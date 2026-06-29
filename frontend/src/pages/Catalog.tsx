@@ -213,6 +213,70 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
   );
 };
 
+// Modal to manage an item's barcodes (010), each optionally tied to a unit.
+const BarcodesButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<{ barcode: string; unit: string | null }[]>([]);
+  const [units, setUnits] = useState<{ name: string; is_base: boolean }[]>([]);
+
+  const load = async () => {
+    try {
+      const [bc, un] = await Promise.all([
+        api.get(`/api/v1/items/${itemId}/barcodes`),
+        api.get(`/api/v1/items/${itemId}/units`),
+      ]);
+      setRows((bc.data || []).map((b: any) => ({ barcode: b.barcode, unit: b.unit })));
+      setUnits((un.data.units || []).map((u: any) => ({ name: u.name, is_base: u.is_base })));
+    } catch (err) { console.error(err); }
+  };
+  const onOpen = () => { setOpen(true); load(); };
+
+  const onSave = async () => {
+    const barcodes = rows.filter((r) => r.barcode.trim())
+      .map((r) => ({ barcode: r.barcode.trim(), unit: r.unit || null }));
+    try {
+      await api.put(`/api/v1/items/${itemId}/barcodes`, { barcodes });
+      message.success('تم حفظ الباركود');
+      setOpen(false);
+    } catch (err) { console.error(err); }
+  };
+
+  return (
+    <>
+      <Button size="small" type="link" icon={<BarcodeOutlined />} onClick={onOpen}>الباركود</Button>
+      <Modal title="الباركود" open={open} onCancel={() => setOpen(false)}
+        onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
+        <p style={{ color: '#888' }}>عدّة باركودات للصنف، كل واحد يحدّد وحدته (الافتراضي: الأساسية).</p>
+        {rows.map((r, i) => (
+          <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+            <Col span={12}>
+              <Input placeholder="الباركود" disabled={!canEdit} value={r.barcode}
+                onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, barcode: e.target.value } : x))} />
+            </Col>
+            <Col span={9}>
+              <Select style={{ width: '100%' }} placeholder="الوحدة" disabled={!canEdit}
+                value={r.unit ?? '__base__'}
+                onChange={(v) => setRows(rows.map((x, j) => j === i ? { ...x, unit: v === '__base__' ? null : v } : x))}>
+                {units.map((u) => (
+                  <Select.Option key={u.name} value={u.is_base ? '__base__' : u.name}>{u.name}</Select.Option>
+                ))}
+              </Select>
+            </Col>
+            <Col span={3}>
+              <Button type="text" danger icon={<DeleteOutlined />} disabled={!canEdit}
+                onClick={() => setRows(rows.filter((_, j) => j !== i))} />
+            </Col>
+          </Row>
+        ))}
+        {canEdit && (
+          <Button type="dashed" block icon={<PlusOutlined />}
+            onClick={() => setRows([...rows, { barcode: '', unit: null }])}>إضافة باركود</Button>
+        )}
+      </Modal>
+    </>
+  );
+};
+
 // Modal to receive serial numbers into stock + list in-stock serials (009).
 const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
   const [open, setOpen] = useState(false);
@@ -367,6 +431,11 @@ export default function Catalog() {
       title: 'الوحدات',
       key: 'units',
       render: (_: any, record: ItemRecord) => <ItemUnitsButton itemId={record.id} canEdit={canEditPrices} />,
+    },
+    {
+      title: 'الباركود',
+      key: 'barcodes',
+      render: (_: any, record: ItemRecord) => <BarcodesButton itemId={record.id} canEdit={canEditPrices} />,
     },
     {
       title: 'السيريال',

@@ -203,6 +203,31 @@ export default function Invoices() {
     );
   };
 
+  const [barcode, setBarcode] = useState('');
+  const scanBarcode = async () => {
+    const code = barcode.trim();
+    if (!code) return;
+    try {
+      const res = await api.get(`/api/v1/barcodes/${encodeURIComponent(code)}`);
+      const d = res.data; // { item_id, unit, factor, base_sale_price }
+      if (!products.find((p) => p.id === d.item_id)) {
+        message.error('هذا الباركود لصنف غير قابل للبيع هنا'); return;
+      }
+      await fetchPrices(d.item_id);
+      const tier = customerTier || 'consumer';
+      const price = (d.base_sale_price ? parseFloat(d.base_sale_price) : 0) * parseFloat(d.factor);
+      const newLine = {
+        key: Date.now().toString(), item_id: d.item_id, quantity: 1, tier,
+        unit: d.unit || null, unit_price: price, serials: '',
+      };
+      setLines((prev) => (prev.length === 1 && prev[0].item_id === null) ? [newLine] : [...prev, newLine]);
+      setBarcode('');
+    } catch (err: any) {
+      if (err?.response?.status === 404) message.error('باركود غير معروف');
+      else console.error(err);
+    }
+  };
+
   const onCustomerChange = (customerId: number) => {
     const c = customers.find((x) => x.id === customerId);
     const tier = c?.default_price_tier ?? null;
@@ -443,6 +468,16 @@ export default function Invoices() {
           </Row>
 
           <Divider orientation="right">المنتجات المباعة</Divider>
+
+          <Input.Search
+            placeholder="امسح أو أدخل باركود ثم اضغط Enter لإضافة سطر"
+            prefix={<span style={{ color: '#888' }}>باركود:</span>}
+            enterButton="إضافة"
+            value={barcode}
+            onChange={(e) => setBarcode(e.target.value)}
+            onSearch={scanBarcode}
+            style={{ marginBottom: 12 }}
+          />
 
           {lines.map((line) => (
             <Row gutter={6} key={line.key} align="middle" style={{ marginBottom: 12 }}>

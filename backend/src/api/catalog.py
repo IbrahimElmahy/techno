@@ -19,6 +19,7 @@ from src.core.db import get_db
 from src.core.money import to_money, to_qty
 from src.models.catalog import (
     Item,
+    ItemBarcode,
     ItemKind,
     ItemPrice,
     ItemSerial,
@@ -27,10 +28,13 @@ from src.models.catalog import (
     SerialStatus,
 )
 from src.models.stock import LocationKind
-from src.services import serial_service
+from src.services import barcode_service, serial_service
+from src.services.barcode_service import BarcodeError, BarcodeInput
 from src.services.serial_service import SerialError
 
 router = APIRouter(tags=["catalog"], prefix="/items")
+# Barcode lookup lives at /barcodes/{code} (outside the /items prefix).
+lookup_router = APIRouter(tags=["catalog"])
 
 
 class ItemCreate(BaseModel):
@@ -307,6 +311,69 @@ def receive_serials(
         raise HTTPException(422, {"code": "serial_invalid", "message": str(exc)})
     db.commit()
     return [_serial_out(s) for s in rows]
+
+
+class BarcodeIn(BaseModel):
+    barcode: str
+    unit: str | None = None
+
+
+class BarcodesSet(BaseModel):
+    barcodes: list[BarcodeIn]
+
+
+class BarcodeLookupOut(BaseModel):
+    item_id: int
+    code: str
+    name: str
+    unit: str | None
+    factor: Decimal
+    base_sale_price: Decimal | None
+
+
+@router.get("/{item_id}/barcodes", response_model=list[BarcodeIn])
+def get_item_barcodes(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> list[BarcodeIn]:
+    rows = db.scalars(select(ItemBarcode).where(ItemBarcode.item_id == item_id)).all()
+    return [BarcodeIn(barcode=r.barcode, unit=r.unit) for r in rows]
+
+
+@router.put("/{item_id}/barcodes", response_model=list[BarcodeIn])
+def set_item_barcodes(
+    item_id: int,
+    body: BarcodesSet,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    db: Session = Depends(get_db),
+) -> list[BarcodeIn]:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    try:
+        rows = barcode_service.set_barcodes(
+            db, item=item, barcodes=[BarcodeInput(b.barcode, b.unit) for b in body.barcodes]
+        )
+    except BarcodeError as exc:
+        raise HTTPException(422, {"code": "barcode_invalid", "message": str(exc)})
+    db.commit()
+    return [BarcodeIn(barcode=r.barcode, unit=r.unit) for r in rows]
+
+
+@lookup_router.get("/barcodes/{code}", response_model=BarcodeLookupOut)
+def lookup_barcode(
+    code: str,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> BarcodeLookupOut:
+    res = barcode_service.lookup(db, code)
+    if res is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Unknown barcode"})
+    return BarcodeLookupOut(
+        item_id=res.item_id, code=res.code, name=res.name, unit=res.unit,
+        factor=res.factor, base_sale_price=res.base_sale_price,
+    )
 
 
 @router.patch("/{item_id}", response_model=ItemOut)

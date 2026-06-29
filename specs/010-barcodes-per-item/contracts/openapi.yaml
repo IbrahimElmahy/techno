@@ -1,0 +1,76 @@
+openapi: 3.1.0
+info:
+  title: UBMS Barcodes API (extends Sales & Inventory 002 + Multiple Units 008)
+  version: 0.1.0
+  description: >
+    Multiple globally-unique barcodes per item, each optionally tied to a unit (008), plus a read-only
+    lookup that resolves a scanned code to item + unit + factor. Additive to 002/008; shares auth and RBAC.
+    Managing uses catalog.write; lookup uses catalog.read. EGP only.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: catalog
+
+paths:
+  /items/{item_id}/barcodes:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [catalog]
+      summary: List an item's barcodes (catalog.read)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Barcode' } } } } }
+    put:
+      tags: [catalog]
+      summary: Set/replace an item's barcodes (catalog.write)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BarcodesSet' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Barcode' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Duplicate barcode / unknown unit, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /barcodes/{code}:
+    parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [catalog]
+      summary: Resolve a scanned barcode to item + unit + factor (catalog.read)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/BarcodeLookup' } } } }
+        '404': { description: Unknown barcode, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Barcode:
+      type: object
+      properties:
+        barcode: { type: string }
+        unit: { type: string, nullable: true, description: 'NULL = base unit' }
+    BarcodesSet:
+      type: object
+      required: [barcodes]
+      properties:
+        barcodes:
+          type: array
+          items:
+            type: object
+            required: [barcode]
+            properties:
+              barcode: { type: string }
+              unit: { type: string, nullable: true }
+    BarcodeLookup:
+      type: object
+      properties:
+        item_id: { type: integer }
+        code: { type: string, description: 'item code' }
+        name: { type: string }
+        unit: { type: string, nullable: true }
+        factor: { type: string, example: '12.000' }
+        base_sale_price: { type: string, nullable: true }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }

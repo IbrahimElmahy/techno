@@ -1,6 +1,6 @@
 """Model package — import all models so metadata is fully populated."""
 from src.models.audit import AuditLogEntry
-from src.models.catalog import Item, ItemPrice, ItemSerial, ItemUnit
+from src.models.catalog import Item, ItemBarcode, ItemPrice, ItemSerial, ItemUnit
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 from src.models.org import Branch, Governorate, HeadOffice, Territory
@@ -48,5 +48,5 @@ __all__ = [
     "SalesInvoice", "SalesInvoiceLine", "SalesReturn", "SalesReturnLine", "SalesSetting",
     "ManufacturingOp", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
-    "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial",
+    "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
 ]

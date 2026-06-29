@@ -117,3 +117,14 @@ class ItemSerial(Base):
     sold_invoice_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_invoice.id"), nullable=True
     )
+
+
+class ItemBarcode(Base):
+    """A scan-target barcode for an item (010). Globally unique; optionally tied to a unit (008)."""
+
+    __tablename__ = "item_barcode"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    barcode: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)  # None = base unit

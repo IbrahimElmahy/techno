@@ -57,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix=prefix)
     # Sales & Inventory (002)
     app.include_router(catalog.router, prefix=prefix)
+    app.include_router(catalog.lookup_router, prefix=prefix)  # /barcodes/{code} (010)
     app.include_router(stock.router, prefix=prefix)
     app.include_router(suppliers.router, prefix=prefix)
     app.include_router(purchases.router, prefix=prefix)
