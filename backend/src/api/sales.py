@@ -34,6 +34,7 @@ class SaleLineIn(BaseModel):
     tier: PriceTier | None = None          # (007) override the customer's default tier per line
     unit_price: Decimal | None = None      # (007) manual price; below tier needs sell.below_price
     unit: str | None = None                # (008) unit of measure; None = base
+    serials: list[str] | None = None       # (009) serials for a serialized item
 
 
 class SaleCreate(BaseModel):
@@ -48,6 +49,7 @@ class SaleCreate(BaseModel):
 class ReturnLineIn(BaseModel):
     item_id: int
     quantity: Decimal
+    serials: list[str] | None = None       # (009) serials being returned (serialized items)
 
 
 class ReturnCreate(BaseModel):
@@ -115,7 +117,8 @@ def create_sale(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
             origin_location_id=body.origin.location_id, variable_discount_pct=body.variable_discount_pct,
             cash_amount=body.cash_amount, credit_amount=body.credit_amount,
-            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit) for l in body.lines],
+            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials)
+                   for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
         )
     except SalesError as exc:
@@ -193,7 +196,9 @@ def return_sale(
     try:
         ret = sales_service.return_sale(
             db, sales_invoice_id=sale_id, lines=[(l.item_id, l.quantity) for l in body.lines],
-            actor_user_id=current.id)
+            actor_user_id=current.id,
+            serials={l.item_id: l.serials for l in body.lines if l.serials},
+        )
     except (SalesError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "return_invalid", "message": str(exc)})
     db.commit()

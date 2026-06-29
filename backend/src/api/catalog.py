@@ -3,16 +3,32 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_CATALOG_READ, CAP_CATALOG_WRITE
+from src.auth.rbac import (
+    CAP_CATALOG_READ,
+    CAP_CATALOG_WRITE,
+    CAP_PURCHASE_WRITE,
+    CAP_STOCK_READ,
+)
 from src.core.db import get_db
 from src.core.money import to_money, to_qty
-from src.models.catalog import Item, ItemKind, ItemPrice, ItemUnit, PriceTier
+from src.models.catalog import (
+    Item,
+    ItemKind,
+    ItemPrice,
+    ItemSerial,
+    ItemUnit,
+    PriceTier,
+    SerialStatus,
+)
+from src.models.stock import LocationKind
+from src.services import serial_service
+from src.services.serial_service import SerialError
 
 router = APIRouter(tags=["catalog"], prefix="/items")
 
@@ -23,6 +39,7 @@ class ItemCreate(BaseModel):
     unit_of_measure: str
     purchase_price: Decimal | None = None
     sale_price: Decimal | None = None
+    is_serialized: bool = False
 
 
 class ItemUpdate(BaseModel):
@@ -30,6 +47,7 @@ class ItemUpdate(BaseModel):
     name: str | None = None
     purchase_price: Decimal | None = None
     sale_price: Decimal | None = None
+    is_serialized: bool | None = None
     active: bool | None = None
 
 
@@ -41,6 +59,7 @@ class ItemOut(BaseModel):
     unit_of_measure: str
     purchase_price: Decimal | None
     sale_price: Decimal | None
+    is_serialized: bool
     active: bool
 
 
@@ -48,7 +67,7 @@ def _out(it: Item) -> ItemOut:
     return ItemOut(
         id=it.id, code=it.code, name=it.name, kind=it.kind,
         unit_of_measure=it.unit_of_measure, purchase_price=it.purchase_price,
-        sale_price=it.sale_price, active=it.active,
+        sale_price=it.sale_price, is_serialized=it.is_serialized, active=it.active,
     )
 
 
@@ -87,6 +106,7 @@ def create_item(
         unit_of_measure=body.unit_of_measure,
         purchase_price=body.purchase_price,
         sale_price=body.sale_price,
+        is_serialized=body.is_serialized,
     )
     db.add(item)
     db.flush()
@@ -225,6 +245,70 @@ def set_item_units(
     return _units_out(db, item)
 
 
+class SerialOut(BaseModel):
+    id: int
+    item_id: int
+    serial: str
+    status: str
+    location_kind: str | None
+    location_id: int | None
+
+
+class ReceiveSerials(BaseModel):
+    location_kind: LocationKind
+    location_id: int
+    serials: list[str]
+
+
+def _serial_out(s: ItemSerial) -> SerialOut:
+    return SerialOut(
+        id=s.id, item_id=s.item_id, serial=s.serial, status=s.status.value,
+        location_kind=s.location_kind.value if s.location_kind else None,
+        location_id=s.location_id,
+    )
+
+
+@router.get("/{item_id}/serials", response_model=list[SerialOut])
+def list_serials(
+    item_id: int,
+    status_filter: str | None = Query(default=None, alias="status"),
+    location_kind: LocationKind | None = None,
+    location_id: int | None = None,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> list[SerialOut]:
+    stmt = select(ItemSerial).where(ItemSerial.item_id == item_id)
+    if status_filter is not None:
+        stmt = stmt.where(ItemSerial.status == SerialStatus(status_filter))
+    if location_kind is not None:
+        stmt = stmt.where(ItemSerial.location_kind == location_kind)
+    if location_id is not None:
+        stmt = stmt.where(ItemSerial.location_id == location_id)
+    return [_serial_out(s) for s in db.scalars(stmt.order_by(ItemSerial.serial)).all()]
+
+
+@router.post("/{item_id}/serials/receive", response_model=list[SerialOut],
+             status_code=status.HTTP_201_CREATED)
+def receive_serials(
+    item_id: int,
+    body: ReceiveSerials,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> list[SerialOut]:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    try:
+        rows = serial_service.receive(
+            db, item=item, location_kind=body.location_kind, location_id=body.location_id,
+            serials=body.serials, actor_user_id=current.id,
+        )
+    except SerialError as exc:
+        raise HTTPException(422, {"code": "serial_invalid", "message": str(exc)})
+    db.commit()
+    return [_serial_out(s) for s in rows]
+
+
 @router.patch("/{item_id}", response_model=ItemOut)
 def update_item(
     item_id: int,
@@ -236,7 +320,7 @@ def update_item(
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     # Editing reference prices never rewrites prices already snapshotted on posted documents.
-    for field in ("code", "name", "purchase_price", "sale_price", "active"):
+    for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active"):
         val = getattr(body, field)
         if val is not None:
             setattr(item, field, val)

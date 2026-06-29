@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: UBMS Serial Numbers API (extends Sales & Inventory 002)
+  version: 0.1.0
+  description: >
+    Per-item serial numbers tracked through stock. Additive to 002/008; shares auth and RBAC. Marking an
+    item serialized uses catalog.write; receiving serials uses purchase.write; listing uses stock.read;
+    sale/return capture uses sale.write/return.write. Each serial move is paired with a 002 quantity
+    movement so on-hand equals the in-stock serial count.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: catalog
+
+paths:
+  /items/{item_id}/serials:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [catalog]
+      summary: List an item's serials (stock.read) — filter by status/location
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [in_stock, sold] } }
+        - { name: location_kind, in: query, schema: { type: string, enum: [warehouse, custody] } }
+        - { name: location_id, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Serial' } } } } }
+  /items/{item_id}/serials/receive:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    post:
+      tags: [catalog]
+      summary: Receive serials into stock (purchase.write) — registers N serials + posts +N stock-in
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReceiveSerials' } } } }
+      responses:
+        '201': { description: Received, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Serial' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Not serialized / duplicate serial, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Serial:
+      type: object
+      properties:
+        id: { type: integer }
+        item_id: { type: integer }
+        serial: { type: string }
+        status: { type: string, enum: [in_stock, sold] }
+        location_kind: { type: string, enum: [warehouse, custody], nullable: true }
+        location_id: { type: integer, nullable: true }
+    ReceiveSerials:
+      type: object
+      required: [location_kind, location_id, serials]
+      properties:
+        location_kind: { type: string, enum: [warehouse, custody] }
+        location_id: { type: integer }
+        serials: { type: array, items: { type: string }, minItems: 1 }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }
+
+# NOTE — additive extensions to the 002 contract (implemented on existing endpoints):
+#   • Item create/update/detail gain `is_serialized` (boolean).
+#   • POST /sales line items MAY include `serials` (string array). For serialized items the count must
+#     equal the line quantity, the unit must be base, and every serial must be in_stock at the origin.
+#   • POST /sales/{id}/returns line items MAY include `serials` to restore (sold on that invoice).

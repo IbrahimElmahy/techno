@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, InputNumber, Select, Tag, message, Divider, Row, Col, Result } from 'antd';
+import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Divider, Row, Col, Result } from 'antd';
 import { PlusOutlined, RollbackOutlined, EyeOutlined, FileTextOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
@@ -35,6 +35,7 @@ interface Product {
   code: string;
   name: string;
   sale_price: string | null;
+  is_serialized: boolean;
 }
 
 interface Warehouse {
@@ -49,6 +50,7 @@ interface SaleLineItem {
   unit_price: number;
   tier: string | null;
   unit: string | null;
+  serials: string;
 }
 
 interface ItemUnit { name: string; factor: number; is_base: boolean; }
@@ -82,7 +84,7 @@ export default function Invoices() {
 
   // Create invoice dynamic lines
   const [lines, setLines] = useState<SaleLineItem[]>([
-    { key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null },
+    { key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null, serials: '' },
   ]);
   // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
   const [pricesCache, setPricesCache] = useState<Record<number, { base: number | null; tiers: Record<string, number> }>>({});
@@ -139,7 +141,7 @@ export default function Invoices() {
 
   const handleAddLine = () => {
     const newKey = Date.now().toString();
-    setLines([...lines, { key: newKey, item_id: null, quantity: 1, unit_price: 0, tier: customerTier, unit: null }]);
+    setLines([...lines, { key: newKey, item_id: null, quantity: 1, unit_price: 0, tier: customerTier, unit: null, serials: '' }]);
   };
 
   const handleRemoveLine = (key: string) => {
@@ -223,6 +225,19 @@ export default function Invoices() {
       return;
     }
 
+    // Serialized lines: serial count must equal the quantity.
+    const parseSerials = (s: string) => s.split(/[\s,\n]+/).map((x) => x.trim()).filter(Boolean);
+    for (const l of validLines) {
+      const prod = products.find((p) => p.id === l.item_id);
+      if (prod?.is_serialized) {
+        const ser = parseSerials(l.serials);
+        if (ser.length !== l.quantity) {
+          message.error(`«${prod.name}»: عدد الأرقام التسلسلية يجب أن يساوي الكمية (${l.quantity})`);
+          return;
+        }
+      }
+    }
+
     try {
       await api.post('/api/v1/sales', {
         customer_id: values.customer_id,
@@ -233,19 +248,23 @@ export default function Invoices() {
         variable_discount_pct: discountPct,
         cash_amount: cashAmount,
         credit_amount: creditAmount,
-        lines: validLines.map((l) => ({
-          item_id: l.item_id,
-          quantity: l.quantity,
-          tier: l.tier,
-          unit: l.unit,
-          unit_price: l.unit_price.toFixed(2),
-        })),
+        lines: validLines.map((l) => {
+          const prod = products.find((p) => p.id === l.item_id);
+          return {
+            item_id: l.item_id,
+            quantity: l.quantity,
+            tier: l.tier,
+            unit: l.unit,
+            unit_price: l.unit_price.toFixed(2),
+            serials: prod?.is_serialized ? parseSerials(l.serials) : null,
+          };
+        }),
       });
 
       message.success('تم تسجيل فاتورة البيع بنجاح');
       setCreateVisible(false);
       createForm.resetFields();
-      setLines([{ key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null }]);
+      setLines([{ key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null, serials: '' }]);
       setCashAmount(0);
       setDiscountPct(0);
       fetchInvoices();
@@ -470,6 +489,13 @@ export default function Invoices() {
               <Col span={2}>
                 <Button type="text" danger onClick={() => handleRemoveLine(line.key)}>حذف</Button>
               </Col>
+              {line.item_id && products.find((p) => p.id === line.item_id)?.is_serialized && (
+                <Col span={24} style={{ marginTop: 6 }}>
+                  <Input size="small" prefix="سيريال:" placeholder="أرقام تسلسلية مفصولة بمسافة/فاصلة (يجب أن يساوي عددها الكمية)"
+                    value={line.serials}
+                    onChange={(e) => handleLineChange(line.key, 'serials', e.target.value)} />
+                </Col>
+              )}
             </Row>
           ))}
 

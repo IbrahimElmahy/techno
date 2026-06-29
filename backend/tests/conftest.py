@@ -235,6 +235,18 @@ def make_priced_product(db, *, name="TieredGadget", sale_price="100", tiers=None
     return item
 
 
+def make_serialized_product(db, *, name="SerialGadget", sale_price="100"):
+    """A serialized product item (009)."""
+    from src.models.catalog import Item, ItemKind
+
+    n = db.query(Item).count()
+    item = Item(code=f"PR-{n + 1:06d}", name=name, kind=ItemKind.product,
+                unit_of_measure="piece", sale_price=Decimal(sale_price), is_serialized=True)
+    db.add(item)
+    db.flush()
+    return item
+
+
 def make_unit(db, item, name, factor):
     """Add an alternate unit (name + factor to base) to an item (008)."""
     from src.models.catalog import ItemUnit

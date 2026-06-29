@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Modal, Row, Col } from 'antd';
-import { PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Switch, Tag, message, Modal, Row, Col } from 'antd';
+import { PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 
@@ -70,6 +70,7 @@ interface ItemRecord {
   unit_of_measure: string;
   purchase_price: string | null;
   sale_price: string | null;
+  is_serialized: boolean;
   active: boolean;
 }
 
@@ -212,6 +213,61 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
   );
 };
 
+// Modal to receive serial numbers into stock + list in-stock serials (009).
+const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
+  const [open, setOpen] = useState(false);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [whId, setWhId] = useState<number | undefined>();
+  const [text, setText] = useState('');
+  const [inStock, setInStock] = useState<any[]>([]);
+
+  const load = async () => {
+    try {
+      const [wh, ser] = await Promise.all([
+        api.get('/api/v1/warehouses'),
+        api.get(`/api/v1/items/${itemId}/serials?status=in_stock`),
+      ]);
+      setWarehouses(wh.data); setInStock(ser.data);
+    } catch (err) { console.error(err); }
+  };
+  const onOpen = () => { setOpen(true); load(); };
+
+  const onReceive = async () => {
+    const serials = text.split(/[\s,\n]+/).map((s) => s.trim()).filter(Boolean);
+    if (!whId || serials.length === 0) { message.warning('اختر المخزن وأدخل أرقاماً تسلسلية'); return; }
+    try {
+      await api.post(`/api/v1/items/${itemId}/serials/receive`, {
+        location_kind: 'warehouse', location_id: whId, serials });
+      message.success(`تم استلام ${serials.length} رقم تسلسلي`);
+      setText(''); load();
+    } catch (err) { console.error(err); }
+  };
+
+  return (
+    <>
+      <Button size="small" type="link" icon={<BarcodeOutlined />} onClick={onOpen}>السيريال</Button>
+      <Modal title="الأرقام التسلسلية" open={open} onCancel={() => setOpen(false)} footer={null} width={560}>
+        {canEdit && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 8 }}>
+            <strong>استلام أرقام تسلسلية للمخزون</strong>
+            <Select style={{ width: '100%', margin: '8px 0' }} placeholder="مخزن الاستلام" value={whId}
+              onChange={setWhId} options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+            <Input.TextArea rows={3} placeholder="أرقام تسلسلية مفصولة بمسافة أو فاصلة أو سطر"
+              value={text} onChange={(e) => setText(e.target.value)} />
+            <Button type="primary" style={{ marginTop: 8 }} onClick={onReceive}>استلام</Button>
+          </div>
+        )}
+        <strong>المتوفر بالمخزون ({inStock.length})</strong>
+        <Table size="small" rowKey="id" dataSource={inStock} pagination={{ pageSize: 8 }}
+          columns={[
+            { title: 'الرقم التسلسلي', dataIndex: 'serial' },
+            { title: 'الموقع', dataIndex: 'location_id', render: (v: number, r: any) => r.location_kind ? `${r.location_kind} #${v}` : '-' },
+          ]} />
+      </Modal>
+    </>
+  );
+};
+
 export default function Catalog() {
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -250,7 +306,7 @@ export default function Catalog() {
         sale_price: values.kind === 'product' ? values.sale_price : null,
       };
 
-      await api.post('/api/v1/items', payload);
+      await api.post('/api/v1/items', { ...payload, is_serialized: !!values.is_serialized });
       message.success('تم تسجيل الصنف في الكتالوج بنجاح');
       setDrawerVisible(false);
       form.resetFields();
@@ -311,6 +367,14 @@ export default function Catalog() {
       title: 'الوحدات',
       key: 'units',
       render: (_: any, record: ItemRecord) => <ItemUnitsButton itemId={record.id} canEdit={canEditPrices} />,
+    },
+    {
+      title: 'السيريال',
+      key: 'serials',
+      render: (_: any, record: ItemRecord) =>
+        record.is_serialized
+          ? <SerialsButton itemId={record.id} canEdit={canEditPrices} />
+          : <Tag>غير مُسلسَل</Tag>,
     },
     {
       title: 'نقاط المنتج',
@@ -408,6 +472,15 @@ export default function Catalog() {
               }
               return null;
             }}
+          </Form.Item>
+
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.kind !== curr.kind}>
+            {({ getFieldValue }) => getFieldValue('kind') === 'product' ? (
+              <Form.Item name="is_serialized" label="صنف بأرقام تسلسلية؟" valuePropName="checked"
+                extra="عند التفعيل يلزم إدخال الأرقام التسلسلية عند الاستلام والبيع">
+                <Switch checkedChildren="نعم" unCheckedChildren="لا" />
+              </Form.Item>
+            ) : null}
           </Form.Item>
 
           <Form.Item style={{ marginTop: 24 }}>

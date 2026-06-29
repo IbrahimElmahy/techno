@@ -31,11 +31,13 @@ from src.services import (
     audit_service,
     ledger_service,
     pricing_service,
+    serial_service,
     stock_service,
     uom_service,
 )
 from src.services.ledger_service import LineInput
 from src.services.pricing_service import PricingError
+from src.services.serial_service import SerialError
 from src.services.uom_service import UomError
 
 
@@ -50,6 +52,7 @@ class SaleLine:
     tier: PriceTier | None = None          # (007) explicit tier override per line
     unit_price: Decimal | None = None      # (007) manual price override (below-tier needs capability)
     unit: str | None = None                # (008) unit of measure; None = base unit
+    serials: list[str] | None = None       # (009) serial numbers (required for serialized items)
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -103,6 +106,12 @@ def create_sale(
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
             raise SalesError(str(exc)) from exc
+        try:  # (009) validate serial count/base-unit/serialized consistency before any stock move
+            serial_service.assert_sale_serials(
+                item, quantity=ln.quantity, unit_factor=factor, serials=ln.serials
+            )
+        except SerialError as exc:
+            raise SalesError(str(exc)) from exc
         tier = pricing_service.resolve_tier(ln.tier, customer)
         try:
             base_price = pricing_service.tier_price(db, item, tier)
@@ -151,6 +160,15 @@ def create_sale(
                              unit_price=unit_price, line_total=line_total, price_tier=tier,
                              unit=ln.unit, unit_factor=factor)
         )
+        if ln.serials:  # (009) mark the specific serials sold (validated above)
+            item = db.get(Item, ln.item_id)
+            try:
+                serial_service.mark_sold(
+                    db, item=item, origin_kind=origin_location_kind, origin_id=origin_location_id,
+                    serials=ln.serials, invoice_id=invoice.id,
+                )
+            except SerialError as exc:
+                raise SalesError(str(exc)) from exc
 
     entry_lines = []
     if to_money(cash_amount) > ZERO:
@@ -189,6 +207,7 @@ def return_sale(
     sales_invoice_id: int,
     lines: list[tuple[int, Decimal]],
     actor_user_id: int,
+    serials: dict[int, list[str]] | None = None,  # (009) item_id → serials being returned
 ) -> SalesReturn:
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
@@ -230,6 +249,18 @@ def return_sale(
             source_doc_type="sale_return", source_doc_id=ret.id,
         )
         ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty)))
+        item = db.get(Item, item_id)  # (009) restore serials for serialized items
+        if item.is_serialized:
+            ser = (serials or {}).get(item_id) or []
+            if Decimal(len(ser)) != to_qty(Decimal(qty)):
+                raise SalesError("Serial count must equal the returned quantity.")
+            try:
+                serial_service.restore_for_return(
+                    db, item=item, invoice_id=inv.id, origin_kind=inv.origin_location_kind,
+                    origin_id=inv.origin_location_id, serials=ser,
+                )
+            except SerialError as exc:
+                raise SalesError(str(exc)) from exc
 
     cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == inv.customer_id))
     entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, value)]

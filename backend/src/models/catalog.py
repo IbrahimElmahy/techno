@@ -9,11 +9,21 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
 from src.core.money import MONEY, QTY
+from src.models.stock import LocationKind
 
 
 class ItemKind(str, enum.Enum):
@@ -42,6 +52,8 @@ class Item(Base):
     # Kind-specific reference prices (editable; never rewrite posted-document prices).
     purchase_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # raw materials
     sale_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)      # products
+    # When true, the item is tracked by serial number (009); receive/sale/return require serials.
+    is_serialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -74,3 +86,34 @@ class ItemUnit(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(16), nullable=False)
     factor: Mapped[object] = mapped_column(QTY, nullable=False)  # base units per one of this unit
+
+
+class SerialStatus(str, enum.Enum):
+    in_stock = "in_stock"
+    sold = "sold"
+
+
+class ItemSerial(Base):
+    """A serial-numbered physical unit of a serialized item (009). Unique per item.
+
+    Lifecycle: in_stock@location ↔ sold. Every status change is paired with a 002 quantity movement so
+    the in-stock serial count at a location equals the item's derived on-hand there.
+    """
+
+    __tablename__ = "item_serial"
+    __table_args__ = (UniqueConstraint("item_id", "serial", name="uq_item_serial_item_serial"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    serial: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[SerialStatus] = mapped_column(
+        Enum(SerialStatus), default=SerialStatus.in_stock, nullable=False
+    )
+    location_kind: Mapped["LocationKind | None"] = mapped_column(
+        Enum(LocationKind), nullable=True
+    )
+    location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Set on sale, cleared on return — scopes which invoice a serial can be returned against.
+    sold_invoice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_invoice.id"), nullable=True
+    )
