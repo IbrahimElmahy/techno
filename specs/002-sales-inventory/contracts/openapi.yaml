@@ -1,0 +1,340 @@
+openapi: 3.1.0
+info:
+  title: UBMS Sales & Inventory API (extends Foundation)
+  version: 0.1.0
+  description: >
+    Sales & Inventory endpoints, additive to the Foundation API and sharing its auth (Bearer JWT),
+    RBAC (deny-by-default, branch/rep scope), and ledger. Money is EGP DECIMAL(18,2); quantity is
+    DECIMAL(18,3). Stock is quantity-only; on-hand is derived from immutable movements. All money
+    posts as one balanced entry to the Foundation ledger. No VAT.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: catalog
+  - name: suppliers
+  - name: purchases
+  - name: manufacturing
+  - name: sales
+  - name: transfers
+  - name: stock
+  - name: settings
+
+paths:
+  /items:
+    get:
+      tags: [catalog]
+      summary: List catalog items (capability catalog.read)
+      parameters:
+        - { name: kind, in: query, schema: { type: string, enum: [raw_material, product] } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Item' } } } } } }
+    post:
+      tags: [catalog]
+      summary: Create an item (catalog.write); raw_material⇒purchase_price, product⇒sale_price
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Item' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /items/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [catalog]
+      summary: Edit item (code, name, prices, active) — never rewrites posted-document prices
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemUpdate' } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Item' } } } } }
+
+  /stock/on-hand:
+    get:
+      tags: [stock]
+      summary: Derived on-hand for an (item × location)
+      parameters:
+        - { name: item_id, in: query, required: true, schema: { type: integer } }
+        - { name: location_kind, in: query, required: true, schema: { type: string, enum: [warehouse, custody] } }
+        - { name: location_id, in: query, required: true, schema: { type: integer } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/OnHand' } } } } }
+
+  /suppliers:
+    get: { tags: [suppliers], summary: List suppliers, responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Supplier' } } } } } } }
+    post:
+      tags: [suppliers]
+      summary: Create supplier (creates its payable account)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SupplierCreate' } } } }
+      responses: { '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Supplier' } } } } }
+  /suppliers/{id}/account:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [suppliers]
+      summary: Supplier payable account with ledger-derived balance
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AccountBalance' } } } } }
+
+  /purchases:
+    post:
+      tags: [purchases]
+      summary: Record a purchase (purchase.write) — raw materials in + balanced ledger entry (cash + supplier credit)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/PurchaseInvoice' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Would violate no-negative-stock or invalid, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /purchases/{id}/returns:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [purchases]
+      summary: Partial purchase return (cumulative ≤ purchased)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReturnCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ReturnDoc' } } } }
+        '409': { description: Exceeds remaining or negative stock, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /manufacturing/consume:
+    post:
+      tags: [manufacturing]
+      summary: Consume raw material (manufacture.write) — independent stock-out, no money
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ManufactureOp' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ManufactureResult' } } } }
+        '409': { description: No-negative-stock, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /manufacturing/produce:
+    post:
+      tags: [manufacturing]
+      summary: Produce product (manufacture.write) — independent stock-in, no money, no BOM
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ManufactureOp' } } } }
+      responses: { '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ManufactureResult' } } } } }
+  /manufacturing/{id}/reverse:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [manufacturing]
+      summary: Reverse a consumption or production (manufacture.write) — linked mirror movement, no money
+      description: Creates a mirror stock movement (reverse-once). A reversed produce is subject to no-negative-stock.
+      responses:
+        '201': { description: Reversed, content: { application/json: { schema: { $ref: '#/components/schemas/ManufactureResult' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Already reversed or no-negative-stock, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /sales:
+    post:
+      tags: [sales]
+      summary: Create a sales invoice (sale.write) — product out at origin + balanced split cash/credit entry
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SaleCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: No-negative-stock / out of scope, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /sales/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [sales]
+      summary: Get a sales invoice (printable payload)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SalesInvoice' } } } } }
+  /sales/{id}/returns:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [sales]
+      summary: Partial sales return (return.write) — products back + auto proportional money reversal
+      description: >
+        Caller supplies returned lines/quantities only. The money reversal is computed by the system
+        in the original invoice's cash/credit proportion (not caller-provided).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReturnCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/ReturnDoc' } } } }
+        '409': { description: Exceeds remaining, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /transfers:
+    post:
+      tags: [transfers]
+      summary: Initiate a transfer (transfer.initiate) — pending, no stock moves yet
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TransferCreate' } } } }
+      responses:
+        '201': { description: Pending, content: { application/json: { schema: { $ref: '#/components/schemas/Transfer' } } } }
+        '422': { description: Illegal route, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /transfers/{id}/approve:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [transfers]
+      summary: Approve a transfer (transfer.approve — Branch Manager) → atomic out+in
+      responses:
+        '200': { description: Approved, content: { application/json: { schema: { $ref: '#/components/schemas/Transfer' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: No-negative-stock at source, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /transfers/{id}/reverse:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [transfers]
+      summary: Reverse an approved transfer (mirror pair)
+      responses: { '201': { description: Reversed, content: { application/json: { schema: { $ref: '#/components/schemas/Transfer' } } } } }
+
+  /settings/sales:
+    get: { tags: [settings], summary: Read sales settings (fixed discount %), responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SalesSettings' } } } } } }
+    put:
+      tags: [settings]
+      summary: Update fixed sales discount % (settings.write) — never alters posted invoices
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SalesSettings' } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SalesSettings' } } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+  responses:
+    Forbidden: { description: Denied by RBAC/scope, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    ValidationError: { description: Validation failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Money: { type: string, example: '850.00' }
+    Qty: { type: string, example: '2.500' }
+    Location:
+      type: object
+      required: [location_kind, location_id]
+      properties:
+        location_kind: { type: string, enum: [warehouse, custody] }
+        location_id: { type: integer }
+    Item:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        kind: { type: string, enum: [raw_material, product] }
+        unit_of_measure: { type: string }
+        purchase_price: { $ref: '#/components/schemas/Money' }
+        sale_price: { $ref: '#/components/schemas/Money' }
+        active: { type: boolean }
+    ItemCreate:
+      type: object
+      required: [name, kind, unit_of_measure]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [raw_material, product] }
+        unit_of_measure: { type: string }
+        purchase_price: { $ref: '#/components/schemas/Money' }
+        sale_price: { $ref: '#/components/schemas/Money' }
+    ItemUpdate:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        purchase_price: { $ref: '#/components/schemas/Money' }
+        sale_price: { $ref: '#/components/schemas/Money' }
+        active: { type: boolean }
+    OnHand:
+      type: object
+      properties:
+        item_id: { type: integer }
+        location_kind: { type: string, enum: [warehouse, custody] }
+        location_id: { type: integer }
+        on_hand: { $ref: '#/components/schemas/Qty' }
+        derived: { type: boolean, example: true }
+    Supplier:
+      type: object
+      properties: { id: { type: integer }, code: { type: string }, name: { type: string }, phone: { type: string, nullable: true }, active: { type: boolean } }
+    SupplierCreate:
+      type: object
+      required: [name]
+      properties: { name: { type: string }, phone: { type: string, nullable: true } }
+    AccountBalance:
+      type: object
+      properties: { account_id: { type: integer }, balance: { $ref: '#/components/schemas/Money' }, derived: { type: boolean } }
+    PurchaseLineCreate:
+      type: object
+      required: [item_id, quantity, unit_price]
+      properties: { item_id: { type: integer }, quantity: { $ref: '#/components/schemas/Qty' }, unit_price: { $ref: '#/components/schemas/Money' } }
+    PurchaseCreate:
+      type: object
+      required: [supplier_id, location, cash_amount, credit_amount, lines]
+      properties:
+        supplier_id: { type: integer }
+        location: { $ref: '#/components/schemas/Location' }
+        cash_amount: { $ref: '#/components/schemas/Money' }
+        credit_amount: { $ref: '#/components/schemas/Money' }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/PurchaseLineCreate' } }
+    PurchaseInvoice:
+      type: object
+      properties:
+        id: { type: integer }
+        document_number: { type: string }
+        supplier_id: { type: integer }
+        total: { $ref: '#/components/schemas/Money' }
+        cash_amount: { $ref: '#/components/schemas/Money' }
+        credit_amount: { $ref: '#/components/schemas/Money' }
+        ledger_entry_id: { type: integer }
+    ReturnLine:
+      type: object
+      required: [item_id, quantity]
+      properties: { item_id: { type: integer }, quantity: { $ref: '#/components/schemas/Qty' } }
+    ReturnCreate:
+      type: object
+      required: [lines]
+      properties: { lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ReturnLine' } } }
+    ReturnDoc:
+      type: object
+      properties: { id: { type: integer }, document_number: { type: string }, original_id: { type: integer }, ledger_entry_id: { type: integer, nullable: true } }
+    ManufactureOp:
+      type: object
+      required: [item_id, location, quantity]
+      properties:
+        item_id: { type: integer }
+        location: { $ref: '#/components/schemas/Location' }
+        quantity: { $ref: '#/components/schemas/Qty' }
+    ManufactureResult:
+      type: object
+      properties: { id: { type: integer }, document_number: { type: string }, op_type: { type: string, enum: [consume, produce] }, stock_movement_id: { type: integer } }
+    SaleLineCreate:
+      type: object
+      required: [item_id, quantity]
+      properties: { item_id: { type: integer }, quantity: { $ref: '#/components/schemas/Qty' } }
+    SaleCreate:
+      type: object
+      required: [customer_id, origin, variable_discount_pct, cash_amount, credit_amount, lines]
+      description: net = gross × (1 − (fixed_%+variable_%)/100); cash + credit = net.
+      properties:
+        customer_id: { type: integer }
+        origin: { $ref: '#/components/schemas/Location' }
+        variable_discount_pct: { type: number, example: 10 }
+        cash_amount: { $ref: '#/components/schemas/Money' }
+        credit_amount: { $ref: '#/components/schemas/Money' }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/SaleLineCreate' } }
+    SalesInvoice:
+      type: object
+      properties:
+        id: { type: integer }
+        document_number: { type: string }
+        customer_id: { type: integer }
+        gross: { $ref: '#/components/schemas/Money' }
+        fixed_discount_pct: { type: number }
+        variable_discount_pct: { type: number }
+        combined_pct: { type: number }
+        net: { $ref: '#/components/schemas/Money' }
+        cash_amount: { $ref: '#/components/schemas/Money' }
+        credit_amount: { $ref: '#/components/schemas/Money' }
+        cash_account_id: { type: integer }
+        ledger_entry_id: { type: integer }
+        lines: { type: array, items: { type: object } }
+    TransferCreate:
+      type: object
+      required: [item_id, quantity, route, source, dest]
+      properties:
+        item_id: { type: integer }
+        quantity: { $ref: '#/components/schemas/Qty' }
+        route: { type: string, enum: [central_to_branch, central_to_rep, rep_to_rep] }
+        source: { $ref: '#/components/schemas/Location' }
+        dest: { $ref: '#/components/schemas/Location' }
+    Transfer:
+      type: object
+      properties:
+        id: { type: integer }
+        document_number: { type: string }
+        status: { type: string, enum: [pending, approved, rejected, reversed] }
+        route: { type: string }
+        approved_by: { type: integer, nullable: true }
+    SalesSettings:
+      type: object
+      properties: { fixed_discount_pct: { type: number, example: 5 } }
+    Error:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, nullable: true }

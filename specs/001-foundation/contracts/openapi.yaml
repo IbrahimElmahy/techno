@@ -1,0 +1,432 @@
+openapi: 3.1.0
+info:
+  title: UBMS Foundation API
+  version: 0.1.0
+  description: >
+    Foundation (shared base) API for the Unified Business Management System.
+    The versioned shared contract per Constitution Principle II. All endpoints
+    enforce RBAC server-side with deny-by-default; branch-scoped and rep-scoped
+    roles cannot access other scopes' data. All money is EGP DECIMAL(18,2).
+    Out of scope: products, invoices, stock movements, loyalty, offline sync, employees.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: auth
+  - name: users
+  - name: org
+  - name: warehouses
+  - name: customers
+  - name: treasury
+  - name: audit
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      security: []
+      summary: Authenticate with username + password, receive access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/TokenResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current user identity, role, and scope
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /users:
+    get:
+      tags: [users]
+      summary: List users (System Admin all; Branch Manager own branch only)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/User' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [users]
+      summary: Create user account (assign role + scope)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UserCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /users/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [users]
+      summary: Get user
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /users/{id}/deactivate:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [users]
+      summary: Deactivate a user (history preserved; audited)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /branches:
+    get:
+      tags: [org]
+      summary: List branches (Admin all; branch-scoped sees own)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Branch' } } } } } }
+    post:
+      tags: [org]
+      summary: Create branch (System Admin only)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BranchCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Branch' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /governorates:
+    get:
+      tags: [org]
+      summary: List Egyptian governorates
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Governorate' } } } } } }
+  /territories:
+    get:
+      tags: [org]
+      summary: List territories (each within one branch)
+      parameters: [{ name: branch_id, in: query, schema: { type: integer } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Territory' } } } } } }
+    post:
+      tags: [org]
+      summary: Create territory within a branch
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TerritoryCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Territory' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /warehouses:
+    get:
+      tags: [warehouses]
+      summary: List warehouses (central + branch; scope-filtered)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Warehouse' } } } } } }
+    post:
+      tags: [warehouses]
+      summary: Create warehouse
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/WarehouseCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Warehouse' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /custodies:
+    get:
+      tags: [warehouses]
+      summary: List custodies (one per rep / per warehouse)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Custody' } } } } } }
+    post:
+      tags: [warehouses]
+      summary: Create the single custody for a rep or a warehouse
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CustodyCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Custody' } } } }
+        '409': { description: Custody already exists for this holder, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /custodies/{id}/balance:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [warehouses]
+      summary: Ledger-derived custody balance
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Balance' } } } } }
+
+  /customers:
+    get:
+      tags: [customers]
+      summary: List customers (rep sees only own; branch-scoped sees own branch)
+      parameters:
+        - { name: rep_id, in: query, schema: { type: integer } }
+        - { name: territory_id, in: query, schema: { type: integer } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Customer' } } } } } }
+    post:
+      tags: [customers]
+      summary: Create customer (system-generated code; duplicate phone flagged not blocked)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CustomerCreate' } } } }
+      responses:
+        '201':
+          description: Created (may include duplicate_phone_warning)
+          content: { application/json: { schema: { $ref: '#/components/schemas/CustomerCreated' } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /customers/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [customers]
+      summary: Get customer
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Customer' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /customers/{id}/reassign:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [customers]
+      summary: Reassign ownership to a new rep/territory (Admin or Branch/Purchasing Manager only)
+      description: >
+        Moves future ownership only. Same account, same balance, continuous; past
+        ledger entries remain attributed to the original rep. Audited.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CustomerReassign' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Customer' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /customers/{id}/account:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [customers]
+      summary: Customer receivable account with ledger-derived balance
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/CustomerAccount' } } } } }
+
+  /treasury/balance:
+    get:
+      tags: [treasury]
+      summary: Consolidated treasury balance (ledger-derived)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Balance' } } } } }
+  /ledger/entries:
+    post:
+      tags: [treasury]
+      summary: Post a balanced double-entry ledger entry (capability ledger.post)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LedgerEntryCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/LedgerEntry' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Unbalanced or invalid entry, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [treasury]
+      summary: List ledger entries (scope-filtered; read-only)
+      parameters:
+        - { name: account_id, in: query, schema: { type: integer } }
+        - { name: branch_id, in: query, schema: { type: integer } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/LedgerEntry' } } } } } }
+  /ledger/entries/{id}/reverse:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [treasury]
+      summary: Create the mirror reversal of an entry (capability ledger.reverse)
+      description: Creates a new linked entry with debits/credits swapped. An entry may be reversed at most once.
+      responses:
+        '201': { description: Reversal created, content: { application/json: { schema: { $ref: '#/components/schemas/LedgerEntry' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Entry already reversed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /audit:
+    get:
+      tags: [audit]
+      summary: Query the audit log (write/security actions; Admin/branch-scoped)
+      parameters:
+        - { name: actor_user_id, in: query, schema: { type: integer } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: entity_type, in: query, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AuditLogEntry' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+  responses:
+    Unauthorized: { description: Missing/invalid credentials, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Forbidden: { description: Denied by RBAC/scope (deny-by-default), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: Not found (or out of scope), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    ValidationError: { description: Validation failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Money: { type: string, description: 'EGP decimal, 2 dp', example: '1500.00' }
+    RoleName:
+      type: string
+      enum: [system_admin, branch_manager, purchasing_manager, sales_manager, after_sales_staff, sales_rep]
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties: { username: { type: string }, password: { type: string, format: password } }
+    TokenResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: bearer }
+        expires_in: { type: integer, example: 1800 }
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        role: { $ref: '#/components/schemas/RoleName' }
+        full_name: { type: string }
+        branch_id: { type: integer, nullable: true }
+        territory_id: { type: integer, nullable: true }
+        active: { type: boolean }
+    UserCreate:
+      type: object
+      required: [username, password, role, full_name]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+        role: { $ref: '#/components/schemas/RoleName' }
+        full_name: { type: string }
+        branch_id: { type: integer, nullable: true, description: required for branch-scoped roles }
+        territory_id: { type: integer, nullable: true, description: required for sales_rep }
+    Governorate:
+      type: object
+      properties: { id: { type: integer }, name: { type: string } }
+    Branch:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        governorate_id: { type: integer }
+        is_head_office: { type: boolean }
+        active: { type: boolean }
+    BranchCreate:
+      type: object
+      required: [name, governorate_id]
+      properties: { name: { type: string }, governorate_id: { type: integer }, is_head_office: { type: boolean, default: false } }
+    Territory:
+      type: object
+      properties: { id: { type: integer }, name: { type: string }, branch_id: { type: integer }, active: { type: boolean } }
+    TerritoryCreate:
+      type: object
+      required: [name, branch_id]
+      properties: { name: { type: string }, branch_id: { type: integer } }
+    Warehouse:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        warehouse_type: { type: string, enum: [central, branch] }
+        branch_id: { type: integer, nullable: true }
+        active: { type: boolean }
+    WarehouseCreate:
+      type: object
+      required: [name, warehouse_type]
+      properties:
+        name: { type: string }
+        warehouse_type: { type: string, enum: [central, branch] }
+        branch_id: { type: integer, nullable: true, description: required when type=branch }
+    Custody:
+      type: object
+      properties:
+        id: { type: integer }
+        holder_type: { type: string, enum: [rep, warehouse] }
+        rep_id: { type: integer, nullable: true }
+        warehouse_id: { type: integer, nullable: true }
+        active: { type: boolean }
+    CustodyCreate:
+      type: object
+      required: [holder_type]
+      properties:
+        holder_type: { type: string, enum: [rep, warehouse] }
+        rep_id: { type: integer, nullable: true }
+        warehouse_id: { type: integer, nullable: true }
+    Customer:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string, description: system-generated stable identity }
+        name: { type: string }
+        customer_type: { type: string, enum: [trader, plumber, other] }
+        phone: { type: string, nullable: true }
+        rep_id: { type: integer }
+        territory_id: { type: integer }
+        active: { type: boolean }
+    CustomerCreate:
+      type: object
+      required: [name, customer_type, rep_id, territory_id]
+      properties:
+        name: { type: string }
+        customer_type: { type: string, enum: [trader, plumber, other] }
+        phone: { type: string, nullable: true }
+        rep_id: { type: integer }
+        territory_id: { type: integer }
+    CustomerCreated:
+      allOf:
+        - $ref: '#/components/schemas/Customer'
+        - type: object
+          properties:
+            duplicate_phone_warning:
+              type: object
+              nullable: true
+              properties: { matched_customer_ids: { type: array, items: { type: integer } } }
+    CustomerReassign:
+      type: object
+      required: [new_rep_id, new_territory_id]
+      properties:
+        new_rep_id: { type: integer }
+        new_territory_id: { type: integer }
+    CustomerAccount:
+      type: object
+      properties:
+        id: { type: integer }
+        customer_id: { type: integer }
+        account_id: { type: integer }
+        balance: { $ref: '#/components/schemas/Money' }
+        balance_derived: { type: boolean, example: true }
+    Balance:
+      type: object
+      properties:
+        account_id: { type: integer }
+        balance: { $ref: '#/components/schemas/Money' }
+        as_of: { type: string, format: date-time }
+    LedgerLineCreate:
+      type: object
+      required: [account_id, direction, amount]
+      properties:
+        account_id: { type: integer }
+        direction: { type: string, enum: [debit, credit] }
+        amount: { $ref: '#/components/schemas/Money' }
+    LedgerEntryCreate:
+      type: object
+      required: [entry_type, lines]
+      description: Σ debit MUST equal Σ credit; at least two lines.
+      properties:
+        entry_type: { type: string }
+        description: { type: string }
+        branch_id: { type: integer, nullable: true }
+        rep_id: { type: integer, nullable: true }
+        lines:
+          type: array
+          minItems: 2
+          items: { $ref: '#/components/schemas/LedgerLineCreate' }
+    LedgerLine:
+      type: object
+      properties:
+        id: { type: integer }
+        account_id: { type: integer }
+        direction: { type: string, enum: [debit, credit] }
+        amount: { $ref: '#/components/schemas/Money' }
+    LedgerEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        entry_type: { type: string }
+        description: { type: string }
+        actor_user_id: { type: integer }
+        rep_id: { type: integer, nullable: true }
+        branch_id: { type: integer, nullable: true }
+        reverses_entry_id: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        lines: { type: array, items: { $ref: '#/components/schemas/LedgerLine' } }
+    AuditLogEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        actor_user_id: { type: integer, nullable: true }
+        action: { type: string }
+        entity_type: { type: string, nullable: true }
+        entity_id: { type: integer, nullable: true }
+        before: { type: object, nullable: true }
+        after: { type: object, nullable: true }
+        created_at: { type: string, format: date-time }
+    Error:
+      type: object
+      properties:
+        code: { type: string, description: stable machine code (locale-neutral) }
+        message: { type: string }
+        details: { type: object, nullable: true }

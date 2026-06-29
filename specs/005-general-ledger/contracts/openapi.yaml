@@ -1,0 +1,227 @@
+openapi: 3.1.0
+info:
+  title: UBMS General Ledger & Chart of Accounts API (extends Foundation)
+  version: 0.1.0
+  description: >
+    Accounting endpoints, additive to 001/002/003 and sharing auth (Bearer JWT), RBAC
+    (deny-by-default), and the one immutable ledger. The chart of accounts is the Foundation `account`
+    table extended into a hierarchy; a journal entry IS a balanced `ledger_entry`. Money is EGP
+    DECIMAL(18,2). Managed by the new Accountant role (+ System Admin). Chart is company-wide; entries
+    are branch-tagged. Trial balance is fully derived.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: chart
+  - name: journal-entries
+  - name: opening-balances
+  - name: trial-balance
+
+paths:
+  /accounts:
+    get:
+      tags: [chart]
+      summary: List / tree the chart of accounts (accounting.chart.read)
+      parameters:
+        - { name: tree, in: query, schema: { type: boolean, default: false }, description: nested tree vs flat }
+        - { name: postable_only, in: query, schema: { type: boolean, default: false } }
+        - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Account' } } } } }
+    post:
+      tags: [chart]
+      summary: Create a chart account (accounting.chart.write)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AccountCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Duplicate code / bad parent prefix / parent not a group, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /accounts/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [chart]
+      summary: Get one account with derived balance (accounting.chart.read)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } } }
+    patch:
+      tags: [chart]
+      summary: Rename / activate / deactivate (accounting.chart.write)
+      description: System accounts may be renamed but not deleted or re-parented out of their nature.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AccountUpdate' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Account' } } } }
+        '409': { description: Cannot make a group of an account with lines / deactivate with active children, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [chart]
+      summary: Deactivate (never hard-delete) an account (accounting.chart.write)
+      responses:
+        '204': { description: Deactivated }
+        '409': { description: Has children or posted lines — deactivated, not removed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /journal-entries:
+    get:
+      tags: [journal-entries]
+      summary: List journal entries (accounting.chart.read) — filter by date/branch
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: branch_id, in: query, schema: { type: integer } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/JournalEntry' } } } } } }
+    post:
+      tags: [journal-entries]
+      summary: Post a manual journal entry (accounting.journal.post)
+      description: >
+        ≥2 lines on postable accounts, Σdebit = Σcredit. Posts one balanced, immutable ledger entry.
+        branch_id required; branch-scoped users may post only to their own branch.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntryCreate' } } } }
+      responses:
+        '201': { description: Posted, content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Unbalanced / <2 lines / non-postable account / cross-branch, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /journal-entries/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [journal-entries]
+      summary: Get one journal entry with its lines (accounting.chart.read)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } } } }
+  /journal-entries/{id}/reverse:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [journal-entries]
+      summary: Post a reversing entry (accounting.journal.reverse) — reverse-once
+      responses:
+        '201': { description: Reversed, content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } } }
+        '409': { description: Already reversed / is itself a reversal, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /opening-balances:
+    post:
+      tags: [opening-balances]
+      summary: Enter opening balances (accounting.journal.post) — one balanced entry vs equity
+      description: Each line's amount posts on the account's normal side; the total offsets opening_balance_equity.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OpeningBalancesCreate' } } } }
+      responses:
+        '201': { description: Posted, content: { application/json: { schema: { $ref: '#/components/schemas/JournalEntry' } } } }
+        '422': { description: Non-postable account / empty, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /trial-balance:
+    get:
+      tags: [trial-balance]
+      summary: Trial balance for a date range (accounting.trial_balance.read)
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: branch_id, in: query, schema: { type: integer }, description: omit for all branches (admin) }
+        - { name: include_groups, in: query, schema: { type: boolean, default: true }, description: roll up group nodes }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/TrialBalance' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Money: { type: string, example: '1500.00' }
+    Nature: { type: string, enum: [asset, liability, equity, income, expense] }
+    Side: { type: string, enum: [debit, credit] }
+    Account:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string, example: '1.01.001' }
+        name: { type: string }
+        parent_id: { type: integer, nullable: true }
+        nature: { $ref: '#/components/schemas/Nature' }
+        normal_side: { $ref: '#/components/schemas/Side' }
+        is_postable: { type: boolean }
+        is_system: { type: boolean }
+        active: { type: boolean }
+        balance: { $ref: '#/components/schemas/Money' }
+        children: { type: array, items: { $ref: '#/components/schemas/Account' }, description: present when tree=true }
+    AccountCreate:
+      type: object
+      required: [code, name, nature, is_postable]
+      properties:
+        code: { type: string, description: 'segmented; must be prefixed by parent code' }
+        name: { type: string }
+        parent_id: { type: integer, nullable: true }
+        nature: { $ref: '#/components/schemas/Nature' }
+        is_postable: { type: boolean }
+    AccountUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        active: { type: boolean }
+    JournalLine:
+      type: object
+      required: [account_id, direction, amount]
+      properties:
+        account_id: { type: integer }
+        direction: { $ref: '#/components/schemas/Side' }
+        amount: { $ref: '#/components/schemas/Money' }
+        statement: { type: string, nullable: true, description: 'per-line بيان' }
+    JournalEntryCreate:
+      type: object
+      required: [date, branch_id, lines]
+      properties:
+        date: { type: string, format: date }
+        description: { type: string }
+        branch_id: { type: integer }
+        lines: { type: array, minItems: 2, items: { $ref: '#/components/schemas/JournalLine' } }
+    JournalEntry:
+      type: object
+      properties:
+        id: { type: integer }
+        entry_type: { type: string, enum: [journal, opening_balance, reversal] }
+        date: { type: string, format: date, description: 'accounting date (entry_date), not the posting timestamp' }
+        description: { type: string }
+        branch_id: { type: integer, nullable: true }
+        actor_user_id: { type: integer }
+        reverses_entry_id: { type: integer, nullable: true }
+        reversed_by_entry_id: { type: integer, nullable: true }
+        lines: { type: array, items: { $ref: '#/components/schemas/JournalLine' } }
+        total: { $ref: '#/components/schemas/Money' }
+    OpeningBalancesCreate:
+      type: object
+      required: [date, lines]
+      description: Each line is an account + amount on its normal side; system offsets opening_balance_equity.
+      properties:
+        date: { type: string, format: date }
+        branch_id: { type: integer, nullable: true }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [account_id, amount]
+            properties:
+              account_id: { type: integer }
+              amount: { $ref: '#/components/schemas/Money' }
+    TrialBalanceRow:
+      type: object
+      properties:
+        account_id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        is_postable: { type: boolean }
+        opening: { $ref: '#/components/schemas/Money' }
+        period_debit: { $ref: '#/components/schemas/Money' }
+        period_credit: { $ref: '#/components/schemas/Money' }
+        closing: { $ref: '#/components/schemas/Money' }
+    TrialBalance:
+      type: object
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        branch_id: { type: integer, nullable: true }
+        rows: { type: array, items: { $ref: '#/components/schemas/TrialBalanceRow' } }
+        grand_total_debit: { $ref: '#/components/schemas/Money' }
+        grand_total_credit: { $ref: '#/components/schemas/Money' }
+        balanced: { type: boolean, example: true }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }

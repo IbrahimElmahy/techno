@@ -1,0 +1,209 @@
+"""Sales service (T035–T036). FR-017–021.
+
+Sale: combined-% discount once on gross; split cash/credit to ONE balanced entry (debit cash-location
++ customer receivable; credit sales_revenue). Return: partial; money reversed proportionally to the
+original invoice's cash/credit split (research R9).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from src.core import hooks
+from src.core.money import ZERO, to_money
+from src.models.catalog import Item, ItemKind
+from src.models.customer import CustomerAccount
+from src.models.ledger import Direction
+from src.models.role import RoleName
+from src.models.sales import (
+    SalesInvoice,
+    SalesInvoiceLine,
+    SalesReturn,
+    SalesReturnLine,
+    SalesSetting,
+)
+from src.models.stock import LocationKind, StockDirection
+from src.services import account_resolver, audit_service, ledger_service, stock_service
+from src.services.ledger_service import LineInput
+
+
+class SalesError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class SaleLine:
+    item_id: int
+    quantity: Decimal
+
+
+def _doc_number(db: Session, model, prefix: str) -> str:
+    n = db.scalar(select(func.count()).select_from(model)) or 0
+    return f"{prefix}-{n + 1:06d}"
+
+
+def fixed_discount_pct(db: Session) -> Decimal:
+    s = db.scalar(select(SalesSetting))
+    return Decimal(s.fixed_discount_pct) if s else Decimal("0")
+
+
+def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
+    return to_money(Decimal(gross) * (Decimal("1") - Decimal(combined_pct) / Decimal("100")))
+
+
+def create_sale(
+    db: Session,
+    *,
+    customer_id: int,
+    origin_location_kind: LocationKind,
+    origin_location_id: int,
+    variable_discount_pct: Decimal,
+    cash_amount: Decimal,
+    credit_amount: Decimal,
+    lines: list[SaleLine],
+    actor_role: RoleName,
+    actor_user_id: int,
+) -> SalesInvoice:
+    if not lines:
+        raise SalesError("A sale needs at least one line.")
+    fixed = fixed_discount_pct(db)
+    variable = Decimal(variable_discount_pct)
+    combined = fixed + variable
+    if combined >= Decimal("100") or variable < ZERO:
+        raise SalesError("Combined discount must be < 100% and the variable discount non-negative.")
+
+    gross = ZERO
+    built: list[tuple[SaleLine, Decimal, Decimal]] = []
+    for ln in lines:
+        item = db.get(Item, ln.item_id)
+        if item is None or item.kind != ItemKind.product:
+            raise SalesError("Sales accept products only.")
+        unit_price = to_money(item.sale_price)
+        line_total = to_money(Decimal(ln.quantity) * unit_price)
+        gross += line_total
+        built.append((ln, unit_price, line_total))
+    gross = to_money(gross)
+    net = compute_net(gross, combined)
+    if to_money(cash_amount) + to_money(credit_amount) != net:
+        raise SalesError("cash + credit must equal the net total.")
+
+    cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
+    if cust_acc is None:
+        raise SalesError("Customer has no account.")
+    cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
+
+    invoice = SalesInvoice(
+        document_number=_doc_number(db, SalesInvoice, "SINV"),
+        customer_id=customer_id, origin_location_kind=origin_location_kind,
+        origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,
+        variable_discount_pct=variable, combined_pct=combined, net=net,
+        cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
+        cash_account_id=cash_acc.id, ledger_entry_id=0, actor_user_id=actor_user_id,
+    )
+    db.add(invoice)
+    db.flush()
+    for ln, unit_price, line_total in built:
+        stock_service.post_movement(
+            db, item_id=ln.item_id, location_kind=origin_location_kind,
+            location_id=origin_location_id, movement_type="sale_out",
+            direction=StockDirection.out, quantity=ln.quantity, actor_user_id=actor_user_id,
+            source_doc_type="sale", source_doc_id=invoice.id,
+        )
+        invoice.lines.append(
+            SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
+                             unit_price=unit_price, line_total=line_total)
+        )
+
+    entry_lines = []
+    if to_money(cash_amount) > ZERO:
+        entry_lines.append(LineInput(cash_acc.id, Direction.debit, to_money(cash_amount)))
+    if to_money(credit_amount) > ZERO:
+        entry_lines.append(LineInput(cust_acc.account_id, Direction.debit, to_money(credit_amount)))
+    entry_lines.append(LineInput(account_resolver.sales_revenue_account(db).id, Direction.credit, net))
+    entry = ledger_service.post_entry(
+        db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
+        rep_id=actor_user_id if actor_role == RoleName.sales_rep else None,
+        description=f"Sale {invoice.document_number}",
+    )
+    invoice.ledger_entry_id = entry.id
+    db.flush()
+    audit_service.record(db, action="sale.create", actor_user_id=actor_user_id,
+                         entity_type="sales_invoice", entity_id=invoice.id,
+                         after={"net": str(net), "doc": invoice.document_number})
+    # Additive cross-feature hook (no-op if no subscriber, e.g. 002-only deploy). 003 loyalty earns here.
+    hooks.emit("sale_created", db, invoice)
+    return invoice
+
+
+def _already_returned(db: Session, invoice_id: int) -> dict[int, Decimal]:
+    rows = db.execute(
+        select(SalesReturnLine.item_id, func.coalesce(func.sum(SalesReturnLine.quantity), 0))
+        .join(SalesReturn, SalesReturn.id == SalesReturnLine.return_id)
+        .where(SalesReturn.sales_invoice_id == invoice_id)
+        .group_by(SalesReturnLine.item_id)
+    ).all()
+    return {item_id: Decimal(qty) for item_id, qty in rows}
+
+
+def return_sale(
+    db: Session,
+    *,
+    sales_invoice_id: int,
+    lines: list[tuple[int, Decimal]],
+    actor_user_id: int,
+) -> SalesReturn:
+    inv = db.get(SalesInvoice, sales_invoice_id)
+    if inv is None:
+        raise SalesError("Sales invoice not found.")
+    sold = {ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price)) for ln in inv.lines}
+    prior = _already_returned(db, sales_invoice_id)
+
+    value = ZERO
+    for item_id, qty in lines:
+        qty = Decimal(qty)
+        if item_id not in sold:
+            raise SalesError("Returned item was not on the invoice.")
+        if prior.get(item_id, ZERO) + qty > sold[item_id][0]:
+            raise SalesError("Cumulative return exceeds sold quantity.")
+        value += to_money(qty * sold[item_id][1])
+    value = to_money(value)
+
+    # Proportional split from the ORIGINAL invoice's cash/credit composition.
+    cash_refund = to_money(value * to_money(inv.cash_amount) / to_money(inv.net)) if inv.net else ZERO
+    credit_reduction = to_money(value - cash_refund)
+
+    ret = SalesReturn(
+        document_number=_doc_number(db, SalesReturn, "SRET"),
+        sales_invoice_id=sales_invoice_id, value=value, cash_refund=cash_refund,
+        credit_reduction=credit_reduction, ledger_entry_id=0, actor_user_id=actor_user_id,
+    )
+    db.add(ret)
+    db.flush()
+    for item_id, qty in lines:
+        stock_service.post_movement(
+            db, item_id=item_id, location_kind=inv.origin_location_kind,
+            location_id=inv.origin_location_id, movement_type="sale_return_in",
+            direction=StockDirection.in_, quantity=Decimal(qty), actor_user_id=actor_user_id,
+            source_doc_type="sale_return", source_doc_id=ret.id,
+        )
+        ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty)))
+
+    cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == inv.customer_id))
+    entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, value)]
+    if cash_refund > ZERO:
+        entry_lines.append(LineInput(inv.cash_account_id, Direction.credit, cash_refund))
+    if credit_reduction > ZERO:
+        entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, credit_reduction))
+    entry = ledger_service.post_entry(
+        db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
+        description=f"Sales return {ret.document_number}",
+    )
+    ret.ledger_entry_id = entry.id
+    db.flush()
+    audit_service.record(db, action="sale.return", actor_user_id=actor_user_id,
+                         entity_type="sales_return", entity_id=ret.id, after={"value": str(value)})
+    hooks.emit("sale_returned", db, ret, inv)
+    return ret

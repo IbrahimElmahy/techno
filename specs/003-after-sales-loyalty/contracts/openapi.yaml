@@ -1,0 +1,184 @@
+openapi: 3.1.0
+info:
+  title: UBMS After-Sales Loyalty API (extends Foundation + Sales & Inventory)
+  version: 0.1.0
+  description: >
+    Loyalty endpoints, additive to 001/002 and sharing auth (Bearer JWT), RBAC (deny-by-default), the
+    ledger, and the 002 stock service. Points are integers; money is EGP DECIMAL(18,2). Earning is an
+    automatic effect of a 002 sale (no endpoint). Loyalty management is After-Sales Staff only.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: loyalty-settings
+  - name: product-points
+  - name: points
+  - name: coupons
+
+paths:
+  /loyalty/coupon-types:
+    get:
+      tags: [loyalty-settings]
+      summary: List coupon types (loyalty.read)
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CouponType' } } } } } }
+    post:
+      tags: [loyalty-settings]
+      summary: Create a coupon type (loyalty_settings.write — After-Sales Staff)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CouponTypeCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/CouponType' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /loyalty/coupon-types/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    patch:
+      tags: [loyalty-settings]
+      summary: Edit a coupon type (does not alter issued coupons)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CouponTypeUpdate' } } } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/CouponType' } } } } }
+
+  /products/{item_id}/point-value:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    put:
+      tags: [product-points]
+      summary: Set/edit a product's point value (product_points.write)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PointValue' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PointValue' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Not a product, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /customers/{id}/points:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [points]
+      summary: Customer's derived point balance (loyalty.read)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PointBalance' } } } } }
+
+  /customers/{id}/points/convert:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [points]
+      summary: Convert points into coupons (points.convert) — whole coupons only
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConvertRequest' } } } }
+      responses:
+        '201': { description: Coupons issued, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Coupon' } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Insufficient points / partial coupon, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+  /coupons:
+    get:
+      tags: [coupons]
+      summary: List coupons (filter by customer/status) (loyalty.read)
+      parameters:
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string, enum: [issued, redeemed, voided] } }
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Coupon' } } } } } }
+  /coupons/{id}/redeem:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [coupons]
+      summary: Redeem a coupon (coupon.redeem) — money / gift-product / gift-money-off
+      description: >
+        money & gift_money_off post one balanced entry (loyalty_expense / receivable); gift_product
+        decrements stock via the 002 service (no-negative, no ledger). Mode chosen here for gift coupons.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RedeemRequest' } } } }
+      responses:
+        '201': { description: Redeemed, content: { application/json: { schema: { $ref: '#/components/schemas/Redemption' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Already redeemed / no-negative-stock / value too high, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /coupons/{id}/redemption/reverse:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [coupons]
+      summary: Reverse a coupon's redemption (coupon.reverse) → coupon returns to issued
+      responses:
+        '201': { description: Reversed, content: { application/json: { schema: { $ref: '#/components/schemas/Redemption' } } } }
+        '409': { description: Not redeemed / already reversed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Money: { type: string, example: '50.00' }
+    CouponType:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        kind: { type: string, enum: [money, gift] }
+        point_cost: { type: integer, example: 50 }
+        value: { $ref: '#/components/schemas/Money' }
+        active: { type: boolean }
+    CouponTypeCreate:
+      type: object
+      required: [name, kind, point_cost, value]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [money, gift] }
+        point_cost: { type: integer }
+        value: { $ref: '#/components/schemas/Money' }
+    CouponTypeUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        point_cost: { type: integer }
+        value: { $ref: '#/components/schemas/Money' }
+        active: { type: boolean }
+    PointValue:
+      type: object
+      required: [point_value]
+      properties: { item_id: { type: integer }, point_value: { type: integer, minimum: 0 } }
+    PointBalance:
+      type: object
+      properties:
+        customer_id: { type: integer }
+        balance: { type: integer, description: 'may be negative (owed points)' }
+        derived: { type: boolean, example: true }
+    ConvertRequest:
+      type: object
+      required: [coupon_type_ids]
+      description: One coupon issued per listed coupon_type_id (whole coupons only).
+      properties:
+        coupon_type_ids: { type: array, items: { type: integer }, minItems: 1 }
+    Coupon:
+      type: object
+      properties:
+        id: { type: integer }
+        serial: { type: string }
+        customer_id: { type: integer }
+        kind: { type: string, enum: [money, gift] }
+        value: { $ref: '#/components/schemas/Money' }
+        points_consumed: { type: integer }
+        status: { type: string, enum: [issued, redeemed, voided] }
+    RedeemRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [money, gift_product, gift_money_off] }
+        sales_invoice_id: { type: integer, nullable: true, description: omit for standalone }
+        # gift_product only:
+        item_id: { type: integer, nullable: true }
+        location_kind: { type: string, enum: [warehouse, custody], nullable: true }
+        location_id: { type: integer, nullable: true }
+        quantity: { type: string, nullable: true, description: 'decimal; product value ≤ coupon value' }
+    Redemption:
+      type: object
+      properties:
+        id: { type: integer }
+        coupon_id: { type: integer }
+        mode: { type: string, enum: [money, gift_product, gift_money_off] }
+        value: { $ref: '#/components/schemas/Money' }
+        ledger_entry_id: { type: integer, nullable: true }
+        stock_movement_id: { type: integer, nullable: true }
+        coupon_status: { type: string, enum: [issued, redeemed, voided] }
+    Error:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, nullable: true }

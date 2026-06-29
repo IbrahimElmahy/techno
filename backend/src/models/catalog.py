@@ -1,0 +1,38 @@
+"""Catalog: one shared catalog, two item kinds (T006).
+
+FR-001–005, FR-002a. Raw materials are purchased/consumed (purchase reference price); products are
+manufactured/sold (one fixed sale price). Decimal quantities + per-item unit of measure. No quantity
+is stored on the item — it lives in stock movements (per item × location).
+"""
+from __future__ import annotations
+
+import enum
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Enum, String, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+from src.core.db import Base, BigIntPK
+from src.core.money import MONEY
+
+
+class ItemKind(str, enum.Enum):
+    raw_material = "raw_material"
+    product = "product"
+
+
+class Item(Base):
+    __tablename__ = "item"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    kind: Mapped[ItemKind] = mapped_column(Enum(ItemKind), nullable=False)
+    unit_of_measure: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Kind-specific reference prices (editable; never rewrite posted-document prices).
+    purchase_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # raw materials
+    sale_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)      # products
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
