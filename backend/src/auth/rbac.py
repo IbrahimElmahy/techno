@@ -99,6 +99,7 @@ CAP_SUPPLIER_WRITE = "supplier.write"
 CAP_PURCHASE_WRITE = "purchase.write"
 CAP_MANUFACTURE_WRITE = "manufacture.write"
 CAP_SALE_WRITE = "sale.write"
+CAP_SELL_BELOW_PRICE = "sell.below_price"  # (007) charge below the resolved tier price
 CAP_TRANSFER_INITIATE = "transfer.initiate"
 CAP_TRANSFER_APPROVE = "transfer.approve"
 CAP_STOCK_READ = "stock.read"
@@ -136,6 +137,12 @@ _SI_BY_ROLE: dict[RoleName, set[str]] = {
 for _role, _caps in _SI_BY_ROLE.items():
     ROLE_CAPABILITIES.setdefault(_role, set()).update(_caps)
 ALL_CAPABILITIES |= _SI_ALL
+
+# Five price tiers (007): selling below the resolved tier price is a manager authority — granted to
+# System Admin, Branch Manager, Sales Manager; NOT Sales Rep (reps cannot undercut tiers).
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager):
+    ROLE_CAPABILITIES.setdefault(_role, set()).add(CAP_SELL_BELOW_PRICE)
+ALL_CAPABILITIES.add(CAP_SELL_BELOW_PRICE)
 
 # ---------------------------------------------------------------------------
 # After-Sales Loyalty (003) capability extension — additive.

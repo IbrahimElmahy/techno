@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CATALOG_READ, CAP_CATALOG_WRITE
 from src.core.db import get_db
-from src.models.catalog import Item, ItemKind
+from src.core.money import to_money
+from src.models.catalog import Item, ItemKind, ItemPrice, PriceTier
 
 router = APIRouter(tags=["catalog"], prefix="/items")
 
@@ -91,6 +92,70 @@ def create_item(
     db.flush()
     db.commit()
     return _out(item)
+
+
+class TierPrice(BaseModel):
+    tier: PriceTier
+    price: Decimal
+
+
+class ItemPricesOut(BaseModel):
+    item_id: int
+    base_sale_price: Decimal | None
+    tiers: list[TierPrice]
+
+
+class ItemPricesSet(BaseModel):
+    tiers: list[TierPrice]
+
+
+def _prices_out(db: Session, item: Item) -> ItemPricesOut:
+    rows = db.scalars(select(ItemPrice).where(ItemPrice.item_id == item.id)).all()
+    return ItemPricesOut(
+        item_id=item.id, base_sale_price=item.sale_price,
+        tiers=[TierPrice(tier=r.tier, price=r.price) for r in rows],
+    )
+
+
+@router.get("/{item_id}/prices", response_model=ItemPricesOut)
+def get_item_prices(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> ItemPricesOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    return _prices_out(db, item)
+
+
+@router.put("/{item_id}/prices", response_model=ItemPricesOut)
+def set_item_prices(
+    item_id: int,
+    body: ItemPricesSet,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    db: Session = Depends(get_db),
+) -> ItemPricesOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    if item.kind != ItemKind.product:
+        raise HTTPException(422, {"code": "validation", "message": "only products have sale prices"})
+    for tp in body.tiers:
+        if tp.price < 0:
+            raise HTTPException(422, {"code": "validation", "message": "price must be ≥ 0"})
+    # Upsert each provided tier (omitted tiers are left unchanged).
+    for tp in body.tiers:
+        row = db.scalar(
+            select(ItemPrice).where(ItemPrice.item_id == item.id, ItemPrice.tier == tp.tier)
+        )
+        if row is None:
+            db.add(ItemPrice(item_id=item.id, tier=tp.tier, price=to_money(tp.price)))
+        else:
+            row.price = to_money(tp.price)
+    db.flush()
+    db.commit()
+    return _prices_out(db, item)
 
 
 @router.patch("/{item_id}", response_model=ItemOut)

@@ -14,8 +14,8 @@ from sqlalchemy.orm import Session
 
 from src.core import hooks
 from src.core.money import ZERO, to_money
-from src.models.catalog import Item, ItemKind
-from src.models.customer import CustomerAccount
+from src.models.catalog import Item, ItemKind, PriceTier
+from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Direction
 from src.models.role import RoleName
 from src.models.sales import (
@@ -26,8 +26,15 @@ from src.models.sales import (
     SalesSetting,
 )
 from src.models.stock import LocationKind, StockDirection
-from src.services import account_resolver, audit_service, ledger_service, stock_service
+from src.services import (
+    account_resolver,
+    audit_service,
+    ledger_service,
+    pricing_service,
+    stock_service,
+)
 from src.services.ledger_service import LineInput
+from src.services.pricing_service import PricingError
 
 
 class SalesError(Exception):
@@ -38,6 +45,8 @@ class SalesError(Exception):
 class SaleLine:
     item_id: int
     quantity: Decimal
+    tier: PriceTier | None = None          # (007) explicit tier override per line
+    unit_price: Decimal | None = None      # (007) manual price override (below-tier needs capability)
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -66,6 +75,7 @@ def create_sale(
     lines: list[SaleLine],
     actor_role: RoleName,
     actor_user_id: int,
+    can_sell_below: bool = False,
 ) -> SalesInvoice:
     if not lines:
         raise SalesError("A sale needs at least one line.")
@@ -75,16 +85,30 @@ def create_sale(
     if combined >= Decimal("100") or variable < ZERO:
         raise SalesError("Combined discount must be < 100% and the variable discount non-negative.")
 
+    customer = db.get(Customer, customer_id)
+
     gross = ZERO
-    built: list[tuple[SaleLine, Decimal, Decimal]] = []
+    # (007) each line resolves its price from a tier (override per line); manual price below the
+    # resolved tier price requires the sell.below_price capability. Records tier + actual price.
+    built: list[tuple[SaleLine, Decimal, Decimal, PriceTier]] = []
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
             raise SalesError("Sales accept products only.")
-        unit_price = to_money(item.sale_price)
+        tier = pricing_service.resolve_tier(ln.tier, customer)
+        try:
+            list_price = pricing_service.tier_price(db, item, tier)
+        except PricingError as exc:
+            raise SalesError(str(exc)) from exc
+        unit_price = to_money(ln.unit_price) if ln.unit_price is not None else list_price
+        if unit_price < list_price and not can_sell_below:
+            raise SalesError(
+                f"Selling below the '{tier.value}' tier price ({list_price}) requires the "
+                f"sell.below_price capability."
+            )
         line_total = to_money(Decimal(ln.quantity) * unit_price)
         gross += line_total
-        built.append((ln, unit_price, line_total))
+        built.append((ln, unit_price, line_total, tier))
     gross = to_money(gross)
     net = compute_net(gross, combined)
     if to_money(cash_amount) + to_money(credit_amount) != net:
@@ -105,7 +129,7 @@ def create_sale(
     )
     db.add(invoice)
     db.flush()
-    for ln, unit_price, line_total in built:
+    for ln, unit_price, line_total, tier in built:
         stock_service.post_movement(
             db, item_id=ln.item_id, location_kind=origin_location_kind,
             location_id=origin_location_id, movement_type="sale_out",
@@ -114,7 +138,7 @@ def create_sale(
         )
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
-                             unit_price=unit_price, line_total=line_total)
+                             unit_price=unit_price, line_total=line_total, price_tier=tier)
         )
 
     entry_lines = []

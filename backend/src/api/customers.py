@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
 from src.core.db import get_db
+from src.models.catalog import PriceTier
 from src.models.customer import Customer, CustomerAccount, CustomerType
 from src.services import customer_service, ledger_service
 
@@ -23,6 +24,11 @@ class CustomerCreate(BaseModel):
     rep_id: int
     territory_id: int
     phone: str | None = None
+    default_price_tier: PriceTier | None = None
+
+
+class CustomerUpdate(BaseModel):
+    default_price_tier: PriceTier | None = None
 
 
 class CustomerOut(BaseModel):
@@ -33,6 +39,7 @@ class CustomerOut(BaseModel):
     phone: str | None
     rep_id: int
     territory_id: int
+    default_price_tier: PriceTier | None = None
     active: bool
 
 
@@ -56,7 +63,8 @@ class CustomerAccountOut(BaseModel):
 def _out(c: Customer) -> CustomerOut:
     return CustomerOut(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type,
-        phone=c.phone, rep_id=c.rep_id, territory_id=c.territory_id, active=c.active,
+        phone=c.phone, rep_id=c.rep_id, territory_id=c.territory_id,
+        default_price_tier=c.default_price_tier, active=c.active,
     )
 
 
@@ -103,13 +111,35 @@ def create_customer(
         phone=body.phone,
         actor_user_id=current.id,
     )
-    db.commit()
     c = result.customer
+    if body.default_price_tier is not None:  # (007)
+        c.default_price_tier = body.default_price_tier
+        db.flush()
+    db.commit()
     return CustomerCreated(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type, phone=c.phone,
-        rep_id=c.rep_id, territory_id=c.territory_id, active=c.active,
-        duplicate_phone_customer_ids=result.duplicate_phone_customer_ids,
+        rep_id=c.rep_id, territory_id=c.territory_id, default_price_tier=c.default_price_tier,
+        active=c.active, duplicate_phone_customer_ids=result.duplicate_phone_customer_ids,
     )
+
+
+@router.patch("/{customer_id}", response_model=CustomerOut)
+def update_customer(
+    customer_id: int,
+    body: CustomerUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
+    db: Session = Depends(get_db),
+) -> CustomerOut:
+    c = db.get(Customer, customer_id)
+    if c is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    if current.rep_id is not None and c.rep_id != current.rep_id:
+        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    if body.default_price_tier is not None:  # (007) set the customer's default sale tier
+        c.default_price_tier = body.default_price_tier
+    db.flush()
+    db.commit()
+    return _out(c)
 
 
 @router.get("/{customer_id}", response_model=CustomerOut)

@@ -1,8 +1,66 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, Select, Tag, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Modal, Row, Col } from 'antd';
+import { PlusOutlined, DollarOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
+
+const PRICE_TIERS: { key: string; label: string }[] = [
+  { key: 'commercial', label: 'تجاري' },
+  { key: 'semi_commercial', label: 'نصف تجاري' },
+  { key: 'wholesale', label: 'جملة' },
+  { key: 'semi_wholesale', label: 'نصف جملة' },
+  { key: 'consumer', label: 'مستهلك' },
+];
+
+// Modal editor for an item's five sale price tiers (007).
+const PriceTiersButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
+  const [open, setOpen] = useState(false);
+  const [vals, setVals] = useState<Record<string, number | null>>({});
+  const [base, setBase] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/prices`);
+      const m: Record<string, number | null> = {};
+      (res.data.tiers || []).forEach((t: any) => { m[t.tier] = parseFloat(t.price); });
+      setVals(m);
+      setBase(res.data.base_sale_price);
+    } catch (err) { console.error(err); }
+  };
+
+  const onOpen = () => { setOpen(true); load(); };
+
+  const onSave = async () => {
+    const tiers = PRICE_TIERS
+      .filter((t) => vals[t.key] != null && !Number.isNaN(vals[t.key]))
+      .map((t) => ({ tier: t.key, price: Number(vals[t.key]).toFixed(2) }));
+    try {
+      await api.put(`/api/v1/items/${itemId}/prices`, { tiers });
+      message.success('تم حفظ الأسعار');
+      setOpen(false);
+    } catch (err) { console.error(err); }
+  };
+
+  return (
+    <>
+      <Button size="small" type="link" icon={<DollarOutlined />} onClick={onOpen}>الأسعار</Button>
+      <Modal title="الأطر السعرية الخمسة" open={open} onCancel={() => setOpen(false)}
+        onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
+        <p style={{ color: '#888' }}>سعر البيع المرجعي (الأساس): {base ? `${base} ج.م` : '—'} — يُستخدم كبديل لأي فئة غير محددة.</p>
+        {PRICE_TIERS.map((t) => (
+          <Row key={t.key} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+            <Col span={10}>{t.label}</Col>
+            <Col span={14}>
+              <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="ج.م"
+                disabled={!canEdit} value={vals[t.key] ?? undefined}
+                onChange={(v) => setVals({ ...vals, [t.key]: v as number })} />
+            </Col>
+          </Row>
+        ))}
+      </Modal>
+    </>
+  );
+};
 
 interface ItemRecord {
   id: number;
@@ -105,6 +163,8 @@ export default function Catalog() {
 
   // Point editing is permitted for system_admin and after_sales_staff roles only
   const canEditPoints = ['system_admin', 'after_sales_staff'].includes(user?.role || '');
+  // Tier-price editing requires catalog.write (system_admin, branch_manager, purchasing_manager).
+  const canEditPrices = ['system_admin', 'branch_manager', 'purchasing_manager'].includes(user?.role || '');
 
   const fetchItems = async () => {
     setLoading(true);
@@ -182,6 +242,12 @@ export default function Catalog() {
       key: 'purchase_price',
       render: (price: string | null) =>
         price ? `${parseFloat(price).toFixed(2)} ج.م` : '-',
+    },
+    {
+      title: 'الأطر السعرية',
+      key: 'price_tiers',
+      render: (_: any, record: ItemRecord) =>
+        record.kind === 'product' ? <PriceTiersButton itemId={record.id} canEdit={canEditPrices} /> : '-',
     },
     {
       title: 'نقاط المنتج',

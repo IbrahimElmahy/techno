@@ -12,6 +12,7 @@ interface CustomerRecord {
   phone: string | null;
   rep_id: number;
   territory_id: number;
+  default_price_tier: string | null;
   active: boolean;
 }
 
@@ -19,6 +20,14 @@ const TYPE_LABELS: Record<string, string> = {
   trader: 'تاجر / موزع',
   plumber: 'فني سباكة',
   other: 'آخر',
+};
+
+const TIER_LABELS: Record<string, string> = {
+  commercial: 'تجاري',
+  semi_commercial: 'نصف تجاري',
+  wholesale: 'جملة',
+  semi_wholesale: 'نصف جملة',
+  consumer: 'مستهلك',
 };
 
 // Sub-component to fetch and render customer ledger balance dynamically per row (thin client)
@@ -153,6 +162,12 @@ export default function Customers() {
       },
     },
     {
+      title: 'الفئة السعرية',
+      dataIndex: 'default_price_tier',
+      key: 'default_price_tier',
+      render: (t: string | null) => t ? <Tag color="geekblue">{TIER_LABELS[t] || t}</Tag> : <Tag>مستهلك (افتراضي)</Tag>,
+    },
+    {
       title: 'رصيد المديونية (الذمة)',
       key: 'balance',
       render: (_: any, record: CustomerRecord) => <CustomerBalance customerId={record.id} />,
@@ -262,6 +277,15 @@ export default function Customers() {
                 <Select.Option key={t.id} value={t.id}>
                   {t.name}
                 </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item name="default_price_tier" label="الفئة السعرية الافتراضية"
+            extra="تُستخدم تلقائياً على فواتير هذا العميل (الافتراضي: مستهلك)">
+            <Select allowClear placeholder="مستهلك (افتراضي)">
+              {Object.entries(TIER_LABELS).map(([k, l]) => (
+                <Select.Option key={k} value={k}>{l}</Select.Option>
               ))}
             </Select>
           </Form.Item>

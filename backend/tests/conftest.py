@@ -1,6 +1,8 @@
 """Test harness (T009): disposable in-memory DB, client, per-role auth fixtures."""
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -216,6 +218,21 @@ def _accounts_by_code(db, code):
     from src.models.ledger import Account
 
     return db.query(Account).filter(Account.code == code).all()
+
+
+def make_priced_product(db, *, name="TieredGadget", sale_price="100", tiers=None):
+    """A product item with a base sale_price and optional per-tier prices (007)."""
+    from src.models.catalog import Item, ItemKind, ItemPrice, PriceTier
+
+    n = db.query(Item).count()
+    item = Item(code=f"PR-{n + 1:06d}", name=name, kind=ItemKind.product,
+                unit_of_measure="piece", sale_price=Decimal(sale_price))
+    db.add(item)
+    db.flush()
+    for tier_name, price in (tiers or {}).items():
+        db.add(ItemPrice(item_id=item.id, tier=PriceTier(tier_name), price=Decimal(price)))
+    db.flush()
+    return item
 
 
 @pytest.fixture()

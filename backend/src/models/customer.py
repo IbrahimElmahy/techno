@@ -13,6 +13,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
+from src.models.catalog import PriceTier
 
 
 class CustomerType(str, enum.Enum):
@@ -31,6 +32,8 @@ class Customer(Base):
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)  # not unique (FR-018a)
     rep_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     territory_id: Mapped[int] = mapped_column(ForeignKey("territory.id"), nullable=False)
+    # Default sale price tier (007); NULL resolves to the consumer tier.
+    default_price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

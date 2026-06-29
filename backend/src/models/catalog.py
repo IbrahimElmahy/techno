@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
@@ -19,6 +19,16 @@ from src.core.money import MONEY
 class ItemKind(str, enum.Enum):
     raw_material = "raw_material"
     product = "product"
+
+
+class PriceTier(str, enum.Enum):
+    """Five sale price tiers (007) — A5Group's تجارى/نصف تجارى/جملة/نصف جملة/مستهلك."""
+
+    commercial = "commercial"
+    semi_commercial = "semi_commercial"
+    wholesale = "wholesale"
+    semi_wholesale = "semi_wholesale"
+    consumer = "consumer"
 
 
 class Item(Base):
@@ -36,3 +46,15 @@ class Item(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+
+
+class ItemPrice(Base):
+    """A per-item, per-tier sale price (007). A missing (item, tier) falls back to item.sale_price."""
+
+    __tablename__ = "item_price"
+    __table_args__ = (UniqueConstraint("item_id", "tier", name="uq_item_price_item_tier"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    tier: Mapped[PriceTier] = mapped_column(Enum(PriceTier), nullable=False)
+    price: Mapped[object] = mapped_column(MONEY, nullable=False)

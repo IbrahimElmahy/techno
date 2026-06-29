@@ -1,0 +1,72 @@
+openapi: 3.1.0
+info:
+  title: UBMS Price Tiers API (extends Sales & Inventory 002)
+  version: 0.1.0
+  description: >
+    Five sale price tiers per item, a per-customer default tier, and tier-aware sale lines. Additive to
+    002; shares auth (Bearer JWT) and RBAC. Setting tier prices uses catalog.write; the customer default
+    tier uses customer.write; selling below the resolved tier price requires the new sell.below_price
+    capability. The money/ledger model is unchanged. EGP only.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: catalog
+  - name: customers
+  - name: sales
+
+paths:
+  /items/{item_id}/prices:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [catalog]
+      summary: Get an item's five tier prices (catalog.read)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ItemPrices' } } } }
+    put:
+      tags: [catalog]
+      summary: Set/replace an item's tier prices (catalog.write)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemPricesSet' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ItemPrices' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Not a product / negative price, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Money: { type: string, example: '120.00' }
+    PriceTier:
+      type: string
+      enum: [commercial, semi_commercial, wholesale, semi_wholesale, consumer]
+    TierPrice:
+      type: object
+      properties:
+        tier: { $ref: '#/components/schemas/PriceTier' }
+        price: { $ref: '#/components/schemas/Money' }
+    ItemPrices:
+      type: object
+      properties:
+        item_id: { type: integer }
+        base_sale_price: { $ref: '#/components/schemas/Money' }
+        tiers: { type: array, items: { $ref: '#/components/schemas/TierPrice' } }
+    ItemPricesSet:
+      type: object
+      required: [tiers]
+      description: One entry per tier to set; omitted tiers are left unchanged.
+      properties:
+        tiers: { type: array, items: { $ref: '#/components/schemas/TierPrice' } }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }
+
+# NOTE — additive extensions to the 002 contract (implemented on existing 002 endpoints):
+#   • Customer create/update/detail gain `default_price_tier` (PriceTier, nullable).
+#   • POST /sales line items MAY include `tier` (PriceTier) and `unit_price` (Money) overrides;
+#     selling below the resolved tier price requires the `sell.below_price` capability (else 422/403).
+#   • Sale invoice line output gains `price_tier` (the resolved tier) alongside `unit_price` (actual).

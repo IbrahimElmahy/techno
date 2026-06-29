@@ -19,7 +19,16 @@ interface InvoiceRecord {
 interface Customer {
   id: number;
   name: string;
+  default_price_tier: string | null;
 }
+
+const TIER_LABELS: Record<string, string> = {
+  commercial: 'تجاري',
+  semi_commercial: 'نصف تجاري',
+  wholesale: 'جملة',
+  semi_wholesale: 'نصف جملة',
+  consumer: 'مستهلك',
+};
 
 interface Product {
   id: number;
@@ -38,6 +47,7 @@ interface SaleLineItem {
   item_id: number | null;
   quantity: number;
   unit_price: number;
+  tier: string | null;
 }
 
 interface InvoiceDetail {
@@ -69,8 +79,11 @@ export default function Invoices() {
 
   // Create invoice dynamic lines
   const [lines, setLines] = useState<SaleLineItem[]>([
-    { key: '1', item_id: null, quantity: 1, unit_price: 0 },
+    { key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null },
   ]);
+  // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
+  const [pricesCache, setPricesCache] = useState<Record<number, { base: number | null; tiers: Record<string, number> }>>({});
+  const [customerTier, setCustomerTier] = useState<string | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
@@ -121,8 +134,8 @@ export default function Invoices() {
   }, [cashAmount, netTotal, discountPct]);
 
   const handleAddLine = () => {
-    const newKey = (lines.length + 1).toString();
-    setLines([...lines, { key: newKey, item_id: null, quantity: 1, unit_price: 0 }]);
+    const newKey = Date.now().toString();
+    setLines([...lines, { key: newKey, item_id: null, quantity: 1, unit_price: 0, tier: customerTier }]);
   };
 
   const handleRemoveLine = (key: string) => {
@@ -130,20 +143,54 @@ export default function Invoices() {
     setLines(lines.filter((l) => l.key !== key));
   };
 
-  const handleLineChange = (key: string, field: keyof SaleLineItem, value: any) => {
-    setLines(
-      lines.map((l) => {
-        if (l.key === key) {
-          const updated = { ...l, [field]: value };
-          if (field === 'item_id') {
-            const prod = products.find((p) => p.id === value);
-            updated.unit_price = prod?.sale_price ? parseFloat(prod.sale_price) : 0;
-          }
-          return updated;
+  // Resolve a line's price from the cached tiers (tier price → base → 0).
+  const resolvePrice = (itemId: number, tier: string | null): number => {
+    const c = pricesCache[itemId];
+    if (!c) {
+      const prod = products.find((p) => p.id === itemId);
+      return prod?.sale_price ? parseFloat(prod.sale_price) : 0;
+    }
+    if (tier && c.tiers[tier] != null) return c.tiers[tier];
+    return c.base ?? 0;
+  };
+
+  const fetchPrices = async (itemId: number) => {
+    if (pricesCache[itemId]) return pricesCache[itemId];
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/prices`);
+      const tiers: Record<string, number> = {};
+      (res.data.tiers || []).forEach((t: any) => { tiers[t.tier] = parseFloat(t.price); });
+      const entry = { base: res.data.base_sale_price ? parseFloat(res.data.base_sale_price) : null, tiers };
+      setPricesCache((prev) => ({ ...prev, [itemId]: entry }));
+      return entry;
+    } catch (err) { console.error(err); return { base: null, tiers: {} }; }
+  };
+
+  const handleLineChange = async (key: string, field: keyof SaleLineItem, value: any) => {
+    if (field === 'item_id' && value) await fetchPrices(value);
+    setLines((prev) =>
+      prev.map((l) => {
+        if (l.key !== key) return l;
+        const updated = { ...l, [field]: value };
+        if (field === 'item_id') {
+          updated.tier = l.tier || customerTier || 'consumer';
+          updated.unit_price = resolvePrice(value, updated.tier);
+        } else if (field === 'tier' && l.item_id) {
+          updated.unit_price = resolvePrice(l.item_id, value);
         }
-        return l;
+        return updated;
       })
     );
+  };
+
+  const onCustomerChange = (customerId: number) => {
+    const c = customers.find((x) => x.id === customerId);
+    const tier = c?.default_price_tier ?? null;
+    setCustomerTier(tier);
+    // Re-default each line's tier/price to the new customer's tier (unless an item-less line).
+    setLines((prev) => prev.map((l) => l.item_id
+      ? { ...l, tier: tier || 'consumer', unit_price: resolvePrice(l.item_id, tier || 'consumer') }
+      : { ...l, tier }));
   };
 
   const handleCreateSubmit = async (values: any) => {
@@ -172,13 +219,15 @@ export default function Invoices() {
         lines: validLines.map((l) => ({
           item_id: l.item_id,
           quantity: l.quantity,
+          tier: l.tier,
+          unit_price: l.unit_price.toFixed(2),
         })),
       });
 
       message.success('تم تسجيل فاتورة البيع بنجاح');
       setCreateVisible(false);
       createForm.resetFields();
-      setLines([{ key: '1', item_id: null, quantity: 1, unit_price: 0 }]);
+      setLines([{ key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null }]);
       setCashAmount(0);
       setDiscountPct(0);
       fetchInvoices();
@@ -330,10 +379,10 @@ export default function Invoices() {
                 label="العميل المشتري"
                 rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
               >
-                <Select placeholder="اختر العميل">
+                <Select placeholder="اختر العميل" onChange={onCustomerChange} showSearch optionFilterProp="children">
                   {customers.map((c) => (
                     <Select.Option key={c.id} value={c.id}>
-                      {c.name}
+                      {c.name}{c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}
                     </Select.Option>
                   ))}
                 </Select>
@@ -358,40 +407,40 @@ export default function Invoices() {
 
           <Divider orientation="right">المنتجات المباعة</Divider>
 
-          {lines.map((line, idx) => (
-            <Row gutter={16} key={line.key} align="middle" style={{ marginBottom: 12 }}>
-              <Col span={10}>
+          {lines.map((line) => (
+            <Row gutter={8} key={line.key} align="middle" style={{ marginBottom: 12 }}>
+              <Col span={8}>
                 <Select
                   placeholder="اختر المنتج"
                   style={{ width: '100%' }}
                   value={line.item_id}
+                  showSearch optionFilterProp="children"
                   onChange={(val) => handleLineChange(line.key, 'item_id', val)}
                 >
                   {products.map((p) => (
-                    <Select.Option key={p.id} value={p.id}>
-                      {p.name} ({p.sale_price ? parseFloat(p.sale_price).toFixed(2) : '0'} ج.م)
-                    </Select.Option>
+                    <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
                   ))}
                 </Select>
               </Col>
-              <Col span={6}>
-                <InputNumber
-                  min={1}
-                  style={{ width: '100%' }}
-                  value={line.quantity}
-                  onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)}
-                  placeholder="الكمية"
-                />
+              <Col span={5}>
+                <Select placeholder="الفئة" style={{ width: '100%' }} value={line.tier ?? undefined}
+                  onChange={(val) => handleLineChange(line.key, 'tier', val)}>
+                  {Object.entries(TIER_LABELS).map(([k, l]) => (
+                    <Select.Option key={k} value={k}>{l}</Select.Option>
+                  ))}
+                </Select>
               </Col>
-              <Col span={6}>
-                <span style={{ fontWeight: 'bold' }}>
-                  {(line.quantity * line.unit_price).toFixed(2)} ج.م
-                </span>
+              <Col span={4}>
+                <InputNumber min={1} style={{ width: '100%' }} value={line.quantity}
+                  onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} placeholder="الكمية" />
+              </Col>
+              <Col span={5}>
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} value={line.unit_price}
+                  addonAfter="ج.م"
+                  onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} placeholder="السعر" />
               </Col>
               <Col span={2}>
-                <Button type="text" danger onClick={() => handleRemoveLine(line.key)}>
-                  حذف
-                </Button>
+                <Button type="text" danger onClick={() => handleRemoveLine(line.key)}>حذف</Button>
               </Col>
             </Row>
           ))}

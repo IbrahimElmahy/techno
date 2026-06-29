@@ -9,8 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_RETURN_WRITE, CAP_SALE_WRITE
+from src.auth.rbac import CAP_RETURN_WRITE, CAP_SALE_WRITE, CAP_SELL_BELOW_PRICE, role_has_capability
 from src.core.db import get_db
+from src.models.catalog import PriceTier
 from src.models.customer import Customer
 from src.models.sales import SalesInvoice
 from src.models.stock import LocationKind
@@ -30,6 +31,8 @@ class LocationIn(BaseModel):
 class SaleLineIn(BaseModel):
     item_id: int
     quantity: Decimal
+    tier: PriceTier | None = None          # (007) override the customer's default tier per line
+    unit_price: Decimal | None = None      # (007) manual price; below tier needs sell.below_price
 
 
 class SaleCreate(BaseModel):
@@ -68,6 +71,7 @@ class InvoiceLineOut(BaseModel):
     quantity: Decimal
     unit_price: Decimal
     line_total: Decimal
+    price_tier: PriceTier | None = None
 
 
 class SalesInvoiceDetail(BaseModel):
@@ -102,13 +106,14 @@ def create_sale(
     db: Session = Depends(get_db),
 ) -> SalesInvoiceOut:
     _rep_scope_check(db, current, body.customer_id, body.origin)
+    can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
     try:
         inv = sales_service.create_sale(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
             origin_location_id=body.origin.location_id, variable_discount_pct=body.variable_discount_pct,
             cash_amount=body.cash_amount, credit_amount=body.credit_amount,
-            lines=[SaleLine(l.item_id, l.quantity) for l in body.lines],
-            actor_role=current.role, actor_user_id=current.id,
+            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price) for l in body.lines],
+            actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "sale_invalid", "message": str(exc)})
@@ -166,6 +171,7 @@ def get_sale(
                 quantity=line.quantity,
                 unit_price=line.unit_price,
                 line_total=line.line_total,
+                price_tier=line.price_tier,
             )
             for line in inv.lines
         ],

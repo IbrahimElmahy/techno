@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
 from src.core.money import MONEY, QTY
+from src.models.catalog import PriceTier
 from src.models.stock import LocationKind
 
 PCT = Numeric(5, 2)
@@ -47,8 +48,10 @@ class SalesInvoiceLine(Base):
     invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # product fixed-price snapshot
+    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # ACTUAL charged price snapshot
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
+    # Resolved price tier snapshot (007); NULL for legacy 002 lines.
+    price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
 
 
 class SalesReturn(Base):
