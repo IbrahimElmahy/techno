@@ -27,6 +27,7 @@ class PurchaseLineIn(BaseModel):
     item_id: int
     quantity: Decimal
     unit_price: Decimal
+    unit: str | None = None    # (008) unit of measure; None = base
 
 
 class PurchaseCreate(BaseModel):
@@ -63,7 +64,7 @@ def create_purchase(
             db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
             location_id=body.location.location_id, cash_amount=body.cash_amount,
             credit_amount=body.credit_amount,
-            lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price) for l in body.lines],
+            lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit) for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
         )
     except (PurchaseError, StockError) as exc:

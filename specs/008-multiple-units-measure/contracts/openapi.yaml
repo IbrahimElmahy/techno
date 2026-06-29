@@ -1,0 +1,73 @@
+openapi: 3.1.0
+info:
+  title: UBMS Units of Measure API (extends Sales & Inventory 002 + Price Tiers 007)
+  version: 0.1.0
+  description: >
+    Alternate units of measure per item with a conversion factor, applied on sales and purchase lines;
+    stock is always tracked in the base unit. Additive to 002/007; shares auth and RBAC. Managing units
+    uses catalog.write. EGP only.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: catalog
+
+paths:
+  /items/{item_id}/units:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [catalog]
+      summary: List an item's units (base + alternates) (catalog.read)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ItemUnits' } } } }
+    put:
+      tags: [catalog]
+      summary: Set/replace an item's alternate units (catalog.write)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ItemUnitsSet' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ItemUnits' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Duplicate name / non-positive factor, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Qty: { type: string, example: '12.000' }
+    Unit:
+      type: object
+      properties:
+        name: { type: string, example: 'كرتونة' }
+        factor: { $ref: '#/components/schemas/Qty' }
+        is_base: { type: boolean }
+    ItemUnits:
+      type: object
+      properties:
+        item_id: { type: integer }
+        base_unit: { type: string }
+        units: { type: array, items: { $ref: '#/components/schemas/Unit' } }
+    ItemUnitsSet:
+      type: object
+      required: [units]
+      description: The full set of ALTERNATE units (the base unit is implicit, factor 1).
+      properties:
+        units:
+          type: array
+          items:
+            type: object
+            required: [name, factor]
+            properties:
+              name: { type: string }
+              factor: { $ref: '#/components/schemas/Qty' }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }
+
+# NOTE — additive extensions to the 002 contract (implemented on existing endpoints):
+#   • POST /sales and POST /purchases line items MAY include `unit` (string). Quantity is in that unit;
+#     stock posts quantity × factor (base units). Sale line default price = base-tier price × factor.
+#   • Sale/purchase invoice line output gains `unit` and `unit_factor`.

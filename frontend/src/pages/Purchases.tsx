@@ -28,7 +28,10 @@ interface PurchaseItem {
   item_id: number | null;
   quantity: number;
   unit_price: number;
+  unit: string | null;
 }
+
+interface ItemUnit { name: string; factor: number; is_base: boolean; }
 
 export default function Purchases() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -40,8 +43,9 @@ export default function Purchases() {
   // Form state
   const [form] = Form.useForm();
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([
-    { key: '1', item_id: null, quantity: 1, unit_price: 0 },
+    { key: '1', item_id: null, quantity: 1, unit_price: 0, unit: null },
   ]);
+  const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
 
   // Payment splits
   const [cashAmount, setCashAmount] = useState<number>(0);
@@ -74,11 +78,20 @@ export default function Purchases() {
   }, []);
 
   const handleAddItem = () => {
-    const newKey = (purchaseItems.length + 1).toString();
+    const newKey = Date.now().toString();
     setPurchaseItems([
       ...purchaseItems,
-      { key: newKey, item_id: null, quantity: 1, unit_price: 0 },
+      { key: newKey, item_id: null, quantity: 1, unit_price: 0, unit: null },
     ]);
+  };
+
+  const fetchUnits = async (itemId: number) => {
+    if (unitsCache[itemId]) return;
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/units`);
+      setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({
+        name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
+    } catch (err) { console.error(err); }
   };
 
   const handleRemoveItem = (key: string) => {
@@ -97,6 +110,8 @@ export default function Purchases() {
         if (field === 'item_id') {
           const selected = items.find((i) => i.id === value);
           updatedItem.unit_price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
+          updatedItem.unit = null;
+          if (value) fetchUnits(value);
         }
         return updatedItem;
       }
@@ -150,6 +165,7 @@ export default function Purchases() {
           item_id: l.item_id,
           quantity: l.quantity,
           unit_price: l.unit_price,
+          unit: l.unit,
         })),
       };
 
@@ -157,7 +173,7 @@ export default function Purchases() {
       setDocResult(res.data);
       message.success('تم تسجيل فاتورة الشراء بنجاح');
       form.resetFields();
-      setPurchaseItems([{ key: '1', item_id: null, quantity: 1, unit_price: 0 }]);
+      setPurchaseItems([{ key: '1', item_id: null, quantity: 1, unit_price: 0, unit: null }]);
       setCashAmount(0);
       setCreditAmount(0);
     } catch (err) {
@@ -208,10 +224,27 @@ export default function Purchases() {
       ),
     },
     {
+      title: 'الوحدة',
+      dataIndex: 'unit',
+      key: 'unit',
+      width: '15%',
+      render: (unit: string | null, record: PurchaseItem) => (
+        <Select style={{ width: '100%' }} placeholder="الوحدة" disabled={!record.item_id}
+          value={unit ?? '__base__'}
+          onChange={(val) => handleItemChange(record.key, 'unit', val === '__base__' ? null : val)}>
+          {(unitsCache[record.item_id || 0] || []).map((u) => (
+            <Select.Option key={u.name} value={u.is_base ? '__base__' : u.name}>
+              {u.name}{u.is_base ? '' : ` (×${u.factor})`}
+            </Select.Option>
+          ))}
+        </Select>
+      ),
+    },
+    {
       title: 'الكمية',
       dataIndex: 'quantity',
       key: 'quantity',
-      width: '20%',
+      width: '12%',
       render: (qty: number, record: PurchaseItem) => (
         <InputNumber
           min={0.01}

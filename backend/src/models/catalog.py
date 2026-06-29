@@ -13,7 +13,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstr
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY
+from src.core.money import MONEY, QTY
 
 
 class ItemKind(str, enum.Enum):
@@ -58,3 +58,19 @@ class ItemPrice(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     tier: Mapped[PriceTier] = mapped_column(Enum(PriceTier), nullable=False)
     price: Mapped[object] = mapped_column(MONEY, nullable=False)
+
+
+class ItemUnit(Base):
+    """An alternate unit of measure for an item (008). Base unit = item.unit_of_measure (factor 1).
+
+    factor = how many BASE units one of this unit equals (e.g. carton → 12). Stock is always tracked
+    in the base unit; documents convert (entered qty × factor) at the boundary.
+    """
+
+    __tablename__ = "item_unit"
+    __table_args__ = (UniqueConstraint("item_id", "name", name="uq_item_unit_item_name"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(16), nullable=False)
+    factor: Mapped[object] = mapped_column(QTY, nullable=False)  # base units per one of this unit

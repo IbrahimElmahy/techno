@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.core.money import ZERO, to_money
+from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item, ItemKind
 from src.models.ledger import Direction
 from src.models.purchasing import (
@@ -24,8 +24,9 @@ from src.models.purchasing import (
 from src.models.role import RoleName
 from src.models.stock import LocationKind, StockDirection
 from src.models.supplier import Supplier, SupplierAccount
-from src.services import account_resolver, audit_service, ledger_service, stock_service
+from src.services import account_resolver, audit_service, ledger_service, stock_service, uom_service
 from src.services.ledger_service import LineInput
+from src.services.uom_service import UomError
 
 
 class PurchaseError(Exception):
@@ -37,6 +38,7 @@ class PurchaseLine:
     item_id: int
     quantity: Decimal
     unit_price: Decimal
+    unit: str | None = None    # (008) unit of measure; None = base unit
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -66,14 +68,18 @@ def create_purchase(
     )
 
     total = ZERO
-    built: list[tuple[PurchaseLine, Decimal]] = []
+    built: list[tuple[PurchaseLine, Decimal, Decimal]] = []
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.raw_material:
             raise PurchaseError("Purchases accept raw materials only.")
+        try:
+            factor = uom_service.resolve_factor(db, item, ln.unit)  # (008)
+        except UomError as exc:
+            raise PurchaseError(str(exc)) from exc
         line_total = to_money(Decimal(ln.quantity) * Decimal(ln.unit_price))
         total += line_total
-        built.append((ln, line_total))
+        built.append((ln, line_total, factor))
     total = to_money(total)
     if to_money(cash_amount) + to_money(credit_amount) != total:
         raise PurchaseError("cash + credit must equal the purchase total.")
@@ -87,15 +93,17 @@ def create_purchase(
     )
     db.add(invoice)
     db.flush()
-    for ln, line_total in built:
+    for ln, line_total, factor in built:
+        base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock in base units
         stock_service.post_movement(
             db, item_id=ln.item_id, location_kind=location_kind, location_id=location_id,
-            movement_type="purchase_in", direction=StockDirection.in_, quantity=ln.quantity,
+            movement_type="purchase_in", direction=StockDirection.in_, quantity=base_qty,
             actor_user_id=actor_user_id, source_doc_type="purchase", source_doc_id=invoice.id,
         )
         invoice.lines.append(
             PurchaseInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
-                                unit_price=to_money(ln.unit_price), line_total=line_total)
+                                unit_price=to_money(ln.unit_price), line_total=line_total,
+                                unit=ln.unit, unit_factor=factor)
         )
 
     # Money: debit purchases_expense T; credit cash-location C + supplier_payable P.
@@ -141,7 +149,10 @@ def return_purchase(
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
         raise PurchaseError("Purchase invoice not found.")
-    purchased = {ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price)) for ln in inv.lines}
+    purchased = {
+        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
+        for ln in inv.lines
+    }
     prior = _already_returned(db, purchase_invoice_id)
 
     value = ZERO
@@ -166,9 +177,10 @@ def return_purchase(
     db.add(ret)
     db.flush()
     for item_id, qty in lines:
+        base_qty = to_qty(Decimal(qty) * purchased[item_id][2])  # (008) reverse stock in base units
         stock_service.post_movement(
             db, item_id=item_id, location_kind=inv.location_kind, location_id=inv.location_id,
-            movement_type="purchase_return_out", direction=StockDirection.out, quantity=Decimal(qty),
+            movement_type="purchase_return_out", direction=StockDirection.out, quantity=base_qty,
             actor_user_id=actor_user_id, source_doc_type="purchase_return", source_doc_id=ret.id,
         )
         ret.lines.append(PurchaseReturnLine(item_id=item_id, quantity=Decimal(qty)))

@@ -235,6 +235,16 @@ def make_priced_product(db, *, name="TieredGadget", sale_price="100", tiers=None
     return item
 
 
+def make_unit(db, item, name, factor):
+    """Add an alternate unit (name + factor to base) to an item (008)."""
+    from src.models.catalog import ItemUnit
+
+    u = ItemUnit(item_id=item.id, name=name, factor=Decimal(str(factor)))
+    db.add(u)
+    db.flush()
+    return u
+
+
 @pytest.fixture()
 def cost_centers(db, chart):
     """The `chart` fixture + a small cost-center master (a root + two children) for 006 tests."""

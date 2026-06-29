@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core import hooks
-from src.core.money import ZERO, to_money
+from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Direction
@@ -32,9 +32,11 @@ from src.services import (
     ledger_service,
     pricing_service,
     stock_service,
+    uom_service,
 )
 from src.services.ledger_service import LineInput
 from src.services.pricing_service import PricingError
+from src.services.uom_service import UomError
 
 
 class SalesError(Exception):
@@ -47,6 +49,7 @@ class SaleLine:
     quantity: Decimal
     tier: PriceTier | None = None          # (007) explicit tier override per line
     unit_price: Decimal | None = None      # (007) manual price override (below-tier needs capability)
+    unit: str | None = None                # (008) unit of measure; None = base unit
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -88,18 +91,24 @@ def create_sale(
     customer = db.get(Customer, customer_id)
 
     gross = ZERO
-    # (007) each line resolves its price from a tier (override per line); manual price below the
-    # resolved tier price requires the sell.below_price capability. Records tier + actual price.
-    built: list[tuple[SaleLine, Decimal, Decimal, PriceTier]] = []
+    # (007) price resolves from a tier (override per line); below-tier needs sell.below_price.
+    # (008) a unit may be chosen: the list price = base-tier price × factor; stock moves in base units
+    # (= entered qty × factor). The line records tier + actual price + unit + factor.
+    built: list[tuple[SaleLine, Decimal, Decimal, PriceTier, Decimal]] = []
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
             raise SalesError("Sales accept products only.")
+        try:
+            factor = uom_service.resolve_factor(db, item, ln.unit)
+        except UomError as exc:
+            raise SalesError(str(exc)) from exc
         tier = pricing_service.resolve_tier(ln.tier, customer)
         try:
-            list_price = pricing_service.tier_price(db, item, tier)
+            base_price = pricing_service.tier_price(db, item, tier)
         except PricingError as exc:
             raise SalesError(str(exc)) from exc
+        list_price = to_money(base_price * factor)  # price for one of the chosen unit
         unit_price = to_money(ln.unit_price) if ln.unit_price is not None else list_price
         if unit_price < list_price and not can_sell_below:
             raise SalesError(
@@ -108,7 +117,7 @@ def create_sale(
             )
         line_total = to_money(Decimal(ln.quantity) * unit_price)
         gross += line_total
-        built.append((ln, unit_price, line_total, tier))
+        built.append((ln, unit_price, line_total, tier, factor))
     gross = to_money(gross)
     net = compute_net(gross, combined)
     if to_money(cash_amount) + to_money(credit_amount) != net:
@@ -129,16 +138,18 @@ def create_sale(
     )
     db.add(invoice)
     db.flush()
-    for ln, unit_price, line_total, tier in built:
+    for ln, unit_price, line_total, tier, factor in built:
+        base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock moves in the base unit
         stock_service.post_movement(
             db, item_id=ln.item_id, location_kind=origin_location_kind,
             location_id=origin_location_id, movement_type="sale_out",
-            direction=StockDirection.out, quantity=ln.quantity, actor_user_id=actor_user_id,
+            direction=StockDirection.out, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type="sale", source_doc_id=invoice.id,
         )
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
-                             unit_price=unit_price, line_total=line_total, price_tier=tier)
+                             unit_price=unit_price, line_total=line_total, price_tier=tier,
+                             unit=ln.unit, unit_factor=factor)
         )
 
     entry_lines = []
@@ -182,7 +193,11 @@ def return_sale(
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
         raise SalesError("Sales invoice not found.")
-    sold = {ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price)) for ln in inv.lines}
+    # (008) carry the line's unit_factor so the return reverses stock in base units.
+    sold = {
+        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
+        for ln in inv.lines
+    }
     prior = _already_returned(db, sales_invoice_id)
 
     value = ZERO
@@ -207,10 +222,11 @@ def return_sale(
     db.add(ret)
     db.flush()
     for item_id, qty in lines:
+        base_qty = to_qty(Decimal(qty) * sold[item_id][2])  # (008) reverse stock in base units
         stock_service.post_movement(
             db, item_id=item_id, location_kind=inv.origin_location_kind,
             location_id=inv.origin_location_id, movement_type="sale_return_in",
-            direction=StockDirection.in_, quantity=Decimal(qty), actor_user_id=actor_user_id,
+            direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type="sale_return", source_doc_id=ret.id,
         )
         ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty)))

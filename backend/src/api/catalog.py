@@ -5,14 +5,14 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CATALOG_READ, CAP_CATALOG_WRITE
 from src.core.db import get_db
-from src.core.money import to_money
-from src.models.catalog import Item, ItemKind, ItemPrice, PriceTier
+from src.core.money import to_money, to_qty
+from src.models.catalog import Item, ItemKind, ItemPrice, ItemUnit, PriceTier
 
 router = APIRouter(tags=["catalog"], prefix="/items")
 
@@ -156,6 +156,73 @@ def set_item_prices(
     db.flush()
     db.commit()
     return _prices_out(db, item)
+
+
+class UnitOut(BaseModel):
+    name: str
+    factor: Decimal
+    is_base: bool
+
+
+class ItemUnitsOut(BaseModel):
+    item_id: int
+    base_unit: str
+    units: list[UnitOut]
+
+
+class UnitIn(BaseModel):
+    name: str
+    factor: Decimal
+
+
+class ItemUnitsSet(BaseModel):
+    units: list[UnitIn]
+
+
+def _units_out(db: Session, item: Item) -> ItemUnitsOut:
+    rows = db.scalars(select(ItemUnit).where(ItemUnit.item_id == item.id)).all()
+    units = [UnitOut(name=item.unit_of_measure, factor=Decimal("1.000"), is_base=True)]
+    units += [UnitOut(name=r.name, factor=r.factor, is_base=False) for r in rows]
+    return ItemUnitsOut(item_id=item.id, base_unit=item.unit_of_measure, units=units)
+
+
+@router.get("/{item_id}/units", response_model=ItemUnitsOut)
+def get_item_units(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> ItemUnitsOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    return _units_out(db, item)
+
+
+@router.put("/{item_id}/units", response_model=ItemUnitsOut)
+def set_item_units(
+    item_id: int,
+    body: ItemUnitsSet,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    db: Session = Depends(get_db),
+) -> ItemUnitsOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    seen = {item.unit_of_measure}
+    for u in body.units:
+        if u.factor <= 0:
+            raise HTTPException(422, {"code": "validation", "message": "factor must be > 0"})
+        if u.name in seen:
+            raise HTTPException(422, {"code": "validation",
+                                      "message": f"duplicate unit name '{u.name}'"})
+        seen.add(u.name)
+    # Replace the full alternate set.
+    db.execute(delete(ItemUnit).where(ItemUnit.item_id == item.id))
+    for u in body.units:
+        db.add(ItemUnit(item_id=item.id, name=u.name, factor=to_qty(u.factor)))
+    db.flush()
+    db.commit()
+    return _units_out(db, item)
 
 
 @router.patch("/{item_id}", response_model=ItemOut)

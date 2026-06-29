@@ -12,6 +12,8 @@ Auto-generated from all feature plans. Last updated: 2026-06-29
 - Python 3.12 (3.11 dev) — same as 001–005 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused (006-cost-centers-optional)
 - MySQL 8 / MariaDB 10.6+ (InnoDB, utf8mb4); money `DECIMAL(18,2)` via shared `MONEY` (006-cost-centers-optional)
 - Python 3.12 (3.11 dev) — same as 001–006 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused (007-five-sale-price)
+- Python 3.12 (3.11 dev) — same as 001–007 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused (008-multiple-units-measure)
+- MySQL 8 / MariaDB 10.6+; money `MONEY` DECIMAL(18,2); quantity `QTY` DECIMAL(18,3) (008-multiple-units-measure)
 
 - Python 3.12 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2, passlib[bcrypt], (001-foundation)
 
@@ -32,9 +34,9 @@ cd src; pytest; ruff check .
 Python 3.12: Follow standard conventions
 
 ## Recent Changes
+- 008-multiple-units-measure: Added Python 3.12 (3.11 dev) — same as 001–007 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 - 007-five-sale-price: Added Python 3.12 (3.11 dev) — same as 001–006 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 - 006-cost-centers-optional: Added Python 3.12 (3.11 dev) — same as 001–005 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
-- 005-general-ledger: Added Python 3.12 (3.11 dev) — same as 001/002/003 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 
 
 <!-- MANUAL ADDITIONS START -->

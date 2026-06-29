@@ -37,8 +37,11 @@ class PurchaseInvoiceLine(Base):
     invoice_id: Mapped[int] = mapped_column(ForeignKey("purchase_invoice.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # per-invoice snapshot
+    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # per chosen unit snapshot
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
+    # Unit of measure used on this line (008); NULL = base. Stock in base = quantity × unit_factor.
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
 
 
 class PurchaseReturn(Base):

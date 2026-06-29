@@ -48,7 +48,10 @@ interface SaleLineItem {
   quantity: number;
   unit_price: number;
   tier: string | null;
+  unit: string | null;
 }
+
+interface ItemUnit { name: string; factor: number; is_base: boolean; }
 
 interface InvoiceDetail {
   id: number;
@@ -79,10 +82,11 @@ export default function Invoices() {
 
   // Create invoice dynamic lines
   const [lines, setLines] = useState<SaleLineItem[]>([
-    { key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null },
+    { key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null },
   ]);
   // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
   const [pricesCache, setPricesCache] = useState<Record<number, { base: number | null; tiers: Record<string, number> }>>({});
+  const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
   const [customerTier, setCustomerTier] = useState<string | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
@@ -135,7 +139,7 @@ export default function Invoices() {
 
   const handleAddLine = () => {
     const newKey = Date.now().toString();
-    setLines([...lines, { key: newKey, item_id: null, quantity: 1, unit_price: 0, tier: customerTier }]);
+    setLines([...lines, { key: newKey, item_id: null, quantity: 1, unit_price: 0, tier: customerTier, unit: null }]);
   };
 
   const handleRemoveLine = (key: string) => {
@@ -143,27 +147,40 @@ export default function Invoices() {
     setLines(lines.filter((l) => l.key !== key));
   };
 
-  // Resolve a line's price from the cached tiers (tier price → base → 0).
-  const resolvePrice = (itemId: number, tier: string | null): number => {
+  const unitFactor = (itemId: number, unit: string | null): number => {
+    if (!unit) return 1;
+    const u = (unitsCache[itemId] || []).find((x) => x.name === unit);
+    return u ? u.factor : 1;
+  };
+
+  // Resolve a line's price = base-tier price × unit factor (matches the backend, 007+008).
+  const resolvePrice = (itemId: number, tier: string | null, unit: string | null): number => {
     const c = pricesCache[itemId];
+    let base: number;
     if (!c) {
       const prod = products.find((p) => p.id === itemId);
-      return prod?.sale_price ? parseFloat(prod.sale_price) : 0;
+      base = prod?.sale_price ? parseFloat(prod.sale_price) : 0;
+    } else {
+      base = (tier && c.tiers[tier] != null) ? c.tiers[tier] : (c.base ?? 0);
     }
-    if (tier && c.tiers[tier] != null) return c.tiers[tier];
-    return c.base ?? 0;
+    return base * unitFactor(itemId, unit);
   };
 
   const fetchPrices = async (itemId: number) => {
-    if (pricesCache[itemId]) return pricesCache[itemId];
-    try {
-      const res = await api.get(`/api/v1/items/${itemId}/prices`);
-      const tiers: Record<string, number> = {};
-      (res.data.tiers || []).forEach((t: any) => { tiers[t.tier] = parseFloat(t.price); });
-      const entry = { base: res.data.base_sale_price ? parseFloat(res.data.base_sale_price) : null, tiers };
-      setPricesCache((prev) => ({ ...prev, [itemId]: entry }));
-      return entry;
-    } catch (err) { console.error(err); return { base: null, tiers: {} }; }
+    if (!pricesCache[itemId]) {
+      try {
+        const res = await api.get(`/api/v1/items/${itemId}/prices`);
+        const tiers: Record<string, number> = {};
+        (res.data.tiers || []).forEach((t: any) => { tiers[t.tier] = parseFloat(t.price); });
+        setPricesCache((prev) => ({ ...prev, [itemId]: { base: res.data.base_sale_price ? parseFloat(res.data.base_sale_price) : null, tiers } }));
+      } catch (err) { console.error(err); }
+    }
+    if (!unitsCache[itemId]) {
+      try {
+        const res = await api.get(`/api/v1/items/${itemId}/units`);
+        setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({ name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
+      } catch (err) { console.error(err); }
+    }
   };
 
   const handleLineChange = async (key: string, field: keyof SaleLineItem, value: any) => {
@@ -174,9 +191,10 @@ export default function Invoices() {
         const updated = { ...l, [field]: value };
         if (field === 'item_id') {
           updated.tier = l.tier || customerTier || 'consumer';
-          updated.unit_price = resolvePrice(value, updated.tier);
-        } else if (field === 'tier' && l.item_id) {
-          updated.unit_price = resolvePrice(l.item_id, value);
+          updated.unit = null;  // default to base
+          updated.unit_price = resolvePrice(value, updated.tier, null);
+        } else if ((field === 'tier' || field === 'unit') && l.item_id) {
+          updated.unit_price = resolvePrice(l.item_id, updated.tier, updated.unit);
         }
         return updated;
       })
@@ -187,9 +205,8 @@ export default function Invoices() {
     const c = customers.find((x) => x.id === customerId);
     const tier = c?.default_price_tier ?? null;
     setCustomerTier(tier);
-    // Re-default each line's tier/price to the new customer's tier (unless an item-less line).
     setLines((prev) => prev.map((l) => l.item_id
-      ? { ...l, tier: tier || 'consumer', unit_price: resolvePrice(l.item_id, tier || 'consumer') }
+      ? { ...l, tier: tier || 'consumer', unit_price: resolvePrice(l.item_id, tier || 'consumer', l.unit) }
       : { ...l, tier }));
   };
 
@@ -220,6 +237,7 @@ export default function Invoices() {
           item_id: l.item_id,
           quantity: l.quantity,
           tier: l.tier,
+          unit: l.unit,
           unit_price: l.unit_price.toFixed(2),
         })),
       });
@@ -227,7 +245,7 @@ export default function Invoices() {
       message.success('تم تسجيل فاتورة البيع بنجاح');
       setCreateVisible(false);
       createForm.resetFields();
-      setLines([{ key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null }]);
+      setLines([{ key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null }]);
       setCashAmount(0);
       setDiscountPct(0);
       fetchInvoices();
@@ -408,8 +426,8 @@ export default function Invoices() {
           <Divider orientation="right">المنتجات المباعة</Divider>
 
           {lines.map((line) => (
-            <Row gutter={8} key={line.key} align="middle" style={{ marginBottom: 12 }}>
-              <Col span={8}>
+            <Row gutter={6} key={line.key} align="middle" style={{ marginBottom: 12 }}>
+              <Col span={7}>
                 <Select
                   placeholder="اختر المنتج"
                   style={{ width: '100%' }}
@@ -422,7 +440,7 @@ export default function Invoices() {
                   ))}
                 </Select>
               </Col>
-              <Col span={5}>
+              <Col span={4}>
                 <Select placeholder="الفئة" style={{ width: '100%' }} value={line.tier ?? undefined}
                   onChange={(val) => handleLineChange(line.key, 'tier', val)}>
                   {Object.entries(TIER_LABELS).map(([k, l]) => (
@@ -431,12 +449,22 @@ export default function Invoices() {
                 </Select>
               </Col>
               <Col span={4}>
+                <Select placeholder="الوحدة" style={{ width: '100%' }} value={line.unit ?? '__base__'}
+                  disabled={!line.item_id}
+                  onChange={(val) => handleLineChange(line.key, 'unit', val === '__base__' ? null : val)}>
+                  {(unitsCache[line.item_id || 0] || []).map((u) => (
+                    <Select.Option key={u.name} value={u.is_base ? '__base__' : u.name}>
+                      {u.name}{u.is_base ? '' : ` (×${u.factor})`}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Col>
+              <Col span={3}>
                 <InputNumber min={1} style={{ width: '100%' }} value={line.quantity}
                   onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} placeholder="الكمية" />
               </Col>
-              <Col span={5}>
+              <Col span={4}>
                 <InputNumber min={0} step={0.01} style={{ width: '100%' }} value={line.unit_price}
-                  addonAfter="ج.م"
                   onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} placeholder="السعر" />
               </Col>
               <Col span={2}>

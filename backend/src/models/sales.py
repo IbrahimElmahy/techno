@@ -52,6 +52,10 @@ class SalesInvoiceLine(Base):
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
     # Resolved price tier snapshot (007); NULL for legacy 002 lines.
     price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
+    # Unit of measure used on this line (008); NULL = base unit. quantity is in this unit;
+    # stock moved in base = quantity × unit_factor.
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
 
 
 class SalesReturn(Base):

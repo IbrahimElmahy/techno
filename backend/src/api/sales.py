@@ -33,6 +33,7 @@ class SaleLineIn(BaseModel):
     quantity: Decimal
     tier: PriceTier | None = None          # (007) override the customer's default tier per line
     unit_price: Decimal | None = None      # (007) manual price; below tier needs sell.below_price
+    unit: str | None = None                # (008) unit of measure; None = base
 
 
 class SaleCreate(BaseModel):
@@ -72,6 +73,8 @@ class InvoiceLineOut(BaseModel):
     unit_price: Decimal
     line_total: Decimal
     price_tier: PriceTier | None = None
+    unit: str | None = None
+    unit_factor: Decimal | None = None
 
 
 class SalesInvoiceDetail(BaseModel):
@@ -112,7 +115,7 @@ def create_sale(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
             origin_location_id=body.origin.location_id, variable_discount_pct=body.variable_discount_pct,
             cash_amount=body.cash_amount, credit_amount=body.credit_amount,
-            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price) for l in body.lines],
+            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit) for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
         )
     except SalesError as exc:
@@ -172,6 +175,8 @@ def get_sale(
                 unit_price=line.unit_price,
                 line_total=line.line_total,
                 price_tier=line.price_tier,
+                unit=line.unit,
+                unit_factor=line.unit_factor,
             )
             for line in inv.lines
         ],

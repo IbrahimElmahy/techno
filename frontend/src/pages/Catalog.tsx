@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Modal, Row, Col } from 'antd';
-import { PlusOutlined, DollarOutlined } from '@ant-design/icons';
+import { PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 
@@ -154,6 +154,64 @@ const ProductPoints = ({
   );
 };
 
+// Modal editor for an item's alternate units of measure + conversion factor (008).
+const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
+  const [open, setOpen] = useState(false);
+  const [base, setBase] = useState<string>('');
+  const [rows, setRows] = useState<{ name: string; factor: number | null }[]>([]);
+
+  const load = async () => {
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/units`);
+      setBase(res.data.base_unit);
+      setRows((res.data.units || []).filter((u: any) => !u.is_base)
+        .map((u: any) => ({ name: u.name, factor: parseFloat(u.factor) })));
+    } catch (err) { console.error(err); }
+  };
+  const onOpen = () => { setOpen(true); load(); };
+
+  const onSave = async () => {
+    const units = rows.filter((r) => r.name && r.factor && r.factor > 0)
+      .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(3) }));
+    try {
+      await api.put(`/api/v1/items/${itemId}/units`, { units });
+      message.success('تم حفظ الوحدات');
+      setOpen(false);
+    } catch (err) { console.error(err); }
+  };
+
+  return (
+    <>
+      <Button size="small" type="link" icon={<ColumnWidthOutlined />} onClick={onOpen}>الوحدات</Button>
+      <Modal title="وحدات القياس ومعامل التحويل" open={open} onCancel={() => setOpen(false)}
+        onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
+        <p style={{ color: '#888' }}>الوحدة الأساسية: <strong>{base}</strong> (معامل = 1). أضف وحدات أكبر بمعاملها مقابل الأساس (مثلاً: كرتونة = 12).</p>
+        {rows.map((r, i) => (
+          <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+            <Col span={12}>
+              <Input placeholder="اسم الوحدة (كرتونة)" disabled={!canEdit} value={r.name}
+                onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+            </Col>
+            <Col span={9}>
+              <InputNumber min={0.001} step={1} style={{ width: '100%' }} addonBefore="= عدد الأساس"
+                disabled={!canEdit} value={r.factor ?? undefined}
+                onChange={(v) => setRows(rows.map((x, j) => j === i ? { ...x, factor: v as number } : x))} />
+            </Col>
+            <Col span={3}>
+              <Button type="text" danger icon={<DeleteOutlined />} disabled={!canEdit}
+                onClick={() => setRows(rows.filter((_, j) => j !== i))} />
+            </Col>
+          </Row>
+        ))}
+        {canEdit && (
+          <Button type="dashed" block icon={<PlusOutlined />}
+            onClick={() => setRows([...rows, { name: '', factor: null }])}>إضافة وحدة</Button>
+        )}
+      </Modal>
+    </>
+  );
+};
+
 export default function Catalog() {
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -248,6 +306,11 @@ export default function Catalog() {
       key: 'price_tiers',
       render: (_: any, record: ItemRecord) =>
         record.kind === 'product' ? <PriceTiersButton itemId={record.id} canEdit={canEditPrices} /> : '-',
+    },
+    {
+      title: 'الوحدات',
+      key: 'units',
+      render: (_: any, record: ItemRecord) => <ItemUnitsButton itemId={record.id} canEdit={canEditPrices} />,
     },
     {
       title: 'نقاط المنتج',
