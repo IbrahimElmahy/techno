@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: UBMS Cost Centers API (extends General Ledger 005)
+  version: 0.1.0
+  description: >
+    Cost-center master CRUD plus the optional cost-center dimension on journal lines and the trial
+    balance. Additive to 005; shares auth (Bearer JWT) and the 005 `accounting.*` capabilities
+    (Accountant + System Admin). A cost center is an optional analytical axis on a ledger line — never a
+    ledger account and never balance-bearing. EGP only.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: cost-centers
+
+paths:
+  /cost-centers:
+    get:
+      tags: [cost-centers]
+      summary: List / tree the cost centers (accounting.chart.read)
+      parameters:
+        - { name: tree, in: query, schema: { type: boolean, default: false } }
+        - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CostCenter' } } } } }
+    post:
+      tags: [cost-centers]
+      summary: Create a cost center (accounting.chart.write)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CostCenterCreate' } } } }
+      responses:
+        '201': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/CostCenter' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Duplicate code / unknown parent, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /cost-centers/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [cost-centers]
+      summary: Get one cost center (accounting.chart.read)
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/CostCenter' } } } } }
+    patch:
+      tags: [cost-centers]
+      summary: Rename / activate / deactivate (accounting.chart.write)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CostCenterUpdate' } } } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/CostCenter' } } } }
+        '409': { description: Cannot deactivate with active children, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [cost-centers]
+      summary: Deactivate (never hard-delete) a cost center (accounting.chart.write)
+      responses:
+        '204': { description: Deactivated }
+        '409': { description: Has children or tagged lines — deactivated, not removed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    CostCenter:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string, example: '1.01' }
+        name: { type: string }
+        parent_id: { type: integer, nullable: true }
+        active: { type: boolean }
+        children: { type: array, items: { $ref: '#/components/schemas/CostCenter' }, description: present when tree=true }
+    CostCenterCreate:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        parent_id: { type: integer, nullable: true }
+    CostCenterUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        active: { type: boolean }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }
+
+# NOTE — additive extensions to the 005 contract (documented here; implemented on the 005 endpoints):
+#   • POST /journal-entries  → each line MAY include `cost_center_id` (integer, nullable).
+#   • GET  /journal-entries  → each returned line includes `cost_center_id`; query gains `cost_center_id`.
+#   • GET  /trial-balance    → gains optional query param `cost_center_id` (integer) to scope aggregation.

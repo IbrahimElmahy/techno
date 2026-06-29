@@ -131,6 +131,10 @@ class LedgerLine(Base):
     amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     # Per-line بيان (005). Set by journal entries; NULL for 001/002/003 posts.
     statement: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Optional analytical cost-center dimension (006). NULL for untagged/legacy posts.
+    cost_center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cost_center.id"), nullable=True, index=True
+    )
 
     entry: Mapped["LedgerEntry"] = relationship(back_populates="lines")
     account: Mapped["Account"] = relationship(back_populates="lines")

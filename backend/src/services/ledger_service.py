@@ -26,6 +26,7 @@ class LineInput:
     direction: Direction
     amount: Decimal
     statement: str | None = None  # per-line بيان (005); ignored by 001/002/003 callers
+    cost_center_id: int | None = None  # optional analytical dimension (006)
 
 
 def _validate_lines(lines: list[LineInput]) -> None:
@@ -68,6 +69,7 @@ def post_entry(
             direction=l.direction,
             amount=to_money(l.amount),
             statement=l.statement,
+            cost_center_id=l.cost_center_id,
         )
         for l in lines
     ]
@@ -100,6 +102,7 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
             ),
             amount=line.amount,
             statement=line.statement,
+            cost_center_id=line.cost_center_id,  # reversal nets within the same cost center (006)
         )
         for line in original.lines
     ]

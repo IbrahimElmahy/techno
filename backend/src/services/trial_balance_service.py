@@ -78,11 +78,14 @@ def trial_balance(
     to_date: date,
     branch_id: int | None = None,
     include_groups: bool = True,
+    cost_center_id: int | None = None,
 ) -> TrialBalanceResult:
     # Pull lines joined to their entry once; bucket in Python (DB-agnostic date handling).
     stmt = select(LedgerLine, LedgerEntry).join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
+    if cost_center_id is not None:  # optional analytical scope (006)
+        stmt = stmt.where(LedgerLine.cost_center_id == cost_center_id)
 
     buckets: dict[int, _Bucket] = {}
     for line, entry in db.execute(stmt).all():

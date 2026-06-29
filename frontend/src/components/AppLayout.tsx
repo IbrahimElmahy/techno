@@ -17,6 +17,7 @@ import {
   BuildOutlined,
   HistoryOutlined,
   GiftOutlined,
+  BookOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, RoleName } from './AuthProvider';
@@ -31,6 +32,7 @@ const ROLE_LABELS: Record<RoleName, string> = {
   sales_manager: 'مدير المبيعات',
   after_sales_staff: 'موظف خدمة ما بعد البيع',
   sales_rep: 'مندوب مبيعات',
+  accountant: 'المحاسب',
 };
 
 export default function AppLayout() {
@@ -81,7 +83,7 @@ export default function AppLayout() {
       key: '/dashboard',
       icon: <DashboardOutlined />,
       label: 'الرئيسية',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'after_sales_staff'],
+      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'after_sales_staff', 'accountant'],
     },
     {
       key: '/users',
@@ -142,6 +144,12 @@ export default function AppLayout() {
       icon: <DollarOutlined />,
       label: 'الحسابات والخزينة',
       roles: ['system_admin', 'branch_manager'],
+    },
+    {
+      key: '/general-ledger',
+      icon: <BookOutlined />,
+      label: 'الأستاذ العام والقيود',
+      roles: ['system_admin', 'accountant'],
     },
     {
       key: '/loyalty',

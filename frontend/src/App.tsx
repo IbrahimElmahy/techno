@@ -17,6 +17,7 @@ import Transfers from './pages/Transfers';
 import Invoices from './pages/Invoices';
 import Loyalty from './pages/Loyalty';
 import Treasury from './pages/Treasury';
+import GeneralLedger from './pages/GeneralLedger';
 import Audit from './pages/Audit';
 import Reports from './pages/Reports';
 import { setApiBaseURL } from './api/client';
@@ -90,6 +91,7 @@ export default function App() {
               <Route path="invoices" element={<Invoices />} />
               <Route path="transfers" element={<Transfers />} />
               <Route path="treasury" element={<Treasury />} />
+              <Route path="general-ledger" element={<GeneralLedger />} />
               <Route path="loyalty" element={<Loyalty />} />
               <Route path="audit" element={<Audit />} />
               <Route path="reports" element={<Reports />} />

@@ -37,6 +37,9 @@ from src.models.loyalty import (  # noqa: E402
     ProductPointValue,
 )
 
+# Cost Centers (006) — analytical dimension.
+from src.models.cost_center import CostCenter  # noqa: E402
+
 __all__ = [
     "AuditLogEntry", "Item", "Customer", "CustomerAccount", "Account", "LedgerEntry",
     "LedgerLine", "Branch", "Governorate", "HeadOffice", "Territory", "Role", "User",
@@ -45,5 +48,5 @@ __all__ = [
     "SalesInvoice", "SalesInvoiceLine", "SalesReturn", "SalesReturnLine", "SalesSetting",
     "ManufacturingOp", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
-    "CouponRedemption",
+    "CouponRedemption", "CostCenter",
 ]

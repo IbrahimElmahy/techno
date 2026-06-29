@@ -23,6 +23,7 @@ CONTRACTS = [
     _SPECS / "002-sales-inventory" / "contracts" / "openapi.yaml",
     _SPECS / "003-after-sales-loyalty" / "contracts" / "openapi.yaml",
     _SPECS / "005-general-ledger" / "contracts" / "openapi.yaml",
+    _SPECS / "006-cost-centers-optional" / "contracts" / "openapi.yaml",
 ]
 _PARAM = re.compile(r"\{[^}]+\}")
 

@@ -22,6 +22,7 @@ const ROLE_LABELS: Record<RoleName, string> = {
   sales_manager: 'مدير المبيعات',
   after_sales_staff: 'موظف خدمة ما بعد البيع',
   sales_rep: 'مندوب مبيعات',
+  accountant: 'المحاسب',
 };
 
 export default function Users() {

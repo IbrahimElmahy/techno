@@ -23,6 +23,7 @@ from src.api import (  # After-Sales Loyalty (003)
     reports,
 )
 from src.api import accounting  # General Ledger (005)
+from src.api import cost_centers  # Cost Centers (006)
 import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
 
 
@@ -71,6 +72,8 @@ def create_app() -> FastAPI:
     app.include_router(reports.router, prefix=prefix)
     # General Ledger (005)
     app.include_router(accounting.router, prefix=prefix)
+    # Cost Centers (006)
+    app.include_router(cost_centers.router, prefix=prefix)
 
     @app.get("/health")
     def health() -> dict:

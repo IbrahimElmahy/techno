@@ -14,12 +14,12 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from src.models.ledger import Direction, LedgerEntry
-from src.services import audit_service, chart_service, ledger_service
+from src.services import audit_service, chart_service, cost_center_service, ledger_service
 from src.services.ledger_service import LedgerError, LineInput
 
 
 class JournalError(Exception):
-    """Invalid journal entry (non-postable account, unbalanced, etc.)."""
+    """Invalid journal entry (non-postable account, unbalanced, inactive cost center, etc.)."""
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,7 @@ class JournalLineInput:
     direction: Direction
     amount: Decimal
     statement: str | None = None
+    cost_center_id: int | None = None  # optional analytical dimension (006)
 
 
 def post_entry(
@@ -48,12 +49,19 @@ def post_entry(
             raise JournalError(
                 f"Account {ln.account_id} is not a postable, active leaf; journals post to leaves."
             )
+        if ln.cost_center_id is not None and not cost_center_service.is_active(db, ln.cost_center_id):
+            raise JournalError(
+                f"Cost center {ln.cost_center_id} is unknown or inactive."
+            )
     try:
         entry = ledger_service.post_entry(
             db,
             entry_type=entry_type,
             actor_user_id=actor_user_id,
-            lines=[LineInput(ln.account_id, ln.direction, ln.amount, ln.statement) for ln in lines],
+            lines=[
+                LineInput(ln.account_id, ln.direction, ln.amount, ln.statement, ln.cost_center_id)
+                for ln in lines
+            ],
             description=description,
             branch_id=branch_id,
             entry_date=entry_date,

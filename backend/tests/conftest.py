@@ -219,6 +219,18 @@ def _accounts_by_code(db, code):
 
 
 @pytest.fixture()
+def cost_centers(db, chart):
+    """The `chart` fixture + a small cost-center master (a root + two children) for 006 tests."""
+    from src.services import cost_center_service
+
+    root = cost_center_service.create(db, code="1", name="الفروع")
+    nasr = cost_center_service.create(db, code="1.01", name="معرض مدينة نصر", parent_id=root.id)
+    maadi = cost_center_service.create(db, code="1.02", name="معرض المعادي", parent_id=root.id)
+    db.commit()
+    return {**chart, "cc_root": root.id, "cc_nasr": nasr.id, "cc_maadi": maadi.id}
+
+
+@pytest.fixture()
 def inv_world(db, world):
     """Foundation `world` + a central warehouse, a Branch-A warehouse, and rep custodies."""
     central = Warehouse(name="Central", warehouse_type=WarehouseType.central)

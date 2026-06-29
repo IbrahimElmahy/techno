@@ -23,7 +23,7 @@ from src.auth.rbac import (
     CAP_ACCOUNTING_TRIAL_BALANCE_READ,
 )
 from src.core.db import get_db
-from src.models.ledger import Account, AccountNature, Direction, LedgerEntry
+from src.models.ledger import Account, AccountNature, Direction, LedgerEntry, LedgerLine
 from src.services import (
     chart_service,
     journal_service,
@@ -83,6 +83,7 @@ class JournalLineIn(BaseModel):
     direction: Direction
     amount: Decimal
     statement: str | None = None
+    cost_center_id: int | None = None
 
 
 class JournalEntryCreate(BaseModel):
@@ -97,6 +98,7 @@ class JournalLineOut(BaseModel):
     direction: Direction
     amount: Decimal
     statement: str | None = None
+    cost_center_id: int | None = None
 
 
 class JournalEntryOut(BaseModel):
@@ -171,7 +173,7 @@ def _entry_out(entry: LedgerEntry) -> JournalEntryOut:
         reverses_entry_id=entry.reverses_entry_id,
         lines=[
             JournalLineOut(account_id=l.account_id, direction=l.direction, amount=l.amount,
-                           statement=l.statement)
+                           statement=l.statement, cost_center_id=l.cost_center_id)
             for l in entry.lines
         ],
         total=total,
@@ -265,6 +267,7 @@ def list_journal_entries(
     from_: date | None = Query(default=None, alias="from"),
     to: date | None = None,
     branch_id: int | None = None,
+    cost_center_id: int | None = None,
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[JournalEntryOut]:
@@ -277,6 +280,10 @@ def list_journal_entries(
         stmt = stmt.where(LedgerEntry.entry_date >= from_)
     if to is not None:
         stmt = stmt.where(LedgerEntry.entry_date <= to)
+    if cost_center_id is not None:  # entries that touch this cost center on any line (006)
+        stmt = stmt.where(
+            LedgerEntry.lines.any(LedgerLine.cost_center_id == cost_center_id)
+        )
     return [_entry_out(e) for e in db.scalars(stmt.order_by(LedgerEntry.id)).all()]
 
 
@@ -306,7 +313,8 @@ def post_journal_entry(
             description=body.description,
             branch_id=body.branch_id,
             lines=[
-                JournalLineInput(l.account_id, l.direction, l.amount, l.statement) for l in body.lines
+                JournalLineInput(l.account_id, l.direction, l.amount, l.statement, l.cost_center_id)
+                for l in body.lines
             ],
             actor_user_id=current.id,
         )
@@ -368,6 +376,7 @@ def get_trial_balance(
     to: date = Query(...),
     branch_id: int | None = None,
     include_groups: bool = True,
+    cost_center_id: int | None = None,
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> TrialBalanceOut:
@@ -376,7 +385,8 @@ def get_trial_balance(
     if not current.is_admin and current.branch_id is not None:
         branch_id = current.branch_id
     result = trial_balance_service.trial_balance(
-        db, from_date=from_, to_date=to, branch_id=branch_id, include_groups=include_groups
+        db, from_date=from_, to_date=to, branch_id=branch_id, include_groups=include_groups,
+        cost_center_id=cost_center_id,
     )
     return TrialBalanceOut(
         from_=result.from_date,
