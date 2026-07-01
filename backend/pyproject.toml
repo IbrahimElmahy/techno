@@ -3,6 +3,20 @@ name = "ubms-foundation"
 version = "0.1.0"
 description = "Unified Business Management System — Foundation backend"
 requires-python = ">=3.11"
+# Runtime dependencies — declared here so hosts that `pip install .` (e.g. Vercel's Python builder,
+# which reads [project]) install the app's libraries. Dev/test extras live in requirements.txt.
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "SQLAlchemy>=2.0",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.1",
+  "bcrypt>=4.1",
+  "python-jose[cryptography]>=3.3",
+  "python-multipart>=0.0.9",
+  "psycopg2-binary>=2.9",
+  "PyMySQL>=1.1",
+]
 
 [tool.ruff]
 line-length = 100
