@@ -9,6 +9,30 @@
 
 ---
 
+## PROGRESS SNAPSHOT — 2026-06-30 (shipped 005–010, 011 in progress)
+
+**Closed the biggest gaps since this review was written:**
+
+| Unit (commit) | A5G area | Status |
+|---|---|---|
+| 005 General Ledger & Chart of Accounts (+ Trial Balance, manual journals) | S05 + T01 | ✅ done |
+| 006 Cost Centers (analytical dimension on ledger lines) | S03 | ✅ done |
+| 007 Five sale price tiers (+ per-customer default + sell-below-price capability) | S06 pricing | ✅ done |
+| 008 Multiple units of measure (+ conversion factor, base-unit stock) | S06 units | ✅ done |
+| 009 Serial numbers (registry, receive, sell FEFO-of-specifics, return) | S06 serials | ✅ done |
+| 010 Barcodes (multi, per-unit, global-unique, scan lookup) | S06 barcode | ✅ done |
+| 011 Min/max limits + expiry batches (FEFO) | S06 limits/expiry | 🟡 in progress |
+
+**Still remaining (highest value first):** taxes (VAT + withholding كسب العمل) ⚠️ decision · customer
+**credit limit** + due-term enforcement · **discount types** (allowed/earned/deferred/penalty) ·
+**payments-on-invoice** (multiple) · **commercial papers / cheques** (T07) · **consignment** (T08) ·
+**multi-store→multi-store transfer** + standalone permits (T05) · **inventory valuation** (average cost)
+(S06/T04) · **category/group tree** for items · **reps targets/commissions** (S10) · the broad
+**reporting layer** (Phase 2) · constitution decisions: **multi-currency**, **VAT**, **granular
+permissions**, **multi-company**.
+
+---
+
 ## PHASE 0 — Setup & Master Data (التعريفات الأساسية)
 
 ### S01 — تعريف المنشأة / الشركة والفروع (Company & Branches) — `Cmp_Brn`
@@ -138,17 +162,26 @@
 ## Cross-cutting features to add (تظهر في شاشات كثيرة)
 | Feature | Status | Note |
 |---------|--------|------|
-| Multiple units per item (+ معادل) | 🔴 | affects item, invoices, stock |
-| 5 price tiers + slab pricing | 🔴 | item + sales |
+| Multiple units per item (+ معادل) | ✅ | 008 — factor, base-unit stock |
+| 5 price tiers | ✅ | 007 — + default tier + sell-below-price cap. Slab pricing still 🔴 |
+| Cost centers | ✅ | 006 — optional dimension on ledger lines |
+| Serial numbers | ✅ | 009 — registry + receive/sell/return |
+| Barcode | ✅ | 010 — multi/per-unit/global-unique + scan. Scale barcode still 🔴 |
+| Min/max limits + expiry (batches/FEFO) | 🟡 | 011 in progress |
+| Audit of edits/deletes | ✅ | immutable + audit log |
 | Taxes: VAT + withholding (كسب العمل) + addition | 🔴/⚠️ | we excluded VAT — decision |
 | Discount types: allowed/earned/deferred/penalty | 🔴 | sales/purchase |
-| Cost centers | 🔴 | ledger + documents |
 | Credit limit + due-term enforcement | 🔴 | customer + sales |
-| Serial numbers | 🔴 | item + sale/issue |
-| Barcode (+ scale barcode) | 🔴 | item + POS |
+| Payments-on-invoice (multiple) | 🔴 | sales |
+| Inventory valuation (average / last-purchase cost) | 🔴 | item + purchase (we're quantity-only) |
+| Item category/group tree | 🔴 | item master |
+| Commercial papers (cheques) | 🔴 | treasury T07 |
+| Consignment (أمانات) | 🔴 | T08 |
+| Multi-store→multi-store transfer + standalone permits | 🔴 | T05 |
 | Period close (lock ≤ date) | 🔴 | stores + accounting |
+| Reps targets / commissions | 🔴 | S10 |
+| Reporting layer (100+ reports) | 🔴 | Phase 2 (trial-balance + cost-center done) |
 | Multi-currency | ⚠️ | Principle VIII decision |
-| Audit of edits/deletes | ✅ | we have immutable + audit log |
 
 ---
 
