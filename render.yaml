@@ -1,0 +1,34 @@
+# Render Blueprint — deploys the FastAPI backend + a free Postgres database.
+# In Render: New → Blueprint → connect this GitHub repo → Apply. Render reads this file.
+# After it's live you get a URL like https://techno-backend.onrender.com — put that in Vercel as
+# VITE_API_URL (see DEPLOY.md), then redeploy the frontend.
+
+databases:
+  - name: techno-db
+    plan: free
+    databaseName: ubms
+    user: ubms
+
+services:
+  - type: web
+    name: techno-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    healthCheckPath: /health
+    buildCommand: pip install -r requirements.txt
+    # Create schema + seed demo data (idempotent), then serve.
+    startCommand: python -m scripts.bootstrap && uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: techno-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true          # Render generates a strong secret (not the dev default)
+      - key: FRONTEND_ORIGINS
+        value: https://techno-beryl-beta.vercel.app
+      - key: PYTHONPATH
+        value: .
+      - key: ACCESS_TOKEN_TTL
+        value: "1800"

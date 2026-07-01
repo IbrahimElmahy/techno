@@ -16,3 +16,5 @@ PyYAML>=6.0
 
 # Optional MySQL driver (production); tests default to SQLite
 PyMySQL>=1.1
+# Postgres driver (Render/Neon/Supabase hosting)
+psycopg2-binary>=2.9

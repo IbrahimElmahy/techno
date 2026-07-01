@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: UBMS Stock Limits & Expiry Batches API (extends Sales & Inventory 002)
+  version: 0.1.0
+  description: >
+    Item min/max limits with a reorder report, and expiry-date batch tracking for perishable items with
+    FEFO consumption and an expiring-soon report. Additive to 002/008; shares auth and RBAC. Managing
+    limits/perishable uses catalog.write; batch receive uses purchase.write; reports use stock.read.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: catalog
+  - name: stock
+
+paths:
+  /items/{item_id}/batches:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    get:
+      tags: [catalog]
+      summary: List an item's batches (stock.read)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Batch' } } } } }
+  /items/{item_id}/batches/receive:
+    parameters: [{ name: item_id, in: path, required: true, schema: { type: integer } }]
+    post:
+      tags: [catalog]
+      summary: Receive a batch (purchase.write) — registers a lot + posts +quantity stock-in
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReceiveBatch' } } } }
+      responses:
+        '201': { description: Received, content: { application/json: { schema: { $ref: '#/components/schemas/Batch' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { description: Not perishable / invalid quantity, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /stock/reorder:
+    get:
+      tags: [stock]
+      summary: Reorder report — items below min / above max (stock.read)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ReorderRow' } } } } }
+  /stock/expiring:
+    get:
+      tags: [stock]
+      summary: Batches expiring on/before a cutoff date (stock.read)
+      parameters:
+        - { name: before, in: query, required: true, schema: { type: string, format: date } }
+        - { name: item_id, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Batch' } } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Forbidden: { description: Denied by RBAC, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    Qty: { type: string, example: '10.000' }
+    Batch:
+      type: object
+      properties:
+        id: { type: integer }
+        item_id: { type: integer }
+        location_kind: { type: string, enum: [warehouse, custody] }
+        location_id: { type: integer }
+        expiry_date: { type: string, format: date }
+        quantity: { $ref: '#/components/schemas/Qty' }
+    ReceiveBatch:
+      type: object
+      required: [location_kind, location_id, expiry_date, quantity]
+      properties:
+        location_kind: { type: string, enum: [warehouse, custody] }
+        location_id: { type: integer }
+        expiry_date: { type: string, format: date }
+        quantity: { $ref: '#/components/schemas/Qty' }
+    ReorderRow:
+      type: object
+      properties:
+        item_id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        on_hand: { $ref: '#/components/schemas/Qty' }
+        min_stock: { $ref: '#/components/schemas/Qty' }
+        max_stock: { $ref: '#/components/schemas/Qty' }
+        flag: { type: string, enum: [below_min, above_max] }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }
+
+# NOTE — additive extensions to the 002 contract (implemented on existing endpoints):
+#   • Item create/update/detail gain `min_stock`, `max_stock`, `is_perishable`.
+#   • POST /sales/{id}/returns line items MAY include `expiry_date` (required for perishable items).

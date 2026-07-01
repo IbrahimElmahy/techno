@@ -34,6 +34,10 @@ def create_app() -> FastAPI:
         description="Foundation (shared base) — the versioned shared contract per Principle II.",
     )
 
+    # Local dev origins + any deployed frontend origins from FRONTEND_ORIGINS (comma-separated),
+    # plus a regex allowing Vercel preview/prod domains (*.vercel.app).
+    from src.core.config import settings as _settings
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -41,7 +45,9 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:5173",
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            *_settings.cors_origins,
         ],
+        allow_origin_regex=r"https://.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

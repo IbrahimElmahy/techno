@@ -1,6 +1,6 @@
 # techno Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-29
+Auto-generated from all feature plans. Last updated: 2026-07-02
 
 ## Active Technologies
 - Python 3.12 (running 3.11 in dev) — same as Foundation + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2, bcrypt, python-jose — reused (002-sales-inventory)
@@ -17,6 +17,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-29
 - Python 3.12 (3.11 dev) — same as 001–008 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused (009-serial-numbers-per)
 - MySQL 8 / MariaDB 10.6+; quantity `QTY` DECIMAL(18,3) (009-serial-numbers-per)
 - Python 3.12 (3.11 dev) — same as 001–009 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused (010-barcodes-per-item)
+- Python 3.12 (3.11 dev) — same as 001–010 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused (011-stock-min-max)
 
 - Python 3.12 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2, passlib[bcrypt], (001-foundation)
 
@@ -37,9 +38,9 @@ cd src; pytest; ruff check .
 Python 3.12: Follow standard conventions
 
 ## Recent Changes
+- 011-stock-min-max: Added Python 3.12 (3.11 dev) — same as 001–010 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 - 010-barcodes-per-item: Added Python 3.12 (3.11 dev) — same as 001–009 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 - 009-serial-numbers-per: Added Python 3.12 (3.11 dev) — same as 001–008 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
-- 008-multiple-units-measure: Added Python 3.12 (3.11 dev) — same as 001–007 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 
 
 <!-- MANUAL ADDITIONS START -->

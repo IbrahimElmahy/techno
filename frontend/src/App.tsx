@@ -47,9 +47,11 @@ export default function App() {
         setConfigLoaded(true);
       });
     } else {
-      // Fallback for browser testing
-      setApiUrl('http://127.0.0.1:8000');
-      setApiBaseURL('http://127.0.0.1:8000');
+      // Web build (e.g. Vercel): the backend URL is baked at build time via VITE_API_URL.
+      // Falls back to localhost for local `vite` dev.
+      const apiBase = (import.meta as any).env?.VITE_API_URL || 'http://127.0.0.1:8000';
+      setApiUrl(apiBase);
+      setApiBaseURL(apiBase);
       setConfigLoaded(true);
     }
   }, []);
