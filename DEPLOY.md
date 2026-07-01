@@ -1,18 +1,29 @@
 # Deploying techno (frontend on Vercel + backend on Render)
 
 The frontend is already on Vercel: **https://techno-beryl-beta.vercel.app**.
-It calls the backend, so the backend must be live on a public HTTPS URL. These steps host it on
-**Render** (free) and connect the two. ~10 minutes, no local machine needed afterwards.
+It calls the backend, so the backend must be live on a public HTTPS URL. These steps host it
+**100% free & permanent**: backend on **Render** (free web service) + database on **Neon** (free,
+non-expiring Postgres). ~10 minutes, no local machine needed afterwards.
 
-## 1) Deploy the backend on Render (gives a permanent HTTPS URL)
+## 1) Create a free permanent database on Neon
 
-1. Go to <https://render.com> → sign up (free, "Sign in with GitHub").
+1. Go to <https://neon.tech> → **Sign up with GitHub** (free, no card).
+2. Create a project (any name, e.g. `techno`). Neon creates a Postgres database.
+3. On the project dashboard, copy the **Connection string** — it looks like:
+   `postgresql://user:pass@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`
+   Keep it for step 2.
+
+> Neon's free tier is permanent (the compute just auto-suspends when idle and resumes on connect).
+
+## 2) Deploy the backend on Render (free web service)
+
+1. Go to <https://render.com> → sign up (free, "Sign in with GitHub"). **Verify your email** (Render
+   loops back to the login page until the email is confirmed).
 2. **New → Blueprint** → select the repo **`IbrahimElmahy/techno`** → **Apply**.
-   Render reads [`render.yaml`](render.yaml) and creates:
-   - a **free Postgres** database (`techno-db`), and
-   - a **web service** (`techno-backend`) running FastAPI.
-3. Wait for the first deploy to go green. On start it auto-creates the schema and seeds demo data.
-4. Copy the service URL — it looks like **`https://techno-backend.onrender.com`**.
+   Render reads [`render.yaml`](render.yaml) and creates the **web service** (`techno-backend`).
+3. When prompted for **`DATABASE_URL`**, paste the **Neon connection string** from step 1.
+4. Wait for the first deploy to go green. On start it auto-creates the schema and seeds demo data.
+5. Copy the service URL — it looks like **`https://techno-backend.onrender.com`**.
 
 Demo logins (seeded): `admin`/`admin123` · `accountant`/`acc123` · `manager`/`mgr123` · `rep`/`rep123`
 (change these before real production use).
@@ -20,7 +31,7 @@ Demo logins (seeded): `admin`/`admin123` · `accountant`/`acc123` · `manager`/`
 > Free Render web services sleep after ~15 min idle; the first request then takes ~50 s to wake. Fine
 > for a demo. Upgrade the plan for always-on.
 
-## 2) Point the Vercel frontend at that backend
+## 3) Point the Vercel frontend at that backend
 
 1. In **Vercel → project `techno` → Settings → Environment Variables**, add:
    - **Name:** `VITE_API_URL`
@@ -32,7 +43,7 @@ The frontend reads `VITE_API_URL` at build time (see `frontend/src/App.tsx`) and
 `<VITE_API_URL>/api/v1/...`. CORS on the backend already allows `*.vercel.app` and the value in
 `FRONTEND_ORIGINS`.
 
-## 3) Verify
+## 4) Verify
 
 - Open <https://techno-beryl-beta.vercel.app/#/login> and log in as `admin` / `admin123`.
 - If login hangs on the first try, the free backend is waking up — retry after ~50 s.
@@ -41,7 +52,8 @@ The frontend reads `VITE_API_URL` at build time (see `frontend/src/App.tsx`) and
 
 - `render.yaml` sets a strong generated `JWT_SECRET` (not the dev default).
 - The demo passwords above are for the seeded users — change them (or wipe the seed) before going live.
-- The hosted DB is Postgres; the app uses `Base.metadata.create_all` on boot (DB-agnostic). The
-  MySQL-only Alembic migrations are not used on Render.
+- The hosted DB is Neon Postgres (free, permanent); the app uses `Base.metadata.create_all` on boot
+  (DB-agnostic). The MySQL-only Alembic migrations are not used on Render.
+- Everything here is free forever: Render free web service (sleeps when idle) + Neon free Postgres.
 - To change which frontend origins may call the API, edit `FRONTEND_ORIGINS` (comma-separated) on the
   Render service.

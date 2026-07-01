@@ -1,13 +1,10 @@
-# Render Blueprint — deploys the FastAPI backend + a free Postgres database.
-# In Render: New → Blueprint → connect this GitHub repo → Apply. Render reads this file.
-# After it's live you get a URL like https://techno-backend.onrender.com — put that in Vercel as
-# VITE_API_URL (see DEPLOY.md), then redeploy the frontend.
-
-databases:
-  - name: techno-db
-    plan: free
-    databaseName: ubms
-    user: ubms
+# Render Blueprint — deploys the FastAPI backend as a FREE web service.
+# Database is a FREE, permanent Neon Postgres (https://neon.tech) — Render's own free Postgres expires
+# after ~30 days, Neon's free tier does not. You paste the Neon connection string into DATABASE_URL when
+# Render prompts (sync: false). See DEPLOY.md.
+#
+# In Render: New → Blueprint → connect this GitHub repo → Apply. After it's live you get a URL like
+# https://techno-backend.onrender.com — put that in Vercel as VITE_API_URL, then redeploy the frontend.
 
 services:
   - type: web
@@ -21,9 +18,7 @@ services:
     startCommand: python -m scripts.bootstrap && uvicorn src.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: techno-db
-          property: connectionString
+        sync: false                  # you paste the free Neon Postgres connection string here
       - key: JWT_SECRET
         generateValue: true          # Render generates a strong secret (not the dev default)
       - key: FRONTEND_ORIGINS
