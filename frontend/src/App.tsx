@@ -47,9 +47,12 @@ export default function App() {
         setConfigLoaded(true);
       });
     } else {
-      // Web build (e.g. Vercel): the backend URL is baked at build time via VITE_API_URL.
-      // Falls back to localhost for local `vite` dev.
-      const apiBase = (import.meta as any).env?.VITE_API_URL || 'http://127.0.0.1:8000';
+      // Web build. Local `vite` dev → the backend on :8000. Deployed (e.g. Vercel) → same origin
+      // (vercel.json rewrites /api → the backend service), unless VITE_API_URL overrides it.
+      const host = window.location.hostname;
+      const isLocal = host === 'localhost' || host === '127.0.0.1';
+      const envUrl = (import.meta as any).env?.VITE_API_URL;
+      const apiBase = isLocal ? 'http://127.0.0.1:8000' : (envUrl || window.location.origin);
       setApiUrl(apiBase);
       setApiBaseURL(apiBase);
       setConfigLoaded(true);
