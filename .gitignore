@@ -36,3 +36,8 @@ Thumbs.db
 node_modules/
 *.log
 
+# Electron / build artifacts (large binaries — never commit)
+frontend/dist/
+frontend/dist-electron/
+frontend/dist-package/
+
