@@ -10,7 +10,7 @@ from src.models.warehouse import Custody, Warehouse
 
 # Sales & Inventory (002) models — imported for metadata; added per phase.
 from src.models.supplier import Supplier, SupplierAccount  # noqa: E402
-from src.models.stock import StockLocator, StockMovement  # noqa: E402
+from src.models.stock import StockBatch, StockLocator, StockMovement  # noqa: E402
 from src.models.purchasing import (  # noqa: E402
     PurchaseInvoice,
     PurchaseInvoiceLine,
@@ -45,7 +45,7 @@ __all__ = [
     "LedgerLine", "Branch", "Governorate", "HeadOffice", "Territory", "Role", "User",
     "Custody", "Warehouse", "Supplier", "SupplierAccount", "StockLocator", "StockMovement",
     "PurchaseInvoice", "PurchaseInvoiceLine", "PurchaseReturn", "PurchaseReturnLine",
-    "SalesInvoice", "SalesInvoiceLine", "SalesReturn", "SalesReturnLine", "SalesSetting",
+    "SalesInvoice", "SalesInvoiceLine", "SalesReturn", "SalesReturnLine", "SalesSetting", "StockBatch",
     "ManufacturingOp", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",

@@ -36,6 +36,7 @@ interface Product {
   name: string;
   sale_price: string | null;
   is_serialized: boolean;
+  is_perishable: boolean;
 }
 
 interface Warehouse {
@@ -96,6 +97,8 @@ export default function Invoices() {
 
   // Return quantities tracking
   const [returnQtys, setReturnQtys] = useState<Record<number, number>>({});
+  // (011) expiry date per perishable item being returned (restored to a batch).
+  const [returnExpiries, setReturnExpiries] = useState<Record<number, string>>({});
 
   const fetchInvoices = async () => {
     setLoading(true);
@@ -302,6 +305,7 @@ export default function Invoices() {
   const openReturnWizard = async (record: InvoiceRecord) => {
     setSelectedInvoice(record);
     setReturnQtys({});
+    setReturnExpiries({});
     try {
       const res = await api.get(`/api/v1/sales/${record.id}`);
       setInvoiceDetail(res.data);
@@ -315,13 +319,26 @@ export default function Invoices() {
     if (!selectedInvoice || !invoiceDetail) return;
     const linesToReturn = Object.entries(returnQtys)
       .filter(([_, qty]) => qty > 0)
-      .map(([itemId, qty]) => ({
-        item_id: parseInt(itemId, 10),
-        quantity: qty,
-      }));
+      .map(([itemId, qty]) => {
+        const id = parseInt(itemId, 10);
+        const prod = products.find((p) => p.id === id);
+        const line: any = { item_id: id, quantity: qty };
+        if (prod?.is_perishable) line.expiry_date = returnExpiries[id] || null;
+        return line;
+      });
 
     if (linesToReturn.length === 0) {
       message.warning('يرجى تحديد كميات مرتجعة أكبر من الصفر للأصناف المعنية');
+      return;
+    }
+
+    // (011) a perishable return must specify the expiry of the restored batch.
+    const missingExpiry = linesToReturn.find((l: any) => {
+      const prod = products.find((p) => p.id === l.item_id);
+      return prod?.is_perishable && !l.expiry_date;
+    });
+    if (missingExpiry) {
+      message.warning('يجب تحديد تاريخ الصلاحية للأصناف القابلة للانتهاء المرتجعة');
       return;
     }
 
@@ -624,6 +641,13 @@ export default function Invoices() {
                   </Form.Item>
                 </Col>
               </Row>
+              {prod?.is_perishable && (returnQtys[line.item_id] || 0) > 0 && (
+                <Form.Item label="تاريخ صلاحية الدفعة المرتجعة" style={{ marginTop: 12, marginBottom: 0 }}
+                  extra="تُعاد الكمية إلى دفعة بهذا التاريخ (نظام FEFO)">
+                  <Input type="date" value={returnExpiries[line.item_id] || ''}
+                    onChange={(e) => setReturnExpiries({ ...returnExpiries, [line.item_id]: e.target.value })} />
+                </Form.Item>
+              )}
             </div>
           );
         })}

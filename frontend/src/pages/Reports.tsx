@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Statistic, Button, Space, DatePicker, Select, Divider } from 'antd';
-import { FileExcelOutlined, FilePdfOutlined, AreaChartOutlined, DollarOutlined, ShoppingCartOutlined, BankOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Statistic, Button, Space, DatePicker, Select, Divider, Table, Tag, Input } from 'antd';
+import { FileExcelOutlined, FilePdfOutlined, AreaChartOutlined, DollarOutlined, ShoppingCartOutlined, BankOutlined, WarningOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { api, getApiBaseURL } from '../api/client';
 
 const { RangePicker } = DatePicker;
@@ -25,6 +25,26 @@ export default function Reports() {
   const [reps, setReps] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+
+  // Stock planning (011): reorder + expiring-batches reports.
+  const [reorder, setReorder] = useState<any[]>([]);
+  const [expiring, setExpiring] = useState<any[]>([]);
+  const [expBefore, setExpBefore] = useState('');
+
+  const fetchReorder = async () => {
+    try {
+      const res = await api.get('/api/v1/stock/reorder');
+      setReorder(res.data);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchExpiring = async () => {
+    if (!expBefore) return;
+    try {
+      const res = await api.get('/api/v1/stock/expiring', { params: { before: expBefore } });
+      setExpiring(res.data);
+    } catch (err) { console.error(err); }
+  };
 
   const fetchSummary = async () => {
     setLoading(true);
@@ -56,6 +76,7 @@ export default function Reports() {
   useEffect(() => {
     fetchSummary();
     loadLookups();
+    fetchReorder();
   }, []);
 
   const handleExport = (reportType: string) => {
@@ -169,6 +190,46 @@ export default function Reports() {
                 prefix={<BankOutlined />}
                 suffix="ج.م"
               />
+            </Card>
+          </Col>
+        </Row>
+
+        <Divider orientation="right">تخطيط المخزون (الحدود والصلاحية)</Divider>
+
+        <Row gutter={16}>
+          <Col span={12}>
+            <Card size="small" title={<span><WarningOutlined /> أصناف تحتاج إعادة طلب (تحت/فوق الحد)</span>}
+              extra={<Button size="small" onClick={fetchReorder}>تحديث</Button>}>
+              <Table size="small" rowKey="item_id" dataSource={reorder} pagination={{ pageSize: 6 }}
+                locale={{ emptyText: 'لا توجد أصناف خارج الحدود' }}
+                columns={[
+                  { title: 'الكود', dataIndex: 'code' },
+                  { title: 'الصنف', dataIndex: 'name' },
+                  { title: 'المتوفر', dataIndex: 'on_hand', render: (v: string) => parseFloat(v).toFixed(3) },
+                  { title: 'الأدنى', dataIndex: 'min_stock', render: (v: string | null) => v ? parseFloat(v).toFixed(3) : '—' },
+                  { title: 'الأقصى', dataIndex: 'max_stock', render: (v: string | null) => v ? parseFloat(v).toFixed(3) : '—' },
+                  { title: 'الحالة', dataIndex: 'flag', render: (f: string) =>
+                    f === 'below_min' ? <Tag color="red">تحت الحد الأدنى</Tag> : <Tag color="orange">فوق الحد الأقصى</Tag> },
+                ]} />
+            </Card>
+          </Col>
+          <Col span={12}>
+            <Card size="small" title={<span><ClockCircleOutlined /> دفعات قاربت الانتهاء</span>}
+              extra={
+                <Space>
+                  <Input type="date" size="small" style={{ width: 150 }}
+                    value={expBefore} onChange={(e) => setExpBefore(e.target.value)} />
+                  <Button size="small" type="primary" onClick={fetchExpiring}>عرض</Button>
+                </Space>
+              }>
+              <Table size="small" rowKey="id" dataSource={expiring} pagination={{ pageSize: 6 }}
+                locale={{ emptyText: 'اختر تاريخاً واعرض الدفعات المنتهية قبله' }}
+                columns={[
+                  { title: 'الصنف #', dataIndex: 'item_id' },
+                  { title: 'تاريخ الصلاحية', dataIndex: 'expiry_date' },
+                  { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => parseFloat(v).toFixed(3) },
+                  { title: 'الموقع', dataIndex: 'location_id', render: (v: number, r: any) => `${r.location_kind} #${v}` },
+                ]} />
             </Card>
           </Col>
         </Row>

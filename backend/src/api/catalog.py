@@ -1,6 +1,7 @@
 """Catalog router (T008). FR-001–005. System-generated editable code; kind/price validation."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -27,9 +28,10 @@ from src.models.catalog import (
     PriceTier,
     SerialStatus,
 )
-from src.models.stock import LocationKind
-from src.services import barcode_service, serial_service
+from src.models.stock import LocationKind, StockBatch
+from src.services import barcode_service, batch_service, serial_service
 from src.services.barcode_service import BarcodeError, BarcodeInput
+from src.services.batch_service import BatchError
 from src.services.serial_service import SerialError
 
 router = APIRouter(tags=["catalog"], prefix="/items")
@@ -44,6 +46,9 @@ class ItemCreate(BaseModel):
     purchase_price: Decimal | None = None
     sale_price: Decimal | None = None
     is_serialized: bool = False
+    is_perishable: bool = False
+    min_stock: Decimal | None = None
+    max_stock: Decimal | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -52,6 +57,9 @@ class ItemUpdate(BaseModel):
     purchase_price: Decimal | None = None
     sale_price: Decimal | None = None
     is_serialized: bool | None = None
+    is_perishable: bool | None = None
+    min_stock: Decimal | None = None
+    max_stock: Decimal | None = None
     active: bool | None = None
 
 
@@ -64,6 +72,9 @@ class ItemOut(BaseModel):
     purchase_price: Decimal | None
     sale_price: Decimal | None
     is_serialized: bool
+    is_perishable: bool
+    min_stock: Decimal | None
+    max_stock: Decimal | None
     active: bool
 
 
@@ -71,7 +82,8 @@ def _out(it: Item) -> ItemOut:
     return ItemOut(
         id=it.id, code=it.code, name=it.name, kind=it.kind,
         unit_of_measure=it.unit_of_measure, purchase_price=it.purchase_price,
-        sale_price=it.sale_price, is_serialized=it.is_serialized, active=it.active,
+        sale_price=it.sale_price, is_serialized=it.is_serialized, is_perishable=it.is_perishable,
+        min_stock=it.min_stock, max_stock=it.max_stock, active=it.active,
     )
 
 
@@ -111,6 +123,9 @@ def create_item(
         purchase_price=body.purchase_price,
         sale_price=body.sale_price,
         is_serialized=body.is_serialized,
+        is_perishable=body.is_perishable,
+        min_stock=body.min_stock,
+        max_stock=body.max_stock,
     )
     db.add(item)
     db.flush()
@@ -313,6 +328,64 @@ def receive_serials(
     return [_serial_out(s) for s in rows]
 
 
+class BatchOut(BaseModel):
+    id: int
+    item_id: int
+    location_kind: str
+    location_id: int
+    expiry_date: date
+    quantity: Decimal
+
+
+class BatchReceiveIn(BaseModel):
+    location_kind: LocationKind
+    location_id: int
+    expiry_date: date
+    quantity: Decimal
+
+
+def _batch_out(b: StockBatch) -> BatchOut:
+    return BatchOut(
+        id=b.id, item_id=b.item_id, location_kind=b.location_kind.value,
+        location_id=b.location_id, expiry_date=b.expiry_date, quantity=b.quantity,
+    )
+
+
+@router.get("/{item_id}/batches", response_model=list[BatchOut])
+def list_batches(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> list[BatchOut]:
+    rows = db.scalars(
+        select(StockBatch).where(StockBatch.item_id == item_id)
+        .order_by(StockBatch.expiry_date, StockBatch.id)
+    ).all()
+    return [_batch_out(b) for b in rows]
+
+
+@router.post("/{item_id}/batches/receive", response_model=BatchOut,
+             status_code=status.HTTP_201_CREATED)
+def receive_batch(
+    item_id: int,
+    body: BatchReceiveIn,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> BatchOut:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    try:
+        row = batch_service.receive(
+            db, item=item, location_kind=body.location_kind, location_id=body.location_id,
+            expiry_date=body.expiry_date, quantity=body.quantity, actor_user_id=current.id,
+        )
+    except BatchError as exc:
+        raise HTTPException(422, {"code": "batch_invalid", "message": str(exc)})
+    db.commit()
+    return _batch_out(row)
+
+
 class BarcodeIn(BaseModel):
     barcode: str
     unit: str | None = None
@@ -387,7 +460,8 @@ def update_item(
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     # Editing reference prices never rewrites prices already snapshotted on posted documents.
-    for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active"):
+    for field in ("code", "name", "purchase_price", "sale_price", "is_serialized",
+                  "is_perishable", "min_stock", "max_stock", "active"):
         val = getattr(body, field)
         if val is not None:
             setattr(item, field, val)

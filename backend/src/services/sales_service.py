@@ -7,6 +7,7 @@ original invoice's cash/credit split (research R9).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -29,12 +30,14 @@ from src.models.stock import LocationKind, StockDirection
 from src.services import (
     account_resolver,
     audit_service,
+    batch_service,
     ledger_service,
     pricing_service,
     serial_service,
     stock_service,
     uom_service,
 )
+from src.services.batch_service import BatchError
 from src.services.ledger_service import LineInput
 from src.services.pricing_service import PricingError
 from src.services.serial_service import SerialError
@@ -112,6 +115,10 @@ def create_sale(
             )
         except SerialError as exc:
             raise SalesError(str(exc)) from exc
+        try:  # (011) perishable items sell in the base unit (FEFO is base-unit)
+            batch_service.assert_base_unit(item, factor)
+        except BatchError as exc:
+            raise SalesError(str(exc)) from exc
         tier = pricing_service.resolve_tier(ln.tier, customer)
         try:
             base_price = pricing_service.tier_price(db, item, tier)
@@ -169,6 +176,15 @@ def create_sale(
                 )
             except SerialError as exc:
                 raise SalesError(str(exc)) from exc
+        item = db.get(Item, ln.item_id)
+        if item.is_perishable:  # (011) deplete batches earliest-expiry-first
+            try:
+                batch_service.consume_fefo(
+                    db, item=item, location_kind=origin_location_kind,
+                    location_id=origin_location_id, quantity=base_qty,
+                )
+            except BatchError as exc:
+                raise SalesError(str(exc)) from exc
 
     entry_lines = []
     if to_money(cash_amount) > ZERO:
@@ -208,6 +224,7 @@ def return_sale(
     lines: list[tuple[int, Decimal]],
     actor_user_id: int,
     serials: dict[int, list[str]] | None = None,  # (009) item_id → serials being returned
+    expiries: dict[int, date] | None = None,       # (011) item_id → expiry for the restored batch
 ) -> SalesReturn:
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
@@ -260,6 +277,15 @@ def return_sale(
                     origin_id=inv.origin_location_id, serials=ser,
                 )
             except SerialError as exc:
+                raise SalesError(str(exc)) from exc
+        if item.is_perishable:  # (011) restore returned quantity to a batch at the given expiry
+            try:
+                batch_service.restore_for_return(
+                    db, item=item, location_kind=inv.origin_location_kind,
+                    location_id=inv.origin_location_id,
+                    expiry_date=(expiries or {}).get(item_id), quantity=base_qty,
+                )
+            except BatchError as exc:
                 raise SalesError(str(exc)) from exc
 
     cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == inv.customer_id))

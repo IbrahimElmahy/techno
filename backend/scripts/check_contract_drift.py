@@ -28,6 +28,7 @@ CONTRACTS = [
     _SPECS / "008-multiple-units-measure" / "contracts" / "openapi.yaml",
     _SPECS / "009-serial-numbers-per" / "contracts" / "openapi.yaml",
     _SPECS / "010-barcodes-per-item" / "contracts" / "openapi.yaml",
+    _SPECS / "011-stock-min-max" / "contracts" / "openapi.yaml",
 ]
 _PARAM = re.compile(r"\{[^}]+\}")
 

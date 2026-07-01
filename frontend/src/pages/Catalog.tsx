@@ -71,6 +71,9 @@ interface ItemRecord {
   purchase_price: string | null;
   sale_price: string | null;
   is_serialized: boolean;
+  is_perishable: boolean;
+  min_stock: string | null;
+  max_stock: string | null;
   active: boolean;
 }
 
@@ -332,6 +335,72 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
   );
 };
 
+// Modal to receive expiry batches into stock + list current batches (011). Perishable items only.
+const BatchesButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
+  const [open, setOpen] = useState(false);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [whId, setWhId] = useState<number | undefined>();
+  const [expiry, setExpiry] = useState('');
+  const [qty, setQty] = useState<number | null>(null);
+  const [batches, setBatches] = useState<any[]>([]);
+
+  const load = async () => {
+    try {
+      const [wh, bt] = await Promise.all([
+        api.get('/api/v1/warehouses'),
+        api.get(`/api/v1/items/${itemId}/batches`),
+      ]);
+      setWarehouses(wh.data); setBatches(bt.data);
+    } catch (err) { console.error(err); }
+  };
+  const onOpen = () => { setOpen(true); load(); };
+
+  const onReceive = async () => {
+    if (!whId || !expiry || !qty || qty <= 0) {
+      message.warning('اختر المخزن وتاريخ الصلاحية والكمية'); return;
+    }
+    try {
+      await api.post(`/api/v1/items/${itemId}/batches/receive`, {
+        location_kind: 'warehouse', location_id: whId,
+        expiry_date: expiry, quantity: Number(qty).toFixed(3) });
+      message.success('تم استلام الدفعة');
+      setQty(null); setExpiry(''); load();
+    } catch (err) { console.error(err); }
+  };
+
+  return (
+    <>
+      <Button size="small" type="link" icon={<ColumnWidthOutlined />} onClick={onOpen}>الدفعات</Button>
+      <Modal title="دفعات الصلاحية (FEFO)" open={open} onCancel={() => setOpen(false)} footer={null} width={600}>
+        {canEdit && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 8 }}>
+            <strong>استلام دفعة جديدة للمخزون</strong>
+            <Select style={{ width: '100%', margin: '8px 0' }} placeholder="مخزن الاستلام" value={whId}
+              onChange={setWhId} options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+            <Row gutter={8}>
+              <Col span={12}>
+                <Input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+              </Col>
+              <Col span={12}>
+                <InputNumber min={0.001} step={1} style={{ width: '100%' }} placeholder="الكمية"
+                  value={qty ?? undefined} onChange={(v) => setQty(v as number)} />
+              </Col>
+            </Row>
+            <Button type="primary" style={{ marginTop: 8 }} onClick={onReceive}>استلام الدفعة</Button>
+          </div>
+        )}
+        <strong>الدفعات الحالية ({batches.length})</strong>
+        <Table size="small" rowKey="id" dataSource={batches} pagination={{ pageSize: 8 }}
+          columns={[
+            { title: 'تاريخ الصلاحية', dataIndex: 'expiry_date' },
+            { title: 'الكمية المتبقية', dataIndex: 'quantity', render: (v: string) => parseFloat(v).toFixed(3) },
+            { title: 'الموقع', dataIndex: 'location_id', render: (v: number, r: any) => `${r.location_kind} #${v}` },
+          ]} />
+      </Modal>
+    </>
+  );
+};
+
 export default function Catalog() {
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -370,7 +439,13 @@ export default function Catalog() {
         sale_price: values.kind === 'product' ? values.sale_price : null,
       };
 
-      await api.post('/api/v1/items', { ...payload, is_serialized: !!values.is_serialized });
+      await api.post('/api/v1/items', {
+        ...payload,
+        is_serialized: !!values.is_serialized,
+        is_perishable: !!values.is_perishable,
+        min_stock: values.min_stock != null ? Number(values.min_stock).toFixed(3) : null,
+        max_stock: values.max_stock != null ? Number(values.max_stock).toFixed(3) : null,
+      });
       message.success('تم تسجيل الصنف في الكتالوج بنجاح');
       setDrawerVisible(false);
       form.resetFields();
@@ -444,6 +519,14 @@ export default function Catalog() {
         record.is_serialized
           ? <SerialsButton itemId={record.id} canEdit={canEditPrices} />
           : <Tag>غير مُسلسَل</Tag>,
+    },
+    {
+      title: 'الدفعات',
+      key: 'batches',
+      render: (_: any, record: ItemRecord) =>
+        record.is_perishable
+          ? <BatchesButton itemId={record.id} canEdit={canEditPrices} />
+          : <Tag>غير قابل للانتهاء</Tag>,
     },
     {
       title: 'نقاط المنتج',
@@ -551,6 +634,29 @@ export default function Catalog() {
               </Form.Item>
             ) : null}
           </Form.Item>
+
+          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.kind !== curr.kind}>
+            {({ getFieldValue }) => getFieldValue('kind') === 'product' ? (
+              <Form.Item name="is_perishable" label="صنف قابل للانتهاء (بدفعات صلاحية)؟" valuePropName="checked"
+                extra="عند التفعيل يُباع بنظام الأقرب انتهاءً أولاً (FEFO) بالوحدة الأساسية">
+                <Switch checkedChildren="نعم" unCheckedChildren="لا" />
+              </Form.Item>
+            ) : null}
+          </Form.Item>
+
+          <Row gutter={8}>
+            <Col span={12}>
+              <Form.Item name="min_stock" label="الحد الأدنى للمخزون"
+                extra="تنبيه إعادة الطلب — لا يمنع البيع">
+                <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="max_stock" label="الحد الأقصى للمخزون">
+                <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Form.Item style={{ marginTop: 24 }}>
             <Space>

@@ -247,6 +247,21 @@ def make_serialized_product(db, *, name="SerialGadget", sale_price="100"):
     return item
 
 
+def make_perishable_product(db, *, name="PerishGadget", sale_price="100",
+                            min_stock=None, max_stock=None):
+    """A perishable (expiry-batched) product item (011)."""
+    from src.models.catalog import Item, ItemKind
+
+    n = db.query(Item).count()
+    item = Item(code=f"PR-{n + 1:06d}", name=name, kind=ItemKind.product,
+                unit_of_measure="piece", sale_price=Decimal(sale_price), is_perishable=True,
+                min_stock=Decimal(str(min_stock)) if min_stock is not None else None,
+                max_stock=Decimal(str(max_stock)) if max_stock is not None else None)
+    db.add(item)
+    db.flush()
+    return item
+
+
 def make_unit(db, item, name, factor):
     """Add an alternate unit (name + factor to base) to an item (008)."""
     from src.models.catalog import ItemUnit

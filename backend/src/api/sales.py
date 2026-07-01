@@ -1,6 +1,7 @@
 """Sales router (T037). FR-017–021, FR-026/028. Rep → own custody origin + own customers."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -50,6 +51,7 @@ class ReturnLineIn(BaseModel):
     item_id: int
     quantity: Decimal
     serials: list[str] | None = None       # (009) serials being returned (serialized items)
+    expiry_date: date | None = None        # (011) expiry for the restored batch (perishable items)
 
 
 class ReturnCreate(BaseModel):
@@ -198,6 +200,7 @@ def return_sale(
             db, sales_invoice_id=sale_id, lines=[(l.item_id, l.quantity) for l in body.lines],
             actor_user_id=current.id,
             serials={l.item_id: l.serials for l in body.lines if l.serials},
+            expiries={l.item_id: l.expiry_date for l in body.lines if l.expiry_date},
         )
     except (SalesError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "return_invalid", "message": str(exc)})

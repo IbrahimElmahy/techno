@@ -7,14 +7,16 @@ Movements are quantity-only (no monetary value — Q4 boundary, FR-008a) and rev
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     String,
     UniqueConstraint,
     event,
@@ -72,6 +74,27 @@ class StockLocator(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
     location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class StockBatch(Base):
+    """A lot of a perishable item at a location sharing one expiry (011).
+
+    `quantity` is the remaining amount (base units). FEFO consumes the earliest expiry first. The sum of
+    a perishable item's batch quantities at a location equals its derived on-hand there (each batch change
+    is paired with a stock movement).
+    """
+
+    __tablename__ = "stock_batch"
+    __table_args__ = (
+        Index("ix_stock_batch_item_loc_exp", "item_id", "location_kind", "location_id", "expiry_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
+    location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[object] = mapped_column(QTY, nullable=False)  # remaining, base units
 
 
 class StockImmutableError(Exception):
