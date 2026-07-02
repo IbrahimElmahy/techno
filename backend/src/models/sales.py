@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Numeric, String, func
+from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -36,6 +36,8 @@ class SalesInvoice(Base):
     cash_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
     ledger_entry_id: Mapped[int] = mapped_column(ForeignKey("ledger_entry.id"), nullable=False)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    # Payment due date for a credit sale carrying a term (012); NULL for cash-only or no-term sales.
+    due_date: Mapped[object | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     lines: Mapped[list["SalesInvoiceLine"]] = relationship(cascade="all, save-update")

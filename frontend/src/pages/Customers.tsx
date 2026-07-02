@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, Select, Tag, message } from 'antd';
+import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Row, Col } from 'antd';
 import { UserAddOutlined, SwapOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -13,6 +13,8 @@ interface CustomerRecord {
   rep_id: number;
   territory_id: number;
   default_price_tier: string | null;
+  credit_limit: string | null;
+  max_due_term_days: number | null;
   active: boolean;
 }
 
@@ -168,6 +170,17 @@ export default function Customers() {
       render: (t: string | null) => t ? <Tag color="geekblue">{TIER_LABELS[t] || t}</Tag> : <Tag>مستهلك (افتراضي)</Tag>,
     },
     {
+      title: 'حد الائتمان',
+      dataIndex: 'credit_limit',
+      key: 'credit_limit',
+      render: (v: string | null, r: CustomerRecord) => (
+        <span>
+          {v ? `${parseFloat(v).toLocaleString('ar-EG')} ج.م` : <Tag>غير محدود</Tag>}
+          {r.max_due_term_days != null && <Tag color="purple" style={{ marginRight: 4 }}>{r.max_due_term_days} يوم</Tag>}
+        </span>
+      ),
+    },
+    {
       title: 'رصيد المديونية (الذمة)',
       key: 'balance',
       render: (_: any, record: CustomerRecord) => <CustomerBalance customerId={record.id} />,
@@ -289,6 +302,21 @@ export default function Customers() {
               ))}
             </Select>
           </Form.Item>
+
+          <Row gutter={8}>
+            <Col span={12}>
+              <Form.Item name="credit_limit" label="حد الائتمان (ج.م)"
+                extra="أقصى رصيد آجل مسموح — فارغ = غير محدود">
+                <InputNumber min={0} step={100} style={{ width: '100%' }} placeholder="غير محدود" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="max_due_term_days" label="أقصى أجل سداد (يوم)"
+                extra="فارغ = بدون حد">
+                <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="بدون حد" />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Form.Item style={{ marginTop: 24 }}>
             <Space>

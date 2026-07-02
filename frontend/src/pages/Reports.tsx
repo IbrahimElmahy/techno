@@ -46,6 +46,26 @@ export default function Reports() {
     } catch (err) { console.error(err); }
   };
 
+  // Credit controls (012): exposure + overdue.
+  const [exposure, setExposure] = useState<any[]>([]);
+  const [overdue, setOverdue] = useState<any[]>([]);
+  const [overdueAsOf, setOverdueAsOf] = useState('');
+
+  const fetchExposure = async () => {
+    try {
+      const res = await api.get('/api/v1/reports/credit-exposure');
+      setExposure(res.data);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchOverdue = async () => {
+    try {
+      const res = await api.get('/api/v1/reports/overdue',
+        overdueAsOf ? { params: { as_of: overdueAsOf } } : undefined);
+      setOverdue(res.data);
+    } catch (err) { console.error(err); }
+  };
+
   const fetchSummary = async () => {
     setLoading(true);
     try {
@@ -77,6 +97,8 @@ export default function Reports() {
     fetchSummary();
     loadLookups();
     fetchReorder();
+    fetchExposure();
+    fetchOverdue();
   }, []);
 
   const handleExport = (reportType: string) => {
@@ -229,6 +251,46 @@ export default function Reports() {
                   { title: 'تاريخ الصلاحية', dataIndex: 'expiry_date' },
                   { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => parseFloat(v).toFixed(3) },
                   { title: 'الموقع', dataIndex: 'location_id', render: (v: number, r: any) => `${r.location_kind} #${v}` },
+                ]} />
+            </Card>
+          </Col>
+        </Row>
+
+        <Divider orientation="right">الائتمان والمديونية</Divider>
+
+        <Row gutter={16}>
+          <Col span={12}>
+            <Card size="small" title={<span><DollarOutlined /> تعرّض العملاء الائتماني</span>}
+              extra={<Button size="small" onClick={fetchExposure}>تحديث</Button>}>
+              <Table size="small" rowKey="customer_id" dataSource={exposure} pagination={{ pageSize: 6 }}
+                locale={{ emptyText: 'لا يوجد عملاء بحد ائتمان' }}
+                columns={[
+                  { title: 'الكود', dataIndex: 'code' },
+                  { title: 'العميل', dataIndex: 'name' },
+                  { title: 'الحد', dataIndex: 'credit_limit', render: (v: string) => parseFloat(v).toLocaleString('ar-EG') },
+                  { title: 'المديونية', dataIndex: 'outstanding', render: (v: string) => parseFloat(v).toLocaleString('ar-EG') },
+                  { title: 'المتاح', dataIndex: 'available', render: (v: string) => parseFloat(v).toLocaleString('ar-EG') },
+                  { title: 'الحالة', dataIndex: 'over_limit', render: (o: boolean) =>
+                    o ? <Tag color="red">تجاوز الحد</Tag> : <Tag color="green">ضمن الحد</Tag> },
+                ]} />
+            </Card>
+          </Col>
+          <Col span={12}>
+            <Card size="small" title={<span><WarningOutlined /> فواتير آجلة متأخرة</span>}
+              extra={
+                <Space>
+                  <Input type="date" size="small" style={{ width: 150 }}
+                    value={overdueAsOf} onChange={(e) => setOverdueAsOf(e.target.value)} />
+                  <Button size="small" type="primary" onClick={fetchOverdue}>عرض</Button>
+                </Space>
+              }>
+              <Table size="small" rowKey="invoice_id" dataSource={overdue} pagination={{ pageSize: 6 }}
+                locale={{ emptyText: 'لا توجد فواتير متأخرة' }}
+                columns={[
+                  { title: 'الفاتورة', dataIndex: 'document_number' },
+                  { title: 'العميل', dataIndex: 'customer_name' },
+                  { title: 'الاستحقاق', dataIndex: 'due_date' },
+                  { title: 'المديونية', dataIndex: 'outstanding', render: (v: string) => parseFloat(v).toLocaleString('ar-EG') },
                 ]} />
             </Card>
           </Col>

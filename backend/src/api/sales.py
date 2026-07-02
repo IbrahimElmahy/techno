@@ -10,7 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_RETURN_WRITE, CAP_SALE_WRITE, CAP_SELL_BELOW_PRICE, role_has_capability
+from src.auth.rbac import (
+    CAP_RETURN_WRITE,
+    CAP_SALE_WRITE,
+    CAP_SELL_BELOW_PRICE,
+    CAP_SELL_OVER_CREDIT_LIMIT,
+    role_has_capability,
+)
 from src.core.db import get_db
 from src.models.catalog import PriceTier
 from src.models.customer import Customer
@@ -18,7 +24,7 @@ from src.models.sales import SalesInvoice
 from src.models.stock import LocationKind
 from src.models.warehouse import Custody
 from src.services import sales_service
-from src.services.sales_service import SaleLine, SalesError
+from src.services.sales_service import CreditLimitError, DueTermError, SaleLine, SalesError
 from src.services.stock_service import StockError
 
 router = APIRouter(tags=["sales"], prefix="/sales")
@@ -45,6 +51,7 @@ class SaleCreate(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     lines: list[SaleLineIn]
+    due_term_days: int | None = None  # (012) credit term in days; stamps due_date
 
 
 class ReturnLineIn(BaseModel):
@@ -69,6 +76,7 @@ class SalesInvoiceOut(BaseModel):
     credit_amount: Decimal
     cash_account_id: int
     ledger_entry_id: int
+    due_date: date | None = None
 
 
 class InvoiceLineOut(BaseModel):
@@ -114,6 +122,7 @@ def create_sale(
 ) -> SalesInvoiceOut:
     _rep_scope_check(db, current, body.customer_id, body.origin)
     can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
+    can_over_credit = role_has_capability(current.role, CAP_SELL_OVER_CREDIT_LIMIT)
     try:
         inv = sales_service.create_sale(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
@@ -122,7 +131,10 @@ def create_sale(
             lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
+            can_over_credit_limit=can_over_credit, due_term_days=body.due_term_days,
         )
+    except (CreditLimitError, DueTermError) as exc:  # (012) credit-control breach → 409
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "credit_limit_exceeded", "message": str(exc)})
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "sale_invalid", "message": str(exc)})
     except StockError as exc:
@@ -136,7 +148,7 @@ def _inv_out(inv: SalesInvoice) -> SalesInvoiceOut:
         id=inv.id, document_number=inv.document_number, customer_id=inv.customer_id,
         gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net, cash_amount=inv.cash_amount,
         credit_amount=inv.credit_amount, cash_account_id=inv.cash_account_id,
-        ledger_entry_id=inv.ledger_entry_id,
+        ledger_entry_id=inv.ledger_entry_id, due_date=inv.due_date,
     )
 
 

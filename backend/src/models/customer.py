@@ -9,10 +9,11 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
+from src.core.money import MONEY
 from src.models.catalog import PriceTier
 
 
@@ -34,6 +35,9 @@ class Customer(Base):
     territory_id: Mapped[int] = mapped_column(ForeignKey("territory.id"), nullable=False)
     # Default sale price tier (007); NULL resolves to the consumer tier.
     default_price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
+    # Credit controls (012); NULL = no cap. Enforced only on credit sales, never on cash.
+    credit_limit: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    max_due_term_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

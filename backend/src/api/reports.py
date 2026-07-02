@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 import io
@@ -13,7 +15,7 @@ from src.core.db import get_db
 from src.models.sales import SalesInvoice
 from src.models.purchasing import PurchaseInvoice
 from src.models.ledger import Account, AccountType
-from src.services import ledger_service
+from src.services import credit_report, ledger_service
 
 router = APIRouter(tags=["reports"], prefix="/reports")
 
@@ -51,6 +53,57 @@ def get_summary(
         "purchases_total": purchases_total,
         "treasury_balance": treasury_balance,
     }
+
+
+class CreditExposureRow(BaseModel):
+    customer_id: int
+    code: str
+    name: str
+    credit_limit: Decimal
+    outstanding: Decimal
+    available: Decimal
+    over_limit: bool
+
+
+class OverdueRow(BaseModel):
+    invoice_id: int
+    document_number: str
+    customer_id: int
+    customer_name: str
+    due_date: date
+    outstanding: Decimal
+
+
+@router.get("/credit-exposure", response_model=list[CreditExposureRow])
+def get_credit_exposure(
+    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> list[CreditExposureRow]:
+    """Per-customer credit exposure (limit vs derived outstanding) — 012 FR-007."""
+    return [
+        CreditExposureRow(
+            customer_id=r.customer_id, code=r.code, name=r.name, credit_limit=r.credit_limit,
+            outstanding=r.outstanding, available=r.available, over_limit=r.over_limit,
+        )
+        for r in credit_report.exposure(db)
+    ]
+
+
+@router.get("/overdue", response_model=list[OverdueRow])
+def get_overdue(
+    as_of: date | None = Query(default=None),
+    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> list[OverdueRow]:
+    """Overdue credit invoices (due_date before as_of, still unsettled) — 012 FR-008."""
+    ref = as_of or date.today()
+    return [
+        OverdueRow(
+            invoice_id=r.invoice_id, document_number=r.document_number, customer_id=r.customer_id,
+            customer_name=r.customer_name, due_date=r.due_date, outstanding=r.outstanding,
+        )
+        for r in credit_report.overdue(db, as_of=ref)
+    ]
 
 
 @router.get("/export")

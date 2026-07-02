@@ -7,7 +7,7 @@ original invoice's cash/credit split (research R9).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -48,6 +48,14 @@ class SalesError(Exception):
     pass
 
 
+class CreditLimitError(SalesError):
+    """A credit sale would exceed the customer's credit limit (012). API maps to 409."""
+
+
+class DueTermError(SalesError):
+    """A credit sale's term exceeds the customer's maximum due-term (012). API maps to 409."""
+
+
 @dataclass(frozen=True)
 class SaleLine:
     item_id: int
@@ -85,6 +93,8 @@ def create_sale(
     actor_role: RoleName,
     actor_user_id: int,
     can_sell_below: bool = False,
+    can_over_credit_limit: bool = False,
+    due_term_days: int | None = None,
 ) -> SalesInvoice:
     if not lines:
         raise SalesError("A sale needs at least one line.")
@@ -142,6 +152,31 @@ def create_sale(
     cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
     if cust_acc is None:
         raise SalesError("Customer has no account.")
+
+    # (012) Credit controls — enforced only on the credit portion; cash-only sales are never blocked.
+    credit_portion = to_money(credit_amount)
+    due_date: date | None = None
+    if credit_portion > ZERO:
+        # Amount ceiling: outstanding (derived) + this credit vs the limit; == is allowed, > blocks.
+        if customer is not None and customer.credit_limit is not None and not can_over_credit_limit:
+            outstanding = to_money(ledger_service.balance_of(db, cust_acc.account_id))
+            if outstanding + credit_portion > to_money(customer.credit_limit):
+                raise CreditLimitError(
+                    f"Credit sale would exceed the customer's credit limit "
+                    f"({to_money(customer.credit_limit)}); outstanding {outstanding}."
+                )
+        # Due-term cap (hard policy, no override) + due_date stamping.
+        if due_term_days is not None:
+            if due_term_days < 0:
+                raise DueTermError("Due-term days must be non-negative.")
+            if customer is not None and customer.max_due_term_days is not None \
+                    and due_term_days > customer.max_due_term_days:
+                raise DueTermError(
+                    f"Credit term {due_term_days}d exceeds the customer's maximum "
+                    f"({customer.max_due_term_days}d)."
+                )
+            due_date = date.today() + timedelta(days=due_term_days)
+
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
 
     invoice = SalesInvoice(
@@ -149,8 +184,9 @@ def create_sale(
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,
         variable_discount_pct=variable, combined_pct=combined, net=net,
-        cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
+        cash_amount=to_money(cash_amount), credit_amount=credit_portion,
         cash_account_id=cash_acc.id, ledger_entry_id=0, actor_user_id=actor_user_id,
+        due_date=due_date,
     )
     db.add(invoice)
     db.flush()

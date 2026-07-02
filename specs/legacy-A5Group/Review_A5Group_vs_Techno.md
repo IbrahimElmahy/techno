@@ -9,7 +9,7 @@
 
 ---
 
-## PROGRESS SNAPSHOT — 2026-06-30 (shipped 005–010, 011 in progress)
+## PROGRESS SNAPSHOT — 2026-07-02 (shipped 005–012)
 
 **Closed the biggest gaps since this review was written:**
 
@@ -21,10 +21,11 @@
 | 008 Multiple units of measure (+ conversion factor, base-unit stock) | S06 units | ✅ done |
 | 009 Serial numbers (registry, receive, sell FEFO-of-specifics, return) | S06 serials | ✅ done |
 | 010 Barcodes (multi, per-unit, global-unique, scan lookup) | S06 barcode | ✅ done |
-| 011 Min/max limits + expiry batches (FEFO) | S06 limits/expiry | 🟡 in progress |
+| 011 Min/max limits + expiry batches (FEFO) | S06 limits/expiry | ✅ done |
+| 012 Customer credit limit + due-term enforcement (+ exposure/overdue reports) | S06 customer | ✅ done |
 
-**Still remaining (highest value first):** taxes (VAT + withholding كسب العمل) ⚠️ decision · customer
-**credit limit** + due-term enforcement · **discount types** (allowed/earned/deferred/penalty) ·
+**Still remaining (highest value first):** taxes (VAT + withholding كسب العمل) ⚠️ decision ·
+**discount types** (allowed/earned/deferred/penalty) ·
 **payments-on-invoice** (multiple) · **commercial papers / cheques** (T07) · **consignment** (T08) ·
 **multi-store→multi-store transfer** + standalone permits (T05) · **inventory valuation** (average cost)
 (S06/T04) · **category/group tree** for items · **reps targets/commissions** (S10) · the broad

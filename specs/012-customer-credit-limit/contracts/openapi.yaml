@@ -1,0 +1,64 @@
+openapi: 3.1.0
+info:
+  title: UBMS Customer Credit Limit & Due-Term API (extends Sales & Inventory 002)
+  version: 0.1.0
+  description: >
+    Per-customer credit limit and maximum due-term, enforced at credit-sale time, plus credit-exposure
+    and overdue reports. Additive to 002; shares auth and RBAC. Managing limits uses customer.write;
+    the override at sale time uses the sell.over_credit_limit capability; reports use reports.read.
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: reports
+
+paths:
+  /reports/credit-exposure:
+    get:
+      tags: [reports]
+      summary: Per-customer credit exposure — limit, derived outstanding, available, over-limit flag (reports.read)
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/CreditExposureRow' } } } } }
+  /reports/overdue:
+    get:
+      tags: [reports]
+      summary: Overdue credit invoices — due_date before as_of while the customer still owes (reports.read)
+      parameters:
+        - { name: as_of, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/OverdueRow' } } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    Money: { type: string, example: '1000.00' }
+    CreditExposureRow:
+      type: object
+      properties:
+        customer_id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        credit_limit: { $ref: '#/components/schemas/Money' }
+        outstanding: { $ref: '#/components/schemas/Money' }
+        available: { $ref: '#/components/schemas/Money' }
+        over_limit: { type: boolean }
+    OverdueRow:
+      type: object
+      properties:
+        invoice_id: { type: integer }
+        document_number: { type: string }
+        customer_id: { type: integer }
+        customer_name: { type: string }
+        due_date: { type: string, format: date }
+        outstanding: { $ref: '#/components/schemas/Money' }
+    Error:
+      type: object
+      properties:
+        detail: { type: string }
+
+# NOTE — additive extensions to the 002 contract (implemented on existing endpoints):
+#   • Customer create/update/detail gain `credit_limit`, `max_due_term_days`.
+#   • POST /sales MAY include `due_term_days`; a credit sale over the customer's credit_limit is rejected
+#     (409) unless the actor holds sell.over_credit_limit; a term beyond max_due_term_days is rejected.

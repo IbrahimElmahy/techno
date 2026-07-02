@@ -276,6 +276,8 @@ export default function Invoices() {
         variable_discount_pct: discountPct,
         cash_amount: cashAmount,
         credit_amount: creditAmount,
+        // (012) credit term in days; only meaningful when there is a credit portion.
+        due_term_days: creditAmount > 0 ? (values.due_term_days ?? null) : null,
         lines: validLines.map((l) => {
           const prod = products.find((p) => p.id === l.item_id);
           return {
@@ -296,8 +298,14 @@ export default function Invoices() {
       setCashAmount(0);
       setDiscountPct(0);
       fetchInvoices();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      // (012) surface credit-control rejections (409) with the backend's Arabic-friendly reason.
+      const detail = err?.response?.data?.detail;
+      if (err?.response?.status === 409 && detail?.code === 'credit_limit_exceeded') {
+        message.error(detail.message || 'تم تجاوز حد الائتمان أو أجل السداد المسموح للعميل');
+      } else {
+        console.error(err);
+      }
     }
   };
 
@@ -595,6 +603,13 @@ export default function Invoices() {
               </Form.Item>
             </Col>
           </Row>
+
+          {creditAmount > 0 && (
+            <Form.Item name="due_term_days" label="أجل السداد (يوم)"
+              extra="عدد الأيام حتى استحقاق المبلغ الآجل — يخضع لأقصى أجل مسموح للعميل">
+              <InputNumber min={0} step={1} style={{ width: 200 }} placeholder="اختياري" />
+            </Form.Item>
+          )}
 
           <Form.Item style={{ marginTop: 24 }}>
             <Space>

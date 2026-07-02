@@ -184,6 +184,15 @@ for _role in (RoleName.system_admin, RoleName.accountant):
 ALL_CAPABILITIES |= _ACCOUNTING_ALL
 
 
+# Customer credit limit (012): overriding a customer's credit ceiling at sale time is a manager
+# authority — granted to System Admin, Branch Manager, Sales Manager; NOT Sales Rep. Mirrors
+# sell.below_price. The due-term cap has no override (hard policy).
+CAP_SELL_OVER_CREDIT_LIMIT = "sell.over_credit_limit"
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager):
+    ROLE_CAPABILITIES.setdefault(_role, set()).add(CAP_SELL_OVER_CREDIT_LIMIT)
+ALL_CAPABILITIES.add(CAP_SELL_OVER_CREDIT_LIMIT)
+
+
 def role_has_capability(role: RoleName, capability: str) -> bool:
     """Deny-by-default: True only if explicitly granted."""
     return capability in ROLE_CAPABILITIES.get(role, set())

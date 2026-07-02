@@ -25,10 +25,14 @@ class CustomerCreate(BaseModel):
     territory_id: int
     phone: str | None = None
     default_price_tier: PriceTier | None = None
+    credit_limit: Decimal | None = None
+    max_due_term_days: int | None = None
 
 
 class CustomerUpdate(BaseModel):
     default_price_tier: PriceTier | None = None
+    credit_limit: Decimal | None = None
+    max_due_term_days: int | None = None
 
 
 class CustomerOut(BaseModel):
@@ -40,6 +44,8 @@ class CustomerOut(BaseModel):
     rep_id: int
     territory_id: int
     default_price_tier: PriceTier | None = None
+    credit_limit: Decimal | None = None
+    max_due_term_days: int | None = None
     active: bool
 
 
@@ -64,7 +70,8 @@ def _out(c: Customer) -> CustomerOut:
     return CustomerOut(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type,
         phone=c.phone, rep_id=c.rep_id, territory_id=c.territory_id,
-        default_price_tier=c.default_price_tier, active=c.active,
+        default_price_tier=c.default_price_tier, credit_limit=c.credit_limit,
+        max_due_term_days=c.max_due_term_days, active=c.active,
     )
 
 
@@ -114,11 +121,16 @@ def create_customer(
     c = result.customer
     if body.default_price_tier is not None:  # (007)
         c.default_price_tier = body.default_price_tier
-        db.flush()
+    if body.credit_limit is not None:  # (012) credit controls
+        c.credit_limit = body.credit_limit
+    if body.max_due_term_days is not None:
+        c.max_due_term_days = body.max_due_term_days
+    db.flush()
     db.commit()
     return CustomerCreated(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type, phone=c.phone,
         rep_id=c.rep_id, territory_id=c.territory_id, default_price_tier=c.default_price_tier,
+        credit_limit=c.credit_limit, max_due_term_days=c.max_due_term_days,
         active=c.active, duplicate_phone_customer_ids=result.duplicate_phone_customer_ids,
     )
 
@@ -137,6 +149,12 @@ def update_customer(
         raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
     if body.default_price_tier is not None:  # (007) set the customer's default sale tier
         c.default_price_tier = body.default_price_tier
+    # (012) credit controls — presence in the payload means "set" (null clears the cap).
+    fields_set = body.model_fields_set
+    if "credit_limit" in fields_set:
+        c.credit_limit = body.credit_limit
+    if "max_due_term_days" in fields_set:
+        c.max_due_term_days = body.max_due_term_days
     db.flush()
     db.commit()
     return _out(c)
