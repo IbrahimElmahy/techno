@@ -13,7 +13,7 @@ from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER
 from src.core.db import get_db
 from src.models.catalog import PriceTier
 from src.models.customer import Customer, CustomerAccount, CustomerType
-from src.services import customer_service, ledger_service
+from src.services import audit_service, customer_service, ledger_service
 
 router = APIRouter(tags=["customers"], prefix="/customers")
 
@@ -28,7 +28,11 @@ class CustomerCreate(BaseModel):
 
 
 class CustomerUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    customer_type: CustomerType | None = None
     default_price_tier: PriceTier | None = None
+    active: bool | None = None
 
 
 class CustomerOut(BaseModel):
@@ -135,11 +139,39 @@ def update_customer(
         raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
     if current.rep_id is not None and c.rep_id != current.rep_id:
         raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    if body.name is not None:
+        c.name = body.name
+    if body.phone is not None:
+        c.phone = body.phone
+    if body.customer_type is not None:
+        c.customer_type = body.customer_type
     if body.default_price_tier is not None:  # (007) set the customer's default sale tier
         c.default_price_tier = body.default_price_tier
+    if body.active is not None:
+        c.active = body.active
     db.flush()
+    audit_service.record(db, action="customer.update", actor_user_id=current.id,
+                         entity_type="customer", entity_id=c.id)
     db.commit()
     return _out(c)
+
+
+@router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_customer(
+    customer_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    c = db.get(Customer, customer_id)
+    if c is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    if current.rep_id is not None and c.rep_id != current.rep_id:
+        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    c.active = False
+    db.flush()
+    audit_service.record(db, action="customer.deactivate", actor_user_id=current.id,
+                         entity_type="customer", entity_id=c.id)
+    db.commit()
 
 
 @router.get("/{customer_id}", response_model=CustomerOut)
