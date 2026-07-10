@@ -89,6 +89,20 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"status": "ok"}
 
+    # Ensure the schema exists on every environment. Render runs scripts.bootstrap, but Vercel
+    # serverless has no start command — without this, newly-added tables (BOM, lookups, …) never get
+    # created and their endpoints 500 (which surfaces in the browser as a CORS error). create_all is
+    # idempotent and additive: it only creates MISSING tables, never alters or drops existing ones.
+    try:
+        import src.models  # noqa: F401 — populate metadata with every model
+        from src.core.db import Base, engine
+
+        Base.metadata.create_all(engine)
+    except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
+        import logging
+
+        logging.getLogger("uvicorn.error").warning("startup create_all skipped: %s", exc)
+
     return app
 
 
