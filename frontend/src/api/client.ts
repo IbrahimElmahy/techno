@@ -2,7 +2,9 @@ import axios from 'axios';
 import { message, notification } from 'antd';
 
 export const api = axios.create({
-  timeout: 10000,
+  // Serverless backends + auto-suspending DBs (Vercel/Neon) can take >10s on a cold start;
+  // a short timeout surfaced as "فشل الاتصال بالخادم" on the first request. 30s tolerates the wake-up.
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
     'Accept-Language': 'ar',

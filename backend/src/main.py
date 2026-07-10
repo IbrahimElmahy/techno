@@ -4,28 +4,34 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api import audit, auth, customers, org, treasury, users, warehouses
-from src.api import (  # Sales & Inventory (002)
+import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
+from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
+    accounting,  # General Ledger (005)
+    audit,
+    auth,
     catalog,
+    cost_centers,  # Cost Centers (006)
+    coupons,
+    customers,
+    loyalty_settings,
     manufacturing,
+    org,
+    points,
+    product_points,
     purchases,
+    reports,
     sales,
-    settings as sales_settings,
+    settings_lookups,  # Configurable dropdown lists (013)
     stock,
     suppliers,
     transfers,
+    treasury,
+    users,
+    warehouses,
 )
-from src.api import (  # After-Sales Loyalty (003)
-    coupons,
-    loyalty_settings,
-    points,
-    product_points,
-    reports,
+from src.api import (
+    settings as sales_settings,
 )
-from src.api import accounting  # General Ledger (005)
-from src.api import cost_centers  # Cost Centers (006)
-from src.api import settings_lookups  # Configurable dropdown lists (013)
-import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
 
 
 def create_app() -> FastAPI:
@@ -116,28 +122,40 @@ def _relax_configurable_enum_columns(engine) -> None:
     already stores it as text so it is a no-op there.
     """
     import logging
+
     from sqlalchemy import text
 
     dialect = engine.dialect.name
+    if dialect not in ("postgresql", "postgres", "mysql", "mariadb"):
+        return  # sqlite already stores Enum as VARCHAR with no CHECK — nothing to do
+    from sqlalchemy import inspect as sa_inspect
+
     # (table, column, varchar length) pairs that are configurable free lists.
     targets = [("customer", "customer_type", 32)]
-    with engine.begin() as conn:
-        for table, column, length in targets:
-            try:
+    inspector = sa_inspect(engine)
+    for table, column, length in targets:
+        try:
+            col = next((c for c in inspector.get_columns(table) if c["name"] == column), None)
+            # Skip when already a plain string — avoids re-running ALTER on every serverless cold start.
+            if col is None:
+                continue
+            type_str = str(col["type"]).upper()
+            if "CHAR" in type_str or "TEXT" in type_str:
+                continue
+            with engine.begin() as conn:
                 if dialect in ("postgresql", "postgres"):
                     conn.execute(text(
                         f'ALTER TABLE "{table}" ALTER COLUMN "{column}" '
                         f'TYPE VARCHAR({length}) USING "{column}"::text'
                     ))
-                elif dialect in ("mysql", "mariadb"):
+                else:  # mysql / mariadb
                     conn.execute(text(
                         f"ALTER TABLE `{table}` MODIFY `{column}` VARCHAR({length}) NOT NULL"
                     ))
-                # sqlite: Enum is already stored as VARCHAR with no CHECK — nothing to do.
-            except Exception as exc:  # pragma: no cover — best-effort widening
-                logging.getLogger("uvicorn.error").info(
-                    "relax enum %s.%s skipped: %s", table, column, exc
-                )
+        except Exception as exc:  # pragma: no cover — best-effort widening
+            logging.getLogger("uvicorn.error").info(
+                "relax enum %s.%s skipped: %s", table, column, exc
+            )
 
 
 app = create_app()

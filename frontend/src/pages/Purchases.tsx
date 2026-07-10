@@ -144,12 +144,12 @@ export default function Purchases() {
       const [supRes, whRes, itemsRes] = await Promise.all([
         api.get('/api/v1/suppliers'),
         api.get('/api/v1/warehouses'),
-        api.get('/api/v1/items?kind=raw_material'),
+        api.get('/api/v1/items'),  // purchases accept raw materials AND products (resale)
       ]);
       setSuppliers(supRes.data);
       // Filter out central/branch warehouses
       setWarehouses(whRes.data);
-      setItems(itemsRes.data);
+      setItems(itemsRes.data.filter((i: any) => i.active !== false));
     } catch (err) {
       console.error(err);
     } finally {

@@ -42,7 +42,8 @@ def test_split_purchase_updates_stock_and_payable(client, inv_world, login, Sess
     s.close()
 
 
-def test_product_cannot_be_purchased(client, inv_world, login):
+def test_product_can_be_purchased(client, inv_world, login):
+    """Purchases accept products too (resale/trading), not just raw materials."""
     h = login("admin")
     prod = client.post("/api/v1/items", headers=h,
                        json={"name": "G", "kind": "product", "unit_of_measure": "piece",
@@ -54,4 +55,8 @@ def test_product_cannot_be_purchased(client, inv_world, login):
         "cash_amount": "50", "credit_amount": "0",
         "lines": [{"item_id": prod["id"], "quantity": "1", "unit_price": "50"}],
     })
-    assert resp.status_code == 409
+    assert resp.status_code == 201
+    on_hand = client.get("/api/v1/stock/on-hand", headers=h, params={
+        "item_id": prod["id"], "location_kind": "warehouse",
+        "location_id": inv_world["central_wh"]}).json()["on_hand"]
+    assert float(on_hand) == 1.0

@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
-from src.models.catalog import Item, ItemKind
+from src.models.catalog import Item
 from src.models.ledger import Direction
 from src.models.purchasing import (
     PurchaseInvoice,
@@ -71,8 +71,9 @@ def create_purchase(
     built: list[tuple[PurchaseLine, Decimal, Decimal]] = []
     for ln in lines:
         item = db.get(Item, ln.item_id)
-        if item is None or item.kind != ItemKind.raw_material:
-            raise PurchaseError("Purchases accept raw materials only.")
+        if item is None:
+            raise PurchaseError("Purchased item not found.")
+        # Purchases accept any stocked item — raw materials AND finished products (resale/trading).
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)  # (008)
         except UomError as exc:
