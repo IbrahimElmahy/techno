@@ -169,6 +169,12 @@ export default function AppLayout() {
       label: 'التقارير والإحصائيات',
       roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
     },
+    {
+      key: '/settings',
+      icon: <SettingOutlined />,
+      label: 'إعدادات القوائم',
+      roles: ['system_admin', 'branch_manager'],
+    },
   ];
 
   // Filter items based on active user role

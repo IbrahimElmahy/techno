@@ -5,6 +5,9 @@ from src.models.catalog import Item, ItemBarcode, ItemPrice, ItemSerial, ItemUni
 
 # Cost Centers (006) — analytical dimension.
 from src.models.cost_center import CostCenter  # noqa: E402
+
+# Settings → configurable dropdown lists (013).
+from src.models.lookup import LookupOption  # noqa: E402
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 
@@ -55,4 +58,5 @@ __all__ = [
     "Bom", "BomComponent", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
+    "LookupOption",
 ]

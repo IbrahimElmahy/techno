@@ -4,6 +4,7 @@ import { UserAddOutlined, SwapOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface CustomerRecord {
   id: number;
@@ -50,6 +51,8 @@ const CustomerBalance = ({ customerId }: { customerId: number }) => {
 };
 
 export default function Customers() {
+  const { options: typeOptions } = useLookup('customer_type');
+  const typeLabels = labelMap(typeOptions);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [reps, setReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
@@ -187,7 +190,7 @@ export default function Customers() {
       title: 'نوع العميل',
       dataIndex: 'customer_type',
       key: 'customer_type',
-      render: (type: string) => TYPE_LABELS[type] || type,
+      render: (type: string) => typeLabels[type] || TYPE_LABELS[type] || type,
     },
     {
       title: 'رقم الهاتف',
@@ -297,13 +300,8 @@ export default function Customers() {
             label="تصنيف العميل"
             rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}
           >
-            <Select placeholder="اختر تصنيف العميل">
-              {Object.entries(TYPE_LABELS).map(([key, label]) => (
-                <Select.Option key={key} value={key}>
-                  {label}
-                </Select.Option>
-              ))}
-            </Select>
+            <Select placeholder="اختر تصنيف العميل"
+              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
           </Form.Item>
 
           <Form.Item
@@ -383,13 +381,8 @@ export default function Customers() {
             label="تصنيف العميل"
             rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}
           >
-            <Select placeholder="اختر تصنيف العميل">
-              {Object.entries(TYPE_LABELS).map(([key, label]) => (
-                <Select.Option key={key} value={key}>
-                  {label}
-                </Select.Option>
-              ))}
-            </Select>
+            <Select placeholder="اختر تصنيف العميل"
+              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
           </Form.Item>
 
           <Form.Item name="phone" label="رقم الهاتف">

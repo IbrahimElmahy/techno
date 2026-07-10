@@ -24,6 +24,7 @@ from src.api import (  # After-Sales Loyalty (003)
 )
 from src.api import accounting  # General Ledger (005)
 from src.api import cost_centers  # Cost Centers (006)
+from src.api import settings_lookups  # Configurable dropdown lists (013)
 import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
 
 
@@ -81,6 +82,8 @@ def create_app() -> FastAPI:
     app.include_router(accounting.router, prefix=prefix)
     # Cost Centers (006)
     app.include_router(cost_centers.router, prefix=prefix)
+    # Settings → configurable dropdown lists (013)
+    app.include_router(settings_lookups.router, prefix=prefix)
 
     @app.get("/health")
     def health() -> dict:

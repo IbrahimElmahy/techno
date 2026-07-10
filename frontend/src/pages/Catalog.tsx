@@ -4,6 +4,7 @@ import { PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, Barc
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 const PRICE_TIERS: { key: string; label: string }[] = [
   { key: 'commercial', label: 'تجاري' },
@@ -334,6 +335,9 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
 };
 
 export default function Catalog() {
+  const { options: kindOptions } = useLookup('item_kind');
+  const { options: uomOptions } = useLookup('unit_of_measure');
+  const kindLabels = labelMap(kindOptions);
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -451,7 +455,7 @@ export default function Catalog() {
       key: 'kind',
       render: (kind: string) => (
         <Tag color={kind === 'product' ? 'green' : 'orange'}>
-          {KIND_LABELS[kind] || kind}
+          {kindLabels[kind] || KIND_LABELS[kind] || kind}
         </Tag>
       ),
     },
@@ -575,13 +579,8 @@ export default function Catalog() {
             label="نوع الصنف"
             rules={[{ required: true, message: 'يرجى تحديد نوع الصنف!' }]}
           >
-            <Select placeholder="اختر النوع">
-              {Object.entries(KIND_LABELS).map(([key, label]) => (
-                <Select.Option key={key} value={key}>
-                  {label}
-                </Select.Option>
-              ))}
-            </Select>
+            <Select placeholder="اختر النوع"
+              options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
           </Form.Item>
 
           <Form.Item
@@ -589,7 +588,12 @@ export default function Catalog() {
             label="وحدة القياس"
             rules={[{ required: true, message: 'يرجى إدخال وحدة القياس!' }]}
           >
-            <Input placeholder="مثال: متر، كرتونة، قطعة" />
+            <Select
+              showSearch
+              placeholder="اختر وحدة القياس (تُدار من الإعدادات)"
+              options={uomOptions.map((o) => ({ value: o.value, label: o.label }))}
+              filterOption={(input, option) => String(option?.label ?? '').includes(input)}
+            />
           </Form.Item>
 
           <Form.Item noStyle shouldUpdate={(prev, curr) => prev.kind !== curr.kind}>
