@@ -28,6 +28,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     treasury,
     users,
     warehouses,
+    wastage,
 )
 from src.api import (
     settings as sales_settings,
@@ -90,6 +91,8 @@ def create_app() -> FastAPI:
     app.include_router(cost_centers.router, prefix=prefix)
     # Settings → configurable dropdown lists (013)
     app.include_router(settings_lookups.router, prefix=prefix)
+    # Production reporting (014) — wastage documents
+    app.include_router(wastage.router, prefix=prefix)
 
     @app.get("/health")
     def health() -> dict:
@@ -104,13 +107,50 @@ def create_app() -> FastAPI:
         from src.core.db import Base, engine
 
         Base.metadata.create_all(engine)
+        _ensure_columns(engine)
         _relax_configurable_enum_columns(engine)
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
 
-        logging.getLogger("uvicorn.error").warning("startup create_all skipped: %s", exc)
+        logging.getLogger("uvicorn.error").warning("startup schema sync skipped: %s", exc)
 
     return app
+
+
+# Columns added to EXISTING tables after their first release. create_all only creates missing
+# tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
+# Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
+_ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    ("item", "default_warehouse_id", "BIGINT"),
+    ("manufacturing_order", "material_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
+    ("manufacturing_order", "resource_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
+    ("manufacturing_order_consumption", "waste_quantity", "NUMERIC(18,3) NOT NULL DEFAULT 0"),
+    ("manufacturing_order_consumption", "warehouse_id", "BIGINT"),
+]
+
+
+def _ensure_columns(engine) -> None:
+    """Add columns introduced on existing tables (create_all won't alter). Idempotent."""
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, column, ddl in _ADDED_COLUMNS:
+        if table not in existing_tables:
+            continue
+        cols = {c["name"] for c in inspector.get_columns(table)}
+        if column in cols:
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        except Exception as exc:  # pragma: no cover — best-effort
+            logging.getLogger("uvicorn.error").info(
+                "ensure column %s.%s skipped: %s", table, column, exc
+            )
 
 
 def _relax_configurable_enum_columns(engine) -> None:

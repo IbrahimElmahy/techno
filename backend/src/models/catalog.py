@@ -54,6 +54,11 @@ class Item(Base):
     sale_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)      # products
     # When true, the item is tracked by serial number (009); receive/sale/return require serials.
     is_serialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Default warehouse for inventory routing (014): manufacturing pulls this item from / produces
+    # it into this warehouse automatically. NULL falls back to the order's chosen location.
+    default_warehouse_id: Mapped[int | None] = mapped_column(
+        ForeignKey("warehouse.id"), nullable=True
+    )
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

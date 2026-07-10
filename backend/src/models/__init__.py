@@ -1,6 +1,6 @@
 """Model package — import all models so metadata is fully populated."""
 from src.models.audit import AuditLogEntry
-from src.models.bom import Bom, BomComponent  # noqa: E402
+from src.models.bom import Bom, BomComponent, BomResource  # noqa: E402
 from src.models.catalog import Item, ItemBarcode, ItemPrice, ItemSerial, ItemUnit
 
 # Cost Centers (006) — analytical dimension.
@@ -24,6 +24,7 @@ from src.models.manufacturing import (  # noqa: E402
     ManufacturingOp,
     ManufacturingOrder,
     ManufacturingOrderConsumption,
+    ManufacturingOrderResource,
 )
 from src.models.org import Branch, Governorate, HeadOffice, Territory
 from src.models.purchasing import (  # noqa: E402
@@ -47,6 +48,7 @@ from src.models.supplier import Supplier, SupplierAccount  # noqa: E402
 from src.models.transfer import StockTransfer  # noqa: E402
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse
+from src.models.wastage import WastageDocument  # noqa: E402
 
 __all__ = [
     "AuditLogEntry", "Item", "Customer", "CustomerAccount", "Account", "LedgerEntry",
@@ -55,8 +57,8 @@ __all__ = [
     "PurchaseInvoice", "PurchaseInvoiceLine", "PurchaseReturn", "PurchaseReturnLine",
     "SalesInvoice", "SalesInvoiceLine", "SalesReturn", "SalesReturnLine", "SalesSetting",
     "ManufacturingOp", "ManufacturingOrder", "ManufacturingOrderConsumption",
-    "Bom", "BomComponent", "StockTransfer",
+    "ManufacturingOrderResource", "Bom", "BomComponent", "BomResource", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
-    "LookupOption",
+    "LookupOption", "WastageDocument",
 ]

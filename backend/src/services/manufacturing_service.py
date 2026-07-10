@@ -11,13 +11,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
-from src.models.bom import Bom, BomComponent
+from src.lib import production
+from src.models.bom import Bom, BomComponent, BomResource, ResourceKind
 from src.models.catalog import Item, ItemKind
 from src.models.manufacturing import (
     ManufactureOpType,
     ManufacturingOp,
     ManufacturingOrder,
     ManufacturingOrderConsumption,
+    ManufacturingOrderResource,
 )
 from src.models.stock import LocationKind, StockDirection
 from src.services import audit_service, stock_service
@@ -107,7 +109,8 @@ def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
 # ---------------------------------------------------------------------------
 # Bill of materials (recipes) — 012-manufacturing-bom.
 # ---------------------------------------------------------------------------
-def _validate_recipe(db: Session, *, product_id: int, output_quantity, components) -> None:
+def _validate_recipe(db: Session, *, product_id: int, output_quantity, components,
+                     resources=None) -> None:
     product = db.get(Item, product_id)
     if product is None or product.kind != ItemKind.product:
         raise ManufacturingError("A recipe's output must be a product.")
@@ -125,14 +128,31 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
             raise ManufacturingError("Recipe components must be raw materials.")
         if to_qty(qty) <= to_qty(0):
             raise ManufacturingError("Each component quantity must be positive.")
+    for kind, name, qty, rate in (resources or []):
+        try:
+            ResourceKind(kind)
+        except ValueError:
+            raise ManufacturingError(f"Unknown resource kind '{kind}'.") from None
+        if to_qty(qty) < to_qty(0) or to_money(rate) < ZERO:
+            raise ManufacturingError("Resource quantity and rate must be non-negative.")
+
+
+def _persist_recipe_lines(db: Session, bom: Bom, components, resources) -> None:
+    for item_id, qty in components:
+        db.add(BomComponent(bom_id=bom.id, item_id=item_id, quantity=to_qty(qty)))
+    for kind, name, qty, rate in (resources or []):
+        db.add(BomResource(bom_id=bom.id, kind=ResourceKind(kind), name=name,
+                           quantity=to_qty(qty), rate=to_money(rate)))
+    db.flush()
 
 
 def create_bom(
-    db: Session, *, product_id: int, name: str, output_quantity, components, actor_user_id: int
+    db: Session, *, product_id: int, name: str, output_quantity, components, actor_user_id: int,
+    resources=None,
 ) -> Bom:
     """Create a recipe. Deactivates any prior active recipe for the same product (one active each)."""
     _validate_recipe(db, product_id=product_id, output_quantity=output_quantity,
-                     components=components)
+                     components=components, resources=resources)
     for prior in db.scalars(
         select(Bom).where(Bom.product_id == product_id, Bom.active.is_(True))
     ).all():
@@ -140,31 +160,30 @@ def create_bom(
     bom = Bom(product_id=product_id, name=name, output_quantity=to_qty(output_quantity), active=True)
     db.add(bom)
     db.flush()
-    for item_id, qty in components:
-        db.add(BomComponent(bom_id=bom.id, item_id=item_id, quantity=to_qty(qty)))
-    db.flush()
+    _persist_recipe_lines(db, bom, components, resources)
     audit_service.record(db, action="bom.create", actor_user_id=actor_user_id,
                          entity_type="bom", entity_id=bom.id, after={"product_id": product_id})
     return bom
 
 
 def update_bom(
-    db: Session, *, bom_id: int, name: str, output_quantity, components, actor_user_id: int
+    db: Session, *, bom_id: int, name: str, output_quantity, components, actor_user_id: int,
+    resources=None,
 ) -> Bom:
-    """Replace a recipe's name/output/components in place (recipes are master data, editable)."""
+    """Replace a recipe's name/output/components/resources in place (recipes are editable)."""
     bom = db.get(Bom, bom_id)
     if bom is None:
         raise ManufacturingError("Recipe not found.")
     _validate_recipe(db, product_id=bom.product_id, output_quantity=output_quantity,
-                     components=components)
+                     components=components, resources=resources)
     bom.name = name
     bom.output_quantity = to_qty(output_quantity)
     for comp in list(bom.components):
         db.delete(comp)
+    for res in list(bom.resources):
+        db.delete(res)
     db.flush()
-    for item_id, qty in components:
-        db.add(BomComponent(bom_id=bom.id, item_id=item_id, quantity=to_qty(qty)))
-    db.flush()
+    _persist_recipe_lines(db, bom, components, resources)
     audit_service.record(db, action="bom.update", actor_user_id=actor_user_id,
                          entity_type="bom", entity_id=bom.id)
     return bom
@@ -210,11 +229,15 @@ def create_order(
     location_id: int,
     bom_id: int | None = None,
     actor_user_id: int,
+    resources=None,          # (014) override list of (kind, name, quantity, rate); None = use recipe
+    wastes=None,             # (014) {component_item_id: waste_quantity} recorded per line
 ) -> ManufacturingOrder:
     """Consume the product's recipe components (scaled) and produce the product in one document.
 
-    Cost per component = base qty consumed × raw material purchase_price (0 if unpriced). No-negative
-    stock is enforced on every consumption; if a component is short, the whole order fails.
+    Inventory routing (014): each component is pulled from its own default warehouse and the product
+    is produced into its default warehouse (falling back to the order's location). Cost = materials
+    (Σ consumed × purchase_price) + resources (labor/machine/overhead: Σ qty × rate). No-negative
+    stock is enforced on every consumption; if any component is short the whole order fails.
     """
     qty = to_qty(quantity)
     if qty <= to_qty(0):
@@ -230,43 +253,70 @@ def create_order(
     if not bom.components:
         raise ManufacturingError("Recipe has no components.")
 
-    scale = qty / to_qty(bom.output_quantity)
+    scale = production.scale_factor(bom.output_quantity, qty)
+    wastes = wastes or {}
 
     order = ManufacturingOrder(
         document_number=_order_doc_number(db), product_id=product_id, bom_id=bom.id,
         location_kind=location_kind, location_id=location_id, quantity=qty,
-        unit_cost=ZERO, total_cost=ZERO, stock_movement_id=0, actor_user_id=actor_user_id,
+        unit_cost=ZERO, total_cost=ZERO, material_cost=ZERO, resource_cost=ZERO,
+        stock_movement_id=0, actor_user_id=actor_user_id,
     )
     db.add(order)
     db.flush()
 
-    total_cost = ZERO
+    # --- Materials: route each component to its own warehouse, consume, cost ---
+    material_cost = ZERO
     for comp in bom.components:
-        consumed = to_qty(Decimal(comp.quantity) * scale)
+        consumed = production.consumed_quantity(comp.quantity, scale)
         raw = db.get(Item, comp.item_id)
+        wk, wid = production.resolve_warehouse(
+            raw.default_warehouse_id if raw else None, location_kind, location_id)
         unit_cost = to_money(raw.purchase_price) if raw and raw.purchase_price is not None else ZERO
-        line_cost = to_money(consumed * unit_cost)
-        total_cost += line_cost
+        line_cost = production.line_cost(consumed, unit_cost)
+        material_cost += line_cost
+        waste_qty = to_qty(wastes.get(comp.item_id, 0))
+        if waste_qty < to_qty(0) or waste_qty > consumed:
+            raise ManufacturingError("Waste quantity must be between 0 and the consumed quantity.")
         mv = stock_service.post_movement(
-            db, item_id=comp.item_id, location_kind=location_kind, location_id=location_id,
+            db, item_id=comp.item_id, location_kind=wk, location_id=wid,
             movement_type="consumption_out", direction=StockDirection.out, quantity=consumed,
             actor_user_id=actor_user_id, source_doc_type="manufacturing_order", source_doc_id=order.id,
         )
         order.consumptions.append(
             ManufacturingOrderConsumption(
-                item_id=comp.item_id, quantity=consumed, unit_cost=unit_cost,
-                line_cost=line_cost, stock_movement_id=mv.id,
+                item_id=comp.item_id, quantity=consumed, unit_cost=unit_cost, line_cost=line_cost,
+                waste_quantity=waste_qty,
+                warehouse_id=wid if wk == LocationKind.warehouse else None,
+                stock_movement_id=mv.id,
             )
         )
 
+    # --- Resources: recipe standard (scaled) unless the caller overrides per order ---
+    if resources is None:
+        res_lines = [(r.kind.value, r.name, to_qty(Decimal(r.quantity) * scale), to_money(r.rate))
+                     for r in bom.resources]
+    else:
+        res_lines = [(kind, name, to_qty(q), to_money(rate)) for kind, name, q, rate in resources]
+    resource_cost = ZERO
+    for kind, name, res_qty, rate in res_lines:
+        cost = production.resource_cost(res_qty, rate)
+        resource_cost += cost
+        order.resources.append(ManufacturingOrderResource(
+            kind=kind, name=name, quantity=res_qty, rate=rate, cost=cost))
+
+    # --- Product: produce into its own default warehouse ---
+    pk, pid = production.resolve_warehouse(product.default_warehouse_id, location_kind, location_id)
     produced = stock_service.post_movement(
-        db, item_id=product_id, location_kind=location_kind, location_id=location_id,
+        db, item_id=product_id, location_kind=pk, location_id=pid,
         movement_type="production_in", direction=StockDirection.in_, quantity=qty,
         actor_user_id=actor_user_id, source_doc_type="manufacturing_order", source_doc_id=order.id,
     )
     order.stock_movement_id = produced.id
-    order.total_cost = to_money(total_cost)
-    order.unit_cost = to_money(total_cost / qty) if qty else ZERO
+    order.material_cost = to_money(material_cost)
+    order.resource_cost = to_money(resource_cost)
+    order.total_cost = to_money(material_cost + resource_cost)
+    order.unit_cost = production.unit_cost(order.total_cost, qty)
     db.flush()
     audit_service.record(db, action="manufacturing_order.create", actor_user_id=actor_user_id,
                          entity_type="manufacturing_order", entity_id=order.id,
@@ -302,8 +352,9 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Manufact
         document_number=_order_doc_number(db), product_id=original.product_id,
         bom_id=original.bom_id, location_kind=original.location_kind,
         location_id=original.location_id, quantity=original.quantity,
-        unit_cost=original.unit_cost, total_cost=original.total_cost, stock_movement_id=0,
-        reverses_order_id=order_id, actor_user_id=actor_user_id,
+        unit_cost=original.unit_cost, total_cost=original.total_cost,
+        material_cost=original.material_cost, resource_cost=original.resource_cost,
+        stock_movement_id=0, reverses_order_id=order_id, actor_user_id=actor_user_id,
     )
     db.add(rev)
     db.flush()
@@ -322,7 +373,7 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Manufact
         rev.consumptions.append(
             ManufacturingOrderConsumption(
                 item_id=cons.item_id, quantity=cons.quantity, unit_cost=cons.unit_cost,
-                line_cost=cons.line_cost, stock_movement_id=mv.id,
+                line_cost=cons.line_cost, warehouse_id=cons.warehouse_id, stock_movement_id=mv.id,
             )
         )
     db.flush()

@@ -103,22 +103,38 @@ class ComponentIn(BaseModel):
     quantity: Decimal
 
 
+class ResourceIn(BaseModel):
+    kind: str  # labor | machine | overhead | other
+    name: str
+    quantity: Decimal
+    rate: Decimal
+
+
 class BomIn(BaseModel):
     product_id: int
     name: str
     output_quantity: Decimal = Decimal("1")
     components: list[ComponentIn]
+    resources: list[ResourceIn] = []
 
 
 class BomUpdate(BaseModel):
     name: str
     output_quantity: Decimal
     components: list[ComponentIn]
+    resources: list[ResourceIn] = []
 
 
 class ComponentOut(BaseModel):
     item_id: int
     quantity: Decimal
+
+
+class ResourceOut(BaseModel):
+    kind: str
+    name: str
+    quantity: Decimal
+    rate: Decimal
 
 
 class BomOut(BaseModel):
@@ -128,6 +144,7 @@ class BomOut(BaseModel):
     output_quantity: Decimal
     active: bool
     components: list[ComponentOut]
+    resources: list[ResourceOut]
 
 
 def _bom_out(bom) -> BomOut:
@@ -135,6 +152,8 @@ def _bom_out(bom) -> BomOut:
         id=bom.id, product_id=bom.product_id, name=bom.name,
         output_quantity=bom.output_quantity, active=bom.active,
         components=[ComponentOut(item_id=c.item_id, quantity=c.quantity) for c in bom.components],
+        resources=[ResourceOut(kind=r.kind.value, name=r.name, quantity=r.quantity, rate=r.rate)
+                   for r in bom.resources],
     )
 
 
@@ -170,7 +189,9 @@ def create_bom(
     try:
         bom = manufacturing_service.create_bom(
             db, product_id=body.product_id, name=body.name, output_quantity=body.output_quantity,
-            components=[(c.item_id, c.quantity) for c in body.components], actor_user_id=current.id)
+            components=[(c.item_id, c.quantity) for c in body.components],
+            resources=[(r.kind, r.name, r.quantity, r.rate) for r in body.resources],
+            actor_user_id=current.id)
     except ManufacturingError as exc:
         raise _conflict(exc)
     db.commit()
@@ -187,7 +208,9 @@ def update_bom(
     try:
         bom = manufacturing_service.update_bom(
             db, bom_id=bom_id, name=body.name, output_quantity=body.output_quantity,
-            components=[(c.item_id, c.quantity) for c in body.components], actor_user_id=current.id)
+            components=[(c.item_id, c.quantity) for c in body.components],
+            resources=[(r.kind, r.name, r.quantity, r.rate) for r in body.resources],
+            actor_user_id=current.id)
     except ManufacturingError as exc:
         raise _conflict(exc)
     db.commit()
@@ -210,11 +233,25 @@ def deactivate_bom(
 # ---------------------------------------------------------------------------
 # Manufacturing orders — recipe-driven consume + produce.
 # ---------------------------------------------------------------------------
+class OrderResourceIn(BaseModel):
+    kind: str
+    name: str
+    quantity: Decimal
+    rate: Decimal
+
+
+class OrderWasteIn(BaseModel):
+    item_id: int
+    quantity: Decimal
+
+
 class OrderIn(BaseModel):
     product_id: int
     quantity: Decimal
     location: LocationIn
     bom_id: int | None = None
+    resources: list[OrderResourceIn] | None = None  # override recipe resources; omit = use recipe
+    wastes: list[OrderWasteIn] = []                  # per-component waste recorded on the order
 
 
 class OrderConsumptionOut(BaseModel):
@@ -222,6 +259,16 @@ class OrderConsumptionOut(BaseModel):
     quantity: Decimal
     unit_cost: Decimal
     line_cost: Decimal
+    waste_quantity: Decimal
+    warehouse_id: int | None
+
+
+class OrderResourceOut(BaseModel):
+    kind: str
+    name: str
+    quantity: Decimal
+    rate: Decimal
+    cost: Decimal
 
 
 class OrderOut(BaseModel):
@@ -232,9 +279,12 @@ class OrderOut(BaseModel):
     quantity: Decimal
     unit_cost: Decimal
     total_cost: Decimal
+    material_cost: Decimal
+    resource_cost: Decimal
     reversed: bool
     is_reversal: bool
     consumptions: list[OrderConsumptionOut]
+    resources: list[OrderResourceOut]
 
 
 def _reversed_ids(db: Session) -> set[int]:
@@ -253,11 +303,15 @@ def _order_out(order, reversed_ids: set[int]) -> OrderOut:
     return OrderOut(
         id=order.id, document_number=order.document_number, product_id=order.product_id,
         bom_id=order.bom_id, quantity=order.quantity, unit_cost=order.unit_cost,
-        total_cost=order.total_cost, reversed=order.id in reversed_ids,
+        total_cost=order.total_cost, material_cost=order.material_cost,
+        resource_cost=order.resource_cost, reversed=order.id in reversed_ids,
         is_reversal=order.reverses_order_id is not None,
         consumptions=[OrderConsumptionOut(item_id=c.item_id, quantity=c.quantity,
-                                          unit_cost=c.unit_cost, line_cost=c.line_cost)
+                                          unit_cost=c.unit_cost, line_cost=c.line_cost,
+                                          waste_quantity=c.waste_quantity, warehouse_id=c.warehouse_id)
                       for c in order.consumptions],
+        resources=[OrderResourceOut(kind=r.kind, name=r.name, quantity=r.quantity, rate=r.rate,
+                                    cost=r.cost) for r in order.resources],
     )
 
 
@@ -292,7 +346,10 @@ def create_order(
         order = manufacturing_service.create_order(
             db, product_id=body.product_id, quantity=body.quantity,
             location_kind=body.location.location_kind, location_id=body.location.location_id,
-            bom_id=body.bom_id, actor_user_id=current.id)
+            bom_id=body.bom_id, actor_user_id=current.id,
+            resources=([(r.kind, r.name, r.quantity, r.rate) for r in body.resources]
+                       if body.resources is not None else None),
+            wastes={w.item_id: w.quantity for w in body.wastes})
     except (ManufacturingError, StockError) as exc:
         raise _conflict(exc)
     db.commit()

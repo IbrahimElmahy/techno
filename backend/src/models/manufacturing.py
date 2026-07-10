@@ -63,7 +63,10 @@ class ManufacturingOrder(Base):
     location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)  # base units of product produced
     unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False)   # total_cost / quantity
-    total_cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # Σ component line cost
+    total_cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # material_cost + resource_cost
+    # Cost breakdown (014): materials (Σ component line cost) vs resources (labor/machine/overhead).
+    material_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    resource_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     # The product's in-movement id (for reverse). Component out-movements are on the consumption rows.
     stock_movement_id: Mapped[int] = mapped_column(ForeignKey("stock_movement.id"), nullable=False)
     # Set when this order is itself the reversal of another (reverse-once at order level).
@@ -74,6 +77,9 @@ class ManufacturingOrder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     consumptions: Mapped[list[ManufacturingOrderConsumption]] = relationship(
+        cascade="all, save-update", back_populates="order"
+    )
+    resources: Mapped[list[ManufacturingOrderResource]] = relationship(
         cascade="all, save-update", back_populates="order"
     )
 
@@ -89,6 +95,30 @@ class ManufacturingOrderConsumption(Base):
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)  # base units consumed
     unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # raw purchase_price snapshot
     line_cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # quantity × unit_cost
+    # Portion of the consumed quantity that was scrap/waste (014); feeds the wastage report.
+    waste_quantity: Mapped[object] = mapped_column(QTY, nullable=False, default=0)
+    # Warehouse the material was actually pulled from (014 routing); mirrors the stock movement.
+    warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
     stock_movement_id: Mapped[int] = mapped_column(ForeignKey("stock_movement.id"), nullable=False)
 
     order: Mapped[ManufacturingOrder] = relationship(back_populates="consumptions")
+
+
+class ManufacturingOrderResource(Base):
+    """A non-material input actually consumed by an order (014): labor/machine/overhead.
+
+    Seeded from the recipe's `BomResource` (scaled to the produced quantity) and editable per order.
+    Costed as `quantity × rate`; contributes to `resource_cost` — no stock movement, no ledger entry.
+    """
+
+    __tablename__ = "manufacturing_order_resource"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("manufacturing_order.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # ResourceKind value
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    quantity: Mapped[object] = mapped_column(QTY, nullable=False)
+    rate: Mapped[object] = mapped_column(MONEY, nullable=False)
+    cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # quantity × rate
+
+    order: Mapped[ManufacturingOrder] = relationship(back_populates="resources")

@@ -1,21 +1,73 @@
 from __future__ import annotations
 
+import io
 from decimal import Decimal
+
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-import io
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_SALES_READ
+from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
 from src.core.db import get_db
-from src.models.sales import SalesInvoice
-from src.models.purchasing import PurchaseInvoice
+from src.lib import reporting
 from src.models.ledger import Account, AccountType
+from src.models.purchasing import PurchaseInvoice
+from src.models.sales import SalesInvoice
 from src.services import ledger_service
 
 router = APIRouter(tags=["reports"], prefix="/reports")
+
+
+@router.get("/production")
+def production_report(
+    date_from: str | None = Query(None), date_to: str | None = Query(None),
+    period: str = Query("month"), product_id: int | None = Query(None),
+    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+):
+    return reporting.production_consumption(
+        db, date_from=date_from, date_to=date_to, period=period, product_id=product_id)
+
+
+@router.get("/inventory")
+def inventory_report(
+    warehouse_id: int | None = Query(None), item_id: int | None = Query(None),
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    return reporting.inventory(db, warehouse_id=warehouse_id, item_id=item_id)
+
+
+@router.get("/wastage")
+def wastage_report(
+    date_from: str | None = Query(None), date_to: str | None = Query(None),
+    item_id: int | None = Query(None), warehouse_id: int | None = Query(None),
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    return reporting.wastage(db, date_from=date_from, date_to=date_to, item_id=item_id,
+                             warehouse_id=warehouse_id)
+
+
+@router.get("/stagnant")
+def stagnant_report(
+    days: int = Query(90, ge=0), warehouse_id: int | None = Query(None),
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id)
+
+
+@router.get("/sales")
+def sales_report(
+    date_from: str | None = Query(None), date_to: str | None = Query(None),
+    period: str = Query("month"),
+    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+):
+    return reporting.sales(db, date_from=date_from, date_to=date_to, period=period)
 
 
 @router.get("/summary")
