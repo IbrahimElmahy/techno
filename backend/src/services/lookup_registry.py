@@ -25,8 +25,9 @@ CATEGORIES: dict[str, dict] = {
                      ("consumer", "مستهلك")],
     },
     # --- Customers page ---
+    # Free list (013): no logic branches on customer_type, so admins can add their own types.
     "customer_type": {
-        "page": "customers", "label": "أنواع العملاء", "system": True,
+        "page": "customers", "label": "أنواع العملاء", "system": False,
         "defaults": [("trader", "تاجر"), ("plumber", "سباك"), ("other", "أخرى")],
     },
     # --- Loyalty page ---

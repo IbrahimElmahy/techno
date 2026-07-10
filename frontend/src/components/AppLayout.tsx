@@ -277,34 +277,44 @@ export default function AppLayout() {
         style={{
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           zIndex: 10,
+          height: '100vh',
+          position: 'sticky',
+          insetInlineStart: 0,
+          top: 0,
         }}
       >
-        <div
-          className="logo"
-          style={{
-            height: 64,
-            margin: 16,
-            background: '#6AB42D',
-            color: '#fff',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            borderRadius: 8,
-            fontSize: collapsed ? '16px' : '20px',
-            fontWeight: 'bold',
-            transition: 'all 0.2s',
-          }}
-        >
-          {collapsed ? 'T' : 'Techno Therm'}
+        {/* Flex column so the logo stays pinned and the menu scrolls when items overflow. */}
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div
+            className="logo"
+            style={{
+              height: 64,
+              margin: 16,
+              flexShrink: 0,
+              background: '#6AB42D',
+              color: '#fff',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              borderRadius: 8,
+              fontSize: collapsed ? '16px' : '20px',
+              fontWeight: 'bold',
+              transition: 'all 0.2s',
+            }}
+          >
+            {collapsed ? 'T' : 'Techno Therm'}
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+            <Menu
+              theme="light"
+              mode="inline"
+              selectedKeys={[location.pathname]}
+              items={filteredMenuItems}
+              onClick={handleMenuClick}
+              style={{ borderInlineEnd: 0 }}
+            />
+          </div>
         </div>
-        <Menu
-          theme="light"
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={filteredMenuItems}
-          onClick={handleMenuClick}
-          style={{ borderInlineEnd: 0 }}
-        />
       </Sider>
       <Layout>
         <Header

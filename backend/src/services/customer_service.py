@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.models.customer import Customer, CustomerAccount, CustomerType
+from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Account, AccountType, Direction
 from src.services import audit_service
 
@@ -30,7 +30,7 @@ def create_customer(
     db: Session,
     *,
     name: str,
-    customer_type: CustomerType,
+    customer_type: str,
     rep_id: int,
     territory_id: int,
     phone: str | None,

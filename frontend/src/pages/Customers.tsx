@@ -10,7 +10,7 @@ interface CustomerRecord {
   id: number;
   code: string;
   name: string;
-  customer_type: 'trader' | 'plumber' | 'other';
+  customer_type: string; // admin-configurable via Settings (013)
   phone: string | null;
   rep_id: number;
   territory_id: number;

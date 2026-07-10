@@ -6,7 +6,8 @@ from src.models.ledger import LedgerEntry
 from src.models.user import User
 
 
-def test_no_delete_endpoint_for_customers(client, world, login):
+def test_customer_delete_is_soft_deactivate_not_hard_delete(client, world, login):
+    """DELETE deactivates (v2 CRUD) but never hard-deletes — the row persists (FR-023)."""
     admin = login("admin")
     c = client.post(
         "/api/v1/customers",
@@ -16,9 +17,11 @@ def test_no_delete_endpoint_for_customers(client, world, login):
             "rep_id": world["rep_a"], "territory_id": world["terr_a"],
         },
     ).json()
-    # No hard-delete route is exposed -> method not allowed on the existing resource path.
     resp = client.delete(f"/api/v1/customers/{c['id']}", headers=admin)
-    assert resp.status_code == 405
+    assert resp.status_code == 204
+    # Soft-delete: the record is still there, just inactive (history preserved, not removed).
+    fetched = client.get(f"/api/v1/customers/{c['id']}", headers=admin).json()
+    assert fetched["active"] is False
 
 
 def test_deactivation_preserves_user_and_ledger_history(client, world, login, Session):

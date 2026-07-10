@@ -12,7 +12,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
 from src.core.db import get_db
 from src.models.catalog import PriceTier
-from src.models.customer import Customer, CustomerAccount, CustomerType
+from src.models.customer import Customer, CustomerAccount
 from src.services import audit_service, customer_service, ledger_service
 
 router = APIRouter(tags=["customers"], prefix="/customers")
@@ -20,7 +20,7 @@ router = APIRouter(tags=["customers"], prefix="/customers")
 
 class CustomerCreate(BaseModel):
     name: str
-    customer_type: CustomerType
+    customer_type: str  # free string (013) — validated against the lookup list, not an enum
     rep_id: int
     territory_id: int
     phone: str | None = None
@@ -30,7 +30,7 @@ class CustomerCreate(BaseModel):
 class CustomerUpdate(BaseModel):
     name: str | None = None
     phone: str | None = None
-    customer_type: CustomerType | None = None
+    customer_type: str | None = None
     default_price_tier: PriceTier | None = None
     active: bool | None = None
 
@@ -39,7 +39,7 @@ class CustomerOut(BaseModel):
     id: int
     code: str
     name: str
-    customer_type: CustomerType
+    customer_type: str
     phone: str | None
     rep_id: int
     territory_id: int

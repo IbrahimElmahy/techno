@@ -19,7 +19,14 @@ active, is_system)` keyed by `category`. Two category kinds (registry in
   `redemption_mode`, `warehouse_type`, `holder_type`, `location_kind`): seeded from the backend Enum.
   The admin MAY **relabel, reorder, and hide** options, but MUST NOT add/delete values — business
   logic switches on the enum. Enforced in `lookup_service` (`is_system=True` rows).
-- **custom** (free lists: `unit_of_measure`, `payment_method`): full add/edit/remove.
+- **custom** (free lists: `unit_of_measure`, `payment_method`, `customer_type`): full add/edit/remove.
+  `customer_type` was converted from an Enum column to a free `String` — no logic branches on it, so
+  admins can add their own customer types. A guarded startup fixup (`_relax_configurable_enum_columns`
+  in `main.py`) widens the existing native-ENUM column to VARCHAR on Postgres/MySQL, since the
+  create_all deploy path never alters columns. **Genuinely structural enums stay locked** (item_kind,
+  price_tier, location_kind, holder_type, warehouse_type, coupon_kind, redemption_mode): their values
+  are consumed directly by pricing/inventory/manufacturing/redemption logic, so a new value would be
+  selectable but non-functional — extending one is a code change, not a settings change.
 
 Options are **lazily seeded** from the registry on first read, so fresh DBs and tests always have
 defaults with no explicit seed step.
