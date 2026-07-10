@@ -98,12 +98,46 @@ def create_app() -> FastAPI:
         from src.core.db import Base, engine
 
         Base.metadata.create_all(engine)
+        _relax_configurable_enum_columns(engine)
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
 
         logging.getLogger("uvicorn.error").warning("startup create_all skipped: %s", exc)
 
     return app
+
+
+def _relax_configurable_enum_columns(engine) -> None:
+    """Demote columns whose values are admin-configurable from a native DB ENUM to VARCHAR.
+
+    create_all never alters an existing column, so on a live DB a column first created as a native
+    ENUM (Postgres/MySQL) keeps rejecting new values. `customer_type` is a free lookup (013) with no
+    logic depending on it — widen it so admins can add their own types. Idempotent and safe; SQLite
+    already stores it as text so it is a no-op there.
+    """
+    import logging
+    from sqlalchemy import text
+
+    dialect = engine.dialect.name
+    # (table, column, varchar length) pairs that are configurable free lists.
+    targets = [("customer", "customer_type", 32)]
+    with engine.begin() as conn:
+        for table, column, length in targets:
+            try:
+                if dialect in ("postgresql", "postgres"):
+                    conn.execute(text(
+                        f'ALTER TABLE "{table}" ALTER COLUMN "{column}" '
+                        f'TYPE VARCHAR({length}) USING "{column}"::text'
+                    ))
+                elif dialect in ("mysql", "mariadb"):
+                    conn.execute(text(
+                        f"ALTER TABLE `{table}` MODIFY `{column}` VARCHAR({length}) NOT NULL"
+                    ))
+                # sqlite: Enum is already stored as VARCHAR with no CHECK — nothing to do.
+            except Exception as exc:  # pragma: no cover — best-effort widening
+                logging.getLogger("uvicorn.error").info(
+                    "relax enum %s.%s skipped: %s", table, column, exc
+                )
 
 
 app = create_app()
