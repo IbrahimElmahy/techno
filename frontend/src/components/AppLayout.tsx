@@ -278,9 +278,7 @@ export default function AppLayout() {
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           zIndex: 10,
           height: '100vh',
-          position: 'sticky',
-          insetInlineStart: 0,
-          top: 0,
+          overflow: 'hidden',
         }}
       >
         {/* Flex column so the logo stays pinned and the menu scrolls when items overflow. */}
