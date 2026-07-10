@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Form, Input, Button, Card, Select, Table, Space, Row, Col, InputNumber, Divider, message, Modal, Result } from 'antd';
-import { PlusOutlined, DeleteOutlined, FileDoneOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Form, Input, Button, Card, Select, Table, Space, Row, Col, InputNumber, Divider, message, Modal, Result, Tabs, Drawer, Descriptions, Tag } from 'antd';
+import { PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 
 interface Supplier {
@@ -33,6 +33,48 @@ interface PurchaseItem {
 
 interface ItemUnit { name: string; factor: number; is_base: boolean; }
 
+interface PurchaseRecord {
+  id: number;
+  document_number: string;
+  supplier_id: number;
+  supplier_name: string;
+  total: string;
+  cash_amount: string;
+  credit_amount: string;
+  created_at: string;
+}
+
+interface PurchaseDetailLine {
+  item_id: number;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+  unit: string | null;
+}
+
+interface PurchaseDetailReturn {
+  id: number;
+  document_number: string;
+  value: string;
+  created_at: string;
+}
+
+interface PurchaseDetail extends PurchaseRecord {
+  location_kind: string;
+  location_id: number;
+  lines: PurchaseDetailLine[];
+  returns: PurchaseDetailReturn[];
+}
+
+const fmtMoney = (v: string | number) =>
+  Number(v).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const fmtDate = (v: string) => {
+  if (!v) return '-';
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? v : d.toLocaleString('ar-EG');
+};
+
 export default function Purchases() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -53,6 +95,48 @@ export default function Purchases() {
 
   // Document creation result
   const [docResult, setDocResult] = useState<any>(null);
+
+  // Active tab + purchases history list
+  const [activeTab, setActiveTab] = useState<string>('create');
+  const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+
+  // Detail drawer
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detail, setDetail] = useState<PurchaseDetail | null>(null);
+
+  const itemName = useMemo(() => {
+    const m = new Map<number, RawMaterial>();
+    items.forEach((i) => m.set(i.id, i));
+    return (id: number) => m.get(id)?.name ?? `صنف #${id}`;
+  }, [items]);
+
+  const fetchPurchases = async () => {
+    setListLoading(true);
+    try {
+      const res = await api.get('/api/v1/purchases');
+      setPurchases(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setListLoading(false);
+    }
+  };
+
+  const openDetail = async (record: PurchaseRecord) => {
+    setDetailVisible(true);
+    setDetail(null);
+    setDetailLoading(true);
+    try {
+      const res = await api.get(`/api/v1/purchases/${record.id}`);
+      setDetail(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const loadLookups = async () => {
     setLoading(true);
@@ -75,6 +159,7 @@ export default function Purchases() {
 
   useEffect(() => {
     loadLookups();
+    fetchPurchases();
   }, []);
 
   const handleAddItem = () => {
@@ -176,31 +261,13 @@ export default function Purchases() {
       setPurchaseItems([{ key: '1', item_id: null, quantity: 1, unit_price: 0, unit: null }]);
       setCashAmount(0);
       setCreditAmount(0);
+      fetchPurchases();
     } catch (err) {
       console.error(err);
     } finally {
       setSubmitLoading(false);
     }
   };
-
-  if (docResult) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
-        <Card style={{ width: 600 }}>
-          <Result
-            status="success"
-            title="تم تسجيل فاتورة الشراء بنجاح"
-            subTitle={`رقم مستند الفاتورة: ${docResult.document_number} | رقم قيد اليومية: ${docResult.ledger_entry_id || 'لا يوجد'}`}
-            extra={[
-              <Button type="primary" key="new" onClick={() => setDocResult(null)}>
-                تسجيل فاتورة جديدة
-              </Button>,
-            ]}
-          />
-        </Card>
-      </div>
-    );
-  }
 
   const columns = [
     {
@@ -294,13 +361,24 @@ export default function Purchases() {
     },
   ];
 
-  return (
-    <div>
-      <Card
-        title="فاتورة شراء جديدة"
-        extra={<Button type="primary">تسجيل فاتورة شراء</Button>}
-      >
-        <Form form={form} layout="vertical" onFinish={handleSubmit} requiredMark={false}>
+  const createContent = docResult ? (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+      <Card style={{ width: 600 }}>
+        <Result
+          status="success"
+          title="تم تسجيل فاتورة الشراء بنجاح"
+          subTitle={`رقم مستند الفاتورة: ${docResult.document_number} | رقم قيد اليومية: ${docResult.ledger_entry_id || 'لا يوجد'}`}
+          extra={[
+            <Button type="primary" key="new" onClick={() => setDocResult(null)}>
+              تسجيل فاتورة جديدة
+            </Button>,
+          ]}
+        />
+      </Card>
+    </div>
+  ) : (
+    <Card title="فاتورة شراء جديدة">
+      <Form form={form} layout="vertical" onFinish={handleSubmit} requiredMark={false}>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
@@ -397,8 +475,155 @@ export default function Purchases() {
               تسجيل وترحيل فاتورة الشراء
             </Button>
           </Form.Item>
-        </Form>
-      </Card>
+      </Form>
+    </Card>
+  );
+
+  const listColumns = [
+    {
+      title: 'رقم المستند',
+      dataIndex: 'document_number',
+      key: 'document_number',
+      render: (doc: string) => <Tag color="blue">{doc}</Tag>,
+    },
+    {
+      title: 'المورد',
+      dataIndex: 'supplier_name',
+      key: 'supplier_name',
+      render: (name: string, record: PurchaseRecord) => name || `مورد #${record.supplier_id}`,
+    },
+    {
+      title: 'الإجمالي',
+      dataIndex: 'total',
+      key: 'total',
+      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong>,
+    },
+    {
+      title: 'نقدي',
+      dataIndex: 'cash_amount',
+      key: 'cash_amount',
+      render: (val: string) => `${fmtMoney(val)} ج.م`,
+    },
+    {
+      title: 'آجل',
+      dataIndex: 'credit_amount',
+      key: 'credit_amount',
+      render: (val: string) => `${fmtMoney(val)} ج.م`,
+    },
+    {
+      title: 'التاريخ',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      render: (val: string) => fmtDate(val),
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      render: (_: any, record: PurchaseRecord) => (
+        <Space size="middle">
+          <Button type="dashed" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+            عرض
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
+  const listContent = (
+    <Card title="سجل المشتريات">
+      <Table
+        dataSource={purchases}
+        columns={listColumns}
+        rowKey="id"
+        loading={listLoading}
+        pagination={{ pageSize: 10 }}
+        locale={{ emptyText: 'لا يوجد فواتير شراء بعد' }}
+      />
+    </Card>
+  );
+
+  const detailLineColumns = [
+    { title: 'الصنف', key: 'item', render: (_: any, r: PurchaseDetailLine) => itemName(r.item_id) },
+    { title: 'الوحدة', dataIndex: 'unit', key: 'unit', render: (u: string | null) => u || 'الأساسية' },
+    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', render: (q: string) => Number(q) },
+    { title: 'سعر الوحدة', dataIndex: 'unit_price', key: 'unit_price', render: (v: string) => `${fmtMoney(v)} ج.م` },
+    { title: 'الإجمالي', dataIndex: 'line_total', key: 'line_total', render: (v: string) => `${fmtMoney(v)} ج.م` },
+  ];
+
+  const detailReturnColumns = [
+    { title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
+    { title: 'القيمة', dataIndex: 'value', key: 'value', render: (v: string) => `${fmtMoney(v)} ج.م` },
+    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (v: string) => fmtDate(v) },
+  ];
+
+  return (
+    <div>
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: 'create',
+            label: <span><FileDoneOutlined /> فاتورة شراء جديدة</span>,
+            children: createContent,
+          },
+          {
+            key: 'list',
+            label: <span><UnorderedListOutlined /> سجل المشتريات</span>,
+            children: listContent,
+          },
+        ]}
+      />
+
+      <Drawer
+        title={`تفاصيل فاتورة الشراء: ${detail?.document_number || ''}`}
+        width={720}
+        onClose={() => setDetailVisible(false)}
+        open={detailVisible}
+        destroyOnHidden
+      >
+        {detail && (
+          <>
+            <Descriptions bordered column={2} size="small">
+              <Descriptions.Item label="رقم المستند">
+                <Tag color="blue">{detail.document_number}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="المورد">
+                {detail.supplier_name || `مورد #${detail.supplier_id}`}
+              </Descriptions.Item>
+              <Descriptions.Item label="الإجمالي">
+                <strong style={{ color: '#6AB42D' }}>{fmtMoney(detail.total)} ج.م</strong>
+              </Descriptions.Item>
+              <Descriptions.Item label="التاريخ">{fmtDate(detail.created_at)}</Descriptions.Item>
+              <Descriptions.Item label="المدفوع نقداً">{fmtMoney(detail.cash_amount)} ج.م</Descriptions.Item>
+              <Descriptions.Item label="المتبقي آجل">{fmtMoney(detail.credit_amount)} ج.م</Descriptions.Item>
+              <Descriptions.Item label="موقع الاستلام" span={2}>
+                {detail.location_kind === 'warehouse' ? 'مستودع' : detail.location_kind} #{detail.location_id}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Divider orientation="right">أصناف الفاتورة</Divider>
+            <Table
+              dataSource={detail.lines}
+              columns={detailLineColumns}
+              rowKey="item_id"
+              pagination={false}
+              size="small"
+            />
+
+            <Divider orientation="right">المرتجعات</Divider>
+            <Table
+              dataSource={detail.returns}
+              columns={detailReturnColumns}
+              rowKey="id"
+              pagination={false}
+              size="small"
+              locale={{ emptyText: 'لا توجد مرتجعات على هذه الفاتورة' }}
+            />
+          </>
+        )}
+        {!detail && detailLoading && <p>جارٍ التحميل...</p>}
+      </Drawer>
     </div>
   );
 }

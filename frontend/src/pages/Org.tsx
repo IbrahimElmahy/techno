@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Tabs, Table, Button, Space, Modal, Form, Input, Select, Checkbox, Tag, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
+import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 
 export default function Org() {
   const [activeTab, setActiveTab] = useState('branches');
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [form] = Form.useForm();
+
+  // Edit state
+  const [editVisible, setEditVisible] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any>(null);
+  const [editForm] = Form.useForm();
   
   // Data states
   const [branches, setBranches] = useState<any[]>([]);
@@ -87,6 +93,64 @@ export default function Org() {
     }
   };
 
+  const openEdit = (record: any) => {
+    setEditingRecord(record);
+    if (activeTab === 'branches') {
+      editForm.setFieldsValue({ name: record.name, governorate_id: record.governorate_id });
+    } else if (activeTab === 'warehouses') {
+      editForm.setFieldsValue({ name: record.name });
+    }
+    setEditVisible(true);
+  };
+
+  const handleEdit = async (values: any) => {
+    if (!editingRecord) return;
+    try {
+      if (activeTab === 'branches') {
+        await api.patch(`/api/v1/branches/${editingRecord.id}`, {
+          name: values.name,
+          governorate_id: values.governorate_id,
+        });
+        message.success('تم تعديل الفرع بنجاح');
+      } else if (activeTab === 'warehouses') {
+        await api.patch(`/api/v1/warehouses/${editingRecord.id}`, {
+          name: values.name,
+        });
+        message.success('تم تعديل المستودع بنجاح');
+      }
+      setEditVisible(false);
+      editForm.resetFields();
+      setEditingRecord(null);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeactivate = (record: any) => {
+    const label =
+      activeTab === 'branches' ? 'الفرع' : activeTab === 'warehouses' ? 'المستودع' : 'العهدة';
+    const endpoint =
+      activeTab === 'branches'
+        ? `/api/v1/branches/${record.id}`
+        : activeTab === 'warehouses'
+        ? `/api/v1/warehouses/${record.id}`
+        : `/api/v1/custodies/${record.id}`;
+    showDeactivationConfirm({
+      title: `إلغاء تفعيل ${label}`,
+      content: `هل أنت متأكد من إلغاء تفعيل ${label}؟ لن يعود متاحًا للاستخدام في العمليات الجديدة.`,
+      onOk: async () => {
+        try {
+          await api.delete(endpoint);
+          message.success(`تم إلغاء تفعيل ${label} بنجاح`);
+          fetchData();
+        } catch (err) {
+          console.error(err);
+        }
+      },
+    });
+  };
+
   // Columns definition
   const branchColumns = [
     { title: 'كود الفرع', dataIndex: 'id', key: 'id' },
@@ -111,6 +175,22 @@ export default function Org() {
       dataIndex: 'active',
       key: 'active',
       render: (active: boolean) => <Tag color={active ? 'green' : 'red'}>{active ? 'نشط' : 'معطل'}</Tag>,
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      render: (_: any, record: any) => (
+        <Space size="middle">
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+            تعديل
+          </Button>
+          {record.active && (
+            <Button size="small" danger icon={<StopOutlined />} onClick={() => handleDeactivate(record)}>
+              إلغاء تفعيل
+            </Button>
+          )}
+        </Space>
+      ),
     },
   ];
 
@@ -138,6 +218,22 @@ export default function Org() {
       dataIndex: 'active',
       key: 'active',
       render: (active: boolean) => <Tag color={active ? 'green' : 'red'}>{active ? 'نشط' : 'معطل'}</Tag>,
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      render: (_: any, record: any) => (
+        <Space size="middle">
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+            تعديل
+          </Button>
+          {record.active && (
+            <Button size="small" danger icon={<StopOutlined />} onClick={() => handleDeactivate(record)}>
+              إلغاء تفعيل
+            </Button>
+          )}
+        </Space>
+      ),
     },
   ];
 
@@ -167,6 +263,16 @@ export default function Org() {
       dataIndex: 'active',
       key: 'active',
       render: (active: boolean) => <Tag color={active ? 'green' : 'red'}>{active ? 'نشط' : 'معطل'}</Tag>,
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      render: (_: any, record: any) =>
+        record.active ? (
+          <Button size="small" danger icon={<StopOutlined />} onClick={() => handleDeactivate(record)}>
+            إلغاء تفعيل
+          </Button>
+        ) : null,
     },
   ];
 
@@ -349,6 +455,57 @@ export default function Org() {
                 }}
               </Form.Item>
             </>
+          )}
+        </Form>
+      </Modal>
+
+      <Modal
+        title={activeTab === 'branches' ? 'تعديل بيانات الفرع' : 'تعديل بيانات المستودع'}
+        open={editVisible}
+        onCancel={() => {
+          setEditVisible(false);
+          setEditingRecord(null);
+        }}
+        onOk={() => editForm.submit()}
+        okText="حفظ التعديلات"
+        cancelText="إلغاء"
+        destroyOnHidden
+      >
+        <Form form={editForm} layout="vertical" onFinish={handleEdit} requiredMark={false}>
+          {activeTab === 'branches' && (
+            <>
+              <Form.Item
+                name="name"
+                label="اسم الفرع"
+                rules={[{ required: true, message: 'يرجى إدخال اسم الفرع!' }]}
+              >
+                <Input placeholder="مثال: فرع الإسكندرية" />
+              </Form.Item>
+
+              <Form.Item
+                name="governorate_id"
+                label="المحافظة التابع لها"
+                rules={[{ required: true, message: 'يرجى تحديد المحافظة!' }]}
+              >
+                <Select placeholder="اختر المحافظة">
+                  {governorates.map((g) => (
+                    <Select.Option key={g.id} value={g.id}>
+                      {g.name}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </>
+          )}
+
+          {activeTab === 'warehouses' && (
+            <Form.Item
+              name="name"
+              label="اسم المستودع"
+              rules={[{ required: true, message: 'يرجى إدخال اسم المستودع!' }]}
+            >
+              <Input placeholder="مثال: مخزن الخامات الرئيسي" />
+            </Form.Item>
           )}
         </Form>
       </Modal>

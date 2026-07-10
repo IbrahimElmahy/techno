@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Divider, Row, Col, Result } from 'antd';
+import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Divider, Row, Col, Result, Descriptions } from 'antd';
 import { PlusOutlined, RollbackOutlined, EyeOutlined, FileTextOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
@@ -77,6 +77,11 @@ export default function Invoices() {
   const [returnVisible, setReturnVisible] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
+
+  // Standalone invoice detail/view (separate from the return wizard)
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [viewInvoice, setViewInvoice] = useState<any>(null);
+  const [viewReturns, setViewReturns] = useState<any[]>([]);
 
   // Forms
   const [createForm] = Form.useForm();
@@ -311,6 +316,23 @@ export default function Invoices() {
     }
   };
 
+  const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
+
+  // Open a read-only detail view: invoice header + lines + its returns.
+  const openDetail = async (record: InvoiceRecord) => {
+    try {
+      const [detRes, retRes] = await Promise.all([
+        api.get(`/api/v1/sales/${record.id}`),
+        api.get(`/api/v1/sales/${record.id}/returns`),
+      ]);
+      setViewInvoice({ ...record, ...detRes.data });
+      setViewReturns(retRes.data);
+      setDetailVisible(true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleReturnSubmit = () => {
     if (!selectedInvoice || !invoiceDetail) return;
     const linesToReturn = Object.entries(returnQtys)
@@ -394,6 +416,9 @@ export default function Invoices() {
       key: 'actions',
       render: (_: any, record: InvoiceRecord) => (
         <Space size="middle">
+          <Button type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+            عرض
+          </Button>
           <Button
             type="dashed"
             icon={<RollbackOutlined />}
@@ -636,6 +661,57 @@ export default function Invoices() {
             <Button onClick={() => setReturnVisible(false)}>إلغاء</Button>
           </Space>
         </div>
+      </Drawer>
+
+      {/* Invoice detail / view drawer */}
+      <Drawer
+        title={`تفاصيل الفاتورة ${viewInvoice?.document_number ?? ''}`}
+        width={640}
+        open={detailVisible}
+        onClose={() => setDetailVisible(false)}
+        destroyOnHidden
+      >
+        {viewInvoice && (
+          <>
+            <Descriptions bordered size="small" column={2}>
+              <Descriptions.Item label="رقم الفاتورة">{viewInvoice.document_number}</Descriptions.Item>
+              <Descriptions.Item label="العميل">
+                {customers.find((c) => c.id === viewInvoice.customer_id)?.name ?? `#${viewInvoice.customer_id}`}
+              </Descriptions.Item>
+              <Descriptions.Item label="الإجمالي">{parseFloat(viewInvoice.gross).toFixed(2)} ج.م</Descriptions.Item>
+              <Descriptions.Item label="الخصم">{parseFloat(viewInvoice.combined_pct).toFixed(0)}%</Descriptions.Item>
+              <Descriptions.Item label="الصافي">{parseFloat(viewInvoice.net).toFixed(2)} ج.م</Descriptions.Item>
+              <Descriptions.Item label="نقداً / آجل">
+                {parseFloat(viewInvoice.cash_amount).toFixed(2)} / {parseFloat(viewInvoice.credit_amount).toFixed(2)} ج.م
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Divider orientation="right">أصناف الفاتورة</Divider>
+            <Table
+              size="small" pagination={false} rowKey={(_, i) => String(i)}
+              dataSource={viewInvoice.lines || []}
+              columns={[
+                { title: 'الصنف', key: 'n', render: (_: any, r: any) => productName(r.item_id) },
+                { title: 'الكمية', dataIndex: 'quantity', render: (q: string) => parseFloat(q) },
+                { title: 'سعر الوحدة', dataIndex: 'unit_price', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
+                { title: 'الإجمالي', dataIndex: 'line_total', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
+              ]}
+            />
+
+            <Divider orientation="right">المرتجعات</Divider>
+            <Table
+              size="small" pagination={false} rowKey="id"
+              dataSource={viewReturns}
+              locale={{ emptyText: 'لا يوجد مرتجعات على هذه الفاتورة' }}
+              columns={[
+                { title: 'سند المرتجع', dataIndex: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
+                { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
+                { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
+                { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
+              ]}
+            />
+          </>
+        )}
       </Drawer>
     </div>
   );

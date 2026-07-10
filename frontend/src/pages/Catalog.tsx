@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Switch, Tag, message, Modal, Row, Col } from 'antd';
-import { PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined } from '@ant-design/icons';
+import { PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
+import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 
 const PRICE_TIERS: { key: string; label: string }[] = [
   { key: 'commercial', label: 'تجاري' },
@@ -336,13 +337,18 @@ export default function Catalog() {
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const [editing, setEditing] = useState<ItemRecord | null>(null);
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
   const { user } = useAuth();
 
   // Point editing is permitted for system_admin and after_sales_staff roles only
   const canEditPoints = ['system_admin', 'after_sales_staff'].includes(user?.role || '');
   // Tier-price editing requires catalog.write (system_admin, branch_manager, purchasing_manager).
   const canEditPrices = ['system_admin', 'branch_manager', 'purchasing_manager'].includes(user?.role || '');
+  // Item-core edit/deactivate gated to the same roles allowed to create items.
+  const canManageItems = ['system_admin', 'purchasing_manager'].includes(user?.role || '');
 
   const fetchItems = async () => {
     setLoading(true);
@@ -378,6 +384,53 @@ export default function Catalog() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const openEditItem = (record: ItemRecord) => {
+    setEditing(record);
+    editForm.setFieldsValue({
+      name: record.name,
+      purchase_price: record.purchase_price ?? undefined,
+      sale_price: record.sale_price ?? undefined,
+      is_serialized: record.is_serialized,
+      active: record.active,
+    });
+    setEditVisible(true);
+  };
+
+  const onEditItem = async (values: any) => {
+    if (!editing) return;
+    try {
+      const payload: any = { name: values.name, active: values.active };
+      if (editing.kind === 'raw_material') payload.purchase_price = values.purchase_price;
+      if (editing.kind === 'product') {
+        payload.sale_price = values.sale_price;
+        payload.is_serialized = !!values.is_serialized;
+      }
+      await api.patch(`/api/v1/items/${editing.id}`, payload);
+      message.success('تم تحديث بيانات الصنف بنجاح');
+      setEditVisible(false);
+      setEditing(null);
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const deactivateItem = (record: ItemRecord) => {
+    showDeactivationConfirm({
+      title: 'إلغاء تفعيل الصنف',
+      content: `هل أنت متأكد من إلغاء تفعيل "${record.name}"؟ لن يظهر في اختيارات العمليات الجديدة، وتظل حركاته السابقة كما هي.`,
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/items/${record.id}`);
+          message.success('تم إلغاء تفعيل الصنف');
+          fetchItems();
+        } catch (err) {
+          console.error(err);
+        }
+      },
+    });
   };
 
   const columns = [
@@ -453,6 +506,30 @@ export default function Catalog() {
         return <ProductPoints itemId={record.id} isEditable={canEditPoints} />;
       },
     },
+    {
+      title: 'الحالة',
+      dataIndex: 'active',
+      key: 'active',
+      render: (active: boolean) =>
+        active ? <Tag color="green">نشط</Tag> : <Tag color="red">غير نشط</Tag>,
+    },
+    ...(canManageItems ? [{
+      title: 'إجراءات',
+      key: 'actions',
+      render: (_: any, record: ItemRecord) => (
+        <Space>
+          <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditItem(record)}>
+            تعديل
+          </Button>
+          {record.active && (
+            <Button size="small" type="link" danger icon={<StopOutlined />}
+              onClick={() => deactivateItem(record)}>
+              إلغاء تفعيل
+            </Button>
+          )}
+        </Space>
+      ),
+    }] : []),
   ];
 
   return (
@@ -558,6 +635,49 @@ export default function Catalog() {
                 حفظ وإضافة
               </Button>
               <Button onClick={() => setDrawerVisible(false)}>إلغاء</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      {/* Edit Item Drawer */}
+      <Drawer
+        title={`تعديل الصنف: ${editing?.name ?? ''}`}
+        width={400}
+        onClose={() => { setEditVisible(false); setEditing(null); }}
+        open={editVisible}
+        destroyOnHidden
+      >
+        <Form form={editForm} layout="vertical" onFinish={onEditItem} requiredMark={false}>
+          <Form.Item name="name" label="اسم الصنف"
+            rules={[{ required: true, message: 'يرجى إدخال اسم الصنف!' }]}>
+            <Input />
+          </Form.Item>
+
+          {editing?.kind === 'product' && (
+            <Form.Item name="sale_price" label="سعر البيع المرجعي (ج.م)">
+              <Input type="number" min={0} step="0.01" placeholder="0.00" />
+            </Form.Item>
+          )}
+          {editing?.kind === 'raw_material' && (
+            <Form.Item name="purchase_price" label="سعر الشراء المرجعي (ج.م)">
+              <Input type="number" min={0} step="0.01" placeholder="0.00" />
+            </Form.Item>
+          )}
+          {editing?.kind === 'product' && (
+            <Form.Item name="is_serialized" label="صنف بأرقام تسلسلية؟" valuePropName="checked">
+              <Switch checkedChildren="نعم" unCheckedChildren="لا" />
+            </Form.Item>
+          )}
+
+          <Form.Item name="active" label="الحالة" valuePropName="checked">
+            <Switch checkedChildren="نشط" unCheckedChildren="غير نشط" />
+          </Form.Item>
+
+          <Form.Item style={{ marginTop: 24 }}>
+            <Space>
+              <Button type="primary" htmlType="submit">حفظ التعديلات</Button>
+              <Button onClick={() => { setEditVisible(false); setEditing(null); }}>إلغاء</Button>
             </Space>
           </Form.Item>
         </Form>

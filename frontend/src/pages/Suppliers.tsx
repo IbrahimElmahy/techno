@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Card, Drawer, Form, Input, Tag, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 
 interface SupplierRecord {
   id: number;
@@ -33,7 +34,10 @@ export default function Suppliers() {
   const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const [editing, setEditing] = useState<SupplierRecord | null>(null);
   const [form] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   const fetchSuppliers = async () => {
     setLoading(true);
@@ -61,6 +65,45 @@ export default function Suppliers() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const openEdit = (record: SupplierRecord) => {
+    setEditing(record);
+    editForm.setFieldsValue({ name: record.name, phone: record.phone });
+    setEditVisible(true);
+  };
+
+  const onEditSupplier = async (values: any) => {
+    if (!editing) return;
+    try {
+      await api.patch(`/api/v1/suppliers/${editing.id}`, {
+        name: values.name,
+        phone: values.phone,
+      });
+      message.success('تم تحديث بيانات المورد بنجاح');
+      setEditVisible(false);
+      setEditing(null);
+      editForm.resetFields();
+      fetchSuppliers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const onDeactivate = (record: SupplierRecord) => {
+    showDeactivationConfirm({
+      title: 'إلغاء تفعيل المورد',
+      content: `هل أنت متأكد من إلغاء تفعيل المورد "${record.name}"؟`,
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/suppliers/${record.id}`);
+          message.success('تم إلغاء تفعيل المورد');
+          fetchSuppliers();
+        } catch (err) {
+          console.error(err);
+        }
+      },
+    });
   };
 
   const columns = [
@@ -93,6 +136,22 @@ export default function Suppliers() {
       title: 'الرصيد الدائن',
       key: 'balance',
       render: (_: any, record: SupplierRecord) => <SupplierBalance supplierId={record.id} />,
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      render: (_: any, record: SupplierRecord) => (
+        <Space size="middle">
+          <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+            تعديل
+          </Button>
+          {record.active && (
+            <Button type="link" danger onClick={() => onDeactivate(record)}>
+              إلغاء تفعيل
+            </Button>
+          )}
+        </Space>
+      ),
     },
   ];
 
@@ -145,6 +204,38 @@ export default function Suppliers() {
                 تسجيل المورد
               </Button>
               <Button onClick={() => setDrawerVisible(false)}>إلغاء</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      {/* Edit Supplier Drawer */}
+      <Drawer
+        title="تعديل بيانات المورد"
+        width={400}
+        onClose={() => setEditVisible(false)}
+        open={editVisible}
+        destroyOnHidden
+      >
+        <Form form={editForm} layout="vertical" onFinish={onEditSupplier} requiredMark={false}>
+          <Form.Item
+            name="name"
+            label="اسم جهة التوريد / المورد"
+            rules={[{ required: true, message: 'يرجى إدخال اسم المورد!' }]}
+          >
+            <Input placeholder="مثال: مصنع النصر للأنابيب" />
+          </Form.Item>
+
+          <Form.Item name="phone" label="رقم الهاتف">
+            <Input placeholder="مثال: 02-23456789" />
+          </Form.Item>
+
+          <Form.Item style={{ marginTop: 24 }}>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                حفظ التعديلات
+              </Button>
+              <Button onClick={() => setEditVisible(false)}>إلغاء</Button>
             </Space>
           </Form.Item>
         </Form>

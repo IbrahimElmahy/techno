@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Row, Col, Statistic, Button, Space, DatePicker, Select, Divider } from 'antd';
 import { FileExcelOutlined, FilePdfOutlined, AreaChartOutlined, DollarOutlined, ShoppingCartOutlined, BankOutlined } from '@ant-design/icons';
 import { api, getApiBaseURL } from '../api/client';
+import type { Dayjs } from 'dayjs';
 
 const { RangePicker } = DatePicker;
 
@@ -20,6 +21,7 @@ export default function Reports() {
     treasury_balance: 0,
   });
   const [loading, setLoading] = useState(false);
+  const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
   // Lookups for filters
   const [reps, setReps] = useState<any[]>([]);
@@ -29,7 +31,12 @@ export default function Reports() {
   const fetchSummary = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/reports/summary');
+      const params: Record<string, string> = {};
+      const from = dateRange?.[0];
+      const to = dateRange?.[1];
+      if (from) params.date_from = from.format('YYYY-MM-DD');
+      if (to) params.date_to = to.format('YYYY-MM-DD');
+      const res = await api.get('/api/v1/reports/summary', { params });
       setSummary(res.data);
     } catch (err) {
       console.error(err);
@@ -79,7 +86,11 @@ export default function Reports() {
         <Space size="middle" style={{ marginBottom: 24, flexWrap: 'wrap' }}>
           <div>
             <span style={{ marginLeft: 8 }}>تحديد الفترة الزمنية:</span>
-            <RangePicker style={{ width: 250 }} />
+            <RangePicker
+              style={{ width: 250 }}
+              value={dateRange as any}
+              onChange={(vals) => setDateRange(vals as [Dayjs | null, Dayjs | null] | null)}
+            />
           </div>
 
           <div>
