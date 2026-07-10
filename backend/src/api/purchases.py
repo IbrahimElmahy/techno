@@ -5,12 +5,15 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE
+from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
 from src.core.db import get_db
+from src.models.purchasing import PurchaseInvoice, PurchaseReturn
 from src.models.stock import LocationKind
+from src.models.supplier import Supplier
 from src.services import purchase_service
 from src.services.purchase_service import PurchaseError, PurchaseLine
 from src.services.stock_service import StockError
@@ -51,6 +54,81 @@ class DocOut(BaseModel):
     id: int
     document_number: str
     ledger_entry_id: int | None = None
+
+
+class PurchaseListOut(BaseModel):
+    id: int
+    document_number: str
+    supplier_id: int
+    supplier_name: str | None
+    total: Decimal
+    cash_amount: Decimal
+    credit_amount: Decimal
+    created_at: str
+
+
+class PurchaseLineOut(BaseModel):
+    item_id: int
+    quantity: Decimal
+    unit_price: Decimal
+    line_total: Decimal
+    unit: str | None = None
+
+
+class PurchaseReturnOut(BaseModel):
+    id: int
+    document_number: str
+    value: Decimal
+    created_at: str
+
+
+class PurchaseDetailOut(PurchaseListOut):
+    location_kind: str
+    location_id: int
+    lines: list[PurchaseLineOut]
+    returns: list[PurchaseReturnOut]
+
+
+@router.get("", response_model=list[PurchaseListOut])
+def list_purchases(
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> list[PurchaseListOut]:
+    names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
+    rows = db.scalars(select(PurchaseInvoice).order_by(PurchaseInvoice.id.desc())).all()
+    return [
+        PurchaseListOut(
+            id=p.id, document_number=p.document_number, supplier_id=p.supplier_id,
+            supplier_name=names.get(p.supplier_id), total=p.total, cash_amount=p.cash_amount,
+            credit_amount=p.credit_amount, created_at=str(p.created_at),
+        )
+        for p in rows
+    ]
+
+
+@router.get("/{purchase_id}", response_model=PurchaseDetailOut)
+def get_purchase(
+    purchase_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> PurchaseDetailOut:
+    p = db.get(PurchaseInvoice, purchase_id)
+    if p is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Purchase not found"})
+    supplier = db.get(Supplier, p.supplier_id)
+    returns = db.scalars(
+        select(PurchaseReturn).where(PurchaseReturn.purchase_invoice_id == purchase_id)
+    ).all()
+    return PurchaseDetailOut(
+        id=p.id, document_number=p.document_number, supplier_id=p.supplier_id,
+        supplier_name=supplier.name if supplier else None, total=p.total,
+        cash_amount=p.cash_amount, credit_amount=p.credit_amount, created_at=str(p.created_at),
+        location_kind=p.location_kind.value, location_id=p.location_id,
+        lines=[PurchaseLineOut(item_id=ln.item_id, quantity=ln.quantity, unit_price=ln.unit_price,
+                               line_total=ln.line_total, unit=ln.unit) for ln in p.lines],
+        returns=[PurchaseReturnOut(id=r.id, document_number=r.document_number, value=r.value,
+                                   created_at=str(r.created_at)) for r in returns],
+    )
 
 
 @router.post("", response_model=DocOut, status_code=status.HTTP_201_CREATED)

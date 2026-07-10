@@ -13,7 +13,7 @@ from src.auth.rbac import CAP_SUPPLIER_READ, CAP_SUPPLIER_WRITE
 from src.core.db import get_db
 from src.models.ledger import Account, AccountType, Direction
 from src.models.supplier import Supplier, SupplierAccount
-from src.services import ledger_service
+from src.services import audit_service, ledger_service
 
 router = APIRouter(tags=["suppliers"], prefix="/suppliers")
 
@@ -23,12 +23,22 @@ class SupplierCreate(BaseModel):
     phone: str | None = None
 
 
+class SupplierUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    active: bool | None = None
+
+
 class SupplierOut(BaseModel):
     id: int
     code: str
     name: str
     phone: str | None
     active: bool
+
+
+def _sup_out(s: Supplier) -> SupplierOut:
+    return SupplierOut(id=s.id, code=s.code, name=s.name, phone=s.phone, active=s.active)
 
 
 class AccountBalanceOut(BaseModel):
@@ -68,6 +78,57 @@ def create_supplier(
     db.commit()
     return SupplierOut(id=supplier.id, code=supplier.code, name=supplier.name,
                        phone=supplier.phone, active=supplier.active)
+
+
+@router.get("/{supplier_id}", response_model=SupplierOut)
+def get_supplier(
+    supplier_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
+    db: Session = Depends(get_db),
+) -> SupplierOut:
+    s = db.get(Supplier, supplier_id)
+    if s is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    return _sup_out(s)
+
+
+@router.patch("/{supplier_id}", response_model=SupplierOut)
+def update_supplier(
+    supplier_id: int,
+    body: SupplierUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_WRITE)),
+    db: Session = Depends(get_db),
+) -> SupplierOut:
+    s = db.get(Supplier, supplier_id)
+    if s is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    if body.name is not None:
+        s.name = body.name
+    if body.phone is not None:
+        s.phone = body.phone
+    if body.active is not None:
+        s.active = body.active
+    db.flush()
+    audit_service.record(db, action="supplier.update", actor_user_id=current.id,
+                         entity_type="supplier", entity_id=s.id)
+    db.commit()
+    return _sup_out(s)
+
+
+@router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_supplier(
+    supplier_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    s = db.get(Supplier, supplier_id)
+    if s is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    s.active = False
+    db.flush()
+    audit_service.record(db, action="supplier.deactivate", actor_user_id=current.id,
+                         entity_type="supplier", entity_id=s.id)
+    db.commit()
 
 
 @router.get("/{supplier_id}/account", response_model=AccountBalanceOut)

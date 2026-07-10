@@ -20,6 +20,7 @@ import Treasury from './pages/Treasury';
 import GeneralLedger from './pages/GeneralLedger';
 import Audit from './pages/Audit';
 import Reports from './pages/Reports';
+import Settings from './pages/Settings';
 import { setApiBaseURL } from './api/client';
 
 // Define placeholder pages for routes (implemented in later tasks)
@@ -100,6 +101,7 @@ export default function App() {
               <Route path="loyalty" element={<Loyalty />} />
               <Route path="audit" element={<Audit />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>

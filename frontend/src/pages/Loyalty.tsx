@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Row, Col, Divider, Tabs, Modal } from 'antd';
-import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined } from '@ant-design/icons';
+import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
-import { showReversalConfirm } from '../components/ConfirmationDialog';
+import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
 
 interface CouponType {
   id: number;
@@ -47,8 +47,13 @@ export default function Loyalty() {
   const [redeemVisible, setRedeemVisible] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
 
+  // Edit coupon type
+  const [editTypeVisible, setEditTypeVisible] = useState(false);
+  const [editingType, setEditingType] = useState<CouponType | null>(null);
+
   // Forms
   const [typeForm] = Form.useForm();
+  const [editTypeForm] = Form.useForm();
   const [convertForm] = Form.useForm();
   const [redeemForm] = Form.useForm();
 
@@ -120,6 +125,58 @@ export default function Loyalty() {
       fetchCouponTypes();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const openEditType = (record: CouponType) => {
+    setEditingType(record);
+    editTypeForm.setFieldsValue({
+      name: record.name,
+      point_cost: record.point_cost,
+      value: parseFloat(record.value),
+      active: record.active,
+    });
+    setEditTypeVisible(true);
+  };
+
+  const onEditCouponType = async (values: any) => {
+    if (!editingType) return;
+    try {
+      await api.patch(`/api/v1/loyalty/coupon-types/${editingType.id}`, {
+        name: values.name,
+        point_cost: values.point_cost,
+        value: values.value,
+        active: values.active,
+      });
+      message.success('تم تعديل نوع الكوبون بنجاح');
+      setEditTypeVisible(false);
+      editTypeForm.resetFields();
+      setEditingType(null);
+      fetchCouponTypes();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const toggleCouponTypeActive = (record: CouponType) => {
+    const activate = !record.active;
+    const doToggle = async () => {
+      try {
+        await api.patch(`/api/v1/loyalty/coupon-types/${record.id}`, { active: activate });
+        message.success(activate ? 'تم تفعيل نوع الكوبون' : 'تم إيقاف نوع الكوبون');
+        fetchCouponTypes();
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    if (activate) {
+      doToggle();
+    } else {
+      showDeactivationConfirm({
+        title: 'إيقاف نوع الكوبون',
+        content: `هل أنت متأكد من إيقاف نوع الكوبون "${record.name}"؟ لن يكون متاحًا لتحويل النقاط بعد ذلك.`,
+        onOk: doToggle,
+      });
     }
   };
 
@@ -222,6 +279,26 @@ export default function Loyalty() {
       key: 'active',
       render: (active: boolean) => (
         <Tag color={active ? 'green' : 'red'}>{active ? 'متاح للتحويل' : 'موقف'}</Tag>
+      ),
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      render: (_: any, record: CouponType) => (
+        <Space size="middle">
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEditType(record)}>
+            تعديل
+          </Button>
+          {record.active ? (
+            <Button size="small" danger icon={<StopOutlined />} onClick={() => toggleCouponTypeActive(record)}>
+              إلغاء تفعيل
+            </Button>
+          ) : (
+            <Button size="small" type="primary" icon={<CheckCircleOutlined />} onClick={() => toggleCouponTypeActive(record)}>
+              تفعيل
+            </Button>
+          )}
+        </Space>
       ),
     },
   ];
@@ -379,6 +456,67 @@ export default function Loyalty() {
                 حفظ وإضافة
               </Button>
               <Button onClick={() => setTypeVisible(false)}>إلغاء</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      {/* Edit Coupon Type Drawer */}
+      <Drawer
+        title="تعديل نوع الكوبون الترويجي"
+        width={400}
+        onClose={() => {
+          setEditTypeVisible(false);
+          setEditingType(null);
+        }}
+        open={editTypeVisible}
+        destroyOnHidden
+      >
+        <Form form={editTypeForm} layout="vertical" onFinish={onEditCouponType} requiredMark={false}>
+          <Form.Item
+            name="name"
+            label="اسم الكوبون الترويجي"
+            rules={[{ required: true, message: 'يرجى إدخال اسم الكوبون الترويجي!' }]}
+          >
+            <Input placeholder="مثال: كوبون سباك متميز 50" />
+          </Form.Item>
+
+          <Form.Item
+            name="point_cost"
+            label="تكلفة التحويل بالنقاط"
+            rules={[{ required: true, message: 'يرجى تحديد تكلفة النقاط!' }]}
+          >
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item
+            name="value"
+            label="القيمة المالية المستفادة (ج.م)"
+            rules={[{ required: true, message: 'يرجى إدخال القيمة المالية!' }]}
+          >
+            <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item name="active" label="حالة العرض">
+            <Select>
+              <Select.Option value={true}>متاح للتحويل</Select.Option>
+              <Select.Option value={false}>موقف</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item style={{ marginTop: 24 }}>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                حفظ التعديلات
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditTypeVisible(false);
+                  setEditingType(null);
+                }}
+              >
+                إلغاء
+              </Button>
             </Space>
           </Form.Item>
         </Form>

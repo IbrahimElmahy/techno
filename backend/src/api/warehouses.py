@@ -18,7 +18,7 @@ from src.auth.rbac import (
 from src.core.db import get_db
 from src.models.ledger import Account, AccountType, Direction
 from src.models.warehouse import Custody, HolderType, Warehouse, WarehouseType
-from src.services import ledger_service
+from src.services import audit_service, ledger_service
 
 router = APIRouter(tags=["warehouses"])
 
@@ -27,6 +27,15 @@ class WarehouseCreate(BaseModel):
     name: str
     warehouse_type: WarehouseType
     branch_id: int | None = None
+
+
+class WarehouseUpdate(BaseModel):
+    name: str | None = None
+    active: bool | None = None
+
+
+class CustodyUpdate(BaseModel):
+    active: bool | None = None
 
 
 class WarehouseOut(BaseModel):
@@ -95,6 +104,44 @@ def create_warehouse(
     )
 
 
+@router.patch("/warehouses/{warehouse_id}", response_model=WarehouseOut)
+def update_warehouse(
+    warehouse_id: int,
+    body: WarehouseUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_WRITE)),
+    db: Session = Depends(get_db),
+) -> WarehouseOut:
+    wh = db.get(Warehouse, warehouse_id)
+    if wh is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
+    if body.name is not None:
+        wh.name = body.name
+    if body.active is not None:
+        wh.active = body.active
+    db.flush()
+    audit_service.record(db, action="warehouse.update", actor_user_id=current.id,
+                         entity_type="warehouse", entity_id=wh.id)
+    db.commit()
+    return WarehouseOut(id=wh.id, name=wh.name, warehouse_type=wh.warehouse_type,
+                        branch_id=wh.branch_id, active=wh.active)
+
+
+@router.delete("/warehouses/{warehouse_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_warehouse(
+    warehouse_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    wh = db.get(Warehouse, warehouse_id)
+    if wh is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
+    wh.active = False
+    db.flush()
+    audit_service.record(db, action="warehouse.deactivate", actor_user_id=current.id,
+                         entity_type="warehouse", entity_id=wh.id)
+    db.commit()
+
+
 @router.get("/custodies", response_model=list[CustodyOut])
 def list_custodies(
     _: CurrentUser = Depends(require_capability(CAP_CUSTODY_READ)),
@@ -145,6 +192,42 @@ def create_custody(
         id=custody.id, holder_type=custody.holder_type, rep_id=custody.rep_id,
         warehouse_id=custody.warehouse_id, active=custody.active,
     )
+
+
+@router.patch("/custodies/{custody_id}", response_model=CustodyOut)
+def update_custody(
+    custody_id: int,
+    body: CustodyUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTODY_WRITE)),
+    db: Session = Depends(get_db),
+) -> CustodyOut:
+    c = db.get(Custody, custody_id)
+    if c is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Custody not found"})
+    if body.active is not None:
+        c.active = body.active
+    db.flush()
+    audit_service.record(db, action="custody.update", actor_user_id=current.id,
+                         entity_type="custody", entity_id=c.id)
+    db.commit()
+    return CustodyOut(id=c.id, holder_type=c.holder_type, rep_id=c.rep_id,
+                      warehouse_id=c.warehouse_id, active=c.active)
+
+
+@router.delete("/custodies/{custody_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_custody(
+    custody_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTODY_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    c = db.get(Custody, custody_id)
+    if c is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Custody not found"})
+    c.active = False
+    db.flush()
+    audit_service.record(db, action="custody.deactivate", actor_user_id=current.id,
+                         entity_type="custody", entity_id=c.id)
+    db.commit()
 
 
 @router.get("/custodies/{custody_id}/balance", response_model=BalanceOut)

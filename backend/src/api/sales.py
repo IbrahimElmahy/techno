@@ -9,11 +9,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_RETURN_WRITE, CAP_SALE_WRITE, CAP_SELL_BELOW_PRICE, role_has_capability
+from src.auth.rbac import (
+    CAP_RETURN_WRITE,
+    CAP_SALE_WRITE,
+    CAP_SELL_BELOW_PRICE,
+    role_has_capability,
+)
 from src.core.db import get_db
 from src.models.catalog import PriceTier
 from src.models.customer import Customer
-from src.models.sales import SalesInvoice
+from src.models.sales import SalesInvoice, SalesReturn
 from src.models.stock import LocationKind
 from src.models.warehouse import Custody
 from src.services import sales_service
@@ -184,6 +189,27 @@ def get_sale(
             for line in inv.lines
         ],
     )
+
+
+@router.get("/{sale_id}/returns", response_model=list[dict])
+def list_sale_returns(
+    sale_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = db.scalars(
+        select(SalesReturn).where(SalesReturn.sales_invoice_id == sale_id)
+        .order_by(SalesReturn.id.desc())
+    ).all()
+    return [
+        {
+            "id": r.id, "document_number": r.document_number, "value": str(r.value),
+            "cash_refund": str(r.cash_refund), "credit_reduction": str(r.credit_reduction),
+            "created_at": str(r.created_at),
+            "lines": [{"item_id": ln.item_id, "quantity": str(ln.quantity)} for ln in r.lines],
+        }
+        for r in rows
+    ]
 
 
 @router.post("/{sale_id}/returns", response_model=dict, status_code=status.HTTP_201_CREATED)

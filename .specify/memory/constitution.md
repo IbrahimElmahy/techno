@@ -223,10 +223,14 @@ The system covers three domains under one shared user/permission model:
      never sold.
    - **Products** — manufactured in-house, have a fixed sale price, and are sold.
 
-   Manufacturing is **simple and decoupled**: consuming raw material and producing/adding a
-   product are two **independent** stock operations — not a single tied transaction and not
-   driven by a fixed recipe/BOM. Both item kinds MAY be stored in any warehouse/location.
-   Detailed mechanics belong to the Sales & Inventory spec.
+   Manufacturing supports two modes (both keep the quantity-only, no-ledger money boundary):
+   the original **decoupled** primitive — consuming raw material and producing/adding a product
+   as two **independent** stock operations (manual adjustments); and, added in v2 per client
+   request (spec 012-manufacturing-bom), a **recipe-driven manufacturing order** that consumes a
+   product's **bill of materials (BOM)** and produces the product in one linked, reverse-once
+   document, storing a derived cost from raw-material purchase prices. Both item kinds MAY be
+   stored in any warehouse/location. Detailed mechanics belong to the Sales & Inventory and
+   012-manufacturing-bom specs.
 2. **After-Sales loyalty (points & coupons)** — in scope, and the **sole owner** of all loyalty
    schema and behavior. The confirmed model:
    - **Point values**: each product carries an **editable point value** set per product by

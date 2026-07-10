@@ -38,6 +38,7 @@ cd src; pytest; ruff check .
 Python 3.12: Follow standard conventions
 
 ## Recent Changes
+- 012-manufacturing-bom: Recipe (BOM) + recipe-driven manufacturing orders (linked consume+produce, derived cost, reverse-once) + integrity-preserving CRUD completion across modules
 - 011-stock-min-max: Added Python 3.12 (3.11 dev) — same as 001–010 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 - 010-barcodes-per-item: Added Python 3.12 (3.11 dev) — same as 001–009 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused
 - 009-serial-numbers-per: Added Python 3.12 (3.11 dev) — same as 001–008 + FastAPI, SQLAlchemy 2.x, Alembic, Pydantic v2 — reused

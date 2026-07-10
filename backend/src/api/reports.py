@@ -20,22 +20,31 @@ router = APIRouter(tags=["reports"], prefix="/reports")
 
 @router.get("/summary")
 def get_summary(
+    date_from: str | None = Query(None, description="ISO date; include docs on/after this day"),
+    date_to: str | None = Query(None, description="ISO date; include docs on/before this day"),
     _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
-    # Calculate total sales
-    sales_stmt = select(
+    def _apply_dates(stmt, col):
+        if date_from:
+            stmt = stmt.where(func.date(col) >= date_from)
+        if date_to:
+            stmt = stmt.where(func.date(col) <= date_to)
+        return stmt
+
+    # Calculate total sales (optionally within the requested date range).
+    sales_stmt = _apply_dates(select(
         func.sum(SalesInvoice.gross).label("gross"),
         func.sum(SalesInvoice.net).label("net")
-    )
+    ), SalesInvoice.created_at)
     sales_res = db.execute(sales_stmt).first()
     sales_gross = sales_res.gross or Decimal("0")
     sales_net = sales_res.net or Decimal("0")
 
     # Calculate total purchases
-    purchases_stmt = select(
+    purchases_stmt = _apply_dates(select(
         func.sum(PurchaseInvoice.cash_amount + PurchaseInvoice.credit_amount).label("total")
-    )
+    ), PurchaseInvoice.created_at)
     purchases_res = db.execute(purchases_stmt).first()
     purchases_total = purchases_res.total or Decimal("0")
 

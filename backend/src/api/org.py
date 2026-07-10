@@ -32,6 +32,17 @@ class BranchCreate(BaseModel):
     is_head_office: bool = False
 
 
+class BranchUpdate(BaseModel):
+    name: str | None = None
+    governorate_id: int | None = None
+    active: bool | None = None
+
+
+class TerritoryUpdate(BaseModel):
+    name: str | None = None
+    active: bool | None = None
+
+
 class BranchOut(BaseModel):
     id: int
     name: str
@@ -102,6 +113,46 @@ def create_branch(
     )
 
 
+@router.patch("/branches/{branch_id}", response_model=BranchOut)
+def update_branch(
+    branch_id: int,
+    body: BranchUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_BRANCH_WRITE)),
+    db: Session = Depends(get_db),
+) -> BranchOut:
+    b = db.get(Branch, branch_id)
+    if b is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Branch not found"})
+    if body.name is not None:
+        b.name = body.name
+    if body.governorate_id is not None:
+        b.governorate_id = body.governorate_id
+    if body.active is not None:
+        b.active = body.active
+    db.flush()
+    audit_service.record(db, action="branch.update", actor_user_id=current.id,
+                         entity_type="branch", entity_id=b.id)
+    db.commit()
+    return BranchOut(id=b.id, name=b.name, governorate_id=b.governorate_id,
+                     is_head_office=b.is_head_office, active=b.active)
+
+
+@router.delete("/branches/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_branch(
+    branch_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_BRANCH_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    b = db.get(Branch, branch_id)
+    if b is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Branch not found"})
+    b.active = False
+    db.flush()
+    audit_service.record(db, action="branch.deactivate", actor_user_id=current.id,
+                         entity_type="branch", entity_id=b.id)
+    db.commit()
+
+
 @router.get("/territories", response_model=list[TerritoryOut])
 def list_territories(
     branch_id: int | None = None,
@@ -136,3 +187,40 @@ def create_territory(
     return TerritoryOut(
         id=territory.id, name=territory.name, branch_id=territory.branch_id, active=territory.active
     )
+
+
+@router.patch("/territories/{territory_id}", response_model=TerritoryOut)
+def update_territory(
+    territory_id: int,
+    body: TerritoryUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_TERRITORY_WRITE)),
+    db: Session = Depends(get_db),
+) -> TerritoryOut:
+    t = db.get(Territory, territory_id)
+    if t is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Territory not found"})
+    if not current.is_admin:
+        ensure_branch_access(current, t.branch_id)
+    if body.name is not None:
+        t.name = body.name
+    if body.active is not None:
+        t.active = body.active
+    db.flush()
+    db.commit()
+    return TerritoryOut(id=t.id, name=t.name, branch_id=t.branch_id, active=t.active)
+
+
+@router.delete("/territories/{territory_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_territory(
+    territory_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_TERRITORY_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    t = db.get(Territory, territory_id)
+    if t is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Territory not found"})
+    if not current.is_admin:
+        ensure_branch_access(current, t.branch_id)
+    t.active = False
+    db.flush()
+    db.commit()

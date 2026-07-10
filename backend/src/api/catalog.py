@@ -394,3 +394,17 @@ def update_item(
     db.flush()
     db.commit()
     return _out(item)
+
+
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def deactivate_item(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    item.active = False  # soft-delete: never hard-delete an item referenced by posted documents
+    db.flush()
+    db.commit()

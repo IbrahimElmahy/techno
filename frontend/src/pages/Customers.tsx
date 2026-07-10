@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, Select, Tag, message } from 'antd';
-import { UserAddOutlined, SwapOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Card, Drawer, Form, Input, Select, Switch, Tag, message } from 'antd';
+import { UserAddOutlined, SwapOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
+import { showDeactivationConfirm } from '../components/ConfirmationDialog';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface CustomerRecord {
   id: number;
@@ -49,16 +51,21 @@ const CustomerBalance = ({ customerId }: { customerId: number }) => {
 };
 
 export default function Customers() {
+  const { options: typeOptions } = useLookup('customer_type');
+  const typeLabels = labelMap(typeOptions);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [reps, setReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [reassignVisible, setReassignVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const [editing, setEditing] = useState<CustomerRecord | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
-  
+
   const [form] = Form.useForm();
   const [reassignForm] = Form.useForm();
+  const [editForm] = Form.useForm();
   const { user: currentUser } = useAuth();
 
   const fetchCustomers = async () => {
@@ -119,6 +126,54 @@ export default function Customers() {
     }
   };
 
+  const openEdit = (record: CustomerRecord) => {
+    setEditing(record);
+    editForm.setFieldsValue({
+      name: record.name,
+      phone: record.phone,
+      customer_type: record.customer_type,
+      default_price_tier: record.default_price_tier ?? undefined,
+      active: record.active,
+    });
+    setEditVisible(true);
+  };
+
+  const onEditCustomer = async (values: any) => {
+    if (!editing) return;
+    try {
+      await api.patch(`/api/v1/customers/${editing.id}`, {
+        name: values.name,
+        phone: values.phone,
+        customer_type: values.customer_type,
+        default_price_tier: values.default_price_tier ?? null,
+        active: values.active,
+      });
+      message.success('تم تحديث بيانات العميل بنجاح');
+      setEditVisible(false);
+      setEditing(null);
+      editForm.resetFields();
+      fetchCustomers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const onDeactivate = (record: CustomerRecord) => {
+    showDeactivationConfirm({
+      title: 'إلغاء تفعيل العميل',
+      content: `هل أنت متأكد من إلغاء تفعيل العميل "${record.name}"؟`,
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/customers/${record.id}`);
+          message.success('تم إلغاء تفعيل العميل');
+          fetchCustomers();
+        } catch (err) {
+          console.error(err);
+        }
+      },
+    });
+  };
+
   const columns = [
     {
       title: 'كود العميل',
@@ -135,7 +190,7 @@ export default function Customers() {
       title: 'نوع العميل',
       dataIndex: 'customer_type',
       key: 'customer_type',
-      render: (type: string) => TYPE_LABELS[type] || type,
+      render: (type: string) => typeLabels[type] || TYPE_LABELS[type] || type,
     },
     {
       title: 'رقم الهاتف',
@@ -177,6 +232,9 @@ export default function Customers() {
       key: 'actions',
       render: (_: any, record: CustomerRecord) => (
         <Space size="middle">
+          <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+            تعديل
+          </Button>
           <Button
             type="dashed"
             icon={<SwapOutlined />}
@@ -191,6 +249,11 @@ export default function Customers() {
           >
             إعادة تعيين
           </Button>
+          {record.active && (
+            <Button type="link" danger onClick={() => onDeactivate(record)}>
+              إلغاء تفعيل
+            </Button>
+          )}
         </Space>
       ),
     },
@@ -237,13 +300,8 @@ export default function Customers() {
             label="تصنيف العميل"
             rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}
           >
-            <Select placeholder="اختر تصنيف العميل">
-              {Object.entries(TYPE_LABELS).map(([key, label]) => (
-                <Select.Option key={key} value={key}>
-                  {label}
-                </Select.Option>
-              ))}
-            </Select>
+            <Select placeholder="اختر تصنيف العميل"
+              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
           </Form.Item>
 
           <Form.Item
@@ -296,6 +354,60 @@ export default function Customers() {
                 تسجيل العميل
               </Button>
               <Button onClick={() => setDrawerVisible(false)}>إلغاء</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      {/* Edit Customer Drawer */}
+      <Drawer
+        title={`تعديل بيانات العميل: ${editing?.name || ''}`}
+        width={450}
+        onClose={() => setEditVisible(false)}
+        open={editVisible}
+        destroyOnHidden
+      >
+        <Form form={editForm} layout="vertical" onFinish={onEditCustomer} requiredMark={false}>
+          <Form.Item
+            name="name"
+            label="اسم العميل (الكامل)"
+            rules={[{ required: true, message: 'يرجى إدخال اسم العميل!' }]}
+          >
+            <Input placeholder="مثال: شركة النور للسباكة" />
+          </Form.Item>
+
+          <Form.Item
+            name="customer_type"
+            label="تصنيف العميل"
+            rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}
+          >
+            <Select placeholder="اختر تصنيف العميل"
+              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+          </Form.Item>
+
+          <Form.Item name="phone" label="رقم الهاتف">
+            <Input placeholder="مثال: 01000000000" />
+          </Form.Item>
+
+          <Form.Item name="default_price_tier" label="الفئة السعرية الافتراضية"
+            extra="تُستخدم تلقائياً على فواتير هذا العميل (الافتراضي: مستهلك)">
+            <Select allowClear placeholder="مستهلك (افتراضي)">
+              {Object.entries(TIER_LABELS).map(([k, l]) => (
+                <Select.Option key={k} value={k}>{l}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item name="active" label="الحالة" valuePropName="checked">
+            <Switch checkedChildren="نشط" unCheckedChildren="معطل" />
+          </Form.Item>
+
+          <Form.Item style={{ marginTop: 24 }}>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                حفظ التعديلات
+              </Button>
+              <Button onClick={() => setEditVisible(false)}>إلغاء</Button>
             </Space>
           </Form.Item>
         </Form>
