@@ -74,6 +74,7 @@ interface ItemRecord {
   sale_price: string | null;
   is_serialized: boolean;
   active: boolean;
+  default_warehouse_id: number | null;
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -339,6 +340,7 @@ export default function Catalog() {
   const { options: uomOptions } = useLookup('unit_of_measure');
   const kindLabels = labelMap(kindOptions);
   const [items, setItems] = useState<ItemRecord[]>([]);
+  const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
@@ -368,6 +370,9 @@ export default function Catalog() {
 
   useEffect(() => {
     fetchItems();
+    api.get('/api/v1/warehouses')
+      .then((res) => setWarehouses(res.data))
+      .catch((err) => console.error(err));
   }, []);
 
   const onCreateItem = async (values: any) => {
@@ -378,6 +383,7 @@ export default function Catalog() {
         unit_of_measure: values.unit_of_measure,
         purchase_price: values.kind === 'raw_material' ? values.purchase_price : null,
         sale_price: values.kind === 'product' ? values.sale_price : null,
+        default_warehouse_id: values.default_warehouse_id ?? null,
       };
 
       await api.post('/api/v1/items', { ...payload, is_serialized: !!values.is_serialized });
@@ -398,6 +404,7 @@ export default function Catalog() {
       sale_price: record.sale_price ?? undefined,
       is_serialized: record.is_serialized,
       active: record.active,
+      default_warehouse_id: record.default_warehouse_id ?? undefined,
     });
     setEditVisible(true);
   };
@@ -405,7 +412,11 @@ export default function Catalog() {
   const onEditItem = async (values: any) => {
     if (!editing) return;
     try {
-      const payload: any = { name: values.name, active: values.active };
+      const payload: any = {
+        name: values.name,
+        active: values.active,
+        default_warehouse_id: values.default_warehouse_id ?? null,
+      };
       if (editing.kind === 'raw_material') payload.purchase_price = values.purchase_price;
       if (editing.kind === 'product') {
         payload.sale_price = values.sale_price;
@@ -596,6 +607,11 @@ export default function Catalog() {
             />
           </Form.Item>
 
+          <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
+            <Select allowClear placeholder="اختر المخزن الافتراضي (اختياري)"
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          </Form.Item>
+
           <Form.Item noStyle shouldUpdate={(prev, curr) => prev.kind !== curr.kind}>
             {({ getFieldValue }) => {
               const kind = getFieldValue('kind');
@@ -673,6 +689,11 @@ export default function Catalog() {
               <Switch checkedChildren="نعم" unCheckedChildren="لا" />
             </Form.Item>
           )}
+
+          <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
+            <Select allowClear placeholder="اختر المخزن الافتراضي (اختياري)"
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          </Form.Item>
 
           <Form.Item name="active" label="الحالة" valuePropName="checked">
             <Switch checkedChildren="نشط" unCheckedChildren="غير نشط" />
