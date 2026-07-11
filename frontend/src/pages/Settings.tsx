@@ -16,6 +16,23 @@ interface Option {
 export default function Settings() {
   const [pages, setPages] = useState<PageGroup[]>([]);
   const [loading, setLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+
+  const handleSeed = async () => {
+    setSeeding(true);
+    try {
+      const res = await api.post('/api/v1/admin/demo-seed');
+      if (res.data?.status === 'already_seeded') {
+        message.info('البيانات التجريبية موجودة بالفعل');
+      } else {
+        message.success('تم تحميل بيانات تجريبية كاملة للاختبار');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const loadCategories = async () => {
     setLoading(true);
@@ -32,6 +49,22 @@ export default function Settings() {
   useEffect(() => { loadCategories(); }, []);
 
   return (
+    <Space direction="vertical" style={{ width: '100%' }} size="large">
+      <Card title="بيانات تجريبية للاختبار" size="small">
+        <Space wrap>
+          <span style={{ color: '#888' }}>
+            تحميل داتا كاملة للشركة (خامات، منتجات، وصفات بموارد، موردين، عملاء، مشتريات،
+            أوامر تصنيع، هوالك، مبيعات) لتجربة كل النظام. آمن — لا يُكرّر لو اتحمّل قبل كده.
+          </span>
+          <Popconfirm
+            title="تحميل بيانات تجريبية كاملة؟"
+            okText="تحميل" cancelText="إلغاء" onConfirm={handleSeed}
+          >
+            <Button type="primary" loading={seeding}>تحميل بيانات تجريبية</Button>
+          </Popconfirm>
+        </Space>
+      </Card>
+
     <Card title="إعدادات القوائم المنسدلة" loading={loading}>
       <p style={{ color: '#888', marginBottom: 16 }}>
         تحكّم في خيارات القوائم المنسدلة في كل صفحة. القوائم المربوطة بمنطق النظام{' '}
@@ -53,6 +86,7 @@ export default function Settings() {
         }))}
       />
     </Card>
+    </Space>
   );
 }
 

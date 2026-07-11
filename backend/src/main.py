@@ -30,6 +30,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     warehouses,
     wastage,
 )
+from src.api import admin  # Demo data seeding (system admin)
 from src.api import (
     settings as sales_settings,
 )
@@ -93,6 +94,8 @@ def create_app() -> FastAPI:
     app.include_router(settings_lookups.router, prefix=prefix)
     # Production reporting (014) — wastage documents
     app.include_router(wastage.router, prefix=prefix)
+    # Admin utilities (demo data seeding)
+    app.include_router(admin.router, prefix=prefix)
 
     @app.get("/health")
     def health() -> dict:
