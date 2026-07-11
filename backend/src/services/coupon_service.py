@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.core.money import ZERO, to_money
+from src.core.money import to_money
 from src.models.catalog import Item, ItemKind
 from src.models.customer import CustomerAccount
 from src.models.ledger import Direction

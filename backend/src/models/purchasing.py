@@ -23,7 +23,9 @@ class PurchaseInvoice(Base):
     total: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
-    ledger_entry_id: Mapped[int] = mapped_column(ForeignKey("ledger_entry.id"), nullable=False)
+    # Nullable so the row can be inserted before its ledger entry exists (Postgres enforces FKs;
+    # a 0 placeholder would violate the constraint). Always set to the real id before commit.
+    ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
@@ -53,7 +55,9 @@ class PurchaseReturn(Base):
         ForeignKey("purchase_invoice.id"), nullable=False
     )
     value: Mapped[object] = mapped_column(MONEY, nullable=False)
-    ledger_entry_id: Mapped[int] = mapped_column(ForeignKey("ledger_entry.id"), nullable=False)
+    # Nullable so the row can be inserted before its ledger entry exists (Postgres enforces FKs;
+    # a 0 placeholder would violate the constraint). Always set to the real id before commit.
+    ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 

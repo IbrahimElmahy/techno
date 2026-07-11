@@ -90,7 +90,7 @@ def create_purchase(
         document_number=_doc_number(db, PurchaseInvoice, "PINV"),
         supplier_id=supplier_id, location_kind=location_kind, location_id=location_id,
         total=total, cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
-        ledger_entry_id=0, actor_user_id=actor_user_id,
+        ledger_entry_id=None, actor_user_id=actor_user_id,
     )
     db.add(invoice)
     db.flush()
@@ -172,7 +172,7 @@ def return_purchase(
 
     ret = PurchaseReturn(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
-        purchase_invoice_id=purchase_invoice_id, value=value, ledger_entry_id=0,
+        purchase_invoice_id=purchase_invoice_id, value=value, ledger_entry_id=None,
         actor_user_id=actor_user_id,
     )
     db.add(ret)

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
 from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     accounting,  # General Ledger (005)
+    admin,  # Demo data seeding (system admin)
     audit,
     auth,
     catalog,
@@ -30,7 +31,6 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     warehouses,
     wastage,
 )
-from src.api import admin  # Demo data seeding (system admin)
 from src.api import (
     settings as sales_settings,
 )
@@ -112,6 +112,7 @@ def create_app() -> FastAPI:
         Base.metadata.create_all(engine)
         _ensure_columns(engine)
         _relax_configurable_enum_columns(engine)
+        _relax_not_null(engine)
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
 
@@ -130,6 +131,51 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("manufacturing_order_consumption", "waste_quantity", "NUMERIC(18,3) NOT NULL DEFAULT 0"),
     ("manufacturing_order_consumption", "warehouse_id", "BIGINT"),
 ]
+
+
+# FK columns that are inserted with a temporary NULL before the referenced row exists (Postgres
+# enforces FKs immediately; a 0 placeholder violated the constraint → invoices/production failed on
+# the live DB). The model is now nullable; drop NOT NULL on existing databases too. (table, column).
+_NULLABLE_FK_COLUMNS: list[tuple[str, str]] = [
+    ("purchase_invoice", "ledger_entry_id"),
+    ("purchase_return", "ledger_entry_id"),
+    ("sales_invoice", "ledger_entry_id"),
+    ("sales_return", "ledger_entry_id"),
+    ("manufacturing_op", "stock_movement_id"),
+    ("manufacturing_order", "stock_movement_id"),
+    ("manufacturing_order_consumption", "stock_movement_id"),
+    ("wastage_document", "stock_movement_id"),
+]
+
+
+def _relax_not_null(engine) -> None:
+    """Drop NOT NULL on FK columns filled in after insert (see note above). Idempotent."""
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    dialect = engine.dialect.name
+    if dialect not in ("postgresql", "postgres", "mysql", "mariadb"):
+        return  # sqlite doesn't enforce these FKs / NOT NULL matters less; nothing to do
+    inspector = sa_inspect(engine)
+    tables = set(inspector.get_table_names())
+    for table, column in _NULLABLE_FK_COLUMNS:
+        if table not in tables:
+            continue
+        col = next((c for c in inspector.get_columns(table) if c["name"] == column), None)
+        if col is None or col.get("nullable", True):
+            continue  # already nullable — skip
+        try:
+            with engine.begin() as conn:
+                if dialect in ("postgresql", "postgres"):
+                    conn.execute(text(f'ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL'))
+                else:  # mysql / mariadb
+                    conn.execute(text(f"ALTER TABLE `{table}` MODIFY `{column}` BIGINT NULL"))
+        except Exception as exc:  # pragma: no cover — best-effort
+            logging.getLogger("uvicorn.error").info(
+                "relax not-null %s.%s skipped: %s", table, column, exc
+            )
 
 
 def _ensure_columns(engine) -> None:

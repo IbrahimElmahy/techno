@@ -34,7 +34,8 @@ class SalesInvoice(Base):
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
-    ledger_entry_id: Mapped[int] = mapped_column(ForeignKey("ledger_entry.id"), nullable=False)
+    # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
+    ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
@@ -67,7 +68,8 @@ class SalesReturn(Base):
     value: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_refund: Mapped[object] = mapped_column(MONEY, nullable=False)       # derived
     credit_reduction: Mapped[object] = mapped_column(MONEY, nullable=False)  # derived
-    ledger_entry_id: Mapped[int] = mapped_column(ForeignKey("ledger_entry.id"), nullable=False)
+    # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
+    ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 

@@ -35,7 +35,8 @@ class ManufacturingOp(Base):
     location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
     location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    stock_movement_id: Mapped[int] = mapped_column(ForeignKey("stock_movement.id"), nullable=False)
+    # Nullable so the doc can be inserted before its movement exists (Postgres FK enforcement).
+    stock_movement_id: Mapped[int | None] = mapped_column(ForeignKey("stock_movement.id"), nullable=True)
     # Set when this op is itself a reversal of another op (reverse-once at op level).
     reverses_op_id: Mapped[int | None] = mapped_column(
         ForeignKey("manufacturing_op.id"), unique=True, nullable=True
@@ -68,7 +69,8 @@ class ManufacturingOrder(Base):
     material_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     resource_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     # The product's in-movement id (for reverse). Component out-movements are on the consumption rows.
-    stock_movement_id: Mapped[int] = mapped_column(ForeignKey("stock_movement.id"), nullable=False)
+    # Nullable so the doc can be inserted before its movement exists (Postgres FK enforcement).
+    stock_movement_id: Mapped[int | None] = mapped_column(ForeignKey("stock_movement.id"), nullable=True)
     # Set when this order is itself the reversal of another (reverse-once at order level).
     reverses_order_id: Mapped[int | None] = mapped_column(
         ForeignKey("manufacturing_order.id"), unique=True, nullable=True
@@ -99,7 +101,8 @@ class ManufacturingOrderConsumption(Base):
     waste_quantity: Mapped[object] = mapped_column(QTY, nullable=False, default=0)
     # Warehouse the material was actually pulled from (014 routing); mirrors the stock movement.
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
-    stock_movement_id: Mapped[int] = mapped_column(ForeignKey("stock_movement.id"), nullable=False)
+    # Nullable so the doc can be inserted before its movement exists (Postgres FK enforcement).
+    stock_movement_id: Mapped[int | None] = mapped_column(ForeignKey("stock_movement.id"), nullable=True)
 
     order: Mapped[ManufacturingOrder] = relationship(back_populates="consumptions")
 

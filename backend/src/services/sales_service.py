@@ -143,7 +143,7 @@ def create_sale(
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,
         variable_discount_pct=variable, combined_pct=combined, net=net,
         cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
-        cash_account_id=cash_acc.id, ledger_entry_id=0, actor_user_id=actor_user_id,
+        cash_account_id=cash_acc.id, ledger_entry_id=None, actor_user_id=actor_user_id,
     )
     db.add(invoice)
     db.flush()
@@ -236,7 +236,7 @@ def return_sale(
     ret = SalesReturn(
         document_number=_doc_number(db, SalesReturn, "SRET"),
         sales_invoice_id=sales_invoice_id, value=value, cash_refund=cash_refund,
-        credit_reduction=credit_reduction, ledger_entry_id=0, actor_user_id=actor_user_id,
+        credit_reduction=credit_reduction, ledger_entry_id=None, actor_user_id=actor_user_id,
     )
     db.add(ret)
     db.flush()

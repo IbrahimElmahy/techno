@@ -44,7 +44,7 @@ def _op(db, *, op_type, item_id, location_kind, location_id, quantity, movement_
     op = ManufacturingOp(
         document_number=_doc_number(db), op_type=op_type, item_id=item_id,
         location_kind=location_kind, location_id=location_id, quantity=Decimal(quantity),
-        stock_movement_id=0, reverses_op_id=reverses_op_id, actor_user_id=actor_user_id,
+        stock_movement_id=None, reverses_op_id=reverses_op_id, actor_user_id=actor_user_id,
     )
     db.add(op)
     db.flush()
@@ -260,7 +260,7 @@ def create_order(
         document_number=_order_doc_number(db), product_id=product_id, bom_id=bom.id,
         location_kind=location_kind, location_id=location_id, quantity=qty,
         unit_cost=ZERO, total_cost=ZERO, material_cost=ZERO, resource_cost=ZERO,
-        stock_movement_id=0, actor_user_id=actor_user_id,
+        stock_movement_id=None, actor_user_id=actor_user_id,
     )
     db.add(order)
     db.flush()
@@ -354,7 +354,7 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Manufact
         location_id=original.location_id, quantity=original.quantity,
         unit_cost=original.unit_cost, total_cost=original.total_cost,
         material_cost=original.material_cost, resource_cost=original.resource_cost,
-        stock_movement_id=0, reverses_order_id=order_id, actor_user_id=actor_user_id,
+        stock_movement_id=None, reverses_order_id=order_id, actor_user_id=actor_user_id,
     )
     db.add(rev)
     db.flush()

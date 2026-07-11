@@ -39,7 +39,7 @@ def create_wastage(
     doc = WastageDocument(
         document_number=_doc_number(db), item_id=item_id, warehouse_id=warehouse_id, quantity=qty,
         unit_cost=unit_cost, total_cost=production.line_cost(qty, unit_cost), reason=reason,
-        stock_movement_id=0, actor_user_id=actor_user_id,
+        stock_movement_id=None, actor_user_id=actor_user_id,
     )
     db.add(doc)
     db.flush()

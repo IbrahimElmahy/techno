@@ -26,7 +26,8 @@ class WastageDocument(Base):
     unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False)   # purchase_price snapshot
     total_cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # quantity × unit_cost
     reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    stock_movement_id: Mapped[int] = mapped_column(ForeignKey("stock_movement.id"), nullable=False)
+    # Nullable so the doc can be inserted before its movement exists (Postgres FK enforcement).
+    stock_movement_id: Mapped[int | None] = mapped_column(ForeignKey("stock_movement.id"), nullable=True)
     reverses_id: Mapped[int | None] = mapped_column(
         ForeignKey("wastage_document.id"), unique=True, nullable=True
     )
