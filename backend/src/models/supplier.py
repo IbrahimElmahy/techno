@@ -13,10 +13,12 @@ class Supplier(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(24), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)  # primary number
+    # (v4) full address; extra numbers live in `contact_phone` (owner_type='supplier').
+    address: Mapped[str | None] = mapped_column(String(240), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    account: Mapped["SupplierAccount"] = relationship(back_populates="supplier", uselist=False)
+    account: Mapped[SupplierAccount] = relationship(back_populates="supplier", uselist=False)
 
 
 class SupplierAccount(Base):
@@ -28,4 +30,4 @@ class SupplierAccount(Base):
     supplier_id: Mapped[int] = mapped_column(ForeignKey("supplier.id"), unique=True, nullable=False)
     account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
 
-    supplier: Mapped["Supplier"] = relationship(back_populates="account")
+    supplier: Mapped[Supplier] = relationship(back_populates="account")

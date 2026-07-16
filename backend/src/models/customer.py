@@ -34,6 +34,11 @@ class Customer(Base):
     # Free string (was Enum) — admin-configurable via lookups; not tied to any logic.
     customer_type: Mapped[str] = mapped_column(String(32), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)  # not unique (FR-018a)
+    # (v4) detailed address: governorate + markaz/district + free text. Extra phone numbers live in
+    # `contact_phone` (owner_type='customer'). `territory_id` stays the rep's sales territory.
+    governorate_id: Mapped[int | None] = mapped_column(ForeignKey("governorate.id"), nullable=True)
+    markaz: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(240), nullable=True)
     rep_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     territory_id: Mapped[int] = mapped_column(ForeignKey("territory.id"), nullable=False)
     # Default sale price tier (007); NULL resolves to the consumer tier.
@@ -43,7 +48,7 @@ class Customer(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    account: Mapped["CustomerAccount"] = relationship(back_populates="customer", uselist=False)
+    account: Mapped[CustomerAccount] = relationship(back_populates="customer", uselist=False)
 
 
 class CustomerAccount(Base):
@@ -60,5 +65,5 @@ class CustomerAccount(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    customer: Mapped["Customer"] = relationship(back_populates="account")
-    account: Mapped["object"] = relationship("Account")
+    customer: Mapped[Customer] = relationship(back_populates="account")
+    account: Mapped[object] = relationship("Account")

@@ -50,4 +50,4 @@ class Custody(Base):
     account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
-    account: Mapped["object"] = relationship("Account")
+    account: Mapped[object] = relationship("Account")

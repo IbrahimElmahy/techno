@@ -34,8 +34,8 @@ class Branch(Base):
     is_head_office: Mapped[bool] = mapped_column(default=False, nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
-    governorate: Mapped["Governorate"] = relationship()
-    territories: Mapped[list["Territory"]] = relationship(back_populates="branch")
+    governorate: Mapped[Governorate] = relationship()
+    territories: Mapped[list[Territory]] = relationship(back_populates="branch")
 
 
 class Territory(Base):
@@ -46,4 +46,4 @@ class Territory(Base):
     branch_id: Mapped[int] = mapped_column(ForeignKey("branch.id"), nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
-    branch: Mapped["Branch"] = relationship(back_populates="territories")
+    branch: Mapped[Branch] = relationship(back_populates="territories")

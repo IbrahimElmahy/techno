@@ -79,6 +79,7 @@ def seed_demo(db: Session) -> dict:
 
     admin = db.scalar(select(User).where(User.username == "admin"))
     rep = db.scalar(select(User).where(User.username == "rep"))
+    after_sales = db.scalar(select(User).where(User.username == "aftersales"))
     territory = db.scalar(select(Territory))
     actor = admin.id
 
@@ -158,8 +159,10 @@ def seed_demo(db: Session) -> dict:
 
     # --- Customers (owned by the seeded rep + territory) ---
     def customer(name, ctype, phone):
+        # (v4) a plumber's responsible rep must be after-sales staff.
+        owner = after_sales if (ctype == "plumber" and after_sales) else rep
         return customer_service.create_customer(
-            db, name=name, customer_type=ctype, rep_id=rep.id, territory_id=territory.id,
+            db, name=name, customer_type=ctype, rep_id=owner.id, territory_id=territory.id,
             phone=phone, actor_user_id=actor).customer
 
     c1 = customer("مؤسسة النور للأدوات الصحية", "trader", "01111111111")

@@ -5,14 +5,14 @@ Run once at container start (before uvicorn). Uses `Base.metadata.create_all` so
 organisation, warehouses, the standard chart of accounts, cost centers, and four demo logins — but only
 if the database is empty, so redeploys are safe.
 
-Demo logins: admin/admin123 · accountant/acc123 · manager/mgr123 · rep/rep123
+Demo logins: admin/admin123 · accountant/acc123 · manager/mgr123 · rep/rep123 · aftersales/as123
 (Change these before real production use.)
 """
 from __future__ import annotations
 
+import src.models  # noqa: F401 — populate metadata
 from src.core.db import Base, SessionLocal, engine
 from src.core.security import hash_password
-import src.models  # noqa: F401 — populate metadata
 from src.models.ledger import AccountNature
 from src.models.org import Branch, Governorate, Territory
 from src.models.role import Role, RoleName
@@ -58,6 +58,8 @@ def main() -> None:
         user("accountant", RoleName.accountant, "acc123")
         user("manager", RoleName.branch_manager, "mgr123", branch_id=branch.id)
         user("rep", RoleName.sales_rep, "rep123", branch_id=branch.id, territory_id=terr.id)
+        # (v4) plumbers must be owned by after-sales staff.
+        user("aftersales", RoleName.after_sales_staff, "as123")
         db.flush()
 
         groups = chart_service.seed_standard_chart(db)

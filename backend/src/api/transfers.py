@@ -5,17 +5,17 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from sqlalchemy import select
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_TRANSFER_APPROVE, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
 from src.models.stock import LocationKind
-from src.models.transfer import TransferRoute, StockTransfer
+from src.models.transfer import StockTransfer, TransferRoute
 from src.services import transfer_service
-from src.services.transfer_service import TransferDenied, TransferError
 from src.services.stock_service import StockError
+from src.services.transfer_service import TransferDenied, TransferError
 
 router = APIRouter(tags=["transfers"], prefix="/transfers")
 

@@ -85,8 +85,8 @@ class Account(Base):
     is_postable: Mapped[bool] = mapped_column(default=True, nullable=False)
     is_system: Mapped[bool] = mapped_column(default=False, nullable=False)
 
-    lines: Mapped[list["LedgerLine"]] = relationship(back_populates="account")
-    parent: Mapped["Account | None"] = relationship(remote_side=[id], backref="children")
+    lines: Mapped[list[LedgerLine]] = relationship(back_populates="account")
+    parent: Mapped[Account | None] = relationship(remote_side=[id], backref="children")
 
 
 class LedgerEntry(Base):
@@ -113,7 +113,7 @@ class LedgerEntry(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    lines: Mapped[list["LedgerLine"]] = relationship(
+    lines: Mapped[list[LedgerLine]] = relationship(
         back_populates="entry", cascade="all, save-update"
     )
 
@@ -136,8 +136,8 @@ class LedgerLine(Base):
         ForeignKey("cost_center.id"), nullable=True, index=True
     )
 
-    entry: Mapped["LedgerEntry"] = relationship(back_populates="lines")
-    account: Mapped["Account"] = relationship(back_populates="lines")
+    entry: Mapped[LedgerEntry] = relationship(back_populates="lines")
+    account: Mapped[Account] = relationship(back_populates="lines")
 
 
 class LedgerImmutableError(Exception):

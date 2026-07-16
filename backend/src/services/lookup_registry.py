@@ -13,6 +13,12 @@ CATEGORIES: dict[str, dict] = {
         "page": "catalog", "label": "أنواع الأصناف", "system": True,
         "defaults": [("raw_material", "مادة خام"), ("product", "منتج")],
     },
+    # Free list (v4): item categories — admins define their own classification.
+    "item_category": {
+        "page": "catalog", "label": "فئات الأصناف", "system": False,
+        "defaults": [("مواسير", "مواسير"), ("لحامات", "لحامات"), ("عدد وأدوات", "عدد وأدوات"),
+                     ("خامات تشغيل", "خامات تشغيل")],
+    },
     "unit_of_measure": {
         "page": "catalog", "label": "وحدات القياس", "system": False,
         "defaults": [("قطعة", "قطعة"), ("متر", "متر"), ("كرتونة", "كرتونة"),

@@ -1,13 +1,15 @@
 """Product point-value router (T012). FR-001/002."""
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_PRODUCT_POINTS_WRITE, CAP_CATALOG_READ
+from src.auth.rbac import CAP_CATALOG_READ, CAP_PRODUCT_POINTS_WRITE
 from src.core.db import get_db
 from src.models.catalog import Item, ItemKind
 from src.models.loyalty import ProductPointValue
@@ -16,12 +18,12 @@ router = APIRouter(tags=["product-points"], prefix="/products")
 
 
 class PointValueBody(BaseModel):
-    point_value: int
+    point_value: Decimal
 
 
 class PointValueOut(BaseModel):
     item_id: int
-    point_value: int
+    point_value: Decimal
 
 
 @router.get("/{item_id}/point-value", response_model=PointValueOut)

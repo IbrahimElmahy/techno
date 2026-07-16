@@ -7,7 +7,7 @@ chart of accounts but a SEPARATE table: a cost center is not a ledger account an
 """
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, ForeignKey, String
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -24,4 +24,4 @@ class CostCenter(Base):
     )
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
-    parent: Mapped["CostCenter | None"] = relationship(remote_side=[id], backref="children")
+    parent: Mapped[CostCenter | None] = relationship(remote_side=[id], backref="children")

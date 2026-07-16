@@ -2,14 +2,15 @@
 from src.models.audit import AuditLogEntry
 from src.models.bom import Bom, BomComponent, BomResource  # noqa: E402
 from src.models.catalog import Item, ItemBarcode, ItemPrice, ItemSerial, ItemUnit
+from src.models.contact import ContactPhone  # noqa: E402
 
 # Cost Centers (006) — analytical dimension.
 from src.models.cost_center import CostCenter  # noqa: E402
+from src.models.customer import Customer, CustomerAccount
+from src.models.ledger import Account, LedgerEntry, LedgerLine
 
 # Settings → configurable dropdown lists (013).
 from src.models.lookup import LookupOption  # noqa: E402
-from src.models.customer import Customer, CustomerAccount
-from src.models.ledger import Account, LedgerEntry, LedgerLine
 
 # After-Sales Loyalty (003) models.
 from src.models.loyalty import (  # noqa: E402
@@ -60,5 +61,5 @@ __all__ = [
     "ManufacturingOrderResource", "Bom", "BomComponent", "BomResource", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
-    "LookupOption", "WastageDocument",
+    "LookupOption", "WastageDocument", "ContactPhone",
 ]

@@ -63,6 +63,47 @@ class TerritoryOut(BaseModel):
     active: bool
 
 
+class GovernorateIn(BaseModel):
+    name: str
+
+
+@router.post("/governorates", response_model=GovernorateOut, status_code=status.HTTP_201_CREATED)
+def create_governorate(
+    body: GovernorateIn,
+    current: CurrentUser = Depends(require_capability(CAP_BRANCH_WRITE)),
+    db: Session = Depends(get_db),
+) -> GovernorateOut:
+    """(v4) Add a governorate — previously only seeded, so new areas couldn't be entered."""
+    if db.scalar(select(Governorate).where(Governorate.name == body.name)) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "duplicate", "message": "Governorate already exists"})
+    g = Governorate(name=body.name)
+    db.add(g)
+    db.flush()
+    audit_service.record(db, action="governorate.create", actor_user_id=current.id,
+                         entity_type="governorate", entity_id=g.id, after={"name": g.name})
+    db.commit()
+    return GovernorateOut(id=g.id, name=g.name)
+
+
+@router.patch("/governorates/{governorate_id}", response_model=GovernorateOut)
+def update_governorate(
+    governorate_id: int,
+    body: GovernorateIn,
+    current: CurrentUser = Depends(require_capability(CAP_BRANCH_WRITE)),
+    db: Session = Depends(get_db),
+) -> GovernorateOut:
+    g = db.get(Governorate, governorate_id)
+    if g is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Governorate not found"})
+    g.name = body.name
+    db.flush()
+    audit_service.record(db, action="governorate.update", actor_user_id=current.id,
+                         entity_type="governorate", entity_id=g.id)
+    db.commit()
+    return GovernorateOut(id=g.id, name=g.name)
+
+
 @router.get("/governorates", response_model=list[GovernorateOut])
 def list_governorates(
     _: CurrentUser = Depends(require_capability(CAP_GOVERNORATE_READ)),

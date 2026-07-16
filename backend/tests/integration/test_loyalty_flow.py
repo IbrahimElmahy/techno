@@ -34,7 +34,9 @@ def _sale(client, rep, inv_world, cust_id, item_id, qty, cash, credit):
 
 
 def _balance(client, admin, cust_id):
-    return client.get(f"/api/v1/customers/{cust_id}/points", headers=admin).json()["balance"]
+    # Points are fractional (v4) — the API returns a decimal string like money/quantities.
+    from decimal import Decimal
+    return Decimal(client.get(f"/api/v1/customers/{cust_id}/points", headers=admin).json()["balance"])
 
 
 def test_earn_and_reverse_on_sale(client, inv_world, login):

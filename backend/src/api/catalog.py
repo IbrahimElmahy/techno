@@ -45,6 +45,7 @@ class ItemCreate(BaseModel):
     sale_price: Decimal | None = None
     is_serialized: bool = False
     default_warehouse_id: int | None = None
+    category: str | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -55,6 +56,7 @@ class ItemUpdate(BaseModel):
     is_serialized: bool | None = None
     active: bool | None = None
     default_warehouse_id: int | None = None
+    category: str | None = None
 
 
 class ItemOut(BaseModel):
@@ -68,6 +70,7 @@ class ItemOut(BaseModel):
     is_serialized: bool
     active: bool
     default_warehouse_id: int | None = None
+    category: str | None = None
 
 
 def _out(it: Item) -> ItemOut:
@@ -75,7 +78,7 @@ def _out(it: Item) -> ItemOut:
         id=it.id, code=it.code, name=it.name, kind=it.kind,
         unit_of_measure=it.unit_of_measure, purchase_price=it.purchase_price,
         sale_price=it.sale_price, is_serialized=it.is_serialized, active=it.active,
-        default_warehouse_id=it.default_warehouse_id,
+        default_warehouse_id=it.default_warehouse_id, category=it.category,
     )
 
 
@@ -88,12 +91,15 @@ def _next_code(db: Session, kind: ItemKind) -> str:
 @router.get("", response_model=list[ItemOut])
 def list_items(
     kind: ItemKind | None = None,
+    category: str | None = None,
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemOut]:
     stmt = select(Item)
     if kind is not None:
         stmt = stmt.where(Item.kind == kind)
+    if category is not None:  # (v4) filter by item category
+        stmt = stmt.where(Item.category == category)
     return [_out(i) for i in db.scalars(stmt).all()]
 
 
@@ -115,7 +121,7 @@ def create_item(
         purchase_price=body.purchase_price,
         sale_price=body.sale_price,
         is_serialized=body.is_serialized,
-        default_warehouse_id=body.default_warehouse_id,
+        default_warehouse_id=body.default_warehouse_id, category=body.category,
     )
     db.add(item)
     db.flush()
@@ -393,7 +399,7 @@ def update_item(
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     # Editing reference prices never rewrites prices already snapshotted on posted documents.
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
-                  "default_warehouse_id"):
+                  "default_warehouse_id", "category"):
         val = getattr(body, field)
         if val is not None:
             setattr(item, field, val)

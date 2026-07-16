@@ -29,7 +29,7 @@ class PurchaseInvoice(Base):
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    lines: Mapped[list["PurchaseInvoiceLine"]] = relationship(cascade="all, save-update")
+    lines: Mapped[list[PurchaseInvoiceLine]] = relationship(cascade="all, save-update")
 
 
 class PurchaseInvoiceLine(Base):
@@ -61,7 +61,7 @@ class PurchaseReturn(Base):
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    lines: Mapped[list["PurchaseReturnLine"]] = relationship(cascade="all, save-update")
+    lines: Mapped[list[PurchaseReturnLine]] = relationship(cascade="all, save-update")
 
 
 class PurchaseReturnLine(Base):

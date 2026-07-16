@@ -1,7 +1,7 @@
 """Password hashing and JWT issue/verify (T027). Research R5."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
@@ -21,7 +21,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(claims: dict[str, Any]) -> str:
     to_encode = dict(claims)
-    expire = datetime.now(timezone.utc) + timedelta(seconds=settings.access_token_ttl)
+    expire = datetime.now(UTC) + timedelta(seconds=settings.access_token_ttl)
     to_encode["exp"] = expire
     return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

@@ -29,4 +29,4 @@ class User(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    role: Mapped["Role"] = relationship()
+    role: Mapped[Role] = relationship()

@@ -14,15 +14,20 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Numeric,
     String,
     event,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
 from src.core.money import MONEY
 from src.models.stock import LocationKind
+
+# Points are fractional (v4): a product can be worth e.g. 1/6 of a point. 3dp is enough for
+# "6 pieces = 1 point" style rules and keeps balances exact under Decimal arithmetic.
+POINTS = Numeric(18, 3)
 
 
 # --- Per-product point value (additive; 002 item untouched) ---
@@ -32,7 +37,8 @@ class ProductPointValue(Base):
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), unique=True, nullable=False)
-    point_value: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)  # >= 0
+    # (v4) fractional: a product may be worth a fraction of a point (e.g. 6 pieces = 1 point).
+    point_value: Mapped[object] = mapped_column(POINTS, default=0, nullable=False)  # >= 0
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -55,7 +61,7 @@ class PointRecord(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=False, index=True)
     kind: Mapped[PointKind] = mapped_column(Enum(PointKind), nullable=False)
-    delta: Mapped[int] = mapped_column(BigInteger, nullable=False)  # signed
+    delta: Mapped[object] = mapped_column(POINTS, nullable=False)  # signed; fractional (v4)
     sales_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoice.id"), nullable=True)
     sales_return_id: Mapped[int | None] = mapped_column(ForeignKey("sales_return.id"), nullable=True)
     origin_earn_id: Mapped[int | None] = mapped_column(ForeignKey("point_record.id"), nullable=True)

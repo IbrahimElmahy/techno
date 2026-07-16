@@ -25,14 +25,19 @@ class PointError(Exception):
     pass
 
 
-def balance(db: Session, customer_id: int) -> int:
+def _points(value) -> Decimal:
+    """Points are fractional (v4) — normalise to 3dp Decimal."""
+    return Decimal(str(value or 0)).quantize(Decimal("0.001"))
+
+
+def balance(db: Session, customer_id: int) -> Decimal:
     """Derived point balance = Σ delta over the customer's records (may be negative)."""
     total = db.scalar(
         select(func.coalesce(func.sum(PointRecord.delta), 0)).where(
             PointRecord.customer_id == customer_id
         )
     )
-    return int(total or 0)
+    return _points(total)
 
 
 def _post_record(
@@ -51,7 +56,7 @@ def _post_record(
     rec = PointRecord(
         customer_id=customer_id,
         kind=kind,
-        delta=int(delta),
+        delta=_points(delta),
         sales_invoice_id=sales_invoice_id,
         sales_return_id=sales_return_id,
         origin_earn_id=origin_earn_id,
@@ -64,19 +69,20 @@ def _post_record(
     return rec
 
 
-def _point_value(db: Session, item_id: int) -> int:
-    """Current per-unit point value for a product; 0 if none set (G1 — graceful)."""
+def _point_value(db: Session, item_id: int) -> Decimal:
+    """Current per-unit point value for a product; 0 if none set (G1 — graceful). Fractional (v4)."""
     ppv = db.scalar(select(ProductPointValue).where(ProductPointValue.item_id == item_id))
-    return int(ppv.point_value) if ppv else 0
+    return _points(ppv.point_value) if ppv else _points(0)
 
 
 # --- Earning / reversal (T014/T015), driven by the 002 sale hooks ---
 
 def earn_for_invoice(db: Session, invoice) -> PointRecord | None:
     """Earn Σ(point value × qty) for a sales invoice. No-op (returns None) if total is 0 (G1)."""
-    total = 0
+    total = _points(0)
     for line in invoice.lines:
-        total += _point_value(db, line.item_id) * int(Decimal(line.quantity))
+        total += _point_value(db, line.item_id) * Decimal(str(line.quantity))
+    total = _points(total)
     if total <= 0:
         return None
     return _post_record(
@@ -95,9 +101,10 @@ def _earn_record_for_invoice(db: Session, invoice_id: int) -> PointRecord | None
 
 def reverse_for_return(db: Session, sales_return, invoice) -> PointRecord | None:
     """Reverse points for the returned quantity (linked to the original earn). FR-004 base path."""
-    r = 0
+    r = _points(0)
     for line in sales_return.lines:
-        r += _point_value(db, line.item_id) * int(Decimal(line.quantity))
+        r += _point_value(db, line.item_id) * Decimal(str(line.quantity))
+    r = _points(r)
     if r <= 0:
         return None
     earn = _earn_record_for_invoice(db, invoice.id)
@@ -125,7 +132,8 @@ def reconcile_return(db: Session, customer_id: int, sales_return_id: int) -> Non
         db.flush()
         _post_record(
             db, customer_id=customer_id, kind=PointKind.void_reclaim,
-            delta=int(coupon.points_consumed), coupon_id=coupon.id, sales_return_id=sales_return_id,
+            delta=_points(coupon.points_consumed), coupon_id=coupon.id,
+            sales_return_id=sales_return_id,
         )
 
 
@@ -150,9 +158,10 @@ def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_
         ct = db.get(CouponType, type_id)
         if ct is None or not ct.active:
             raise PointError("Coupon type not found or inactive.")
-        if int(ct.point_cost) > available:
+        cost = _points(ct.point_cost)
+        if cost > available:
             raise PointError("Insufficient points for the selected coupon type.")
-        available -= int(ct.point_cost)
+        available -= cost
         coupon = Coupon(
             serial=_next_serial(db), customer_id=customer_id, coupon_type_id=ct.id,
             kind=ct.kind, value=ct.value, points_consumed=int(ct.point_cost),
@@ -161,7 +170,7 @@ def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_
         db.add(coupon)
         db.flush()
         _post_record(
-            db, customer_id=customer_id, kind=PointKind.converted, delta=-int(ct.point_cost),
+            db, customer_id=customer_id, kind=PointKind.converted, delta=-cost,
             conversion_id=conversion.id, coupon_id=coupon.id, actor_user_id=actor_user_id,
         )
         coupons.append(coupon)

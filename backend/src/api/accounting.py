@@ -62,7 +62,7 @@ class AccountOut(BaseModel):
     is_system: bool
     active: bool
     balance: Decimal
-    children: list["AccountOut"] | None = None
+    children: list[AccountOut] | None = None
 
 
 class AccountCreate(BaseModel):

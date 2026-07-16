@@ -26,6 +26,29 @@ def _next_code(db: Session) -> str:
     return f"CUST-{count + 1:06d}"
 
 
+class CustomerError(Exception):
+    """Invalid customer data (e.g. a plumber assigned to a non after-sales rep)."""
+
+
+# (v4) Customer types whose responsible rep must be after-sales (customer-service) staff.
+AFTER_SALES_TYPES = {"plumber"}
+
+
+def assert_rep_matches_type(db: Session, *, customer_type: str, rep_id: int) -> None:
+    """A plumber's responsible rep must be After-Sales staff (client rule, v4)."""
+    if customer_type not in AFTER_SALES_TYPES:
+        return
+    from src.models.role import Role, RoleName
+    from src.models.user import User
+
+    rep = db.get(User, rep_id)
+    role = db.get(Role, rep.role_id) if rep else None
+    if role is None or role.name != RoleName.after_sales_staff:
+        raise CustomerError(
+            "عميل من نوع «سباك» لازم يكون المندوب المسؤول عنه مندوب خدمة ما بعد البيع."
+        )
+
+
 def create_customer(
     db: Session,
     *,
@@ -39,7 +62,9 @@ def create_customer(
     """Create a customer with a stable code + a ledger-backed receivable account.
 
     Duplicate phone is flagged (not blocked). No loyalty schema (owned by After-Sales).
+    (v4) A plumber must be owned by an after-sales rep — see `assert_rep_matches_type`.
     """
+    assert_rep_matches_type(db, customer_type=customer_type, rep_id=rep_id)
     dup_ids: list[int] = []
     if phone:
         dup_ids = list(

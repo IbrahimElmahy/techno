@@ -52,6 +52,8 @@ class Item(Base):
     # Kind-specific reference prices (editable; never rewrite posted-document prices).
     purchase_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # raw materials
     sale_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)      # products
+    # Item category (v4) — an admin-configurable lookup value (`item_category`), free text.
+    category: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     # When true, the item is tracked by serial number (009); receive/sale/return require serials.
     is_serialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Default warehouse for inventory routing (014): manufacturing pulls this item from / produces
@@ -114,7 +116,7 @@ class ItemSerial(Base):
     status: Mapped[SerialStatus] = mapped_column(
         Enum(SerialStatus), default=SerialStatus.in_stock, nullable=False
     )
-    location_kind: Mapped["LocationKind | None"] = mapped_column(
+    location_kind: Mapped[LocationKind | None] = mapped_column(
         Enum(LocationKind), nullable=True
     )
     location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

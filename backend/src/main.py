@@ -111,6 +111,7 @@ def create_app() -> FastAPI:
 
         Base.metadata.create_all(engine)
         _ensure_columns(engine)
+        _widen_columns(engine)
         _relax_configurable_enum_columns(engine)
         _relax_not_null(engine)
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
@@ -130,7 +131,51 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("manufacturing_order", "resource_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order_consumption", "waste_quantity", "NUMERIC(18,3) NOT NULL DEFAULT 0"),
     ("manufacturing_order_consumption", "warehouse_id", "BIGINT"),
+    # v4 quick wins
+    ("item", "category", "VARCHAR(80)"),
+    ("supplier", "address", "VARCHAR(240)"),
+    ("customer", "governorate_id", "BIGINT"),
+    ("customer", "markaz", "VARCHAR(120)"),
+    ("customer", "address", "VARCHAR(240)"),
 ]
+
+# Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).
+_WIDENED_COLUMNS: list[tuple[str, str, str]] = [
+    # v4: points are fractional — "6 pieces = 1 point".
+    ("product_point_value", "point_value", "NUMERIC(18,3)"),
+    ("point_record", "delta", "NUMERIC(18,3)"),
+]
+
+
+def _widen_columns(engine) -> None:
+    """Widen column types introduced after release (e.g. integer points -> fractional). Idempotent."""
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    dialect = engine.dialect.name
+    if dialect not in ("postgresql", "postgres", "mysql", "mariadb"):
+        return  # sqlite is dynamically typed — nothing to do
+    inspector = sa_inspect(engine)
+    tables = set(inspector.get_table_names())
+    for table, column, ddl_type in _WIDENED_COLUMNS:
+        if table not in tables:
+            continue
+        col = next((c for c in inspector.get_columns(table) if c["name"] == column), None)
+        if col is None or "NUMERIC" in str(col["type"]).upper() or "DECIMAL" in str(col["type"]).upper():
+            continue  # already widened
+        try:
+            with engine.begin() as conn:
+                if dialect in ("postgresql", "postgres"):
+                    conn.execute(text(
+                        f'ALTER TABLE {table} ALTER COLUMN {column} TYPE {ddl_type} '
+                        f'USING {column}::numeric'))
+                else:
+                    conn.execute(text(f"ALTER TABLE `{table}` MODIFY `{column}` {ddl_type} NOT NULL"))
+        except Exception as exc:  # pragma: no cover — best-effort
+            logging.getLogger("uvicorn.error").info(
+                "widen %s.%s skipped: %s", table, column, exc)
 
 
 # FK columns that are inserted with a temporary NULL before the referenced row exists (Postgres

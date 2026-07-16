@@ -26,7 +26,7 @@ class CostCenterOut(BaseModel):
     name: str
     parent_id: int | None
     active: bool
-    children: list["CostCenterOut"] | None = None
+    children: list[CostCenterOut] | None = None
 
 
 class CostCenterCreate(BaseModel):

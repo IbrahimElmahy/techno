@@ -1,6 +1,8 @@
 """Points router (T024): derived balance + conversion. FR-007."""
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -16,7 +18,7 @@ router = APIRouter(tags=["points"], prefix="/customers")
 
 class PointBalanceOut(BaseModel):
     customer_id: int
-    balance: int
+    balance: Decimal
     derived: bool = True
 
 

@@ -12,8 +12,10 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
 from src.core.db import get_db
 from src.models.catalog import PriceTier
+from src.models.contact import PhoneOwner
 from src.models.customer import Customer, CustomerAccount
-from src.services import audit_service, customer_service, ledger_service
+from src.services import audit_service, contact_service, customer_service, ledger_service
+from src.services.customer_service import CustomerError
 
 router = APIRouter(tags=["customers"], prefix="/customers")
 
@@ -25,6 +27,10 @@ class CustomerCreate(BaseModel):
     territory_id: int
     phone: str | None = None
     default_price_tier: PriceTier | None = None
+    governorate_id: int | None = None     # (v4) detailed address
+    markaz: str | None = None
+    address: str | None = None
+    phones: list[str] | None = None       # (v4) extra numbers
 
 
 class CustomerUpdate(BaseModel):
@@ -33,6 +39,10 @@ class CustomerUpdate(BaseModel):
     customer_type: str | None = None
     default_price_tier: PriceTier | None = None
     active: bool | None = None
+    governorate_id: int | None = None
+    markaz: str | None = None
+    address: str | None = None
+    phones: list[str] | None = None
 
 
 class CustomerOut(BaseModel):
@@ -45,6 +55,10 @@ class CustomerOut(BaseModel):
     territory_id: int
     default_price_tier: PriceTier | None = None
     active: bool
+    governorate_id: int | None = None
+    markaz: str | None = None
+    address: str | None = None
+    phones: list[str] = []
 
 
 class CustomerCreated(CustomerOut):
@@ -64,11 +78,13 @@ class CustomerAccountOut(BaseModel):
     balance_derived: bool = True
 
 
-def _out(c: Customer) -> CustomerOut:
+def _out(c: Customer, db: Session | None = None) -> CustomerOut:
+    extra = contact_service.phone_values(db, PhoneOwner.customer, c.id) if db is not None else []
     return CustomerOut(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type,
         phone=c.phone, rep_id=c.rep_id, territory_id=c.territory_id,
         default_price_tier=c.default_price_tier, active=c.active,
+        governorate_id=c.governorate_id, markaz=c.markaz, address=c.address, phones=extra,
     )
 
 
@@ -97,7 +113,7 @@ def list_customers(
         stmt = stmt.where(Customer.rep_id == rep_id)
     if territory_id is not None:
         stmt = stmt.where(Customer.territory_id == territory_id)
-    return [_out(c) for c in db.scalars(stmt).all()]
+    return [_out(c, db) for c in db.scalars(stmt).all()]
 
 
 @router.post("", response_model=CustomerCreated, status_code=status.HTTP_201_CREATED)
@@ -106,25 +122,31 @@ def create_customer(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
     db: Session = Depends(get_db),
 ) -> CustomerCreated:
-    result = customer_service.create_customer(
-        db,
-        name=body.name,
-        customer_type=body.customer_type,
-        rep_id=body.rep_id,
-        territory_id=body.territory_id,
-        phone=body.phone,
-        actor_user_id=current.id,
-    )
+    try:
+        result = customer_service.create_customer(
+            db,
+            name=body.name,
+            customer_type=body.customer_type,
+            rep_id=body.rep_id,
+            territory_id=body.territory_id,
+            phone=body.phone,
+            actor_user_id=current.id,
+        )
+    except CustomerError as exc:
+        raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
     c = result.customer
     if body.default_price_tier is not None:  # (007)
         c.default_price_tier = body.default_price_tier
-        db.flush()
+    # (v4) detailed address + extra phone numbers
+    c.governorate_id = body.governorate_id
+    c.markaz = body.markaz
+    c.address = body.address
+    db.flush()
+    contact_service.set_phones(db, PhoneOwner.customer, c.id, body.phones)
     db.commit()
-    return CustomerCreated(
-        id=c.id, code=c.code, name=c.name, customer_type=c.customer_type, phone=c.phone,
-        rep_id=c.rep_id, territory_id=c.territory_id, default_price_tier=c.default_price_tier,
-        active=c.active, duplicate_phone_customer_ids=result.duplicate_phone_customer_ids,
-    )
+    base = _out(c, db)
+    return CustomerCreated(**base.model_dump(),
+                           duplicate_phone_customer_ids=result.duplicate_phone_customer_ids)
 
 
 @router.patch("/{customer_id}", response_model=CustomerOut)
@@ -144,16 +166,26 @@ def update_customer(
     if body.phone is not None:
         c.phone = body.phone
     if body.customer_type is not None:
+        try:  # (v4) plumber must stay with an after-sales rep
+            customer_service.assert_rep_matches_type(
+                db, customer_type=body.customer_type, rep_id=c.rep_id)
+        except CustomerError as exc:
+            raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
         c.customer_type = body.customer_type
     if body.default_price_tier is not None:  # (007) set the customer's default sale tier
         c.default_price_tier = body.default_price_tier
     if body.active is not None:
         c.active = body.active
+    for field in ("governorate_id", "markaz", "address"):  # (v4)
+        val = getattr(body, field)
+        if val is not None:
+            setattr(c, field, val)
+    contact_service.set_phones(db, PhoneOwner.customer, c.id, body.phones)
     db.flush()
     audit_service.record(db, action="customer.update", actor_user_id=current.id,
                          entity_type="customer", entity_id=c.id)
     db.commit()
-    return _out(c)
+    return _out(c, db)
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -185,7 +217,7 @@ def get_customer(
         raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
     if current.rep_id is not None and c.rep_id != current.rep_id:
         raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
-    return _out(c)
+    return _out(c, db)
 
 
 @router.post("/{customer_id}/reassign", response_model=CustomerOut)

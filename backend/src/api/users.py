@@ -31,6 +31,17 @@ class UserCreate(BaseModel):
     territory_id: int | None = None
 
 
+class UserUpdate(BaseModel):
+    """(v4) Edit a user. Password is optional — send it only to reset it."""
+
+    full_name: str | None = None
+    role: RoleName | None = None
+    branch_id: int | None = None
+    territory_id: int | None = None
+    active: bool | None = None
+    password: str | None = None
+
+
 def _to_out(db: Session, user: User) -> UserOut:
     role = db.get(Role, user.role_id)
     return UserOut(
@@ -111,6 +122,57 @@ def get_user(
         raise HTTPException(404, {"code": "not_found", "message": "User not found"})
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
+    return _to_out(db, user)
+
+
+@router.patch("/{user_id}", response_model=UserOut)
+def update_user(
+    user_id: int,
+    body: UserUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    db: Session = Depends(get_db),
+) -> UserOut:
+    """(v4) Edit a user: name, role, scope, active, and optional password reset."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, {"code": "not_found", "message": "User not found"})
+    if not current.is_admin:
+        ensure_branch_access(current, user.branch_id)
+        ensure_branch_access(current, body.branch_id if body.branch_id is not None else user.branch_id)
+
+    new_role = body.role or db.get(Role, user.role_id).name
+    branch_id = body.branch_id if body.branch_id is not None else user.branch_id
+    territory_id = body.territory_id if body.territory_id is not None else user.territory_id
+    # Same scope rules as creation.
+    if new_role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager):
+        if branch_id is None:
+            raise HTTPException(422, {"code": "validation", "message": f"{new_role.value} needs branch_id"})
+    if new_role == RoleName.sales_rep and (branch_id is None or territory_id is None):
+        raise HTTPException(
+            422, {"code": "validation", "message": "sales_rep needs branch_id + territory_id"})
+
+    if body.role is not None:
+        role = db.scalar(select(Role).where(Role.name == body.role))
+        if role is None:
+            role = Role(name=body.role)
+            db.add(role)
+            db.flush()
+        user.role_id = role.id
+    if body.full_name is not None:
+        user.full_name = body.full_name
+    if body.branch_id is not None:
+        user.branch_id = body.branch_id
+    if body.territory_id is not None:
+        user.territory_id = body.territory_id
+    if body.active is not None:
+        user.active = body.active
+    if body.password:
+        user.password_hash = hash_password(body.password)
+    db.flush()
+    audit_service.record(db, action="user.update", actor_user_id=current.id,
+                         entity_type="user", entity_id=user.id,
+                         after={"role": new_role.value, "active": user.active})
+    db.commit()
     return _to_out(db, user)
 
 

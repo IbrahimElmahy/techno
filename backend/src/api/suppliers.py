@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SUPPLIER_READ, CAP_SUPPLIER_WRITE
 from src.core.db import get_db
+from src.models.contact import PhoneOwner
 from src.models.ledger import Account, AccountType, Direction
 from src.models.supplier import Supplier, SupplierAccount
-from src.services import audit_service, ledger_service
+from src.services import audit_service, contact_service, ledger_service
 
 router = APIRouter(tags=["suppliers"], prefix="/suppliers")
 
@@ -21,12 +22,16 @@ router = APIRouter(tags=["suppliers"], prefix="/suppliers")
 class SupplierCreate(BaseModel):
     name: str
     phone: str | None = None
+    address: str | None = None            # (v4)
+    phones: list[str] | None = None       # (v4) extra numbers
 
 
 class SupplierUpdate(BaseModel):
     name: str | None = None
     phone: str | None = None
     active: bool | None = None
+    address: str | None = None
+    phones: list[str] | None = None
 
 
 class SupplierOut(BaseModel):
@@ -35,10 +40,14 @@ class SupplierOut(BaseModel):
     name: str
     phone: str | None
     active: bool
+    address: str | None = None
+    phones: list[str] = []
 
 
-def _sup_out(s: Supplier) -> SupplierOut:
-    return SupplierOut(id=s.id, code=s.code, name=s.name, phone=s.phone, active=s.active)
+def _sup_out(s: Supplier, db: Session | None = None) -> SupplierOut:
+    extra = contact_service.phone_values(db, PhoneOwner.supplier, s.id) if db is not None else []
+    return SupplierOut(id=s.id, code=s.code, name=s.name, phone=s.phone, active=s.active,
+                       address=s.address, phones=extra)
 
 
 class AccountBalanceOut(BaseModel):
@@ -52,10 +61,7 @@ def list_suppliers(
     _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> list[SupplierOut]:
-    return [
-        SupplierOut(id=s.id, code=s.code, name=s.name, phone=s.phone, active=s.active)
-        for s in db.scalars(select(Supplier)).all()
-    ]
+    return [_sup_out(s, db) for s in db.scalars(select(Supplier)).all()]
 
 
 @router.post("", response_model=SupplierOut, status_code=status.HTTP_201_CREATED)
@@ -68,16 +74,17 @@ def create_supplier(
     acc = Account(account_type=AccountType.supplier_payable, normal_side=Direction.credit)
     db.add(acc)
     db.flush()
-    supplier = Supplier(code=f"SUP-{n + 1:05d}", name=body.name, phone=body.phone)
+    supplier = Supplier(code=f"SUP-{n + 1:05d}", name=body.name, phone=body.phone,
+                        address=body.address)
     db.add(supplier)
     db.flush()
     sa = SupplierAccount(supplier_id=supplier.id, account_id=acc.id)
     db.add(sa)
     db.flush()
     acc.owner_ref = sa.id
+    contact_service.set_phones(db, PhoneOwner.supplier, supplier.id, body.phones)
     db.commit()
-    return SupplierOut(id=supplier.id, code=supplier.code, name=supplier.name,
-                       phone=supplier.phone, active=supplier.active)
+    return _sup_out(supplier, db)
 
 
 @router.get("/{supplier_id}", response_model=SupplierOut)
@@ -89,7 +96,7 @@ def get_supplier(
     s = db.get(Supplier, supplier_id)
     if s is None:
         raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
-    return _sup_out(s)
+    return _sup_out(s, db)
 
 
 @router.patch("/{supplier_id}", response_model=SupplierOut)
@@ -108,11 +115,14 @@ def update_supplier(
         s.phone = body.phone
     if body.active is not None:
         s.active = body.active
+    if body.address is not None:
+        s.address = body.address
+    contact_service.set_phones(db, PhoneOwner.supplier, s.id, body.phones)
     db.flush()
     audit_service.record(db, action="supplier.update", actor_user_id=current.id,
                          entity_type="supplier", entity_id=s.id)
     db.commit()
-    return _sup_out(s)
+    return _sup_out(s, db)
 
 
 @router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
