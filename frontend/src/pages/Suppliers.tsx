@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Card, Drawer, Form, Input, Tag, message } from 'antd';
-import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 
@@ -9,8 +9,34 @@ interface SupplierRecord {
   code: string;
   name: string;
   phone: string | null;
+  address: string | null;
+  phones: string[] | null;
   active: boolean;
 }
+
+// Dynamic list of EXTRA phone numbers (the primary `phone` field stays separate).
+const ExtraPhonesList = () => (
+  <Form.List name="phones">
+    {(fields, { add, remove }) => (
+      <>
+        <div style={{ marginBottom: 8 }}>أرقام هاتف إضافية</div>
+        {fields.map((field) => (
+          <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+            <Form.Item {...field} style={{ marginBottom: 0, flex: 1 }}>
+              <Input placeholder="مثال: 01000000000" style={{ width: 280 }} />
+            </Form.Item>
+            <MinusCircleOutlined onClick={() => remove(field.name)} />
+          </Space>
+        ))}
+        <Form.Item style={{ marginBottom: 16 }}>
+          <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add()}>
+            إضافة رقم
+          </Button>
+        </Form.Item>
+      </>
+    )}
+  </Form.List>
+);
 
 // Sub-component to fetch and render supplier ledger balance dynamically per row (thin client)
 const SupplierBalance = ({ supplierId }: { supplierId: number }) => {
@@ -55,9 +81,17 @@ export default function Suppliers() {
     fetchSuppliers();
   }, []);
 
+  // Form.List rows can be blank/undefined; only send real numbers.
+  const cleanPhones = (phones: any): string[] =>
+    (phones || []).map((p: any) => (p || '').trim()).filter(Boolean);
+
   const onCreateSupplier = async (values: any) => {
     try {
-      await api.post('/api/v1/suppliers', values);
+      await api.post('/api/v1/suppliers', {
+        ...values,
+        address: values.address ?? null,
+        phones: cleanPhones(values.phones),
+      });
       message.success('تم تسجيل المورد بنجاح');
       setDrawerVisible(false);
       form.resetFields();
@@ -69,7 +103,12 @@ export default function Suppliers() {
 
   const openEdit = (record: SupplierRecord) => {
     setEditing(record);
-    editForm.setFieldsValue({ name: record.name, phone: record.phone });
+    editForm.setFieldsValue({
+      name: record.name,
+      phone: record.phone,
+      address: record.address ?? undefined,
+      phones: record.phones ?? [],
+    });
     setEditVisible(true);
   };
 
@@ -79,6 +118,8 @@ export default function Suppliers() {
       await api.patch(`/api/v1/suppliers/${editing.id}`, {
         name: values.name,
         phone: values.phone,
+        address: values.address ?? null,
+        phones: cleanPhones(values.phones),
       });
       message.success('تم تحديث بيانات المورد بنجاح');
       setEditVisible(false);
@@ -122,7 +163,22 @@ export default function Suppliers() {
       title: 'رقم الهاتف',
       dataIndex: 'phone',
       key: 'phone',
-      render: (phone: string | null) => phone || '-',
+      render: (phone: string | null, record: SupplierRecord) => (
+        <Space size={4}>
+          <span>{phone || '-'}</span>
+          {record.phones && record.phones.length > 0 && (
+            <Tag color="blue" title={record.phones.join('، ')}>
+              +{record.phones.length}
+            </Tag>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: 'العنوان',
+      dataIndex: 'address',
+      key: 'address',
+      render: (address: string | null) => address || '-',
     },
     {
       title: 'الحالة',
@@ -198,6 +254,12 @@ export default function Suppliers() {
             <Input placeholder="مثال: 02-23456789" />
           </Form.Item>
 
+          <ExtraPhonesList />
+
+          <Form.Item name="address" label="العنوان">
+            <Input.TextArea rows={3} placeholder="مثال: 15 شارع الجمهورية، وسط البلد، القاهرة" />
+          </Form.Item>
+
           <Form.Item style={{ marginTop: 24 }}>
             <Space>
               <Button type="primary" htmlType="submit">
@@ -228,6 +290,12 @@ export default function Suppliers() {
 
           <Form.Item name="phone" label="رقم الهاتف">
             <Input placeholder="مثال: 02-23456789" />
+          </Form.Item>
+
+          <ExtraPhonesList />
+
+          <Form.Item name="address" label="العنوان">
+            <Input.TextArea rows={3} placeholder="مثال: 15 شارع الجمهورية، وسط البلد، القاهرة" />
           </Form.Item>
 
           <Form.Item style={{ marginTop: 24 }}>

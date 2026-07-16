@@ -75,6 +75,7 @@ interface ItemRecord {
   is_serialized: boolean;
   active: boolean;
   default_warehouse_id: number | null;
+  category: string | null;
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -97,8 +98,10 @@ const ProductPoints = ({
   const fetchPoints = () => {
     api.get(`/api/v1/products/${itemId}/point-value`)
       .then((res) => {
-        setPoints(res.data.point_value);
-        setInputVal(res.data.point_value);
+        // Points are fractional (v4) and come back as a decimal string, e.g. "0.167".
+        const v = parseFloat(res.data.point_value) || 0;
+        setPoints(v);
+        setInputVal(v);
       })
       .catch(() => setPoints(0));
   };
@@ -129,12 +132,14 @@ const ProductPoints = ({
   if (editing) {
     return (
       <Space>
-        <Input
-          type="number"
+        <InputNumber
           size="small"
-          style={{ width: 80 }}
+          min={0}
+          step={0.001}
+          style={{ width: 100 }}
           value={inputVal}
-          onChange={(e) => setInputVal(parseInt(e.target.value, 10) || 0)}
+          // Fractional point values (v4): e.g. 6 pieces = 1 point -> 0.167.
+          onChange={(v) => setInputVal(Number(v) || 0)}
         />
         <Button size="small" type="primary" onClick={handleSave}>
           حفظ
@@ -338,8 +343,11 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
 export default function Catalog() {
   const { options: kindOptions } = useLookup('item_kind');
   const { options: uomOptions } = useLookup('unit_of_measure');
+  const { options: categoryOptions } = useLookup('item_category');
   const kindLabels = labelMap(kindOptions);
+  const categoryLabels = labelMap(categoryOptions);
   const [items, setItems] = useState<ItemRecord[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
   const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -384,6 +392,7 @@ export default function Catalog() {
         purchase_price: values.kind === 'raw_material' ? values.purchase_price : null,
         sale_price: values.kind === 'product' ? values.sale_price : null,
         default_warehouse_id: values.default_warehouse_id ?? null,
+        category: values.category ?? null,
       };
 
       await api.post('/api/v1/items', { ...payload, is_serialized: !!values.is_serialized });
@@ -405,6 +414,7 @@ export default function Catalog() {
       is_serialized: record.is_serialized,
       active: record.active,
       default_warehouse_id: record.default_warehouse_id ?? undefined,
+      category: record.category ?? undefined,
     });
     setEditVisible(true);
   };
@@ -416,6 +426,7 @@ export default function Catalog() {
         name: values.name,
         active: values.active,
         default_warehouse_id: values.default_warehouse_id ?? null,
+        category: values.category ?? null,
       };
       if (editing.kind === 'raw_material') payload.purchase_price = values.purchase_price;
       if (editing.kind === 'product') {
@@ -448,6 +459,11 @@ export default function Catalog() {
     });
   };
 
+  // Client-side category filter over the already-loaded items.
+  const filteredItems = categoryFilter
+    ? items.filter((i) => i.category === categoryFilter)
+    : items;
+
   const columns = [
     {
       title: 'كود الصنف',
@@ -469,6 +485,13 @@ export default function Catalog() {
           {kindLabels[kind] || KIND_LABELS[kind] || kind}
         </Tag>
       ),
+    },
+    {
+      title: 'الفئة',
+      dataIndex: 'category',
+      key: 'category',
+      render: (category: string | null) =>
+        category ? <Tag color="purple">{categoryLabels[category] || category}</Tag> : '-',
     },
     {
       title: 'وحدة القياس',
@@ -559,8 +582,20 @@ export default function Catalog() {
           ) : null
         }
       >
+        <Space style={{ marginBottom: 16 }}>
+          <span>الفئة:</span>
+          <Select
+            allowClear
+            style={{ width: 220 }}
+            placeholder="كل الفئات"
+            value={categoryFilter}
+            onChange={(v) => setCategoryFilter(v)}
+            options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
+          />
+        </Space>
+
         <Table
-          dataSource={items}
+          dataSource={filteredItems}
           columns={columns}
           rowKey="id"
           loading={loading}
@@ -605,6 +640,13 @@ export default function Catalog() {
               options={uomOptions.map((o) => ({ value: o.value, label: o.label }))}
               filterOption={(input, option) => String(option?.label ?? '').includes(input)}
             />
+          </Form.Item>
+
+          <Form.Item name="category" label="الفئة"
+            extra="تُدار قائمة الفئات من الإعدادات">
+            <Select allowClear showSearch placeholder="اختر فئة الصنف (اختياري)"
+              options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
+              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
           </Form.Item>
 
           <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
@@ -689,6 +731,13 @@ export default function Catalog() {
               <Switch checkedChildren="نعم" unCheckedChildren="لا" />
             </Form.Item>
           )}
+
+          <Form.Item name="category" label="الفئة"
+            extra="تُدار قائمة الفئات من الإعدادات">
+            <Select allowClear showSearch placeholder="اختر فئة الصنف (اختياري)"
+              options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
+              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+          </Form.Item>
 
           <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
             <Select allowClear placeholder="اختر المخزن الافتراضي (اختياري)"

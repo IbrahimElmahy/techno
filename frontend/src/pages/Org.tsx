@@ -5,6 +5,26 @@ import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 
+const ADD_LABELS: Record<string, string> = {
+  governorates: 'إضافة محافظة',
+  branches: 'إضافة فرع',
+  warehouses: 'إضافة مستودع',
+  custodies: 'إعداد عهدة',
+};
+
+const CREATE_TITLES: Record<string, string> = {
+  governorates: 'إضافة محافظة جديدة',
+  branches: 'إضافة فرع جديد',
+  warehouses: 'إضافة مستودع جديد',
+  custodies: 'إعداد عهدة جديدة',
+};
+
+const EDIT_TITLES: Record<string, string> = {
+  governorates: 'تعديل بيانات المحافظة',
+  branches: 'تعديل بيانات الفرع',
+  warehouses: 'تعديل بيانات المستودع',
+};
+
 export default function Org() {
   const [activeTab, setActiveTab] = useState('branches');
   const [loading, setLoading] = useState(false);
@@ -49,6 +69,9 @@ export default function Org() {
         setCustodies(custodiesRes.data);
         setReps(repsRes.data.filter((u: any) => u.role === 'sales_rep'));
         setWarehouses(warehousesRes.data);
+      } else if (activeTab === 'governorates') {
+        const govRes = await api.get('/api/v1/governorates');
+        setGovernorates(govRes.data);
       }
     } catch (err) {
       console.error(err);
@@ -84,6 +107,9 @@ export default function Org() {
           warehouse_id: values.holder_type === 'warehouse' ? values.warehouse_id : null,
         });
         message.success('تم ربط وإعداد العهدة بنجاح');
+      } else if (activeTab === 'governorates') {
+        await api.post('/api/v1/governorates', { name: values.name });
+        message.success('تم إضافة المحافظة بنجاح');
       }
       setModalVisible(false);
       form.resetFields();
@@ -97,7 +123,7 @@ export default function Org() {
     setEditingRecord(record);
     if (activeTab === 'branches') {
       editForm.setFieldsValue({ name: record.name, governorate_id: record.governorate_id });
-    } else if (activeTab === 'warehouses') {
+    } else if (activeTab === 'warehouses' || activeTab === 'governorates') {
       editForm.setFieldsValue({ name: record.name });
     }
     setEditVisible(true);
@@ -117,6 +143,11 @@ export default function Org() {
           name: values.name,
         });
         message.success('تم تعديل المستودع بنجاح');
+      } else if (activeTab === 'governorates') {
+        await api.patch(`/api/v1/governorates/${editingRecord.id}`, {
+          name: values.name,
+        });
+        message.success('تم تعديل المحافظة بنجاح');
       }
       setEditVisible(false);
       editForm.resetFields();
@@ -237,6 +268,22 @@ export default function Org() {
     },
   ];
 
+  const governorateColumns = [
+    { title: 'كود المحافظة', dataIndex: 'id', key: 'id' },
+    { title: 'اسم المحافظة', dataIndex: 'name', key: 'name' },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      render: (_: any, record: any) => (
+        <Space size="middle">
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>
+            تعديل
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
   const custodyColumns = [
     { title: 'رقم العهدة', dataIndex: 'id', key: 'id' },
     {
@@ -278,6 +325,13 @@ export default function Org() {
 
   const tabItems = [
     {
+      key: 'governorates',
+      label: 'المحافظات',
+      children: (
+        <Table dataSource={governorates} columns={governorateColumns} rowKey="id" loading={loading} />
+      ),
+    },
+    {
       key: 'branches',
       label: 'الفروع والمكاتب',
       children: (
@@ -306,7 +360,7 @@ export default function Org() {
         title="إدارة البنية التنظيمية"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
-            {activeTab === 'branches' ? 'إضافة فرع' : activeTab === 'warehouses' ? 'إضافة مستودع' : 'إعداد عهدة'}
+            {ADD_LABELS[activeTab] || 'إضافة'}
           </Button>
         }
       >
@@ -314,7 +368,7 @@ export default function Org() {
       </Card>
 
       <Modal
-        title={activeTab === 'branches' ? 'إضافة فرع جديد' : activeTab === 'warehouses' ? 'إضافة مستودع جديد' : 'إعداد عهدة جديدة'}
+        title={CREATE_TITLES[activeTab] || 'إضافة'}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={() => form.submit()}
@@ -323,6 +377,16 @@ export default function Org() {
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={handleCreate} requiredMark={false}>
+          {activeTab === 'governorates' && (
+            <Form.Item
+              name="name"
+              label="اسم المحافظة"
+              rules={[{ required: true, message: 'يرجى إدخال اسم المحافظة!' }]}
+            >
+              <Input placeholder="مثال: الإسكندرية" />
+            </Form.Item>
+          )}
+
           {activeTab === 'branches' && (
             <>
               <Form.Item
@@ -460,7 +524,7 @@ export default function Org() {
       </Modal>
 
       <Modal
-        title={activeTab === 'branches' ? 'تعديل بيانات الفرع' : 'تعديل بيانات المستودع'}
+        title={EDIT_TITLES[activeTab] || 'تعديل البيانات'}
         open={editVisible}
         onCancel={() => {
           setEditVisible(false);
@@ -472,6 +536,16 @@ export default function Org() {
         destroyOnHidden
       >
         <Form form={editForm} layout="vertical" onFinish={handleEdit} requiredMark={false}>
+          {activeTab === 'governorates' && (
+            <Form.Item
+              name="name"
+              label="اسم المحافظة"
+              rules={[{ required: true, message: 'يرجى إدخال اسم المحافظة!' }]}
+            >
+              <Input placeholder="مثال: الإسكندرية" />
+            </Form.Item>
+          )}
+
           {activeTab === 'branches' && (
             <>
               <Form.Item

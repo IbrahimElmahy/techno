@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Space, Card, Drawer, Form, Input, Select, Switch, Tag, message } from 'antd';
-import { UserAddOutlined, SwapOutlined, EditOutlined } from '@ant-design/icons';
+import { UserAddOutlined, SwapOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
@@ -12,10 +12,19 @@ interface CustomerRecord {
   name: string;
   customer_type: string; // admin-configurable via Settings (013)
   phone: string | null;
+  phones: string[] | null;
+  governorate_id: number | null;
+  markaz: string | null;
+  address: string | null;
   rep_id: number;
   territory_id: number;
   default_price_tier: string | null;
   active: boolean;
+}
+
+interface Governorate {
+  id: number;
+  name: string;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -31,6 +40,30 @@ const TIER_LABELS: Record<string, string> = {
   semi_wholesale: 'نصف جملة',
   consumer: 'مستهلك',
 };
+
+// Dynamic list of EXTRA phone numbers (the primary `phone` field stays separate).
+const ExtraPhonesList = () => (
+  <Form.List name="phones">
+    {(fields, { add, remove }) => (
+      <>
+        <div style={{ marginBottom: 8 }}>أرقام هاتف إضافية</div>
+        {fields.map((field) => (
+          <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+            <Form.Item {...field} style={{ marginBottom: 0, flex: 1 }}>
+              <Input placeholder="مثال: 01000000000" style={{ width: 330 }} />
+            </Form.Item>
+            <MinusCircleOutlined onClick={() => remove(field.name)} />
+          </Space>
+        ))}
+        <Form.Item style={{ marginBottom: 16 }}>
+          <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add()}>
+            إضافة رقم
+          </Button>
+        </Form.Item>
+      </>
+    )}
+  </Form.List>
+);
 
 // Sub-component to fetch and render customer ledger balance dynamically per row (thin client)
 const CustomerBalance = ({ customerId }: { customerId: number }) => {
@@ -56,6 +89,7 @@ export default function Customers() {
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [reps, setReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
+  const [governorates, setGovernorates] = useState<Governorate[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [reassignVisible, setReassignVisible] = useState(false);
@@ -82,12 +116,14 @@ export default function Customers() {
 
   const fetchLookups = async () => {
     try {
-      const [usersRes, territoriesRes] = await Promise.all([
+      const [usersRes, territoriesRes, governoratesRes] = await Promise.all([
         api.get('/api/v1/users'),
         api.get('/api/v1/territories'),
+        api.get('/api/v1/governorates'),
       ]);
       setReps(usersRes.data.filter((u: any) => u.role === 'sales_rep'));
       setTerritories(territoriesRes.data);
+      setGovernorates(governoratesRes.data);
     } catch (err) {
       console.error(err);
     }
@@ -98,9 +134,19 @@ export default function Customers() {
     fetchLookups();
   }, []);
 
+  // Form.List rows can be blank/undefined; only send real numbers.
+  const cleanPhones = (phones: any): string[] =>
+    (phones || []).map((p: any) => (p || '').trim()).filter(Boolean);
+
   const onCreateCustomer = async (values: any) => {
     try {
-      await api.post('/api/v1/customers', values);
+      await api.post('/api/v1/customers', {
+        ...values,
+        governorate_id: values.governorate_id ?? null,
+        markaz: values.markaz ?? null,
+        address: values.address ?? null,
+        phones: cleanPhones(values.phones),
+      });
       message.success('تم تسجيل العميل بنجاح');
       setDrawerVisible(false);
       form.resetFields();
@@ -134,6 +180,10 @@ export default function Customers() {
       customer_type: record.customer_type,
       default_price_tier: record.default_price_tier ?? undefined,
       active: record.active,
+      governorate_id: record.governorate_id ?? undefined,
+      markaz: record.markaz ?? undefined,
+      address: record.address ?? undefined,
+      phones: record.phones ?? [],
     });
     setEditVisible(true);
   };
@@ -147,6 +197,10 @@ export default function Customers() {
         customer_type: values.customer_type,
         default_price_tier: values.default_price_tier ?? null,
         active: values.active,
+        governorate_id: values.governorate_id ?? null,
+        markaz: values.markaz ?? null,
+        address: values.address ?? null,
+        phones: cleanPhones(values.phones),
       });
       message.success('تم تحديث بيانات العميل بنجاح');
       setEditVisible(false);
@@ -311,6 +365,22 @@ export default function Customers() {
             <Input placeholder="مثال: 01000000000" />
           </Form.Item>
 
+          <ExtraPhonesList />
+
+          <Form.Item name="governorate_id" label="المحافظة">
+            <Select allowClear showSearch placeholder="اختر المحافظة"
+              options={governorates.map((g) => ({ value: g.id, label: g.name }))}
+              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+          </Form.Item>
+
+          <Form.Item name="markaz" label="المركز">
+            <Input placeholder="مثال: مركز طنطا" />
+          </Form.Item>
+
+          <Form.Item name="address" label="العنوان">
+            <Input.TextArea rows={3} placeholder="مثال: 22 شارع سعد زغلول، بجوار مسجد النور" />
+          </Form.Item>
+
           <Form.Item
             name="rep_id"
             label="مندوب المبيعات المسؤول"
@@ -387,6 +457,22 @@ export default function Customers() {
 
           <Form.Item name="phone" label="رقم الهاتف">
             <Input placeholder="مثال: 01000000000" />
+          </Form.Item>
+
+          <ExtraPhonesList />
+
+          <Form.Item name="governorate_id" label="المحافظة">
+            <Select allowClear showSearch placeholder="اختر المحافظة"
+              options={governorates.map((g) => ({ value: g.id, label: g.name }))}
+              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+          </Form.Item>
+
+          <Form.Item name="markaz" label="المركز">
+            <Input placeholder="مثال: مركز طنطا" />
+          </Form.Item>
+
+          <Form.Item name="address" label="العنوان">
+            <Input.TextArea rows={3} placeholder="مثال: 22 شارع سعد زغلول، بجوار مسجد النور" />
           </Form.Item>
 
           <Form.Item name="default_price_tier" label="الفئة السعرية الافتراضية"
