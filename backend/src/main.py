@@ -44,7 +44,7 @@ def create_app() -> FastAPI:
     )
 
     # Local dev origins + any deployed frontend origins from FRONTEND_ORIGINS (comma-separated),
-    # plus a regex allowing Vercel preview/prod domains (*.vercel.app).
+    # plus a regex allowing Vercel preview/prod domains and the production technothermeg.com domain.
     from src.core.config import settings as _settings
 
     app.add_middleware(
@@ -54,9 +54,12 @@ def create_app() -> FastAPI:
             "http://127.0.0.1:5173",
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "https://app.technothermeg.com",
+            "https://technothermeg.com",
             *_settings.cors_origins,
         ],
-        allow_origin_regex=r"https://.*\.vercel\.app",
+        # *.vercel.app (previews) OR the technothermeg.com production domain (app/api/apex).
+        allow_origin_regex=r"https://(.*\.vercel\.app|(.*\.)?technothermeg\.com)",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
