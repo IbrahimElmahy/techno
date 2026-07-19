@@ -46,6 +46,7 @@ class ItemCreate(BaseModel):
     is_serialized: bool = False
     default_warehouse_id: int | None = None
     category: str | None = None
+    default_discount_pct: Decimal | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -57,6 +58,7 @@ class ItemUpdate(BaseModel):
     active: bool | None = None
     default_warehouse_id: int | None = None
     category: str | None = None
+    default_discount_pct: Decimal | None = None
 
 
 class ItemOut(BaseModel):
@@ -71,6 +73,7 @@ class ItemOut(BaseModel):
     active: bool
     default_warehouse_id: int | None = None
     category: str | None = None
+    default_discount_pct: Decimal | None = None
 
 
 def _out(it: Item) -> ItemOut:
@@ -79,6 +82,7 @@ def _out(it: Item) -> ItemOut:
         unit_of_measure=it.unit_of_measure, purchase_price=it.purchase_price,
         sale_price=it.sale_price, is_serialized=it.is_serialized, active=it.active,
         default_warehouse_id=it.default_warehouse_id, category=it.category,
+        default_discount_pct=it.default_discount_pct,
     )
 
 
@@ -122,6 +126,7 @@ def create_item(
         sale_price=body.sale_price,
         is_serialized=body.is_serialized,
         default_warehouse_id=body.default_warehouse_id, category=body.category,
+        default_discount_pct=body.default_discount_pct or 0,
     )
     db.add(item)
     db.flush()
@@ -399,7 +404,8 @@ def update_item(
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     # Editing reference prices never rewrites prices already snapshotted on posted documents.
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
-                  "default_warehouse_id", "category"):
+                  "default_warehouse_id", "category",
+                  "default_discount_pct"):
         val = getattr(body, field)
         if val is not None:
             setattr(item, field, val)

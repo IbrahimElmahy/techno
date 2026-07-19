@@ -140,6 +140,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer", "governorate_id", "BIGINT"),
     ("customer", "markaz", "VARCHAR(120)"),
     ("customer", "address", "VARCHAR(240)"),
+    ("item", "default_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
 ]
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).

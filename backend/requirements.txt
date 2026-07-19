@@ -18,3 +18,4 @@ PyYAML>=6.0
 PyMySQL>=1.1
 # Postgres driver (Render/Neon/Supabase hosting)
 psycopg2-binary>=2.9
+openpyxl>=3.1

@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Numeric,
     String,
     UniqueConstraint,
     func,
@@ -54,6 +55,11 @@ class Item(Base):
     sale_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)      # products
     # Item category (v4) — an admin-configurable lookup value (`item_category`), free text.
     category: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    # Default line discount % for this item (v4), e.g. 10.00 = 10%. Used as the suggested discount
+    # on invoice lines; the posted document always stores the ACTUAL discount charged.
+    default_discount_pct: Mapped[object] = mapped_column(
+        Numeric(5, 2), default=0, nullable=False
+    )
     # When true, the item is tracked by serial number (009); receive/sale/return require serials.
     is_serialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Default warehouse for inventory routing (014): manufacturing pulls this item from / produces
