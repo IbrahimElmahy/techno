@@ -186,6 +186,22 @@ for _role in (RoleName.system_admin, RoleName.accountant):
 ALL_CAPABILITIES |= _ACCOUNTING_ALL
 
 
+# ---------------------------------------------------------------------------
+# Site inspections / معاينات (015-inspections-mobile) capability extension — additive.
+# ---------------------------------------------------------------------------
+CAP_INSPECTION_READ = "inspection.read"
+CAP_INSPECTION_WRITE = "inspection.write"
+
+_INSPECTION_ALL = {CAP_INSPECTION_READ, CAP_INSPECTION_WRITE}
+
+# Reps record inspections from the mobile app (scoped to their own in the endpoint);
+# managers and after-sales staff review them.
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager,
+              RoleName.after_sales_staff, RoleName.sales_rep):
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(_INSPECTION_ALL)
+ALL_CAPABILITIES |= _INSPECTION_ALL
+
+
 def role_has_capability(role: RoleName, capability: str) -> bool:
     """Deny-by-default: True only if explicitly granted."""
     return capability in ROLE_CAPABILITIES.get(role, set())

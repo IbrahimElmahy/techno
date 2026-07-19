@@ -64,6 +64,19 @@ CATEGORIES: dict[str, dict] = {
         "page": "transactions", "label": "طرق الدفع", "system": False,
         "defaults": [("cash", "نقدي"), ("credit", "آجل")],
     },
+    # --- Inspections page (015 — mobile معاينات; free lists per the client's spec) ---
+    "inspection_description": {
+        "page": "inspections", "label": "توصيف المعاينة", "system": False,
+        "defaults": [("حمام و مطبخ", "حمام و مطبخ"), ("حمام فقط", "حمام فقط"),
+                     ("مطبخ فقط", "مطبخ فقط"), ("2 حمام و مطبخ", "2 حمام و مطبخ"),
+                     ("مرمه", "مرمه"), ("محل", "محل"), ("مسجد", "مسجد"),
+                     ("صيدليه", "صيدليه"), ("2 حمام", "2 حمام")],
+    },
+    "inspection_type": {
+        "page": "inspections", "label": "نوع المعاينة", "system": False,
+        "defaults": [("تغذية و صرف", "تغذية و صرف"), ("تغذية فقط", "تغذية فقط"),
+                     ("صرف فقط", "صرف فقط")],
+    },
 }
 
 # Human-readable page titles for the Settings UI.
@@ -73,6 +86,7 @@ PAGE_LABELS: dict[str, str] = {
     "loyalty": "الولاء والكوبونات",
     "org": "التنظيم والمخازن",
     "transactions": "الفواتير والمعاملات",
+    "inspections": "المعاينات",
 }
 
 

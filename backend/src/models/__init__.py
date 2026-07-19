@@ -7,6 +7,9 @@ from src.models.contact import ContactPhone  # noqa: E402
 # Cost Centers (006) — analytical dimension.
 from src.models.cost_center import CostCenter  # noqa: E402
 from src.models.customer import Customer, CustomerAccount
+
+# Site inspections / معاينات (015-inspections-mobile).
+from src.models.inspection import Inspection, InspectionItem  # noqa: E402
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 
 # Settings → configurable dropdown lists (013).
@@ -61,5 +64,5 @@ __all__ = [
     "ManufacturingOrderResource", "Bom", "BomComponent", "BomResource", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
-    "LookupOption", "WastageDocument", "ContactPhone",
+    "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
 ]

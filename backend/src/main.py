@@ -14,6 +14,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     cost_centers,  # Cost Centers (006)
     coupons,
     customers,
+    inspections,  # Site inspections / معاينات (015)
     loyalty_settings,
     manufacturing,
     org,
@@ -97,6 +98,8 @@ def create_app() -> FastAPI:
     app.include_router(settings_lookups.router, prefix=prefix)
     # Production reporting (014) — wastage documents
     app.include_router(wastage.router, prefix=prefix)
+    # Site inspections / معاينات (015) — rep mobile app
+    app.include_router(inspections.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
 

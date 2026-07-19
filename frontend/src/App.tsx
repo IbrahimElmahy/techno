@@ -21,6 +21,7 @@ import GeneralLedger from './pages/GeneralLedger';
 import Audit from './pages/Audit';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Inspections from './pages/Inspections';
 import { setApiBaseURL } from './api/client';
 
 // Define placeholder pages for routes (implemented in later tasks)
@@ -100,6 +101,7 @@ export default function App() {
               <Route path="general-ledger" element={<GeneralLedger />} />
               <Route path="loyalty" element={<Loyalty />} />
               <Route path="audit" element={<Audit />} />
+              <Route path="inspections" element={<Inspections />} />
               <Route path="reports" element={<Reports />} />
               <Route path="settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

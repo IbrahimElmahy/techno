@@ -11,6 +11,7 @@ import {
   DollarOutlined,
   FileTextOutlined,
   SettingOutlined,
+  MobileOutlined,
   DatabaseOutlined,
   ShopOutlined,
   SwapOutlined,
@@ -162,6 +163,12 @@ export default function AppLayout() {
       icon: <HistoryOutlined />,
       label: 'سجل العمليات',
       roles: ['system_admin', 'branch_manager'],
+    },
+    {
+      key: '/inspections',
+      icon: <MobileOutlined />,
+      label: 'المعاينات',
+      roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'],
     },
     {
       key: '/reports',

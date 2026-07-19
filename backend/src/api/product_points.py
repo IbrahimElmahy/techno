@@ -26,6 +26,16 @@ class PointValueOut(BaseModel):
     point_value: Decimal
 
 
+@router.get("/point-values", response_model=list[PointValueOut])
+def list_point_values(
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> list[PointValueOut]:
+    """All configured point values in one call — the mobile app caches these for offline use."""
+    rows = db.scalars(select(ProductPointValue)).all()
+    return [PointValueOut(item_id=r.item_id, point_value=r.point_value) for r in rows]
+
+
 @router.get("/{item_id}/point-value", response_model=PointValueOut)
 def get_point_value(
     item_id: int,
