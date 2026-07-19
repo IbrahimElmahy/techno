@@ -11,6 +11,7 @@ from src.core.db import get_db
 from src.models.role import RoleName
 from src.scripts.demo_seed import seed_demo
 from src.scripts.import_company_data import import_workbook
+from src.scripts.purge_demo import purge_demo as _purge_demo
 
 router = APIRouter(tags=["admin"], prefix="/admin")
 
@@ -59,3 +60,21 @@ async def import_company_data(
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "import_failed", "message": str(exc)}) from exc
+
+
+@router.delete("/demo-seed")
+def purge_demo_data(
+    _: CurrentUser = Depends(_require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Delete the demo dataset (and only it) so a production database is left with real data.
+
+    Hard delete by design — the app is append-only everywhere else; this is the deliberate
+    exception for clearing sample data before go-live.
+    """
+    try:
+        return _purge_demo(db)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "purge_failed", "message": str(exc)}) from exc
