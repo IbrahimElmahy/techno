@@ -173,6 +173,25 @@ def list_inspections(
     return [_out(i) for i in rows]
 
 
+@router.delete("/{inspection_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_inspection(
+    inspection_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """Hard-delete an inspection (admins only). Safe: inspections are informational —
+    no stock movements or ledger entries reference them."""
+    if current.role != RoleName.system_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "System admin only."})
+    insp = inspection_service.get_inspection(db, inspection_id)
+    if insp is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "Inspection not found."})
+    db.delete(insp)
+    db.commit()
+
+
 @router.get("/{inspection_id}", response_model=InspectionOut)
 def get_inspection(
     inspection_id: int,

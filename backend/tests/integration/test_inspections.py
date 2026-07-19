@@ -101,6 +101,16 @@ def test_accountant_cannot_write_inspections(client, world, login):
     assert r.status_code == 403
 
 
+def test_only_admin_deletes_inspections(client, world, login):
+    h = login("rep_a")
+    created = client.post("/api/v1/inspections", json=_payload(), headers=h).json()
+    iid = created["id"]
+    # The recording rep cannot delete — admin only.
+    assert client.delete(f"/api/v1/inspections/{iid}", headers=h).status_code == 403
+    assert client.delete(f"/api/v1/inspections/{iid}", headers=login("admin")).status_code == 204
+    assert client.get("/api/v1/inspections", headers=h).json() == []
+
+
 def test_inspection_lookups_seeded(client, world, login):
     h = login("admin")
     r = client.get("/api/v1/settings/lookups?category=inspection_description", headers=h)
