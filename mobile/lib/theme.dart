@@ -62,7 +62,9 @@ ThemeData buildTheme() {
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        minimumSize: const Size.fromHeight(50),
+        // NOT Size.fromHeight: that implies infinite min-width, which crashes the layout
+        // inside width-unbounded parents (e.g. a Row) and silently drops the subtree.
+        minimumSize: const Size(64, 50),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
       ),

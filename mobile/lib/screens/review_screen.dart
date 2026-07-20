@@ -15,6 +15,8 @@ class ReviewScreen extends StatefulWidget {
 
 class _ReviewScreenState extends State<ReviewScreen> {
   DateTime? _date = DateTime.now();
+  String? _kind; // null = الكل | technician | regular
+  bool? _synced; // null = الكل | true متزامنة | false معلقة
   List<Inspection> _rows = [];
   bool _loading = true;
 
@@ -27,7 +29,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final rows = await LocalDb.instance.listInspections(
-        date: _date == null ? null : intl.DateFormat('yyyy-MM-dd').format(_date!));
+        date: _date == null ? null : intl.DateFormat('yyyy-MM-dd').format(_date!),
+        visitKind: _kind,
+        synced: _synced);
     if (mounted) {
       setState(() {
         _rows = rows;
@@ -84,6 +88,28 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ],
             ),
           ),
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                _chip('الكل', _kind == null && _synced == null, () {
+                  _kind = null;
+                  _synced = null;
+                }),
+                _chip('معاينات فنيين', _kind == 'technician',
+                    () => _kind = _kind == 'technician' ? null : 'technician'),
+                _chip('زيارات عادية', _kind == 'regular',
+                    () => _kind = _kind == 'regular' ? null : 'regular'),
+                _chip('متزامنة', _synced == true,
+                    () => _synced = _synced == true ? null : true),
+                _chip('في انتظار المزامنة', _synced == false,
+                    () => _synced = _synced == false ? null : false),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -96,6 +122,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, bool selected, VoidCallback toggle) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        selectedColor: AppColors.primary.withOpacity(0.15),
+        checkmarkColor: AppColors.primary,
+        onSelected: (_) {
+          setState(toggle);
+          _load();
+        },
       ),
     );
   }
