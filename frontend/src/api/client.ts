@@ -52,8 +52,16 @@ api.interceptors.response.use(
         window.dispatchEvent(new CustomEvent('api-unauthorized', { detail: { status } }));
       }
 
-      // Handle server validation/business logic violations (e.g., negative stock, Principle XI)
-      const errorMessage = data?.detail || data?.message || 'حدث خطأ في النظام';
+      // Handle server validation/business logic violations (e.g., negative stock, Principle XI).
+      // FastAPI hands back `detail` as {code, message} for our errors and as a list for
+      // pydantic validation — rendering either object directly crashes React (#31).
+      const detail = data?.detail;
+      const errorMessage =
+        (typeof detail === 'string' && detail) ||
+        detail?.message ||
+        (Array.isArray(detail) && detail.map((d: any) => d?.msg).filter(Boolean).join('، ')) ||
+        (typeof data?.message === 'string' && data.message) ||
+        'حدث خطأ في النظام';
       
       // If validation error or specific stock limit issue (rejections)
       if (status === 400 || status === 422) {

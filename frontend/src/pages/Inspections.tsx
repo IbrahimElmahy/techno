@@ -117,7 +117,7 @@ const Inspections: React.FC = () => {
       if (ownerF.trim()) params.owner = ownerF.trim();
       if (technicianF.trim()) params.technician = technicianF.trim();
       if (traderF.trim()) params.trader = traderF.trim();
-      const { data } = await api.get<InspectionRecord[]>('/inspections', { params });
+      const { data } = await api.get<InspectionRecord[]>('/api/v1/inspections', { params });
       setRows(data);
     } catch (e: any) {
       message.error(e?.message || 'تعذر تحميل المعاينات');
@@ -132,7 +132,7 @@ const Inspections: React.FC = () => {
 
   useEffect(() => {
     api
-      .get<UserRecord[]>('/users')
+      .get<UserRecord[]>('/api/v1/users')
       .then((r) => setUsers(r.data))
       .catch(() => setUsers([]));
   }, []);
@@ -156,7 +156,7 @@ const Inspections: React.FC = () => {
     if (!detail) return;
     setSaving(true);
     try {
-      const { data } = await api.patch<InspectionRecord>(`/inspections/${detail.id}`, {
+      const { data } = await api.patch<InspectionRecord>(`/api/v1/inspections/${detail.id}`, {
         visit_type: visitTypeEdit,
       });
       patchDetail(data);
@@ -171,7 +171,7 @@ const Inspections: React.FC = () => {
   const rejectInspection = async () => {
     if (!detail) return;
     try {
-      const { data } = await api.post<InspectionRecord>(`/inspections/${detail.id}/reject`);
+      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/reject`);
       patchDetail(data);
       message.success('تم رفض المعاينة وإرجاع البضاعة لعهدة المندوب');
     } catch (e: any) {
@@ -246,7 +246,7 @@ const Inspections: React.FC = () => {
     win.document.write(html);
     win.document.close();
     try {
-      const { data } = await api.post<InspectionRecord>(`/inspections/${detail.id}/mark-printed`);
+      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/mark-printed`);
       patchDetail(data);
     } catch {
       /* الطباعة نفسها تمت — تحديث الحالة فشل فقط */
