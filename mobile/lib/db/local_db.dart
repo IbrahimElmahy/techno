@@ -13,7 +13,12 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 1, onCreate: (d, v) async {
+    _db = await openDatabase(path, version: 2, onUpgrade: (d, from, to) async {
+      if (from < 2) {
+        // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
+        await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
+      }
+    }, onCreate: (d, v) async {
       await d.execute('''
         CREATE TABLE inspection(
           local_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +43,8 @@ class LocalDb {
           quantity REAL NOT NULL, points REAL NOT NULL DEFAULT 0, total REAL NOT NULL DEFAULT 0
         )''');
       await d.execute(
-          'CREATE TABLE catalog_item(id INTEGER PRIMARY KEY, name TEXT, category TEXT, points REAL)');
+          'CREATE TABLE catalog_item(id INTEGER PRIMARY KEY, name TEXT, category TEXT, '
+          'points REAL, my_stock REAL)');
       await d.execute(
           'CREATE TABLE lookup(category TEXT, value TEXT, label TEXT, sort INTEGER, '
           'PRIMARY KEY(category, value))');

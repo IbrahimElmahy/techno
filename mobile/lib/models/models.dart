@@ -6,17 +6,20 @@ class CatalogItem {
   final String name;
   final String? category;
   final double points; // point value per unit (fractional)
+  final double? myStock; // what the rep carries in his custody (null = no custody info)
 
-  const CatalogItem({required this.id, required this.name, this.category, this.points = 0});
+  const CatalogItem(
+      {required this.id, required this.name, this.category, this.points = 0, this.myStock});
 
   Map<String, Object?> toRow() =>
-      {'id': id, 'name': name, 'category': category, 'points': points};
+      {'id': id, 'name': name, 'category': category, 'points': points, 'my_stock': myStock};
 
   static CatalogItem fromRow(Map<String, Object?> r) => CatalogItem(
         id: r['id'] as int,
         name: r['name'] as String,
         category: r['category'] as String?,
         points: (r['points'] as num?)?.toDouble() ?? 0,
+        myStock: (r['my_stock'] as num?)?.toDouble(),
       );
 }
 

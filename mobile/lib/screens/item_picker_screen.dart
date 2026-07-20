@@ -17,6 +17,7 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
   final _search = TextEditingController();
   List<CatalogItem> _items = [];
   bool _loading = true;
+  bool _custodyMode = false; // rep with a custody -> only what he carries is offered
 
   @override
   void initState() {
@@ -25,10 +26,15 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
   }
 
   Future<void> _load([String q = '']) async {
-    final items = await LocalDb.instance.catalog(query: q);
+    final hasCustody = (await LocalDb.instance.getKv('has_custody')) == '1';
+    var items = await LocalDb.instance.catalog(query: q);
+    if (hasCustody) {
+      items = items.where((it) => (it.myStock ?? 0) > 0).toList();
+    }
     if (mounted) {
       setState(() {
         _items = items;
+        _custodyMode = hasCustody;
         _loading = false;
       });
     }
@@ -40,6 +46,7 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
   Future<void> _pick(CatalogItem item) async {
     final qty = TextEditingController(text: '1');
     final points = TextEditingController(text: _fmt(item.points));
+    final maxQty = _custodyMode ? item.myStock : null;
     final result = await showDialog<InspectionLine>(
       context: context,
       builder: (c) => Directionality(
@@ -53,7 +60,10 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
                 controller: qty,
                 autofocus: true,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'الكمية'),
+                decoration: InputDecoration(
+                  labelText: 'الكمية',
+                  helperText: maxQty == null ? null : 'المتاح في عهدتك: ${_fmt(maxQty)}',
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -70,6 +80,12 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
                 final q = double.tryParse(qty.text) ?? 0;
                 final p = double.tryParse(points.text) ?? 0;
                 if (q <= 0) return;
+                if (maxQty != null && q > maxQty) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content:
+                          Text('الكمية أكبر من المتاح في عهدتك (${_fmt(maxQty)})')));
+                  return;
+                }
                 Navigator.pop(
                     c,
                     InspectionLine(
@@ -114,8 +130,10 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _items.isEmpty
-                    ? const Center(
-                        child: Text('مفيش أصناف — اعمل «تحديث الأصناف» من القائمة الجانبية'))
+                    ? Center(
+                        child: Text(_custodyMode
+                            ? 'مفيش أصناف في عهدتك — استلم بضاعة من المخزن الأول'
+                            : 'مفيش أصناف — اعمل «تحديث الأصناف» من القائمة الجانبية'))
                     : ListView.separated(
                         itemCount: _items.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
@@ -124,8 +142,26 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
                           return ListTile(
                             title: Text(it.name),
                             subtitle: it.category == null ? null : Text(it.category!),
-                            trailing: it.points > 0
-                                ? Container(
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_custodyMode && it.myStock != null)
+                                  Container(
+                                    margin: const EdgeInsets.only(left: 6),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.success.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text('معاك ${_fmt(it.myStock!)}',
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.success)),
+                                  ),
+                                if (it.points > 0)
+                                  Container(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
@@ -135,8 +171,9 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
                                     child: Text('${_fmt(it.points)} نقطة',
                                         style: const TextStyle(
                                             fontSize: 12, fontWeight: FontWeight.w700)),
-                                  )
-                                : null,
+                                  ),
+                              ],
+                            ),
                             onTap: () => _pick(it),
                           );
                         },

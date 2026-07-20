@@ -79,5 +79,10 @@ class InspectionItem(Base):
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     points: Mapped[object] = mapped_column(POINTS, nullable=False, default=0)  # نقاط الوحدة
     total: Mapped[object] = mapped_column(POINTS, nullable=False, default=0)   # points × quantity
+    # Set when the recording rep holds a custody: the line's `inspection_out` movement that
+    # deducted this quantity from it (reversed if an admin deletes the inspection).
+    stock_movement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("stock_movement.id"), nullable=True
+    )
 
     inspection: Mapped[Inspection] = relationship(back_populates="items")

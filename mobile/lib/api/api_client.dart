@@ -80,6 +80,19 @@ class ApiClient {
             double.tryParse(row['point_value'].toString()) ?? 0;
       }
     }
+    // What the rep carries in his custody — empty for admins / reps without one.
+    final stockR = await http
+        .get(await _uri('/inspections/my-stock'), headers: headers)
+        .timeout(const Duration(seconds: 30));
+    final myStockByItem = <int, double>{};
+    if (stockR.statusCode == 200) {
+      for (final row in jsonDecode(utf8.decode(stockR.bodyBytes)) as List) {
+        myStockByItem[row['item_id'] as int] =
+            double.tryParse(row['quantity'].toString()) ?? 0;
+      }
+    }
+    await LocalDb.instance.setKv('has_custody', myStockByItem.isEmpty ? '0' : '1');
+
     await LocalDb.instance.replaceCatalog([
       for (final it in items)
         CatalogItem(
@@ -87,6 +100,7 @@ class ApiClient {
           name: it['name'] as String,
           category: it['category'] as String?,
           points: pointsByItem[it['id']] ?? 0,
+          myStock: myStockByItem[it['id']],
         )
     ]);
 

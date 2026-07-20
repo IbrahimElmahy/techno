@@ -16,11 +16,50 @@ from sqlalchemy.orm import Session, selectinload
 from src.core.money import to_qty
 from src.models.catalog import Item
 from src.models.inspection import Inspection, InspectionItem, VisitKind
-from src.services import audit_service
+from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.warehouse import Custody
+from src.services import audit_service, stock_service
 
 
 class InspectionError(Exception):
     pass
+
+
+def rep_custody(db: Session, rep_user_id: int) -> Custody | None:
+    """The rep's active custody, or None (admins / reps not yet issued one)."""
+    return db.scalar(select(Custody).where(
+        Custody.rep_id == rep_user_id, Custody.active.is_(True)))
+
+
+def rep_stock_location(db: Session, rep_user_id: int) -> tuple[LocationKind, int] | None:
+    """Where the rep's carried goods live.
+
+    A custody linked to a warehouse (e.g. «مخزن السياره ب») points at that warehouse — the
+    company stocks it with ordinary transfers. An unlinked custody holds stock directly
+    (central_to_rep transfers). None ⇒ no custody: inspections stay informational.
+    """
+    custody = rep_custody(db, rep_user_id)
+    if custody is None:
+        return None
+    if custody.warehouse_id is not None:
+        return (LocationKind.warehouse, custody.warehouse_id)
+    return (LocationKind.custody, custody.id)
+
+
+def location_holdings(
+    db: Session, location_kind: LocationKind, location_id: int
+) -> dict[int, Decimal]:
+    """item_id -> on-hand at one location (derived from movements, Σ in − out)."""
+    rows = db.scalars(select(StockMovement).where(
+        StockMovement.location_kind == location_kind,
+        StockMovement.location_id == location_id,
+    )).all()
+    totals: dict[int, Decimal] = {}
+    for mv in rows:
+        q = to_qty(mv.quantity)
+        delta = q if mv.direction == StockDirection.in_ else -q
+        totals[mv.item_id] = totals.get(mv.item_id, Decimal("0")) + delta
+    return {item_id: qty for item_id, qty in totals.items() if qty > 0}
 
 
 @dataclass(frozen=True)
@@ -71,6 +110,11 @@ def create_inspection(
     db.add(insp)
     db.flush()
 
+    # When the recording rep holds a custody, every identified item line deducts from his
+    # stock location (custody or its linked car warehouse) — the rep can only install what he
+    # actually carries (no-negative enforced by stock_service).
+    stock_loc = rep_stock_location(db, rep_user_id)
+
     total = Decimal("0")
     for ln in lines:
         qty = to_qty(ln.quantity)
@@ -83,10 +127,25 @@ def create_inspection(
             if item is not None:
                 name = item.name
         line_total = _points(_points(ln.points) * qty)
-        db.add(InspectionItem(
+        line = InspectionItem(
             inspection_id=insp.id, item_id=ln.item_id, item_name=name, quantity=qty,
             points=_points(ln.points), total=line_total,
-        ))
+        )
+        db.add(line)
+        db.flush()
+        if stock_loc is not None and ln.item_id is not None:
+            try:
+                mv = stock_service.post_movement(
+                    db, item_id=ln.item_id, location_kind=stock_loc[0],
+                    location_id=stock_loc[1], movement_type="inspection_out",
+                    direction=StockDirection.out, quantity=qty, actor_user_id=actor_user_id,
+                    source_doc_type="inspection", source_doc_id=insp.id,
+                )
+            except stock_service.StockError as exc:
+                raise InspectionError(
+                    f"الرصيد غير كافٍ في عهدتك للصنف «{name}» — المتاح أقل من {qty}."
+                ) from exc
+            line.stock_movement_id = mv.id
         total += line_total
     insp.total_points = _points(total)
     db.flush()
@@ -110,6 +169,20 @@ def list_inspections(
     if date_to is not None:
         stmt = stmt.where(Inspection.inspection_date <= date_to)
     return db.scalars(stmt.order_by(Inspection.inspection_date.desc(), Inspection.id.desc())).all()
+
+
+def delete_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
+    """Hard-delete (admin only) — custody deductions are reversed first so stock stays true."""
+    for line in inspection.items:
+        if line.stock_movement_id is not None:
+            stock_service.reverse_movement(
+                db, original_id=line.stock_movement_id, actor_user_id=actor_user_id,
+                movement_type="reverse_inspection_out",
+            )
+    audit_service.record(db, action="inspection.delete", actor_user_id=actor_user_id,
+                         entity_type="inspection", entity_id=inspection.id,
+                         before={"doc": inspection.document_number})
+    db.delete(inspection)
 
 
 def get_inspection(db: Session, inspection_id: int) -> Inspection | None:

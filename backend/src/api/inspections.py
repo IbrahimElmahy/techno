@@ -90,6 +90,11 @@ class SyncResultOut(BaseModel):
     document_number: str
 
 
+class MyStockOut(BaseModel):
+    item_id: int
+    quantity: Decimal
+
+
 def _out(i) -> InspectionOut:
     return InspectionOut(
         id=i.id, document_number=i.document_number, client_uuid=i.client_uuid,
@@ -157,6 +162,23 @@ def sync_inspections(
     return results
 
 
+@router.get("/my-stock", response_model=list[MyStockOut])
+def my_stock(
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
+    db: Session = Depends(get_db),
+) -> list[MyStockOut]:
+    """What the current rep carries in his custody — drives the mobile item picker.
+
+    Empty list ⇒ no active custody (admins, or reps not yet issued one): the app then shows the
+    full catalog and the server posts no stock movements for their inspections.
+    """
+    loc = inspection_service.rep_stock_location(db, current.id)
+    if loc is None:
+        return []
+    holdings = inspection_service.location_holdings(db, loc[0], loc[1])
+    return [MyStockOut(item_id=i, quantity=q) for i, q in sorted(holdings.items())]
+
+
 @router.get("", response_model=list[InspectionOut])
 def list_inspections(
     visit_kind: VisitKind | None = Query(default=None),
@@ -188,7 +210,7 @@ def delete_inspection(
     if insp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "Inspection not found."})
-    db.delete(insp)
+    inspection_service.delete_inspection(db, insp, actor_user_id=current.id)
     db.commit()
 
 
