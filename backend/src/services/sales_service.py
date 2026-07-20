@@ -33,6 +33,7 @@ from src.services import (
     pricing_service,
     serial_service,
     stock_service,
+    tax_service,
     uom_service,
 )
 from src.services.ledger_service import LineInput
@@ -129,8 +130,14 @@ def create_sale(
         built.append((ln, unit_price, line_total, tier, factor))
     gross = to_money(gross)
     net = compute_net(gross, combined)
-    if to_money(cash_amount) + to_money(credit_amount) != net:
-        raise SalesError("cash + credit must equal the net total.")
+    # VAT (021): zero rate ⇒ tax 0 and `payable == net`, i.e. the original contract exactly.
+    tax = tax_service.tax_on(net, tax_service.vat_rate(db))
+    payable = to_money(net + tax)
+    if to_money(cash_amount) + to_money(credit_amount) != payable:
+        raise SalesError(
+            "cash + credit must equal the net total." if tax == ZERO
+            else f"cash + credit must equal the total including VAT ({payable})."
+        )
 
     cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
     if cust_acc is None:
@@ -141,7 +148,7 @@ def create_sale(
         document_number=_doc_number(db, SalesInvoice, "SINV"),
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,
-        variable_discount_pct=variable, combined_pct=combined, net=net,
+        variable_discount_pct=variable, combined_pct=combined, net=net, tax_amount=tax,
         cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         cash_account_id=cash_acc.id, ledger_entry_id=None, actor_user_id=actor_user_id,
     )
@@ -176,6 +183,9 @@ def create_sale(
     if to_money(credit_amount) > ZERO:
         entry_lines.append(LineInput(cust_acc.account_id, Direction.debit, to_money(credit_amount)))
     entry_lines.append(LineInput(account_resolver.sales_revenue_account(db).id, Direction.credit, net))
+    if tax > ZERO:  # output VAT is owed to the authority, not revenue
+        entry_lines.append(LineInput(tax_service.output_tax_account(db).id,
+                                     Direction.credit, tax, statement="ضريبة القيمة المضافة"))
     entry = ledger_service.post_entry(
         db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=actor_user_id if actor_role == RoleName.sales_rep else None,
@@ -229,9 +239,16 @@ def return_sale(
         value += to_money(qty * sold[item_id][1])
     value = to_money(value)
 
-    # Proportional split from the ORIGINAL invoice's cash/credit composition.
-    cash_refund = to_money(value * to_money(inv.cash_amount) / to_money(inv.net)) if inv.net else ZERO
-    credit_reduction = to_money(value - cash_refund)
+    # VAT (021): a partial return gives back the same share of the tax that was charged, so a
+    # full return leaves neither revenue nor tax behind.
+    invoice_tax = to_money(getattr(inv, "tax_amount", ZERO) or ZERO)
+    tax_refund = to_money(value * invoice_tax / to_money(inv.net)) if inv.net and invoice_tax else ZERO
+    refund_total = to_money(value + tax_refund)
+
+    # Proportional split from the ORIGINAL invoice's cash/credit composition (of what was payable).
+    payable = to_money(to_money(inv.cash_amount) + to_money(inv.credit_amount))
+    cash_refund = to_money(refund_total * to_money(inv.cash_amount) / payable) if payable else ZERO
+    credit_reduction = to_money(refund_total - cash_refund)
 
     ret = SalesReturn(
         document_number=_doc_number(db, SalesReturn, "SRET"),
@@ -264,6 +281,9 @@ def return_sale(
 
     cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == inv.customer_id))
     entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, value)]
+    if tax_refund > ZERO:
+        entry_lines.append(LineInput(tax_service.output_tax_account(db).id, Direction.debit,
+                                     tax_refund, statement="رد ضريبة القيمة المضافة"))
     if cash_refund > ZERO:
         entry_lines.append(LineInput(inv.cash_account_id, Direction.credit, cash_refund))
     if credit_reduction > ZERO:

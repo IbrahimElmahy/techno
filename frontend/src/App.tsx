@@ -23,6 +23,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Inspections from './pages/Inspections';
 import Vouchers from './pages/Vouchers';
+import FinanceReports from './pages/FinanceReports';
 import { setApiBaseURL } from './api/client';
 
 // Define placeholder pages for routes (implemented in later tasks)
@@ -100,6 +101,7 @@ export default function App() {
               <Route path="transfers" element={<Transfers />} />
               <Route path="treasury" element={<Treasury />} />
               <Route path="vouchers" element={<Vouchers />} />
+              <Route path="finance-reports" element={<FinanceReports />} />
               <Route path="general-ledger" element={<GeneralLedger />} />
               <Route path="loyalty" element={<Loyalty />} />
               <Route path="audit" element={<Audit />} />

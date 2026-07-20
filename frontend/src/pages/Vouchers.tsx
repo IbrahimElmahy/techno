@@ -17,6 +17,7 @@ import {
   Popconfirm,
   message,
   Descriptions,
+  Alert,
 } from 'antd';
 import {
   DollarOutlined,
@@ -124,9 +125,18 @@ const Vouchers: React.FC = () => {
   const [statement, setStatement] = useState<StatementData | null>(null);
   const [stLoading, setStLoading] = useState(false);
 
+  const [treasuries, setTreasuries] = useState<any[]>([]);
+  const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
+  const [cheques, setCheques] = useState<any[]>([]);
+  const [periodLock, setPeriodLock] = useState<string | null>(null);
+
   const [receiptForm] = Form.useForm();
   const [paymentForm] = Form.useForm();
   const [handoverForm] = Form.useForm();
+  const [expenseForm] = Form.useForm();
+  const [transferForm] = Form.useForm();
+  const [treasuryForm] = Form.useForm();
+  const [chequeForm] = Form.useForm();
 
   const loadVouchers = useCallback(async () => {
     setLoading(true);
@@ -147,6 +157,37 @@ const Vouchers: React.FC = () => {
   useEffect(() => {
     loadVouchers();
   }, [loadVouchers]);
+
+  const loadTreasuries = useCallback(async () => {
+    try {
+      const { data } = await api.get<any[]>('/api/v1/treasuries');
+      setTreasuries(data);
+    } catch {
+      /* interceptor */
+    }
+  }, []);
+
+  const loadCheques = useCallback(async () => {
+    try {
+      const { data } = await api.get<any[]>('/api/v1/cheques');
+      setCheques(data);
+    } catch {
+      /* interceptor */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTreasuries();
+    loadCheques();
+    api
+      .get<any[]>('/api/v1/accounts')
+      .then((r) => setExpenseAccounts(r.data.filter((a) => a.nature === 'expense' && a.is_postable)))
+      .catch(() => {});
+    api
+      .get<{ locked_through: string | null }>('/api/v1/period-lock')
+      .then((r) => setPeriodLock(r.data.locked_through))
+      .catch(() => {});
+  }, [loadTreasuries, loadCheques]);
 
   useEffect(() => {
     api.get<Party[]>('/api/v1/customers').then((r) => setCustomers(r.data)).catch(() => {});
@@ -176,6 +217,7 @@ const Vouchers: React.FC = () => {
       message.success(okMsg);
       form.resetFields();
       loadVouchers();
+      loadTreasuries();
       if (statement) loadStatement();
     } catch {
       /* interceptor shows the server's Arabic message */
@@ -359,6 +401,15 @@ const Vouchers: React.FC = () => {
         </Col>
       </Row>
 
+      {periodLock && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`الفترة مقفلة حتى ${periodLock} — أي سند بتاريخ أقدم أو مساوٍ هيترفض.`}
+        />
+      )}
+
       <Tabs
         defaultActiveKey="receipt"
         items={[
@@ -388,6 +439,14 @@ const Vouchers: React.FC = () => {
                   </Form.Item>
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="treasury_id" label="الخزينة">
+                    <Select
+                      allowClear
+                      style={{ width: 170 }}
+                      placeholder="الافتراضية"
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
                   </Form.Item>
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select
@@ -437,6 +496,14 @@ const Vouchers: React.FC = () => {
                   </Form.Item>
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="treasury_id" label="الخزينة">
+                    <Select
+                      allowClear
+                      style={{ width: 170 }}
+                      placeholder="الافتراضية"
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
                   </Form.Item>
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select
@@ -499,6 +566,351 @@ const Vouchers: React.FC = () => {
                     </Button>
                   </Form.Item>
                 </Form>
+              </Card>
+            ),
+          },
+          {
+            key: 'expense',
+            label: 'سند مصروف',
+            children: (
+              <Card title="صرف مصروف من الخزينة">
+                <Form
+                  form={expenseForm}
+                  layout="inline"
+                  onFinish={(v) =>
+                    submit('/api/v1/vouchers/expenses', v, expenseForm, 'تم تسجيل سند المصروف ✔')
+                  }
+                >
+                  <Form.Item
+                    name="expense_account_id"
+                    label="حساب المصروف"
+                    rules={[{ required: true, message: 'اختر حساب المصروف' }]}
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      style={{ width: 240 }}
+                      placeholder="إيجار / مرتبات / بنزين…"
+                      options={expenseAccounts.map((a) => ({ value: a.id, label: a.name || a.code }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="treasury_id" label="الخزينة">
+                    <Select
+                      allowClear
+                      style={{ width: 170 }}
+                      placeholder="الافتراضية"
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="description" label="البيان">
+                    <Input placeholder="اختياري" style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تسجيل المصروف
+                    </Button>
+                  </Form.Item>
+                </Form>
+                {expenseAccounts.length === 0 && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginTop: 12 }}
+                    message="مفيش حسابات مصروفات"
+                    description="أضف حساب مصروف من شجرة الحسابات (طبيعة: مصروفات) عشان تقدر تصرف عليه."
+                  />
+                )}
+              </Card>
+            ),
+          },
+          {
+            key: 'transfer',
+            label: 'تحويل بين الخزائن',
+            children: (
+              <Card title="تحويل نقدية بين خزينتين">
+                <Form
+                  form={transferForm}
+                  layout="inline"
+                  onFinish={(v) =>
+                    submit('/api/v1/vouchers/transfers', v, transferForm, 'تم تسجيل التحويل ✔')
+                  }
+                >
+                  <Form.Item name="from_treasury_id" label="من" rules={[{ required: true, message: 'اختر الخزينة' }]}>
+                    <Select
+                      style={{ width: 200 }}
+                      options={treasuries
+                        .filter((t) => t.active)
+                        .map((t) => ({ value: t.id, label: `${t.name} (${money(t.balance)})` }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="to_treasury_id" label="إلى" rules={[{ required: true, message: 'اختر الخزينة' }]}>
+                    <Select
+                      style={{ width: 200 }}
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تحويل
+                    </Button>
+                  </Form.Item>
+                </Form>
+
+                <Table
+                  rowKey="id"
+                  size="small"
+                  style={{ marginTop: 20 }}
+                  title={() => 'الخزائن'}
+                  dataSource={treasuries}
+                  pagination={false}
+                  columns={[
+                    { title: 'الخزينة', dataIndex: 'name' },
+                    {
+                      title: 'النوع',
+                      dataIndex: 'kind',
+                      width: 100,
+                      render: (v: string) => (
+                        <Tag color={v === 'bank' ? 'purple' : 'gold'}>{v === 'bank' ? 'بنك' : 'نقدية'}</Tag>
+                      ),
+                    },
+                    { title: 'البنك', dataIndex: 'bank_name', width: 140 },
+                    {
+                      title: 'الرصيد',
+                      dataIndex: 'balance',
+                      width: 150,
+                      align: 'left' as const,
+                      render: (v: string) => <b>{money(v)}</b>,
+                    },
+                    {
+                      title: '',
+                      width: 110,
+                      render: (_: any, t: any) =>
+                        t.is_default ? <Tag color="blue">الافتراضية</Tag> : t.active ? null : <Tag>موقوفة</Tag>,
+                    },
+                  ]}
+                />
+
+                <Form
+                  form={treasuryForm}
+                  layout="inline"
+                  style={{ marginTop: 16 }}
+                  onFinish={async (v) => {
+                    setPosting(true);
+                    try {
+                      await api.post('/api/v1/treasuries', v);
+                      message.success('تم إنشاء الخزينة ✔');
+                      treasuryForm.resetFields();
+                      loadTreasuries();
+                    } catch {
+                      /* interceptor */
+                    } finally {
+                      setPosting(false);
+                    }
+                  }}
+                >
+                  <Form.Item name="name" label="خزينة جديدة" rules={[{ required: true, message: 'اكتب الاسم' }]}>
+                    <Input placeholder="اسم الخزينة" style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item name="kind" label="النوع" initialValue="cash">
+                    <Select
+                      style={{ width: 120 }}
+                      options={[
+                        { value: 'cash', label: 'نقدية' },
+                        { value: 'bank', label: 'بنك' },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="bank_name" label="البنك">
+                    <Input placeholder="اختياري" style={{ width: 150 }} />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button htmlType="submit" loading={posting}>
+                      إضافة
+                    </Button>
+                  </Form.Item>
+                </Form>
+              </Card>
+            ),
+          },
+          {
+            key: 'cheques',
+            label: 'الشيكات',
+            children: (
+              <Card title="الشيكات">
+                <Form
+                  form={chequeForm}
+                  layout="inline"
+                  onFinish={async (v) => {
+                    setPosting(true);
+                    try {
+                      await api.post('/api/v1/cheques', {
+                        ...v,
+                        amount: String(v.amount),
+                        due_date: v.due_date.format('YYYY-MM-DD'),
+                      });
+                      message.success('تم تسجيل الشيك ✔');
+                      chequeForm.resetFields();
+                      loadCheques();
+                    } catch {
+                      /* interceptor */
+                    } finally {
+                      setPosting(false);
+                    }
+                  }}
+                >
+                  <Form.Item name="direction" label="النوع" initialValue="incoming" rules={[{ required: true }]}>
+                    <Select
+                      style={{ width: 130 }}
+                      options={[
+                        { value: 'incoming', label: 'وارد من عميل' },
+                        { value: 'outgoing', label: 'صادر لمورد' },
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate>
+                    {({ getFieldValue }) =>
+                      getFieldValue('direction') === 'outgoing' ? (
+                        <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
+                          <Select
+                            showSearch
+                            optionFilterProp="label"
+                            style={{ width: 200 }}
+                            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+                          />
+                        </Form.Item>
+                      ) : (
+                        <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
+                          <Select
+                            showSearch
+                            optionFilterProp="label"
+                            style={{ width: 200 }}
+                            options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                          />
+                        </Form.Item>
+                      )
+                    }
+                  </Form.Item>
+                  <Form.Item name="cheque_number" label="رقم الشيك" rules={[{ required: true, message: 'أدخل الرقم' }]}>
+                    <Input style={{ width: 120 }} />
+                  </Form.Item>
+                  <Form.Item name="bank_name" label="البنك">
+                    <Input style={{ width: 130 }} />
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 130 }} />
+                  </Form.Item>
+                  <Form.Item name="due_date" label="الاستحقاق" rules={[{ required: true, message: 'أدخل التاريخ' }]}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تسجيل الشيك
+                    </Button>
+                  </Form.Item>
+                </Form>
+
+                <Table
+                  rowKey="id"
+                  size="small"
+                  style={{ marginTop: 20 }}
+                  dataSource={cheques}
+                  pagination={{ pageSize: 15 }}
+                  columns={[
+                    { title: 'المستند', dataIndex: 'document_number', width: 120 },
+                    {
+                      title: 'النوع',
+                      dataIndex: 'direction',
+                      width: 110,
+                      render: (v: string) => (
+                        <Tag color={v === 'incoming' ? 'green' : 'red'}>{v === 'incoming' ? 'وارد' : 'صادر'}</Tag>
+                      ),
+                    },
+                    { title: 'رقم الشيك', dataIndex: 'cheque_number', width: 110 },
+                    { title: 'البنك', dataIndex: 'bank_name', width: 120 },
+                    {
+                      title: 'المبلغ',
+                      dataIndex: 'amount',
+                      width: 130,
+                      align: 'left' as const,
+                      render: (v: string) => <b>{money(v)}</b>,
+                    },
+                    { title: 'الاستحقاق', dataIndex: 'due_date', width: 110 },
+                    {
+                      title: 'الحالة',
+                      dataIndex: 'status',
+                      width: 120,
+                      render: (v: string) => {
+                        const map: Record<string, [string, string]> = {
+                          pending: ['orange', 'تحت التحصيل'],
+                          settled: ['green', 'تم'],
+                          bounced: ['red', 'مرتد'],
+                          cancelled: ['default', 'ملغي'],
+                        };
+                        const [color, label] = map[v] || ['default', v];
+                        return <Tag color={color}>{label}</Tag>;
+                      },
+                    },
+                    {
+                      title: '',
+                      width: 200,
+                      render: (_: any, c: any) =>
+                        c.status !== 'pending' ? null : (
+                          <Space>
+                            <Button
+                              size="small"
+                              type="primary"
+                              onClick={async () => {
+                                try {
+                                  await api.post(`/api/v1/cheques/${c.id}/settle`, {});
+                                  message.success(c.direction === 'incoming' ? 'تم التحصيل ✔' : 'تم الصرف ✔');
+                                  loadCheques();
+                                  loadTreasuries();
+                                } catch {
+                                  /* interceptor */
+                                }
+                              }}
+                            >
+                              {c.direction === 'incoming' ? 'تحصيل' : 'صرف'}
+                            </Button>
+                            {c.direction === 'incoming' && (
+                              <Popconfirm
+                                title="ارتداد الشيك؟"
+                                description="الدين هيرجع على العميل."
+                                okText="ارتداد"
+                                cancelText="إلغاء"
+                                okButtonProps={{ danger: true }}
+                                onConfirm={async () => {
+                                  try {
+                                    await api.post(`/api/v1/cheques/${c.id}/bounce`);
+                                    message.success('تم تسجيل الارتداد');
+                                    loadCheques();
+                                  } catch {
+                                    /* interceptor */
+                                  }
+                                }}
+                              >
+                                <Button size="small" danger>
+                                  ارتداد
+                                </Button>
+                              </Popconfirm>
+                            )}
+                          </Space>
+                        ),
+                    },
+                  ]}
+                />
               </Card>
             ),
           },

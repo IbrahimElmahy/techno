@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +18,8 @@ router = APIRouter(tags=["settings"], prefix="/settings")
 
 class SalesSettingsBody(BaseModel):
     fixed_discount_pct: Decimal
+    # VAT % (021). 0 = off, which keeps invoice posting exactly as it was before VAT existed.
+    vat_rate_pct: Decimal = Decimal("0")
 
 
 def _get_or_create(db: Session) -> SalesSetting:
@@ -36,7 +38,8 @@ def get_sales_settings(
 ) -> SalesSettingsBody:
     s = _get_or_create(db)
     db.commit()
-    return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct))
+    return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct),
+                             vat_rate_pct=Decimal(s.vat_rate_pct or 0))
 
 
 @router.put("/sales", response_model=SalesSettingsBody)
@@ -46,8 +49,13 @@ def update_sales_settings(
     db: Session = Depends(get_db),
 ) -> SalesSettingsBody:
     s = _get_or_create(db)
+    if body.vat_rate_pct < 0 or body.vat_rate_pct > 100:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "نسبة الضريبة لازم تكون بين 0 و 100."})
     s.fixed_discount_pct = body.fixed_discount_pct
+    s.vat_rate_pct = body.vat_rate_pct
     s.updated_by = current.id
     db.flush()
     db.commit()
-    return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct))
+    return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct),
+                             vat_rate_pct=Decimal(s.vat_rate_pct or 0))

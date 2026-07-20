@@ -21,9 +21,11 @@ from src.core.money import MONEY
 
 
 class VoucherKind(str, enum.Enum):
-    receipt = "receipt"            # تحصيل من عميل
-    payment = "payment"            # دفع لمورد
-    rep_handover = "rep_handover"  # توريد المندوب لخزينة الشركة
+    receipt = "receipt"              # تحصيل من عميل
+    payment = "payment"              # دفع لمورد
+    rep_handover = "rep_handover"    # توريد المندوب لخزينة الشركة
+    expense = "expense"              # سند مصروف (إيجار، مرتبات، بنزين…)
+    cash_transfer = "cash_transfer"  # تحويل بين الخزائن
 
 
 class Voucher(Base):
@@ -42,9 +44,15 @@ class Voucher(Base):
                                                     index=True)
     rep_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True,
                                                     index=True)
-    # Both sides of the posting, snapshotted for the voucher list/report.
+    # Both sides of the posting, snapshotted for the voucher list/report. For an expense the
+    # party side is the expense account; for a transfer it is the destination treasury.
     cash_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
     party_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
+    # Which named safe the cash moved through (019); NULL for legacy rows / rep custody.
+    treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"), nullable=True,
+                                                    index=True)
+    to_treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"),
+                                                       nullable=True)
 
     voucher_date: Mapped[date] = mapped_column(Date, nullable=False)
     payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)  # نقدي/آجل...

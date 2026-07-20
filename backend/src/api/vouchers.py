@@ -15,10 +15,12 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
 from src.models.role import RoleName
+from src.models.treasury import TreasuryKind
 from src.models.voucher import VoucherKind
-from src.services import statement_service, voucher_service
+from src.services import statement_service, treasury_service, voucher_service
 from src.services.ledger_service import LedgerError
 from src.services.statement_service import StatementError
+from src.services.treasury_service import TreasuryError
 from src.services.voucher_service import VoucherError
 
 router = APIRouter(tags=["vouchers"])
@@ -27,6 +29,7 @@ router = APIRouter(tags=["vouchers"])
 class ReceiptIn(BaseModel):
     customer_id: int
     amount: Decimal
+    treasury_id: int | None = None
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
@@ -36,6 +39,7 @@ class ReceiptIn(BaseModel):
 class PaymentIn(BaseModel):
     supplier_id: int
     amount: Decimal
+    treasury_id: int | None = None
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
@@ -50,6 +54,65 @@ class HandoverIn(BaseModel):
     reference: str | None = Field(default=None, max_length=80)
 
 
+class ExpenseIn(BaseModel):
+    expense_account_id: int
+    amount: Decimal
+    treasury_id: int | None = None
+    voucher_date: date | None = None
+    description: str | None = Field(default=None, max_length=255)
+    reference: str | None = Field(default=None, max_length=80)
+    payment_method: str | None = Field(default=None, max_length=32)
+
+
+class CashTransferIn(BaseModel):
+    from_treasury_id: int
+    to_treasury_id: int
+    amount: Decimal
+    voucher_date: date | None = None
+    description: str | None = Field(default=None, max_length=255)
+    reference: str | None = Field(default=None, max_length=80)
+
+
+class TreasuryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: TreasuryKind = TreasuryKind.cash
+    branch_id: int | None = None
+    bank_name: str | None = Field(default=None, max_length=120)
+    account_number: str | None = Field(default=None, max_length=60)
+    is_default: bool = False
+
+
+class TreasuryPatch(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+    bank_name: str | None = Field(default=None, max_length=120)
+    account_number: str | None = Field(default=None, max_length=60)
+    is_default: bool | None = None
+    active: bool | None = None
+
+
+class TreasuryOut(BaseModel):
+    id: int
+    name: str
+    kind: TreasuryKind
+    branch_id: int | None
+    account_id: int
+    bank_name: str | None
+    account_number: str | None
+    is_default: bool
+    active: bool
+    balance: Decimal
+
+
+class PeriodLockIn(BaseModel):
+    locked_through: date
+    note: str | None = Field(default=None, max_length=255)
+
+
+class PeriodLockOut(BaseModel):
+    locked_through: date | None
+    note: str | None = None
+
+
 class VoucherOut(BaseModel):
     id: int
     document_number: str
@@ -58,6 +121,8 @@ class VoucherOut(BaseModel):
     customer_id: int | None
     supplier_id: int | None
     rep_user_id: int | None
+    treasury_id: int | None = None
+    to_treasury_id: int | None = None
     voucher_date: date
     payment_method: str | None
     reference: str | None
@@ -89,9 +154,18 @@ def _out(v) -> VoucherOut:
     return VoucherOut(
         id=v.id, document_number=v.document_number, kind=v.kind, amount=v.amount,
         customer_id=v.customer_id, supplier_id=v.supplier_id, rep_user_id=v.rep_user_id,
+        treasury_id=v.treasury_id, to_treasury_id=v.to_treasury_id,
         voucher_date=v.voucher_date, payment_method=v.payment_method, reference=v.reference,
         description=v.description, ledger_entry_id=v.ledger_entry_id,
         is_reversal=v.reverses_id is not None,
+    )
+
+
+def _treasury_out(db: Session, t) -> TreasuryOut:
+    return TreasuryOut(
+        id=t.id, name=t.name, kind=t.kind, branch_id=t.branch_id, account_id=t.account_id,
+        bank_name=t.bank_name, account_number=t.account_number, is_default=t.is_default,
+        active=t.active, balance=treasury_service.balance(db, t),
     )
 
 
@@ -123,9 +197,9 @@ def create_receipt(
     try:
         v = voucher_service.create_receipt(
             db, customer_id=body.customer_id, amount=body.amount, actor_user_id=current.id,
-            actor_role=current.role, voucher_date=body.voucher_date,
-            description=body.description, reference=body.reference,
-            payment_method=body.payment_method)
+            actor_role=current.role, treasury_id=body.treasury_id,
+            voucher_date=body.voucher_date, description=body.description,
+            reference=body.reference, payment_method=body.payment_method)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -146,9 +220,9 @@ def create_payment(
     try:
         v = voucher_service.create_payment(
             db, supplier_id=body.supplier_id, amount=body.amount, actor_user_id=current.id,
-            actor_role=current.role, voucher_date=body.voucher_date,
-            description=body.description, reference=body.reference,
-            payment_method=body.payment_method)
+            actor_role=current.role, treasury_id=body.treasury_id,
+            voucher_date=body.voucher_date, description=body.description,
+            reference=body.reference, payment_method=body.payment_method)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -178,6 +252,134 @@ def create_handover(
     return _out(v)
 
 
+@router.post("/vouchers/expenses", response_model=VoucherOut,
+             status_code=status.HTTP_201_CREATED)
+def create_expense(
+    body: ExpenseIn,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> VoucherOut:
+    """سند مصروف — صرف نثريات/إيجار/مرتبات من الخزينة على حساب مصروف."""
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "المصروفات من المكتب فقط."})
+    try:
+        v = voucher_service.create_expense(
+            db, expense_account_id=body.expense_account_id, amount=body.amount,
+            actor_user_id=current.id, actor_role=current.role, treasury_id=body.treasury_id,
+            voucher_date=body.voucher_date, description=body.description,
+            reference=body.reference, payment_method=body.payment_method)
+    except (VoucherError, TreasuryError, LedgerError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _out(v)
+
+
+@router.post("/vouchers/transfers", response_model=VoucherOut,
+             status_code=status.HTTP_201_CREATED)
+def create_cash_transfer(
+    body: CashTransferIn,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> VoucherOut:
+    """تحويل نقدية بين خزينتين."""
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "التحويل بين الخزائن من المكتب فقط."})
+    try:
+        v = voucher_service.create_cash_transfer(
+            db, from_treasury_id=body.from_treasury_id, to_treasury_id=body.to_treasury_id,
+            amount=body.amount, actor_user_id=current.id, voucher_date=body.voucher_date,
+            description=body.description, reference=body.reference)
+    except (VoucherError, TreasuryError, LedgerError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _out(v)
+
+
+@router.get("/treasuries", response_model=list[TreasuryOut])
+def list_treasuries(
+    active_only: bool = Query(default=False),
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> list[TreasuryOut]:
+    treasury_service.default_treasury(db)  # adopt the legacy safe on first call
+    rows = treasury_service.list_treasuries(db, active_only=active_only)
+    out = [_treasury_out(db, t) for t in rows]
+    db.commit()
+    return out
+
+
+@router.post("/treasuries", response_model=TreasuryOut, status_code=status.HTTP_201_CREATED)
+def create_treasury(
+    body: TreasuryIn,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> TreasuryOut:
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "إدارة الخزائن من المكتب فقط."})
+    treasury_service.default_treasury(db)
+    try:
+        t = treasury_service.create_treasury(
+            db, name=body.name, kind=body.kind, branch_id=body.branch_id,
+            bank_name=body.bank_name, account_number=body.account_number,
+            is_default=body.is_default, actor_user_id=current.id)
+    except TreasuryError as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _treasury_out(db, t)
+
+
+@router.patch("/treasuries/{treasury_id}", response_model=TreasuryOut)
+def update_treasury(
+    treasury_id: int,
+    body: TreasuryPatch,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> TreasuryOut:
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "إدارة الخزائن من المكتب فقط."})
+    try:
+        t = treasury_service.update_treasury(
+            db, treasury_id=treasury_id, actor_user_id=current.id, name=body.name,
+            bank_name=body.bank_name, account_number=body.account_number,
+            is_default=body.is_default, active=body.active)
+    except TreasuryError as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _treasury_out(db, t)
+
+
+@router.get("/period-lock", response_model=PeriodLockOut)
+def get_period_lock(
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> PeriodLockOut:
+    lock = treasury_service.current_lock(db)
+    return PeriodLockOut(locked_through=lock.locked_through if lock else None,
+                         note=lock.note if lock else None)
+
+
+@router.post("/period-lock", response_model=PeriodLockOut,
+             status_code=status.HTTP_201_CREATED)
+def set_period_lock(
+    body: PeriodLockIn,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> PeriodLockOut:
+    """إقفال الفترة حتى تاريخ — يمنع أي ترحيل بتاريخ أقدم أو مساوٍ (أدمن/محاسب)."""
+    if current.role not in (RoleName.system_admin, RoleName.accountant):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {"code": "forbidden", "message": "إقفال الفترة للأدمن أو المحاسب فقط."})
+    lock = treasury_service.set_lock(db, through=body.locked_through,
+                                     actor_user_id=current.id, note=body.note)
+    db.commit()
+    return PeriodLockOut(locked_through=lock.locked_through, note=lock.note)
+
+
 @router.post("/vouchers/{voucher_id}/reverse", response_model=VoucherOut,
              status_code=status.HTTP_201_CREATED)
 def reverse_voucher(
@@ -203,6 +405,7 @@ def list_vouchers(
     customer_id: int | None = Query(default=None),
     supplier_id: int | None = Query(default=None),
     rep_id: int | None = Query(default=None),
+    treasury_id: int | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
@@ -212,7 +415,7 @@ def list_vouchers(
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
     rows = voucher_service.list_vouchers(
         db, kind=kind, customer_id=customer_id, supplier_id=supplier_id,
-        rep_user_id=scope_rep, date_from=date_from, date_to=date_to)
+        rep_user_id=scope_rep, treasury_id=treasury_id, date_from=date_from, date_to=date_to)
     if current.role == RoleName.sales_rep:
         rows = [v for v in rows
                 if v.actor_user_id == current.id or v.rep_user_id == current.id]

@@ -31,6 +31,8 @@ class SalesInvoice(Base):
     variable_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False)
     combined_pct: Mapped[object] = mapped_column(PCT, nullable=False)
     net: Mapped[object] = mapped_column(MONEY, nullable=False)
+    # Output VAT charged on `net` (021); 0 when the tax rate is off. Payable = net + tax.
+    tax_amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
@@ -92,6 +94,9 @@ class SalesSetting(Base):
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     fixed_discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
+    # VAT / ضريبة القيمة المضافة (021). Zero = off, which is the shipped default: at 0 the
+    # posting is byte-identical to the pre-VAT behaviour, so enabling it is a deliberate act.
+    vat_rate_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

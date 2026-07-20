@@ -11,6 +11,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     audit,
     auth,
     catalog,
+    cheques,  # Cheques + financial statements + aging (020)
     cost_centers,  # Cost Centers (006)
     coupons,
     customers,
@@ -26,6 +27,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     settings_lookups,  # Configurable dropdown lists (013)
     stock,
     suppliers,
+    tax_commissions,  # VAT return + rep commissions (021)
     transfers,
     treasury,
     users,
@@ -103,6 +105,10 @@ def create_app() -> FastAPI:
     app.include_router(inspections.router, prefix=prefix)
     # Cash vouchers + account statements (018) — سندات القبض والصرف وكشوف الحساب
     app.include_router(vouchers.router, prefix=prefix)
+    # Cheques + income statement / balance sheet / aging (020)
+    app.include_router(cheques.router, prefix=prefix)
+    # VAT return + rep commissions (021)
+    app.include_router(tax_commissions.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
 
@@ -149,6 +155,12 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("item", "default_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     # 015: inspections deduct from the rep's custody when he holds one.
     ("inspection_item", "stock_movement_id", "BIGINT"),
+    # 021: opt-in VAT (rate 0 = off) and the tax charged on each sale.
+    ("sales_setting", "vat_rate_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
+    ("sales_invoice", "tax_amount", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
+    # 019: vouchers can name the safe the cash moved through.
+    ("voucher", "treasury_id", "BIGINT"),
+    ("voucher", "to_treasury_id", "BIGINT"),
     # 015 review parity: warranty certificate + status + print tracking + نوع الزيارة.
     ("inspection", "certificate_number", "BIGINT"),
     ("inspection", "visit_type", "VARCHAR(40) NOT NULL DEFAULT 'معاينة'"),

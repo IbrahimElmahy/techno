@@ -40,6 +40,25 @@ def _validate_lines(lines: list[LineInput]) -> None:
         raise LedgerError(f"Unbalanced entry: debit {debit} != credit {credit}.")
 
 
+def _assert_period_open(db: Session, when: date | None) -> None:
+    """إقفال الفترة — refuse to post into a closed period (019).
+
+    Enforced HERE, in the single write path into the ledger, so no document type can slip
+    a posting into a month the accountant has already closed and reported on.
+    """
+    # Imported lazily: treasury_service imports ledger_service for balances.
+    from src.models.treasury import PeriodLock
+
+    lock = db.scalar(select(PeriodLock).order_by(PeriodLock.id.desc()).limit(1))
+    if lock is None:
+        return
+    effective = when or date.today()
+    if effective <= lock.locked_through:
+        raise LedgerError(
+            f"الفترة مقفلة حتى {lock.locked_through} — لا يمكن الترحيل بتاريخ {effective}."
+        )
+
+
 def post_entry(
     db: Session,
     *,
@@ -54,6 +73,7 @@ def post_entry(
 ) -> LedgerEntry:
     """Append a balanced, immutable entry. Returns the persisted entry with lines."""
     _validate_lines(lines)
+    _assert_period_open(db, entry_date)
     entry = LedgerEntry(
         entry_type=entry_type,
         description=description,

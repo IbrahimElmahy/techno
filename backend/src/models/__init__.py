@@ -52,6 +52,9 @@ from src.models.supplier import Supplier, SupplierAccount  # noqa: E402
 from src.models.transfer import StockTransfer  # noqa: E402
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse
+from src.models.cheque import Cheque  # noqa: E402
+from src.models.commission import CommissionRule  # noqa: E402
+from src.models.treasury import PeriodLock, Treasury  # noqa: E402
 from src.models.voucher import Voucher  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 
@@ -66,5 +69,5 @@ __all__ = [
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
-    "Voucher",
+    "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
 ]

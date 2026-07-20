@@ -153,6 +153,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager'],
     },
     {
+      key: '/finance-reports',
+      icon: <BookOutlined />,
+      label: 'القوائم المالية',
+      roles: ['system_admin', 'branch_manager', 'accountant'],
+    },
+    {
       key: '/general-ledger',
       icon: <BookOutlined />,
       label: 'الأستاذ العام والقيود',
