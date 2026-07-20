@@ -147,6 +147,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager'],
     },
     {
+      key: '/vouchers',
+      icon: <DollarOutlined />,
+      label: 'سندات القبض والصرف',
+      roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager'],
+    },
+    {
       key: '/general-ledger',
       icon: <BookOutlined />,
       label: 'الأستاذ العام والقيود',

@@ -29,6 +29,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     transfers,
     treasury,
     users,
+    vouchers,  # Cash vouchers + statements (018)
     warehouses,
     wastage,
 )
@@ -100,6 +101,8 @@ def create_app() -> FastAPI:
     app.include_router(wastage.router, prefix=prefix)
     # Site inspections / معاينات (015) — rep mobile app
     app.include_router(inspections.router, prefix=prefix)
+    # Cash vouchers + account statements (018) — سندات القبض والصرف وكشوف الحساب
+    app.include_router(vouchers.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
 

@@ -202,6 +202,24 @@ for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_man
 ALL_CAPABILITIES |= _INSPECTION_ALL
 
 
+# ---------------------------------------------------------------------------
+# Cash vouchers + statements (018-finance-vouchers) — additive.
+# ---------------------------------------------------------------------------
+CAP_VOUCHER_READ = "voucher.read"
+CAP_VOUCHER_WRITE = "voucher.write"
+
+_VOUCHER_ALL = {CAP_VOUCHER_READ, CAP_VOUCHER_WRITE}
+
+# Office roles issue receipts/payments and receive rep handovers; the accountant reviews.
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.accountant):
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(_VOUCHER_ALL)
+# Sales managers read only (follow-up on collections).
+ROLE_CAPABILITIES.setdefault(RoleName.sales_manager, set()).add(CAP_VOUCHER_READ)
+# Reps collect from customers in the field (into their own custody) and read their own cash.
+ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).update(_VOUCHER_ALL)
+ALL_CAPABILITIES |= _VOUCHER_ALL
+
+
 def role_has_capability(role: RoleName, capability: str) -> bool:
     """Deny-by-default: True only if explicitly granted."""
     return capability in ROLE_CAPABILITIES.get(role, set())
