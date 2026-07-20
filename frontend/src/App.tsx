@@ -49,12 +49,12 @@ export default function App() {
         setConfigLoaded(true);
       });
     } else {
-      // Web build. Local `vite` dev → the backend on :8000. Deployed (e.g. Vercel) → same origin
-      // (vercel.json rewrites /api → the backend service), unless VITE_API_URL overrides it.
+      // Web build. Local `vite` dev → the backend on :8000. Deployed → the canonical API domain.
+      // NOT a baked VITE_API_URL: a stale Vercel env once pointed the production bundle at the
+      // old *.vercel.app domain, whose /api no longer routes to the backend → CORS-dead login.
       const host = window.location.hostname;
       const isLocal = host === 'localhost' || host === '127.0.0.1';
-      const envUrl = (import.meta as any).env?.VITE_API_URL;
-      const apiBase = isLocal ? 'http://127.0.0.1:8000' : (envUrl || window.location.origin);
+      const apiBase = isLocal ? 'http://127.0.0.1:8000' : 'https://api.technothermeg.com';
       setApiUrl(apiBase);
       setApiBaseURL(apiBase);
       setConfigLoaded(true);
