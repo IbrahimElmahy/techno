@@ -19,6 +19,7 @@ router = APIRouter(tags=["auth"])
 class LoginRequest(BaseModel):
     username: str
     password: str
+    client: str | None = None  # "mobile" -> long-lived token (field reps sync offline work)
 
 
 class TokenResponse(BaseModel):
@@ -57,19 +58,21 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
             detail={"code": "unauthorized", "message": "Invalid username or password"},
         )
     role = db.get(Role, user.role_id)
+    ttl = settings.mobile_token_ttl if body.client == "mobile" else settings.access_token_ttl
     token = create_access_token(
         {
             "sub": str(user.id),
             "role": role.name.value,
             "branch_id": user.branch_id,
             "rep_id": user.id if role.name.value == "sales_rep" else None,
-        }
+        },
+        ttl_seconds=ttl,
     )
     audit_service.record(
         db, action="login.success", actor_user_id=user.id, entity_type="user", entity_id=user.id
     )
     db.commit()
-    return TokenResponse(access_token=token, expires_in=settings.access_token_ttl)
+    return TokenResponse(access_token=token, expires_in=ttl)
 
 
 @router.get("/auth/me", response_model=UserOut)

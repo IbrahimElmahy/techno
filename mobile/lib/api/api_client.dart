@@ -49,7 +49,9 @@ class ApiClient {
     final r = await http
         .post(await _uri('/auth/login'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'username': username, 'password': password}))
+            // client=mobile -> the server issues a long-lived token (reps sync offline work).
+            body: jsonEncode(
+                {'username': username, 'password': password, 'client': 'mobile'}))
         .timeout(const Duration(seconds: 20));
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final body = jsonDecode(utf8.decode(r.bodyBytes));

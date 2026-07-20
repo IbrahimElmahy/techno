@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
     access_token_ttl: int = 1800  # seconds
+    # Field reps work offline for long stretches; forcing a re-login at sync time loses momentum.
+    # The mobile app requests this TTL by sending client="mobile" at login (30 days).
+    mobile_token_ttl: int = 30 * 24 * 3600  # seconds
     # Comma-separated allowed browser origins for CORS (the deployed frontend).
     frontend_origins: str = ""
 
