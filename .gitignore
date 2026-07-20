@@ -41,3 +41,4 @@ frontend/dist/
 frontend/dist-electron/
 frontend/dist-package/
 
+*.apk
