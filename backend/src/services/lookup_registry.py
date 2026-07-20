@@ -77,6 +77,11 @@ CATEGORIES: dict[str, dict] = {
         "defaults": [("تغذية و صرف", "تغذية و صرف"), ("تغذية فقط", "تغذية فقط"),
                      ("صرف فقط", "صرف فقط")],
     },
+    # نوع الزيارة في شاشة المراجعة (النظام القديم: معاينة/مرمة) — قابلة للإضافة.
+    "visit_type": {
+        "page": "inspections", "label": "نوع الزيارة", "system": False,
+        "defaults": [("معاينة", "معاينة"), ("مرمة", "مرمة")],
+    },
 }
 
 # Human-readable page titles for the Settings UI.

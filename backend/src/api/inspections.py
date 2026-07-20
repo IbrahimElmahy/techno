@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_INSPECTION_READ, CAP_INSPECTION_WRITE
 from src.core.db import get_db
-from src.models.inspection import VisitKind
+from src.models.inspection import InspectionStatus, VisitKind
 from src.models.role import RoleName
 from src.services import inspection_service
 from src.services.inspection_service import InspectionError, LineIn
@@ -61,6 +61,10 @@ class InspectionLineOut(BaseModel):
 class InspectionOut(BaseModel):
     id: int
     document_number: str
+    certificate_number: int | None
+    status: InspectionStatus
+    visit_type: str
+    printed: bool
     client_uuid: str | None
     visit_kind: VisitKind
     inspection_date: date
@@ -97,7 +101,8 @@ class MyStockOut(BaseModel):
 
 def _out(i) -> InspectionOut:
     return InspectionOut(
-        id=i.id, document_number=i.document_number, client_uuid=i.client_uuid,
+        id=i.id, document_number=i.document_number, certificate_number=i.certificate_number,
+        status=i.status, visit_type=i.visit_type, printed=i.printed, client_uuid=i.client_uuid,
         visit_kind=i.visit_kind, inspection_date=i.inspection_date, owner_name=i.owner_name,
         owner_phone=i.owner_phone, national_id=i.national_id, owner_address=i.owner_address,
         floor_number=i.floor_number, description=i.description,
@@ -185,14 +190,92 @@ def list_inspections(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     rep_id: int | None = Query(default=None),
+    status_filter: InspectionStatus | None = Query(default=None, alias="status"),
+    visit_type: str | None = Query(default=None),
+    printed: bool | None = Query(default=None),
+    certificate_number: int | None = Query(default=None),
+    owner: str | None = Query(default=None),
+    technician: str | None = Query(default=None),
+    trader: str | None = Query(default=None),
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[InspectionOut]:
     # Reps only ever see their own inspections; managers may filter by rep.
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
     rows = inspection_service.list_inspections(
-        db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to)
+        db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to,
+        status=status_filter, visit_type=visit_type, printed=printed,
+        certificate_number=certificate_number, owner=owner, technician=technician, trader=trader)
     return [_out(i) for i in rows]
+
+
+class InspectionPatch(BaseModel):
+    visit_type: str | None = Field(default=None, max_length=40)  # معاينة / مرمة
+
+
+def _reviewer(current: CurrentUser) -> None:
+    """Review actions (reclassify/reject/print) are back-office — not for field reps."""
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {"code": "forbidden", "message": "Review actions are back-office only."})
+
+
+def _get_or_404(db: Session, inspection_id: int):
+    insp = inspection_service.get_inspection(db, inspection_id)
+    if insp is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "Inspection not found."})
+    return insp
+
+
+@router.patch("/{inspection_id}", response_model=InspectionOut)
+def update_inspection(
+    inspection_id: int,
+    body: InspectionPatch,
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
+    db: Session = Depends(get_db),
+) -> InspectionOut:
+    _reviewer(current)
+    insp = _get_or_404(db, inspection_id)
+    if body.visit_type:
+        insp.visit_type = body.visit_type
+    db.commit()
+    return _out(insp)
+
+
+@router.post("/{inspection_id}/reject", response_model=InspectionOut)
+def reject_inspection(
+    inspection_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
+    db: Session = Depends(get_db),
+) -> InspectionOut:
+    """رفض المعاينة — بديل الحذف: يعلّم الشهادة مرفوضة ويرجّع البضاعة لعهدة المندوب."""
+    _reviewer(current)
+    insp = _get_or_404(db, inspection_id)
+    try:
+        inspection_service.reject_inspection(db, insp, actor_user_id=current.id)
+    except InspectionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "reject_conflict", "message": str(exc)})
+    db.commit()
+    return _out(insp)
+
+
+@router.post("/{inspection_id}/mark-printed", response_model=InspectionOut)
+def mark_printed(
+    inspection_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
+    db: Session = Depends(get_db),
+) -> InspectionOut:
+    from datetime import datetime
+
+    _reviewer(current)
+    insp = _get_or_404(db, inspection_id)
+    insp.printed = True
+    insp.printed_at = datetime.now()
+    db.commit()
+    return _out(insp)
 
 
 @router.delete("/{inspection_id}", status_code=status.HTTP_204_NO_CONTENT)

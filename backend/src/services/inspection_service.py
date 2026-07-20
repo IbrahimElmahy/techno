@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import to_qty
 from src.models.catalog import Item
-from src.models.inspection import Inspection, InspectionItem, VisitKind
+from src.models.inspection import Inspection, InspectionItem, InspectionStatus, VisitKind
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.warehouse import Custody
 from src.services import audit_service, stock_service
@@ -75,6 +75,16 @@ def _doc_number(db: Session) -> str:
     return f"INSP-{n + 1:06d}"
 
 
+# The client's paper warranty certificates reached ~156204 in the legacy system —
+# our sequence continues it so the printed numbers stay unique company-wide.
+CERTIFICATE_SEQUENCE_FLOOR = 156204
+
+
+def _next_certificate_number(db: Session) -> int:
+    current = db.scalar(select(func.max(Inspection.certificate_number)))
+    return max(current or 0, CERTIFICATE_SEQUENCE_FLOOR) + 1
+
+
 def _points(value) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.001"))
 
@@ -99,7 +109,8 @@ def create_inspection(
             return existing
 
     insp = Inspection(
-        document_number=_doc_number(db), client_uuid=client_uuid, visit_kind=visit_kind,
+        document_number=_doc_number(db), certificate_number=_next_certificate_number(db),
+        client_uuid=client_uuid, visit_kind=visit_kind,
         inspection_date=inspection_date, owner_name=owner_name.strip(), owner_phone=owner_phone,
         national_id=national_id, owner_address=owner_address, floor_number=floor_number,
         description=description, inspection_type=inspection_type,
@@ -158,6 +169,9 @@ def create_inspection(
 def list_inspections(
     db: Session, *, visit_kind: VisitKind | None = None, rep_user_id: int | None = None,
     date_from: date | None = None, date_to: date | None = None,
+    status: InspectionStatus | None = None, visit_type: str | None = None,
+    printed: bool | None = None, certificate_number: int | None = None,
+    owner: str | None = None, technician: str | None = None, trader: str | None = None,
 ) -> list[Inspection]:
     stmt = select(Inspection).options(selectinload(Inspection.items))
     if visit_kind is not None:
@@ -168,17 +182,57 @@ def list_inspections(
         stmt = stmt.where(Inspection.inspection_date >= date_from)
     if date_to is not None:
         stmt = stmt.where(Inspection.inspection_date <= date_to)
+    if status is not None:
+        stmt = stmt.where(Inspection.status == status)
+    if visit_type is not None:
+        stmt = stmt.where(Inspection.visit_type == visit_type)
+    if printed is not None:
+        stmt = stmt.where(Inspection.printed.is_(printed))
+    if certificate_number is not None:
+        stmt = stmt.where(Inspection.certificate_number == certificate_number)
+    if owner:
+        stmt = stmt.where(Inspection.owner_name.contains(owner))
+    if technician:
+        stmt = stmt.where(Inspection.technician_name.contains(technician))
+    if trader:  # التاجر في الشاشة القديمة = محل الشراء
+        stmt = stmt.where(Inspection.purchase_shop.contains(trader))
     return db.scalars(stmt.order_by(Inspection.inspection_date.desc(), Inspection.id.desc())).all()
 
 
-def delete_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
-    """Hard-delete (admin only) — custody deductions are reversed first so stock stays true."""
+def _return_stock(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
+    """Mirror every custody deduction back (used by reject and by admin delete)."""
     for line in inspection.items:
         if line.stock_movement_id is not None:
             stock_service.reverse_movement(
                 db, original_id=line.stock_movement_id, actor_user_id=actor_user_id,
                 movement_type="reverse_inspection_out",
             )
+
+
+def reject_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> Inspection:
+    """رفض المعاينة — the legacy system's alternative to deletion.
+
+    Marks the certificate rejected and returns any deducted goods to the rep's stock.
+    Reject-once: a rejected inspection cannot be rejected again (stock would double-return).
+    """
+    if inspection.status == InspectionStatus.rejected:
+        raise InspectionError("المعاينة مرفوضة بالفعل.")
+    _return_stock(db, inspection, actor_user_id=actor_user_id)
+    inspection.status = InspectionStatus.rejected
+    db.flush()
+    audit_service.record(db, action="inspection.reject", actor_user_id=actor_user_id,
+                         entity_type="inspection", entity_id=inspection.id,
+                         after={"doc": inspection.document_number})
+    return inspection
+
+
+def delete_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
+    """Hard-delete (admin only) — custody deductions are reversed first so stock stays true.
+
+    A rejected inspection already returned its stock — deleting it must not return it twice.
+    """
+    if inspection.status != InspectionStatus.rejected:
+        _return_stock(db, inspection, actor_user_id=actor_user_id)
     audit_service.record(db, action="inspection.delete", actor_user_id=actor_user_id,
                          entity_type="inspection", entity_id=inspection.id,
                          before={"doc": inspection.document_number})

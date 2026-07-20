@@ -10,7 +10,7 @@ from __future__ import annotations
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -21,6 +21,11 @@ from src.models.loyalty import POINTS
 class VisitKind(str, enum.Enum):
     technician = "technician"  # زيارات الفنيين (معاينات)
     regular = "regular"        # الزيارات العادية
+
+
+class InspectionStatus(str, enum.Enum):
+    accepted = "accepted"  # مقبولة (الافتراضي — زي النظام القديم)
+    rejected = "rejected"  # مرفوضة — بديل الحذف؛ ترجّع البضاعة لعهدة المندوب
 
 
 class Inspection(Base):
@@ -56,6 +61,19 @@ class Inspection(Base):
 
     total_points: Mapped[object] = mapped_column(POINTS, nullable=False, default=0)
     rep_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+
+    # --- Review-screen parity with the legacy «مراجعة زيارات المناديب» (015 follow-up) ---
+    # Sequential warranty-certificate number, continuing the legacy paper sequence (156204…).
+    certificate_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    # معاينة / مرمة — configurable lookup (visit_type); set by the reviewer, defaults to معاينة.
+    visit_type: Mapped[str] = mapped_column(String(40), nullable=False, default="معاينة")
+    status: Mapped[InspectionStatus] = mapped_column(
+        Enum(InspectionStatus, native_enum=False, length=12), nullable=False,
+        default=InspectionStatus.accepted,
+    )
+    printed: Mapped[bool] = mapped_column(default=False, nullable=False)  # حالة الطباعة
+    printed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

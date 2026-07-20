@@ -146,6 +146,12 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("item", "default_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     # 015: inspections deduct from the rep's custody when he holds one.
     ("inspection_item", "stock_movement_id", "BIGINT"),
+    # 015 review parity: warranty certificate + status + print tracking + نوع الزيارة.
+    ("inspection", "certificate_number", "BIGINT"),
+    ("inspection", "visit_type", "VARCHAR(40) NOT NULL DEFAULT 'معاينة'"),
+    ("inspection", "status", "VARCHAR(12) NOT NULL DEFAULT 'accepted'"),
+    ("inspection", "printed", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("inspection", "printed_at", "TIMESTAMP"),
 ]
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).
