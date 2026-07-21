@@ -22,6 +22,7 @@ import Audit from './pages/Audit';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Inspections from './pages/Inspections';
+import InspectionItems from './pages/InspectionItems';
 import Vouchers from './pages/Vouchers';
 import FinanceReports from './pages/FinanceReports';
 import { setApiBaseURL } from './api/client';
@@ -106,6 +107,7 @@ export default function App() {
               <Route path="loyalty" element={<Loyalty />} />
               <Route path="audit" element={<Audit />} />
               <Route path="inspections" element={<Inspections />} />
+              <Route path="inspection-items" element={<InspectionItems />} />
               <Route path="reports" element={<Reports />} />
               <Route path="settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

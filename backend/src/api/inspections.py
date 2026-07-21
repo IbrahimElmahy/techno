@@ -14,7 +14,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_INSPECTION_READ, CAP_INSPECTION_WRITE
+from src.auth.rbac import (
+    CAP_INSPECTION_READ,
+    CAP_INSPECTION_WRITE,
+    CAP_SETTINGS_WRITE,
+)
 from src.core.db import get_db
 from src.models.inspection import InspectionStatus, VisitKind
 from src.models.role import RoleName
@@ -106,6 +110,26 @@ class ItemTypeOut(BaseModel):
     id: int
     name: str
     points: Decimal
+    sort_order: int = 0
+    active: bool = True
+
+
+class ItemTypeIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    points: Decimal = Decimal("0")
+    sort_order: int | None = None
+
+
+class ItemTypePatch(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    points: Decimal | None = None
+    active: bool | None = None
+    sort_order: int | None = None
+
+
+def _type_out(t) -> ItemTypeOut:
+    return ItemTypeOut(id=t.id, name=t.name, points=t.points, sort_order=t.sort_order,
+                       active=t.active)
 
 
 def _out(i) -> InspectionOut:
@@ -180,13 +204,71 @@ def sync_inspections(
 
 @router.get("/item-types", response_model=list[ItemTypeOut])
 def list_item_types(
+    include_inactive: bool = Query(default=False),
     _: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemTypeOut]:
-    """أصناف المعاينة (حساب النقاط) — القائمة اللي بتظهر في التطبيق، منفصلة عن منتجات النظام."""
-    rows = inspection_service.list_item_types(db)
+    """أصناف المعاينة (حساب النقاط) — القائمة اللي بتظهر في التطبيق، منفصلة عن منتجات النظام.
+
+    include_inactive=true للإدارة (تعرض الموقوفة كمان)؛ التطبيق يجيب النشطة فقط.
+    """
+    rows = inspection_service.list_item_types(db, include_inactive=include_inactive)
     db.commit()  # persist the lazy seed
-    return [ItemTypeOut(id=t.id, name=t.name, points=t.points) for t in rows]
+    return [_type_out(t) for t in rows]
+
+
+@router.post("/item-types", response_model=ItemTypeOut, status_code=status.HTTP_201_CREATED)
+def create_item_type(
+    body: ItemTypeIn,
+    current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
+    db: Session = Depends(get_db),
+) -> ItemTypeOut:
+    """إضافة صنف معاينة جديد بنقاطه (إدارة)."""
+    try:
+        t = inspection_service.create_item_type(
+            db, name=body.name, points=body.points, sort_order=body.sort_order,
+            actor_user_id=current.id)
+    except InspectionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "item_type_invalid", "message": str(exc)})
+    db.commit()
+    return _type_out(t)
+
+
+@router.patch("/item-types/{item_type_id}", response_model=ItemTypeOut)
+def update_item_type(
+    item_type_id: int,
+    body: ItemTypePatch,
+    current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
+    db: Session = Depends(get_db),
+) -> ItemTypeOut:
+    """تعديل اسم/نقاط/تفعيل صنف معاينة (إدارة)."""
+    try:
+        t = inspection_service.update_item_type(
+            db, item_type_id=item_type_id, name=body.name, points=body.points,
+            active=body.active, sort_order=body.sort_order, actor_user_id=current.id)
+    except InspectionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "item_type_invalid", "message": str(exc)})
+    db.commit()
+    return _type_out(t)
+
+
+@router.delete("/item-types/{item_type_id}", response_model=ItemTypeOut)
+def deactivate_item_type(
+    item_type_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
+    db: Session = Depends(get_db),
+) -> ItemTypeOut:
+    """إيقاف صنف معاينة — يختفي من التطبيق، والمعاينات القديمة تفضل زي ما هي (إدارة)."""
+    try:
+        t = inspection_service.deactivate_item_type(
+            db, item_type_id=item_type_id, actor_user_id=current.id)
+    except InspectionError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": str(exc)})
+    db.commit()
+    return _type_out(t)
 
 
 @router.get("/my-stock", response_model=list[MyStockOut])

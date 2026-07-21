@@ -26,6 +26,41 @@ def _payload(**over):
     return base
 
 
+def test_admin_manages_item_types(client, world, login):
+    admin, rep = login("admin"), login("rep_a")
+    # Add a new item.
+    c = client.post("/api/v1/inspections/item-types", headers=admin,
+                    json={"name": "صنف جديد", "points": "3.5"})
+    assert c.status_code == 201, c.text
+    new_id = c.json()["id"]
+    assert float(c.json()["points"]) == 3.5
+
+    # Reps cannot manage the catalog.
+    assert client.post("/api/v1/inspections/item-types", headers=rep,
+                       json={"name": "x", "points": "1"}).status_code == 403
+
+    # Edit the points of an existing item.
+    rows = client.get("/api/v1/inspections/item-types", headers=admin).json()
+    battery = next(t for t in rows if t["name"] == 'بطاريه50"*32"')
+    u = client.patch(f"/api/v1/inspections/item-types/{battery['id']}", headers=admin,
+                     json={"points": "15"})
+    assert u.status_code == 200 and float(u.json()["points"]) == 15.0
+
+    # Deactivate the new one — it leaves the app list but the row remains.
+    d = client.delete(f"/api/v1/inspections/item-types/{new_id}", headers=admin)
+    assert d.status_code == 200 and d.json()["active"] is False
+    active_names = {t["name"] for t in
+                    client.get("/api/v1/inspections/item-types", headers=admin).json()}
+    assert "صنف جديد" not in active_names
+    all_names = {t["name"] for t in client.get(
+        "/api/v1/inspections/item-types?include_inactive=true", headers=admin).json()}
+    assert "صنف جديد" in all_names  # not resurrected, not lost
+
+    # Duplicate name is rejected.
+    assert client.post("/api/v1/inspections/item-types", headers=admin,
+                       json={"name": 'بطاريه50"*32"', "points": "1"}).status_code == 409
+
+
 def test_item_types_are_the_points_catalog(client, world, login):
     h = login("rep_a")
     r = client.get("/api/v1/inspections/item-types", headers=h)

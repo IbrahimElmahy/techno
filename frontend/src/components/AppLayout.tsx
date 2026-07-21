@@ -183,6 +183,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'],
     },
     {
+      key: '/inspection-items',
+      icon: <DatabaseOutlined />,
+      label: 'أصناف المعاينة',
+      roles: ['system_admin', 'branch_manager'],
+    },
+    {
       key: '/reports',
       icon: <FileTextOutlined />,
       label: 'التقارير والإحصائيات',

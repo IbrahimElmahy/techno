@@ -90,31 +90,96 @@ def _points(value) -> Decimal:
 
 
 def seed_item_types(db: Session) -> int:
-    """Lazily seed the inspection point-items catalog from «حساب نقاط». Idempotent."""
+    """Seed the point-items catalog from «حساب نقاط» ONCE — only when the table is empty.
+
+    Seeding once (not per-name) is deliberate: the admin fully manages the list afterwards,
+    so a deactivated or renamed item must never be resurrected by the seed.
+    """
     from src.data.inspection_item_seed import INSPECTION_ITEM_TYPES
     from src.models.inspection_item_type import InspectionItemType
 
-    existing = {t.name for t in db.scalars(select(InspectionItemType)).all()}
-    added = 0
+    already = db.scalar(select(func.count()).select_from(InspectionItemType)) or 0
+    if already:
+        return 0
     for order, (name, points) in enumerate(INSPECTION_ITEM_TYPES):
-        if name in existing:
-            continue
         db.add(InspectionItemType(name=name, points=Decimal(points),
                                   sort_order=order, active=True))
-        added += 1
-    if added:
-        db.flush()
-    return added
+    db.flush()
+    return len(INSPECTION_ITEM_TYPES)
 
 
-def list_item_types(db: Session):
+def list_item_types(db: Session, *, include_inactive: bool = False):
     from src.models.inspection_item_type import InspectionItemType
 
     seed_item_types(db)
+    stmt = select(InspectionItemType)
+    if not include_inactive:
+        stmt = stmt.where(InspectionItemType.active.is_(True))
     return db.scalars(
-        select(InspectionItemType).where(InspectionItemType.active.is_(True))
-        .order_by(InspectionItemType.sort_order, InspectionItemType.id)
+        stmt.order_by(InspectionItemType.sort_order, InspectionItemType.id)
     ).all()
+
+
+def create_item_type(db: Session, *, name: str, points, actor_user_id: int,
+                     sort_order: int | None = None):
+    from src.models.inspection_item_type import InspectionItemType
+
+    seed_item_types(db)  # so the standard list exists even if the admin adds before any read
+    clean = " ".join((name or "").split())
+    if not clean:
+        raise InspectionError("اسم الصنف مطلوب.")
+    if Decimal(str(points)) < 0:
+        raise InspectionError("النقاط لازم تكون صفر أو أكثر.")
+    if db.scalar(select(InspectionItemType).where(InspectionItemType.name == clean)):
+        raise InspectionError("يوجد صنف بنفس الاسم.")
+    if sort_order is None:
+        sort_order = (db.scalar(select(func.max(InspectionItemType.sort_order))) or 0) + 1
+    t = InspectionItemType(name=clean, points=Decimal(str(points)), sort_order=sort_order,
+                           active=True)
+    db.add(t)
+    db.flush()
+    audit_service.record(db, action="inspection_item_type.create", actor_user_id=actor_user_id,
+                         entity_type="inspection_item_type", entity_id=t.id,
+                         after={"name": clean, "points": str(points)})
+    return t
+
+
+def update_item_type(db: Session, *, item_type_id: int, actor_user_id: int,
+                     name: str | None = None, points=None, active: bool | None = None,
+                     sort_order: int | None = None):
+    from src.models.inspection_item_type import InspectionItemType
+
+    t = db.get(InspectionItemType, item_type_id)
+    if t is None:
+        raise InspectionError("الصنف غير موجود.")
+    if name is not None:
+        clean = " ".join(name.split())
+        if not clean:
+            raise InspectionError("اسم الصنف مطلوب.")
+        dup = db.scalar(select(InspectionItemType).where(
+            InspectionItemType.name == clean, InspectionItemType.id != item_type_id))
+        if dup is not None:
+            raise InspectionError("يوجد صنف بنفس الاسم.")
+        t.name = clean
+    if points is not None:
+        if Decimal(str(points)) < 0:
+            raise InspectionError("النقاط لازم تكون صفر أو أكثر.")
+        t.points = Decimal(str(points))
+    if active is not None:
+        t.active = active
+    if sort_order is not None:
+        t.sort_order = sort_order
+    db.flush()
+    audit_service.record(db, action="inspection_item_type.update", actor_user_id=actor_user_id,
+                         entity_type="inspection_item_type", entity_id=t.id,
+                         after={"name": t.name, "points": str(t.points), "active": t.active})
+    return t
+
+
+def deactivate_item_type(db: Session, *, item_type_id: int, actor_user_id: int):
+    """Soft-delete — the row stays (so the seed can't resurrect it) but drops out of the app."""
+    return update_item_type(db, item_type_id=item_type_id, actor_user_id=actor_user_id,
+                            active=False)
 
 
 def create_inspection(
