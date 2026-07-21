@@ -89,6 +89,34 @@ def _points(value) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.001"))
 
 
+def seed_item_types(db: Session) -> int:
+    """Lazily seed the inspection point-items catalog from «حساب نقاط». Idempotent."""
+    from src.data.inspection_item_seed import INSPECTION_ITEM_TYPES
+    from src.models.inspection_item_type import InspectionItemType
+
+    existing = {t.name for t in db.scalars(select(InspectionItemType)).all()}
+    added = 0
+    for order, (name, points) in enumerate(INSPECTION_ITEM_TYPES):
+        if name in existing:
+            continue
+        db.add(InspectionItemType(name=name, points=Decimal(points),
+                                  sort_order=order, active=True))
+        added += 1
+    if added:
+        db.flush()
+    return added
+
+
+def list_item_types(db: Session):
+    from src.models.inspection_item_type import InspectionItemType
+
+    seed_item_types(db)
+    return db.scalars(
+        select(InspectionItemType).where(InspectionItemType.active.is_(True))
+        .order_by(InspectionItemType.sort_order, InspectionItemType.id)
+    ).all()
+
+
 def create_inspection(
     db: Session, *, visit_kind: VisitKind, inspection_date: date, owner_name: str | None,
     rep_user_id: int, actor_user_id: int, lines: list[LineIn],
@@ -148,10 +176,13 @@ def create_inspection(
             item = db.get(Item, ln.item_id)
             if item is not None:
                 name = item.name
-        line_total = _points(_points(ln.points) * qty)
+        # Multiply the FULL-precision points by quantity, THEN round — so 6 × (1/6) = 1.000
+        # exactly instead of drifting from a pre-rounded 0.167.
+        unit_points = Decimal(str(ln.points))
+        line_total = _points(unit_points * qty)
         line = InspectionItem(
             inspection_id=insp.id, item_id=ln.item_id, item_name=name, quantity=qty,
-            points=_points(ln.points), total=line_total,
+            points=_points(unit_points), total=line_total,
         )
         db.add(line)
         db.flush()

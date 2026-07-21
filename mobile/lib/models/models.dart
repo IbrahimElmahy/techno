@@ -26,7 +26,9 @@ class CatalogItem {
 class CustomerRef {
   final int id;
   final String name;
-  const CustomerRef({required this.id, required this.name});
+  final String? phone;
+  final String? address;
+  const CustomerRef({required this.id, required this.name, this.phone, this.address});
 }
 
 class LookupOption {

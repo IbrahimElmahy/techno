@@ -4,8 +4,8 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// Searchable catalog picker. Tapping an item asks for the quantity (points come from the
-/// catalog's configured point value) and returns an [InspectionLine].
+/// Searchable picker over «أصناف المعاينة» (the points catalog, not the system's products).
+/// Tapping an item asks for the quantity — points come from the item type — and returns a line.
 class ItemPickerScreen extends StatefulWidget {
   const ItemPickerScreen({super.key});
 
@@ -17,7 +17,6 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
   final _search = TextEditingController();
   List<CatalogItem> _items = [];
   bool _loading = true;
-  bool _custodyMode = false; // rep with a custody -> only what he carries is offered
 
   @override
   void initState() {
@@ -26,27 +25,23 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
   }
 
   Future<void> _load([String q = '']) async {
-    final hasCustody = (await LocalDb.instance.getKv('has_custody')) == '1';
-    var items = await LocalDb.instance.catalog(query: q);
-    if (hasCustody) {
-      items = items.where((it) => (it.myStock ?? 0) > 0).toList();
-    }
+    final items = await LocalDb.instance.itemTypes(query: q);
     if (mounted) {
       setState(() {
         _items = items;
-        _custodyMode = hasCustody;
         _loading = false;
       });
     }
   }
 
-  static String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+  static String _fmt(double v) {
+    if (v == v.roundToDouble()) return v.toInt().toString();
+    // Trim trailing zeros on fractional points (0.1667 → 0.1667, 0.5000 → 0.5).
+    return v.toStringAsFixed(4).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  }
 
   Future<void> _pick(CatalogItem item) async {
     final qty = TextEditingController(text: '1');
-    final points = TextEditingController(text: _fmt(item.points));
-    final maxQty = _custodyMode ? item.myStock : null;
     final result = await showDialog<InspectionLine>(
       context: context,
       builder: (c) => Directionality(
@@ -56,20 +51,14 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text('نقاط الوحدة: ${_fmt(item.points)}',
+                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
               TextField(
                 controller: qty,
                 autofocus: true,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'الكمية',
-                  helperText: maxQty == null ? null : 'المتاح في عهدتك: ${_fmt(maxQty)}',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: points,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'النقاط للوحدة'),
+                decoration: const InputDecoration(labelText: 'الكمية'),
               ),
             ],
           ),
@@ -78,18 +67,12 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
             FilledButton(
               onPressed: () {
                 final q = double.tryParse(qty.text) ?? 0;
-                final p = double.tryParse(points.text) ?? 0;
                 if (q <= 0) return;
-                if (maxQty != null && q > maxQty) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content:
-                          Text('الكمية أكبر من المتاح في عهدتك (${_fmt(maxQty)})')));
-                  return;
-                }
+                // item_id stays null on the wire — these are point-items, not product SKUs.
                 Navigator.pop(
                     c,
                     InspectionLine(
-                        itemId: item.id, itemName: item.name, quantity: q, points: p));
+                        itemId: null, itemName: item.name, quantity: q, points: item.points));
               },
               child: const Text('تم'),
             ),
@@ -130,10 +113,8 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _items.isEmpty
-                    ? Center(
-                        child: Text(_custodyMode
-                            ? 'مفيش أصناف في عهدتك — استلم بضاعة من المخزن الأول'
-                            : 'مفيش أصناف — اعمل «تحديث الأصناف» من القائمة الجانبية'))
+                    ? const Center(
+                        child: Text('مفيش أصناف — اعمل «تحديث الأصناف والقوائم» من القائمة'))
                     : ListView.separated(
                         itemCount: _items.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
@@ -141,38 +122,16 @@ class _ItemPickerScreenState extends State<ItemPickerScreen> {
                           final it = _items[i];
                           return ListTile(
                             title: Text(it.name),
-                            subtitle: it.category == null ? null : Text(it.category!),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (_custodyMode && it.myStock != null)
-                                  Container(
-                                    margin: const EdgeInsets.only(left: 6),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.success.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text('معاك ${_fmt(it.myStock!)}',
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.success)),
-                                  ),
-                                if (it.points > 0)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.accent.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: Text('${_fmt(it.points)} نقطة',
-                                        style: const TextStyle(
-                                            fontSize: 12, fontWeight: FontWeight.w700)),
-                                  ),
-                              ],
+                            trailing: Container(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text('${_fmt(it.points)} نقطة',
+                                  style: const TextStyle(
+                                      fontSize: 12, fontWeight: FontWeight.w700)),
                             ),
                             onTap: () => _pick(it),
                           );

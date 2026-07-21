@@ -10,6 +10,7 @@ from src.models.customer import Customer, CustomerAccount
 
 # Site inspections / معاينات (015-inspections-mobile).
 from src.models.inspection import Inspection, InspectionItem  # noqa: E402
+from src.models.inspection_item_type import InspectionItemType  # noqa: E402
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 
 # Settings → configurable dropdown lists (013).
@@ -70,4 +71,5 @@ __all__ = [
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
+    "InspectionItemType",
 ]

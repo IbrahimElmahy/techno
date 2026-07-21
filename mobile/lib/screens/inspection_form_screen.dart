@@ -30,6 +30,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   final _visitDetails = TextEditingController();
 
   DateTime _date = DateTime.now();
+  int? _selectedCustomerId; // set when the owner name is picked from an existing customer
   String? _description;
   String? _inspectionType;
   List<LookupOption> _descriptions = [];
@@ -163,6 +164,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       technicianPhone: _nullable(_technicianPhone),
       purchaseShop: _nullable(_purchaseShop),
       visitDetails: _nullable(_visitDetails),
+      customerId: _selectedCustomerId,
       lines: _lines,
     );
     await LocalDb.instance.saveInspection(insp);
@@ -211,11 +213,66 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
               ),
             ]),
             _section('بيانات المالك', Icons.person_outline, [
-              TextFormField(
-                controller: _ownerName,
-                decoration: const InputDecoration(labelText: 'اسم صاحب الشقة *'),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'الاسم مطلوب' : null,
+              // Type the name: existing customers appear as suggestions; picking one auto-fills
+              // his phone/address and links the record. A brand-new name is typed freely.
+              Autocomplete<CustomerRef>(
+                displayStringForOption: (c) => c.name,
+                optionsBuilder: (value) async {
+                  final q = value.text.trim();
+                  if (q.length < 2) return const Iterable<CustomerRef>.empty();
+                  return LocalDb.instance.customers(query: q, limit: 8);
+                },
+                onSelected: (c) {
+                  _ownerName.text = c.name;
+                  _selectedCustomerId = c.id;
+                  if ((c.phone ?? '').isNotEmpty) _ownerPhone.text = c.phone!;
+                  if ((c.address ?? '').isNotEmpty) _ownerAddress.text = c.address!;
+                  setState(() {});
+                },
+                fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                  // Keep our controller in sync so save() and validation see the text.
+                  controller.text = _ownerName.text;
+                  controller.selection = TextSelection.collapsed(offset: controller.text.length);
+                  return TextFormField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    onChanged: (v) {
+                      _ownerName.text = v;
+                      _selectedCustomerId = null; // typing a new/edited name unlinks
+                    },
+                    decoration: const InputDecoration(
+                      labelText: 'اسم صاحب الشقة *',
+                      prefixIcon: Icon(Icons.search),
+                      helperText: 'اكتب الاسم — لو عميل موجود هيظهر لتختاره وتتملأ بياناته',
+                    ),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty) ? 'الاسم مطلوب' : null,
+                  );
+                },
+                optionsViewBuilder: (context, onSelected, options) => Align(
+                  alignment: Alignment.topRight,
+                  child: Material(
+                    elevation: 4,
+                    child: SizedBox(
+                      width: MediaQuery.of(context).size.width - 60,
+                      child: ListView(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        children: [
+                          for (final o in options)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.person_outline,
+                                  color: AppColors.primary),
+                              title: Text(o.name),
+                              subtitle: (o.phone ?? '').isEmpty ? null : Text(o.phone!),
+                              onTap: () => onSelected(o),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
               TextFormField(
                 controller: _ownerPhone,

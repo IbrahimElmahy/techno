@@ -102,6 +102,12 @@ class MyStockOut(BaseModel):
     quantity: Decimal
 
 
+class ItemTypeOut(BaseModel):
+    id: int
+    name: str
+    points: Decimal
+
+
 def _out(i) -> InspectionOut:
     return InspectionOut(
         id=i.id, document_number=i.document_number, certificate_number=i.certificate_number,
@@ -170,6 +176,17 @@ def sync_inspections(
                                      document_number=insp.document_number))
     db.commit()
     return results
+
+
+@router.get("/item-types", response_model=list[ItemTypeOut])
+def list_item_types(
+    _: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
+    db: Session = Depends(get_db),
+) -> list[ItemTypeOut]:
+    """أصناف المعاينة (حساب النقاط) — القائمة اللي بتظهر في التطبيق، منفصلة عن منتجات النظام."""
+    rows = inspection_service.list_item_types(db)
+    db.commit()  # persist the lazy seed
+    return [ItemTypeOut(id=t.id, name=t.name, points=t.points) for t in rows]
 
 
 @router.get("/my-stock", response_model=list[MyStockOut])

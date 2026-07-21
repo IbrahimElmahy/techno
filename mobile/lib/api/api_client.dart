@@ -59,48 +59,22 @@ class ApiClient {
     await LocalDb.instance.setKv('username', username);
   }
 
-  /// Pull the item catalog + point values + the two inspection lookups into the offline cache.
+  /// Pull the inspection point-items + lookups + customers into the offline cache.
   Future<void> pullReferenceData() async {
     final headers = await _headers();
-    final itemsR = await http
-        .get(await _uri('/items'), headers: headers)
+    // أصناف المعاينة (حساب النقاط) — the list shown in the app, separate from system products.
+    final typesR = await http
+        .get(await _uri('/inspections/item-types'), headers: headers)
         .timeout(const Duration(seconds: 60));
-    if (itemsR.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
-    if (itemsR.statusCode != 200) throw ApiException(itemsR.statusCode, _error(itemsR));
-    final items = (jsonDecode(utf8.decode(itemsR.bodyBytes)) as List)
-        .where((it) => it['active'] == true && it['kind'] == 'product');
-
-    final pointsR = await http
-        .get(await _uri('/products/point-values'), headers: headers)
-        .timeout(const Duration(seconds: 30));
-    final pointsByItem = <int, double>{};
-    if (pointsR.statusCode == 200) {
-      for (final row in jsonDecode(utf8.decode(pointsR.bodyBytes)) as List) {
-        pointsByItem[row['item_id'] as int] =
-            double.tryParse(row['point_value'].toString()) ?? 0;
-      }
-    }
-    // What the rep carries in his custody — empty for admins / reps without one.
-    final stockR = await http
-        .get(await _uri('/inspections/my-stock'), headers: headers)
-        .timeout(const Duration(seconds: 30));
-    final myStockByItem = <int, double>{};
-    if (stockR.statusCode == 200) {
-      for (final row in jsonDecode(utf8.decode(stockR.bodyBytes)) as List) {
-        myStockByItem[row['item_id'] as int] =
-            double.tryParse(row['quantity'].toString()) ?? 0;
-      }
-    }
-    await LocalDb.instance.setKv('has_custody', myStockByItem.isEmpty ? '0' : '1');
-
-    await LocalDb.instance.replaceCatalog([
-      for (final it in items)
+    if (typesR.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (typesR.statusCode != 200) throw ApiException(typesR.statusCode, _error(typesR));
+    final types = jsonDecode(utf8.decode(typesR.bodyBytes)) as List;
+    await LocalDb.instance.replaceItemTypes([
+      for (final t in types)
         CatalogItem(
-          id: it['id'] as int,
-          name: it['name'] as String,
-          category: it['category'] as String?,
-          points: pointsByItem[it['id']] ?? 0,
-          myStock: myStockByItem[it['id']],
+          id: t['id'] as int,
+          name: t['name'] as String,
+          points: double.tryParse(t['points'].toString()) ?? 0,
         )
     ]);
 
@@ -127,7 +101,13 @@ class ApiClient {
     if (custR.statusCode == 200) {
       final rows = jsonDecode(utf8.decode(custR.bodyBytes)) as List;
       await LocalDb.instance.replaceCustomers([
-        for (final c in rows) CustomerRef(id: c['id'] as int, name: c['name'] as String)
+        for (final c in rows)
+          CustomerRef(
+            id: c['id'] as int,
+            name: c['name'] as String,
+            phone: c['phone'] as String?,
+            address: c['address'] as String?,
+          )
       ]);
     }
 

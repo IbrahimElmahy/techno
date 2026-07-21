@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 3, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 4, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -22,6 +22,13 @@ class LocalDb {
         // v3: cached customers + the regular visit's customer link.
         await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT)');
         await d.execute('ALTER TABLE inspection ADD COLUMN customer_id INTEGER');
+      }
+      if (from < 4) {
+        // v4: the inspection point-items catalog + customer contact fields for autofill.
+        await d.execute('CREATE TABLE insp_item_type('
+            'id INTEGER PRIMARY KEY, name TEXT, points REAL)');
+        await d.execute('ALTER TABLE customer ADD COLUMN phone TEXT');
+        await d.execute('ALTER TABLE customer ADD COLUMN address TEXT');
       }
     }, onCreate: (d, v) async {
       await d.execute('''
@@ -41,7 +48,10 @@ class LocalDb {
           document_number TEXT,
           created_at TEXT NOT NULL
         )''');
-      await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT)');
+      await d.execute(
+          'CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, address TEXT)');
+      await d.execute(
+          'CREATE TABLE insp_item_type(id INTEGER PRIMARY KEY, name TEXT, points REAL)');
       await d.execute('''
         CREATE TABLE inspection_line(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,27 +120,60 @@ class LocalDb {
     return rows.map(LookupOption.fromRow).toList();
   }
 
-  // --- customers cache (for the regular visit picker, offline) ---
+  // --- customers cache (for the regular visit picker + owner autofill, offline) ---
   Future<void> replaceCustomers(List<CustomerRef> customers) async {
     final d = await db;
     await d.transaction((tx) async {
       await tx.delete('customer');
       final batch = tx.batch();
       for (final c in customers) {
-        batch.insert('customer', {'id': c.id, 'name': c.name});
+        batch.insert('customer',
+            {'id': c.id, 'name': c.name, 'phone': c.phone, 'address': c.address});
       }
       await batch.commit(noResult: true);
     });
   }
 
-  Future<List<CustomerRef>> customers({String query = ''}) async {
+  Future<List<CustomerRef>> customers({String query = '', int limit = 40}) async {
     final d = await db;
     final rows = query.isEmpty
-        ? await d.query('customer', orderBy: 'name')
+        ? await d.query('customer', orderBy: 'name', limit: limit)
         : await d.query('customer',
-            where: 'name LIKE ?', whereArgs: ['%$query%'], orderBy: 'name');
+            where: 'name LIKE ?', whereArgs: ['%$query%'], orderBy: 'name', limit: limit);
+    return rows.map(_customerFromRow).toList();
+  }
+
+  CustomerRef _customerFromRow(Map<String, Object?> r) => CustomerRef(
+        id: r['id'] as int,
+        name: r['name'] as String,
+        phone: r['phone'] as String?,
+        address: r['address'] as String?,
+      );
+
+  // --- inspection point-items catalog (أصناف المعاينة) ---
+  Future<void> replaceItemTypes(List<CatalogItem> types) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('insp_item_type');
+      final batch = tx.batch();
+      for (final t in types) {
+        batch.insert('insp_item_type', {'id': t.id, 'name': t.name, 'points': t.points});
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<CatalogItem>> itemTypes({String query = ''}) async {
+    final d = await db;
+    final rows = query.isEmpty
+        ? await d.query('insp_item_type', orderBy: 'id')
+        : await d.query('insp_item_type',
+            where: 'name LIKE ?', whereArgs: ['%$query%'], orderBy: 'id');
     return rows
-        .map((r) => CustomerRef(id: r['id'] as int, name: r['name'] as String))
+        .map((r) => CatalogItem(
+            id: r['id'] as int,
+            name: r['name'] as String,
+            points: (r['points'] as num?)?.toDouble() ?? 0))
         .toList();
   }
 

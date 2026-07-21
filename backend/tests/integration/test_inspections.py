@@ -26,6 +26,33 @@ def _payload(**over):
     return base
 
 
+def test_item_types_are_the_points_catalog(client, world, login):
+    h = login("rep_a")
+    r = client.get("/api/v1/inspections/item-types", headers=h)
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert len(rows) == 32  # the «حساب نقاط» sheet
+    names = {t["name"] for t in rows}
+    assert 'بطاريه50"*32"' in names
+    battery = next(t for t in rows if t["name"] == 'بطاريه50"*32"')
+    assert float(battery["points"]) == 10.0
+    # A fractional sixth is preserved at 4 decimals.
+    sixth = next(t for t in rows if "صرف 1" in t["name"])
+    assert abs(float(sixth["points"]) - (1 / 6)) < 0.0001
+
+
+def test_fractional_points_total_cleanly(client, world, login):
+    """Six 1/6-point pieces must total exactly 1.000 (no 0.167×6 drift)."""
+    h = login("rep_a")
+    r = client.post("/api/v1/inspections", json={
+        "visit_kind": "technician", "inspection_date": "2026-07-20",
+        "owner_name": "عميل النقاط",
+        "items": [{"item_name": "قطعه صرف 1", "quantity": "6", "points": "0.1667"}],
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    assert float(r.json()["total_points"]) == 1.0
+
+
 def test_regular_visit_takes_the_customer_name(client, world, login, db):
     from src.services import customer_service
 
