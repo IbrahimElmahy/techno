@@ -18,8 +18,9 @@ class RegularVisitFormScreen extends StatefulWidget {
 
 class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   final _visitDetails = TextEditingController();
+  final _customerName = TextEditingController(); // free text: pick an existing one OR type a new
   DateTime _date = DateTime.now();
-  CustomerRef? _customer;
+  int? _customerId; // set only when an existing customer is picked
   final List<InspectionLine> _lines = [];
   bool _saving = false;
 
@@ -39,17 +40,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
-  Future<void> _pickCustomer() async {
-    final chosen = await showModalBottomSheet<CustomerRef>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (c) => const _CustomerPicker(),
-    );
-    if (chosen != null) setState(() => _customer = chosen);
-  }
-
   Future<void> _addItem() async {
     final line = await Navigator.push<InspectionLine>(
         context, MaterialPageRoute(builder: (_) => const ItemPickerScreen()));
@@ -67,9 +57,10 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   }
 
   Future<void> _save() async {
-    if (_customer == null) {
+    final name = _customerName.text.trim();
+    if (name.isEmpty) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('اختر العميل الأول')));
+          .showSnackBar(const SnackBar(content: Text('اكتب اسم العميل الأول')));
       return;
     }
     setState(() => _saving = true);
@@ -77,8 +68,8 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
       clientUuid: const Uuid().v4(),
       visitKind: 'regular',
       inspectionDate: intl.DateFormat('yyyy-MM-dd').format(_date),
-      ownerName: _customer!.name,
-      customerId: _customer!.id,
+      ownerName: name,
+      customerId: _customerId, // null for a new name typed freely
       visitDetails: _visitDetails.text.trim().isEmpty ? null : _visitDetails.text.trim(),
       lines: _lines,
     );
@@ -129,18 +120,80 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                     ),
                   ),
                   const Divider(),
-                  InkWell(
-                    onTap: _pickCustomer,
-                    child: _row(
-                      'العميل',
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(_customer?.name ?? 'اختر العميل',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: _customer == null ? Colors.grey : AppColors.primary)),
-                        const SizedBox(width: 6),
-                        const Icon(Icons.search, size: 18, color: AppColors.accent),
-                      ]),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          // Type the customer: existing ones appear as suggestions; a new name
+                          // is typed freely and just saved on the visit (no system record).
+                          child: Autocomplete<CustomerRef>(
+                            displayStringForOption: (c) => c.name,
+                            optionsBuilder: (value) async {
+                              final q = value.text.trim();
+                              if (q.length < 2) {
+                                return const Iterable<CustomerRef>.empty();
+                              }
+                              return LocalDb.instance.customers(query: q, limit: 8);
+                            },
+                            onSelected: (c) {
+                              _customerName.text = c.name;
+                              _customerId = c.id;
+                              setState(() {});
+                            },
+                            fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                              controller.text = _customerName.text;
+                              controller.selection = TextSelection.collapsed(
+                                  offset: controller.text.length);
+                              return TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                textAlign: TextAlign.right,
+                                onChanged: (v) {
+                                  _customerName.text = v;
+                                  _customerId = null; // typing a new/edited name unlinks
+                                },
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  border: InputBorder.none,
+                                  hintText: 'اكتب اسم العميل',
+                                  suffixIcon:
+                                      Icon(Icons.search, size: 18, color: AppColors.accent),
+                                ),
+                              );
+                            },
+                            optionsViewBuilder: (context, onSelected, options) => Align(
+                              alignment: Alignment.topRight,
+                              child: Material(
+                                elevation: 4,
+                                child: SizedBox(
+                                  width: MediaQuery.of(context).size.width - 60,
+                                  child: ListView(
+                                    padding: EdgeInsets.zero,
+                                    shrinkWrap: true,
+                                    children: [
+                                      for (final o in options)
+                                        ListTile(
+                                          dense: true,
+                                          leading: const Icon(Icons.person_outline,
+                                              color: AppColors.primary),
+                                          title: Text(o.name),
+                                          subtitle: (o.phone ?? '').isEmpty
+                                              ? null
+                                              : Text(o.phone!),
+                                          onTap: () => onSelected(o),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('العميل',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                      ],
                     ),
                   ),
                 ],
@@ -313,81 +366,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A searchable customer list, offline from the cache.
-class _CustomerPicker extends StatefulWidget {
-  const _CustomerPicker();
-
-  @override
-  State<_CustomerPicker> createState() => _CustomerPickerState();
-}
-
-class _CustomerPickerState extends State<_CustomerPicker> {
-  final _search = TextEditingController();
-  List<CustomerRef> _customers = [];
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load([String q = '']) async {
-    final rows = await LocalDb.instance.customers(query: q);
-    if (mounted) {
-      setState(() {
-        _customers = rows;
-        _loading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.75,
-        builder: (c, scroll) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: TextField(
-                controller: _search,
-                autofocus: true,
-                onChanged: _load,
-                decoration: const InputDecoration(
-                  hintText: 'ابحث بإسم العميل…',
-                  prefixIcon: Icon(Icons.search),
-                ),
-              ),
-            ),
-            Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _customers.isEmpty
-                      ? const Center(
-                          child: Text('مفيش عملاء — اعمل «تحديث الأصناف والقوائم»'))
-                      : ListView.separated(
-                          controller: scroll,
-                          itemCount: _customers.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (c, i) => ListTile(
-                            leading: const Icon(Icons.person_outline,
-                                color: AppColors.primary),
-                            title: Text(_customers[i].name),
-                            onTap: () => Navigator.pop(context, _customers[i]),
-                          ),
-                        ),
-            ),
-          ],
         ),
       ),
     );
