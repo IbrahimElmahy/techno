@@ -41,41 +41,70 @@ class AccountResolutionError(Exception):
     """Raised when a required account (e.g., a rep's custody) cannot be resolved."""
 
 
-def get_or_create_singleton(db: Session, account_type: AccountType) -> Account:
-    """Get-or-create the single owner-less account of a type (treasury / revenue / expense)."""
+def get_or_create_singleton(
+    db: Session, account_type: AccountType, *, branch_id: int | None = None
+) -> Account:
+    """Get-or-create the one owner-less system account of a type **for a branch** (024).
+
+    Each branch has its own treasury / revenue / purchases / equity. When no branch is given
+    the default (main) branch is used, which keeps the pre-multi-branch callers working
+    unchanged — and a legacy branch-less account is adopted into the main branch rather than
+    duplicated, so existing balances stay intact.
+    """
+    from src.services import org_service
+
+    bid = org_service.resolve_branch_id(db, branch_id)
     acc = db.scalar(
         select(Account).where(
-            Account.account_type == account_type, Account.owner_ref.is_(None)
+            Account.account_type == account_type,
+            Account.owner_ref.is_(None),
+            Account.branch_id == bid,
         )
     )
-    if acc is None:
-        acc = Account(
-            account_type=account_type, owner_ref=None, normal_side=NORMAL_SIDE[account_type]
+    if acc is not None:
+        return acc
+    # Adopt a pre-024 branch-less account into the main branch (never into a secondary branch).
+    if bid == org_service.default_branch(db).id:
+        legacy = db.scalar(
+            select(Account).where(
+                Account.account_type == account_type,
+                Account.owner_ref.is_(None),
+                Account.branch_id.is_(None),
+            )
         )
-        db.add(acc)
-        db.flush()
+        if legacy is not None:
+            legacy.branch_id = bid
+            db.flush()
+            return legacy
+    acc = Account(
+        account_type=account_type, owner_ref=None,
+        normal_side=NORMAL_SIDE[account_type], branch_id=bid,
+    )
+    db.add(acc)
+    db.flush()
     return acc
 
 
-def treasury_account(db: Session) -> Account:
-    return get_or_create_singleton(db, AccountType.treasury)
+def treasury_account(db: Session, *, branch_id: int | None = None) -> Account:
+    return get_or_create_singleton(db, AccountType.treasury, branch_id=branch_id)
 
 
-def sales_revenue_account(db: Session) -> Account:
-    return get_or_create_singleton(db, AccountType.sales_revenue)
+def sales_revenue_account(db: Session, *, branch_id: int | None = None) -> Account:
+    return get_or_create_singleton(db, AccountType.sales_revenue, branch_id=branch_id)
 
 
-def purchases_expense_account(db: Session) -> Account:
-    return get_or_create_singleton(db, AccountType.purchases_expense)
+def purchases_expense_account(db: Session, *, branch_id: int | None = None) -> Account:
+    return get_or_create_singleton(db, AccountType.purchases_expense, branch_id=branch_id)
 
 
-def loyalty_expense_account(db: Session) -> Account:
-    return get_or_create_singleton(db, AccountType.loyalty_expense)
+def loyalty_expense_account(db: Session, *, branch_id: int | None = None) -> Account:
+    return get_or_create_singleton(db, AccountType.loyalty_expense, branch_id=branch_id)
 
 
-def opening_balance_equity_account(db: Session) -> Account:
+def opening_balance_equity_account(db: Session, *, branch_id: int | None = None) -> Account:
     """The equity account that opening-balance entries offset against (005)."""
-    return get_or_create_singleton(db, AccountType.opening_balance_equity)
+    return get_or_create_singleton(
+        db, AccountType.opening_balance_equity, branch_id=branch_id)
 
 
 def resolve_cash_account(db: Session, *, role: RoleName, user_id: int) -> Account:

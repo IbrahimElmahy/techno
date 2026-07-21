@@ -75,6 +75,12 @@ class Account(Base):
     normal_side: Mapped[Direction] = mapped_column(Enum(Direction), nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
+    # Which branch this account belongs to (024 — multi-branch). Each branch has its own full
+    # chart; NULL only transiently before the startup backfill homes it to the main branch.
+    branch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("branch.id"), nullable=True, index=True
+    )
+
     # --- Chart of accounts columns (005, additive; nullable so legacy rows backfill) ---
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("account.id"), nullable=True, index=True

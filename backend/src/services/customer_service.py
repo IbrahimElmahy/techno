@@ -83,10 +83,19 @@ def create_customer(
     db.flush()
 
     # Receivable account is a normal-debit ledger account (assets increase on debit).
+    # It belongs to the customer's branch (024 — via his territory), so per-branch receivables
+    # aggregate correctly; falls back to the main branch when the territory has none.
+    from src.models.org import Territory
+    from src.services import org_service
+
+    territory = db.get(Territory, territory_id)
+    branch_id = org_service.resolve_branch_id(
+        db, territory.branch_id if territory is not None else None)
     account = Account(
         account_type=AccountType.customer_receivable,
         owner_ref=None,
         normal_side=Direction.debit,
+        branch_id=branch_id,
     )
     db.add(account)
     db.flush()

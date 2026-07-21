@@ -129,6 +129,7 @@ def create_app() -> FastAPI:
         _widen_columns(engine)
         _relax_configurable_enum_columns(engine)
         _relax_not_null(engine)
+        _backfill_branch(engine)
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
 
@@ -153,6 +154,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer", "markaz", "VARCHAR(120)"),
     ("customer", "address", "VARCHAR(240)"),
     ("item", "default_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
+    # 024: per-branch chart of accounts.
+    ("account", "branch_id", "BIGINT"),
     # 015: inspections deduct from the rep's custody when he holds one.
     ("inspection_item", "stock_movement_id", "BIGINT"),
     # 022: a regular visit links to a chosen customer.
@@ -253,6 +256,46 @@ def _relax_not_null(engine) -> None:
             logging.getLogger("uvicorn.error").info(
                 "relax not-null %s.%s skipped: %s", table, column, exc
             )
+
+
+def _backfill_branch(engine) -> None:
+    """Home every branch-less account to the company's main branch (024). Idempotent.
+
+    Runs once after the branch_id column is added: existing balances stay exactly where they
+    are — they just gain a branch — so a single-branch company behaves identically.
+    """
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import func, select, update
+
+    inspector = sa_inspect(engine)
+    tables = set(inspector.get_table_names())
+    if "account" not in tables or "branch" not in tables:
+        return
+    if "branch_id" not in {c["name"] for c in inspector.get_columns("account")}:
+        return
+    from src.core.db import SessionLocal
+    from src.models.ledger import Account
+    from src.services import org_service
+
+    db = SessionLocal()
+    try:
+        pending = db.scalar(
+            select(func.count()).select_from(Account).where(Account.branch_id.is_(None))
+        ) or 0
+        if not pending:
+            return
+        branch_id = org_service.default_branch(db).id
+        db.execute(update(Account).where(Account.branch_id.is_(None)).values(branch_id=branch_id))
+        db.commit()
+        logging.getLogger("uvicorn.error").info(
+            "multi-branch backfill: homed %s accounts to branch %s", pending, branch_id)
+    except Exception as exc:  # pragma: no cover — best-effort
+        db.rollback()
+        logging.getLogger("uvicorn.error").info("branch backfill skipped: %s", exc)
+    finally:
+        db.close()
 
 
 def _ensure_columns(engine) -> None:
