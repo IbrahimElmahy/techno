@@ -190,6 +190,30 @@ def bounce_cheque(db: Session, *, cheque_id: int, actor_user_id: int,
     return cheque
 
 
+def unsettle_cheque(db: Session, *, cheque_id: int, actor_user_id: int) -> Cheque:
+    """عكس تحصيل/صرف شيك — يعكس قيد التسوية ويرجّع الشيك «تحت التحصيل/الدفع».
+
+    A settled cheque cannot be edited (append-only), so undoing a mistaken collection means
+    reversing the settlement entry: the value leaves the treasury and returns to the holding
+    account, and the cheque is pending again — ready to re-settle or bounce.
+    """
+    cheque = db.get(Cheque, cheque_id)
+    if cheque is None:
+        raise ChequeError("الشيك غير موجود.")
+    if cheque.status != ChequeStatus.settled or cheque.settle_entry_id is None:
+        raise ChequeError("لا يمكن عكس التسوية إلا لشيك مُحصَّل أو مصروف.")
+    ledger_service.reverse_entry(db, original_id=cheque.settle_entry_id,
+                                 actor_user_id=actor_user_id)
+    cheque.settle_entry_id = None
+    cheque.settled_on = None
+    cheque.status = ChequeStatus.pending
+    db.flush()
+    audit_service.record(db, action="cheque.unsettle", actor_user_id=actor_user_id,
+                         entity_type="cheque", entity_id=cheque.id,
+                         before={"doc": cheque.document_number})
+    return cheque
+
+
 def cancel_cheque(db: Session, *, cheque_id: int, actor_user_id: int) -> Cheque:
     """إلغاء شيك لم يُحصَّل — يعكس قيد التسجيل."""
     cheque = db.get(Cheque, cheque_id)

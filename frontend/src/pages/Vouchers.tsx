@@ -864,9 +864,31 @@ const Vouchers: React.FC = () => {
                     },
                     {
                       title: '',
-                      width: 200,
+                      width: 240,
                       render: (_: any, c: any) =>
-                        c.status !== 'pending' ? null : (
+                        c.status === 'settled' ? (
+                          <Popconfirm
+                            title="عكس التحصيل؟"
+                            description="القيمة هترجع للحساب الوسيط وتخرج من الخزينة، والشيك يرجع تحت التحصيل."
+                            okText="عكس"
+                            cancelText="إلغاء"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={async () => {
+                              try {
+                                await api.post(`/api/v1/cheques/${c.id}/unsettle`);
+                                message.success('تم عكس التحصيل — الشيك رجع تحت التحصيل');
+                                loadCheques();
+                                loadTreasuries();
+                              } catch {
+                                /* interceptor */
+                              }
+                            }}
+                          >
+                            <Button size="small" icon={<UndoOutlined />}>
+                              {c.direction === 'incoming' ? 'عكس التحصيل' : 'عكس الصرف'}
+                            </Button>
+                          </Popconfirm>
+                        ) : c.status !== 'pending' ? null : (
                           <Space>
                             <Button
                               size="small"

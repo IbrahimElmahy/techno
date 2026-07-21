@@ -175,6 +175,22 @@ def bounce_cheque(
     return _out(c)
 
 
+@router.post("/cheques/{cheque_id}/unsettle", response_model=ChequeOut)
+def unsettle_cheque(
+    cheque_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> ChequeOut:
+    """عكس تحصيل/صرف شيك — القيمة ترجع للحساب الوسيط والشيك يرجع تحت التحصيل."""
+    _office_only(current)
+    try:
+        c = cheque_service.unsettle_cheque(db, cheque_id=cheque_id, actor_user_id=current.id)
+    except (ChequeError, LedgerError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _out(c)
+
+
 @router.post("/cheques/{cheque_id}/cancel", response_model=ChequeOut)
 def cancel_cheque(
     cheque_id: int,

@@ -119,6 +119,25 @@ def test_outgoing_cheque_pays_the_supplier_on_settlement(client, books):
     assert float(treasuries[books["main_id"]]["balance"]) == 19300.0
 
 
+def test_unsettle_returns_the_cheque_to_pending(client, books):
+    admin = books["admin"]
+    c = client.post("/api/v1/cheques", headers=admin, json={
+        "direction": "incoming", "cheque_number": "5599", "amount": "300",
+        "due_date": str(date.today()), "customer_id": books["customer_id"]}).json()
+    client.post(f"/api/v1/cheques/{c['id']}/settle", headers=admin, json={})
+    treasuries = {t["id"]: t for t in client.get("/api/v1/treasuries", headers=admin).json()}
+    assert float(treasuries[books["main_id"]]["balance"]) == 20300.0
+
+    u = client.post(f"/api/v1/cheques/{c['id']}/unsettle", headers=admin)
+    assert u.status_code == 200 and u.json()["status"] == "pending"
+    treasuries = {t["id"]: t for t in client.get("/api/v1/treasuries", headers=admin).json()}
+    assert float(treasuries[books["main_id"]]["balance"]) == 20000.0  # cash left again
+    # It can then be bounced (which a settled cheque could not).
+    assert client.post(f"/api/v1/cheques/{c['id']}/bounce", headers=admin).status_code == 200
+    # And a pending cheque cannot be unsettled.
+    assert client.post(f"/api/v1/cheques/{c['id']}/unsettle", headers=admin).status_code == 409
+
+
 def test_cancel_only_before_settlement(client, books):
     admin = books["admin"]
     c = client.post("/api/v1/cheques", headers=admin, json={
