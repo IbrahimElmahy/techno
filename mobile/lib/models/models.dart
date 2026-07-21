@@ -23,6 +23,12 @@ class CatalogItem {
       );
 }
 
+class CustomerRef {
+  final int id;
+  final String name;
+  const CustomerRef({required this.id, required this.name});
+}
+
 class LookupOption {
   final String category;
   final String value;
@@ -68,6 +74,7 @@ class Inspection {
   String? technicianPhone;
   String? purchaseShop;
   String? visitDetails;
+  int? customerId; // الزيارة العادية مرتبطة بعميل
   List<InspectionLine> lines;
   final bool synced;
   final String? documentNumber;
@@ -89,6 +96,7 @@ class Inspection {
     this.technicianPhone,
     this.purchaseShop,
     this.visitDetails,
+    this.customerId,
     List<InspectionLine>? lines,
     this.synced = false,
     this.documentNumber,
@@ -114,6 +122,7 @@ class Inspection {
         'technician_phone': technicianPhone,
         'purchase_shop': purchaseShop,
         'visit_details': visitDetails,
+        'customer_id': customerId,
         'items': [
           for (final l in lines)
             {

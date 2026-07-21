@@ -120,6 +120,17 @@ class ApiClient {
           )
       ]);
     }
+    // Customers for the regular-visit picker (cached so it works offline).
+    final custR = await http
+        .get(await _uri('/customers'), headers: headers)
+        .timeout(const Duration(seconds: 60));
+    if (custR.statusCode == 200) {
+      final rows = jsonDecode(utf8.decode(custR.bodyBytes)) as List;
+      await LocalDb.instance.replaceCustomers([
+        for (final c in rows) CustomerRef(id: c['id'] as int, name: c['name'] as String)
+      ]);
+    }
+
     await LocalDb.instance.setKv('last_pull', DateTime.now().toIso8601String());
   }
 

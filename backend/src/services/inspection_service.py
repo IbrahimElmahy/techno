@@ -90,17 +90,28 @@ def _points(value) -> Decimal:
 
 
 def create_inspection(
-    db: Session, *, visit_kind: VisitKind, inspection_date: date, owner_name: str,
+    db: Session, *, visit_kind: VisitKind, inspection_date: date, owner_name: str | None,
     rep_user_id: int, actor_user_id: int, lines: list[LineIn],
     owner_phone: str | None = None, national_id: str | None = None,
     owner_address: str | None = None, floor_number: str | None = None,
     description: str | None = None, inspection_type: str | None = None,
     technician_name: str | None = None, technician_phone: str | None = None,
     purchase_shop: str | None = None, visit_details: str | None = None,
-    client_uuid: str | None = None,
+    customer_id: int | None = None, client_uuid: str | None = None,
 ) -> Inspection:
-    if not owner_name or not owner_name.strip():
-        raise InspectionError("Owner name is required.")
+    # A regular visit is tied to a chosen customer; its owner_name is filled from the customer,
+    # so a technician inspection needs a typed owner while a regular visit needs a customer.
+    name = (owner_name or "").strip()
+    if customer_id is not None:
+        from src.models.customer import Customer
+
+        customer = db.get(Customer, customer_id)
+        if customer is None:
+            raise InspectionError("العميل غير موجود.")
+        if not name:
+            name = customer.name
+    if not name:
+        raise InspectionError("اسم صاحب الزيارة (أو العميل) مطلوب.")
 
     # Idempotent sync: the device retries whole batches — an already-synced UUID is a no-op.
     if client_uuid:
@@ -110,8 +121,8 @@ def create_inspection(
 
     insp = Inspection(
         document_number=_doc_number(db), certificate_number=_next_certificate_number(db),
-        client_uuid=client_uuid, visit_kind=visit_kind,
-        inspection_date=inspection_date, owner_name=owner_name.strip(), owner_phone=owner_phone,
+        client_uuid=client_uuid, visit_kind=visit_kind, customer_id=customer_id,
+        inspection_date=inspection_date, owner_name=name, owner_phone=owner_phone,
         national_id=national_id, owner_address=owner_address, floor_number=floor_number,
         description=description, inspection_type=inspection_type,
         technician_name=technician_name, technician_phone=technician_phone,

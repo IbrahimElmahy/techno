@@ -13,10 +13,15 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 2, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 3, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
+      }
+      if (from < 3) {
+        // v3: cached customers + the regular visit's customer link.
+        await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT)');
+        await d.execute('ALTER TABLE inspection ADD COLUMN customer_id INTEGER');
       }
     }, onCreate: (d, v) async {
       await d.execute('''
@@ -30,11 +35,13 @@ class LocalDb {
           description TEXT, inspection_type TEXT,
           technician_name TEXT, technician_phone TEXT,
           purchase_shop TEXT, visit_details TEXT,
+          customer_id INTEGER,
           total_points REAL NOT NULL DEFAULT 0,
           synced INTEGER NOT NULL DEFAULT 0,
           document_number TEXT,
           created_at TEXT NOT NULL
         )''');
+      await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT)');
       await d.execute('''
         CREATE TABLE inspection_line(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +110,30 @@ class LocalDb {
     return rows.map(LookupOption.fromRow).toList();
   }
 
+  // --- customers cache (for the regular visit picker, offline) ---
+  Future<void> replaceCustomers(List<CustomerRef> customers) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('customer');
+      final batch = tx.batch();
+      for (final c in customers) {
+        batch.insert('customer', {'id': c.id, 'name': c.name});
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<CustomerRef>> customers({String query = ''}) async {
+    final d = await db;
+    final rows = query.isEmpty
+        ? await d.query('customer', orderBy: 'name')
+        : await d.query('customer',
+            where: 'name LIKE ?', whereArgs: ['%$query%'], orderBy: 'name');
+    return rows
+        .map((r) => CustomerRef(id: r['id'] as int, name: r['name'] as String))
+        .toList();
+  }
+
   // --- inspections ---
   Future<int> saveInspection(Inspection insp) async {
     final d = await db;
@@ -122,6 +153,7 @@ class LocalDb {
         'technician_phone': insp.technicianPhone,
         'purchase_shop': insp.purchaseShop,
         'visit_details': insp.visitDetails,
+        'customer_id': insp.customerId,
         'total_points': insp.totalPoints,
         'synced': 0,
         'created_at': DateTime.now().toIso8601String(),
@@ -187,6 +219,7 @@ class LocalDb {
       technicianPhone: r['technician_phone'] as String?,
       purchaseShop: r['purchase_shop'] as String?,
       visitDetails: r['visit_details'] as String?,
+      customerId: r['customer_id'] as int?,
       lines: [
         for (final l in lineRows)
           InspectionLine(

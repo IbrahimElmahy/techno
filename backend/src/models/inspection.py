@@ -41,7 +41,11 @@ class Inspection(Base):
     )
     inspection_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    # صاحب الشقة / المالك
+    # الزيارة العادية مرتبطة بعميل مختار من النظام؛ معاينة الفنيين تكتب اسم المالك يدويًا.
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True,
+                                                    index=True)
+
+    # صاحب الشقة / المالك (أو اسم العميل في الزيارة العادية)
     owner_name: Mapped[str] = mapped_column(String(160), nullable=False)
     owner_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     national_id: Mapped[str | None] = mapped_column(String(20), nullable=True)   # رقم البطاقة

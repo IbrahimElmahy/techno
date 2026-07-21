@@ -155,6 +155,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("item", "default_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     # 015: inspections deduct from the rep's custody when he holds one.
     ("inspection_item", "stock_movement_id", "BIGINT"),
+    # 022: a regular visit links to a chosen customer.
+    ("inspection", "customer_id", "BIGINT"),
     # 021: opt-in VAT (rate 0 = off) and the tax charged on each sale.
     ("sales_setting", "vat_rate_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     ("sales_invoice", "tax_amount", "NUMERIC(18,2) NOT NULL DEFAULT 0"),

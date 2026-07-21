@@ -26,6 +26,33 @@ def _payload(**over):
     return base
 
 
+def test_regular_visit_takes_the_customer_name(client, world, login, db):
+    from src.services import customer_service
+
+    result = customer_service.create_customer(
+        db, name="عميل الزيارة العادية", customer_type="trader", rep_id=world["rep_a"],
+        territory_id=world["terr_a"], phone=None, actor_user_id=world["admin"])
+    db.commit()
+    h = login("rep_a")
+    # No owner_name typed — the regular visit fills it from the customer.
+    r = client.post("/api/v1/inspections", json={
+        "visit_kind": "regular", "inspection_date": "2026-07-20",
+        "customer_id": result.customer.id, "visit_details": "زيارة متابعة",
+        "items": [{"item_name": "خرطوم", "quantity": "1", "points": "0"}],
+    }, headers=h)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["customer_id"] == result.customer.id
+    assert body["owner_name"] == "عميل الزيارة العادية"
+
+
+def test_visit_without_owner_or_customer_is_rejected(client, world, login):
+    h = login("rep_a")
+    r = client.post("/api/v1/inspections", json={
+        "visit_kind": "regular", "inspection_date": "2026-07-20", "items": []}, headers=h)
+    assert r.status_code == 409
+
+
 def test_rep_creates_inspection_with_totals(client, world, login):
     h = login("rep_a")
     r = client.post("/api/v1/inspections", json=_payload(), headers=h)

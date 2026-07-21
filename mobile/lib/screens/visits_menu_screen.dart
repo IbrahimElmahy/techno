@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import 'inspection_form_screen.dart';
+import 'regular_visit_form_screen.dart';
 
 class VisitsMenuScreen extends StatelessWidget {
   const VisitsMenuScreen({super.key});
@@ -32,7 +33,7 @@ class VisitsMenuScreen extends StatelessWidget {
             onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                    builder: (_) => const InspectionFormScreen(visitKind: 'regular'))),
+                    builder: (_) => const RegularVisitFormScreen())),
           ),
         ],
       ),
