@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, Select, Switch, Tag, message } from 'antd';
-import { UserAddOutlined, SwapOutlined, EditOutlined, PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Statistic, Switch, Table, Tag, message,
+} from 'antd';
+import {
+  UserAddOutlined, PlusOutlined, MinusCircleOutlined,
+  SearchOutlined, ClearOutlined, DeleteOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { useNavigate } from 'react-router-dom';
 
 interface CustomerRecord {
   id: number;
@@ -20,6 +26,17 @@ interface CustomerRecord {
   territory_id: number;
   default_price_tier: string | null;
   active: boolean;
+  balance?: string | null;   // receivable balance, sent with the list (one grouped query)
+}
+
+interface Filters {
+  q?: string;
+  customer_type?: string;
+  rep_id?: number;
+  territory_id?: number;
+  governorate_id?: number;
+  active?: boolean;
+  balance_filter?: string;
 }
 
 interface Governorate {
@@ -65,22 +82,15 @@ const ExtraPhonesList = () => (
   </Form.List>
 );
 
-// Sub-component to fetch and render customer ledger balance dynamically per row (thin client)
-const CustomerBalance = ({ customerId }: { customerId: number }) => {
-  const [balance, setBalance] = useState<string>('...');
-  
-  useEffect(() => {
-    api.get(`/api/v1/customers/${customerId}/account`)
-      .then((res) => {
-        setBalance(parseFloat(res.data.balance).toLocaleString('ar-EG', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        }));
-      })
-      .catch(() => setBalance('خطأ'));
-  }, [customerId]);
+const money = (v: any) =>
+  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  return <span style={{ fontWeight: 'bold' }}>{balance} ج.م</span>;
+// The list endpoint now carries each customer's balance (one grouped query on the server),
+// so the grid no longer fires a request per row.
+const CustomerBalance = ({ value }: { value?: string | null }) => {
+  const n = Number(value || 0);
+  const color = n > 0 ? '#cf1322' : n < 0 ? '#1677ff' : undefined;
+  return <span style={{ fontWeight: 'bold', color }}>{money(n)} ج.م</span>;
 };
 
 export default function Customers() {
@@ -92,20 +102,23 @@ export default function Customers() {
   const [governorates, setGovernorates] = useState<Governorate[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [reassignVisible, setReassignVisible] = useState(false);
-  const [editVisible, setEditVisible] = useState(false);
-  const [editing, setEditing] = useState<CustomerRecord | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
+  const [filters, setFilters] = useState<Filters>({});
+  const [search, setSearch] = useState('');           // typed text, applied on Enter/button
+  const navigate = useNavigate();
 
   const [form] = Form.useForm();
-  const [reassignForm] = Form.useForm();
-  const [editForm] = Form.useForm();
   const { user: currentUser } = useAuth();
 
-  const fetchCustomers = async () => {
+  // Filtering happens on the server so it covers ALL customers, not just the loaded page.
+  const fetchCustomers = async (override?: Filters) => {
+    const active = override ?? filters;
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/customers');
+      const params: any = {};
+      Object.entries(active).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') params[k] = v;
+      });
+      const res = await api.get('/api/v1/customers', { params });
       setCustomers(res.data);
     } catch (err) {
       console.error(err);
@@ -113,6 +126,27 @@ export default function Customers() {
       setLoading(false);
     }
   };
+
+  const setFilter = (key: keyof Filters, value: any) => {
+    const next = { ...filters, [key]: value };
+    setFilters(next);
+    fetchCustomers(next);
+  };
+
+  const applySearch = () => setFilter('q', search.trim() || undefined);
+
+  const resetFilters = () => {
+    setSearch('');
+    setFilters({});
+    fetchCustomers({});
+  };
+
+  // Live summary of whatever the current filter returned.
+  const summary = useMemo(() => {
+    const total = customers.reduce((s, c) => s + Number(c.balance || 0), 0);
+    const debtors = customers.filter((c) => Number(c.balance || 0) > 0).length;
+    return { count: customers.length, total, debtors };
+  }, [customers]);
 
   const fetchLookups = async () => {
     try {
@@ -156,61 +190,7 @@ export default function Customers() {
     }
   };
 
-  const onReassign = async (values: any) => {
-    if (!selectedCustomer) return;
-    try {
-      await api.post(`/api/v1/customers/${selectedCustomer.id}/reassign`, {
-        new_rep_id: values.new_rep_id,
-        new_territory_id: values.new_territory_id,
-      });
-      message.success('تمت إعادة تعيين العميل والمندوب بنجاح');
-      setReassignVisible(false);
-      reassignForm.resetFields();
-      fetchCustomers();
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
-  const openEdit = (record: CustomerRecord) => {
-    setEditing(record);
-    editForm.setFieldsValue({
-      name: record.name,
-      phone: record.phone,
-      customer_type: record.customer_type,
-      default_price_tier: record.default_price_tier ?? undefined,
-      active: record.active,
-      governorate_id: record.governorate_id ?? undefined,
-      markaz: record.markaz ?? undefined,
-      address: record.address ?? undefined,
-      phones: record.phones ?? [],
-    });
-    setEditVisible(true);
-  };
-
-  const onEditCustomer = async (values: any) => {
-    if (!editing) return;
-    try {
-      await api.patch(`/api/v1/customers/${editing.id}`, {
-        name: values.name,
-        phone: values.phone,
-        customer_type: values.customer_type,
-        default_price_tier: values.default_price_tier ?? null,
-        active: values.active,
-        governorate_id: values.governorate_id ?? null,
-        markaz: values.markaz ?? null,
-        address: values.address ?? null,
-        phones: cleanPhones(values.phones),
-      });
-      message.success('تم تحديث بيانات العميل بنجاح');
-      setEditVisible(false);
-      setEditing(null);
-      editForm.resetFields();
-      fetchCustomers();
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const onDeactivate = (record: CustomerRecord) => {
     showDeactivationConfirm({
@@ -220,6 +200,27 @@ export default function Customers() {
         try {
           await api.delete(`/api/v1/customers/${record.id}`);
           message.success('تم إلغاء تفعيل العميل');
+          fetchCustomers();
+        } catch (err) {
+          console.error(err);
+        }
+      },
+    });
+  };
+
+  // Permanent delete. The server refuses when the customer has any movement (invoices,
+  // receipts, ledger lines…) and tells the user to deactivate instead.
+  const onDelete = (record: CustomerRecord) => {
+    Modal.confirm({
+      title: 'حذف العميل نهائياً',
+      content: `سيتم حذف العميل "${record.name}" نهائياً. لا يمكن الحذف إذا كانت عليه أي حركة — عندها استخدم «إلغاء التفعيل».`,
+      okText: 'حذف نهائي',
+      okButtonProps: { danger: true },
+      cancelText: 'إلغاء',
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/customers/${record.id}?hard=true`);
+          message.success('تم حذف العميل');
           fetchCustomers();
         } catch (err) {
           console.error(err);
@@ -239,6 +240,7 @@ export default function Customers() {
       title: 'اسم العميل',
       dataIndex: 'name',
       key: 'name',
+      render: (name: string) => <span style={{ fontWeight: 600 }}>{name}</span>,
     },
     {
       title: 'نوع العميل',
@@ -279,35 +281,24 @@ export default function Customers() {
     {
       title: 'رصيد المديونية (الذمة)',
       key: 'balance',
-      render: (_: any, record: CustomerRecord) => <CustomerBalance customerId={record.id} />,
+      render: (_: any, record: CustomerRecord) => <CustomerBalance value={record.balance} />,
+      sorter: (a: CustomerRecord, b: CustomerRecord) =>
+        Number(a.balance || 0) - Number(b.balance || 0),
     },
     {
       title: 'الإجراءات',
       key: 'actions',
+      // Row clicks open the customer file, so the buttons must not bubble up to it.
       render: (_: any, record: CustomerRecord) => (
-        <Space size="middle">
-          <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
-            تعديل
-          </Button>
-          <Button
-            type="dashed"
-            icon={<SwapOutlined />}
-            onClick={() => {
-              setSelectedCustomer(record);
-              reassignForm.setFieldsValue({
-                new_rep_id: record.rep_id,
-                new_territory_id: record.territory_id,
-              });
-              setReassignVisible(true);
-            }}
-          >
-            إعادة تعيين
-          </Button>
+        <Space size="middle" onClick={(e) => e.stopPropagation()}>
           {record.active && (
-            <Button type="link" danger onClick={() => onDeactivate(record)}>
+            <Button type="link" onClick={() => onDeactivate(record)}>
               إلغاء تفعيل
             </Button>
           )}
+          <Button type="link" danger icon={<DeleteOutlined />} onClick={() => onDelete(record)}>
+            حذف
+          </Button>
         </Space>
       ),
     },
@@ -323,20 +314,107 @@ export default function Customers() {
           </Button>
         }
       >
+        {/* --- Search + filters (server-side, so they cover every customer) --- */}
+        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+          <Col xs={24} md={7}>
+            <Input
+              allowClear
+              value={search}
+              placeholder="بحث بالاسم أو الكود أو الهاتف أو العنوان"
+              prefix={<SearchOutlined />}
+              onChange={(e) => setSearch(e.target.value)}
+              onPressEnter={applySearch}
+              onBlur={applySearch}
+            />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear style={{ width: '100%' }} placeholder="التصنيف"
+              value={filters.customer_type}
+              onChange={(v) => setFilter('customer_type', v)}
+              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
+              value={filters.rep_id}
+              onChange={(v) => setFilter('rep_id', v)}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المحافظة"
+              value={filters.governorate_id}
+              onChange={(v) => setFilter('governorate_id', v)}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={governorates.map((g) => ({ value: g.id, label: g.name }))} />
+          </Col>
+          <Col xs={12} md={5}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المنطقة"
+              value={filters.territory_id}
+              onChange={(v) => setFilter('territory_id', v)}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={territories.map((t) => ({ value: t.id, label: t.name }))} />
+          </Col>
+          <Col xs={12} md={5}>
+            <Select allowClear style={{ width: '100%' }} placeholder="حالة الذمة"
+              value={filters.balance_filter}
+              onChange={(v) => setFilter('balance_filter', v)}
+              options={[
+                { value: 'debtors', label: 'عليه مديونية' },
+                { value: 'settled', label: 'مسدّد بالكامل' },
+                { value: 'credit', label: 'له رصيد (دائن)' },
+              ]} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear style={{ width: '100%' }} placeholder="الحالة"
+              value={filters.active as any}
+              onChange={(v) => setFilter('active', v)}
+              options={[
+                { value: true, label: 'نشط' },
+                { value: false, label: 'معطل' },
+              ]} />
+          </Col>
+          <Col xs={24} md={5}>
+            <Space>
+              <Button type="primary" icon={<SearchOutlined />} onClick={applySearch}>بحث</Button>
+              <Button icon={<ClearOutlined />} onClick={resetFilters}>مسح الفلاتر</Button>
+            </Space>
+          </Col>
+        </Row>
+
+        <Row gutter={12} style={{ marginBottom: 12 }}>
+          <Col xs={24} md={8}>
+            <Card size="small"><Statistic title="عدد العملاء الظاهرين" value={summary.count} /></Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card size="small">
+              <Statistic title="إجمالي المديونية" value={money(summary.total)} suffix="ج.م"
+                valueStyle={{ color: summary.total > 0 ? '#cf1322' : undefined }} />
+            </Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card size="small"><Statistic title="عملاء عليهم مديونية" value={summary.debtors} /></Card>
+          </Col>
+        </Row>
+
         <Table
           dataSource={customers}
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}` }}
+          // The whole row opens the customer file — no dedicated button needed.
+          onRow={(record) => ({
+            onClick: () => navigate(`/customers/${record.id}`),
+            style: { cursor: 'pointer' },
+          })}
         />
       </Card>
 
       {/* Add Customer Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title="إضافة عميل جديد"
         width={450}
-        onClose={() => setDrawerVisible(false)}
+        onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
@@ -427,125 +505,9 @@ export default function Customers() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
 
-      {/* Edit Customer Drawer */}
-      <Drawer
-        title={`تعديل بيانات العميل: ${editing?.name || ''}`}
-        width={450}
-        onClose={() => setEditVisible(false)}
-        open={editVisible}
-        destroyOnHidden
-      >
-        <Form form={editForm} layout="vertical" onFinish={onEditCustomer} requiredMark={false}>
-          <Form.Item
-            name="name"
-            label="اسم العميل (الكامل)"
-            rules={[{ required: true, message: 'يرجى إدخال اسم العميل!' }]}
-          >
-            <Input placeholder="مثال: شركة النور للسباكة" />
-          </Form.Item>
 
-          <Form.Item
-            name="customer_type"
-            label="تصنيف العميل"
-            rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}
-          >
-            <Select placeholder="اختر تصنيف العميل"
-              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
-          </Form.Item>
-
-          <Form.Item name="phone" label="رقم الهاتف">
-            <Input placeholder="مثال: 01000000000" />
-          </Form.Item>
-
-          <ExtraPhonesList />
-
-          <Form.Item name="governorate_id" label="المحافظة">
-            <Select allowClear showSearch placeholder="اختر المحافظة"
-              options={governorates.map((g) => ({ value: g.id, label: g.name }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
-          </Form.Item>
-
-          <Form.Item name="markaz" label="المركز">
-            <Input placeholder="مثال: مركز طنطا" />
-          </Form.Item>
-
-          <Form.Item name="address" label="العنوان">
-            <Input.TextArea rows={3} placeholder="مثال: 22 شارع سعد زغلول، بجوار مسجد النور" />
-          </Form.Item>
-
-          <Form.Item name="default_price_tier" label="الفئة السعرية الافتراضية"
-            extra="تُستخدم تلقائياً على فواتير هذا العميل (الافتراضي: مستهلك)">
-            <Select allowClear placeholder="مستهلك (افتراضي)">
-              {Object.entries(TIER_LABELS).map(([k, l]) => (
-                <Select.Option key={k} value={k}>{l}</Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="active" label="الحالة" valuePropName="checked">
-            <Switch checkedChildren="نشط" unCheckedChildren="معطل" />
-          </Form.Item>
-
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                حفظ التعديلات
-              </Button>
-              <Button onClick={() => setEditVisible(false)}>إلغاء</Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Drawer>
-
-      {/* Reassign Rep/Territory Side Drawer */}
-      <Drawer
-        title={`إعادة تعيين العميل: ${selectedCustomer?.name || ''}`}
-        width={450}
-        onClose={() => setReassignVisible(false)}
-        open={reassignVisible}
-        destroyOnHidden
-      >
-        <Form form={reassignForm} layout="vertical" onFinish={onReassign}>
-          <Form.Item
-            name="new_rep_id"
-            label="المندوب المسؤول الجديد"
-            rules={[{ required: true, message: 'يرجى تحديد المندوب الجديد!' }]}
-          >
-            <Select placeholder="اختر المندوب">
-              {reps.map((r) => (
-                <Select.Option key={r.id} value={r.id}>
-                  {r.full_name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="new_territory_id"
-            label="المنطقة الجغرافية الجديدة"
-            rules={[{ required: true, message: 'يرجى تحديد المنطقة الجديدة!' }]}
-          >
-            <Select placeholder="اختر المنطقة">
-              {territories.map((t) => (
-                <Select.Option key={t.id} value={t.id}>
-                  {t.name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                حفظ التعديلات
-              </Button>
-              <Button onClick={() => setReassignVisible(false)}>إلغاء</Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Drawer>
     </div>
   );
 }

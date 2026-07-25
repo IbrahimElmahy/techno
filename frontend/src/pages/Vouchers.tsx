@@ -17,6 +17,7 @@ import {
   Popconfirm,
   message,
   Descriptions,
+  Modal,
   Alert,
 } from 'antd';
 import {
@@ -29,6 +30,8 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { printDocument } from '../print/brand';
+import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
 import { useLookup } from '../hooks/useLookup';
 
 interface VoucherRecord {
@@ -129,6 +132,7 @@ const Vouchers: React.FC = () => {
   const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
   const [cheques, setCheques] = useState<any[]>([]);
   const [periodLock, setPeriodLock] = useState<string | null>(null);
+  const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
 
   const [receiptForm] = Form.useForm();
   const [paymentForm] = Form.useForm();
@@ -208,6 +212,29 @@ const Vouchers: React.FC = () => {
     return '—';
   };
 
+  // Map a voucher row onto the shared voucher sheet (same data on screen and in print).
+  const voucherDoc = (v: VoucherRecord | null): VoucherDoc | null => {
+    if (!v) return null;
+    const treasuryName = (id: any) => treasuries.find((t) => t.id === id)?.name ?? null;
+    const label = v.customer_id ? 'العميل' : v.supplier_id ? 'المورد'
+      : v.rep_user_id ? 'المندوب' : 'الطرف';
+    return {
+      kind: v.kind as VoucherDoc['kind'],
+      document_number: v.document_number,
+      date: v.voucher_date,
+      amount: v.amount,
+      partyLabel: label,
+      partyName: partyName(v),
+      treasury: treasuryName((v as any).treasury_id),
+      toTreasury: treasuryName((v as any).to_treasury_id),
+      paymentMethod: v.payment_method,
+      reference: v.reference,
+      description: v.description,
+      entryId: (v as any).ledger_entry_id ?? null,
+      isReversal: v.is_reversal,
+    };
+  };
+
   const submit = async (path: string, values: any, form: any, okMsg: string) => {
     setPosting(true);
     try {
@@ -280,35 +307,22 @@ const Vouchers: React.FC = () => {
           `<tr><td>${l.entry_date}</td><td>${ENTRY_TYPE_LABEL[l.entry_type] || l.entry_type}</td><td>${l.description || ''}</td><td>${money(l.debit)}</td><td>${money(l.credit)}</td><td>${money(l.balance)}</td></tr>`
       )
       .join('');
-    const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title>
-<style>
- body{font-family:'Segoe UI',Tahoma,sans-serif;padding:26px;color:#12303f}
- h1{color:#0e4c6d;font-size:22px;margin:0 0 4px}
- .sub{color:#5b7686;font-size:13px;margin-bottom:16px}
- table{width:100%;border-collapse:collapse;margin-top:12px}
- th{background:#0e4c6d;color:#fff;padding:8px;font-size:13px}
- td{border:1px solid #d5e2ea;padding:6px 8px;font-size:13px;text-align:center}
- tfoot td{font-weight:800;background:#f2f7fa}
- .open{margin-top:10px;font-weight:700}
- @media print{body{padding:0}}
-</style></head><body>
- <h1>تكنو ثيرم — ${title}</h1>
- <div class="sub">${stPartyLabel} • ${stRange?.[0] ? stRange[0].format('YYYY-MM-DD') : 'من البداية'} إلى ${stRange?.[1] ? stRange[1].format('YYYY-MM-DD') : 'اليوم'}</div>
- <div class="open">رصيد أول المدة: ${money(statement.opening_balance)}</div>
- <table>
-  <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
-  <tbody>${rows || '<tr><td colspan="6">لا توجد حركة</td></tr>'}</tbody>
-  <tfoot><tr><td colspan="3">الإجمالي</td><td>${money(statement.total_debit)}</td><td>${money(statement.total_credit)}</td><td>${money(statement.closing_balance)}</td></tr></tfoot>
- </table>
- <script>window.onload=function(){window.print()}</script>
-</body></html>`;
-    const win = window.open('', '_blank', 'width=1000,height=900');
-    if (!win) {
-      message.error('اسمح بفتح النوافذ المنبثقة للطباعة');
-      return;
-    }
-    win.document.write(html);
-    win.document.close();
+    printDocument(
+      {
+        title: `تكنو ثيرم — ${title}`,
+        meta: [
+          ['الطرف', stPartyLabel],
+          ['الفترة',
+            `${stRange?.[0] ? stRange[0].format('YYYY-MM-DD') : 'من البداية'} إلى ${stRange?.[1] ? stRange[1].format('YYYY-MM-DD') : 'اليوم'}`],
+          ['رصيد أول المدة', money(statement.opening_balance)],
+        ],
+      },
+      `<table class="grid">
+        <thead><tr><th>التاريخ</th><th>النوع</th><th>البيان</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">لا توجد حركة</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="3">الإجمالي</td><td>${money(statement.total_debit)}</td><td>${money(statement.total_credit)}</td><td>${money(statement.closing_balance)}</td></tr></tfoot>
+      </table>`,
+    );
   };
 
   const voucherColumns = [
@@ -333,11 +347,15 @@ const Vouchers: React.FC = () => {
     { title: 'البيان', dataIndex: 'description' },
     {
       title: '',
-      width: 110,
-      render: (_: any, r: VoucherRecord) =>
-        r.is_reversal ? (
-          <Tag>عكسي</Tag>
-        ) : (
+      width: 190,
+      render: (_: any, r: VoucherRecord) => (
+        <Space size={4}>
+          <Button size="small" icon={<PrinterOutlined />} onClick={() => setVoucherView(r)}>
+            عرض / طباعة
+          </Button>
+          {r.is_reversal ? (
+            <Tag>عكسي</Tag>
+          ) : (
           <Popconfirm
             title="عكس السند؟"
             description="هيتم عكس القيد وإرجاع الرصيد كما كان."
@@ -350,7 +368,9 @@ const Vouchers: React.FC = () => {
               عكس
             </Button>
           </Popconfirm>
-        ),
+          )}
+        </Space>
+      ),
     },
   ];
 
@@ -826,7 +846,7 @@ const Vouchers: React.FC = () => {
                   size="small"
                   style={{ marginTop: 20 }}
                   dataSource={cheques}
-                  pagination={{ pageSize: 15 }}
+                  pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                   columns={[
                     { title: 'المستند', dataIndex: 'document_number', width: 120 },
                     {
@@ -998,7 +1018,7 @@ const Vouchers: React.FC = () => {
                       rowKey={(r) => `${r.entry_id}-${r.entry_date}-${r.debit}-${r.credit}`}
                       loading={stLoading}
                       dataSource={statement.lines}
-                      pagination={{ pageSize: 25 }}
+                      pagination={{ defaultPageSize: 25, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                       size="small"
                       columns={[
                         { title: 'التاريخ', dataIndex: 'entry_date', width: 110 },
@@ -1067,10 +1087,23 @@ const Vouchers: React.FC = () => {
           loading={loading}
           dataSource={vouchers}
           columns={voucherColumns}
-          pagination={{ pageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
+          pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
           size="small"
         />
       </Card>
+
+      {/* The voucher itself — branded sheet with the amount in words, printable as-is. */}
+      <Modal
+        open={voucherView !== null}
+        title={`${voucherView ? VOUCHER_TITLES[voucherView.kind as VoucherDoc['kind']] : 'سند'} ${voucherView?.document_number ?? ''}`}
+        onCancel={() => setVoucherView(null)}
+        footer={voucherFooter(voucherDoc(voucherView), () => setVoucherView(null))}
+        width={760}
+        centered
+        destroyOnHidden
+      >
+        {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
+      </Modal>
     </div>
   );
 };

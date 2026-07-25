@@ -143,6 +143,7 @@ def create_app() -> FastAPI:
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("item", "default_warehouse_id", "BIGINT"),
+    ("sales_invoice_line", "discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order", "material_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order", "resource_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order_consumption", "waste_quantity", "NUMERIC(18,3) NOT NULL DEFAULT 0"),
@@ -172,6 +173,20 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("inspection", "status", "VARCHAR(12) NOT NULL DEFAULT 'accepted'"),
     ("inspection", "printed", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("inspection", "printed_at", "TIMESTAMP"),
+    # 028: standalone sales returns ("return like a sale, reversed") — the invoice link becomes
+    # optional and the return carries its own customer/location/cash + priced lines.
+    ("sales_return", "customer_id", "BIGINT"),
+    ("sales_return", "origin_location_kind", "VARCHAR(20)"),
+    ("sales_return", "origin_location_id", "BIGINT"),
+    ("sales_return", "gross", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
+    ("sales_return", "combined_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
+    ("sales_return", "tax_amount", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
+    ("sales_return", "cash_account_id", "BIGINT"),
+    ("sales_return_line", "unit_price", "NUMERIC(18,2)"),
+    ("sales_return_line", "discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
+    ("sales_return_line", "line_total", "NUMERIC(18,2)"),
+    ("sales_return_line", "unit", "VARCHAR(16)"),
+    ("sales_return_line", "unit_factor", "NUMERIC(18,3) NOT NULL DEFAULT 1"),
 ]
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).
@@ -225,6 +240,8 @@ _NULLABLE_FK_COLUMNS: list[tuple[str, str]] = [
     ("manufacturing_order", "stock_movement_id"),
     ("manufacturing_order_consumption", "stock_movement_id"),
     ("wastage_document", "stock_movement_id"),
+    # 028: standalone returns have no originating invoice.
+    ("sales_return", "sales_invoice_id"),
 ]
 
 

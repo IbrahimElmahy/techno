@@ -21,10 +21,17 @@ def on_sale_returned(db: Session, sales_return, invoice) -> None:
     point_service.reconcile_return(db, invoice.customer_id, sales_return.id)
 
 
+def on_standalone_return_created(db: Session, sales_return) -> None:
+    """028: a return with no originating invoice still removes the points the goods once earned."""
+    point_service.reverse_for_standalone_return(db, sales_return)
+    point_service.reconcile_return(db, sales_return.customer_id, sales_return.id)
+
+
 def register() -> None:
     """Idempotent subscription; called once at app startup."""
     hooks.subscribe("sale_created", on_sale_created)
     hooks.subscribe("sale_returned", on_sale_returned)
+    hooks.subscribe("standalone_return_created", on_standalone_return_created)
 
 
 register()

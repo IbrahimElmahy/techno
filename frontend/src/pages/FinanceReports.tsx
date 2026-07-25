@@ -18,6 +18,7 @@ import {
 import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { printDocument } from '../print/brand';
 
 interface ReportLine {
   account_id: number;
@@ -122,30 +123,18 @@ const FinanceReports: React.FC = () => {
     loadAll();
   }, [loadAll]);
 
+  // Every printed statement shares the company letterhead defined in print/brand.
   const printBlock = (title: string, bodyHtml: string) => {
-    const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>${title}</title>
-<style>
- body{font-family:'Segoe UI',Tahoma,sans-serif;padding:26px;color:#12303f}
- h1{color:#0e4c6d;font-size:21px;margin:0 0 4px}
- .sub{color:#5b7686;font-size:13px;margin-bottom:14px}
- table{width:100%;border-collapse:collapse;margin-top:10px}
- th{background:#0e4c6d;color:#fff;padding:7px;font-size:13px}
- td{border:1px solid #d5e2ea;padding:6px 8px;font-size:13px}
- td.num{text-align:left}
- tfoot td{font-weight:800;background:#f2f7fa}
- @media print{body{padding:0}}
-</style></head><body>
-<h1>تكنو ثيرم — ${title}</h1>
-<div class="sub">${range?.[0] ? range[0].format('YYYY-MM-DD') : 'من البداية'} إلى ${range?.[1] ? range[1].format('YYYY-MM-DD') : 'اليوم'}</div>
-${bodyHtml}
-<script>window.onload=function(){window.print()}</script></body></html>`;
-    const win = window.open('', '_blank', 'width=1000,height=900');
-    if (!win) {
-      message.error('اسمح بفتح النوافذ المنبثقة للطباعة');
-      return;
-    }
-    win.document.write(html);
-    win.document.close();
+    printDocument(
+      {
+        title: `تكنو ثيرم — ${title}`,
+        meta: [
+          ['الفترة',
+            `${range?.[0] ? range[0].format('YYYY-MM-DD') : 'من البداية'} إلى ${range?.[1] ? range[1].format('YYYY-MM-DD') : 'اليوم'}`],
+        ],
+      },
+      bodyHtml,
+    );
   };
 
   const linesTable = (rows: ReportLine[]) =>
@@ -297,7 +286,7 @@ ${bodyHtml}
                   size="small"
                   loading={loading}
                   dataSource={aging}
-                  pagination={{ pageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
+                  pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
                   columns={[
                     { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name' },
                     ...BUCKETS.map((b) => ({

@@ -114,6 +114,22 @@ def reverse_for_return(db: Session, sales_return, invoice) -> PointRecord | None
     )
 
 
+def reverse_for_standalone_return(db: Session, sales_return) -> PointRecord | None:
+    """Deduct points for a standalone return (028) — one that has no originating invoice, so there
+    is no earn record to link back to. Mirrors `reverse_for_return` but keyed to the return's own
+    customer + priced lines."""
+    r = _points(0)
+    for line in sales_return.lines:
+        r += _point_value(db, line.item_id) * Decimal(str(line.quantity))
+    r = _points(r)
+    if r <= 0:
+        return None
+    return _post_record(
+        db, customer_id=sales_return.customer_id, kind=PointKind.reverse, delta=-r,
+        sales_return_id=sales_return.id,
+    )
+
+
 def reconcile_return(db: Session, customer_id: int, sales_return_id: int) -> None:
     """Q3 hybrid (T036): if the reversal drove the balance negative because points were already
     consumed, void unredeemed coupons to reclaim points. Any residual negative is owed points from

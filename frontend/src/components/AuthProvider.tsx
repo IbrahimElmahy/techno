@@ -1,5 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Spin } from 'antd';
+import { api } from '../api/client';
+
+// A session that never interrupts work: the token is long-lived on the server, and we
+// re-issue it on every app load and every few hours while the tab stays open. So anyone
+// who keeps using the system stays signed in indefinitely.
+const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
 export type RoleName = 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant';
 
@@ -51,8 +57,28 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     };
 
     window.addEventListener('api-unauthorized', handleUnauthorized);
+
+    // Slide the session forward: once now (so a tab reopened after days gets a fresh token)
+    // and then on a timer while the app stays open.
+    const renew = async () => {
+      if (!localStorage.getItem('token')) return;
+      try {
+        const res = await api.post('/api/v1/auth/refresh');
+        if (res.data?.access_token) {
+          localStorage.setItem('token', res.data.access_token);
+          setToken(res.data.access_token);
+        }
+      } catch {
+        // A failed renewal is not a logout — the current token may still be valid, and the
+        // 401 interceptor already handles the case where it isn't.
+      }
+    };
+    renew();
+    const timer = window.setInterval(renew, REFRESH_EVERY_MS);
+
     return () => {
       window.removeEventListener('api-unauthorized', handleUnauthorized);
+      window.clearInterval(timer);
     };
   }, []);
 

@@ -48,6 +48,23 @@ def _warehouse(db: Session, name: str) -> Warehouse:
     return wh
 
 
+def _ensure_after_sales_user(db: Session) -> User:
+    """Create the after-sales rep the demo's plumber customers must belong to."""
+    from src.core.security import hash_password
+    from src.models.role import Role
+
+    role = db.scalar(select(Role).where(Role.name == RoleName.after_sales_staff))
+    if role is None:
+        role = Role(name=RoleName.after_sales_staff)
+        db.add(role)
+        db.flush()
+    user = User(username="aftersales", password_hash=hash_password("aftersales123"),
+                role_id=role.id, full_name="مندوب خدمة ما بعد البيع")
+    db.add(user)
+    db.flush()
+    return user
+
+
 def _supplier(db: Session, name: str, phone: str) -> Supplier:
     acc = Account(account_type=AccountType.supplier_payable, normal_side=Direction.credit)
     db.add(acc)
@@ -80,6 +97,10 @@ def seed_demo(db: Session) -> dict:
     admin = db.scalar(select(User).where(User.username == "admin"))
     rep = db.scalar(select(User).where(User.username == "rep"))
     after_sales = db.scalar(select(User).where(User.username == "aftersales"))
+    if after_sales is None:
+        # A plumber customer must be owned by after-sales staff; on a database that only ran
+        # the base seed that user does not exist yet, and the whole demo seed used to abort.
+        after_sales = _ensure_after_sales_user(db)
     territory = db.scalar(select(Territory))
     actor = admin.id
 

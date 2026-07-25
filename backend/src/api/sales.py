@@ -5,7 +5,9 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from datetime import date
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -22,7 +24,7 @@ from src.models.sales import SalesInvoice, SalesReturn
 from src.models.stock import LocationKind
 from src.models.warehouse import Custody
 from src.services import sales_service
-from src.services.sales_service import SaleLine, SalesError
+from src.services.sales_service import ReturnLine, SaleLine, SalesError
 from src.services.stock_service import StockError
 
 router = APIRouter(tags=["sales"], prefix="/sales")
@@ -40,6 +42,7 @@ class SaleLineIn(BaseModel):
     unit_price: Decimal | None = None      # (007) manual price; below tier needs sell.below_price
     unit: str | None = None                # (008) unit of measure; None = base
     serials: list[str] | None = None       # (009) serials for a serialized item
+    discount_pct: Decimal | None = None    # (027) per-line discount; None = item's fixed default
 
 
 class SaleCreate(BaseModel):
@@ -61,6 +64,23 @@ class ReturnCreate(BaseModel):
     lines: list[ReturnLineIn]
 
 
+class StandaloneReturnLineIn(BaseModel):
+    item_id: int
+    quantity: Decimal
+    unit_price: Decimal                    # refunded price per unit (defaults to last sold price)
+    unit: str | None = None                # (008) unit of measure; None = base
+    discount_pct: Decimal | None = None    # (027) per-line discount; None = 0
+
+
+class StandaloneReturnCreate(BaseModel):
+    customer_id: int
+    origin: LocationIn
+    variable_discount_pct: Decimal = Decimal("0")
+    cash_refund: Decimal = Decimal("0")
+    credit_reduction: Decimal = Decimal("0")
+    lines: list[StandaloneReturnLineIn]
+
+
 class SalesInvoiceOut(BaseModel):
     id: int
     document_number: str
@@ -72,12 +92,14 @@ class SalesInvoiceOut(BaseModel):
     credit_amount: Decimal
     cash_account_id: int
     ledger_entry_id: int
+    created_at: str | None = None
 
 
 class InvoiceLineOut(BaseModel):
     item_id: int
     quantity: Decimal
     unit_price: Decimal
+    discount_pct: Decimal | None = None
     line_total: Decimal
     price_tier: PriceTier | None = None
     unit: str | None = None
@@ -122,7 +144,8 @@ def create_sale(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
             origin_location_id=body.origin.location_id, variable_discount_pct=body.variable_discount_pct,
             cash_amount=body.cash_amount, credit_amount=body.credit_amount,
-            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials)
+            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials,
+                            l.discount_pct)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
         )
@@ -140,20 +163,145 @@ def _inv_out(inv: SalesInvoice) -> SalesInvoiceOut:
         gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net, cash_amount=inv.cash_amount,
         credit_amount=inv.credit_amount, cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
+        created_at=str(inv.created_at) if inv.created_at else None,
     )
 
 
 @router.get("", response_model=list[SalesInvoiceOut])
 def list_sales(
+    q: str | None = None,
+    customer_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    payment: str | None = None,   # cash | credit | partial
     current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
     db: Session = Depends(get_db),
 ) -> list[SalesInvoiceOut]:
+    """List sales invoices with search + filters, newest first."""
     stmt = select(SalesInvoice)
     if current.rep_id is not None:
         stmt = stmt.where(SalesInvoice.customer_id.in_(
             select(Customer.id).where(Customer.rep_id == current.rep_id)
         ))
-    return [_inv_out(i) for i in db.scalars(stmt).all()]
+    if q:
+        stmt = stmt.where(SalesInvoice.document_number.like(f"%{q.strip()}%"))
+    if customer_id is not None:
+        stmt = stmt.where(SalesInvoice.customer_id == customer_id)
+    if date_from is not None:
+        stmt = stmt.where(func.date(SalesInvoice.created_at) >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(func.date(SalesInvoice.created_at) <= date_to)
+    if payment == "cash":       # fully paid (nothing on credit)
+        stmt = stmt.where(SalesInvoice.credit_amount == 0)
+    elif payment == "credit":   # fully on credit (nothing paid)
+        stmt = stmt.where(SalesInvoice.cash_amount == 0)
+    elif payment == "partial":  # a mix
+        stmt = stmt.where(SalesInvoice.cash_amount > 0, SalesInvoice.credit_amount > 0)
+    return [_inv_out(i) for i in db.scalars(stmt.order_by(SalesInvoice.id.desc())).all()]
+
+
+# --- Standalone returns (028): "return like a sale, reversed" ---------------------------------
+# Declared BEFORE /{sale_id} so the literal "returns"/"customer-item-history" paths win over the
+# int path param.
+
+def _standalone_return_out(r: SalesReturn) -> dict:
+    return {
+        "id": r.id, "document_number": r.document_number, "customer_id": r.customer_id,
+        "gross": str(r.gross), "combined_pct": str(r.combined_pct), "net": str(r.value),
+        "tax_amount": str(r.tax_amount), "cash_refund": str(r.cash_refund),
+        "credit_reduction": str(r.credit_reduction), "ledger_entry_id": r.ledger_entry_id,
+        "created_at": str(r.created_at) if r.created_at else None,
+    }
+
+
+@router.get("/customer-item-history", response_model=dict)
+def customer_item_history(
+    customer_id: int,
+    item_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Last price this customer paid for this item + short purchase history (028). Empty if never
+    bought — the return line then just keeps its typed price."""
+    data = sales_service.last_sold_price(db, customer_id=customer_id, item_id=item_id)
+    return data or {"last_price": None, "history": []}
+
+
+@router.get("/returns", response_model=list[dict])
+def list_standalone_returns(
+    q: str | None = None,
+    customer_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """List standalone sales returns (customer-based), newest first."""
+    stmt = select(SalesReturn).where(SalesReturn.customer_id.isnot(None))
+    if current.rep_id is not None:
+        stmt = stmt.where(SalesReturn.customer_id.in_(
+            select(Customer.id).where(Customer.rep_id == current.rep_id)
+        ))
+    if q:
+        stmt = stmt.where(SalesReturn.document_number.like(f"%{q.strip()}%"))
+    if customer_id is not None:
+        stmt = stmt.where(SalesReturn.customer_id == customer_id)
+    if date_from is not None:
+        stmt = stmt.where(func.date(SalesReturn.created_at) >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(func.date(SalesReturn.created_at) <= date_to)
+    return [_standalone_return_out(r) for r in db.scalars(stmt.order_by(SalesReturn.id.desc())).all()]
+
+
+@router.post("/returns", response_model=dict, status_code=status.HTTP_201_CREATED)
+def create_standalone_return(
+    body: StandaloneReturnCreate,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    _rep_scope_check(db, current, body.customer_id, body.origin)
+    try:
+        ret = sales_service.create_standalone_return(
+            db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
+            origin_location_id=body.origin.location_id,
+            variable_discount_pct=body.variable_discount_pct,
+            cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
+            lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct)
+                   for l in body.lines],
+            actor_role=current.role, actor_user_id=current.id,
+        )
+    except SalesError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "return_invalid", "message": str(exc)})
+    except StockError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "no_negative_stock", "message": str(exc)})
+    db.commit()
+    return _standalone_return_out(ret)
+
+
+@router.get("/returns/{return_id}", response_model=dict)
+def get_standalone_return(
+    return_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    r = db.get(SalesReturn, return_id)
+    if r is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Return not found"})
+    out = _standalone_return_out(r)
+    out["origin_location_kind"] = r.origin_location_kind.value if r.origin_location_kind else None
+    out["origin_location_id"] = r.origin_location_id
+    out["lines"] = [
+        {
+            "item_id": ln.item_id, "quantity": str(ln.quantity),
+            "unit_price": str(ln.unit_price) if ln.unit_price is not None else None,
+            "discount_pct": str(ln.discount_pct), "unit": ln.unit,
+            "line_total": str(ln.line_total) if ln.line_total is not None else None,
+        }
+        for ln in r.lines
+    ]
+    return out
 
 
 @router.get("/{sale_id}", response_model=SalesInvoiceDetail)
@@ -181,6 +329,7 @@ def get_sale(
                 item_id=line.item_id,
                 quantity=line.quantity,
                 unit_price=line.unit_price,
+                discount_pct=line.discount_pct,
                 line_total=line.line_total,
                 price_tier=line.price_tier,
                 unit=line.unit,

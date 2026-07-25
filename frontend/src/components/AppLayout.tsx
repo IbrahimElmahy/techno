@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Button, Breadcrumb, theme, Dropdown, Space, Avatar, Modal, Result } from 'antd';
+import { Layout, Menu, Button, Tabs, theme, Dropdown, Space, Avatar, Modal, Result } from 'antd';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -10,6 +10,7 @@ import {
   ApartmentOutlined,
   DollarOutlined,
   FileTextOutlined,
+  RollbackOutlined,
   SettingOutlined,
   MobileOutlined,
   DatabaseOutlined,
@@ -20,8 +21,10 @@ import {
   GiftOutlined,
   BookOutlined,
 } from '@ant-design/icons';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth, RoleName } from './AuthProvider';
+import Logo from './Logo';
+import { useTabs } from './TabsContext';
+import TabWorkspace from './TabWorkspace';
 
 const { Header, Sider, Content } = Layout;
 
@@ -39,8 +42,7 @@ const ROLE_LABELS: Record<RoleName, string> = {
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
+  const { tabs, activeId, openTab, activateTab, closeTab } = useTabs();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -131,7 +133,13 @@ export default function AppLayout() {
     {
       key: '/invoices',
       icon: <FileTextOutlined />,
-      label: 'الفواتير والمرتجعات',
+      label: 'فواتير البيع',
+      roles: ['system_admin', 'branch_manager', 'sales_manager'],
+    },
+    {
+      key: '/returns',
+      icon: <RollbackOutlined />,
+      label: 'مرتجعات المبيعات',
       roles: ['system_admin', 'branch_manager', 'sales_manager'],
     },
     {
@@ -208,9 +216,13 @@ export default function AppLayout() {
     .filter((item) => item.roles.includes(userRole))
     .map(({ key, icon, label }) => ({ key, icon, label }));
 
+  // A menu click opens (or focuses) that section's tab.
   const handleMenuClick = ({ key }: { key: string }) => {
-    navigate(key);
+    openTab(key);
   };
+
+  // The active tab's base path drives the sidebar highlight.
+  const activeBase = activeId || '/dashboard';
 
   const userDropdownItems = [
     {
@@ -235,34 +247,11 @@ export default function AppLayout() {
     },
   ];
 
-  // Generate breadcrumb items based on current pathname
-  const pathSnippets = location.pathname.split('/').filter((i) => i);
-  const breadcrumbItems = [
-    {
-      key: 'home',
-      title: (
-        <span onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
-          الرئيسية
-        </span>
-      ),
-    },
-    ...pathSnippets.map((snippet, index) => {
-      const url = `/${pathSnippets.slice(0, index + 1).join('/')}`;
-      const menuItem = menuItems.find((item) => item.key === url);
-      const title = menuItem ? menuItem.label : snippet;
-      return {
-        key: url,
-        title: (
-          <span onClick={() => navigate(url)} style={{ cursor: 'pointer' }}>
-            {title}
-          </span>
-        ),
-      };
-    }),
-  ];
-
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    // The shell is exactly one viewport and never scrolls: the sidebar and the header stay
+    // put, and only the content box below scrolls. With `minHeight` the whole document
+    // scrolled instead, dragging the sidebar (logo included) out of view.
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       {!isOnline && (
         <div
           style={{
@@ -308,30 +297,26 @@ export default function AppLayout() {
       >
         {/* Flex column so the logo stays pinned and the menu scrolls when items overflow. */}
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {/* The brand mark itself — collapsed keeps just the house+leaf. */}
           <div
             className="logo"
             style={{
-              height: 64,
+              minHeight: 64,
               margin: 16,
               flexShrink: 0,
-              background: '#6AB42D',
-              color: '#fff',
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
-              borderRadius: 8,
-              fontSize: collapsed ? '16px' : '20px',
-              fontWeight: 'bold',
               transition: 'all 0.2s',
             }}
           >
-            {collapsed ? 'T' : 'Techno Therm'}
+            <Logo variant={collapsed ? 'mark' : 'full'} width={collapsed ? 40 : 168} />
           </div>
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
             <Menu
               theme="light"
               mode="inline"
-              selectedKeys={[location.pathname]}
+              selectedKeys={[activeBase]}
               items={filteredMenuItems}
               onClick={handleMenuClick}
               style={{ borderInlineEnd: 0 }}
@@ -339,9 +324,10 @@ export default function AppLayout() {
           </div>
         </div>
       </Sider>
-      <Layout>
+      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Header
           style={{
+            flexShrink: 0,
             padding: 0,
             background: colorBgContainer,
             display: 'flex',
@@ -370,18 +356,39 @@ export default function AppLayout() {
             </Dropdown>
           </div>
         </Header>
-        <Content style={{ margin: '16px 24px 0', display: 'flex', flexDirection: 'column' }}>
-          <Breadcrumb style={{ margin: '0 0 16px 0' }} items={breadcrumbItems} />
+        {/* minHeight:0 lets this flex child actually shrink, so the box below can scroll
+            instead of stretching the page. */}
+        <Content style={{
+          margin: '12px 24px 0', display: 'flex', flexDirection: 'column',
+          minHeight: 0, overflow: 'hidden',
+        }}>
+          {/* Chrome-style tab strip — one tab per open section, each keeps its page mounted. */}
+          <Tabs
+            hideAdd
+            type="editable-card"
+            size="small"
+            activeKey={activeId || undefined}
+            onChange={activateTab}
+            onEdit={(key, action) => { if (action === 'remove') closeTab(key as string); }}
+            style={{ flexShrink: 0 }}
+            items={tabs.map((t) => ({
+              key: t.id,
+              label: t.title,
+              closable: tabs.length > 1,
+            }))}
+          />
           <div
             style={{
               padding: 24,
               background: colorBgContainer,
               borderRadius: borderRadiusLG,
               flex: 1,
+              minHeight: 0,
               overflowY: 'auto',
+              marginBottom: 16,
             }}
           >
-            <Outlet />
+            <TabWorkspace />
           </div>
         </Content>
       </Layout>

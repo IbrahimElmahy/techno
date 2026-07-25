@@ -15,7 +15,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+pysqlite:///./ubms_dev.sqlite"
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
-    access_token_ttl: int = 1800  # seconds
+    # Office staff work all day in the system; a 30-minute token logged them out mid-invoice.
+    # The token is long-lived AND the client silently renews it (POST /auth/refresh), so an
+    # active user is never kicked out, while a stolen token still ages out on its own.
+    access_token_ttl: int = 30 * 24 * 3600  # seconds
     # Field reps work offline for long stretches; forcing a re-login at sync time loses momentum.
     # The mobile app requests this TTL by sending client="mobile" at login (30 days).
     mobile_token_ttl: int = 30 * 24 * 3600  # seconds

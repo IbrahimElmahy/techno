@@ -85,6 +85,28 @@ class ItemPrice(Base):
     price: Mapped[object] = mapped_column(MONEY, nullable=False)
 
 
+class ItemPriceHistory(Base):
+    """Every change to an item's prices, kept forever (027).
+
+    Posted documents already snapshot the price they charged, but nothing recorded *when* a
+    price changed or *who* changed it — so "why is this item suddenly cheaper?" was
+    unanswerable. Append-only: a correction is another row, never an edit.
+    """
+
+    __tablename__ = "item_price_history"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    # Which price moved: 'sale_price', 'purchase_price', 'default_discount_pct', or a tier name.
+    field: Mapped[str] = mapped_column(String(32), nullable=False)
+    old_value: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    new_value: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False, index=True
+    )
+
+
 class ItemUnit(Base):
     """An alternate unit of measure for an item (008). Base unit = item.unit_of_measure (factor 1).
 

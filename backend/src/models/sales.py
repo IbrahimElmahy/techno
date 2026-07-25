@@ -51,8 +51,11 @@ class SalesInvoiceLine(Base):
     invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # ACTUAL charged price snapshot
-    line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
+    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # list price snapshot (pre-discount)
+    # Per-line discount % applied to this line (027): the item's fixed discount + a typed
+    # variable discount, combined. line_total = quantity × unit_price × (1 − discount_pct/100).
+    discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
+    line_total: Mapped[object] = mapped_column(MONEY, nullable=False)  # AFTER the line discount
     # Resolved price tier snapshot (007); NULL for legacy 002 lines.
     price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
     # Unit of measure used on this line (008); NULL = base unit. quantity is in this unit;
@@ -66,10 +69,23 @@ class SalesReturn(Base):
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
-    sales_invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
-    value: Mapped[object] = mapped_column(MONEY, nullable=False)
-    cash_refund: Mapped[object] = mapped_column(MONEY, nullable=False)       # derived
-    credit_reduction: Mapped[object] = mapped_column(MONEY, nullable=False)  # derived
+    # Invoice-bound returns (002) reference the original invoice. Standalone returns (028) — the
+    # "return like a sale but reversed" flow: pick a customer + items directly — leave it NULL and
+    # carry their own customer/location/cash-account instead.
+    sales_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoice.id"), nullable=True)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True)
+    # Where the returned goods go back into stock (standalone returns).
+    origin_location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
+    origin_location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Document totals (standalone); invoice-bound returns leave gross/combined/tax at their defaults.
+    gross: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
+    combined_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
+    value: Mapped[object] = mapped_column(MONEY, nullable=False)  # net (after the invoice-level discount)
+    tax_amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
+    cash_refund: Mapped[object] = mapped_column(MONEY, nullable=False)       # derived (invoice-bound) / chosen (standalone)
+    credit_reduction: Mapped[object] = mapped_column(MONEY, nullable=False)  # derived (invoice-bound) / chosen (standalone)
+    # Treasury the cash refund is paid from (standalone). NULL when there is no cash refund.
+    cash_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
@@ -85,6 +101,13 @@ class SalesReturnLine(Base):
     return_id: Mapped[int] = mapped_column(ForeignKey("sales_return.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
+    # Standalone returns record the refunded price per line (invoice-bound ones derive value from the
+    # original invoice, so these stay NULL/default for them).
+    unit_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
+    line_total: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # AFTER the line discount
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
 
 
 class SalesSetting(Base):

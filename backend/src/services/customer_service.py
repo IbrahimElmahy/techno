@@ -116,6 +116,66 @@ def create_customer(
     return CreateResult(customer=customer, duplicate_phone_customer_ids=dup_ids)
 
 
+def delete_customer(db: Session, *, customer: Customer, actor_user_id: int) -> None:
+    """Permanently remove a customer that has never moved — otherwise refuse.
+
+    Deleting a customer with invoices, receipts or ledger movement would orphan posted
+    documents and silently change the books, so that case must stay a deactivation.
+    """
+    from src.models.cheque import Cheque
+    from src.models.inspection import Inspection
+    from src.models.ledger import LedgerLine
+    from src.models.loyalty import Coupon, PointRecord
+    from src.models.sales import SalesInvoice
+    from src.models.voucher import Voucher
+
+    blockers: list[str] = []
+    checks = [
+        ("فواتير بيع", select(func.count()).select_from(SalesInvoice)
+         .where(SalesInvoice.customer_id == customer.id)),
+        ("سندات", select(func.count()).select_from(Voucher)
+         .where(Voucher.customer_id == customer.id)),
+        ("شيكات", select(func.count()).select_from(Cheque)
+         .where(Cheque.customer_id == customer.id)),
+        ("معاينات", select(func.count()).select_from(Inspection)
+         .where(Inspection.customer_id == customer.id)),
+        ("نقاط ولاء", select(func.count()).select_from(PointRecord)
+         .where(PointRecord.customer_id == customer.id)),
+        ("كوبونات", select(func.count()).select_from(Coupon)
+         .where(Coupon.customer_id == customer.id)),
+    ]
+    for label, stmt in checks:
+        if (db.scalar(stmt) or 0) > 0:
+            blockers.append(label)
+
+    link = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer.id))
+    if link is not None:
+        moved = db.scalar(select(func.count()).select_from(LedgerLine)
+                          .where(LedgerLine.account_id == link.account_id)) or 0
+        if moved:
+            blockers.append("حركات على الحساب")
+
+    if blockers:
+        raise CustomerError(
+            "لا يمكن حذف العميل نهائياً لوجود " + "، ".join(blockers)
+            + ". يمكنك إلغاء تفعيله بدلاً من الحذف."
+        )
+
+    audit_service.record(
+        db, action="customer.delete", actor_user_id=actor_user_id,
+        entity_type="customer", entity_id=customer.id,
+        before={"code": customer.code, "name": customer.name},
+    )
+    if link is not None:
+        account = db.get(Account, link.account_id)
+        db.delete(link)
+        db.flush()
+        if account is not None:
+            db.delete(account)
+    db.delete(customer)
+    db.flush()
+
+
 def reassign_customer(
     db: Session,
     *,

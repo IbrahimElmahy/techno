@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Form, Input, Button, Card, Select, Table, Space, Row, Col, InputNumber, Divider, message, Modal, Result, Tabs, Drawer, Descriptions, Tag } from 'antd';
-import { PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import {
+  Button, Card, Col, Descriptions, Divider, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message,
+} from 'antd';
+import {
+  PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
+  PrinterOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 
 interface Supplier {
   id: number;
@@ -136,6 +142,33 @@ export default function Purchases() {
     } finally {
       setDetailLoading(false);
     }
+  };
+
+  // Same document shape as the sales invoice — one look, one print path for both sides.
+  const purchaseDoc = (p: PurchaseDetail | null): InvoiceDoc | null => {
+    if (!p) return null;
+    const supplier = suppliers.find((s) => s.id === p.supplier_id);
+    return {
+      kind: 'purchase',
+      document_number: p.document_number,
+      date: p.created_at,
+      partyLabel: 'المورد',
+      partyName: p.supplier_name || supplier?.name || `#${p.supplier_id}`,
+      partyPhone: (supplier as any)?.phone ?? null,
+      gross: p.total,
+      net: p.total,           // purchases carry no invoice-level discount today
+      cash: p.cash_amount,
+      credit: p.credit_amount,
+      lines: (p.lines || []).map((l) => ({
+        name: itemName(l.item_id),
+        quantity: l.quantity,
+        unit: (l as any).unit,
+        unit_price: l.unit_price,
+        line_total: l.line_total,
+      })),
+      extraMeta: [['موقع الاستلام',
+        `${p.location_kind === 'warehouse' ? 'مستودع' : p.location_kind} #${p.location_id}`]],
+    };
   };
 
   const loadLookups = async () => {
@@ -524,6 +557,10 @@ export default function Purchases() {
           <Button type="dashed" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
             عرض
           </Button>
+          {/* Opens the invoice (loading its lines) so it can be printed from there. */}
+          <Button type="link" icon={<PrinterOutlined />} onClick={() => openDetail(record)}>
+            طباعة
+          </Button>
         </Space>
       ),
     },
@@ -536,7 +573,7 @@ export default function Purchases() {
         columns={listColumns}
         rowKey="id"
         loading={listLoading}
-        pagination={{ pageSize: 10 }}
+        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         locale={{ emptyText: 'لا يوجد فواتير شراء بعد' }}
       />
     </Card>
@@ -575,41 +612,17 @@ export default function Purchases() {
         ]}
       />
 
-      <Drawer
+      <Modal centered
         title={`تفاصيل فاتورة الشراء: ${detail?.document_number || ''}`}
-        width={720}
-        onClose={() => setDetailVisible(false)}
+        width={820}
+        onCancel={() => setDetailVisible(false)}
         open={detailVisible}
         destroyOnHidden
+        footer={invoiceFooter(purchaseDoc(detail), () => setDetailVisible(false))}
       >
         {detail && (
           <>
-            <Descriptions bordered column={2} size="small">
-              <Descriptions.Item label="رقم المستند">
-                <Tag color="blue">{detail.document_number}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="المورد">
-                {detail.supplier_name || `مورد #${detail.supplier_id}`}
-              </Descriptions.Item>
-              <Descriptions.Item label="الإجمالي">
-                <strong style={{ color: '#6AB42D' }}>{fmtMoney(detail.total)} ج.م</strong>
-              </Descriptions.Item>
-              <Descriptions.Item label="التاريخ">{fmtDate(detail.created_at)}</Descriptions.Item>
-              <Descriptions.Item label="المدفوع نقداً">{fmtMoney(detail.cash_amount)} ج.م</Descriptions.Item>
-              <Descriptions.Item label="المتبقي آجل">{fmtMoney(detail.credit_amount)} ج.م</Descriptions.Item>
-              <Descriptions.Item label="موقع الاستلام" span={2}>
-                {detail.location_kind === 'warehouse' ? 'مستودع' : detail.location_kind} #{detail.location_id}
-              </Descriptions.Item>
-            </Descriptions>
-
-            <Divider orientation="right">أصناف الفاتورة</Divider>
-            <Table
-              dataSource={detail.lines}
-              columns={detailLineColumns}
-              rowKey="item_id"
-              pagination={false}
-              size="small"
-            />
+            <InvoiceDocument doc={purchaseDoc(detail)!} />
 
             <Divider orientation="right">المرتجعات</Divider>
             <Table
@@ -623,7 +636,7 @@ export default function Purchases() {
           </>
         )}
         {!detail && detailLoading && <p>جارٍ التحميل...</p>}
-      </Drawer>
+      </Modal>
     </div>
   );
 }

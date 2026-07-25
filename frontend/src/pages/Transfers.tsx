@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, InputNumber, Select, Tag, message, Divider, Row, Col } from 'antd';
+import {
+  Button, Card, Col, Divider, Form, InputNumber, Modal, Row, Select, Space, Table, Tag, message,
+} from 'antd';
 import { PlusOutlined, CheckCircleOutlined, RollbackOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -197,15 +199,15 @@ export default function Transfers() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         />
       </Card>
 
       {/* Initiate Transfer Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title="طلب تحويل مخزني جديد"
         width={450}
-        onClose={() => setDrawerVisible(false)}
+        onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
@@ -343,7 +345,7 @@ export default function Transfers() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
     </div>
   );
 }

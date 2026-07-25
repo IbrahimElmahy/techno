@@ -1,6 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Switch, Tag, message, Modal, Row, Col } from 'antd';
-import { PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Button, Card, Col, Collapse, Empty, Form, Input, InputNumber, Modal, Row, Segmented, Select,
+  Space, Statistic, Switch, Table, Tag, message,
+} from 'antd';
+import {
+  PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined,
+  EditOutlined, StopOutlined, SearchOutlined, ClearOutlined, AppstoreOutlined,
+  UnorderedListOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
@@ -221,70 +229,6 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
   );
 };
 
-// Modal to manage an item's barcodes (010), each optionally tied to a unit.
-const BarcodesButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
-  const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<{ barcode: string; unit: string | null }[]>([]);
-  const [units, setUnits] = useState<{ name: string; is_base: boolean }[]>([]);
-
-  const load = async () => {
-    try {
-      const [bc, un] = await Promise.all([
-        api.get(`/api/v1/items/${itemId}/barcodes`),
-        api.get(`/api/v1/items/${itemId}/units`),
-      ]);
-      setRows((bc.data || []).map((b: any) => ({ barcode: b.barcode, unit: b.unit })));
-      setUnits((un.data.units || []).map((u: any) => ({ name: u.name, is_base: u.is_base })));
-    } catch (err) { console.error(err); }
-  };
-  const onOpen = () => { setOpen(true); load(); };
-
-  const onSave = async () => {
-    const barcodes = rows.filter((r) => r.barcode.trim())
-      .map((r) => ({ barcode: r.barcode.trim(), unit: r.unit || null }));
-    try {
-      await api.put(`/api/v1/items/${itemId}/barcodes`, { barcodes });
-      message.success('تم حفظ الباركود');
-      setOpen(false);
-    } catch (err) { console.error(err); }
-  };
-
-  return (
-    <>
-      <Button size="small" type="link" icon={<BarcodeOutlined />} onClick={onOpen}>الباركود</Button>
-      <Modal title="الباركود" open={open} onCancel={() => setOpen(false)}
-        onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
-        <p style={{ color: '#888' }}>عدّة باركودات للصنف، كل واحد يحدّد وحدته (الافتراضي: الأساسية).</p>
-        {rows.map((r, i) => (
-          <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8 }}>
-            <Col span={12}>
-              <Input placeholder="الباركود" disabled={!canEdit} value={r.barcode}
-                onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, barcode: e.target.value } : x))} />
-            </Col>
-            <Col span={9}>
-              <Select style={{ width: '100%' }} placeholder="الوحدة" disabled={!canEdit}
-                value={r.unit ?? '__base__'}
-                onChange={(v) => setRows(rows.map((x, j) => j === i ? { ...x, unit: v === '__base__' ? null : v } : x))}>
-                {units.map((u) => (
-                  <Select.Option key={u.name} value={u.is_base ? '__base__' : u.name}>{u.name}</Select.Option>
-                ))}
-              </Select>
-            </Col>
-            <Col span={3}>
-              <Button type="text" danger icon={<DeleteOutlined />} disabled={!canEdit}
-                onClick={() => setRows(rows.filter((_, j) => j !== i))} />
-            </Col>
-          </Row>
-        ))}
-        {canEdit && (
-          <Button type="dashed" block icon={<PlusOutlined />}
-            onClick={() => setRows([...rows, { barcode: '', unit: null }])}>إضافة باركود</Button>
-        )}
-      </Modal>
-    </>
-  );
-};
-
 // Modal to receive serial numbers into stock + list in-stock serials (009).
 const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
   const [open, setOpen] = useState(false);
@@ -330,7 +274,7 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
           </div>
         )}
         <strong>المتوفر بالمخزون ({inStock.length})</strong>
-        <Table size="small" rowKey="id" dataSource={inStock} pagination={{ pageSize: 8 }}
+        <Table size="small" rowKey="id" dataSource={inStock} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           columns={[
             { title: 'الرقم التسلسلي', dataIndex: 'serial' },
             { title: 'الموقع', dataIndex: 'location_id', render: (v: number, r: any) => r.location_kind ? `${r.location_kind} #${v}` : '-' },
@@ -347,12 +291,13 @@ export default function Catalog() {
   const kindLabels = labelMap(kindOptions);
   const categoryLabels = labelMap(categoryOptions);
   const [items, setItems] = useState<ItemRecord[]>([]);
-  const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
+  const [filters, setFilters] = useState<Record<string, any>>({});
+  const [search, setSearch] = useState('');
+  const navigate = useNavigate();
   const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [editVisible, setEditVisible] = useState(false);
-  const [editing, setEditing] = useState<ItemRecord | null>(null);
+  const [view, setView] = useState<'grouped' | 'table'>('grouped');
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const { user } = useAuth();
@@ -364,10 +309,16 @@ export default function Catalog() {
   // Item-core edit/deactivate gated to the same roles allowed to create items.
   const canManageItems = ['system_admin', 'purchasing_manager'].includes(user?.role || '');
 
-  const fetchItems = async () => {
+  // Filtering happens on the server so it covers ALL items, not just the loaded page.
+  const fetchItems = async (override?: Record<string, any>) => {
+    const active = override ?? filters;
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/items');
+      const params: any = {};
+      Object.entries(active).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') params[k] = v;
+      });
+      const res = await api.get('/api/v1/items', { params });
       setItems(res.data);
     } catch (err) {
       console.error(err);
@@ -375,6 +326,27 @@ export default function Catalog() {
       setLoading(false);
     }
   };
+
+  const setFilter = (key: string, value: any) => {
+    const next = { ...filters, [key]: value };
+    setFilters(next);
+    fetchItems(next);
+  };
+
+  const applySearch = () => setFilter('q', search.trim() || undefined);
+
+  const resetFilters = () => {
+    setSearch('');
+    setFilters({});
+    fetchItems({});
+  };
+
+  // Live summary of whatever the current filter returned.
+  const summary = useMemo(() => {
+    const inStock = items.filter((i: any) => Number(i.on_hand || 0) > 0).length;
+    const out = items.filter((i: any) => Number(i.on_hand || 0) === 0).length;
+    return { count: items.length, inStock, out };
+  }, [items]);
 
   useEffect(() => {
     fetchItems();
@@ -405,42 +377,27 @@ export default function Catalog() {
     }
   };
 
-  const openEditItem = (record: ItemRecord) => {
-    setEditing(record);
-    editForm.setFieldsValue({
-      name: record.name,
-      purchase_price: record.purchase_price ?? undefined,
-      sale_price: record.sale_price ?? undefined,
-      is_serialized: record.is_serialized,
-      active: record.active,
-      default_warehouse_id: record.default_warehouse_id ?? undefined,
-      category: record.category ?? undefined,
-    });
-    setEditVisible(true);
-  };
 
-  const onEditItem = async (values: any) => {
-    if (!editing) return;
-    try {
-      const payload: any = {
-        name: values.name,
-        active: values.active,
-        default_warehouse_id: values.default_warehouse_id ?? null,
-        category: values.category ?? null,
-      };
-      if (editing.kind === 'raw_material') payload.purchase_price = values.purchase_price;
-      if (editing.kind === 'product') {
-        payload.sale_price = values.sale_price;
-        payload.is_serialized = !!values.is_serialized;
-      }
-      await api.patch(`/api/v1/items/${editing.id}`, payload);
-      message.success('تم تحديث بيانات الصنف بنجاح');
-      setEditVisible(false);
-      setEditing(null);
-      fetchItems();
-    } catch (err) {
-      console.error(err);
-    }
+
+  // Permanent delete. The server refuses when the item has any movement, invoice line or
+  // recipe reference, and tells the user to deactivate instead.
+  const deleteItem = (record: ItemRecord) => {
+    Modal.confirm({
+      title: 'حذف الصنف نهائياً',
+      content: `سيتم حذف الصنف "${record.name}" نهائياً. لا يمكن الحذف إذا كانت عليه أي حركة أو ظهر في أي فاتورة — عندها استخدم «إلغاء التفعيل».`,
+      okText: 'حذف نهائي',
+      okButtonProps: { danger: true },
+      cancelText: 'إلغاء',
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/items/${record.id}?hard=true`);
+          message.success('تم حذف الصنف');
+          fetchItems();
+        } catch (err) {
+          console.error(err);
+        }
+      },
+    });
   };
 
   const deactivateItem = (record: ItemRecord) => {
@@ -460,9 +417,33 @@ export default function Catalog() {
   };
 
   // Client-side category filter over the already-loaded items.
-  const filteredItems = categoryFilter
-    ? items.filter((i) => i.category === categoryFilter)
-    : items;
+  const filteredItems = items;   // filtering now happens on the server
+
+  // Items grouped by category for the accordion view. Items with no category land in a
+  // «بدون فئة» group instead of disappearing.
+  const grouped = useMemo(() => {
+    const map = new Map<string, ItemRecord[]>();
+    items.forEach((i) => {
+      const key = i.category || '__none__';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(i);
+    });
+    return [...map.entries()]
+      .sort((a, b) => (a[0] === '__none__' ? 1 : b[0] === '__none__' ? -1 : a[0].localeCompare(b[0], 'ar')))
+      .map(([key, rows]) => ({
+        key,
+        label: key === '__none__' ? 'بدون فئة' : (categoryLabels[key] || key),
+        rows,
+        onHand: rows.reduce((sum, r: any) => sum + Number(r.on_hand || 0), 0),
+      }));
+  }, [items, categoryLabels]);
+
+  // «إضافة صنف» from inside a category pre-fills that category.
+  const openCreateForCategory = (category?: string) => {
+    form.resetFields();
+    if (category && category !== '__none__') form.setFieldsValue({ category });
+    setDrawerVisible(true);
+  };
 
   const columns = [
     {
@@ -485,6 +466,20 @@ export default function Catalog() {
           {kindLabels[kind] || KIND_LABELS[kind] || kind}
         </Tag>
       ),
+    },
+    {
+      title: 'الرصيد الحالي',
+      dataIndex: 'on_hand',
+      key: 'on_hand',
+      render: (v: string | null, r: any) => {
+        const n = Number(v || 0);
+        return (
+          <b style={{ color: n > 0 ? '#3f8600' : n < 0 ? '#cf1322' : '#999' }}>
+            {n.toLocaleString('ar-EG', { maximumFractionDigits: 3 })} {r.unit_of_measure}
+          </b>
+        );
+      },
+      sorter: (a: any, b: any) => Number(a.on_hand || 0) - Number(b.on_hand || 0),
     },
     {
       title: 'الفئة',
@@ -513,35 +508,12 @@ export default function Catalog() {
         price ? `${parseFloat(price).toFixed(2)} ج.م` : '-',
     },
     {
-      title: 'الأطر السعرية',
-      key: 'price_tiers',
-      render: (_: any, record: ItemRecord) =>
-        record.kind === 'product' ? <PriceTiersButton itemId={record.id} canEdit={canEditPrices} /> : '-',
-    },
-    {
-      title: 'الوحدات',
-      key: 'units',
-      render: (_: any, record: ItemRecord) => <ItemUnitsButton itemId={record.id} canEdit={canEditPrices} />,
-    },
-    {
-      title: 'الباركود',
-      key: 'barcodes',
-      render: (_: any, record: ItemRecord) => <BarcodesButton itemId={record.id} canEdit={canEditPrices} />,
-    },
-    {
-      title: 'السيريال',
-      key: 'serials',
-      render: (_: any, record: ItemRecord) =>
-        record.is_serialized
-          ? <SerialsButton itemId={record.id} canEdit={canEditPrices} />
-          : <Tag>غير مُسلسَل</Tag>,
-    },
-    {
       title: 'نقاط المنتج',
       key: 'points',
       render: (_: any, record: ItemRecord) => {
         if (record.kind !== 'product') return '-';
-        return <ProductPoints itemId={record.id} isEditable={canEditPoints} />;
+        // Read-only here: points are edited inside the item file, with everything else.
+        return <ProductPoints itemId={record.id} isEditable={false} />;
       },
     },
     {
@@ -555,16 +527,17 @@ export default function Catalog() {
       title: 'إجراءات',
       key: 'actions',
       render: (_: any, record: ItemRecord) => (
-        <Space>
-          <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditItem(record)}>
-            تعديل
-          </Button>
+        <Space onClick={(e) => e.stopPropagation()}>
           {record.active && (
-            <Button size="small" type="link" danger icon={<StopOutlined />}
+            <Button size="small" type="link" icon={<StopOutlined />}
               onClick={() => deactivateItem(record)}>
               إلغاء تفعيل
             </Button>
           )}
+          <Button size="small" type="link" danger icon={<DeleteOutlined />}
+            onClick={() => deleteItem(record)}>
+            حذف
+          </Button>
         </Space>
       ),
     }] : []),
@@ -576,38 +549,159 @@ export default function Catalog() {
         title="كتالوج المنتجات والمواد الخام"
         extra={
           user?.role === 'system_admin' || user?.role === 'purchasing_manager' ? (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
               إضافة صنف للكتالوج
             </Button>
           ) : null
         }
       >
-        <Space style={{ marginBottom: 16 }}>
-          <span>الفئة:</span>
-          <Select
-            allowClear
-            style={{ width: 220 }}
-            placeholder="كل الفئات"
-            value={categoryFilter}
-            onChange={(v) => setCategoryFilter(v)}
-            options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
-          />
-        </Space>
+        {/* --- Search + filters (server-side, so they cover every item) --- */}
+        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+          <Col xs={24} md={7}>
+            <Input
+              allowClear
+              value={search}
+              placeholder="بحث بالاسم أو الكود أو الفئة"
+              prefix={<SearchOutlined />}
+              onChange={(e) => setSearch(e.target.value)}
+              onPressEnter={applySearch}
+              onBlur={applySearch}
+            />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear style={{ width: '100%' }} placeholder="النوع"
+              value={filters.kind}
+              onChange={(v) => setFilter('kind', v)}
+              options={[
+                { value: 'product', label: 'منتج تام' },
+                { value: 'raw_material', label: 'مادة خام' },
+              ]} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear style={{ width: '100%' }} placeholder="الفئة"
+              value={filters.category}
+              onChange={(v) => setFilter('category', v)}
+              options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المخزن الافتراضي"
+              value={filters.warehouse_id}
+              onChange={(v) => setFilter('warehouse_id', v)}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          </Col>
+          <Col xs={12} md={5}>
+            <Select allowClear style={{ width: '100%' }} placeholder="حالة المخزون"
+              value={filters.stock_filter}
+              onChange={(v) => setFilter('stock_filter', v)}
+              options={[
+                { value: 'in_stock', label: 'متوفر' },
+                { value: 'out_of_stock', label: 'رصيد صفر' },
+                { value: 'negative', label: 'رصيد سالب' },
+              ]} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear style={{ width: '100%' }} placeholder="الحالة"
+              value={filters.active}
+              onChange={(v) => setFilter('active', v)}
+              options={[{ value: true, label: 'نشط' }, { value: false, label: 'معطل' }]} />
+          </Col>
+          <Col xs={24} md={6}>
+            <Space>
+              <Button type="primary" icon={<SearchOutlined />} onClick={applySearch}>بحث</Button>
+              <Button icon={<ClearOutlined />} onClick={resetFilters}>مسح الفلاتر</Button>
+            </Space>
+          </Col>
+        </Row>
 
-        <Table
-          dataSource={filteredItems}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
+        <Row gutter={12} style={{ marginBottom: 12 }}>
+          <Col xs={24} md={8}>
+            <Card size="small"><Statistic title="عدد الأصناف الظاهرة" value={summary.count} /></Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card size="small"><Statistic title="أصناف متوفرة" value={summary.inStock} /></Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card size="small"><Statistic title="أصناف برصيد صفر" value={summary.out} /></Card>
+          </Col>
+        </Row>
+
+        <Segmented
+          style={{ marginBottom: 12 }}
+          value={view}
+          onChange={(v) => setView(v as 'grouped' | 'table')}
+          options={[
+            { value: 'grouped', label: 'مجمّع بالفئات', icon: <AppstoreOutlined /> },
+            { value: 'table', label: 'جدول واحد', icon: <UnorderedListOutlined /> },
+          ]}
         />
+
+        {view === 'table' ? (
+          <Table
+            dataSource={filteredItems}
+            columns={columns}
+            rowKey="id"
+            loading={loading}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+            // The whole row opens the product file.
+            onRow={(record) => ({
+              onClick: () => navigate(`/catalog/${record.id}`),
+              style: { cursor: 'pointer' },
+            })}
+          />
+        ) : grouped.length === 0 ? (
+          <Empty description="لا توجد أصناف مطابقة" />
+        ) : (
+          <Collapse
+            defaultActiveKey={grouped.length <= 3 ? grouped.map((g) => g.key) : []}
+            items={grouped.map((g) => ({
+              key: g.key,
+              label: (
+                <Space>
+                  <strong>{g.label}</strong>
+                  <Tag color="blue">{g.rows.length} صنف</Tag>
+                  <Tag color={g.onHand > 0 ? 'green' : 'default'}>
+                    الرصيد: {g.onHand.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                  </Tag>
+                </Space>
+              ),
+              extra: canManageItems ? (
+                <Button
+                  size="small"
+                  type="link"
+                  icon={<PlusOutlined />}
+                  // Don't let the click toggle the panel open/closed.
+                  onClick={(e) => { e.stopPropagation(); openCreateForCategory(g.key); }}
+                >
+                  إضافة صنف لهذه الفئة
+                </Button>
+              ) : null,
+              children: (
+                <Table
+                  dataSource={g.rows}
+                  columns={columns}
+                  rowKey="id"
+                  size="small"
+                  loading={loading}
+                  pagination={g.rows.length > 10
+                    ? { defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }
+                    : false}
+                  onRow={(record) => ({
+                    onClick: () => navigate(`/catalog/${record.id}`),
+                    style: { cursor: 'pointer' },
+                  })}
+                />
+              ),
+            }))}
+          />
+        )}
       </Card>
 
       {/* Add Item Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title="إضافة صنف جديد للكتالوج"
         width={400}
-        onClose={() => setDrawerVisible(false)}
+        onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
@@ -700,62 +794,8 @@ export default function Catalog() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
 
-      {/* Edit Item Drawer */}
-      <Drawer
-        title={`تعديل الصنف: ${editing?.name ?? ''}`}
-        width={400}
-        onClose={() => { setEditVisible(false); setEditing(null); }}
-        open={editVisible}
-        destroyOnHidden
-      >
-        <Form form={editForm} layout="vertical" onFinish={onEditItem} requiredMark={false}>
-          <Form.Item name="name" label="اسم الصنف"
-            rules={[{ required: true, message: 'يرجى إدخال اسم الصنف!' }]}>
-            <Input />
-          </Form.Item>
-
-          {editing?.kind === 'product' && (
-            <Form.Item name="sale_price" label="سعر البيع المرجعي (ج.م)">
-              <Input type="number" min={0} step="0.01" placeholder="0.00" />
-            </Form.Item>
-          )}
-          {editing?.kind === 'raw_material' && (
-            <Form.Item name="purchase_price" label="سعر الشراء المرجعي (ج.م)">
-              <Input type="number" min={0} step="0.01" placeholder="0.00" />
-            </Form.Item>
-          )}
-          {editing?.kind === 'product' && (
-            <Form.Item name="is_serialized" label="صنف بأرقام تسلسلية؟" valuePropName="checked">
-              <Switch checkedChildren="نعم" unCheckedChildren="لا" />
-            </Form.Item>
-          )}
-
-          <Form.Item name="category" label="الفئة"
-            extra="تُدار قائمة الفئات من الإعدادات">
-            <Select allowClear showSearch placeholder="اختر فئة الصنف (اختياري)"
-              options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
-          </Form.Item>
-
-          <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
-            <Select allowClear placeholder="اختر المخزن الافتراضي (اختياري)"
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-          </Form.Item>
-
-          <Form.Item name="active" label="الحالة" valuePropName="checked">
-            <Switch checkedChildren="نشط" unCheckedChildren="غير نشط" />
-          </Form.Item>
-
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">حفظ التعديلات</Button>
-              <Button onClick={() => { setEditVisible(false); setEditing(null); }}>إلغاء</Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Drawer>
     </div>
   );
 }

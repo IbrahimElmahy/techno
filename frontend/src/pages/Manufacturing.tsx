@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Tabs, Table, Button, Card, Select, InputNumber, Form, Drawer, Space, Tag, Divider,
-  message, Row, Col, Statistic, Popconfirm, Input, Empty,
+  Button, Card, Col, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
@@ -306,10 +305,10 @@ function OrdersTab({
         locale={{ emptyText: 'لا يوجد أوامر تصنيع بعد' }}
       />
 
-      <Drawer
-        title="أمر تصنيع جديد" width={560} open={open} onClose={() => setOpen(false)}
-        destroyOnClose
-        extra={<Button type="primary" onClick={() => form.submit()}>ترحيل الأمر</Button>}
+      <Modal centered
+        title="أمر تصنيع جديد" width={560} open={open} onCancel={() => setOpen(false)}
+        destroyOnHidden
+        footer={<Button type="primary" onClick={() => form.submit()}>ترحيل الأمر</Button>}
       >
         {manufacturable.length === 0 ? (
           <Empty description="لا يوجد منتجات لها وصفة نشطة. أنشئ وصفة (BOM) أولاً من تبويب الوصفات." />
@@ -365,7 +364,7 @@ function OrdersTab({
             )}
           </Form>
         )}
-      </Drawer>
+      </Modal>
     </div>
   );
 }
@@ -473,10 +472,10 @@ function RecipesTab({
       <Table rowKey="id" loading={loading} dataSource={boms} columns={columns}
         locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
 
-      <Drawer
+      <Modal centered
         title={editing ? 'تعديل وصفة' : 'وصفة جديدة'} width={560} open={open}
-        onClose={() => setOpen(false)} destroyOnClose
-        extra={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
+        onCancel={() => setOpen(false)} destroyOnHidden
+        footer={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
       >
         <Form form={form} layout="vertical" onFinish={submit}>
           <Form.Item name="product_id" label="المنتج الناتج"
@@ -550,7 +549,7 @@ function RecipesTab({
             )}
           </Form.List>
         </Form>
-      </Drawer>
+      </Modal>
     </div>
   );
 }
@@ -635,10 +634,10 @@ function WastageTab({
       <Table rowKey="id" loading={loading} dataSource={wastages} columns={columns}
         locale={{ emptyText: 'لا يوجد مستندات هالك بعد' }} />
 
-      <Drawer
-        title="مستند هالك جديد" width={480} open={open} onClose={() => setOpen(false)}
-        destroyOnClose
-        extra={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
+      <Modal centered
+        title="مستند هالك جديد" width={480} open={open} onCancel={() => setOpen(false)}
+        destroyOnHidden
+        footer={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
       >
         <Form form={form} layout="vertical" onFinish={submit}>
           <Form.Item name="item_id" label="الصنف" rules={[{ required: true, message: 'اختر الصنف' }]}>
@@ -656,7 +655,7 @@ function WastageTab({
             <Input.TextArea rows={2} placeholder="سبب الهالك" />
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
     </div>
   );
 }

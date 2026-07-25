@@ -140,7 +140,7 @@ export default function Audit() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 15 }}
+          pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           expandable={{
             expandedRowRender: (record: AuditLog) => (
               <div style={{ padding: 16, backgroundColor: '#fafafa', borderRadius: 6 }}>

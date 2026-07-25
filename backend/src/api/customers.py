@@ -14,7 +14,13 @@ from src.core.db import get_db
 from src.models.catalog import PriceTier
 from src.models.contact import PhoneOwner
 from src.models.customer import Customer, CustomerAccount
-from src.services import audit_service, contact_service, customer_service, ledger_service
+from src.services import (
+    audit_service,
+    contact_service,
+    customer_profile_service,
+    customer_service,
+    ledger_service,
+)
 from src.services.customer_service import CustomerError
 
 router = APIRouter(tags=["customers"], prefix="/customers")
@@ -59,6 +65,8 @@ class CustomerOut(BaseModel):
     markaz: str | None = None
     address: str | None = None
     phones: list[str] = []
+    # Receivable balance — filled on the list endpoint (one grouped query, not per row).
+    balance: Decimal | None = None
 
 
 class CustomerCreated(CustomerOut):
@@ -105,15 +113,33 @@ def _scope_filter(stmt, current: CurrentUser):
 def list_customers(
     rep_id: int | None = None,
     territory_id: int | None = None,
+    q: str | None = None,
+    customer_type: str | None = None,
+    governorate_id: int | None = None,
+    active: bool | None = None,
+    balance_filter: str | None = None,  # all | debtors | settled | credit
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CustomerOut]:
-    stmt = _scope_filter(select(Customer), current)
-    if rep_id is not None:
-        stmt = stmt.where(Customer.rep_id == rep_id)
-    if territory_id is not None:
-        stmt = stmt.where(Customer.territory_id == territory_id)
-    return [_out(c, db) for c in db.scalars(stmt).all()]
+    """List customers with search + filters, each carrying its receivable balance.
+
+    `q` matches code/name/phone/markaz/address partially. Balances come from ONE grouped
+    query, so filtering by debt costs the same as listing.
+    """
+    stmt = customer_profile_service.apply_filters(
+        _scope_filter(select(Customer), current),
+        q=q, customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
+        governorate_id=governorate_id, active=active,
+    )
+    rows = list(db.scalars(stmt.order_by(Customer.id.desc())).all())
+    balances = customer_profile_service.bulk_balances(db, [c.id for c in rows])
+    rows = customer_profile_service.filter_by_balance(rows, balances, balance_filter)
+    out = []
+    for c in rows:
+        item = _out(c, db)
+        item.balance = balances.get(c.id, Decimal("0.00"))
+        out.append(item)
+    return out
 
 
 @router.post("", response_model=CustomerCreated, status_code=status.HTTP_201_CREATED)
@@ -191,14 +217,23 @@ def update_customer(
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_customer(
     customer_id: int,
+    hard: bool = False,
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
+    """Deactivate the customer; `hard=true` deletes him outright — but only if he never moved."""
     c = db.get(Customer, customer_id)
     if c is None:
         raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
     if current.rep_id is not None and c.rep_id != current.rep_id:
         raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    if hard:
+        try:
+            customer_service.delete_customer(db, customer=c, actor_user_id=current.id)
+        except CustomerError as exc:
+            raise HTTPException(409, {"code": "has_history", "message": str(exc)}) from exc
+        db.commit()
+        return
     c.active = False
     db.flush()
     audit_service.record(db, action="customer.deactivate", actor_user_id=current.id,
@@ -236,6 +271,88 @@ def reassign_customer(
     )
     db.commit()
     return _out(c)
+
+
+class ProfileDocOut(BaseModel):
+    id: int
+    document_number: str
+    doc_date: str | None = None
+    amount: Decimal
+    detail: str = ""
+
+
+class CustomerProfileOut(BaseModel):
+    """ملف العميل — every movement tied to one customer, in one call."""
+
+    customer: CustomerOut
+    account_id: int | None
+    balance: Decimal
+    points_balance: Decimal
+    total_sales: Decimal
+    total_returns: Decimal
+    total_receipts: Decimal
+    invoice_count: int
+    last_invoice_date: str | None = None
+    invoices: list[ProfileDocOut] = []
+    returns: list[ProfileDocOut] = []
+    receipts: list[ProfileDocOut] = []
+    cheques: list[dict] = []
+    coupons: list[dict] = []
+
+
+def _doc_out(d) -> ProfileDocOut:
+    return ProfileDocOut(id=d.id, document_number=d.document_number,
+                         doc_date=str(d.doc_date) if d.doc_date else None,
+                         amount=d.amount, detail=d.detail)
+
+
+@router.get("/{customer_id}/profile", response_model=CustomerProfileOut)
+def customer_profile(
+    customer_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
+    db: Session = Depends(get_db),
+) -> CustomerProfileOut:
+    """The customer's full file: balance, invoices, returns, receipts, cheques, visits, points."""
+    c = db.get(Customer, customer_id)
+    if c is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    if current.rep_id is not None and c.rep_id != current.rep_id:
+        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    p = customer_profile_service.profile(db, customer_id)
+    base = _out(c, db)
+    base.balance = p.balance
+    return CustomerProfileOut(
+        customer=base, account_id=p.account_id, balance=p.balance,
+        points_balance=p.points_balance, total_sales=p.total_sales,
+        total_returns=p.total_returns, total_receipts=p.total_receipts,
+        invoice_count=p.invoice_count,
+        last_invoice_date=str(p.last_invoice_date) if p.last_invoice_date else None,
+        invoices=[_doc_out(d) for d in p.invoices],
+        returns=[_doc_out(d) for d in p.returns],
+        receipts=[_doc_out(d) for d in p.receipts],
+        cheques=p.cheques, coupons=p.coupons,
+    )
+
+
+@router.get("/{customer_id}/records/{kind}/{record_id}")
+def customer_record_detail(
+    customer_id: int,
+    kind: str,
+    record_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Full detail of one row in the customer's file — invoice, return, receipt, cheque,
+    inspection, coupon or ledger entry — in a uniform shape the UI renders generically."""
+    c = db.get(Customer, customer_id)
+    if c is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    if current.rep_id is not None and c.rep_id != current.rep_id:
+        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    try:
+        return customer_profile_service.record_detail(db, customer_id, kind, record_id)
+    except customer_profile_service.CustomerProfileError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
 
 
 @router.get("/{customer_id}/account", response_model=CustomerAccountOut)

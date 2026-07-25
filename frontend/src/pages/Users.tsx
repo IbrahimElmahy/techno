@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, Select, Switch, Tag, message } from 'antd';
+import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { UserAddOutlined, LockOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth, RoleName } from '../components/AuthProvider';
@@ -225,14 +225,14 @@ export default function Users() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         />
       </Card>
 
-      <Drawer
+      <Modal footer={null} centered
         title="إضافة مستخدم جديد"
         width={450}
-        onClose={() => setDrawerVisible(false)}
+        onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
@@ -335,12 +335,12 @@ export default function Users() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
 
-      <Drawer
+      <Modal footer={null} centered
         title={editingUser ? `تعديل بيانات ${editingUser.username}` : 'تعديل بيانات المستخدم'}
         width={450}
-        onClose={() => {
+        onCancel={() => {
           setEditVisible(false);
           setEditingUser(null);
         }}
@@ -448,7 +448,7 @@ export default function Users() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
     </div>
   );
 }

@@ -75,6 +75,37 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     return TokenResponse(access_token=token, expires_in=ttl)
 
 
+@router.post("/auth/refresh", response_model=TokenResponse)
+def refresh(
+    current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
+) -> TokenResponse:
+    """Re-issue a full-length token for the caller — a sliding session.
+
+    The client calls this on load and periodically, so someone who keeps using the system is
+    never logged out, while a token that stops being used still expires by itself.
+    """
+    from src.core.config import settings
+
+    user = db.get(User, current.id)
+    if user is None or not user.active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "unauthorized", "message": "User is not active"},
+        )
+    role = db.get(Role, user.role_id)
+    ttl = settings.access_token_ttl
+    token = create_access_token(
+        {
+            "sub": str(user.id),
+            "role": role.name.value,
+            "branch_id": user.branch_id,
+            "rep_id": user.id if role.name.value == "sales_rep" else None,
+        },
+        ttl_seconds=ttl,
+    )
+    return TokenResponse(access_token=token, expires_in=ttl)
+
+
 @router.get("/auth/me", response_model=UserOut)
 def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)) -> UserOut:
     user = db.get(User, current.id)

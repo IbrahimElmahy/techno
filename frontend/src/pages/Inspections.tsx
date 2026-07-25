@@ -1,22 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Table,
-  Card,
-  Drawer,
-  Tag,
-  DatePicker,
-  Select,
-  Space,
-  Button,
-  Descriptions,
-  Statistic,
-  Row,
-  Col,
-  Input,
-  InputNumber,
-  Radio,
-  Popconfirm,
-  message,
+  Button, Card, Col, DatePicker, Descriptions, Input, InputNumber, Modal, Popconfirm, Radio, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -28,6 +12,7 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { printDocument } from '../print/brand';
 import { useLookup } from '../hooks/useLookup';
 
 interface InspectionLine {
@@ -189,62 +174,39 @@ const Inspections: React.FC = () => {
           `<tr><td>${l.item_name}</td><td>${fmt(l.quantity)}</td><td>${fmt(l.points)}</td><td>${fmt(l.total)}</td></tr>`
       )
       .join('');
-    const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
-<title>شهادة ضمان ${d.certificate_number ?? ''}</title>
-<style>
-  body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 28px; color: #12303f; }
-  .frame { border: 3px double #0e4c6d; border-radius: 14px; padding: 28px; }
-  .head { display: flex; justify-content: space-between; align-items: center;
-          border-bottom: 2px solid #0e4c6d; padding-bottom: 14px; }
-  .brand { font-size: 26px; font-weight: 800; color: #0e4c6d; }
-  .sub { color: #5b7686; font-size: 13px; }
-  .cert { text-align: center; margin: 18px 0 6px; font-size: 22px; font-weight: 800; }
-  .no { text-align: center; color: #b26a00; font-size: 16px; font-weight: 700; }
-  table.info { width: 100%; border-collapse: collapse; margin-top: 18px; }
-  table.info td { padding: 7px 10px; border: 1px solid #d5e2ea; font-size: 14px; }
-  table.info td.k { background: #f2f7fa; font-weight: 700; width: 150px; }
-  table.items { width: 100%; border-collapse: collapse; margin-top: 16px; }
-  table.items th { background: #0e4c6d; color: #fff; padding: 8px; font-size: 13px; }
-  table.items td { border: 1px solid #d5e2ea; padding: 7px; text-align: center; font-size: 14px; }
-  .total { margin-top: 12px; text-align: left; font-size: 16px; font-weight: 800; color: #0e4c6d; }
-  .foot { margin-top: 26px; display: flex; justify-content: space-between; font-size: 13px; }
-  .sig { border-top: 1px solid #98acb9; padding-top: 6px; width: 180px; text-align: center; }
-  @media print { body { padding: 0; } }
-</style></head><body><div class="frame">
-  <div class="head">
-    <div><div class="brand">تكنو ثيرم</div><div class="sub">Techno Therm — أنظمة السباكة والتغذية</div></div>
-    <div class="sub">التاريخ: ${d.inspection_date}</div>
-  </div>
-  <div class="cert">شهادة ضمان</div>
-  <div class="no">رقم الشهادة: ${d.certificate_number ?? '—'}</div>
-  <table class="info">
-    <tr><td class="k">اسم المالك</td><td>${d.owner_name}</td><td class="k">تليفون المالك</td><td>${d.owner_phone ?? '—'}</td></tr>
-    <tr><td class="k">العنوان</td><td>${d.owner_address ?? '—'}</td><td class="k">الدور</td><td>${d.floor_number ?? '—'}</td></tr>
-    <tr><td class="k">توصيف المعاينة</td><td>${d.description ?? '—'}</td><td class="k">نوع المعاينة</td><td>${d.inspection_type ?? '—'}</td></tr>
-    <tr><td class="k">اسم الفني</td><td>${d.technician_name ?? '—'}</td><td class="k">تليفون الفني</td><td>${d.technician_phone ?? '—'}</td></tr>
-    <tr><td class="k">المندوب</td><td>${repName(d.rep_user_id)}</td><td class="k">التاجر / محل الشراء</td><td>${d.purchase_shop ?? '—'}</td></tr>
-    <tr><td class="k">نوع الزيارة</td><td>${d.visit_type}</td><td class="k">رقم المستند</td><td>${d.document_number}</td></tr>
-  </table>
-  <table class="items">
-    <thead><tr><th>الصنف</th><th>الكمية</th><th>النقاط</th><th>الإجمالي</th></tr></thead>
-    <tbody>${linesHtml || '<tr><td colspan="4">بدون أصناف</td></tr>'}</tbody>
-  </table>
-  <div class="total">إجمالي النقاط: ${fmt(d.total_points)}</div>
-  <div class="foot">
-    <div class="sig">توقيع الفني</div>
-    <div class="sig">توقيع المندوب</div>
-    <div class="sig">ختم الشركة</div>
-  </div>
-</div>
-<script>window.onload = function () { window.print(); };</script>
-</body></html>`;
-    const win = window.open('', '_blank', 'width=900,height=1000');
-    if (!win) {
-      message.error('اسمح بفتح النوافذ المنبثقة للطباعة');
-      return;
-    }
-    win.document.write(html);
-    win.document.close();
+    printDocument(
+      {
+        title: 'شهادة ضمان',
+        number: d.certificate_number ? `رقم ${d.certificate_number}` : d.document_number,
+        meta: [
+          ['اسم المالك', d.owner_name],
+          ['تليفون المالك', d.owner_phone ?? '—'],
+          ['العنوان', d.owner_address ?? '—'],
+          ['الدور', d.floor_number ?? '—'],
+          ['توصيف المعاينة', d.description ?? '—'],
+          ['نوع المعاينة', d.inspection_type ?? '—'],
+          ['اسم الفني', d.technician_name ?? '—'],
+          ['تليفون الفني', d.technician_phone ?? '—'],
+          ['المندوب', repName(d.rep_user_id)],
+          ['التاجر / محل الشراء', d.purchase_shop ?? '—'],
+          ['نوع الزيارة', d.visit_type],
+          ['التاريخ', d.inspection_date],
+        ],
+        note: 'الضمان ساري وفق شروط الشركة المعتمدة ومن تاريخ التركيب.',
+      },
+      `<table class="grid">
+        <thead><tr><th>الصنف</th><th>الكمية</th><th>النقاط</th><th>الإجمالي</th></tr></thead>
+        <tbody>${linesHtml || '<tr><td colspan="4">بدون أصناف</td></tr>'}</tbody>
+      </table>
+      <table class="totals">
+        <tr><td>إجمالي النقاط</td><td style="text-align:left">${fmt(d.total_points)}</td></tr>
+      </table>
+      <div class="signatures">
+        <div class="sig">توقيع الفني</div>
+        <div class="sig">توقيع المندوب</div>
+        <div class="sig">ختم الشركة</div>
+      </div>`,
+    );
     try {
       const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/mark-printed`);
       patchDetail(data);
@@ -389,7 +351,7 @@ const Inspections: React.FC = () => {
           loading={loading}
           dataSource={rows}
           onRow={(record) => ({ onClick: () => openDetail(record), style: { cursor: 'pointer' } })}
-          pagination={{ pageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
+          pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
           columns={[
             {
               title: 'رقم الشهادة',
@@ -435,16 +397,16 @@ const Inspections: React.FC = () => {
         />
       </Card>
 
-      <Drawer
+      <Modal centered
         title={
           detail
             ? `شهادة ${detail.certificate_number ?? '—'} — ${detail.owner_name}`
             : ''
         }
         open={!!detail}
-        onClose={() => setDetail(null)}
+        onCancel={() => setDetail(null)}
         width={620}
-        extra={
+        footer={
           detail && (
             <Space>
               {detail.status === 'rejected' ? (
@@ -561,7 +523,7 @@ const Inspections: React.FC = () => {
             />
           </>
         )}
-      </Drawer>
+      </Modal>
     </div>
   );
 };

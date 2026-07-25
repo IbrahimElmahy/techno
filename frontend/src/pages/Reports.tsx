@@ -146,7 +146,8 @@ function ProductionTab({ period, range, items }: TabProps) {
       const params: Record<string, any> = { period, ...dateParams(range) };
       if (productId) params.product_id = productId;
       const res = await api.get('/api/v1/reports/production', { params });
-      setRows(res.data.rows || []);
+      // (item_name, warehouse) is not unique — stamp a stable key for React.
+      setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setByPeriod(res.data.by_period || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -187,7 +188,7 @@ function ProductionTab({ period, range, items }: TabProps) {
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
-      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ pageSize: 10 }}
+      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
@@ -218,7 +219,8 @@ function InventoryTab({ warehouses, items }: TabProps) {
       if (warehouseId) params.warehouse_id = warehouseId;
       if (itemId) params.item_id = itemId;
       const res = await api.get('/api/v1/reports/inventory', { params });
-      setRows(res.data.rows || []);
+      // (item_name, warehouse) is not unique — stamp a stable key for React.
+      setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -246,7 +248,7 @@ function InventoryTab({ warehouses, items }: TabProps) {
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
       </Space>
 
-      <Table rowKey={(r) => `${r.item_name}-${r.warehouse_id}`} loading={loading} pagination={{ pageSize: 12 }}
+      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         dataSource={rows} columns={columns}
         summary={(data) => {
           const total = data.reduce((s, r) => s + Number(r.value ?? 0), 0);
@@ -290,7 +292,8 @@ function WastageTab({ range, warehouses, items }: TabProps) {
       if (itemId) params.item_id = itemId;
       if (warehouseId) params.warehouse_id = warehouseId;
       const res = await api.get('/api/v1/reports/wastage', { params });
-      setRows(res.data.rows || []);
+      // (item_name, warehouse) is not unique — stamp a stable key for React.
+      setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setTotalQty(res.data.total_quantity ?? '0');
       setTotalCost(res.data.total_cost ?? '0');
     } catch (err) { console.error(err); } finally { setLoading(false); }
@@ -334,7 +337,7 @@ function WastageTab({ range, warehouses, items }: TabProps) {
         </Col>
       </Row>
 
-      <Table rowKey={(r, i) => `${r.source}-${r.document_number}-${i}`} loading={loading} pagination={{ pageSize: 12 }}
+      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         dataSource={rows} columns={columns}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
@@ -365,7 +368,8 @@ function StagnantTab({ warehouses }: TabProps) {
       const params: Record<string, any> = { days };
       if (warehouseId) params.warehouse_id = warehouseId;
       const res = await api.get('/api/v1/reports/stagnant', { params });
-      setRows(res.data.rows || []);
+      // (item_name, warehouse) is not unique — stamp a stable key for React.
+      setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setAsOf(res.data.as_of || '');
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -395,7 +399,7 @@ function StagnantTab({ warehouses }: TabProps) {
         {asOf && <Tag color="default">حتى تاريخ: {dayjs(asOf).format('YYYY-MM-DD')}</Tag>}
       </Space>
 
-      <Table rowKey={(r) => `${r.item_name}-${r.warehouse_id}`} loading={loading} pagination={{ pageSize: 12 }}
+      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         dataSource={rows} columns={columns}
         rowClassName={(r) => (r.last_out_date === null ? 'stagnant-never-moved' : '')}
         onRow={(r) => (r.last_out_date === null ? { style: { background: '#fff1f0' } } : {})}
@@ -439,7 +443,8 @@ function SalesTab({ period, range }: TabProps) {
     try {
       const params: Record<string, any> = { period, ...dateParams(range) };
       const res = await api.get('/api/v1/reports/sales', { params });
-      setRows(res.data.rows || []);
+      // (item_name, warehouse) is not unique — stamp a stable key for React.
+      setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setByPeriod(res.data.by_period || []);
       setGrossTotal(res.data.gross_total ?? '0');
       setNetTotal(res.data.net_total ?? '0');
@@ -483,7 +488,7 @@ function SalesTab({ period, range }: TabProps) {
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
-      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ pageSize: 10 }}
+      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>

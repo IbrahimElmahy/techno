@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Row, Col, Divider } from 'antd';
+import {
+  Button, Card, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag, message,
+} from 'antd';
 import { PlusOutlined, RollbackOutlined, WalletOutlined, FileSearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
@@ -300,15 +302,15 @@ export default function Treasury() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         />
       </Card>
 
       {/* Manual Entry Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title="تسجيل قيد تسوية يدوية"
         width={550}
-        onClose={() => setDrawerVisible(false)}
+        onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
@@ -419,7 +421,7 @@ export default function Treasury() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
     </div>
   );
 }

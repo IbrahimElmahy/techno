@@ -4,8 +4,7 @@ import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, User, RoleName } from '../components/AuthProvider';
 import { api } from '../api/client';
-
-const { Title } = Typography;
+import Logo from '../components/Logo';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -77,27 +76,10 @@ export default function Login() {
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              backgroundColor: '#6AB42D',
-              display: 'inline-flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              color: '#fff',
-              fontSize: 28,
-              fontWeight: 'bold',
-              marginBottom: 12,
-            }}
-          >
-            T
-          </div>
-          <Title level={3} style={{ margin: 0, color: '#6AB42D' }}>
-            تكنو ثيرم (Techno Therm)
-          </Title>
-          <Typography.Text type="secondary">بوابة موظفي الإدارة والفروع</Typography.Text>
+          <Logo width={230} style={{ justifyContent: 'center', marginBottom: 8 }} />
+          <Typography.Text type="secondary" style={{ display: 'block' }}>
+            بوابة موظفي الإدارة والفروع
+          </Typography.Text>
         </div>
 
         <h2 style={{ textAlign: 'center', marginBottom: 24, fontWeight: 'normal', fontSize: '20px' }}>

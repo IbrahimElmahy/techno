@@ -54,6 +54,9 @@ class SaleLine:
     unit_price: Decimal | None = None      # (007) manual price override (below-tier needs capability)
     unit: str | None = None                # (008) unit of measure; None = base unit
     serials: list[str] | None = None       # (009) serial numbers (required for serialized items)
+    # (027) per-line discount %. None = use the item's fixed default; a number overrides it
+    # (the caller adds the item fixed + a typed variable and sends the total here).
+    discount_pct: Decimal | None = None
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -98,7 +101,7 @@ def create_sale(
     # (007) price resolves from a tier (override per line); below-tier needs sell.below_price.
     # (008) a unit may be chosen: the list price = base-tier price × factor; stock moves in base units
     # (= entered qty × factor). The line records tier + actual price + unit + factor.
-    built: list[tuple[SaleLine, Decimal, Decimal, PriceTier, Decimal]] = []
+    built: list[tuple[SaleLine, Decimal, Decimal, PriceTier, Decimal, Decimal]] = []
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
@@ -125,9 +128,15 @@ def create_sale(
                 f"Selling below the '{tier.value}' tier price ({list_price}) requires the "
                 f"sell.below_price capability."
             )
-        line_total = to_money(Decimal(ln.quantity) * unit_price)
+        # (027) per-line discount: an explicit value wins, else the item's fixed default.
+        line_disc = (Decimal(ln.discount_pct) if ln.discount_pct is not None
+                     else Decimal(item.default_discount_pct or 0))
+        if line_disc < ZERO or line_disc >= Decimal("100"):
+            raise SalesError("Line discount must be between 0 and under 100%.")
+        line_before = Decimal(ln.quantity) * unit_price
+        line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
         gross += line_total
-        built.append((ln, unit_price, line_total, tier, factor))
+        built.append((ln, unit_price, line_total, tier, factor, line_disc))
     gross = to_money(gross)
     net = compute_net(gross, combined)
     # VAT (021): zero rate ⇒ tax 0 and `payable == net`, i.e. the original contract exactly.
@@ -154,7 +163,7 @@ def create_sale(
     )
     db.add(invoice)
     db.flush()
-    for ln, unit_price, line_total, tier, factor in built:
+    for ln, unit_price, line_total, tier, factor, line_disc in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock moves in the base unit
         stock_service.post_movement(
             db, item_id=ln.item_id, location_kind=origin_location_kind,
@@ -164,7 +173,8 @@ def create_sale(
         )
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
-                             unit_price=unit_price, line_total=line_total, price_tier=tier,
+                             unit_price=unit_price, discount_pct=line_disc,
+                             line_total=line_total, price_tier=tier,
                              unit=ln.unit, unit_factor=factor)
         )
         if ln.serials:  # (009) mark the specific serials sold (validated above)
@@ -180,8 +190,14 @@ def create_sale(
     entry_lines = []
     if to_money(cash_amount) > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.debit, to_money(cash_amount)))
-    if to_money(credit_amount) > ZERO:
-        entry_lines.append(LineInput(cust_acc.account_id, Direction.debit, to_money(credit_amount)))
+    credit = to_money(credit_amount)
+    if credit > ZERO:
+        # Part of this invoice is on credit — it adds to what the customer owes.
+        entry_lines.append(LineInput(cust_acc.account_id, Direction.debit, credit))
+    elif credit < ZERO:
+        # The customer paid MORE than this invoice: the surplus settles his prior balance, so it
+        # credits (reduces) his receivable. His overall account total drops by that surplus.
+        entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, -credit))
     entry_lines.append(LineInput(account_resolver.sales_revenue_account(db).id, Direction.credit, net))
     if tax > ZERO:  # output VAT is owed to the authority, not revenue
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id,
@@ -298,3 +314,155 @@ def return_sale(
                          entity_type="sales_return", entity_id=ret.id, after={"value": str(value)})
     hooks.emit("sale_returned", db, ret, inv)
     return ret
+
+
+@dataclass(frozen=True)
+class ReturnLine:
+    item_id: int
+    quantity: Decimal
+    unit_price: Decimal                    # the refunded price per unit (defaults to last sold price)
+    unit: str | None = None                # (008) unit of measure; None = base unit
+    discount_pct: Decimal | None = None    # (027) per-line discount; None = 0 (refund the actual price)
+
+
+def create_standalone_return(
+    db: Session,
+    *,
+    customer_id: int,
+    origin_location_kind: LocationKind,
+    origin_location_id: int,
+    variable_discount_pct: Decimal,
+    cash_refund: Decimal,
+    credit_reduction: Decimal,
+    lines: list[ReturnLine],
+    actor_role: RoleName,
+    actor_user_id: int,
+) -> SalesReturn:
+    """A sales return built like a sale but reversed (028): pick a customer + items directly (no
+    originating invoice), goods go back INTO stock, and the customer is credited (cash refund from a
+    treasury and/or a reduction of what they owe). Prices default to what the customer last paid.
+    """
+    if not lines:
+        raise SalesError("A return needs at least one line.")
+    variable = Decimal(variable_discount_pct)
+    if variable < ZERO or variable >= Decimal("100"):
+        raise SalesError("The invoice-level discount must be between 0 and under 100%.")
+
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise SalesError("Customer not found.")
+    cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
+    if cust_acc is None:
+        raise SalesError("Customer has no account.")
+
+    gross = ZERO
+    built: list[tuple[ReturnLine, Decimal, Decimal, Decimal]] = []  # (line, unit_price, line_total, factor)
+    for ln in lines:
+        item = db.get(Item, ln.item_id)
+        if item is None or item.kind != ItemKind.product:
+            raise SalesError("Returns accept products only.")
+        if item.is_serialized:
+            # Serial ownership can only be restored against the original sale — route serialized
+            # items through the invoice-bound return instead.
+            raise SalesError("Serialized items must be returned from their original invoice.")
+        try:
+            factor = uom_service.resolve_factor(db, item, ln.unit)
+        except UomError as exc:
+            raise SalesError(str(exc)) from exc
+        unit_price = to_money(ln.unit_price)
+        if unit_price < ZERO:
+            raise SalesError("The refund price cannot be negative.")
+        line_disc = Decimal(ln.discount_pct) if ln.discount_pct is not None else ZERO
+        if line_disc < ZERO or line_disc >= Decimal("100"):
+            raise SalesError("Line discount must be between 0 and under 100%.")
+        line_before = Decimal(ln.quantity) * unit_price
+        line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
+        gross += line_total
+        built.append((ln, unit_price, line_total, factor))
+    gross = to_money(gross)
+    net = compute_net(gross, variable)
+    tax = tax_service.tax_on(net, tax_service.vat_rate(db))
+    refund_total = to_money(net + tax)
+    if to_money(cash_refund) + to_money(credit_reduction) != refund_total:
+        raise SalesError(
+            "cash refund + credit reduction must equal the net total." if tax == ZERO
+            else f"cash refund + credit reduction must equal the total including VAT ({refund_total})."
+        )
+
+    cash_acc = (account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
+                if to_money(cash_refund) > ZERO else None)
+
+    ret = SalesReturn(
+        document_number=_doc_number(db, SalesReturn, "SRET"),
+        sales_invoice_id=None, customer_id=customer_id,
+        origin_location_kind=origin_location_kind, origin_location_id=origin_location_id,
+        gross=gross, combined_pct=variable, value=net, tax_amount=tax,
+        cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),
+        cash_account_id=cash_acc.id if cash_acc else None,
+        ledger_entry_id=None, actor_user_id=actor_user_id,
+    )
+    db.add(ret)
+    db.flush()
+    for ln, unit_price, line_total, factor in built:
+        base_qty = to_qty(Decimal(ln.quantity) * factor)  # goods return to stock in base units
+        stock_service.post_movement(
+            db, item_id=ln.item_id, location_kind=origin_location_kind,
+            location_id=origin_location_id, movement_type="sale_return_in",
+            direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
+            source_doc_type="sale_return", source_doc_id=ret.id,
+        )
+        ret.lines.append(SalesReturnLine(
+            item_id=ln.item_id, quantity=Decimal(ln.quantity), unit_price=unit_price,
+            discount_pct=(Decimal(ln.discount_pct) if ln.discount_pct is not None else ZERO),
+            line_total=line_total, unit=ln.unit, unit_factor=factor,
+        ))
+
+    entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, net)]
+    if tax > ZERO:
+        entry_lines.append(LineInput(tax_service.output_tax_account(db).id, Direction.debit,
+                                     tax, statement="رد ضريبة القيمة المضافة"))
+    if to_money(cash_refund) > ZERO:
+        entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_refund)))
+    if to_money(credit_reduction) > ZERO:
+        entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, to_money(credit_reduction)))
+    entry = ledger_service.post_entry(
+        db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
+        description=f"Sales return {ret.document_number}",
+    )
+    ret.ledger_entry_id = entry.id
+    db.flush()
+    audit_service.record(db, action="sale.return_standalone", actor_user_id=actor_user_id,
+                         entity_type="sales_return", entity_id=ret.id, after={"value": str(net)})
+    hooks.emit("standalone_return_created", db, ret)
+    return ret
+
+
+def last_sold_price(db: Session, *, customer_id: int, item_id: int) -> dict | None:
+    """The price this customer last paid for this item + a short purchase history (028). The
+    "last price" is the effective per-unit price paid (line_total / quantity, i.e. after the line
+    discount), which is what the return should refund by default. None if never bought."""
+    rows = db.execute(
+        select(
+            SalesInvoice.document_number, SalesInvoice.created_at,
+            SalesInvoiceLine.quantity, SalesInvoiceLine.unit_price,
+            SalesInvoiceLine.line_total, SalesInvoiceLine.unit,
+        )
+        .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
+        .where(SalesInvoice.customer_id == customer_id, SalesInvoiceLine.item_id == item_id)
+        .order_by(SalesInvoice.id.desc())
+        .limit(10)
+    ).all()
+    if not rows:
+        return None
+    history = []
+    for doc, created_at, qty, unit_price, line_total, unit in rows:
+        q = Decimal(str(qty)) or Decimal("1")
+        effective = to_money(Decimal(str(line_total)) / q) if q else to_money(unit_price)
+        history.append({
+            "document_number": doc,
+            "date": created_at.isoformat() if created_at else None,
+            "quantity": str(qty), "unit": unit,
+            "unit_price": str(to_money(unit_price)),
+            "effective_price": str(effective),
+        })
+    return {"last_price": history[0]["effective_price"], "history": history}

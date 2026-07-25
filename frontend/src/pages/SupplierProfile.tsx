@@ -1,0 +1,397 @@
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  Tabs, Table, Descriptions, Statistic, Row, Col, Card, Tag, Spin,
+  DatePicker, Space, Button, Empty, Typography, Modal,
+} from 'antd';
+import { ReloadOutlined, ArrowRightOutlined, EditOutlined } from '@ant-design/icons';
+import { Dayjs } from 'dayjs';
+import { api } from '../api/client';
+import InvoiceDocument, { invoiceFooter } from '../components/InvoiceDocument';
+import VoucherDocument, { voucherFooter } from '../components/VoucherDocument';
+import SupplierEditModal from '../components/SupplierEditModal';
+
+/**
+ * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
+ * purchase invoices, returns, payment vouchers and cheques, each row opening in a popup.
+ */
+
+const money = (v: any) =>
+  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+interface DocRow {
+  id: number;
+  document_number: string;
+  doc_date: string | null;
+  amount: string;
+  detail: string;
+}
+
+interface ProfileData {
+  supplier: any;
+  account_id: number | null;
+  balance: string;
+  total_purchases: string;
+  total_returns: string;
+  total_payments: string;
+  invoice_count: number;
+  last_invoice_date: string | null;
+  purchases: DocRow[];
+  returns: DocRow[];
+  payments: DocRow[];
+  cheques: any[];
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'تحت الدفع', settled: 'مصروف', bounced: 'مرتد', cancelled: 'ملغي',
+};
+
+const docColumns = (amountTitle: string) => [
+  { title: 'رقم المستند', dataIndex: 'document_number', key: 'doc' },
+  {
+    title: 'التاريخ', dataIndex: 'doc_date', key: 'date',
+    render: (d: string | null) => (d ? d.slice(0, 10) : '-'),
+  },
+  {
+    title: amountTitle, dataIndex: 'amount', key: 'amount',
+    render: (v: string) => <b>{money(v)} ج.م</b>,
+  },
+  { title: 'تفاصيل', dataIndex: 'detail', key: 'detail' },
+];
+
+export default function SupplierProfile() {
+  const { supplierId } = useParams();
+  const navigate = useNavigate();
+  const [data, setData] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [statement, setStatement] = useState<any>(null);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const [record, setRecord] = useState<any>(null);
+  const [recordLoading, setRecordLoading] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const load = async () => {
+    if (!supplierId) return;
+    setLoading(true);
+    try {
+      const res = await api.get(`/api/v1/suppliers/${supplierId}/profile`);
+      setData(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStatement = async (reset = false) => {
+    if (!supplierId) return;
+    const params: any = {};
+    if (range && !reset) {
+      params.date_from = range[0].format('YYYY-MM-DD');
+      params.date_to = range[1].format('YYYY-MM-DD');
+    }
+    try {
+      const res = await api.get(`/api/v1/suppliers/${supplierId}/statement`, { params });
+      setStatement({
+        ...res.data,
+        lines: (res.data.lines || []).map((l: any, i: number) => ({ ...l, _key: `${l.entry_id}-${i}` })),
+      });
+    } catch (err) {
+      setStatement(null);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    loadStatement(true);
+  }, [supplierId]);
+
+  const openRecord = async (kind: string, id: number) => {
+    setRecordLoading(true);
+    setRecord({ title: 'جارٍ التحميل…', fields: [], lines: [], line_columns: [] });
+    try {
+      const res = await api.get(`/api/v1/suppliers/${supplierId}/records/${kind}/${id}`);
+      setRecord(res.data);
+    } catch (err) {
+      setRecord(null);
+    } finally {
+      setRecordLoading(false);
+    }
+  };
+
+  const rowProps = (kind: string) => (r: any) => ({
+    onClick: () => openRecord(kind, kind === 'entry' ? r.entry_id : r.id),
+    style: { cursor: 'pointer' },
+  });
+
+  const s = data?.supplier;
+  const balance = Number(data?.balance || 0);
+
+  return (
+    <div>
+      <Card
+        title={
+          <Space>
+            <Button type="text" icon={<ArrowRightOutlined />} onClick={() => navigate('/suppliers')}>
+              رجوع
+            </Button>
+            <Typography.Text strong style={{ fontSize: 16 }}>
+              {s ? `ملف المورد: ${s.name} (${s.code})` : 'ملف المورد'}
+            </Typography.Text>
+          </Space>
+        }
+        extra={
+          <Space>
+            <Button type="primary" icon={<EditOutlined />} onClick={() => setEditOpen(true)}>
+              تعديل البيانات
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={() => { load(); loadStatement(); }}>
+              تحديث
+            </Button>
+          </Space>
+        }
+      >
+        {loading && !data ? (
+          <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
+        ) : !data ? (
+          <Empty description="لا توجد بيانات" />
+        ) : (
+          <>
+            <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic
+                    title="الرصيد المستحق للمورد"
+                    value={money(data.balance)}
+                    suffix="ج.م"
+                    valueStyle={{
+                      color: balance > 0 ? '#cf1322' : balance < 0 ? '#1677ff' : '#3f8600',
+                    }}
+                  />
+                </Card>
+              </Col>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic title="إجمالي المشتريات" value={money(data.total_purchases)} suffix="ج.م" />
+                </Card>
+              </Col>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic title="إجمالي المدفوعات" value={money(data.total_payments)} suffix="ج.م" />
+                </Card>
+              </Col>
+              <Col xs={12} md={6}>
+                <Card size="small">
+                  <Statistic title="إجمالي المرتجعات" value={money(data.total_returns)} suffix="ج.م" />
+                </Card>
+              </Col>
+            </Row>
+
+            <Tabs
+              items={[
+                {
+                  key: 'overview',
+                  label: 'نظرة عامة',
+                  children: (
+                    <Descriptions bordered column={2} size="small">
+                      <Descriptions.Item label="الكود">{s.code}</Descriptions.Item>
+                      <Descriptions.Item label="الاسم">{s.name}</Descriptions.Item>
+                      <Descriptions.Item label="الحالة">
+                        {s.active ? <Tag color="green">نشط</Tag> : <Tag color="red">معطل</Tag>}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="الهاتف">{s.phone || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="أرقام إضافية">
+                        {(s.phones || []).join('، ') || '-'}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="العنوان">{s.address || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="عدد الفواتير">{data.invoice_count}</Descriptions.Item>
+                      <Descriptions.Item label="آخر فاتورة">
+                        {data.last_invoice_date ? data.last_invoice_date.slice(0, 10) : '-'}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="رقم الحساب بالدفتر">
+                        {data.account_id ?? '-'}
+                      </Descriptions.Item>
+                    </Descriptions>
+                  ),
+                },
+                {
+                  key: 'statement',
+                  label: 'كشف الحساب',
+                  children: (
+                    <>
+                      <Space style={{ marginBottom: 12 }} wrap>
+                        <DatePicker.RangePicker value={range as any}
+                          onChange={(v) => setRange(v as any)} />
+                        <Button type="primary" onClick={() => loadStatement()}>عرض</Button>
+                        <Button onClick={() => { setRange(null); loadStatement(true); }}>
+                          كل الفترات
+                        </Button>
+                      </Space>
+                      {!statement ? (
+                        <Empty description="لا يوجد حساب دفتري لهذا المورد" />
+                      ) : (
+                        <>
+                          <Row gutter={[12, 12]} style={{ marginBottom: 12 }}>
+                            <Col xs={12} md={6}>
+                              <Card size="small">
+                                <Statistic title="رصيد أول المدة"
+                                  value={money(statement.opening_balance)} suffix="ج.م" />
+                              </Card>
+                            </Col>
+                            <Col xs={12} md={6}>
+                              <Card size="small">
+                                <Statistic title="إجمالي مدين"
+                                  value={money(statement.total_debit)} suffix="ج.م" />
+                              </Card>
+                            </Col>
+                            <Col xs={12} md={6}>
+                              <Card size="small">
+                                <Statistic title="إجمالي دائن"
+                                  value={money(statement.total_credit)} suffix="ج.م" />
+                              </Card>
+                            </Col>
+                            <Col xs={12} md={6}>
+                              <Card size="small">
+                                <Statistic title="رصيد آخر المدة"
+                                  value={money(statement.closing_balance)} suffix="ج.م" />
+                              </Card>
+                            </Col>
+                          </Row>
+                          <Table
+                            size="small" rowKey="_key" dataSource={statement.lines}
+                            onRow={rowProps('entry')} scroll={{ x: true }}
+                            pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                              pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                            columns={[
+                              { title: 'التاريخ', dataIndex: 'entry_date', key: 'd',
+                                render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
+                              { title: 'النوع', dataIndex: 'entry_type', key: 't' },
+                              { title: 'البيان', dataIndex: 'description', key: 'desc' },
+                              { title: 'مدين', dataIndex: 'debit', key: 'dr',
+                                render: (v: string) => money(v) },
+                              { title: 'دائن', dataIndex: 'credit', key: 'cr',
+                                render: (v: string) => money(v) },
+                              { title: 'الرصيد', dataIndex: 'balance', key: 'bal',
+                                render: (v: string) => <b>{money(v)}</b> },
+                            ]}
+                          />
+                        </>
+                      )}
+                    </>
+                  ),
+                },
+                {
+                  key: 'purchases',
+                  label: `فواتير الشراء (${data.purchases.length})`,
+                  children: (
+                    <Table size="small" rowKey="id" dataSource={data.purchases}
+                      columns={docColumns('الإجمالي')} onRow={rowProps('purchase')}
+                      scroll={{ x: true }}
+                      pagination={{ defaultPageSize: 10, showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+                  ),
+                },
+                {
+                  key: 'returns',
+                  label: `المرتجعات (${data.returns.length})`,
+                  children: (
+                    <Table size="small" rowKey="id" dataSource={data.returns}
+                      columns={docColumns('قيمة المرتجع')} onRow={rowProps('return')}
+                      scroll={{ x: true }}
+                      pagination={{ defaultPageSize: 10, showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+                  ),
+                },
+                {
+                  key: 'payments',
+                  label: `سندات الصرف (${data.payments.length})`,
+                  children: (
+                    <Table size="small" rowKey="id" dataSource={data.payments}
+                      columns={docColumns('المدفوع')} onRow={rowProps('payment')}
+                      scroll={{ x: true }}
+                      pagination={{ defaultPageSize: 10, showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+                  ),
+                },
+                {
+                  key: 'cheques',
+                  label: `الشيكات (${data.cheques.length})`,
+                  children: (
+                    <Table size="small" rowKey="id" dataSource={data.cheques}
+                      onRow={rowProps('cheque')} scroll={{ x: true }}
+                      pagination={{ defaultPageSize: 10, showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                      columns={[
+                        { title: 'رقم الشيك', dataIndex: 'cheque_number', key: 'n' },
+                        { title: 'البنك', dataIndex: 'bank_name', key: 'b',
+                          render: (v: string) => v || '-' },
+                        { title: 'القيمة', dataIndex: 'amount', key: 'a',
+                          render: (v: string) => <b>{money(v)} ج.م</b> },
+                        { title: 'الاستحقاق', dataIndex: 'due_date', key: 'd' },
+                        { title: 'الحالة', dataIndex: 'status', key: 's',
+                          render: (v: string) => <Tag>{STATUS_LABELS[v] || v}</Tag> },
+                      ]} />
+                  ),
+                },
+              ]}
+            />
+          </>
+        )}
+      </Card>
+
+      {/* One popup for every document kind. */}
+      <Modal
+        open={record !== null}
+        title={record?.title || 'تفاصيل المستند'}
+        onCancel={() => setRecord(null)}
+        footer={record?.doc
+          ? invoiceFooter(record.doc, () => setRecord(null))
+          : record?.voucher
+            ? voucherFooter(record.voucher, () => setRecord(null))
+            : <Button onClick={() => setRecord(null)}>إغلاق</Button>}
+        width={820}
+        centered
+        destroyOnHidden
+      >
+        {recordLoading ? (
+          <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
+        ) : !record ? null : record.doc ? (
+          <InvoiceDocument doc={record.doc} />
+        ) : record.voucher ? (
+          <VoucherDocument doc={record.voucher} />
+        ) : (
+          <>
+            <Descriptions bordered column={2} size="small">
+              {(record.fields || []).map((f: any) => (
+                <Descriptions.Item key={f.label} label={f.label}>{f.value}</Descriptions.Item>
+              ))}
+            </Descriptions>
+            {(record.lines || []).length > 0 && (
+              <Table
+                style={{ marginTop: 16 }}
+                size="small"
+                rowKey={(_r, i) => String(i)}
+                dataSource={(record.lines || []).map((row: string[], i: number) => ({
+                  _i: i,
+                  ...Object.fromEntries(row.map((v, j) => [`c${j}`, v])),
+                }))}
+                columns={(record.line_columns || []).map((t: string, j: number) => ({
+                  title: t, dataIndex: `c${j}`, key: `c${j}`,
+                }))}
+                pagination={false}
+                scroll={{ x: true }}
+              />
+            )}
+          </>
+        )}
+      </Modal>
+
+      <SupplierEditModal
+        supplier={data?.supplier}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        onSaved={load}
+      />
+    </div>
+  );
+}

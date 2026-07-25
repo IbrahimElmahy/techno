@@ -1,8 +1,18 @@
-import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Divider, Row, Col, Result, Descriptions } from 'antd';
-import { PlusOutlined, RollbackOutlined, EyeOutlined, FileTextOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Statistic, Table, Tag, Typography, message,
+} from 'antd';
+import {
+  PlusOutlined, RollbackOutlined, FileTextOutlined, PrinterOutlined, DeleteOutlined,
+  ArrowRightOutlined, SearchOutlined, ClearOutlined,
+} from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
+import CustomerAccountPanel from '../components/CustomerAccountPanel';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface InvoiceRecord {
   id: number;
@@ -22,6 +32,9 @@ interface Customer {
   default_price_tier: string | null;
 }
 
+const money = (v: any) =>
+  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 const TIER_LABELS: Record<string, string> = {
   commercial: 'تجاري',
   semi_commercial: 'نصف تجاري',
@@ -36,6 +49,8 @@ interface Product {
   name: string;
   sale_price: string | null;
   is_serialized: boolean;
+  category: string | null;
+  default_discount_pct: string | null;   // the item's own fixed discount
 }
 
 interface Warehouse {
@@ -45,12 +60,15 @@ interface Warehouse {
 
 interface SaleLineItem {
   key: string;
+  category: string | null;         // chosen first; filters the item list
   item_id: number | null;
   quantity: number;
   unit_price: number;
   tier: string | null;
   unit: string | null;
   serials: string;
+  fixed_discount: number;          // the item's own fixed discount (auto)
+  variable_discount: number;       // a typed extra discount on this line
 }
 
 interface ItemUnit { name: string; factor: number; is_base: boolean; }
@@ -65,11 +83,25 @@ interface InvoiceDetail {
   }>;
 }
 
+interface InvoiceFilters {
+  q?: string;
+  customer_id?: number;
+  date_from?: string;
+  date_to?: string;
+  payment?: string;   // cash | credit | partial
+}
+
 export default function Invoices() {
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
+  const navigate = useNavigate();
+  const [filters, setFilters] = useState<InvoiceFilters>({});
+  const [search, setSearch] = useState('');
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
 
   // Drawers
@@ -88,24 +120,36 @@ export default function Invoices() {
   const [returnForm] = Form.useForm();
 
   // Create invoice dynamic lines
-  const [lines, setLines] = useState<SaleLineItem[]>([
-    { key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null, serials: '' },
-  ]);
+  const blankLine = (key: string, tier: string | null = null): SaleLineItem => ({
+    key, category: null, item_id: null, quantity: 1, unit_price: 0, tier, unit: null,
+    serials: '', fixed_discount: 0, variable_discount: 0,
+  });
+  const [lines, setLines] = useState<SaleLineItem[]>([]);
   // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
   const [pricesCache, setPricesCache] = useState<Record<number, { base: number | null; tiers: Record<string, number> }>>({});
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
   const [customerTier, setCustomerTier] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [customerBalance, setCustomerBalance] = useState<number | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
+  // The category products are picked from — chosen once, stays until changed.
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   // Return quantities tracking
   const [returnQtys, setReturnQtys] = useState<Record<number, number>>({});
 
-  const fetchInvoices = async () => {
+  // Filtering happens on the server so it covers ALL invoices, not just the loaded page.
+  const fetchInvoices = async (override?: InvoiceFilters) => {
+    const active = override ?? filters;
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/sales');
+      const params: any = {};
+      Object.entries(active).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') params[k] = v;
+      });
+      const res = await api.get('/api/v1/sales', { params });
       setInvoices(res.data);
     } catch (err) {
       console.error(err);
@@ -114,16 +158,41 @@ export default function Invoices() {
     }
   };
 
+  const setFilter = (key: keyof InvoiceFilters, value: any) => {
+    const next = { ...filters, [key]: value };
+    setFilters(next);
+    fetchInvoices(next);
+  };
+
+  const applySearch = () => setFilter('q', search.trim() || undefined);
+
+  const resetFilters = () => {
+    setSearch('');
+    setFilters({});
+    fetchInvoices({});
+  };
+
+  // Live summary of whatever the current filter returned.
+  const summary = useMemo(() => {
+    const net = invoices.reduce((s, i) => s + Number(i.net || 0), 0);
+    const credit = invoices.reduce((s, i) => s + Number(i.credit_amount || 0), 0);
+    return { count: invoices.length, net, credit };
+  }, [invoices]);
+
   const loadLookups = async () => {
     try {
-      const [custRes, prodRes, whRes] = await Promise.all([
+      const [custRes, prodRes, whRes, ptRes] = await Promise.all([
         api.get('/api/v1/customers'),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
+        api.get('/api/v1/products/point-values'),
       ]);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
       setWarehouses(whRes.data);
+      const pts: Record<number, number> = {};
+      (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
+      setPointValues(pts);
     } catch (err) {
       console.error(err);
     }
@@ -134,23 +203,80 @@ export default function Invoices() {
     loadLookups();
   }, []);
 
-  // Invoice computations
-  const grossTotal = lines.reduce((sum, line) => sum + line.quantity * line.unit_price, 0);
-  const netTotal = grossTotal * (1 - discountPct / 100);
+  // Product categories (of sellable products) for the category picker.
+  const productCategories = React.useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => { if (p.category) set.add(p.category); });
+    return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
+  }, [products]);
 
+  // Added products grouped by category, in first-appearance order.
+  const linesByCategory = React.useMemo(() => {
+    const groups: { category: string | null; items: SaleLineItem[] }[] = [];
+    lines.forEach((l) => {
+      let g = groups.find((x) => x.category === (l.category ?? null));
+      if (!g) { g = { category: l.category ?? null, items: [] }; groups.push(g); }
+      g.items.push(l);
+    });
+    return groups;
+  }, [lines]);
+
+  // A line's amount AFTER its own (fixed + variable) discount.
+  const lineTotal = (l: SaleLineItem) => {
+    const disc = Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
+    return l.quantity * l.unit_price * (1 - disc / 100);
+  };
+
+  // Loyalty points a line earns = the product's point value × quantity.
+  const linePoints = (l: SaleLineItem) =>
+    (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
+
+  // Invoice computations: per-line discounts first, then the invoice-total discount.
+  const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
+  const netTotal = grossTotal * (1 - discountPct / 100);
+  const totalPoints = lines.reduce((sum, line) => sum + linePoints(line), 0);
+
+  // credit = net − cash, SIGNED: positive → the remainder is added to the customer's account;
+  // negative → the customer overpaid and the surplus settles his prior balance (028).
   useEffect(() => {
     const cash = parseFloat(cashAmount.toString()) || 0;
-    const credit = Math.max(0, netTotal - cash);
-    setCreditAmount(parseFloat(credit.toFixed(2)));
+    setCreditAmount(parseFloat((netTotal - cash).toFixed(2)));
   }, [cashAmount, netTotal, discountPct]);
 
-  const handleAddLine = () => {
-    const newKey = Date.now().toString();
-    setLines([...lines, { key: newKey, item_id: null, quantity: 1, unit_price: 0, tier: customerTier, unit: null, serials: '' }]);
+  // Close the create page and clear it, so reopening starts fresh.
+  const closeCreate = () => {
+    setCreateVisible(false);
+    setLines([]);
+    setActiveCategory(null);
+    setCashAmount(0);
+    setDiscountPct(0);
+    setSelectedCustomerId(null);
+    setCustomerBalance(null);
+    createForm.resetFields();
+  };
+
+  // Type a product name → it's added to the invoice immediately (POS-style, fastest path).
+  const addProductById = async (itemId: number) => {
+    if (!itemId) return;
+    await fetchPrices(itemId);
+    const prod = products.find((p) => p.id === itemId);
+    const tier = customerTier || 'consumer';
+    const l = blankLine(Date.now().toString(), tier);
+    l.category = prod?.category ?? null;
+    l.item_id = itemId;
+    l.unit_price = resolvePrice(itemId, tier, null);
+    l.fixed_discount = prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
+    // If the same product is already on the invoice, just bump its quantity.
+    const existing = lines.find((x) => x.item_id === itemId);
+    if (existing) {
+      setLines((prev) => prev.map((x) => (x.key === existing.key
+        ? { ...x, quantity: x.quantity + 1 } : x)));
+    } else {
+      setLines((prev) => [...prev, l]);
+    }
   };
 
   const handleRemoveLine = (key: string) => {
-    if (lines.length === 1) return;
     setLines(lines.filter((l) => l.key !== key));
   };
 
@@ -196,10 +322,20 @@ export default function Invoices() {
       prev.map((l) => {
         if (l.key !== key) return l;
         const updated = { ...l, [field]: value };
-        if (field === 'item_id') {
+        if (field === 'category') {
+          // New category → clear the chosen item so the list re-filters.
+          updated.item_id = null;
+          updated.unit = null;
+          updated.unit_price = 0;
+          updated.fixed_discount = 0;
+        } else if (field === 'item_id') {
           updated.tier = l.tier || customerTier || 'consumer';
           updated.unit = null;  // default to base
           updated.unit_price = resolvePrice(value, updated.tier, null);
+          // The item's own fixed discount is applied automatically.
+          const prod = products.find((p) => p.id === value);
+          updated.fixed_discount = prod?.default_discount_pct
+            ? parseFloat(prod.default_discount_pct) : 0;
         } else if ((field === 'tier' || field === 'unit') && l.item_id) {
           updated.unit_price = resolvePrice(l.item_id, updated.tier, updated.unit);
         }
@@ -208,35 +344,15 @@ export default function Invoices() {
     );
   };
 
-  const [barcode, setBarcode] = useState('');
-  const scanBarcode = async () => {
-    const code = barcode.trim();
-    if (!code) return;
-    try {
-      const res = await api.get(`/api/v1/barcodes/${encodeURIComponent(code)}`);
-      const d = res.data; // { item_id, unit, factor, base_sale_price }
-      if (!products.find((p) => p.id === d.item_id)) {
-        message.error('هذا الباركود لصنف غير قابل للبيع هنا'); return;
-      }
-      await fetchPrices(d.item_id);
-      const tier = customerTier || 'consumer';
-      const price = (d.base_sale_price ? parseFloat(d.base_sale_price) : 0) * parseFloat(d.factor);
-      const newLine = {
-        key: Date.now().toString(), item_id: d.item_id, quantity: 1, tier,
-        unit: d.unit || null, unit_price: price, serials: '',
-      };
-      setLines((prev) => (prev.length === 1 && prev[0].item_id === null) ? [newLine] : [...prev, newLine]);
-      setBarcode('');
-    } catch (err: any) {
-      if (err?.response?.status === 404) message.error('باركود غير معروف');
-      else console.error(err);
-    }
-  };
-
   const onCustomerChange = (customerId: number) => {
     const c = customers.find((x) => x.id === customerId);
     const tier = c?.default_price_tier ?? null;
     setCustomerTier(tier);
+    setSelectedCustomerId(customerId);
+    setCustomerBalance(null);
+    api.get(`/api/v1/customers/${customerId}/account`)
+      .then((res) => setCustomerBalance(Number(res.data.balance || 0)))
+      .catch((err) => console.error(err));
     setLines((prev) => prev.map((l) => l.item_id
       ? { ...l, tier: tier || 'consumer', unit_price: resolvePrice(l.item_id, tier || 'consumer', l.unit) }
       : { ...l, tier }));
@@ -286,6 +402,8 @@ export default function Invoices() {
             tier: l.tier,
             unit: l.unit,
             unit_price: l.unit_price.toFixed(2),
+            // Combined per-line discount: the item's fixed + the typed variable.
+            discount_pct: ((l.fixed_discount || 0) + (l.variable_discount || 0)).toFixed(2),
             serials: prod?.is_serialized ? parseSerials(l.serials) : null,
           };
         }),
@@ -294,7 +412,8 @@ export default function Invoices() {
       message.success('تم تسجيل فاتورة البيع بنجاح');
       setCreateVisible(false);
       createForm.resetFields();
-      setLines([{ key: '1', item_id: null, quantity: 1, unit_price: 0, tier: null, unit: null, serials: '' }]);
+      setLines([]);
+      setActiveCategory(null);
       setCashAmount(0);
       setDiscountPct(0);
       fetchInvoices();
@@ -331,6 +450,42 @@ export default function Invoices() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // Map a loaded invoice onto the shared invoice document (same shape drives screen + print).
+  const invoiceDoc = (inv: any): InvoiceDoc | null => {
+    if (!inv) return null;
+    const customer = customers.find((c) => c.id === inv.customer_id);
+    return {
+      kind: 'sale',
+      document_number: inv.document_number,
+      date: (inv as any).created_at ?? null,
+      partyLabel: 'العميل',
+      partyName: customer?.name ?? `#${inv.customer_id}`,
+      partyPhone: (customer as any)?.phone ?? null,
+      partyId: inv.customer_id ?? null,
+      gross: inv.gross,
+      discountPct: inv.combined_pct,
+      net: inv.net,
+      tax: (inv as any).tax_amount ?? 0,
+      // On an overpaid invoice the surplus settles prior debt (a payment on account), so on THIS
+      // document show only what applied to it: cash ≤ payable and never a negative "remaining".
+      cash: Math.min(Number(inv.cash_amount || 0), Number(inv.net || 0) + Number(inv.tax_amount || 0)),
+      credit: Math.max(0, Number(inv.credit_amount || 0)),
+      entryId: (inv as any).ledger_entry_id ?? null,
+      totalPoints: (inv.lines || []).reduce(
+        (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
+      lines: (inv.lines || []).map((l: any) => ({
+        name: productName(l.item_id),
+        itemId: l.item_id,
+        quantity: l.quantity,
+        unit: l.unit,
+        unit_price: l.unit_price,
+        discount_pct: l.discount_pct,
+        points: (pointValues[l.item_id] || 0) * Number(l.quantity || 0),
+        line_total: l.line_total,
+      })),
+    };
   };
 
   const handleReturnSubmit = () => {
@@ -370,6 +525,7 @@ export default function Invoices() {
       title: 'رقم الفاتورة',
       dataIndex: 'document_number',
       key: 'document_number',
+      // The whole row is clickable (see the table's onRow); just show the number.
       render: (doc: string) => <Tag color="blue">{doc}</Tag>,
     },
     {
@@ -415,9 +571,11 @@ export default function Invoices() {
       title: 'الإجراءات',
       key: 'actions',
       render: (_: any, record: InvoiceRecord) => (
-        <Space size="middle">
-          <Button type="link" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
-            عرض
+        <Space size="middle" onClick={(e) => e.stopPropagation()}>
+          {/* Loads the lines first, then prints — the list row alone has no line detail. */}
+          <Button type="link" icon={<PrinterOutlined />}
+            onClick={async () => { await openDetail(record); }}>
+            طباعة
           </Button>
           <Button
             type="dashed"
@@ -431,33 +589,22 @@ export default function Invoices() {
     },
   ];
 
-  return (
-    <div>
-      <Card
-        title="الفواتير (سجل فواتير المبيعات)"
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
-            تسجيل فاتورة بيع
-          </Button>
-        }
-      >
-        <Table
-          dataSource={invoices}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-        />
-      </Card>
-
-      {/* Create Sale Invoice Drawer */}
-      <Drawer
-        title="تسجيل فاتورة بيع جديدة"
-        width={650}
-        onClose={() => setCreateVisible(false)}
-        open={createVisible}
-        destroyOnHidden
-      >
+  // The create form is a full inner page (not a modal) — a big invoice form reads better on a
+  // full page than boxed inside a scrolling modal.
+  if (createVisible) {
+    return (
+      <div>
+        <Card
+          title={
+            <Space>
+              <Button type="text" icon={<ArrowRightOutlined />}
+                onClick={closeCreate}>رجوع</Button>
+              <Typography.Text strong style={{ fontSize: 16 }}>
+                تسجيل فاتورة بيع جديدة
+              </Typography.Text>
+            </Space>
+          }
+        >
         <Form form={createForm} layout="vertical" onFinish={handleCreateSubmit} requiredMark={false}>
           <Row gutter={16}>
             <Col span={12}>
@@ -465,6 +612,7 @@ export default function Invoices() {
                 name="customer_id"
                 label="العميل المشتري"
                 rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
+                style={{ marginBottom: 8 }}
               >
                 <Select placeholder="اختر العميل" onChange={onCustomerChange} showSearch optionFilterProp="children">
                   {customers.map((c) => (
@@ -492,134 +640,316 @@ export default function Invoices() {
             </Col>
           </Row>
 
-          <Divider orientation="right">المنتجات المباعة</Divider>
+          <Divider orientation="right" style={{ fontWeight: 700 }}>المنتجات المباعة</Divider>
 
-          <Input.Search
-            placeholder="امسح أو أدخل باركود ثم اضغط Enter لإضافة سطر"
-            prefix={<span style={{ color: '#888' }}>باركود:</span>}
-            enterButton="إضافة"
-            value={barcode}
-            onChange={(e) => setBarcode(e.target.value)}
-            onSearch={scanBarcode}
-            style={{ marginBottom: 12 }}
-          />
-
-          {lines.map((line) => (
-            <Row gutter={6} key={line.key} align="middle" style={{ marginBottom: 12 }}>
-              <Col span={7}>
-                <Select
-                  placeholder="اختر المنتج"
-                  style={{ width: '100%' }}
-                  value={line.item_id}
-                  showSearch optionFilterProp="children"
-                  onChange={(val) => handleLineChange(line.key, 'item_id', val)}
-                >
-                  {products.map((p) => (
-                    <Select.Option key={p.id} value={p.id}>{p.name}</Select.Option>
-                  ))}
-                </Select>
-              </Col>
-              <Col span={4}>
-                <Select placeholder="الفئة" style={{ width: '100%' }} value={line.tier ?? undefined}
-                  onChange={(val) => handleLineChange(line.key, 'tier', val)}>
-                  {Object.entries(TIER_LABELS).map(([k, l]) => (
-                    <Select.Option key={k} value={k}>{l}</Select.Option>
-                  ))}
-                </Select>
-              </Col>
-              <Col span={4}>
-                <Select placeholder="الوحدة" style={{ width: '100%' }} value={line.unit ?? '__base__'}
-                  disabled={!line.item_id}
-                  onChange={(val) => handleLineChange(line.key, 'unit', val === '__base__' ? null : val)}>
-                  {(unitsCache[line.item_id || 0] || []).map((u) => (
-                    <Select.Option key={u.name} value={u.is_base ? '__base__' : u.name}>
-                      {u.name}{u.is_base ? '' : ` (×${u.factor})`}
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Col>
-              <Col span={3}>
-                <InputNumber min={1} style={{ width: '100%' }} value={line.quantity}
-                  onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} placeholder="الكمية" />
-              </Col>
-              <Col span={4}>
-                <InputNumber min={0} step={0.01} style={{ width: '100%' }} value={line.unit_price}
-                  onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} placeholder="السعر" />
-              </Col>
-              <Col span={2}>
-                <Button type="text" danger onClick={() => handleRemoveLine(line.key)}>حذف</Button>
-              </Col>
-              {line.item_id && products.find((p) => p.id === line.item_id)?.is_serialized && (
-                <Col span={24} style={{ marginTop: 6 }}>
-                  <Input size="small" prefix="سيريال:" placeholder="أرقام تسلسلية مفصولة بمسافة/فاصلة (يجب أن يساوي عددها الكمية)"
-                    value={line.serials}
-                    onChange={(e) => handleLineChange(line.key, 'serials', e.target.value)} />
-                </Col>
-              )}
-            </Row>
-          ))}
-
-          <Button type="dashed" onClick={handleAddLine} block icon={<PlusOutlined />} style={{ marginBottom: 24 }}>
-            إضافة منتج آخر
-          </Button>
-
-          <Divider />
-
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item label="الخصم الإضافي (%)">
-                <InputNumber
-                  min={0}
-                  max={100}
-                  style={{ width: '100%' }}
-                  value={discountPct}
-                  onChange={(val) => setDiscountPct(val || 0)}
-                />
-              </Form.Item>
+          {/* Choose a category once (keeps the product list short), then pick products from it —
+              each pick adds it instantly. Switch category to add from another. */}
+          <Row gutter={12} style={{ marginBottom: 14 }}>
+            <Col xs={24} md={7}>
+              <Select showSearch style={{ width: '100%' }} size="large"
+                placeholder="١) اختر الفئة" value={activeCategory ?? undefined}
+                optionFilterProp="label"
+                onChange={(val) => setActiveCategory(val ?? null)}
+                options={productCategories.map((c) => ({ value: c, label: categoryLabels[c] || c }))} />
             </Col>
-            <Col span={6}>
-              <div style={{ padding: 12, background: '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
-                <span style={{ fontSize: '12px', color: '#888' }}>إجمالي الفاتورة الصافي</span>
-                <h3 style={{ margin: '4px 0 0', color: '#6AB42D' }}>{netTotal.toFixed(2)} ج.م</h3>
-              </div>
-            </Col>
-            <Col span={6}>
-              <Form.Item label="المبلغ المدفوع نقداً">
-                <InputNumber
-                  min={0}
-                  style={{ width: '100%' }}
-                  value={cashAmount}
-                  onChange={(val) => setCashAmount(val || 0)}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item label="المتبقي آجل">
-                <InputNumber
-                  disabled
-                  style={{ width: '100%' }}
-                  value={creditAmount}
-                />
-              </Form.Item>
+            <Col xs={24} md={17}>
+              <Select showSearch value={null} size="large" style={{ width: '100%' }}
+                disabled={!activeCategory}
+                placeholder={activeCategory ? '٢) اختر منتجاً من الفئة لإضافته' : 'اختر الفئة أولاً'}
+                optionFilterProp="label"
+                onChange={(val) => { if (val) addProductById(val as number); }}
+                options={products
+                  .filter((p) => p.category === activeCategory)
+                  .map((p) => ({ value: p.id, label: p.name }))} />
             </Col>
           </Row>
 
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                تسجيل وحفظ فاتورة البيع
-              </Button>
-              <Button onClick={() => setCreateVisible(false)}>إلغاء</Button>
-            </Space>
+          {lines.length === 0 ? (
+            <Empty description="اختر الفئة ثم المنتجات لإضافتها للفاتورة" style={{ margin: '12px 0' }} />
+          ) : (
+            linesByCategory.map((group) => (
+              <div key={group.category ?? '__none__'}
+                style={{ border: '1px solid #e6efe3', borderRadius: 10, overflow: 'hidden',
+                         marginBottom: 12 }}>
+                {/* Category header. */}
+                <div style={{ background: '#f2f9f3', padding: '8px 12px', display: 'flex',
+                              alignItems: 'center', gap: 8 }}>
+                  <Tag color="green" style={{ fontWeight: 700, margin: 0 }}>
+                    {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                  </Tag>
+                  <span style={{ color: '#8a8a8a', fontSize: 12 }}>{group.items.length} صنف</span>
+                </div>
+
+                {/* Column headers. */}
+                <Row gutter={8} style={{ padding: '6px 12px 0', color: '#8a8a8a', fontSize: 12 }}>
+                  <Col md={6}>المنتج</Col>
+                  <Col md={3}>فئة السعر</Col>
+                  <Col md={2}>الكمية</Col>
+                  <Col md={3}>سعر الوحدة</Col>
+                  <Col md={2}>خصم ثابت %</Col>
+                  <Col md={2}>خصم متغير %</Col>
+                  <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
+                  <Col md={3} style={{ textAlign: 'center' }}>الإجمالي</Col>
+                  <Col md={1} />
+                </Row>
+
+                {group.items.map((line) => {
+                  const serialized = line.item_id
+                    && products.find((p) => p.id === line.item_id)?.is_serialized;
+                  return (
+                    <div key={line.key}
+                      style={{ padding: '4px 12px 6px', borderTop: '1px solid #f0f5ee' }}>
+                      <Row gutter={8} align="middle">
+                        <Col md={6} xs={24}>
+                          <b>{productName(line.item_id as number)}</b>
+                        </Col>
+                        <Col md={3} xs={12}>
+                          <Select size="small" style={{ width: '100%' }} value={line.tier ?? undefined}
+                            onChange={(val) => handleLineChange(line.key, 'tier', val)}>
+                            {Object.entries(TIER_LABELS).map(([k, l]) => (
+                              <Select.Option key={k} value={k}>{l}</Select.Option>
+                            ))}
+                          </Select>
+                        </Col>
+                        <Col md={2} xs={8}>
+                          <InputNumber size="small" min={1} style={{ width: '100%' }}
+                            value={line.quantity}
+                            onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} />
+                        </Col>
+                        <Col md={3} xs={8}>
+                          <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+                            value={line.unit_price}
+                            onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
+                        </Col>
+                        <Col md={2} xs={8}>
+                          <InputNumber size="small" style={{ width: '100%' }}
+                            value={line.fixed_discount} disabled />
+                        </Col>
+                        <Col md={2} xs={8}>
+                          <InputNumber size="small" min={0} max={100} step={0.5} style={{ width: '100%' }}
+                            value={line.variable_discount}
+                            onChange={(val) => handleLineChange(line.key, 'variable_discount', val || 0)} />
+                        </Col>
+                        <Col md={2} xs={12} style={{ textAlign: 'center' }}>
+                          <span style={{ color: '#F5A11D', fontWeight: 600 }}>
+                            {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                          </span>
+                        </Col>
+                        <Col md={3} xs={12} style={{ textAlign: 'center' }}>
+                          <b style={{ color: '#6AB42D' }}>{lineTotal(line).toFixed(2)}</b>
+                        </Col>
+                        <Col md={1} xs={4} style={{ textAlign: 'center' }}>
+                          <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                            onClick={() => handleRemoveLine(line.key)} />
+                        </Col>
+                      </Row>
+                      {serialized && (
+                        <Input size="small" style={{ marginTop: 6 }}
+                          placeholder="أرقام تسلسلية مفصولة بمسافة/فاصلة (يجب أن يساوي عددها الكمية)"
+                          value={line.serials}
+                          onChange={(e) => handleLineChange(line.key, 'serials', e.target.value)} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))
+          )}
+
+          {/* Totals + payment — a single summary strip. */}
+          <div style={{
+            background: '#f6faf3', border: '1px solid #e6efe3', borderRadius: 10, padding: 16,
+          }}>
+            <Row gutter={[16, 8]} align="bottom">
+              <Col xs={12} md={5}>
+                <Form.Item label="خصم على إجمالي الفاتورة" style={{ marginBottom: 0 }}>
+                  <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
+                    value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={5}>
+                <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
+                  help={selectedCustomerId && customerBalance !== null
+                    ? 'يمكن أن يزيد عن قيمة الفاتورة لسداد المديونية القديمة' : undefined}>
+                  <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
+                    value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={5}>
+                {creditAmount >= 0 ? (
+                  <Form.Item label="المتبقي آجل على الفاتورة" style={{ marginBottom: 0 }}>
+                    <InputNumber disabled style={{ width: '100%' }} addonAfter="ج.م" value={creditAmount} />
+                  </Form.Item>
+                ) : (
+                  <Form.Item label="سداد من المديونية القديمة" style={{ marginBottom: 0 }}>
+                    <InputNumber disabled addonAfter="ج.م" value={Math.abs(creditAmount)}
+                      style={{ width: '100%' }} />
+                  </Form.Item>
+                )}
+              </Col>
+              <Col xs={12} md={9}>
+                <div style={{
+                  display: 'flex', gap: 24, justifyContent: 'flex-end', flexWrap: 'wrap',
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الإجمالي قبل خصم الفاتورة</div>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>{grossTotal.toFixed(2)} ج.م</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي نقاط الفاتورة</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: '#F5A11D' }}>
+                      {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })} نقطة
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الصافي المطلوب</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: '#6AB42D' }}>
+                      {netTotal.toFixed(2)} ج.م
+                    </div>
+                  </div>
+                </div>
+              </Col>
+            </Row>
+
+            {selectedCustomerId && customerBalance !== null && (
+              <>
+                <Divider style={{ margin: '14px 0' }} />
+                <Row gutter={[16, 8]} justify="end" style={{ textAlign: 'center' }}>
+                  <Col xs={12} md={5}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي المستحق شامل الفاتورة</div>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>{money(customerBalance + netTotal)} ج.م</div>
+                    <div style={{ fontSize: 11, color: '#b0b0b0' }}>
+                      ({money(customerBalance)} مديونية + {money(netTotal)} فاتورة)
+                    </div>
+                  </Col>
+                  <Col xs={12} md={5}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>يُخصم منه المدفوع نقداً</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: '#6AB42D' }}>− {money(cashAmount)} ج.م</div>
+                  </Col>
+                  <Col xs={24} md={6}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي المستحق على العميل بعد الفاتورة</div>
+                    <div style={{ fontSize: 22, fontWeight: 800,
+                      color: (customerBalance + netTotal - cashAmount) > 0.001 ? '#cf1322' : '#6AB42D' }}>
+                      {money(customerBalance + netTotal - cashAmount)} ج.م
+                    </div>
+                  </Col>
+                </Row>
+              </>
+            )}
+          </div>
+
+          <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
+            {/* Aligned to the physical left of the page (flex-end under RTL). */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Space>
+                <Button type="primary" size="large" htmlType="submit">
+                  تسجيل وحفظ فاتورة البيع
+                </Button>
+                <Button size="large" onClick={closeCreate}>إلغاء</Button>
+              </Space>
+            </div>
           </Form.Item>
         </Form>
-      </Drawer>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Card
+        title="الفواتير (سجل فواتير المبيعات)"
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
+            تسجيل فاتورة بيع
+          </Button>
+        }
+      >
+        {/* --- Search + filters (server-side, so they cover every invoice) --- */}
+        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+          <Col xs={24} md={6}>
+            <Input
+              allowClear
+              value={search}
+              placeholder="بحث برقم الفاتورة"
+              prefix={<SearchOutlined />}
+              onChange={(e) => setSearch(e.target.value)}
+              onPressEnter={applySearch}
+              onBlur={applySearch}
+            />
+          </Col>
+          <Col xs={24} md={6}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="العميل"
+              value={filters.customer_id}
+              onChange={(v) => setFilter('customer_id', v)}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+          </Col>
+          <Col xs={12} md={6}>
+            <DatePicker.RangePicker style={{ width: '100%' }}
+              value={filters.date_from && filters.date_to
+                ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
+              onChange={(v) => {
+                const next = {
+                  ...filters,
+                  date_from: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
+                  date_to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
+                };
+                setFilters(next);
+                fetchInvoices(next);
+              }} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear style={{ width: '100%' }} placeholder="طريقة السداد"
+              value={filters.payment}
+              onChange={(v) => setFilter('payment', v)}
+              options={[
+                { value: 'cash', label: 'نقدي بالكامل' },
+                { value: 'credit', label: 'آجل بالكامل' },
+                { value: 'partial', label: 'جزئي (نقدي + آجل)' },
+              ]} />
+          </Col>
+          <Col xs={24} md={2}>
+            <Button icon={<ClearOutlined />} onClick={resetFilters} block>مسح</Button>
+          </Col>
+        </Row>
+
+        <Row gutter={12} style={{ marginBottom: 12 }}>
+          <Col xs={24} md={8}>
+            <Card size="small"><Statistic title="عدد الفواتير الظاهرة" value={summary.count} /></Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card size="small">
+              <Statistic title="إجمالي صافي المبيعات" value={money(summary.net)} suffix="ج.م" />
+            </Card>
+          </Col>
+          <Col xs={24} md={8}>
+            <Card size="small">
+              <Statistic title="إجمالي المتبقي آجل" value={money(summary.credit)} suffix="ج.م"
+                valueStyle={{ color: summary.credit > 0 ? '#cf1322' : undefined }} />
+            </Card>
+          </Col>
+        </Row>
+
+        <Table
+          dataSource={invoices}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+          // The whole row opens the invoice details.
+          onRow={(record) => ({
+            onClick: () => openDetail(record),
+            style: { cursor: 'pointer' },
+          })}
+        />
+      </Card>
 
       {/* Return Invoice Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title={`مرتجع مبيعات للفاتورة: ${selectedInvoice?.document_number || ''}`}
         width={500}
-        onClose={() => setReturnVisible(false)}
+        onCancel={() => setReturnVisible(false)}
         open={returnVisible}
         destroyOnHidden
       >
@@ -661,42 +991,22 @@ export default function Invoices() {
             <Button onClick={() => setReturnVisible(false)}>إلغاء</Button>
           </Space>
         </div>
-      </Drawer>
+      </Modal>
 
-      {/* Invoice detail / view drawer */}
-      <Drawer
+      {/* Invoice detail / view */}
+      <Modal centered
         title={`تفاصيل الفاتورة ${viewInvoice?.document_number ?? ''}`}
         width={640}
         open={detailVisible}
-        onClose={() => setDetailVisible(false)}
+        onCancel={() => setDetailVisible(false)}
         destroyOnHidden
+        footer={invoiceFooter(invoiceDoc(viewInvoice), () => setDetailVisible(false))}
       >
         {viewInvoice && (
           <>
-            <Descriptions bordered size="small" column={2}>
-              <Descriptions.Item label="رقم الفاتورة">{viewInvoice.document_number}</Descriptions.Item>
-              <Descriptions.Item label="العميل">
-                {customers.find((c) => c.id === viewInvoice.customer_id)?.name ?? `#${viewInvoice.customer_id}`}
-              </Descriptions.Item>
-              <Descriptions.Item label="الإجمالي">{parseFloat(viewInvoice.gross).toFixed(2)} ج.م</Descriptions.Item>
-              <Descriptions.Item label="الخصم">{parseFloat(viewInvoice.combined_pct).toFixed(0)}%</Descriptions.Item>
-              <Descriptions.Item label="الصافي">{parseFloat(viewInvoice.net).toFixed(2)} ج.م</Descriptions.Item>
-              <Descriptions.Item label="نقداً / آجل">
-                {parseFloat(viewInvoice.cash_amount).toFixed(2)} / {parseFloat(viewInvoice.credit_amount).toFixed(2)} ج.م
-              </Descriptions.Item>
-            </Descriptions>
-
-            <Divider orientation="right">أصناف الفاتورة</Divider>
-            <Table
-              size="small" pagination={false} rowKey={(_, i) => String(i)}
-              dataSource={viewInvoice.lines || []}
-              columns={[
-                { title: 'الصنف', key: 'n', render: (_: any, r: any) => productName(r.item_id) },
-                { title: 'الكمية', dataIndex: 'quantity', render: (q: string) => parseFloat(q) },
-                { title: 'سعر الوحدة', dataIndex: 'unit_price', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
-                { title: 'الإجمالي', dataIndex: 'line_total', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
-              ]}
-            />
+            <InvoiceDocument doc={invoiceDoc(viewInvoice)!}
+              onItemClick={(id) => { setDetailVisible(false); navigate(`/catalog/${id}`); }}
+              onPartyClick={(id) => { setDetailVisible(false); navigate(`/customers/${id}`); }} />
 
             <Divider orientation="right">المرتجعات</Divider>
             <Table
@@ -710,9 +1020,13 @@ export default function Invoices() {
                 { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
               ]}
             />
+
+            {viewInvoice.customer_id && (
+              <CustomerAccountPanel customerId={viewInvoice.customer_id} />
+            )}
           </>
         )}
-      </Drawer>
+      </Modal>
     </div>
   );
 }

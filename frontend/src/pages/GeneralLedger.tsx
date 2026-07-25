@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Tabs, Table, Tree, Button, Drawer, Form, Input, InputNumber, Select, DatePicker,
-  Tag, message, Row, Col, Divider, Space, Card, Statistic, Empty,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tabs, Tag, Tree, message,
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
@@ -161,7 +160,7 @@ function ChartTab() {
         expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }}
       />
 
-      <Drawer title="إضافة حساب جديد" width={460} open={drawer} onClose={() => setDrawer(false)} destroyOnHidden>
+      <Modal footer={null} centered title="إضافة حساب جديد" width={460} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}
           initialValues={{ is_postable: true, nature: 'expense' }}>
           <Form.Item name="parent_id" label="الحساب الأب (المجموعة)"
@@ -188,7 +187,7 @@ function ChartTab() {
           </Form.Item>
           <Button type="primary" htmlType="submit" block>حفظ الحساب</Button>
         </Form>
-      </Drawer>
+      </Modal>
     </Card>
   );
 }
@@ -346,10 +345,10 @@ function JournalTab() {
         </Space>
       }
     >
-      <Table rowKey="id" loading={loading} dataSource={entries} columns={columns} pagination={{ pageSize: 8 }} />
+      <Table rowKey="id" loading={loading} dataSource={entries} columns={columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
 
       {/* New journal drawer */}
-      <Drawer title="قيد يومية جديد" width={640} open={drawer} onClose={() => setDrawer(false)} destroyOnHidden>
+      <Modal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onPost} requiredMark={false}
           initialValues={{ date: dayjs() }}>
           <Row gutter={16}>
@@ -416,11 +415,11 @@ function JournalTab() {
             {balanced ? 'ترحيل القيد' : 'القيد غير متوازن'}
           </Button>
         </Form>
-      </Drawer>
+      </Modal>
 
       {/* Opening balances drawer */}
-      <Drawer title="تسجيل الأرصدة الافتتاحية" width={560} open={openingDrawer}
-        onClose={() => setOpeningDrawer(false)} destroyOnHidden>
+      <Modal footer={null} centered title="تسجيل الأرصدة الافتتاحية" width={560} open={openingDrawer}
+        onCancel={() => setOpeningDrawer(false)} destroyOnHidden>
         <Form form={openForm} layout="vertical" onFinish={onPostOpening} requiredMark={false}
           initialValues={{ date: dayjs().startOf('year') }}>
           <Row gutter={16}>
@@ -462,7 +461,7 @@ function JournalTab() {
           </Button>
           <Button type="primary" htmlType="submit" block>تسجيل الأرصدة الافتتاحية</Button>
         </Form>
-      </Drawer>
+      </Modal>
     </Card>
   );
 }
@@ -611,7 +610,7 @@ function CostCenterTab() {
       <Table rowKey="id" loading={loading} dataSource={tree} columns={columns} pagination={false}
         expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }} />
 
-      <Drawer title="إضافة مركز تكلفة" width={420} open={drawer} onClose={() => setDrawer(false)} destroyOnHidden>
+      <Modal footer={null} centered title="إضافة مركز تكلفة" width={420} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}>
           <Form.Item name="parent_id" label="المركز الأب (اختياري)">
             <Select allowClear placeholder="مركز جذر" showSearch optionFilterProp="label"
@@ -625,7 +624,7 @@ function CostCenterTab() {
           </Form.Item>
           <Button type="primary" htmlType="submit" block>حفظ</Button>
         </Form>
-      </Drawer>
+      </Modal>
     </Card>
   );
 }

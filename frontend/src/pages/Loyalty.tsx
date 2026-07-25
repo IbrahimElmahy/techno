@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Space, Card, Drawer, Form, Input, InputNumber, Select, Tag, message, Row, Col, Divider, Tabs, Modal } from 'antd';
+import {
+  Button, Card, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tabs, Tag, message,
+} from 'antd';
 import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
@@ -407,10 +409,10 @@ export default function Loyalty() {
       </Card>
 
       {/* Create Coupon Type Settings Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title="إضافة نوع كوبون ترويجي جديد"
         width={400}
-        onClose={() => setTypeVisible(false)}
+        onCancel={() => setTypeVisible(false)}
         open={typeVisible}
         destroyOnHidden
       >
@@ -459,13 +461,13 @@ export default function Loyalty() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
 
       {/* Edit Coupon Type Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title="تعديل نوع الكوبون الترويجي"
         width={400}
-        onClose={() => {
+        onCancel={() => {
           setEditTypeVisible(false);
           setEditingType(null);
         }}
@@ -520,13 +522,13 @@ export default function Loyalty() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
 
       {/* Manual Points Conversion Drawer */}
-      <Drawer
+      <Modal footer={null} centered
         title="تحويل نقاط العميل يدويًا"
         width={400}
-        onClose={() => setConvertVisible(false)}
+        onCancel={() => setConvertVisible(false)}
         open={convertVisible}
         destroyOnHidden
       >
@@ -577,7 +579,7 @@ export default function Loyalty() {
             </Space>
           </Form.Item>
         </Form>
-      </Drawer>
+      </Modal>
 
       {/* Redeem Coupon Modal */}
       <Modal

@@ -28,7 +28,7 @@ from src.models.catalog import (
     SerialStatus,
 )
 from src.models.stock import LocationKind
-from src.services import barcode_service, serial_service
+from src.services import audit_service, barcode_service, item_profile_service, serial_service
 from src.services.barcode_service import BarcodeError, BarcodeInput
 from src.services.serial_service import SerialError
 
@@ -74,6 +74,8 @@ class ItemOut(BaseModel):
     default_warehouse_id: int | None = None
     category: str | None = None
     default_discount_pct: Decimal | None = None
+    # Total on-hand across all locations — filled on the list endpoint (one grouped query).
+    on_hand: Decimal | None = None
 
 
 def _out(it: Item) -> ItemOut:
@@ -96,15 +98,31 @@ def _next_code(db: Session, kind: ItemKind) -> str:
 def list_items(
     kind: ItemKind | None = None,
     category: str | None = None,
+    q: str | None = None,
+    active: bool | None = None,
+    warehouse_id: int | None = None,
+    stock_filter: str | None = None,  # all | in_stock | out_of_stock | negative
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemOut]:
-    stmt = select(Item)
-    if kind is not None:
-        stmt = stmt.where(Item.kind == kind)
-    if category is not None:  # (v4) filter by item category
-        stmt = stmt.where(Item.category == category)
-    return [_out(i) for i in db.scalars(stmt).all()]
+    """List items with search + filters; each row carries its total on-hand quantity.
+
+    On-hand comes from ONE grouped query over the movements, so filtering by stock costs the
+    same as listing.
+    """
+    stmt = item_profile_service.apply_filters(
+        select(Item), q=q, kind=kind.value if kind else None, category=category,
+        active=active, warehouse_id=warehouse_id,
+    )
+    rows = list(db.scalars(stmt).all())
+    on_hand = item_profile_service.bulk_on_hand(db, [i.id for i in rows])
+    rows = item_profile_service.filter_by_stock(rows, on_hand, stock_filter)
+    out = []
+    for i in rows:
+        o = _out(i)
+        o.on_hand = on_hand.get(i.id, Decimal("0.000"))
+        out.append(o)
+    return out
 
 
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
@@ -173,7 +191,7 @@ def get_item_prices(
 def set_item_prices(
     item_id: int,
     body: ItemPricesSet,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
     db: Session = Depends(get_db),
 ) -> ItemPricesOut:
     item = db.get(Item, item_id)
@@ -189,6 +207,11 @@ def set_item_prices(
         row = db.scalar(
             select(ItemPrice).where(ItemPrice.item_id == item.id, ItemPrice.tier == tp.tier)
         )
+        # Log the move BEFORE writing it, so the history keeps the previous price (027).
+        item_profile_service.record_price_change(
+            db, item_id=item.id, field_name=tp.tier.value,
+            old_value=row.price if row is not None else None,
+            new_value=to_money(tp.price), actor_user_id=current.id)
         if row is None:
             db.add(ItemPrice(item_id=item.id, tier=tp.tier, price=to_money(tp.price)))
         else:
@@ -392,37 +415,147 @@ def lookup_barcode(
     )
 
 
+class ItemProfileOut(BaseModel):
+    """ملف الصنف — stock, sales, purchases, movements and price history in one call."""
+
+    item: ItemOut
+    on_hand: Decimal
+    stock_by_location: list[dict] = []
+    sold_quantity: Decimal
+    sold_value: Decimal
+    purchased_quantity: Decimal
+    purchased_value: Decimal
+    avg_sale_price: Decimal
+    avg_purchase_price: Decimal
+    sales: list[dict] = []
+    purchases: list[dict] = []
+    movements: list[dict] = []
+    price_history: list[dict] = []
+    tier_prices: list[dict] = []
+
+
+@router.get("/{item_id}/profile", response_model=ItemProfileOut)
+def item_profile(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> ItemProfileOut:
+    """Everything the system knows about one item — the product file."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    try:
+        p = item_profile_service.profile(db, item_id)
+    except item_profile_service.ItemProfileError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+    base = _out(item)
+    base.on_hand = p.on_hand
+    return ItemProfileOut(
+        item=base, on_hand=p.on_hand, stock_by_location=p.stock_by_location,
+        sold_quantity=p.sold_quantity, sold_value=p.sold_value,
+        purchased_quantity=p.purchased_quantity, purchased_value=p.purchased_value,
+        avg_sale_price=p.avg_sale_price, avg_purchase_price=p.avg_purchase_price,
+        sales=p.sales, purchases=p.purchases, movements=p.movements,
+        price_history=p.price_history, tier_prices=p.tier_prices,
+    )
+
+
 @router.patch("/{item_id}", response_model=ItemOut)
 def update_item(
     item_id: int,
     body: ItemUpdate,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
     db: Session = Depends(get_db),
 ) -> ItemOut:
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     # Editing reference prices never rewrites prices already snapshotted on posted documents.
+    # Price moves are logged (027) so «why did this get cheaper?» has an answer.
+    PRICE_FIELDS = {"purchase_price", "sale_price", "default_discount_pct"}
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
                   "default_warehouse_id", "category",
                   "default_discount_pct"):
         val = getattr(body, field)
-        if val is not None:
-            setattr(item, field, val)
+        if val is None:
+            continue
+        if field in PRICE_FIELDS:
+            item_profile_service.record_price_change(
+                db, item_id=item.id, field_name=field, old_value=getattr(item, field),
+                new_value=val, actor_user_id=current.id)
+        setattr(item, field, val)
     db.flush()
     db.commit()
     return _out(item)
 
 
+def _delete_item(db: Session, item: Item, actor_user_id: int) -> None:
+    """Permanently remove an item that never moved — otherwise refuse.
+
+    Deleting an item that appears on a posted invoice, a stock movement or a recipe would
+    orphan those documents, so that case must stay a deactivation.
+    """
+    from src.models.bom import BomComponent
+    from src.models.manufacturing import ManufacturingOrder
+    from src.models.purchasing import PurchaseInvoiceLine
+    from src.models.sales import SalesInvoiceLine
+    from src.models.stock import StockMovement
+
+    blockers: list[str] = []
+    checks = [
+        ("حركات مخزون", select(func.count()).select_from(StockMovement)
+         .where(StockMovement.item_id == item.id)),
+        ("سطور فواتير بيع", select(func.count()).select_from(SalesInvoiceLine)
+         .where(SalesInvoiceLine.item_id == item.id)),
+        ("سطور فواتير شراء", select(func.count()).select_from(PurchaseInvoiceLine)
+         .where(PurchaseInvoiceLine.item_id == item.id)),
+        ("وصفات تصنيع", select(func.count()).select_from(BomComponent)
+         .where(BomComponent.item_id == item.id)),
+        ("أوامر تصنيع", select(func.count()).select_from(ManufacturingOrder)
+         .where(ManufacturingOrder.product_id == item.id)),
+    ]
+    for label, stmt in checks:
+        if (db.scalar(stmt) or 0) > 0:
+            blockers.append(label)
+
+    if blockers:
+        raise ValueError(
+            "لا يمكن حذف الصنف نهائياً لوجود " + "، ".join(blockers)
+            + ". يمكنك إلغاء تفعيله بدلاً من الحذف."
+        )
+
+    from src.models.catalog import ItemBarcode, ItemPriceHistory, ItemSerial, ItemUnit
+    from src.models.loyalty import ProductPointValue
+
+    audit_service.record(db, action="item.delete", actor_user_id=actor_user_id,
+                         entity_type="item", entity_id=item.id,
+                         before={"code": item.code, "name": item.name})
+    # Owned rows carry no history of their own once the item is gone.
+    for model in (ItemPrice, ItemUnit, ItemBarcode, ItemSerial, ItemPriceHistory,
+                  ProductPointValue):
+        db.execute(delete(model).where(model.item_id == item.id))
+    db.delete(item)
+    db.flush()
+
+
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_item(
     item_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    hard: bool = False,
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
+    """Deactivate the item; `hard=true` deletes it outright — only if it never moved."""
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    if hard:
+        try:
+            _delete_item(db, item, current.id)
+        except ValueError as exc:
+            raise HTTPException(409, {"code": "has_history", "message": str(exc)}) from exc
+        db.commit()
+        return
     item.active = False  # soft-delete: never hard-delete an item referenced by posted documents
     db.flush()
     db.commit()

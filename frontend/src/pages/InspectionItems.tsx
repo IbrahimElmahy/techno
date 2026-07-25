@@ -146,7 +146,7 @@ const InspectionItems: React.FC = () => {
           rowKey="id"
           loading={loading}
           dataSource={visible}
-          pagination={{ pageSize: 50, showTotal: (t) => `إجمالي ${t}` }}
+          pagination={{ defaultPageSize: 50, showTotal: (t) => `إجمالي ${t}` }}
           columns={[
             { title: '#', width: 60, render: (_: any, __: any, i: number) => i + 1 },
             { title: 'اسم الصنف', dataIndex: 'name' },
