@@ -47,6 +47,10 @@ class ItemCreate(BaseModel):
     default_warehouse_id: int | None = None
     category: str | None = None
     default_discount_pct: Decimal | None = None
+    # (011) advisory planning thresholds + expiry-batch tracking
+    min_stock: Decimal | None = None
+    max_stock: Decimal | None = None
+    is_perishable: bool = False
 
 
 class ItemUpdate(BaseModel):
@@ -59,6 +63,9 @@ class ItemUpdate(BaseModel):
     default_warehouse_id: int | None = None
     category: str | None = None
     default_discount_pct: Decimal | None = None
+    min_stock: Decimal | None = None          # (011)
+    max_stock: Decimal | None = None
+    is_perishable: bool | None = None
 
 
 class ItemOut(BaseModel):
@@ -74,6 +81,10 @@ class ItemOut(BaseModel):
     default_warehouse_id: int | None = None
     category: str | None = None
     default_discount_pct: Decimal | None = None
+    # (011) advisory planning thresholds + expiry-batch tracking
+    min_stock: Decimal | None = None
+    max_stock: Decimal | None = None
+    is_perishable: bool = False
     # Total on-hand across all locations — filled on the list endpoint (one grouped query).
     on_hand: Decimal | None = None
 
@@ -85,6 +96,7 @@ def _out(it: Item) -> ItemOut:
         sale_price=it.sale_price, is_serialized=it.is_serialized, active=it.active,
         default_warehouse_id=it.default_warehouse_id, category=it.category,
         default_discount_pct=it.default_discount_pct,
+        min_stock=it.min_stock, max_stock=it.max_stock, is_perishable=it.is_perishable,
     )
 
 
@@ -145,6 +157,8 @@ def create_item(
         is_serialized=body.is_serialized,
         default_warehouse_id=body.default_warehouse_id, category=body.category,
         default_discount_pct=body.default_discount_pct or 0,
+        min_stock=body.min_stock, max_stock=body.max_stock,   # (011) advisory
+        is_perishable=body.is_perishable,
     )
     db.add(item)
     db.flush()
@@ -473,6 +487,21 @@ def item_profile(
     )
 
 
+@router.get("/{item_id}", response_model=ItemOut)
+def get_item(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> ItemOut:
+    """One item's card — everything stored about it, without the 360 file's history."""
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
+    out = _out(item)
+    out.on_hand = item_profile_service.bulk_on_hand(db, [item_id]).get(item_id, Decimal("0.000"))
+    return out
+
+
 @router.patch("/{item_id}", response_model=ItemOut)
 def update_item(
     item_id: int,
@@ -488,7 +517,8 @@ def update_item(
     PRICE_FIELDS = {"purchase_price", "sale_price", "default_discount_pct"}
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
                   "default_warehouse_id", "category",
-                  "default_discount_pct"):
+                  "default_discount_pct",
+                  "min_stock", "max_stock", "is_perishable"):   # (011)
         val = getattr(body, field)
         if val is None:
             continue

@@ -31,6 +31,7 @@ const BASE_TITLES: Record<string, string> = {
   '/returns': 'مرتجعات المبيعات',
   '/transfers': 'تحويلات المخزون',
   '/stock-balance': 'رصيد صنف',
+  '/stock-alerts': 'تنبيهات المخزون',
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',
   '/finance-reports': 'القوائم المالية',

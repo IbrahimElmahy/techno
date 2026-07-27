@@ -79,6 +79,9 @@ export default function ItemEditModal({
             ? Number(it.default_discount_pct) : 0,
           default_warehouse_id: it.default_warehouse_id ?? undefined,
           is_serialized: !!it.is_serialized,
+          is_perishable: !!it.is_perishable,
+          min_stock: it.min_stock != null ? Number(it.min_stock) : undefined,
+          max_stock: it.max_stock != null ? Number(it.max_stock) : undefined,
           active: !!it.active,
           point_value: points,
           ...tiers,
@@ -106,6 +109,10 @@ export default function ItemEditModal({
         default_discount_pct: v.default_discount_pct ?? 0,
         default_warehouse_id: v.default_warehouse_id ?? null,
         is_serialized: v.is_serialized,
+        // (011) advisory limits + expiry tracking
+        is_perishable: v.is_perishable,
+        min_stock: v.min_stock ?? null,
+        max_stock: v.max_stock ?? null,
         active: v.active,
       });
 
@@ -200,6 +207,25 @@ export default function ItemEditModal({
                 <Select allowClear showSearch
                   filterOption={(i, o) => String(o?.label ?? '').includes(i)}
                   options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+              </Form.Item>
+            </Col>
+            {/* (011) Planning limits — advisory only: they drive the reorder report, they never
+                block a sale. */}
+            <Col xs={12} md={6}>
+              <Form.Item name="min_stock" label="حد إعادة الطلب (الأدنى)"
+                extra="تنبيه فقط — لا يمنع البيع">
+                <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="max_stock" label="الحد الأقصى">
+                <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="is_perishable" label="له صلاحية"
+                valuePropName="checked" extra="يُستلم ويُباع بالتشغيلات (الأقدم صلاحية أولاً)">
+                <Switch checkedChildren="نعم" unCheckedChildren="لا" />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>

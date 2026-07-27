@@ -238,3 +238,51 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month") -> dict:
         "by_period": [{"period": k, "gross": str(to_money(v["gross"])), "net": str(to_money(v["net"]))}
                       for k, v in sorted(buckets.items())],
     }
+
+
+def reorder(db: Session) -> dict:
+    """Items whose total on-hand has drifted outside their advisory min/max limits (011).
+
+    Only items that are actually a planning problem are listed: below the floor (buy more) or above
+    the ceiling (too much cash tied up). An item sitting comfortably in range, or with no limits
+    set at all, is not a problem and would only be noise here.
+    """
+    signed = func.sum(case(
+        (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+        else_=-StockMovement.quantity,
+    ))
+    on_hand = {
+        item_id: to_qty(total)
+        for item_id, total in db.execute(
+            select(StockMovement.item_id, signed).group_by(StockMovement.item_id)
+        ).all()
+    }
+
+    rows = []
+    for item in db.scalars(
+        select(Item).where(Item.active.is_(True)).order_by(Item.name)
+    ).all():
+        if item.min_stock is None and item.max_stock is None:
+            continue
+        have = on_hand.get(item.id, to_qty(0))
+        if item.min_stock is not None and have < to_qty(item.min_stock):
+            flag = "below_min"
+        elif item.max_stock is not None and have > to_qty(item.max_stock):
+            flag = "above_max"
+        else:
+            continue
+        rows.append({
+            "item_id": item.id, "code": item.code, "name": item.name,
+            "unit_of_measure": item.unit_of_measure,
+            "on_hand": str(have),
+            "min_stock": str(to_qty(item.min_stock)) if item.min_stock is not None else None,
+            "max_stock": str(to_qty(item.max_stock)) if item.max_stock is not None else None,
+            # How much to buy to reach the floor — the number the buyer actually acts on.
+            "shortfall": str(to_qty(item.min_stock) - have)
+                         if flag == "below_min" else None,
+            "excess": str(have - to_qty(item.max_stock)) if flag == "above_max" else None,
+            "flag": flag,
+        })
+    return {"rows": rows,
+            "below_min": sum(1 for r in rows if r["flag"] == "below_min"),
+            "above_max": sum(1 for r in rows if r["flag"] == "above_max")}

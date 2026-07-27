@@ -149,6 +149,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
     },
     {
+      key: '/stock-alerts',
+      icon: <DatabaseOutlined />,
+      label: 'تنبيهات المخزون',
+      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
+    },
+    {
       key: '/transfers',
       icon: <SwapOutlined />,
       label: 'تحويلات المخزون',

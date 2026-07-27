@@ -38,6 +38,7 @@ cd src; pytest; ruff check .
 Python 3.12: Follow standard conventions
 
 ## Recent Changes
+- 011-stock-min-max (built): advisory min/max thresholds + reorder report (how much to buy); perishable items tracked in expiry lots with FEFO consumption on sale, lot restore on return, and an expiring-soon report. Invariant: batch sum == derived on-hand at every location.
 - 030-invoice-parity: Warehouse moved from the document to the LINE (one invoice can be served out of several warehouses; availability checked on the SUM per item×warehouse; reversal returns each line to its own warehouse). Cost of goods frozen on each sold line (`costing_service.average_cost`) so past profit never moves. Document fields: rep, posting account (drives the ledger), external document number, notes + 3 statements. Party picker modal with inline create. Migration `0028` backfills legacy lines from their document.
 - 029-a5web-parity: Feature-gap research vs. the client's current a5system (see `specs/029-a5web-parity/research.md`)
 - 014-production-reporting: Costing engine (recipe resources labor/machine + per-order override), inventory routing (per-item default warehouse), wastage (order + document), comprehensive reports (production/inventory/wastage/stagnant/sales). Library-First (`src/lib/production.py`, `src/lib/reporting.py`) + TDD

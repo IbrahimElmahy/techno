@@ -69,6 +69,9 @@ class ReturnLineIn(BaseModel):
     item_id: int
     quantity: Decimal
     serials: list[str] | None = None       # (009) serials being returned (serialized items)
+    # (011) expiry of the perishable goods coming back — required for a perishable item, since a
+    # sale does not record which lot each unit came from.
+    expiry_date: date | None = None
 
 
 class ReturnCreate(BaseModel):
@@ -408,6 +411,7 @@ def return_sale(
             db, sales_invoice_id=sale_id, lines=[(l.item_id, l.quantity) for l in body.lines],
             actor_user_id=current.id,
             serials={l.item_id: l.serials for l in body.lines if l.serials},
+            expiry_dates={l.item_id: l.expiry_date for l in body.lines if l.expiry_date},
         )
     except (SalesError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "return_invalid", "message": str(exc)})

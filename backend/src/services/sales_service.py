@@ -29,6 +29,7 @@ from src.models.stock import LocationKind, StockDirection
 from src.services import (
     account_resolver,
     audit_service,
+    batch_service,
     costing_service,
     ledger_service,
     pricing_service,
@@ -169,6 +170,10 @@ def create_sale(
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
             raise SalesError(str(exc)) from exc
+        # (011) A batch quantity is expressed in base units, so a perishable line must be too —
+        # otherwise the lot arithmetic and the stock movement would disagree.
+        if item.is_perishable and factor != Decimal("1"):
+            raise SalesError("Perishable items are sold in the base unit.")
         try:  # (009) validate serial count/base-unit/serialized consistency before any stock move
             serial_service.assert_sale_serials(
                 item, quantity=ln.quantity, unit_factor=factor, serials=ln.serials
@@ -264,6 +269,17 @@ def create_sale(
                 )
             except SerialError as exc:
                 raise SalesError(str(exc)) from exc
+        # (011) A perishable line also draws down its lots, earliest expiry first, so the batch
+        # sum keeps matching the on-hand the movement above just reduced.
+        line_item = db.get(Item, ln.item_id)
+        if line_item.is_perishable:
+            try:
+                batch_service.consume_fefo(
+                    db, item_id=ln.item_id, location_kind=line_kind,
+                    location_id=line_loc, quantity=base_qty,
+                )
+            except batch_service.BatchError as exc:
+                raise SalesError(str(exc)) from exc
 
     entry_lines = []
     if to_money(cash_amount) > ZERO:
@@ -315,6 +331,9 @@ def return_sale(
     lines: list[tuple[int, Decimal]],
     actor_user_id: int,
     serials: dict[int, list[str]] | None = None,  # (009) item_id → serials being returned
+    # (011) item_id → expiry date of the perishable goods coming back. Required for a perishable
+    # item, because a sale does not record which lot each unit came from.
+    expiry_dates: dict[int, object] | None = None,
 ) -> SalesReturn:
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
@@ -376,6 +395,15 @@ def return_sale(
                                          location_kind=back_kind, location_id=back_loc,
                                          unit_cost=sold_cost.get(item_id)))
         item = db.get(Item, item_id)  # (009) restore serials for serialized items
+        if item.is_perishable:
+            # (011) Goods come back into the lot for their expiry, matching the stock-in above.
+            try:
+                batch_service.restore_for_return(
+                    db, item_id=item_id, location_kind=back_kind, location_id=back_loc,
+                    expiry_date=(expiry_dates or {}).get(item_id), quantity=base_qty,
+                )
+            except batch_service.BatchError as exc:
+                raise SalesError(str(exc)) from exc
         if item.is_serialized:
             ser = (serials or {}).get(item_id) or []
             if Decimal(len(ser)) != to_qty(Decimal(qty)):

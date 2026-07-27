@@ -60,6 +60,15 @@ def stagnant_report(
     return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id)
 
 
+@router.get("/reorder")
+def reorder_report(
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    """حد إعادة الطلب — items below their minimum or above their maximum stock (011)."""
+    return reporting.reorder(db)
+
+
 @router.get("/sales")
 def sales_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),

@@ -7,14 +7,16 @@ is stored on the item — it lives in stock movements (per item × location).
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Numeric,
     String,
     UniqueConstraint,
@@ -62,6 +64,13 @@ class Item(Base):
     )
     # When true, the item is tracked by serial number (009); receive/sale/return require serials.
     is_serialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # (011) Advisory planning thresholds in BASE units, compared against total on-hand across all
+    # locations. Purely advisory: they drive the reorder report, they never block a sale — only
+    # No-Negative-Stock does that (Principle XI).
+    min_stock: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    max_stock: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    # (011) When true the item is tracked in expiry batches: received per expiry date, sold FEFO.
+    is_perishable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # Default warehouse for inventory routing (014): manufacturing pulls this item from / produces
     # it into this warehouse automatically. NULL falls back to the order's chosen location.
     default_warehouse_id: Mapped[int | None] = mapped_column(
@@ -163,3 +172,27 @@ class ItemBarcode(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     barcode: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)  # None = base unit
+
+
+class StockBatch(Base):
+    """A lot of a perishable item sharing one expiry date at one location (011).
+
+    Quantity is what REMAINS of the lot, in base units. The rule the whole feature rests on: for a
+    perishable item at a location, the sum of its batch quantities always equals its derived
+    on-hand there — receive, FEFO sale and return each move both sides together, so the batches can
+    never drift away from the stock ledger.
+    """
+
+    __tablename__ = "stock_batch"
+    __table_args__ = (
+        # FEFO reads and the receive/return upsert both look up by this exact tuple.
+        Index("ix_stock_batch_lookup", "item_id", "location_kind", "location_id", "expiry_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
+    location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
+    location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity: Mapped[object] = mapped_column(QTY, nullable=False)   # remaining, base units
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)

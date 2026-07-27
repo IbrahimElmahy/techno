@@ -218,6 +218,11 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("purchase_invoice", "statement1", "VARCHAR(200)"),
     ("purchase_invoice", "statement2", "VARCHAR(200)"),
     ("purchase_invoice", "statement3", "VARCHAR(200)"),
+    # 011: advisory min/max limits + the perishable flag (stock_batch is a new table, so
+    # create_all handles it).
+    ("item", "min_stock", "NUMERIC(18,3)"),
+    ("item", "max_stock", "NUMERIC(18,3)"),
+    ("item", "is_perishable", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).
