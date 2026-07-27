@@ -58,6 +58,7 @@ from src.models.cheque import Cheque  # noqa: E402
 from src.models.commission import CommissionRule  # noqa: E402
 from src.models.treasury import PeriodLock, Treasury  # noqa: E402
 from src.models.voucher import Voucher  # noqa: E402
+from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 
 __all__ = [
@@ -72,5 +73,5 @@ __all__ = [
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
-    "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine",
+    "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord",
 ]

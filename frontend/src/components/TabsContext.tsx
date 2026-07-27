@@ -36,6 +36,7 @@ const BASE_TITLES: Record<string, string> = {
   '/stock-permits': 'أذونات المخزن',
   '/stocktake': 'جرد حق تاريخ',
   '/account-statement': 'كشف حساب',
+  '/fixed-assets': 'الأصول الثابتة',
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',
   '/finance-reports': 'القوائم المالية',

@@ -17,6 +17,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     customers,
     inspections,  # Site inspections / معاينات (015)
     loyalty_settings,
+    fixed_assets,  # الأصول الثابتة والإهلاك (B6)
     manufacturing,
     org,
     points,
@@ -109,6 +110,8 @@ def create_app() -> FastAPI:
     app.include_router(cheques.router, prefix=prefix)
     # VAT return + rep commissions (021)
     app.include_router(tax_commissions.router, prefix=prefix)
+    # Fixed assets + depreciation (B6)
+    app.include_router(fixed_assets.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
 

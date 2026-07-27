@@ -197,6 +197,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager'],
     },
     {
+      key: '/fixed-assets',
+      icon: <BookOutlined />,
+      label: 'الأصول الثابتة',
+      roles: ['system_admin', 'branch_manager', 'accountant'],
+    },
+    {
       key: '/finance-reports',
       icon: <BookOutlined />,
       label: 'القوائم المالية',
