@@ -7,6 +7,7 @@ import {
   PrinterOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import ItemStockPanel from '../components/ItemStockPanel';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -88,6 +89,9 @@ export default function Purchases() {
   const [items, setItems] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
+  // The item the side stock panel is showing — a buyer about to reorder wants to see what the
+  // branches are already sitting on before committing to a quantity.
+  const [panelItemId, setPanelItemId] = useState<number | null>(null);
 
   // Form state
   const [form] = Form.useForm();
@@ -322,7 +326,7 @@ export default function Purchases() {
           placeholder="اختر المادة الخام"
           style={{ width: '100%' }}
           value={itemId}
-          onChange={(val) => handleItemChange(record.key, 'item_id', val)}
+          onChange={(val) => { setPanelItemId(val as number); handleItemChange(record.key, 'item_id', val); }}
         >
           {items.map((i) => (
             <Select.Option key={i.id} value={i.id}>
@@ -456,23 +460,32 @@ export default function Purchases() {
 
           <Divider orientation="right">أصناف الفاتورة</Divider>
 
-          <Table
-            dataSource={purchaseItems}
-            columns={columns}
-            pagination={false}
-            rowKey="key"
-            style={{ marginBottom: 16 }}
-          />
+          <Row gutter={16}>
+            <Col xs={24} lg={18}>
+              <Table
+                dataSource={purchaseItems}
+                columns={columns}
+                pagination={false}
+                rowKey="key"
+                style={{ marginBottom: 16 }}
+              />
 
-          <Button
-            type="dashed"
-            onClick={handleAddItem}
-            block
-            icon={<PlusOutlined />}
-            style={{ marginBottom: 24 }}
-          >
-            إضافة صنف جديد
-          </Button>
+              <Button
+                type="dashed"
+                onClick={handleAddItem}
+                block
+                icon={<PlusOutlined />}
+                style={{ marginBottom: 24 }}
+              >
+                إضافة صنف جديد
+              </Button>
+            </Col>
+            <Col xs={24} lg={6}>
+              {/* Same panel the sales invoice uses — the question is identical on both sides. */}
+              <ItemStockPanel itemId={panelItemId} products={items}
+                onPickItem={(id) => setPanelItemId(id)} />
+            </Col>
+          </Row>
 
           <Divider />
 

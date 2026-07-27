@@ -9,6 +9,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
+import ItemStockPanel from '../components/ItemStockPanel';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
@@ -83,6 +84,9 @@ export default function Returns() {
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [lines, setLines] = useState<ReturnLineItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  // The item the side stock panel is showing — on a return it answers "where should this go
+  // back to", which is the same question the invoice asks in reverse.
+  const [panelItemId, setPanelItemId] = useState<number | null>(null);
   const [cashRefund, setCashRefund] = useState<number>(0);
   const [creditReduction, setCreditReduction] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
@@ -351,12 +355,14 @@ export default function Returns() {
               <Empty description="اختر العميل أولاً لعرض آخر أسعار الشراء تلقائياً" style={{ margin: '12px 0' }} />
             ) : (
               <>
+                <Row gutter={16}>
+                <Col xs={24} lg={18}>
                 <Row gutter={12} style={{ marginBottom: 14 }}>
                   <Col xs={24} md={7}>
                     <Select showSearch style={{ width: '100%' }} size="large"
                       placeholder="١) اختر الفئة" value={activeCategory ?? undefined}
                       optionFilterProp="label"
-                      onChange={(val) => setActiveCategory(val ?? null)}
+                      onChange={(val) => { setActiveCategory(val ?? null); setPanelItemId(null); }}
                       options={productCategories.map((c) => ({ value: c, label: categoryLabels[c] || c }))} />
                   </Col>
                   <Col xs={24} md={17}>
@@ -364,7 +370,9 @@ export default function Returns() {
                       disabled={!activeCategory}
                       placeholder={activeCategory ? '٢) اختر صنفاً من الفئة لإضافته' : 'اختر الفئة أولاً'}
                       optionFilterProp="label"
-                      onChange={(val) => { if (val) addProductById(val as number); }}
+                      onChange={(val) => {
+                        if (val) { setPanelItemId(val as number); addProductById(val as number); }
+                      }}
                       options={products
                         .filter((p) => p.category === activeCategory)
                         .map((p) => ({ value: p.id, label: p.name }))} />
@@ -458,6 +466,12 @@ export default function Returns() {
                     </div>
                   ))
                 )}
+                </Col>
+                <Col xs={24} lg={6}>
+                  <ItemStockPanel itemId={panelItemId} category={activeCategory}
+                    products={products} onPickItem={(id) => setPanelItemId(id)} />
+                </Col>
+                </Row>
               </>
             )}
 

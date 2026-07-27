@@ -14,6 +14,7 @@ import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
+import ItemStockPanel from '../components/ItemStockPanel';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface InvoiceRecord {
@@ -137,6 +138,10 @@ export default function Invoices() {
   // Coupons already issued to this customer and not yet redeemed — the counter reads out their
   // serial range when handing them over.
   const [customerCoupons, setCustomerCoupons] = useState<any[]>([]);
+  // The item the side stock panel is showing. Follows whatever the user last touched — the
+  // product they picked, or a line they clicked — so the panel answers the question they are
+  // asking right now without them having to ask it twice.
+  const [panelItemId, setPanelItemId] = useState<number | null>(null);
   // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
   // be served from a different warehouse, so a single item-keyed map would answer the wrong
   // question. Stock can never go negative, so the form shows what is available and caps the
@@ -899,6 +904,11 @@ export default function Invoices() {
 
           <Divider orientation="right" style={{ fontWeight: 700 }}>المنتجات المباعة</Divider>
 
+          {/* Products on the right, the stock panel pinned beside them: picking a category or a
+              product answers "do we have it, and where" without leaving the half-typed invoice. */}
+          <Row gutter={16}>
+          <Col xs={24} lg={18}>
+
           {/* Choose a category once (keeps the product list short), then pick products from it —
               each pick adds it instantly. Switch category to add from another. */}
           <Row gutter={12} style={{ marginBottom: 14 }}>
@@ -906,7 +916,7 @@ export default function Invoices() {
               <Select showSearch style={{ width: '100%' }} size="large"
                 placeholder="١) اختر الفئة" value={activeCategory ?? undefined}
                 optionFilterProp="label"
-                onChange={(val) => setActiveCategory(val ?? null)}
+                onChange={(val) => { setActiveCategory(val ?? null); setPanelItemId(null); }}
                 options={productCategories.map((c) => ({ value: c, label: categoryLabels[c] || c }))} />
             </Col>
             <Col xs={24} md={17}>
@@ -914,7 +924,9 @@ export default function Invoices() {
                 disabled={!activeCategory}
                 placeholder={activeCategory ? '٢) اختر منتجاً من الفئة لإضافته' : 'اختر الفئة أولاً'}
                 optionFilterProp="label"
-                onChange={(val) => { if (val) addProductById(val as number); }}
+                onChange={(val) => {
+                  if (val) { setPanelItemId(val as number); addProductById(val as number); }
+                }}
                 options={products
                   .filter((p) => p.category === activeCategory)
                   .map((p) => ({ value: p.id, label: p.name }))} />
@@ -960,7 +972,11 @@ export default function Invoices() {
                       style={{ padding: '4px 12px 6px', borderTop: '1px solid #f0f5ee' }}>
                       <Row gutter={8} align="middle">
                         <Col md={4} xs={24}>
-                          <b>{productName(line.item_id as number)}</b>
+                          {/* Click the name to point the stock panel at this line's item. */}
+                          <b style={{ cursor: 'pointer' }}
+                            onClick={() => setPanelItemId(line.item_id as number)}>
+                            {productName(line.item_id as number)}
+                          </b>
                           {/* Stock never goes negative — show the ceiling right where it binds,
                               for THIS line's warehouse. */}
                           <span style={{
@@ -1050,6 +1066,17 @@ export default function Invoices() {
               </div>
             ))
           )}
+
+          </Col>
+          <Col xs={24} lg={6}>
+            <ItemStockPanel
+              itemId={panelItemId}
+              category={activeCategory}
+              products={products}
+              onPickItem={(id) => setPanelItemId(id)}
+            />
+          </Col>
+          </Row>
 
           {/* Totals + payment — a single summary strip. */}
           <div style={{
