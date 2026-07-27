@@ -63,6 +63,10 @@ class SaleCreate(BaseModel):
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
+    # Coupons handed to the customer with this invoice, as a serial range off the book.
+    coupon_serial_from: str | None = None
+    coupon_serial_to: str | None = None
+    coupon_count: int | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -112,6 +116,11 @@ class SalesInvoiceOut(BaseModel):
     rep_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # The coupon range issued with this invoice — the mobile app reads it when the customer
+    # brings the coupons back, to check a serial belongs to a sale that really happened.
+    coupon_serial_from: str | None = None
+    coupon_serial_to: str | None = None
+    coupon_count: int | None = None
 
 
 class InvoiceLineOut(BaseModel):
@@ -172,6 +181,8 @@ def create_sale(
             actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
+            coupon_serial_from=body.coupon_serial_from,
+            coupon_serial_to=body.coupon_serial_to, coupon_count=body.coupon_count,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
         )
     except SalesError as exc:
@@ -190,6 +201,8 @@ def _inv_out(inv: SalesInvoice) -> SalesInvoiceOut:
         ledger_entry_id=inv.ledger_entry_id,
         created_at=str(inv.created_at) if inv.created_at else None,
         rep_id=inv.rep_id, external_document_number=inv.external_document_number,
+        coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
+        coupon_count=inv.coupon_count,
         notes=inv.notes,
     )
 

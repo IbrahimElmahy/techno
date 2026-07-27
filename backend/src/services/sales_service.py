@@ -89,6 +89,25 @@ def _line_location(ln: SaleLine, doc_kind: LocationKind, doc_id: int) -> tuple[L
     return doc_kind, doc_id
 
 
+def _coupon_count(serial_from: str | None, serial_to: str | None,
+                  given: int | None) -> int | None:
+    """How many coupons the range covers.
+
+    A typed count wins — the person at the counter can see the book. Otherwise it is derived,
+    but ONLY when both serials are plain numbers: coupon books elsewhere use prefixes and letters,
+    and subtracting those would invent a count that nobody can check against the paper.
+    """
+    if given is not None:
+        return int(given)
+    if not serial_from or not serial_to:
+        return None
+    try:
+        first, last = int(str(serial_from).strip()), int(str(serial_to).strip())
+    except ValueError:
+        return None
+    return last - first + 1 if last >= first else None
+
+
 def _assert_lines_available(
     db: Session, built_locations: list[tuple[int, LocationKind, int, Decimal]]
 ) -> None:
@@ -146,6 +165,10 @@ def create_sale(
     statement1: str | None = None,
     statement2: str | None = None,
     statement3: str | None = None,
+    # Coupons handed over with this invoice, as the serial range off the book.
+    coupon_serial_from: str | None = None,
+    coupon_serial_to: str | None = None,
+    coupon_count: int | None = None,
 ) -> SalesInvoice:
     if not lines:
         raise SalesError("A sale needs at least one line.")
@@ -230,6 +253,9 @@ def create_sale(
         revenue_account_id=revenue_account_id,
         external_document_number=(external_document_number or None),
         notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
+        coupon_serial_from=(coupon_serial_from or None),
+        coupon_serial_to=(coupon_serial_to or None),
+        coupon_count=_coupon_count(coupon_serial_from, coupon_serial_to, coupon_count),
     )
     db.add(invoice)
     db.flush()

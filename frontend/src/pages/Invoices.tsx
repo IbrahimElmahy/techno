@@ -143,6 +143,8 @@ export default function Invoices() {
   // product they picked, or a line they clicked — so the panel answers the question they are
   // asking right now without them having to ask it twice.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
+  const [couponFrom, setCouponFrom] = useState('');
+  const [couponTo, setCouponTo] = useState('');
   // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
   // be served from a different warehouse, so a single item-keyed map would answer the wrong
   // question. Stock can never go negative, so the form shows what is available and caps the
@@ -275,6 +277,8 @@ export default function Invoices() {
     setSelectedCustomerId(null);
     setCustomerBalance(null);
     setCustomerCoupons([]);
+    setCouponFrom('');
+    setCouponTo('');
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
@@ -512,6 +516,11 @@ export default function Invoices() {
         }),
         // (030) document fields
         external_document_number: values.external_document_number || undefined,
+        // Coupons handed over with this invoice, as the serial range off the book. Kept on the
+        // invoice because that is what proves which coupons were his when they come back in.
+        coupon_serial_from: values.coupon_serial_from || undefined,
+        coupon_serial_to: values.coupon_serial_to || undefined,
+        coupon_count: couponCount ?? undefined,
         notes: values.notes || undefined,
       });
 
@@ -620,7 +629,29 @@ export default function Invoices() {
     if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
   };
 
+  /** Extra header lines on the printed invoice: the paper number, and the coupon range if the
+   *  sale issued any — the customer's own proof of which serials are his. */
+  const printMeta = (inv: any): [string, string][] | undefined => {
+    const meta: [string, string][] = [];
+    if (inv.external_document_number) meta.push(['رقم المستند', inv.external_document_number]);
+    if (inv.coupon_serial_from) {
+      const count = inv.coupon_count ? `${inv.coupon_count} — ` : '';
+      meta.push(['الكوبونات',
+        `${count}من ${inv.coupon_serial_from} إلى ${inv.coupon_serial_to}`]);
+    }
+    return meta.length ? meta : undefined;
+  };
+
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
+
+  /** How many coupons this invoice hands over — derived only when both serials are plain
+   *  numbers, since a lettered book cannot be subtracted into a count anyone could check. */
+  const couponCount = (() => {
+    const a = parseInt(couponFrom.trim(), 10);
+    const b = parseInt(couponTo.trim(), 10);
+    if (String(a) !== couponFrom.trim() || String(b) !== couponTo.trim()) return null;
+    return b >= a ? b - a + 1 : null;
+  })();
 
   /** First and last serial of the customer's outstanding coupons, sorted so the range is real. */
   const couponRange = (() => {
@@ -674,9 +705,7 @@ export default function Invoices() {
         (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
       // (030) The paper number belongs on the printed document — it is how the customer's own
       // filing refers to this sale.
-      extraMeta: (inv as any).external_document_number
-        ? ([['رقم المستند', (inv as any).external_document_number]] as [string, string][])
-        : undefined,
+      extraMeta: printMeta(inv),
       lines: (inv.lines || []).map((l: any) => ({
         name: productName(l.item_id),
         itemId: l.item_id,
@@ -873,6 +902,35 @@ export default function Invoices() {
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" />
               </Form.Item>
+            </Col>
+          </Row>
+
+          {/* Coupons handed to the customer with this invoice. A range, not a list, because
+              they come off a printed book — and stored on the invoice so that when the customer
+              brings one back, the app can trace the serial to a sale that really happened. */}
+          <Row gutter={16} align="bottom">
+            <Col xs={12} md={5}>
+              <Form.Item name="coupon_serial_from" label="كوبونات من رقم"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="مثال: 1200"
+                  onChange={(e) => setCouponFrom(e.target.value)} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={5}>
+              <Form.Item name="coupon_serial_to" label="إلى رقم" style={{ marginBottom: 8 }}>
+                <Input placeholder="مثال: 1249"
+                  onChange={(e) => setCouponTo(e.target.value)} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={14}>
+              <div style={{ paddingBottom: 8, fontSize: 13, color: '#8a8a8a' }}>
+                {couponCount !== null
+                  ? <>عدد الكوبونات المصروفة:{' '}
+                      <b style={{ color: '#F5A11D' }}>{couponCount}</b></>
+                  : (couponFrom || couponTo)
+                    ? 'الأرقام مش متسلسلة رقمياً — هتتحفظ زي ما هي من غير عدّ.'
+                    : 'سيبها فاضية لو الفاتورة من غير كوبونات.'}
+              </div>
             </Col>
           </Row>
 

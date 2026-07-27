@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Numeric, String, func
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -38,6 +38,14 @@ class SalesInvoice(Base):
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # --- Coupons handed to the customer with this invoice: a serial RANGE, not a list.
+    # They come off a printed book, so "from 1200 to 1249" is how the counter actually issues
+    # them and how the customer will present them back. Stored on the invoice because that is
+    # the document that proves which coupons were his — the mobile app reads these when the
+    # coupons are handed back in, to check a returned serial belongs to a sale that happened.
+    coupon_serial_from: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
+    coupon_serial_to: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
+    coupon_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     gross: Mapped[object] = mapped_column(MONEY, nullable=False)
     fixed_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False)
     variable_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False)
