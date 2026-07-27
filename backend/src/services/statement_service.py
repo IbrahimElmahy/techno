@@ -29,12 +29,14 @@ class StatementLine:
     description: str
     debit: Decimal
     credit: Decimal
+    balance_before: Decimal  # the balance this movement started from
     balance: Decimal  # running, signed by the account's normal side
 
 
 @dataclass(frozen=True)
 class Statement:
     account_id: int
+    account_name: str
     opening_balance: Decimal
     closing_balance: Decimal
     total_debit: Decimal
@@ -89,14 +91,18 @@ def account_statement(
         credit = amount if not is_debit else ZERO
         total_debit += debit
         total_credit += credit
+        # Both sides of every row: what the account stood at before this movement and after it,
+        # so a single line can be read on its own without adding up the ones above it.
+        before = balance
         balance = to_money(balance + signed(line))
         lines.append(StatementLine(
             entry_id=line.entry_id, entry_date=when, entry_type=line.entry.entry_type,
             description=line.statement or line.entry.description or "",
-            debit=debit, credit=credit, balance=balance,
+            debit=debit, credit=credit, balance_before=before, balance=balance,
         ))
 
     return Statement(
-        account_id=account_id, opening_balance=to_money(opening), closing_balance=balance,
+        account_id=account_id, account_name=account.name or f"#{account_id}",
+        opening_balance=to_money(opening), closing_balance=balance,
         total_debit=to_money(total_debit), total_credit=to_money(total_credit), lines=lines,
     )

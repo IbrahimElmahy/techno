@@ -138,11 +138,13 @@ class StatementLineOut(BaseModel):
     description: str
     debit: Decimal
     credit: Decimal
+    balance_before: Decimal
     balance: Decimal
 
 
 class StatementOut(BaseModel):
     account_id: int
+    account_name: str = ""
     opening_balance: Decimal
     closing_balance: Decimal
     total_debit: Decimal
@@ -171,12 +173,14 @@ def _treasury_out(db: Session, t) -> TreasuryOut:
 
 def _statement_out(s) -> StatementOut:
     return StatementOut(
-        account_id=s.account_id, opening_balance=s.opening_balance,
+        account_id=s.account_id, account_name=s.account_name,
+        opening_balance=s.opening_balance,
         closing_balance=s.closing_balance, total_debit=s.total_debit,
         total_credit=s.total_credit,
         lines=[StatementLineOut(
             entry_id=ln.entry_id, entry_date=ln.entry_date, entry_type=ln.entry_type,
-            description=ln.description, debit=ln.debit, credit=ln.credit, balance=ln.balance)
+            description=ln.description, debit=ln.debit, credit=ln.credit,
+            balance_before=ln.balance_before, balance=ln.balance)
             for ln in s.lines],
     )
 
@@ -438,6 +442,28 @@ def customer_statement(
     except (VoucherError, StatementError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)})
+    return _statement_out(s)
+
+
+@router.get("/accounts/{account_id}/statement", response_model=StatementOut)
+def any_account_statement(
+    account_id: int,
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> StatementOut:
+    """كشف حساب لأي حساب في الشجرة — خزينة، بنك، مصروف، مش بس عميل ومورد.
+
+    Same engine as the party statements; a treasury or an expense account has exactly the same
+    question asked of it, and there was no reason only two account types could be read.
+    """
+    try:
+        s = statement_service.account_statement(
+            db, account_id=account_id, date_from=date_from, date_to=date_to)
+    except StatementError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": str(exc)}) from exc
     return _statement_out(s)
 
 

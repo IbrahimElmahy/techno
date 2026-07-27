@@ -28,6 +28,7 @@ from src.models.catalog import (
     SerialStatus,
 )
 from src.models.stock import LocationKind
+from src.lib import item_card as item_card_lib
 from src.services import audit_service, barcode_service, item_profile_service, serial_service
 from src.services.barcode_service import BarcodeError, BarcodeInput
 from src.services.serial_service import SerialError
@@ -458,6 +459,33 @@ def item_balance(
     try:
         return item_profile_service.balance(db, item_id)
     except item_profile_service.ItemProfileError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+
+
+@router.get("/{item_id}/card", response_model=dict)
+def item_card(
+    item_id: int,
+    location_kind: str | None = Query(None, description="warehouse | custody"),
+    location_id: int | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    movement_type: str | None = Query(None),
+    direction: str | None = Query(None, description="in | out"),
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """كارت الصنف — every movement with the balance before and after it.
+
+    Without a location this is the item's whole position; with one it is that store's card.
+    Filters hide rows but never rewrite balances — see `src/lib/item_card.py`.
+    """
+    try:
+        return item_card_lib.card(
+            db, item_id=item_id, location_kind=location_kind, location_id=location_id,
+            date_from=date_from, date_to=date_to, movement_type=movement_type,
+            direction=direction,
+        )
+    except item_card_lib.ItemCardError as exc:
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
 
 

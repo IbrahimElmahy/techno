@@ -310,11 +310,14 @@ export default function SupplierProfile() {
                                 render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
                               { title: 'النوع', dataIndex: 'entry_type', key: 't' },
                               { title: 'البيان', dataIndex: 'description', key: 'desc' },
+                              { title: 'الرصيد قبل', dataIndex: 'balance_before', key: 'bb',
+                                render: (v: string) => (
+                                  <span style={{ color: '#8a8a8a' }}>{money(v)}</span>) },
                               { title: 'مدين', dataIndex: 'debit', key: 'dr',
                                 render: (v: string) => money(v) },
                               { title: 'دائن', dataIndex: 'credit', key: 'cr',
                                 render: (v: string) => money(v) },
-                              { title: 'الرصيد', dataIndex: 'balance', key: 'bal',
+                              { title: 'الرصيد بعد', dataIndex: 'balance', key: 'bal',
                                 render: (v: string) => <b>{money(v)}</b> },
                             ]}
                           />

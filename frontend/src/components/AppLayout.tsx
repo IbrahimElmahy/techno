@@ -149,6 +149,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
     },
     {
+      key: '/item-card',
+      icon: <DatabaseOutlined />,
+      label: 'كارت الصنف',
+      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
+    },
+    {
       key: '/stock-alerts',
       icon: <DatabaseOutlined />,
       label: 'تنبيهات المخزون',
@@ -165,6 +171,12 @@ export default function AppLayout() {
       icon: <DollarOutlined />,
       label: 'الحسابات والخزينة',
       roles: ['system_admin', 'branch_manager'],
+    },
+    {
+      key: '/account-statement',
+      icon: <DollarOutlined />,
+      label: 'كشف حساب',
+      roles: ['system_admin', 'branch_manager', 'accountant'],
     },
     {
       key: '/vouchers',
