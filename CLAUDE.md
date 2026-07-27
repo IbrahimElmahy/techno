@@ -38,6 +38,8 @@ cd src; pytest; ruff check .
 Python 3.12: Follow standard conventions
 
 ## Recent Changes
+- 030-invoice-parity: Warehouse moved from the document to the LINE (one invoice can be served out of several warehouses; availability checked on the SUM per item×warehouse; reversal returns each line to its own warehouse). Cost of goods frozen on each sold line (`costing_service.average_cost`) so past profit never moves. Document fields: rep, posting account (drives the ledger), external document number, notes + 3 statements. Party picker modal with inline create. Migration `0028` backfills legacy lines from their document.
+- 029-a5web-parity: Feature-gap research vs. the client's current a5system (see `specs/029-a5web-parity/research.md`)
 - 014-production-reporting: Costing engine (recipe resources labor/machine + per-order override), inventory routing (per-item default warehouse), wastage (order + document), comprehensive reports (production/inventory/wastage/stagnant/sales). Library-First (`src/lib/production.py`, `src/lib/reporting.py`) + TDD
 - 013-settings-lookups: Admin-configurable dropdown lists (system enum-bound relabel/reorder/hide; custom free add/edit/remove)
 - 012-manufacturing-bom: Recipe (BOM) + recipe-driven manufacturing orders (linked consume+produce, derived cost, reverse-once) + integrity-preserving CRUD completion across modules

@@ -43,6 +43,8 @@ class SaleLineIn(BaseModel):
     unit: str | None = None                # (008) unit of measure; None = base
     serials: list[str] | None = None       # (009) serials for a serialized item
     discount_pct: Decimal | None = None    # (027) per-line discount; None = item's fixed default
+    # (030) serve this line from its own warehouse; None = the document's location
+    warehouse_id: int | None = None
 
 
 class SaleCreate(BaseModel):
@@ -52,6 +54,15 @@ class SaleCreate(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     lines: list[SaleLineIn]
+    # (030) document fields — who sold it, where revenue posts, the customer's paper number,
+    # and free text. All optional: an existing client that sends none behaves exactly as before.
+    rep_id: int | None = None
+    revenue_account_id: int | None = None
+    external_document_number: str | None = None
+    notes: str | None = None
+    statement1: str | None = None
+    statement2: str | None = None
+    statement3: str | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -70,6 +81,7 @@ class StandaloneReturnLineIn(BaseModel):
     unit_price: Decimal                    # refunded price per unit (defaults to last sold price)
     unit: str | None = None                # (008) unit of measure; None = base
     discount_pct: Decimal | None = None    # (027) per-line discount; None = 0
+    warehouse_id: int | None = None        # (030) this line returns into its own warehouse
 
 
 class StandaloneReturnCreate(BaseModel):
@@ -93,6 +105,10 @@ class SalesInvoiceOut(BaseModel):
     cash_account_id: int
     ledger_entry_id: int
     created_at: str | None = None
+    # (030)
+    rep_id: int | None = None
+    external_document_number: str | None = None
+    notes: str | None = None
 
 
 class InvoiceLineOut(BaseModel):
@@ -104,6 +120,9 @@ class InvoiceLineOut(BaseModel):
     price_tier: PriceTier | None = None
     unit: str | None = None
     unit_factor: Decimal | None = None
+    # (030) the warehouse this line was served from, and the cost of goods frozen at sale time
+    warehouse_id: int | None = None
+    unit_cost: Decimal | None = None
 
 
 class SalesInvoiceDetail(BaseModel):
@@ -145,9 +164,12 @@ def create_sale(
             origin_location_id=body.origin.location_id, variable_discount_pct=body.variable_discount_pct,
             cash_amount=body.cash_amount, credit_amount=body.credit_amount,
             lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials,
-                            l.discount_pct)
+                            l.discount_pct, l.warehouse_id)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
+            rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
+            external_document_number=body.external_document_number, notes=body.notes,
+            statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "sale_invalid", "message": str(exc)})
@@ -164,6 +186,8 @@ def _inv_out(inv: SalesInvoice) -> SalesInvoiceOut:
         credit_amount=inv.credit_amount, cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
         created_at=str(inv.created_at) if inv.created_at else None,
+        rep_id=inv.rep_id, external_document_number=inv.external_document_number,
+        notes=inv.notes,
     )
 
 
@@ -174,11 +198,18 @@ def list_sales(
     date_from: date | None = None,
     date_to: date | None = None,
     payment: str | None = None,   # cash | credit | partial
+    rep_id: int | None = None,            # (030)
+    external_document_number: str | None = None,  # (030)
     current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
     db: Session = Depends(get_db),
 ) -> list[SalesInvoiceOut]:
     """List sales invoices with search + filters, newest first."""
     stmt = select(SalesInvoice)
+    if rep_id is not None:
+        stmt = stmt.where(SalesInvoice.rep_id == rep_id)
+    if external_document_number:
+        stmt = stmt.where(SalesInvoice.external_document_number.like(
+            f"%{external_document_number.strip()}%"))
     if current.rep_id is not None:
         stmt = stmt.where(SalesInvoice.customer_id.in_(
             select(Customer.id).where(Customer.rep_id == current.rep_id)
@@ -266,7 +297,8 @@ def create_standalone_return(
             origin_location_id=body.origin.location_id,
             variable_discount_pct=body.variable_discount_pct,
             cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
-            lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct)
+            lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
+                              l.warehouse_id)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
         )
@@ -334,6 +366,8 @@ def get_sale(
                 price_tier=line.price_tier,
                 unit=line.unit,
                 unit_factor=line.unit_factor,
+                warehouse_id=line.location_id,
+                unit_cost=line.unit_cost,
             )
             for line in inv.lines
         ],

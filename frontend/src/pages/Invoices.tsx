@@ -12,6 +12,7 @@ import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
+import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface InvoiceRecord {
@@ -69,6 +70,7 @@ interface SaleLineItem {
   serials: string;
   fixed_discount: number;          // the item's own fixed discount (auto)
   variable_discount: number;       // a typed extra discount on this line
+  warehouse_id: number | null;     // (030) this line is served from its own warehouse
 }
 
 interface ItemUnit { name: string; factor: number; is_base: boolean; }
@@ -122,7 +124,7 @@ export default function Invoices() {
   // Create invoice dynamic lines
   const blankLine = (key: string, tier: string | null = null): SaleLineItem => ({
     key, category: null, item_id: null, quantity: 1, unit_price: 0, tier, unit: null,
-    serials: '', fixed_discount: 0, variable_discount: 0,
+    serials: '', fixed_discount: 0, variable_discount: 0, warehouse_id: null,
   });
   const [lines, setLines] = useState<SaleLineItem[]>([]);
   // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
@@ -131,6 +133,16 @@ export default function Invoices() {
   const [customerTier, setCustomerTier] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
+  // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
+  // be served from a different warehouse, so a single item-keyed map would answer the wrong
+  // question. Stock can never go negative, so the form shows what is available and caps the
+  // quantity rather than letting the user build a basket the server will refuse.
+  const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
+  // (030) the party picker + what it filled into the document header
+  const [partyPickerOpen, setPartyPickerOpen] = useState(false);
+  const [party, setParty] = useState<Party | null>(null);
+  // The document's warehouse — the default every line falls back to when it has none of its own.
+  const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
@@ -252,6 +264,9 @@ export default function Invoices() {
     setDiscountPct(0);
     setSelectedCustomerId(null);
     setCustomerBalance(null);
+    setAvailability({});
+    setParty(null);
+    setDocWarehouseId(null);
     createForm.resetFields();
   };
 
@@ -318,6 +333,8 @@ export default function Invoices() {
 
   const handleLineChange = async (key: string, field: keyof SaleLineItem, value: any) => {
     if (field === 'item_id' && value) await fetchPrices(value);
+    // (030) A line moved to another warehouse needs THAT warehouse's stock to cap against.
+    if (field === 'warehouse_id' && value) await loadWarehouseStock(value);
     setLines((prev) =>
       prev.map((l) => {
         if (l.key !== key) return l;
@@ -344,6 +361,50 @@ export default function Invoices() {
     );
   };
 
+  /** Chosen from the picker (existing or just-created) — fills the form and the header strip. */
+  const handlePartyPicked = (picked: Party) => {
+    setParty(picked);
+    setPartyPickerOpen(false);
+    createForm.setFieldsValue({ customer_id: picked.id });
+    // A brand-new customer isn't in the loaded list yet; add it so the field renders its name.
+    setCustomers((prev) => (prev.some((c) => c.id === picked.id) ? prev : [
+      ...prev, { id: picked.id, name: picked.name, default_price_tier: null } as Customer,
+    ]));
+    onCustomerChange(picked.id);
+  };
+
+  /** Load and cache what one warehouse holds. Called for the document's warehouse and for any
+   *  warehouse a line is switched to, so each line can be capped against the right stock. */
+  const loadWarehouseStock = async (warehouseId: number) => {
+    if (!warehouseId || availability[warehouseId]) return;
+    try {
+      const res = await api.get('/api/v1/stock/by-location', {
+        params: { location_kind: 'warehouse', location_id: warehouseId, only_available: false },
+      });
+      const map: Record<number, number> = {};
+      (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
+      setAvailability((prev) => ({ ...prev, [warehouseId]: map }));
+    } catch (err) { console.error(err); }
+  };
+
+  const onWarehouseChange = async (warehouseId: number) => {
+    setDocWarehouseId(warehouseId);
+    // Lines still pointing at no warehouse of their own follow the document.
+    await loadWarehouseStock(warehouseId);
+  };
+
+  /** The warehouse a line actually draws from: its own, else the document's. */
+  const lineWarehouse = (l: SaleLineItem): number | null => l.warehouse_id ?? docWarehouseId;
+
+  /** On-hand for an item in a given warehouse, expressed in the line's unit (0 when unknown). */
+  const availableFor = (itemId: number | null, unit: string | null,
+                        warehouseId: number | null): number => {
+    if (!itemId || !warehouseId) return 0;
+    const base = availability[warehouseId]?.[itemId] ?? 0;
+    const f = unitFactor(itemId, unit) || 1;
+    return f > 0 ? base / f : base;
+  };
+
   const onCustomerChange = (customerId: number) => {
     const c = customers.find((x) => x.id === customerId);
     const tier = c?.default_price_tier ?? null;
@@ -368,6 +429,30 @@ export default function Invoices() {
     const validLines = lines.filter((l) => l.item_id !== null);
     if (validLines.length === 0) {
       message.error('يرجى إضافة منتج واحد صالح على الأقل!');
+      return;
+    }
+
+    // Never sell more than a warehouse holds. Checked on the SUM per (item × warehouse), because
+    // two lines of 3 against a stock of 5 each look affordable alone — the server applies the
+    // same rule, this just says so before the basket is lost.
+    const wanted = new Map<string, number>();
+    validLines.forEach((l) => {
+      const key = `${lineWarehouse(l)}:${l.item_id}`;
+      wanted.set(key, (wanted.get(key) ?? 0) + l.quantity);
+    });
+    const short = validLines.find((l) => {
+      const asked = wanted.get(`${lineWarehouse(l)}:${l.item_id}`) ?? 0;
+      return asked > availableFor(l.item_id, l.unit, lineWarehouse(l));
+    });
+    if (short) {
+      const prod = products.find((p) => p.id === short.item_id);
+      const wh = warehouses.find((w) => w.id === lineWarehouse(short));
+      const asked = wanted.get(`${lineWarehouse(short)}:${short.item_id}`) ?? 0;
+      message.error(
+        `«${prod?.name ?? 'الصنف'}»: المطلوب ${asked} يتجاوز المتاح في «${wh?.name ?? 'المخزن'}» `
+        + `(${availableFor(short.item_id, short.unit, lineWarehouse(short))
+          .toLocaleString('ar-EG', { maximumFractionDigits: 3 })})`,
+      );
       return;
     }
 
@@ -405,8 +490,14 @@ export default function Invoices() {
             // Combined per-line discount: the item's fixed + the typed variable.
             discount_pct: ((l.fixed_discount || 0) + (l.variable_discount || 0)).toFixed(2),
             serials: prod?.is_serialized ? parseSerials(l.serials) : null,
+            // (030) Only sent when it differs from the document's, so the server keeps its
+            // "fall back to the document" behaviour for everything else.
+            warehouse_id: l.warehouse_id ?? undefined,
           };
         }),
+        // (030) document fields
+        external_document_number: values.external_document_number || undefined,
+        notes: values.notes || undefined,
       });
 
       message.success('تم تسجيل فاتورة البيع بنجاح');
@@ -608,19 +699,21 @@ export default function Invoices() {
         <Form form={createForm} layout="vertical" onFinish={handleCreateSubmit} requiredMark={false}>
           <Row gutter={16}>
             <Col span={12}>
+              {/* Picked from a searchable modal that can also create the customer on the spot,
+                  so a new walk-in never costs the half-entered invoice. */}
               <Form.Item
                 name="customer_id"
                 label="العميل المشتري"
                 rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
                 style={{ marginBottom: 8 }}
               >
-                <Select placeholder="اختر العميل" onChange={onCustomerChange} showSearch optionFilterProp="children">
-                  {customers.map((c) => (
-                    <Select.Option key={c.id} value={c.id}>
-                      {c.name}{c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}
-                    </Select.Option>
-                  ))}
-                </Select>
+                <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
+                  placeholder="اضغط لاختيار العميل"
+                  onClick={() => setPartyPickerOpen(true)}
+                  options={customers.map((c) => ({
+                    value: c.id,
+                    label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
+                  }))} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -629,7 +722,7 @@ export default function Invoices() {
                 label="مستودع الصرف والتسليم"
                 rules={[{ required: true, message: 'يرجى اختيار مستودع الصرف!' }]}
               >
-                <Select placeholder="اختر المستودع">
+                <Select placeholder="اختر المستودع" onChange={onWarehouseChange}>
                   {warehouses.map((w) => (
                     <Select.Option key={w.id} value={w.id}>
                       {w.name}
@@ -639,6 +732,48 @@ export default function Invoices() {
               </Form.Item>
             </Col>
           </Row>
+
+          {/* (030) The paper trail: the customer's own invoice number and any free note. */}
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item name="external_document_number" label="رقم المستند (الورقي)"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري — رقم فاتورة العميل الورقية" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={16}>
+              <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* (030) The party's standing at a glance — what he owes, and how to reach him. */}
+          {party && (
+            <Row gutter={12} style={{
+              marginBottom: 14, padding: '10px 14px', borderRadius: 10,
+              background: '#f6faf3', border: '1px solid #e6efe3',
+            }}>
+              <Col xs={12} md={6}>
+                <div style={{ fontSize: 12, color: '#8a8a8a' }}>العميل</div>
+                <b>{party.name}</b>
+              </Col>
+              <Col xs={12} md={6}>
+                <div style={{ fontSize: 12, color: '#8a8a8a' }}>الحالي (رصيده)</div>
+                <b style={{ color: Number(customerBalance ?? 0) > 0 ? '#cf1322' : '#6AB42D' }}>
+                  {money(customerBalance ?? 0)} ج.م
+                </b>
+              </Col>
+              <Col xs={12} md={6}>
+                <div style={{ fontSize: 12, color: '#8a8a8a' }}>الهاتف</div>
+                <b>{party.phone || '-'}</b>
+              </Col>
+              <Col xs={12} md={6}>
+                <div style={{ fontSize: 12, color: '#8a8a8a' }}>العنوان</div>
+                <b>{party.address || '-'}</b>
+              </Col>
+            </Row>
+          )}
 
           <Divider orientation="right" style={{ fontWeight: 700 }}>المنتجات المباعة</Divider>
 
@@ -682,14 +817,15 @@ export default function Invoices() {
 
                 {/* Column headers. */}
                 <Row gutter={8} style={{ padding: '6px 12px 0', color: '#8a8a8a', fontSize: 12 }}>
-                  <Col md={6}>المنتج</Col>
-                  <Col md={3}>فئة السعر</Col>
+                  <Col md={5}>المنتج</Col>
+                  <Col md={3}>المخزن</Col>
+                  <Col md={2}>فئة السعر</Col>
                   <Col md={2}>الكمية</Col>
                   <Col md={3}>سعر الوحدة</Col>
                   <Col md={2}>خصم ثابت %</Col>
                   <Col md={2}>خصم متغير %</Col>
                   <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
-                  <Col md={3} style={{ textAlign: 'center' }}>الإجمالي</Col>
+                  <Col md={2} style={{ textAlign: 'center' }}>الإجمالي</Col>
                   <Col md={1} />
                 </Row>
 
@@ -700,10 +836,28 @@ export default function Invoices() {
                     <div key={line.key}
                       style={{ padding: '4px 12px 6px', borderTop: '1px solid #f0f5ee' }}>
                       <Row gutter={8} align="middle">
-                        <Col md={6} xs={24}>
+                        <Col md={5} xs={24}>
                           <b>{productName(line.item_id as number)}</b>
+                          {/* Stock never goes negative — show the ceiling right where it binds,
+                              for THIS line's warehouse. */}
+                          <span style={{
+                            marginInlineStart: 8, fontSize: 12,
+                            color: availableFor(line.item_id, line.unit, lineWarehouse(line)) > 0
+                              ? '#6AB42D' : '#cf1322',
+                          }}>
+                            (المتاح: {availableFor(line.item_id, line.unit, lineWarehouse(line))
+                              .toLocaleString('ar-EG', { maximumFractionDigits: 3 })})
+                          </span>
                         </Col>
                         <Col md={3} xs={12}>
+                          {/* (030) Each line may be served from a different warehouse. */}
+                          <Select size="small" style={{ width: '100%' }}
+                            value={lineWarehouse(line) ?? undefined}
+                            placeholder="المخزن"
+                            onChange={(val) => handleLineChange(line.key, 'warehouse_id', val)}
+                            options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+                        </Col>
+                        <Col md={2} xs={12}>
                           <Select size="small" style={{ width: '100%' }} value={line.tier ?? undefined}
                             onChange={(val) => handleLineChange(line.key, 'tier', val)}>
                             {Object.entries(TIER_LABELS).map(([k, l]) => (
@@ -713,6 +867,10 @@ export default function Invoices() {
                         </Col>
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={1} style={{ width: '100%' }}
+                            max={availableFor(line.item_id, line.unit, lineWarehouse(line)) || undefined}
+                            status={line.quantity
+                              > availableFor(line.item_id, line.unit, lineWarehouse(line))
+                              ? 'error' : undefined}
                             value={line.quantity}
                             onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} />
                         </Col>
@@ -735,7 +893,7 @@ export default function Invoices() {
                             {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
                           </span>
                         </Col>
-                        <Col md={3} xs={12} style={{ textAlign: 'center' }}>
+                        <Col md={2} xs={12} style={{ textAlign: 'center' }}>
                           <b style={{ color: '#6AB42D' }}>{lineTotal(line).toFixed(2)}</b>
                         </Col>
                         <Col md={1} xs={4} style={{ textAlign: 'center' }}>
@@ -851,6 +1009,10 @@ export default function Invoices() {
           </Form.Item>
         </Form>
         </Card>
+
+        <PartyPickerModal
+          open={partyPickerOpen} kind="customer"
+          onPick={handlePartyPicked} onCancel={() => setPartyPickerOpen(false)} />
       </div>
     );
   }

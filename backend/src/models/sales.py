@@ -24,8 +24,20 @@ class SalesInvoice(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=False)
+    # The document's warehouse is now only the DEFAULT for new lines — each line carries its own
+    # (030), so one invoice can be served out of several warehouses.
     origin_location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
     origin_location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # --- 030 document fields: who sold it, where it posts, and the paper trail ---
+    # A rep IS a user with the sales_rep role (same as customer.rep_id) — no separate table.
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    revenue_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
+    # The customer's own paper number — kept ALONGSIDE our generated document_number, never instead.
+    external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
     gross: Mapped[object] = mapped_column(MONEY, nullable=False)
     fixed_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False)
     variable_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False)
@@ -62,6 +74,13 @@ class SalesInvoiceLine(Base):
     # stock moved in base = quantity × unit_factor.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    # (030) The warehouse THIS line came out of. NULL only on rows written before 030; the
+    # migration backfills them from the invoice, so readers can treat it as always present.
+    location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
+    location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # (030) Cost of the goods at the moment they were sold. Frozen: later purchases move the
+    # average, but this invoice's profit must never move with them. NULL = sold before 030.
+    unit_cost: Mapped[object | None] = mapped_column(MONEY, nullable=True)
 
 
 class SalesReturn(Base):
@@ -86,6 +105,14 @@ class SalesReturn(Base):
     credit_reduction: Mapped[object] = mapped_column(MONEY, nullable=False)  # derived (invoice-bound) / chosen (standalone)
     # Treasury the cash refund is paid from (standalone). NULL when there is no cash refund.
     cash_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
+    # --- 030 document fields (same set as the invoice) ---
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    revenue_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
+    external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
@@ -108,6 +135,11 @@ class SalesReturnLine(Base):
     line_total: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # AFTER the line discount
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    # (030) The warehouse the goods come back INTO, per line.
+    location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
+    location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # (030) Mirrors the sale's frozen cost so a return reverses exactly the profit the sale booked.
+    unit_cost: Mapped[object | None] = mapped_column(MONEY, nullable=True)
 
 
 class SalesSetting(Base):

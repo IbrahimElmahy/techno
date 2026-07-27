@@ -18,8 +18,18 @@ class PurchaseInvoice(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     supplier_id: Mapped[int] = mapped_column(ForeignKey("supplier.id"), nullable=False)
+    # Now only the DEFAULT for new lines — each line carries its own warehouse (030).
     location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
     location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # --- 030 document fields (mirrors the sales invoice) ---
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    expense_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
+    # The SUPPLIER's own invoice number — kept alongside our generated document_number.
+    external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
     total: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
@@ -44,6 +54,10 @@ class PurchaseInvoiceLine(Base):
     # Unit of measure used on this line (008); NULL = base. Stock in base = quantity × unit_factor.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    # (030) The warehouse THIS line is received into. NULL only on pre-030 rows, which the
+    # migration backfills from the invoice.
+    line_location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
+    line_location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class PurchaseReturn(Base):

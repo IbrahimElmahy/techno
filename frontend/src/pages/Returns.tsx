@@ -54,6 +54,7 @@ interface ReturnLineItem {
   quantity: number;
   unit_price: number;
   discount: number;   // per-line discount %
+  warehouse_id: number | null;   // (030) this line comes back into its own warehouse
 }
 
 interface Filters {
@@ -86,6 +87,8 @@ export default function Returns() {
   const [creditReduction, setCreditReduction] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
+  // The document's warehouse — the default each line falls back to when it has none of its own.
+  const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
   // The customer's purchase history per item — drives the last-price autofill + the info popover.
   const [lastInfo, setLastInfo] = useState<Record<number, LastInfo>>({});
 
@@ -176,7 +179,7 @@ export default function Returns() {
   const closeCreate = () => {
     setCreateVisible(false);
     setLines([]); setActiveCategory(null); setCashRefund(0); setDiscountPct(0);
-    setCustomerId(null); setLastInfo({}); setCustomerBalance(null);
+    setCustomerId(null); setLastInfo({}); setCustomerBalance(null); setDocWarehouseId(null);
     createForm.resetFields();
   };
 
@@ -225,7 +228,7 @@ export default function Returns() {
     } else {
       setLines((prev) => [...prev, {
         key: Date.now().toString(), category: prod?.category ?? null, item_id: itemId,
-        quantity: 1, unit_price: price, discount: 0,
+        quantity: 1, unit_price: price, discount: 0, warehouse_id: null,
       }]);
     }
   };
@@ -258,6 +261,8 @@ export default function Returns() {
             lines: valid.map((l) => ({
               item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
               discount_pct: l.discount || 0,
+              // (030) only when the line differs from the document's warehouse
+              warehouse_id: l.warehouse_id ?? undefined,
             })),
           });
           message.success(`تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
@@ -327,9 +332,10 @@ export default function Returns() {
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item name="warehouse_id" label="مستودع استلام المرتجع"
+                <Form.Item name="warehouse_id" label="مستودع استلام المرتجع (الافتراضي للسطور)"
                   rules={[{ required: true, message: 'يرجى اختيار المستودع!' }]}>
-                  <Select placeholder="اختر المستودع الذي ترجع إليه البضاعة">
+                  <Select placeholder="اختر المستودع الذي ترجع إليه البضاعة"
+                    onChange={(v) => setDocWarehouseId(v as number)}>
                     {warehouses.map((w) => (
                       <Select.Option key={w.id} value={w.id}>{w.name}</Select.Option>
                     ))}
@@ -378,13 +384,14 @@ export default function Returns() {
                       </div>
 
                       <Row gutter={8} style={{ padding: '6px 12px 0', color: '#8a8a8a', fontSize: 12 }}>
-                        <Col md={6}>الصنف</Col>
-                        <Col md={4}>آخر سعر شراء</Col>
+                        <Col md={5}>الصنف</Col>
+                        <Col md={3}>المخزن</Col>
+                        <Col md={3}>آخر سعر شراء</Col>
                         <Col md={2}>الكمية</Col>
                         <Col md={3}>سعر الإرجاع</Col>
                         <Col md={2}>خصم %</Col>
                         <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
-                        <Col md={4} style={{ textAlign: 'center' }}>الإجمالي</Col>
+                        <Col md={3} style={{ textAlign: 'center' }}>الإجمالي</Col>
                         <Col md={1} />
                       </Row>
 
@@ -394,8 +401,16 @@ export default function Returns() {
                         return (
                           <div key={line.key} style={{ padding: '4px 12px 6px', borderTop: '1px solid #f5efec' }}>
                             <Row gutter={8} align="middle">
-                              <Col md={6} xs={24}><b>{productName(line.item_id as number)}</b></Col>
-                              <Col md={4} xs={12}>
+                              <Col md={5} xs={24}><b>{productName(line.item_id as number)}</b></Col>
+                              <Col md={3} xs={12}>
+                                {/* (030) Goods may come back into a different warehouse per line. */}
+                                <Select size="small" style={{ width: '100%' }}
+                                  placeholder="المخزن"
+                                  value={line.warehouse_id ?? docWarehouseId ?? undefined}
+                                  onChange={(val) => handleLineChange(line.key, 'warehouse_id', val)}
+                                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+                              </Col>
+                              <Col md={3} xs={12}>
                                 {last != null ? (
                                   <Tag color="green" style={{ cursor: 'pointer' }}
                                     onClick={() => setHistModal({
@@ -428,7 +443,7 @@ export default function Returns() {
                                   {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
                                 </span>
                               </Col>
-                              <Col md={4} xs={12} style={{ textAlign: 'center' }}>
+                              <Col md={3} xs={12} style={{ textAlign: 'center' }}>
                                 <b style={{ color: '#cf4b1a' }}>{lineTotal(line).toFixed(2)}</b>
                               </Col>
                               <Col md={1} xs={4} style={{ textAlign: 'center' }}>

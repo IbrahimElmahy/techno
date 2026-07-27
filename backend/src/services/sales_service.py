@@ -29,6 +29,7 @@ from src.models.stock import LocationKind, StockDirection
 from src.services import (
     account_resolver,
     audit_service,
+    costing_service,
     ledger_service,
     pricing_service,
     serial_service,
@@ -57,6 +58,56 @@ class SaleLine:
     # (027) per-line discount %. None = use the item's fixed default; a number overrides it
     # (the caller adds the item fixed + a typed variable and sends the total here).
     discount_pct: Decimal | None = None
+    # (030) the warehouse THIS line is served from. None = the document's own location, which is
+    # what every pre-030 caller sends and what a rep selling from his custody still uses.
+    warehouse_id: int | None = None
+
+
+def _revenue_account_id(db: Session, chosen: int | None) -> int:
+    """The account revenue posts to: the one named on the document, else the system default.
+
+    A chosen account must be postable — posting to a group account would silently corrupt the
+    trial balance, so it is refused up front rather than discovered at report time.
+    """
+    if chosen is None:
+        return account_resolver.sales_revenue_account(db).id
+    from src.models.ledger import Account
+
+    acc = db.get(Account, chosen)
+    if acc is None or not acc.active:
+        raise SalesError("Revenue account not found.")
+    if not acc.is_postable:
+        raise SalesError("Revenue account is a group; pick a postable account.")
+    return acc.id
+
+
+def _line_location(ln: SaleLine, doc_kind: LocationKind, doc_id: int) -> tuple[LocationKind, int]:
+    """Where a line moves stock: its own warehouse when given, else the document's location."""
+    if ln.warehouse_id is not None:
+        return LocationKind.warehouse, ln.warehouse_id
+    return doc_kind, doc_id
+
+
+def _assert_lines_available(
+    db: Session, built_locations: list[tuple[int, LocationKind, int, Decimal]]
+) -> None:
+    """Reject the document if the SUM of its lines exceeds what a location holds.
+
+    Checking a line at a time would let two lines of 3 through against a stock of 5: each looks
+    affordable on its own. Stock is grouped per (item × location) first, so the document is
+    refused as a whole before anything moves.
+    """
+    wanted: dict[tuple[int, LocationKind, int], Decimal] = {}
+    for item_id, kind, loc_id, base_qty in built_locations:
+        key = (item_id, kind, loc_id)
+        wanted[key] = wanted.get(key, ZERO) + base_qty
+    for (item_id, kind, loc_id), needed in wanted.items():
+        available = stock_service.on_hand(db, item_id, kind, loc_id)
+        if needed > available:
+            raise stock_service.StockError(
+                f"No-negative-stock: on-hand {available} < requested out {needed} "
+                f"(item {item_id}, {kind.value} {loc_id})."
+            )
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -86,6 +137,14 @@ def create_sale(
     actor_role: RoleName,
     actor_user_id: int,
     can_sell_below: bool = False,
+    # (030) document fields — all optional so every pre-030 caller keeps working unchanged.
+    rep_id: int | None = None,
+    revenue_account_id: int | None = None,
+    external_document_number: str | None = None,
+    notes: str | None = None,
+    statement1: str | None = None,
+    statement2: str | None = None,
+    statement3: str | None = None,
 ) -> SalesInvoice:
     if not lines:
         raise SalesError("A sale needs at least one line.")
@@ -160,28 +219,47 @@ def create_sale(
         variable_discount_pct=variable, combined_pct=combined, net=net, tax_amount=tax,
         cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         cash_account_id=cash_acc.id, ledger_entry_id=None, actor_user_id=actor_user_id,
+        # (030) Falls back to the seller's own rep id, so the document always names someone.
+        rep_id=rep_id if rep_id is not None else (
+            actor_user_id if actor_role == RoleName.sales_rep else None),
+        revenue_account_id=revenue_account_id,
+        external_document_number=(external_document_number or None),
+        notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
     )
     db.add(invoice)
     db.flush()
+    # (030) Every line may draw from its own warehouse, so check the whole document against each
+    # location BEFORE moving anything — see `_assert_lines_available`.
+    _assert_lines_available(db, [
+        (ln.item_id, *_line_location(ln, origin_location_kind, origin_location_id),
+         to_qty(Decimal(ln.quantity) * factor))
+        for ln, _price, _total, _tier, factor, _disc in built
+    ])
     for ln, unit_price, line_total, tier, factor, line_disc in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock moves in the base unit
+        line_kind, line_loc = _line_location(ln, origin_location_kind, origin_location_id)
         stock_service.post_movement(
-            db, item_id=ln.item_id, location_kind=origin_location_kind,
-            location_id=origin_location_id, movement_type="sale_out",
+            db, item_id=ln.item_id, location_kind=line_kind,
+            location_id=line_loc, movement_type="sale_out",
             direction=StockDirection.out, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type="sale", source_doc_id=invoice.id,
         )
+        # (030) Freeze the cost of goods as it stands NOW. Later purchases move the average for
+        # future sales; this invoice's margin must stay exactly what it was on the day.
+        unit_cost = to_money(costing_service.average_cost(db, ln.item_id) * factor)
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                              unit_price=unit_price, discount_pct=line_disc,
                              line_total=line_total, price_tier=tier,
-                             unit=ln.unit, unit_factor=factor)
+                             unit=ln.unit, unit_factor=factor,
+                             location_kind=line_kind, location_id=line_loc,
+                             unit_cost=unit_cost)
         )
         if ln.serials:  # (009) mark the specific serials sold (validated above)
             item = db.get(Item, ln.item_id)
             try:
                 serial_service.mark_sold(
-                    db, item=item, origin_kind=origin_location_kind, origin_id=origin_location_id,
+                    db, item=item, origin_kind=line_kind, origin_id=line_loc,
                     serials=ln.serials, invoice_id=invoice.id,
                 )
             except SerialError as exc:
@@ -198,7 +276,10 @@ def create_sale(
         # The customer paid MORE than this invoice: the surplus settles his prior balance, so it
         # credits (reduces) his receivable. His overall account total drops by that surplus.
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, -credit))
-    entry_lines.append(LineInput(account_resolver.sales_revenue_account(db).id, Direction.credit, net))
+    # (030) Revenue posts to the account chosen on the document when there is one, so a company
+    # can split sales across several revenue accounts; otherwise the system's default.
+    entry_lines.append(LineInput(_revenue_account_id(db, revenue_account_id),
+                                 Direction.credit, net))
     if tax > ZERO:  # output VAT is owed to the authority, not revenue
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id,
                                      Direction.credit, tax, statement="ضريبة القيمة المضافة"))
@@ -243,6 +324,15 @@ def return_sale(
         ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
         for ln in inv.lines
     }
+    # (030) Each sold line remembers the warehouse it left from, so the return puts the goods back
+    # exactly there. Lines written before 030 fall back to the invoice's own location.
+    sold_from = {
+        ln.item_id: (ln.location_kind or inv.origin_location_kind,
+                     ln.location_id if ln.location_id is not None else inv.origin_location_id)
+        for ln in inv.lines
+    }
+    # (030) The cost the SALE booked — a return has to reverse that, not today's average.
+    sold_cost = {ln.item_id: ln.unit_cost for ln in inv.lines}
     prior = _already_returned(db, sales_invoice_id)
 
     value = ZERO
@@ -275,13 +365,16 @@ def return_sale(
     db.flush()
     for item_id, qty in lines:
         base_qty = to_qty(Decimal(qty) * sold[item_id][2])  # (008) reverse stock in base units
+        back_kind, back_loc = sold_from[item_id]            # (030) back to where it left from
         stock_service.post_movement(
-            db, item_id=item_id, location_kind=inv.origin_location_kind,
-            location_id=inv.origin_location_id, movement_type="sale_return_in",
+            db, item_id=item_id, location_kind=back_kind,
+            location_id=back_loc, movement_type="sale_return_in",
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type="sale_return", source_doc_id=ret.id,
         )
-        ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty)))
+        ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty),
+                                         location_kind=back_kind, location_id=back_loc,
+                                         unit_cost=sold_cost.get(item_id)))
         item = db.get(Item, item_id)  # (009) restore serials for serialized items
         if item.is_serialized:
             ser = (serials or {}).get(item_id) or []
@@ -289,8 +382,8 @@ def return_sale(
                 raise SalesError("Serial count must equal the returned quantity.")
             try:
                 serial_service.restore_for_return(
-                    db, item=item, invoice_id=inv.id, origin_kind=inv.origin_location_kind,
-                    origin_id=inv.origin_location_id, serials=ser,
+                    db, item=item, invoice_id=inv.id, origin_kind=back_kind,
+                    origin_id=back_loc, serials=ser,
                 )
             except SerialError as exc:
                 raise SalesError(str(exc)) from exc
@@ -323,6 +416,8 @@ class ReturnLine:
     unit_price: Decimal                    # the refunded price per unit (defaults to last sold price)
     unit: str | None = None                # (008) unit of measure; None = base unit
     discount_pct: Decimal | None = None    # (027) per-line discount; None = 0 (refund the actual price)
+    # (030) the warehouse THIS line comes back into; None = the document's location
+    warehouse_id: int | None = None
 
 
 def create_standalone_return(
@@ -405,9 +500,13 @@ def create_standalone_return(
     db.flush()
     for ln, unit_price, line_total, factor in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # goods return to stock in base units
+        # (030) Each line may come back into its own warehouse, same as a sale leaves from one.
+        back_kind, back_loc = ((LocationKind.warehouse, ln.warehouse_id)
+                               if ln.warehouse_id is not None
+                               else (origin_location_kind, origin_location_id))
         stock_service.post_movement(
-            db, item_id=ln.item_id, location_kind=origin_location_kind,
-            location_id=origin_location_id, movement_type="sale_return_in",
+            db, item_id=ln.item_id, location_kind=back_kind,
+            location_id=back_loc, movement_type="sale_return_in",
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type="sale_return", source_doc_id=ret.id,
         )
@@ -415,6 +514,10 @@ def create_standalone_return(
             item_id=ln.item_id, quantity=Decimal(ln.quantity), unit_price=unit_price,
             discount_pct=(Decimal(ln.discount_pct) if ln.discount_pct is not None else ZERO),
             line_total=line_total, unit=ln.unit, unit_factor=factor,
+            location_kind=back_kind, location_id=back_loc,
+            # (030) A standalone return has no originating sale to copy a cost from, so it takes
+            # the current average — the best available estimate of what is coming back in.
+            unit_cost=to_money(costing_service.average_cost(db, ln.item_id) * factor),
         ))
 
     entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, net)]
