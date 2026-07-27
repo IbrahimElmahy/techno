@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Card, Collapse, Table, Button, Input, InputNumber, Switch, Space, Tag, message, Popconfirm,
-  Modal, Form, Tooltip,
+  Modal, Form, Tooltip, Select,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
@@ -18,6 +18,23 @@ export default function Settings() {
   const [pages, setPages] = useState<PageGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  // نوع التكلفة (B5) — how a unit of stock is valued when a NEW cost is derived. Costs already
+  // frozen onto past documents are untouched by it, which is why they were frozen.
+  const [costingMethod, setCostingMethod] = useState<string>('average');
+  const [savingCosting, setSavingCosting] = useState(false);
+
+  const saveCostingMethod = async (method: string) => {
+    setSavingCosting(true);
+    try {
+      await api.put('/api/v1/settings/stock', { costing_method: method });
+      setCostingMethod(method);
+      message.success('اتحفظت طريقة التكلفة');
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ طريقة التكلفة');
+    } finally {
+      setSavingCosting(false);
+    }
+  };
 
   const handleSeed = async () => {
     setSeeding(true);
@@ -47,7 +64,12 @@ export default function Settings() {
     }
   };
 
-  useEffect(() => { loadCategories(); }, []);
+  useEffect(() => {
+    loadCategories();
+    api.get('/api/v1/settings/stock')
+      .then((r) => setCostingMethod(r.data?.costing_method || 'average'))
+      .catch(console.error);
+  }, []);
 
   // Search runs over the flattened categories, then they are regrouped under their page.
   const allCategories = useMemo(
@@ -70,6 +92,24 @@ export default function Settings() {
 
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="large">
+      <Card title="إعدادات المخزون" size="small">
+        <Space wrap align="center">
+          <span>نوع التكلفة:</span>
+          <Select
+            style={{ minWidth: 220 }} value={costingMethod} loading={savingCosting}
+            onChange={saveCostingMethod}
+            options={[
+              { value: 'average', label: 'المتوسط المرجح' },
+              { value: 'last_purchase', label: 'آخر سعر شراء' },
+            ]}
+          />
+          <span style={{ color: '#888' }}>
+            بتتحكم في تقييم أي تكلفة جديدة (الجرد، أذونات الصرف). التكاليف المتجمّدة على
+            المستندات القديمة ما بتتغيّرش.
+          </span>
+        </Space>
+      </Card>
+
       <Card title="بيانات تجريبية للاختبار" size="small">
         <Space wrap>
           <span style={{ color: '#888' }}>

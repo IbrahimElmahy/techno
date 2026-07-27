@@ -14,6 +14,8 @@ import Transfers from '../pages/Transfers';
 import StockBalance from '../pages/StockBalance';
 import StockAlerts from '../pages/StockAlerts';
 import ItemCard from '../pages/ItemCard';
+import StockPermits from '../pages/StockPermits';
+import Stocktake from '../pages/Stocktake';
 import AccountStatement from '../pages/AccountStatement';
 import Invoices from '../pages/Invoices';
 import Returns from '../pages/Returns';
@@ -59,6 +61,8 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/stock-balance" element={<StockBalance />} />
       <Route path="/stock-alerts" element={<StockAlerts />} />
       <Route path="/item-card" element={<ItemCard />} />
+      <Route path="/stock-permits" element={<StockPermits />} />
+      <Route path="/stocktake" element={<Stocktake />} />
       <Route path="/account-statement" element={<AccountStatement />} />
       <Route path="/treasury" element={<Treasury />} />
       <Route path="/vouchers" element={<Vouchers />} />

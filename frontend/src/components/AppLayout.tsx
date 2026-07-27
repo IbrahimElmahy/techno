@@ -155,6 +155,18 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
     },
     {
+      key: '/stock-permits',
+      icon: <SwapOutlined />,
+      label: 'أذونات المخزن',
+      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
+    },
+    {
+      key: '/stocktake',
+      icon: <DatabaseOutlined />,
+      label: 'جرد حق تاريخ',
+      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
+    },
+    {
       key: '/stock-alerts',
       icon: <DatabaseOutlined />,
       label: 'تنبيهات المخزون',

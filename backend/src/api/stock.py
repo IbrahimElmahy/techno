@@ -1,7 +1,7 @@
 """Stock router (T018): derived on-hand. FR-007."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,12 +10,12 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ
+from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
 from src.models.catalog import Item
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.warehouse import Custody
-from src.services import batch_service
+from src.services import batch_service, stock_permit_service
 from src.services.stock_service import StockError, on_hand
 
 router = APIRouter(tags=["stock"], prefix="/stock")
@@ -145,3 +145,141 @@ def stock_by_location(
         for r in rows
     ]
     return [r for r in out if r.on_hand > 0] if only_available else out
+
+
+# ----------------------------------------------------- إذن إضافة / إذن صرف (B5)
+
+
+class PermitLineIn(BaseModel):
+    item_id: int
+    quantity: Decimal
+    # Only meaningful on a receipt; an issue is costed from the costing method.
+    unit_cost: Decimal | None = None
+
+
+class PermitIn(BaseModel):
+    kind: str  # receipt | issue
+    warehouse_id: int
+    lines: list[PermitLineIn]
+    reason: str | None = None
+    notes: str | None = None
+    permit_date: date | None = None
+
+
+class PermitLineOut(BaseModel):
+    id: int
+    item_id: int
+    item_name: str | None = None
+    quantity: Decimal
+    unit_cost: Decimal
+    line_cost: Decimal
+
+
+class PermitOut(BaseModel):
+    id: int
+    document_number: str
+    kind: str
+    warehouse_id: int
+    warehouse_name: str | None = None
+    permit_date: date | None = None
+    reason: str | None = None
+    notes: str | None = None
+    total_cost: Decimal
+    is_reversal: bool
+    reversed_by: int | None = None
+    created_at: datetime | None = None
+    lines: list[PermitLineOut] = []
+
+
+def _permit_out(db: Session, p) -> PermitOut:
+    from src.models.stock_permit import StockPermit as _P
+    from src.models.warehouse import Warehouse as _W
+
+    item_names = {
+        i.id: i.name for i in db.scalars(
+            select(Item).where(Item.id.in_([ln.item_id for ln in p.lines] or [0]))).all()
+    }
+    warehouse = db.get(_W, p.warehouse_id)
+    reversal = db.scalar(select(_P.id).where(_P.reverses_id == p.id))
+    return PermitOut(
+        id=p.id, document_number=p.document_number, kind=p.kind.value,
+        warehouse_id=p.warehouse_id, warehouse_name=warehouse.name if warehouse else None,
+        permit_date=p.permit_date, reason=p.reason, notes=p.notes,
+        total_cost=p.total_cost, is_reversal=p.reverses_id is not None,
+        reversed_by=reversal, created_at=p.created_at,
+        lines=[PermitLineOut(
+            id=ln.id, item_id=ln.item_id, item_name=item_names.get(ln.item_id),
+            quantity=ln.quantity, unit_cost=ln.unit_cost, line_cost=ln.line_cost)
+            for ln in p.lines],
+    )
+
+
+@router.post("/permits", response_model=PermitOut, status_code=201)
+def create_permit(
+    body: PermitIn,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> PermitOut:
+    """إذن إضافة أو إذن صرف — stock in or out for a reason that is not a trade.
+
+    No-Negative-Stock applies here exactly as it does to a sale: an administrative document is
+    still not allowed to invent stock.
+    """
+    try:
+        permit = stock_permit_service.create_permit(
+            db, kind=body.kind, warehouse_id=body.warehouse_id,
+            lines=[ln.model_dump() for ln in body.lines], actor_user_id=current.id,
+            reason=body.reason, notes=body.notes, permit_date=body.permit_date,
+        )
+    except stock_permit_service.StockPermitError as exc:
+        raise HTTPException(422, {"code": "permit_invalid", "message": str(exc)}) from exc
+    except StockError as exc:
+        raise HTTPException(409, {"code": "insufficient_stock", "message": str(exc)}) from exc
+    out = _permit_out(db, permit)
+    db.commit()
+    return out
+
+
+@router.get("/permits", response_model=list[PermitOut])
+def list_permits(
+    kind: str | None = None,
+    warehouse_id: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> list[PermitOut]:
+    rows = stock_permit_service.list_permits(
+        db, kind=kind, warehouse_id=warehouse_id, date_from=date_from, date_to=date_to)
+    return [_permit_out(db, p) for p in rows]
+
+
+@router.get("/permits/{permit_id}", response_model=PermitOut)
+def get_permit(
+    permit_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> PermitOut:
+    try:
+        return _permit_out(db, stock_permit_service.get_permit(db, permit_id))
+    except stock_permit_service.StockPermitError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+
+
+@router.post("/permits/{permit_id}/reverse", response_model=PermitOut, status_code=201)
+def reverse_permit(
+    permit_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> PermitOut:
+    """Posted documents are reversed, never edited or deleted — and only once."""
+    try:
+        reversal = stock_permit_service.reverse_permit(
+            db, permit_id=permit_id, actor_user_id=current.id)
+    except stock_permit_service.StockPermitError as exc:
+        raise HTTPException(409, {"code": "permit_invalid", "message": str(exc)}) from exc
+    except StockError as exc:
+        raise HTTPException(409, {"code": "insufficient_stock", "message": str(exc)}) from exc
+    out = _permit_out(db, reversal)
+    db.commit()
+    return out

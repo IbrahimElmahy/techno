@@ -74,6 +74,34 @@ class StockLocator(Base):
     location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
+class CostingMethod(str, enum.Enum):
+    """How a unit of stock is valued (نوع التكلفة، B5).
+
+    `average` is the shipped default and what every existing cost on a document was computed
+    with — changing the setting must never rewrite those, only how new valuations are derived.
+    FIFO is deliberately absent: it needs per-receipt cost layers, which is a data change, not a
+    setting.
+    """
+
+    average = "average"              # المتوسط المرجح
+    last_purchase = "last_purchase"  # آخر سعر شراء
+
+
+class StockSetting(Base):
+    """Singleton stock settings — currently just the costing method."""
+
+    __tablename__ = "stock_setting"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    costing_method: Mapped[CostingMethod] = mapped_column(
+        Enum(CostingMethod), default=CostingMethod.average, nullable=False
+    )
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
 class StockImmutableError(Exception):
     """Raised when code attempts to mutate or delete a posted stock movement."""
 

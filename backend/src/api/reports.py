@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
 from src.core.db import get_db
-from src.lib import reporting, trade_reports
+from src.lib import reporting, stocktake, trade_reports
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
 from src.models.sales import SalesInvoice
@@ -86,6 +86,18 @@ def trade_report(
         )
     except trade_reports.TradeReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/stock-as-of")
+def stock_as_of_report(
+    as_of: str | None = Query(None, description="ISO date; the stock as it stood that day"),
+    warehouse_id: int | None = Query(None),
+    item_id: int | None = Query(None),
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    """جرد حق تاريخ — every movement up to that day, nothing after it, valued at cost."""
+    return stocktake.stock_as_of(db, as_of=as_of, warehouse_id=warehouse_id, item_id=item_id)
 
 
 @router.get("/reorder")

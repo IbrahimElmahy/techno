@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine, PurchaseReturn, PurchaseReturnLine
+from src.models.stock import CostingMethod, StockSetting
 
 
 def average_cost(db: Session, item_id: int) -> Decimal:
@@ -56,3 +57,39 @@ def average_cost(db: Session, item_id: int) -> Decimal:
     if net_qty <= 0:
         return ZERO
     return to_money(net_value / net_qty)
+
+
+def last_purchase_cost(db: Session, item_id: int) -> Decimal:
+    """The unit price on the most recent purchase line — «آخر سعر شراء» (B5).
+
+    Per BASE unit, like `average_cost`, so the two are interchangeable wherever a cost is needed.
+    """
+    row = db.execute(
+        select(PurchaseInvoiceLine.unit_price, PurchaseInvoiceLine.unit_factor)
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
+        .where(PurchaseInvoiceLine.item_id == item_id)
+        .order_by(PurchaseInvoice.id.desc(), PurchaseInvoiceLine.id.desc())
+        .limit(1)
+    ).first()
+    if row is None or row[0] is None:
+        return ZERO
+    unit_price = Decimal(str(row[0]))
+    factor = Decimal(str(row[1] or 1))
+    return to_money(unit_price / factor) if factor else to_money(unit_price)
+
+
+def costing_method(db: Session) -> CostingMethod:
+    """The configured valuation method, defaulting to weighted average (the shipped behaviour)."""
+    setting = db.scalar(select(StockSetting).limit(1))
+    return setting.costing_method if setting else CostingMethod.average
+
+
+def unit_cost(db: Session, item_id: int) -> Decimal:
+    """The cost of one base unit under whatever method is configured.
+
+    New valuations follow the setting; costs already frozen onto past documents are untouched by
+    it, which is the whole reason they were frozen.
+    """
+    if costing_method(db) == CostingMethod.last_purchase:
+        return last_purchase_cost(db, item_id)
+    return average_cost(db, item_id)

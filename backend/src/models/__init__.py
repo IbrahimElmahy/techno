@@ -46,7 +46,8 @@ from src.models.sales import (  # noqa: E402
     SalesReturnLine,
     SalesSetting,
 )
-from src.models.stock import StockLocator, StockMovement  # noqa: E402
+from src.models.stock import StockLocator, StockMovement, StockSetting  # noqa: E402
+from src.models.stock_permit import StockPermit, StockPermitLine  # noqa: E402
 
 # Sales & Inventory (002) models — imported for metadata; added per phase.
 from src.models.supplier import Supplier, SupplierAccount  # noqa: E402
@@ -71,5 +72,5 @@ __all__ = [
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
-    "InspectionItemType",
+    "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine",
 ]
