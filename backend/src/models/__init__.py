@@ -51,6 +51,7 @@ from src.models.stock_permit import StockPermit, StockPermitLine  # noqa: E402
 
 # Sales & Inventory (002) models — imported for metadata; added per phase.
 from src.models.supplier import Supplier, SupplierAccount  # noqa: E402
+from src.models.trade_order import TradeOrder, TradeOrderLine  # noqa: E402
 from src.models.transfer import StockTransfer  # noqa: E402
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse
@@ -58,6 +59,7 @@ from src.models.cheque import Cheque  # noqa: E402
 from src.models.commission import CommissionRule  # noqa: E402
 from src.models.treasury import PeriodLock, Treasury  # noqa: E402
 from src.models.voucher import Voucher  # noqa: E402
+from src.models.employee import Employee, JobTitle  # noqa: E402
 from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 
@@ -73,5 +75,5 @@ __all__ = [
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
-    "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord",
+    "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord", "Employee", "JobTitle", "TradeOrder", "TradeOrderLine",
 ]

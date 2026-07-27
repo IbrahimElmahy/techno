@@ -186,16 +186,25 @@ def create_account(
     return acc
 
 
+_APPEARS_IN = {"balance_sheet", "income_statement", "none"}
+
+
 def update_account(
-    db: Session, *, account_id: int, name: str | None = None, active: bool | None = None
+    db: Session, *, account_id: int, name: str | None = None, active: bool | None = None,
+    appears_in: str | None = None,
 ) -> Account:
-    """Rename and/or (de)activate. System accounts may be renamed but not deactivated if they
-    still have active children (FR-005)."""
+    """Rename, (de)activate, and/or set «يظهر في». System accounts may be renamed but not
+    deactivated if they still have active children (FR-005)."""
     acc = db.get(Account, account_id)
     if acc is None:
         raise ChartError("Account not found.")
     if name is not None:
         acc.name = name
+    if appears_in is not None:
+        # Empty string means "follow the account's nature", which is the shipped behaviour.
+        if appears_in and appears_in not in _APPEARS_IN:
+            raise ChartError("قيمة «يظهر في» غير صحيحة.")
+        acc.appears_in = appears_in or None
     if active is not None:
         if active is False:
             _assert_deactivatable(db, acc)

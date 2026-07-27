@@ -17,8 +17,10 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     customers,
     inspections,  # Site inspections / معاينات (015)
     loyalty_settings,
+    employees,  # الموظفون والوظائف (B8)
     fixed_assets,  # الأصول الثابتة والإهلاك (B6)
     manufacturing,
+    orders,  # طلبات البيع والشراء (B9)
     org,
     points,
     product_points,
@@ -112,6 +114,10 @@ def create_app() -> FastAPI:
     app.include_router(tax_commissions.router, prefix=prefix)
     # Fixed assets + depreciation (B6)
     app.include_router(fixed_assets.router, prefix=prefix)
+    # Employees + job titles (B8)
+    app.include_router(employees.router, prefix=prefix)
+    # Sales / purchase orders (B9)
+    app.include_router(orders.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
 
@@ -145,6 +151,8 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # «يظهر في» — statement presentation override (B8).
+    ("account", "appears_in", "VARCHAR(24)"),
     ("item", "default_warehouse_id", "BIGINT"),
     ("sales_invoice_line", "discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order", "material_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),

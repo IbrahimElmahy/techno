@@ -95,6 +95,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager'],
     },
     {
+      key: '/employees',
+      icon: <TeamOutlined />,
+      label: 'الموظفون والوظائف',
+      roles: ['system_admin', 'branch_manager'],
+    },
+    {
       key: '/org',
       icon: <ApartmentOutlined />,
       label: 'الهيكل التنظيمي',
@@ -129,6 +135,12 @@ export default function AppLayout() {
       icon: <BuildOutlined />,
       label: 'عمليات التصنيع',
       roles: ['system_admin', 'branch_manager', 'purchasing_manager'],
+    },
+    {
+      key: '/orders',
+      icon: <FileTextOutlined />,
+      label: 'طلبات البيع والشراء',
+      roles: ['system_admin', 'branch_manager', 'sales_manager', 'purchasing_manager'],
     },
     {
       key: '/invoices',

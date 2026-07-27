@@ -90,6 +90,10 @@ class Account(Base):
     nature: Mapped[AccountNature | None] = mapped_column(Enum(AccountNature), nullable=True)
     is_postable: Mapped[bool] = mapped_column(default=True, nullable=False)
     is_system: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # «يظهر في» (B8) — which statement this account is presented on. Nature already implies the
+    # usual answer, so this is the override for the cases where it does not: a contra account, or
+    # a memo account the client does not want on either face. NULL = follow the nature.
+    appears_in: Mapped[str | None] = mapped_column(String(24), nullable=True)
 
     lines: Mapped[list[LedgerLine]] = relationship(back_populates="account")
     parent: Mapped[Account | None] = relationship(remote_side=[id], backref="children")

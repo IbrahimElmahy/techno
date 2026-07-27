@@ -18,6 +18,8 @@ import StockPermits from '../pages/StockPermits';
 import Stocktake from '../pages/Stocktake';
 import AccountStatement from '../pages/AccountStatement';
 import FixedAssets from '../pages/FixedAssets';
+import Employees from '../pages/Employees';
+import Orders from '../pages/Orders';
 import Invoices from '../pages/Invoices';
 import Returns from '../pages/Returns';
 import Loyalty from '../pages/Loyalty';
@@ -66,6 +68,8 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/stocktake" element={<Stocktake />} />
       <Route path="/account-statement" element={<AccountStatement />} />
       <Route path="/fixed-assets" element={<FixedAssets />} />
+      <Route path="/employees" element={<Employees />} />
+      <Route path="/orders" element={<Orders />} />
       <Route path="/treasury" element={<Treasury />} />
       <Route path="/vouchers" element={<Vouchers />} />
       <Route path="/finance-reports" element={<FinanceReports />} />

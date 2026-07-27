@@ -61,6 +61,7 @@ class AccountOut(BaseModel):
     is_postable: bool
     is_system: bool
     active: bool
+    appears_in: str | None = None
     balance: Decimal
     children: list[AccountOut] | None = None
 
@@ -76,6 +77,8 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
+    # «يظهر في» — balance_sheet | income_statement | none, or "" to follow the nature (B8).
+    appears_in: str | None = None
 
 
 class JournalLineIn(BaseModel):
@@ -159,7 +162,8 @@ def _account_out(db: Session, acc: Account, *, with_children: bool = False) -> A
     return AccountOut(
         id=acc.id, code=acc.code, name=acc.name, parent_id=acc.parent_id, nature=acc.nature,
         normal_side=acc.normal_side, is_postable=acc.is_postable, is_system=acc.is_system,
-        active=acc.active, balance=chart_service.account_balance(db, acc.id), children=children,
+        active=acc.active, appears_in=acc.appears_in,
+        balance=chart_service.account_balance(db, acc.id), children=children,
     )
 
 
@@ -239,7 +243,8 @@ def update_account(
 ) -> AccountOut:
     try:
         acc = chart_service.update_account(
-            db, account_id=account_id, name=body.name, active=body.active
+            db, account_id=account_id, name=body.name, active=body.active,
+            appears_in=body.appears_in,
         )
     except ChartError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "chart_conflict", "message": str(exc)})

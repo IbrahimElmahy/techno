@@ -109,6 +109,85 @@ const ENTRY_TYPE_LABEL: Record<string, string> = {
   coupon_redeem: 'استبدال كوبون',
 };
 
+/**
+ * حركة الخزينة — every movement of one treasury with the balance before and after it.
+ *
+ * The treasuries table answers "how much is in it"; this answers "how did it get there".
+ * It reads the treasury's own ledger account through the same statement engine every other
+ * account uses, so this view can never disagree with the books.
+ */
+const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) => {
+  const [treasuryId, setTreasuryId] = useState<number | undefined>();
+  const [range, setRange] = useState<any>(null);
+  const [statement, setStatement] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const selected = treasuries.find((t) => t.id === treasuryId);
+
+  useEffect(() => {
+    if (!selected?.account_id) { setStatement(null); return; }
+    setLoading(true);
+    const params: any = {};
+    if (range) {
+      params.date_from = range[0].format('YYYY-MM-DD');
+      params.date_to = range[1].format('YYYY-MM-DD');
+    }
+    api.get(`/api/v1/accounts/${selected.account_id}/statement`, { params })
+      .then((r) => setStatement(r.data))
+      .catch(() => setStatement(null))
+      .finally(() => setLoading(false));
+  }, [treasuryId, range]);
+
+  const fmt = (v: any) => Number(v || 0).toLocaleString('ar-EG',
+    { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <Card title="حركة الخزينة">
+      <Space wrap style={{ marginBottom: 12 }}>
+        <Select
+          style={{ width: 260 }} placeholder="اختر الخزينة"
+          value={treasuryId} onChange={setTreasuryId}
+          options={treasuries.map((t) => ({ value: t.id, label: `${t.name} (${fmt(t.balance)})` }))}
+        />
+        <DatePicker.RangePicker value={range} onChange={(v) => setRange(v)}
+          placeholder={['من تاريخ', 'إلى تاريخ']} />
+      </Space>
+
+      {statement && (
+        <>
+          <Space wrap size="large" style={{ marginBottom: 12 }}>
+            <span>رصيد أول المدة: <b>{fmt(statement.opening_balance)}</b></span>
+            <span>وارد: <b style={{ color: '#6AB42D' }}>{fmt(statement.total_debit)}</b></span>
+            <span>منصرف: <b style={{ color: '#cf1322' }}>{fmt(statement.total_credit)}</b></span>
+            <span>الرصيد: <b style={{ color: '#0B5CA8' }}>{fmt(statement.closing_balance)}</b></span>
+          </Space>
+          <Table
+            rowKey={(l: any) => `${l.entry_id}-${l.balance}`} size="small" loading={loading}
+            dataSource={statement.lines}
+            locale={{ emptyText: 'لا توجد حركة في هذه الفترة' }}
+            pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+            scroll={{ x: 'max-content' }}
+            columns={[
+              { title: 'التاريخ', dataIndex: 'entry_date',
+                render: (d: string) => String(d).slice(0, 10) },
+              { title: 'النوع', dataIndex: 'entry_type', render: (t: string) => <Tag>{t}</Tag> },
+              { title: 'البيان', dataIndex: 'description' },
+              { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left' as const,
+                render: (v: string) => <span style={{ color: '#8a8a8a' }}>{fmt(v)}</span> },
+              { title: 'وارد', dataIndex: 'debit', align: 'left' as const,
+                render: (v: string) => (Number(v) ? fmt(v) : '-') },
+              { title: 'منصرف', dataIndex: 'credit', align: 'left' as const,
+                render: (v: string) => (Number(v) ? fmt(v) : '-') },
+              { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left' as const,
+                render: (v: string) => <b>{fmt(v)}</b> },
+            ]}
+          />
+        </>
+      )}
+    </Card>
+  );
+};
+
 const Vouchers: React.FC = () => {
   const [vouchers, setVouchers] = useState<VoucherRecord[]>([]);
   const [customers, setCustomers] = useState<Party[]>([]);
@@ -789,6 +868,11 @@ const Vouchers: React.FC = () => {
                 </Form>
               </Card>
             ),
+          },
+          {
+            key: 'treasury-movement',
+            label: 'حركة الخزينة',
+            children: <TreasuryMovementTab treasuries={treasuries} />,
           },
           {
             key: 'cheques',
