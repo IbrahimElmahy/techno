@@ -27,9 +27,11 @@ import {
   FileSearchOutlined,
   UndoOutlined,
   PrinterOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import { printDocument } from '../print/brand';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
 import { useLookup } from '../hooks/useLookup';
@@ -211,6 +213,30 @@ const Vouchers: React.FC = () => {
     }
     return '—';
   };
+
+  const chequeParty = (c: any) =>
+    c.customer_id
+      ? customers.find((x) => x.id === c.customer_id)?.name || `#${c.customer_id}`
+      : c.supplier_id
+        ? suppliers.find((x) => x.id === c.supplier_id)?.name || `#${c.supplier_id}`
+        : '';
+
+  // النوع والفترة بيتفلتروا من السيرفر — البحث النصي فوق النتيجة المحمّلة.
+  const [voucherQuery, setVoucherQuery] = useState('');
+  const shownVouchers = voucherQuery
+    ? vouchers.filter((v) =>
+        [v.document_number, KIND_LABEL[v.kind], partyName(v), v.payment_method, v.reference, v.description, v.amount]
+          .some((f) => normalizeAr(f).includes(normalizeAr(voucherQuery))))
+    : vouchers;
+
+  const chequeFilter = useListFilter<any>(cheques, {
+    search: (c) => [c.document_number, c.cheque_number, c.bank_name, c.amount, chequeParty(c)],
+    filters: {
+      direction: (c, v) => c.direction === v,
+      status: (c, v) => c.status === v,
+    },
+    dateOf: (c) => c.due_date,
+  });
 
   // Map a voucher row onto the shared voucher sheet (same data on screen and in print).
   const voucherDoc = (v: VoucherRecord | null): VoucherDoc | null => {
@@ -841,11 +867,32 @@ const Vouchers: React.FC = () => {
                   </Form.Item>
                 </Form>
 
+                <div style={{ marginTop: 20 }}>
+                  <ListToolbar
+                    searchPlaceholder="بحث برقم الشيك أو المستند أو البنك أو الطرف"
+                    query={chequeFilter.query} onQueryChange={chequeFilter.setQuery}
+                    values={chequeFilter.values} onValueChange={chequeFilter.setValue}
+                    showDateRange range={chequeFilter.range} onRangeChange={chequeFilter.setRange}
+                    onReset={chequeFilter.reset}
+                    total={cheques.length} shown={chequeFilter.filtered.length}
+                    filters={[
+                      { key: 'direction', placeholder: 'النوع', span: 4,
+                        options: [{ value: 'incoming', label: 'وارد' }, { value: 'outgoing', label: 'صادر' }] },
+                      { key: 'status', placeholder: 'الحالة', span: 4,
+                        options: [
+                          { value: 'pending', label: 'تحت التحصيل' },
+                          { value: 'settled', label: 'تم' },
+                          { value: 'bounced', label: 'مرتد' },
+                          { value: 'cancelled', label: 'ملغي' },
+                        ] },
+                    ]}
+                  />
+                </div>
+
                 <Table
                   rowKey="id"
                   size="small"
-                  style={{ marginTop: 20 }}
-                  dataSource={cheques}
+                  dataSource={chequeFilter.filtered}
                   pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                   columns={[
                     { title: 'المستند', dataIndex: 'document_number', width: 120 },
@@ -1065,6 +1112,14 @@ const Vouchers: React.FC = () => {
         style={{ marginTop: 16 }}
         extra={
           <Space wrap>
+            <Input
+              allowClear
+              value={voucherQuery}
+              onChange={(e) => setVoucherQuery(e.target.value)}
+              prefix={<SearchOutlined />}
+              placeholder="بحث برقم السند أو الطرف أو البيان"
+              style={{ width: 250 }}
+            />
             <Select
               placeholder="نوع السند"
               allowClear
@@ -1085,7 +1140,7 @@ const Vouchers: React.FC = () => {
         <Table<VoucherRecord>
           rowKey="id"
           loading={loading}
-          dataSource={vouchers}
+          dataSource={shownVouchers}
           columns={voucherColumns}
           pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
           size="small"

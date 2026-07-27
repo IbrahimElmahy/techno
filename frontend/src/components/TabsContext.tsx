@@ -30,6 +30,7 @@ const BASE_TITLES: Record<string, string> = {
   '/invoices': 'الفواتير والمرتجعات',
   '/returns': 'مرتجعات المبيعات',
   '/transfers': 'تحويلات المخزون',
+  '/stock-balance': 'رصيد صنف',
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',
   '/finance-reports': 'القوائم المالية',

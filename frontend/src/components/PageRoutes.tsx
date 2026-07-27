@@ -11,6 +11,7 @@ import ItemProfile from '../pages/ItemProfile';
 import Purchases from '../pages/Purchases';
 import Manufacturing from '../pages/Manufacturing';
 import Transfers from '../pages/Transfers';
+import StockBalance from '../pages/StockBalance';
 import Invoices from '../pages/Invoices';
 import Returns from '../pages/Returns';
 import Loyalty from '../pages/Loyalty';
@@ -51,6 +52,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/invoices" element={<Invoices />} />
       <Route path="/returns" element={<Returns />} />
       <Route path="/transfers" element={<Transfers />} />
+      <Route path="/stock-balance" element={<StockBalance />} />
       <Route path="/treasury" element={<Treasury />} />
       <Route path="/vouchers" element={<Vouchers />} />
       <Route path="/finance-reports" element={<FinanceReports />} />

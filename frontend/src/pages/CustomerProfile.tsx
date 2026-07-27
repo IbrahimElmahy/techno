@@ -11,6 +11,7 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import InvoiceDocument, { invoiceFooter } from '../components/InvoiceDocument';
 import VoucherDocument, { voucherFooter } from '../components/VoucherDocument';
 import CustomerEditModal from '../components/CustomerEditModal';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
@@ -51,6 +52,11 @@ const STATUS_LABELS: Record<string, string> = {
   issued: 'صادر', redeemed: 'مستخدم', draft: 'مسودة', approved: 'معتمد', rejected: 'مرفوض',
 };
 
+/** Only the statuses the rows actually carry are offered, labelled in Arabic. */
+const statusOptions = (rows: any[]) =>
+  Array.from(new Set((rows || []).map((r) => r.status).filter(Boolean)))
+    .map((s: any) => ({ value: s, label: STATUS_LABELS[s] || String(s) }));
+
 const docColumns = (amountTitle: string) => [
   { title: 'رقم المستند', dataIndex: 'document_number', key: 'doc' },
   {
@@ -76,6 +82,33 @@ export default function CustomerProfile() {
   const [record, setRecord] = useState<any>(null);          // the record popup
   const [recordLoading, setRecordLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+
+  // Every tab searches on its own, so narrowing the invoices never touches the cheques list.
+  const stmtFilter = useListFilter<any>(statement?.lines || [], {
+    search: (l) => [l.entry_type, l.description, l.debit, l.credit, l.balance],
+    filters: { entry_type: (l, v) => l.entry_type === v },
+  });
+  const invoicesFilter = useListFilter<DocRow>(data?.invoices || [], {
+    search: (r) => [r.document_number, r.detail, r.amount],
+    dateOf: (r) => r.doc_date,
+  });
+  const returnsFilter = useListFilter<DocRow>(data?.returns || [], {
+    search: (r) => [r.document_number, r.detail, r.amount],
+    dateOf: (r) => r.doc_date,
+  });
+  const receiptsFilter = useListFilter<DocRow>(data?.receipts || [], {
+    search: (r) => [r.document_number, r.detail, r.amount],
+    dateOf: (r) => r.doc_date,
+  });
+  const chequesFilter = useListFilter<any>(data?.cheques || [], {
+    search: (r) => [r.cheque_number, r.bank_name, r.amount],
+    filters: { status: (r, v) => r.status === v },
+    dateOf: (r) => r.due_date,
+  });
+  const couponsFilter = useListFilter<any>(data?.coupons || [], {
+    search: (r) => [r.serial, r.value, r.points_consumed],
+    filters: { status: (r, v) => r.status === v },
+  });
 
   const load = async () => {
     if (!customerId) return;
@@ -277,10 +310,24 @@ export default function CustomerProfile() {
                               </Card>
                             </Col>
                           </Row>
+                          <ListToolbar
+                            searchPlaceholder="بحث في البيان أو المبلغ"
+                            searchSpan={8}
+                            query={stmtFilter.query} onQueryChange={stmtFilter.setQuery}
+                            values={stmtFilter.values} onValueChange={stmtFilter.setValue}
+                            onReset={stmtFilter.reset}
+                            total={statement.lines.length} shown={stmtFilter.filtered.length}
+                            filters={[
+                              { key: 'entry_type', placeholder: 'النوع',
+                                options: Array.from(new Set(
+                                  (statement.lines || []).map((l: any) => l.entry_type).filter(Boolean),
+                                )).map((v: any) => ({ value: v, label: String(v) })) },
+                            ]}
+                          />
                           <Table
                             size="small"
                             rowKey="_key"
-                            dataSource={statement.lines} onRow={rowProps('entry')}
+                            dataSource={stmtFilter.filtered} onRow={rowProps('entry')}
                             pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                             scroll={{ x: true }}
                             columns={[
@@ -305,36 +352,79 @@ export default function CustomerProfile() {
                   key: 'invoices',
                   label: `فواتير البيع (${data.invoices.length})`,
                   children: (
-                    <Table size="small" rowKey="id" dataSource={data.invoices} onRow={rowProps('invoice')}
-                      columns={docColumns('الإجمالي')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                      scroll={{ x: true }} />
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث برقم الفاتورة أو التفاصيل"
+                        searchSpan={8} showDateRange
+                        query={invoicesFilter.query} onQueryChange={invoicesFilter.setQuery}
+                        range={invoicesFilter.range} onRangeChange={invoicesFilter.setRange}
+                        onReset={invoicesFilter.reset}
+                        total={data.invoices.length} shown={invoicesFilter.filtered.length}
+                      />
+                      <Table size="small" rowKey="id" dataSource={invoicesFilter.filtered} onRow={rowProps('invoice')}
+                        columns={docColumns('الإجمالي')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        scroll={{ x: true }} />
+                    </>
                   ),
                 },
                 {
                   key: 'returns',
                   label: `المرتجعات (${data.returns.length})`,
                   children: (
-                    <Table size="small" rowKey="id" dataSource={data.returns} onRow={rowProps('return')}
-                      columns={docColumns('قيمة المرتجع')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                      scroll={{ x: true }} />
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث برقم المستند أو التفاصيل"
+                        searchSpan={8} showDateRange
+                        query={returnsFilter.query} onQueryChange={returnsFilter.setQuery}
+                        range={returnsFilter.range} onRangeChange={returnsFilter.setRange}
+                        onReset={returnsFilter.reset}
+                        total={data.returns.length} shown={returnsFilter.filtered.length}
+                      />
+                      <Table size="small" rowKey="id" dataSource={returnsFilter.filtered} onRow={rowProps('return')}
+                        columns={docColumns('قيمة المرتجع')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        scroll={{ x: true }} />
+                    </>
                   ),
                 },
                 {
                   key: 'receipts',
                   label: `سندات القبض (${data.receipts.length})`,
                   children: (
-                    <Table size="small" rowKey="id" dataSource={data.receipts} onRow={rowProps('receipt')}
-                      columns={docColumns('المحصّل')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                      scroll={{ x: true }} />
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث برقم السند أو التفاصيل"
+                        searchSpan={8} showDateRange
+                        query={receiptsFilter.query} onQueryChange={receiptsFilter.setQuery}
+                        range={receiptsFilter.range} onRangeChange={receiptsFilter.setRange}
+                        onReset={receiptsFilter.reset}
+                        total={data.receipts.length} shown={receiptsFilter.filtered.length}
+                      />
+                      <Table size="small" rowKey="id" dataSource={receiptsFilter.filtered} onRow={rowProps('receipt')}
+                        columns={docColumns('المحصّل')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        scroll={{ x: true }} />
+                    </>
                   ),
                 },
                 {
                   key: 'cheques',
                   label: `الشيكات (${data.cheques.length})`,
                   children: (
-                    <Table size="small" rowKey="id" dataSource={data.cheques} onRow={rowProps('cheque')}
-                      pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} scroll={{ x: true }}
-                      columns={[
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث برقم الشيك أو البنك"
+                        searchSpan={8} showDateRange
+                        query={chequesFilter.query} onQueryChange={chequesFilter.setQuery}
+                        values={chequesFilter.values} onValueChange={chequesFilter.setValue}
+                        range={chequesFilter.range} onRangeChange={chequesFilter.setRange}
+                        onReset={chequesFilter.reset}
+                        total={data.cheques.length} shown={chequesFilter.filtered.length}
+                        filters={[
+                          { key: 'status', placeholder: 'الحالة', options: statusOptions(data.cheques) },
+                        ]}
+                      />
+                      <Table size="small" rowKey="id" dataSource={chequesFilter.filtered} onRow={rowProps('cheque')}
+                        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} scroll={{ x: true }}
+                        columns={[
                         { title: 'رقم الشيك', dataIndex: 'cheque_number', key: 'n' },
                         { title: 'البنك', dataIndex: 'bank_name', key: 'b',
                           render: (v: string) => v || '-' },
@@ -344,22 +434,36 @@ export default function CustomerProfile() {
                         { title: 'الحالة', dataIndex: 'status', key: 's',
                           render: (s: string) => <Tag>{STATUS_LABELS[s] || s}</Tag> },
                       ]} />
+                    </>
                   ),
                 },
                 {
                   key: 'coupons',
                   label: `الكوبونات (${data.coupons.length})`,
                   children: (
-                    <Table size="small" rowKey="id" dataSource={data.coupons} onRow={rowProps('coupon')}
-                      pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} scroll={{ x: true }}
-                      columns={[
-                        { title: 'السريال', dataIndex: 'serial', key: 's' },
-                        { title: 'القيمة', dataIndex: 'value', key: 'v',
-                          render: (v: string) => `${money(v)} ج.م` },
-                        { title: 'النقاط المستهلكة', dataIndex: 'points_consumed', key: 'p' },
-                        { title: 'الحالة', dataIndex: 'status', key: 'st',
-                          render: (s: string) => <Tag>{STATUS_LABELS[s] || s}</Tag> },
-                      ]} />
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث بالسريال أو القيمة"
+                        searchSpan={8}
+                        query={couponsFilter.query} onQueryChange={couponsFilter.setQuery}
+                        values={couponsFilter.values} onValueChange={couponsFilter.setValue}
+                        onReset={couponsFilter.reset}
+                        total={data.coupons.length} shown={couponsFilter.filtered.length}
+                        filters={[
+                          { key: 'status', placeholder: 'الحالة', options: statusOptions(data.coupons) },
+                        ]}
+                      />
+                      <Table size="small" rowKey="id" dataSource={couponsFilter.filtered} onRow={rowProps('coupon')}
+                        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} scroll={{ x: true }}
+                        columns={[
+                          { title: 'السريال', dataIndex: 'serial', key: 's' },
+                          { title: 'القيمة', dataIndex: 'value', key: 'v',
+                            render: (v: string) => `${money(v)} ج.م` },
+                          { title: 'النقاط المستهلكة', dataIndex: 'points_consumed', key: 'p' },
+                          { title: 'الحالة', dataIndex: 'status', key: 'st',
+                            render: (s: string) => <Tag>{STATUS_LABELS[s] || s}</Tag> },
+                        ]} />
+                    </>
                   ),
                 },
               ]}
@@ -400,7 +504,7 @@ export default function CustomerProfile() {
               <Table
                 style={{ marginTop: 16 }}
                 size="small"
-                rowKey={(_r, i) => String(i)}
+                rowKey="_i"
                 dataSource={(record.lines || []).map((row: string[], i: number) => ({
                   _i: i,
                   ...Object.fromEntries(row.map((v, j) => [`c${j}`, v])),

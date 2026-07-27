@@ -4,6 +4,7 @@ import { UserAddOutlined, LockOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth, RoleName } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface UserRecord {
   id: number;
@@ -39,6 +40,15 @@ export default function Users() {
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
   const [editForm] = Form.useForm();
   const { user: currentUser } = useAuth();
+
+  const filter = useListFilter(users, {
+    search: (u) => [u.username, u.full_name, ROLE_LABELS[u.role]],
+    filters: {
+      role: (u, v) => u.role === v,
+      branch_id: (u, v) => u.branch_id === v,
+      active: (u, v) => u.active === (v === 'active'),
+    },
+  });
 
   // Territories carry a branch_id — narrow the list once a branch is chosen.
   const territoriesForBranch = (branchId: number | null | undefined) =>
@@ -220,8 +230,23 @@ export default function Users() {
           </Button>
         }
       >
+        <ListToolbar
+          searchPlaceholder="بحث بالاسم أو اسم المستخدم"
+          query={filter.query} onQueryChange={filter.setQuery}
+          values={filter.values} onValueChange={filter.setValue}
+          onReset={filter.reset}
+          total={users.length} shown={filter.filtered.length}
+          filters={[
+            { key: 'role', placeholder: 'الدور',
+              options: Object.entries(ROLE_LABELS).map(([v, l]) => ({ value: v, label: l })) },
+            { key: 'branch_id', placeholder: 'الفرع',
+              options: branches.map((b) => ({ value: b.id, label: b.name })) },
+            { key: 'active', placeholder: 'الحالة',
+              options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'موقوف' }] },
+          ]}
+        />
         <Table
-          dataSource={users}
+          dataSource={filter.filtered}
           columns={columns}
           rowKey="id"
           loading={loading}

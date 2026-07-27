@@ -4,11 +4,12 @@ import {
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
-  ReloadOutlined, ApartmentOutlined,
+  ReloadOutlined, ApartmentOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
+import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 
 // --- Types --------------------------------------------------------------------------------
 interface Account {
@@ -82,6 +83,10 @@ const NATURE_COLOR: Record<string, string> = {
 const egp = (v: string | number) =>
   parseFloat(String(v)).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// الشجرة تُفلتر بالعقدة أو أي فرع تحتها، حتى لا يختفي حساب مطابق داخل مجموعة غير مطابقة.
+const flatten = <T extends { children?: T[] | null }>(node: T): T[] =>
+  [node, ...(node.children || []).flatMap(flatten)];
+
 export default function GeneralLedger() {
   return (
     <Tabs
@@ -103,6 +108,15 @@ function ChartTab() {
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [form] = Form.useForm();
+
+  const filter = useListFilter(tree, {
+    search: (a) => flatten(a).flatMap((n) => [n.code, n.name]),
+    filters: {
+      nature: (a, v) => flatten(a).some((n) => n.nature === v),
+      is_postable: (a, v) => flatten(a).some((n) => n.is_postable === (v === 'postable')),
+      active: (a, v) => flatten(a).some((n) => n.active === (v === 'active')),
+    },
+  });
 
   const load = async () => {
     setLoading(true);
@@ -151,10 +165,25 @@ function ChartTab() {
         </Space>
       }
     >
+      <ListToolbar
+        searchPlaceholder="بحث بكود الحساب أو الاسم"
+        query={filter.query} onQueryChange={filter.setQuery}
+        values={filter.values} onValueChange={filter.setValue}
+        onReset={filter.reset}
+        total={tree.length} shown={filter.filtered.length}
+        filters={[
+          { key: 'nature', placeholder: 'طبيعة الحساب',
+            options: Object.entries(NATURE_LABEL).map(([v, l]) => ({ value: v, label: l })) },
+          { key: 'is_postable', placeholder: 'التصنيف',
+            options: [{ value: 'postable', label: 'قابل للترحيل' }, { value: 'group', label: 'مجموعة' }] },
+          { key: 'active', placeholder: 'الحالة',
+            options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطّل' }] },
+        ]}
+      />
       <Table
         rowKey="id"
         loading={loading}
-        dataSource={tree}
+        dataSource={filter.filtered}
         columns={columns}
         pagination={false}
         expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }}
@@ -307,6 +336,22 @@ function JournalTab() {
     reversal: { t: 'عكس', c: 'red' },
   };
 
+  const branchName = (id: number | null) =>
+    id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام';
+
+  const filter = useListFilter(entries, {
+    search: (e) => [
+      e.id, e.description, TYPE_LABEL[e.entry_type]?.t ?? e.entry_type, e.entry_type,
+      branchName(e.branch_id), ...e.lines.map((l) => acctLabel(l.account_id)),
+      ...e.lines.map((l) => l.statement),
+    ],
+    filters: {
+      entry_type: (e, v) => e.entry_type === v,
+      branch_id: (e, v) => (v === 0 ? e.branch_id === null : e.branch_id === v),
+    },
+    dateOf: (e) => e.date,
+  });
+
   const columns = [
     { title: 'رقم', dataIndex: 'id', key: 'id', width: 70, render: (id: number) => <Tag color="blue">#{id}</Tag> },
     { title: 'التاريخ', dataIndex: 'date', key: 'date', width: 120, render: (d: string) => d || '-' },
@@ -345,7 +390,21 @@ function JournalTab() {
         </Space>
       }
     >
-      <Table rowKey="id" loading={loading} dataSource={entries} columns={columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+      <ListToolbar
+        searchPlaceholder="بحث برقم القيد أو البيان أو الحساب"
+        query={filter.query} onQueryChange={filter.setQuery}
+        values={filter.values} onValueChange={filter.setValue}
+        showDateRange range={filter.range} onRangeChange={filter.setRange}
+        onReset={filter.reset}
+        total={entries.length} shown={filter.filtered.length}
+        filters={[
+          { key: 'entry_type', placeholder: 'نوع القيد', span: 4,
+            options: Object.entries(TYPE_LABEL).map(([v, m]) => ({ value: v, label: m.t })) },
+          { key: 'branch_id', placeholder: 'الفرع', span: 4,
+            options: [{ value: 0, label: 'عام' }, ...branches.map((b) => ({ value: b.id, label: b.name }))] },
+        ]}
+      />
+      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
 
       {/* New journal drawer */}
       <Modal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
@@ -475,6 +534,13 @@ function TrialBalanceTab() {
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  // الفترة والفرع ومركز التكلفة من السيرفر — البحث النصي فوق الصفوف المعروضة.
+  const [rowQuery, setRowQuery] = useState('');
+
+  const rows: TrialRow[] = data?.rows ?? [];
+  const shownRows = rowQuery
+    ? rows.filter((r) => [r.code, r.name].some((f) => normalizeAr(f).includes(normalizeAr(rowQuery))))
+    : rows;
 
   useEffect(() => {
     api.get('/api/v1/branches').then((r) => setBranches(r.data)).catch(() => {});
@@ -512,6 +578,8 @@ function TrialBalanceTab() {
   return (
     <Card title="ميزان المراجعة">
       <Space wrap style={{ marginBottom: 16 }}>
+        <Input allowClear value={rowQuery} onChange={(e) => setRowQuery(e.target.value)}
+          prefix={<SearchOutlined />} placeholder="بحث بكود الحساب أو الاسم" style={{ width: 240 }} />
         <DatePicker.RangePicker value={range} format="YYYY-MM-DD"
           onChange={(v) => v && setRange(v as [dayjs.Dayjs, dayjs.Dayjs])} />
         <Select allowClear placeholder="كل الفروع" style={{ width: 180 }} value={branchId} onChange={setBranchId}
@@ -524,7 +592,7 @@ function TrialBalanceTab() {
 
       {data ? (
         <>
-          <Table rowKey="account_id" dataSource={data.rows} columns={columns} loading={loading}
+          <Table rowKey="account_id" dataSource={shownRows} columns={columns} loading={loading}
             pagination={false} size="small"
             summary={() => (
               <Table.Summary fixed>
@@ -555,6 +623,13 @@ function CostCenterTab() {
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [form] = Form.useForm();
+
+  const filter = useListFilter(tree, {
+    search: (c) => flatten(c).flatMap((n) => [n.code, n.name]),
+    filters: {
+      active: (c, v) => flatten(c).some((n) => n.active === (v === 'active')),
+    },
+  });
 
   const load = async () => {
     setLoading(true);
@@ -607,7 +682,18 @@ function CostCenterTab() {
         </Space>
       }
     >
-      <Table rowKey="id" loading={loading} dataSource={tree} columns={columns} pagination={false}
+      <ListToolbar
+        searchPlaceholder="بحث بكود المركز أو الاسم"
+        query={filter.query} onQueryChange={filter.setQuery}
+        values={filter.values} onValueChange={filter.setValue}
+        onReset={filter.reset}
+        total={tree.length} shown={filter.filtered.length}
+        filters={[
+          { key: 'active', placeholder: 'الحالة',
+            options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطّل' }] },
+        ]}
+      />
+      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns} pagination={false}
         expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }} />
 
       <Modal footer={null} centered title="إضافة مركز تكلفة" width={420} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>

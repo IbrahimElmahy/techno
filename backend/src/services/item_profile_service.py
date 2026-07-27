@@ -140,6 +140,90 @@ def _location_names(db: Session) -> dict[tuple[str, int], str]:
     return out
 
 
+def balance(db: Session, item_id: int) -> dict:
+    """One item's prices and its quantity in EVERY stock location — the stock-enquiry screen.
+
+    Deliberately lean next to `profile`: a storekeeper flicking through items wants the numbers
+    instantly, not the movement and price history behind them. Locations with nothing are still
+    listed (with zero) so «this warehouse has none» is an answer, not a missing row.
+    """
+    from src.models.warehouse import Custody, Warehouse
+
+    item = db.get(Item, item_id)
+    if item is None:
+        raise ItemProfileError("الصنف غير موجود.")
+
+    signed = case(
+        (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+        else_=-StockMovement.quantity,
+    )
+    held = {
+        (kind if isinstance(kind, str) else kind.value, loc_id): _qty(q)
+        for kind, loc_id, q in db.execute(
+            select(StockMovement.location_kind, StockMovement.location_id,
+                   func.coalesce(func.sum(signed), 0))
+            .where(StockMovement.item_id == item_id)
+            .group_by(StockMovement.location_kind, StockMovement.location_id)
+        ).all()
+    }
+    names = _location_names(db)
+
+    locations: list[dict] = []
+    for w in db.scalars(select(Warehouse).order_by(Warehouse.id)).all():
+        locations.append({
+            "kind": "warehouse", "id": w.id, "name": w.name,
+            "quantity": str(held.get(("warehouse", w.id), ZERO_QTY)),
+        })
+    for c in db.scalars(select(Custody).order_by(Custody.id)).all():
+        locations.append({
+            "kind": "custody", "id": c.id,
+            "name": names.get(("custody", c.id), f"عهدة #{c.id}"),
+            "quantity": str(held.get(("custody", c.id), ZERO_QTY)),
+        })
+    total = sum((_qty(v) for v in held.values()), ZERO_QTY)
+
+    tiers = {
+        (p.tier.value if hasattr(p.tier, "value") else str(p.tier)): str(to_money(p.price))
+        for p in db.scalars(select(ItemPrice).where(ItemPrice.item_id == item_id)).all()
+    }
+    last_sale = db.scalar(
+        select(SalesInvoiceLine.unit_price)
+        .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
+        .where(SalesInvoiceLine.item_id == item_id)
+        .order_by(SalesInvoice.id.desc()).limit(1)
+    )
+    last_purchase = db.scalar(
+        select(PurchaseInvoiceLine.unit_price)
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
+        .where(PurchaseInvoiceLine.item_id == item_id)
+        .order_by(PurchaseInvoice.id.desc()).limit(1)
+    )
+    # "Average" here is the average cost actually paid, which is what a valuation is read against.
+    bought_qty, bought_value = db.execute(
+        select(func.coalesce(func.sum(PurchaseInvoiceLine.quantity), 0),
+               func.coalesce(func.sum(PurchaseInvoiceLine.line_total), 0))
+        .where(PurchaseInvoiceLine.item_id == item_id)
+    ).one()
+    bought_qty = _qty(bought_qty)
+
+    return {
+        "item": {
+            "id": item.id, "code": item.code, "name": item.name,
+            "category": item.category, "unit_of_measure": item.unit_of_measure,
+        },
+        "prices": {
+            "last_sale": str(to_money(last_sale)) if last_sale is not None else None,
+            "last_purchase": str(to_money(last_purchase)) if last_purchase is not None else None,
+            "average_cost": (str(to_money(Decimal(str(bought_value)) / bought_qty))
+                             if bought_qty else None),
+            "list_price": str(to_money(item.sale_price)) if item.sale_price is not None else None,
+            "tiers": tiers,
+        },
+        "locations": locations,
+        "total": str(total),
+    }
+
+
 def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
     item = db.get(Item, item_id)
     if item is None:

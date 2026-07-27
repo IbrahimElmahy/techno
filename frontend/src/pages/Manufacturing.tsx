@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface Warehouse { id: number; name: string; }
 interface Item {
@@ -186,6 +187,16 @@ function OrdersTab({
 
   const [lastResult, setLastResult] = useState<Order | null>(null);
 
+  const filter = useListFilter(orders, {
+    search: (o) => [o.document_number, itemName(o.product_id)],
+    filters: {
+      product_id: (o, v) => o.product_id === v,
+      status: (o, v) => (v === 'reversal' ? o.is_reversal
+        : v === 'reversed' ? (o.reversed && !o.is_reversal)
+        : !o.reversed && !o.is_reversal),
+    },
+  });
+
   const submit = async (values: any) => {
     try {
       const wasteMap = values.waste_qty || {};
@@ -261,8 +272,25 @@ function OrdersTab({
         </Card>
       )}
 
+      <ListToolbar
+        searchPlaceholder="بحث برقم المستند أو المنتج"
+        query={filter.query} onQueryChange={filter.setQuery}
+        values={filter.values} onValueChange={filter.setValue}
+        onReset={filter.reset}
+        total={orders.length} shown={filter.filtered.length}
+        filters={[
+          { key: 'product_id', placeholder: 'المنتج',
+            options: products.map((p) => ({ value: p.id, label: p.name })) },
+          { key: 'status', placeholder: 'الحالة', options: [
+            { value: 'posted', label: 'مرحّل' },
+            { value: 'reversed', label: 'معكوس (ملغي)' },
+            { value: 'reversal', label: 'حركة عكسية' },
+          ] },
+        ]}
+      />
+
       <Table
-        rowKey="id" loading={loading} dataSource={orders} columns={columns}
+        rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         expandable={{
           expandedRowRender: (r: Order) => (
             <div>
@@ -382,6 +410,14 @@ function RecipesTab({
   const [editing, setEditing] = useState<Bom | null>(null);
   const [form] = Form.useForm();
 
+  const filter = useListFilter(boms, {
+    search: (b) => [b.name, itemName(b.product_id)],
+    filters: {
+      product_id: (b, v) => b.product_id === v,
+      active: (b, v) => b.active === (v === 'active'),
+    },
+  });
+
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
@@ -469,7 +505,23 @@ function RecipesTab({
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>وصفة جديدة</Button>
       </div>
 
-      <Table rowKey="id" loading={loading} dataSource={boms} columns={columns}
+      <ListToolbar
+        searchPlaceholder="بحث باسم الوصفة أو المنتج"
+        query={filter.query} onQueryChange={filter.setQuery}
+        values={filter.values} onValueChange={filter.setValue}
+        onReset={filter.reset}
+        total={boms.length} shown={filter.filtered.length}
+        filters={[
+          { key: 'product_id', placeholder: 'المنتج',
+            options: products.map((p) => ({ value: p.id, label: p.name })) },
+          { key: 'active', placeholder: 'الحالة', options: [
+            { value: 'active', label: 'نشطة' },
+            { value: 'inactive', label: 'غير نشطة' },
+          ] },
+        ]}
+      />
+
+      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
 
       <Modal centered
@@ -570,6 +622,15 @@ function WastageTab({
   const itemOptions = [...rawMaterials, ...products]
     .map((i) => ({ value: i.id, label: `${i.name} (${i.unit_of_measure})` }));
 
+  const filter = useListFilter(wastages, {
+    search: (w) => [w.document_number, itemName(w.item_id), w.reason],
+    filters: {
+      item_id: (w, v) => w.item_id === v,
+      warehouse_id: (w, v) => w.warehouse_id === v,
+      status: (w, v) => (v === 'reversal' ? w.is_reversal : !w.is_reversal),
+    },
+  });
+
   const openCreate = () => {
     form.resetFields();
     setOpen(true);
@@ -631,7 +692,25 @@ function WastageTab({
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>هالك جديد</Button>
       </div>
 
-      <Table rowKey="id" loading={loading} dataSource={wastages} columns={columns}
+      <ListToolbar
+        searchPlaceholder="بحث برقم المستند أو الصنف أو السبب"
+        query={filter.query} onQueryChange={filter.setQuery}
+        values={filter.values} onValueChange={filter.setValue}
+        onReset={filter.reset}
+        total={wastages.length} shown={filter.filtered.length}
+        filters={[
+          { key: 'item_id', placeholder: 'الصنف',
+            options: [...rawMaterials, ...products].map((i) => ({ value: i.id, label: i.name })) },
+          { key: 'warehouse_id', placeholder: 'المخزن',
+            options: warehouses.map((w) => ({ value: w.id, label: w.name })) },
+          { key: 'status', placeholder: 'الحالة', options: [
+            { value: 'posted', label: 'مرحّل' },
+            { value: 'reversal', label: 'حركة عكسية' },
+          ] },
+        ]}
+      />
+
+      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         locale={{ emptyText: 'لا يوجد مستندات هالك بعد' }} />
 
       <Modal centered

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Tag, Input, Space, Button, Descriptions } from 'antd';
-import { FileSearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Table, Card, Tag, Button, Descriptions } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface AuditLog {
   id: number;
@@ -18,10 +19,6 @@ export default function Audit() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
-
-  // Simple local search filters
-  const [actionFilter, setActionFilter] = useState('');
-  const [entityFilter, setEntityFilter] = useState('');
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -55,14 +52,20 @@ export default function Audit() {
     return user ? `${user.full_name} (${user.username})` : `مستخدم #${userId}`;
   };
 
-  // Local filter logic
-  const filteredLogs = logs.filter((log) => {
-    const matchAction = log.action.toLowerCase().includes(actionFilter.toLowerCase());
-    const matchEntity = log.entity_type
-      ? log.entity_type.toLowerCase().includes(entityFilter.toLowerCase())
-      : true;
-    return matchAction && matchEntity;
+  const filter = useListFilter(logs, {
+    search: (l) => [l.action, l.entity_type, l.entity_id, getActorName(l.actor_user_id)],
+    filters: {
+      action: (l, v) => l.action === v,
+      entity_type: (l, v) => l.entity_type === v,
+      actor_user_id: (l, v) => (v === 0 ? l.actor_user_id === null : l.actor_user_id === v),
+    },
+    dateOf: (l) => l.created_at,
   });
+
+  const actionOptions = Array.from(new Set(logs.map((l) => l.action).filter(Boolean)))
+    .map((a) => ({ value: a, label: a }));
+  const entityOptions = Array.from(new Set(logs.map((l) => l.entity_type).filter(Boolean)))
+    .map((e) => ({ value: e as string, label: e as string }));
 
   const columns = [
     {
@@ -120,23 +123,25 @@ export default function Audit() {
           </Button>
         }
       >
-        <Space style={{ marginBottom: 16 }}>
-          <Input
-            placeholder="تصفية بالعملية"
-            value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
-            style={{ width: 200 }}
-          />
-          <Input
-            placeholder="تصفية بنوع الكيان"
-            value={entityFilter}
-            onChange={(e) => setEntityFilter(e.target.value)}
-            style={{ width: 200 }}
-          />
-        </Space>
+        <ListToolbar
+          searchPlaceholder="بحث بالعملية أو الكيان أو المنفذ"
+          query={filter.query} onQueryChange={filter.setQuery}
+          values={filter.values} onValueChange={filter.setValue}
+          showDateRange range={filter.range} onRangeChange={filter.setRange}
+          onReset={filter.reset}
+          total={logs.length} shown={filter.filtered.length}
+          searchSpan={5}
+          filters={[
+            { key: 'action', placeholder: 'العملية', options: actionOptions, span: 4 },
+            { key: 'entity_type', placeholder: 'نوع الكيان', options: entityOptions, span: 4 },
+            { key: 'actor_user_id', placeholder: 'المنفذ', span: 4,
+              options: [{ value: 0, label: 'النظام' },
+                ...users.map((u) => ({ value: u.id, label: `${u.full_name} (${u.username})` }))] },
+          ]}
+        />
 
         <Table
-          dataSource={filteredLogs}
+          dataSource={filter.filtered}
           columns={columns}
           rowKey="id"
           loading={loading}

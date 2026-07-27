@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface Supplier {
   id: number;
@@ -111,6 +112,14 @@ export default function Purchases() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
+
+  const purchasesFilter = useListFilter(purchases, {
+    search: (p) => [p.document_number, p.supplier_name],
+    filters: {
+      supplier_id: (p, v) => p.supplier_id === v,
+    },
+    dateOf: (p) => p.created_at,
+  });
 
   const itemName = useMemo(() => {
     const m = new Map<number, RawMaterial>();
@@ -568,8 +577,20 @@ export default function Purchases() {
 
   const listContent = (
     <Card title="سجل المشتريات">
+      <ListToolbar
+        searchPlaceholder="بحث برقم المستند أو اسم المورد"
+        query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}
+        values={purchasesFilter.values} onValueChange={purchasesFilter.setValue}
+        showDateRange range={purchasesFilter.range} onRangeChange={purchasesFilter.setRange}
+        onReset={purchasesFilter.reset}
+        total={purchases.length} shown={purchasesFilter.filtered.length}
+        filters={[
+          { key: 'supplier_id', placeholder: 'المورد',
+            options: suppliers.map((s) => ({ value: s.id, label: s.name })) },
+        ]}
+      />
       <Table
-        dataSource={purchases}
+        dataSource={purchasesFilter.filtered}
         columns={listColumns}
         rowKey="id"
         loading={listLoading}

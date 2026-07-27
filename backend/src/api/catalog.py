@@ -434,6 +434,19 @@ class ItemProfileOut(BaseModel):
     tier_prices: list[dict] = []
 
 
+@router.get("/{item_id}/balance", response_model=dict)
+def item_balance(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Prices + the quantity in every stock location — the stock-enquiry screen (رصيد صنف)."""
+    try:
+        return item_profile_service.balance(db, item_id)
+    except item_profile_service.ItemProfileError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+
+
 @router.get("/{item_id}/profile", response_model=ItemProfileOut)
 def item_profile(
     item_id: int,

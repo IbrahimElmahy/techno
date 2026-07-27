@@ -5,6 +5,7 @@ import {
 import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface CouponType {
   id: number;
@@ -29,6 +30,11 @@ interface Coupon {
   points_consumed: number;
   status: 'pending' | 'redeemed' | 'reversed';
 }
+
+const KIND_LABELS: Record<string, string> = {
+  money: 'رصيد مالي للعميل',
+  gift_money_off: 'خصم إضافي للفواتير',
+};
 
 const STATUS_TAGS: Record<string, { color: string; text: string }> = {
   pending: { color: 'warning', text: 'صالح للاستخدام' },
@@ -62,6 +68,24 @@ export default function Loyalty() {
   // Dynamic balance load
   const [customerPoints, setCustomerPoints] = useState<number | null>(null);
   const selectedCustomer = Form.useWatch('customer_id', convertForm);
+
+  const customerName = (id: number) => customers.find((c) => c.id === id)?.name || '';
+
+  const typeFilter = useListFilter(couponTypes, {
+    search: (t) => [t.name, KIND_LABELS[t.kind], t.point_cost, t.value],
+    filters: {
+      kind: (t, v) => t.kind === v,
+      active: (t, v) => t.active === (v === 'active'),
+    },
+  });
+
+  const couponFilter = useListFilter(coupons, {
+    search: (c) => [c.serial, customerName(c.customer_id), c.value, c.points_consumed],
+    filters: {
+      status: (c, v) => c.status === v,
+      customer_id: (c, v) => c.customer_id === v,
+    },
+  });
 
   const fetchCouponTypes = async () => {
     try {
@@ -382,7 +406,20 @@ export default function Loyalty() {
               إضافة نوع كوبون
             </Button>
           </div>
-          <Table dataSource={couponTypes} columns={typeColumns} rowKey="id" loading={loading} pagination={false} />
+          <ListToolbar
+            searchPlaceholder="بحث باسم الكوبون"
+            query={typeFilter.query} onQueryChange={typeFilter.setQuery}
+            values={typeFilter.values} onValueChange={typeFilter.setValue}
+            onReset={typeFilter.reset}
+            total={couponTypes.length} shown={typeFilter.filtered.length}
+            filters={[
+              { key: 'kind', placeholder: 'نوع الكوبون',
+                options: Object.entries(KIND_LABELS).map(([v, l]) => ({ value: v, label: l })) },
+              { key: 'active', placeholder: 'حالة العرض',
+                options: [{ value: 'active', label: 'متاح للتحويل' }, { value: 'inactive', label: 'موقف' }] },
+            ]}
+          />
+          <Table dataSource={typeFilter.filtered} columns={typeColumns} rowKey="id" loading={loading} pagination={false} />
         </div>
       ),
     },
@@ -396,7 +433,20 @@ export default function Loyalty() {
               تحويل نقاط يدوي لعميل
             </Button>
           </div>
-          <Table dataSource={coupons} columns={couponColumns} rowKey="id" loading={loading} />
+          <ListToolbar
+            searchPlaceholder="بحث بالرقم التسلسلي أو العميل"
+            query={couponFilter.query} onQueryChange={couponFilter.setQuery}
+            values={couponFilter.values} onValueChange={couponFilter.setValue}
+            onReset={couponFilter.reset}
+            total={coupons.length} shown={couponFilter.filtered.length}
+            filters={[
+              { key: 'status', placeholder: 'حالة الكوبون',
+                options: Object.entries(STATUS_TAGS).map(([v, t]) => ({ value: v, label: t.text })) },
+              { key: 'customer_id', placeholder: 'العميل',
+                options: customers.map((c) => ({ value: c.id, label: c.name })) },
+            ]}
+          />
+          <Table dataSource={couponFilter.filtered} columns={couponColumns} rowKey="id" loading={loading} />
         </div>
       ),
     },

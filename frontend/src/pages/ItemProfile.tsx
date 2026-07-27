@@ -11,6 +11,7 @@ import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import ItemEditModal from '../components/ItemEditModal';
 import { SerialsPanel, UnitsPanel } from '../components/ItemUnitsPanel';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
@@ -52,6 +53,11 @@ const MOVEMENT_LABELS: Record<string, string> = {
   serial_receive_in: 'استلام بسريال',
 };
 
+/** Offer only the values the loaded rows actually contain, labelled in Arabic. */
+const optionsOf = (rows: any[], field: string, labels: Record<string, string> = {}) =>
+  Array.from(new Set((rows || []).map((r) => r[field]).filter(Boolean)))
+    .map((v: any) => ({ value: v, label: labels[v] || String(v) }));
+
 export default function ItemProfile() {
   const { itemId } = useParams();
   const navigate = useNavigate();
@@ -64,6 +70,30 @@ export default function ItemProfile() {
   const canEditPoints = ['system_admin', 'after_sales_staff'].includes(user?.role || '');
   const canEditPrices = ['system_admin', 'branch_manager', 'purchasing_manager']
     .includes(user?.role || '');
+
+  // Each record tab keeps its own search.
+  const movementsFilter = useListFilter<any>(data?.movements || [], {
+    search: (m) => [m.source, m.location, m.quantity, MOVEMENT_LABELS[m.movement_type] || m.movement_type],
+    filters: {
+      movement_type: (m, v) => m.movement_type === v,
+      direction: (m, v) => m.direction === v,
+    },
+    dateOf: (m) => m.date,
+  });
+  const salesFilter = useListFilter<any>(data?.sales || [], {
+    search: (r) => [r.document_number, r.party, r.unit_price, r.line_total],
+    filters: { tier: (r, v) => r.tier === v },
+    dateOf: (r) => r.date,
+  });
+  const purchasesFilter = useListFilter<any>(data?.purchases || [], {
+    search: (r) => [r.document_number, r.party, r.unit_price, r.line_total],
+    dateOf: (r) => r.date,
+  });
+  const pricesFilter = useListFilter<any>(data?.price_history || [], {
+    search: (r) => [PRICE_FIELD_LABELS[r.field] || r.field, r.old_value, r.new_value],
+    filters: { field: (r, v) => r.field === v },
+    dateOf: (r) => r.changed_at,
+  });
 
   const load = async () => {
     if (!itemId) return;
@@ -221,11 +251,29 @@ export default function ItemProfile() {
                   key: 'movements',
                   label: `حركة المخزون (${data.movements.length})`,
                   children: (
-                    <Table
-                      size="small" rowKey="id" dataSource={data.movements} scroll={{ x: true }}
-                      pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                        pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                      columns={[
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث بالمستند أو الموقع"
+                        searchSpan={7} showDateRange
+                        query={movementsFilter.query} onQueryChange={movementsFilter.setQuery}
+                        values={movementsFilter.values} onValueChange={movementsFilter.setValue}
+                        range={movementsFilter.range} onRangeChange={movementsFilter.setRange}
+                        onReset={movementsFilter.reset}
+                        total={data.movements.length} shown={movementsFilter.filtered.length}
+                        filters={[
+                          { key: 'movement_type', placeholder: 'نوع الحركة',
+                            options: optionsOf(data.movements, 'movement_type', MOVEMENT_LABELS) },
+                          { key: 'direction', placeholder: 'الاتجاه', span: 3,
+                            options: [
+                              { value: 'in', label: 'وارد' }, { value: 'out', label: 'صادر' },
+                            ] },
+                        ]}
+                      />
+                      <Table
+                        size="small" rowKey="id" dataSource={movementsFilter.filtered} scroll={{ x: true }}
+                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        columns={[
                         { title: 'التاريخ', dataIndex: 'date', key: 'd' },
                         { title: 'النوع', dataIndex: 'movement_type', key: 't',
                           render: (v: string) => MOVEMENT_LABELS[v] || v },
@@ -239,56 +287,86 @@ export default function ItemProfile() {
                         { title: 'المستند', dataIndex: 'source', key: 's' },
                         { title: '', dataIndex: 'is_reversal', key: 'r',
                           render: (v: boolean) => (v ? <Tag>عكسي</Tag> : null) },
-                      ]}
-                    />
+                        ]}
+                      />
+                    </>
                   ),
                 },
                 {
                   key: 'sales',
                   label: `سجل البيع (${data.sales.length})`,
                   children: (
-                    <Table
-                      size="small" rowKey={(_r, i) => String(i)} dataSource={data.sales}
-                      scroll={{ x: true }}
-                      pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                        pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                      columns={[
-                        { title: 'الفاتورة', dataIndex: 'document_number', key: 'n' },
-                        { title: 'التاريخ', dataIndex: 'date', key: 'd' },
-                        { title: 'العميل', dataIndex: 'party', key: 'p' },
-                        { title: 'الكمية', dataIndex: 'quantity', key: 'q',
-                          render: (v: string) => qty(v) },
-                        { title: 'سعر البيع', dataIndex: 'unit_price', key: 'u',
-                          render: (v: string) => <b>{money(v)} ج.م</b> },
-                        { title: 'الفئة', dataIndex: 'tier', key: 't',
-                          render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
-                        { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
-                          render: (v: string) => `${money(v)} ج.م` },
-                      ]}
-                    />
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث برقم الفاتورة أو العميل"
+                        searchSpan={8} showDateRange
+                        query={salesFilter.query} onQueryChange={salesFilter.setQuery}
+                        values={salesFilter.values} onValueChange={salesFilter.setValue}
+                        range={salesFilter.range} onRangeChange={salesFilter.setRange}
+                        onReset={salesFilter.reset}
+                        total={data.sales.length} shown={salesFilter.filtered.length}
+                        filters={[
+                          { key: 'tier', placeholder: 'الفئة',
+                            options: optionsOf(data.sales, 'tier', TIER_LABELS) },
+                        ]}
+                      />
+                      <Table
+                        // Keyed by the row's own identity, not its position: these rows are
+                        // filtered, so an index key would re-map content across rows.
+                        size="small" dataSource={salesFilter.filtered}
+                        rowKey={(r: any) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`}
+                        scroll={{ x: true }}
+                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        columns={[
+                          { title: 'الفاتورة', dataIndex: 'document_number', key: 'n' },
+                          { title: 'التاريخ', dataIndex: 'date', key: 'd' },
+                          { title: 'العميل', dataIndex: 'party', key: 'p' },
+                          { title: 'الكمية', dataIndex: 'quantity', key: 'q',
+                            render: (v: string) => qty(v) },
+                          { title: 'سعر البيع', dataIndex: 'unit_price', key: 'u',
+                            render: (v: string) => <b>{money(v)} ج.م</b> },
+                          { title: 'الفئة', dataIndex: 'tier', key: 't',
+                            render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
+                          { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
+                            render: (v: string) => `${money(v)} ج.م` },
+                        ]}
+                      />
+                    </>
                   ),
                 },
                 {
                   key: 'purchases',
                   label: `سجل الشراء (${data.purchases.length})`,
                   children: (
-                    <Table
-                      size="small" rowKey={(_r, i) => String(i)} dataSource={data.purchases}
-                      scroll={{ x: true }}
-                      pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                        pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                      columns={[
-                        { title: 'الفاتورة', dataIndex: 'document_number', key: 'n' },
-                        { title: 'التاريخ', dataIndex: 'date', key: 'd' },
-                        { title: 'المورد', dataIndex: 'party', key: 'p' },
-                        { title: 'الكمية', dataIndex: 'quantity', key: 'q',
-                          render: (v: string) => qty(v) },
-                        { title: 'سعر الشراء', dataIndex: 'unit_price', key: 'u',
-                          render: (v: string) => <b>{money(v)} ج.م</b> },
-                        { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
-                          render: (v: string) => `${money(v)} ج.م` },
-                      ]}
-                    />
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث برقم الفاتورة أو المورد"
+                        searchSpan={8} showDateRange
+                        query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}
+                        range={purchasesFilter.range} onRangeChange={purchasesFilter.setRange}
+                        onReset={purchasesFilter.reset}
+                        total={data.purchases.length} shown={purchasesFilter.filtered.length}
+                      />
+                      <Table
+                        size="small" dataSource={purchasesFilter.filtered}
+                        rowKey={(r: any) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`}
+                        scroll={{ x: true }}
+                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        columns={[
+                          { title: 'الفاتورة', dataIndex: 'document_number', key: 'n' },
+                          { title: 'التاريخ', dataIndex: 'date', key: 'd' },
+                          { title: 'المورد', dataIndex: 'party', key: 'p' },
+                          { title: 'الكمية', dataIndex: 'quantity', key: 'q',
+                            render: (v: string) => qty(v) },
+                          { title: 'سعر الشراء', dataIndex: 'unit_price', key: 'u',
+                            render: (v: string) => <b>{money(v)} ج.م</b> },
+                          { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
+                            render: (v: string) => `${money(v)} ج.م` },
+                        ]}
+                      />
+                    </>
                   ),
                 },
                 {
@@ -305,12 +383,26 @@ export default function ItemProfile() {
                   key: 'prices',
                   label: `سجل الأسعار (${data.price_history.length})`,
                   children: (
-                    <Table
-                      size="small" rowKey="id" dataSource={data.price_history} scroll={{ x: true }}
-                      locale={{ emptyText: 'لم يتم تغيير أي سعر لهذا الصنف بعد' }}
-                      pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                        pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                      columns={[
+                    <>
+                      <ListToolbar
+                        searchPlaceholder="بحث بنوع السعر أو القيمة"
+                        searchSpan={8} showDateRange
+                        query={pricesFilter.query} onQueryChange={pricesFilter.setQuery}
+                        values={pricesFilter.values} onValueChange={pricesFilter.setValue}
+                        range={pricesFilter.range} onRangeChange={pricesFilter.setRange}
+                        onReset={pricesFilter.reset}
+                        total={data.price_history.length} shown={pricesFilter.filtered.length}
+                        filters={[
+                          { key: 'field', placeholder: 'نوع السعر',
+                            options: optionsOf(data.price_history, 'field', PRICE_FIELD_LABELS) },
+                        ]}
+                      />
+                      <Table
+                        size="small" rowKey="id" dataSource={pricesFilter.filtered} scroll={{ x: true }}
+                        locale={{ emptyText: 'لم يتم تغيير أي سعر لهذا الصنف بعد' }}
+                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        columns={[
                         { title: 'التاريخ', dataIndex: 'changed_at', key: 'd' },
                         { title: 'السعر', dataIndex: 'field', key: 'f',
                           render: (v: string) => PRICE_FIELD_LABELS[v] || v },
@@ -333,8 +425,9 @@ export default function ItemProfile() {
                             );
                           },
                         },
-                      ]}
-                    />
+                        ]}
+                      />
+                    </>
                   ),
                 },
               ]}

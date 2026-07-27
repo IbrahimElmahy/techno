@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Card, Collapse, Table, Button, Input, InputNumber, Switch, Space, Tag, message, Popconfirm,
   Modal, Form, Tooltip,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface CategoryMeta { category: string; label: string; system: boolean; }
 interface PageGroup { page: string; page_label: string; categories: CategoryMeta[]; }
@@ -48,6 +49,25 @@ export default function Settings() {
 
   useEffect(() => { loadCategories(); }, []);
 
+  // Search runs over the flattened categories, then they are regrouped under their page.
+  const allCategories = useMemo(
+    () => pages.flatMap((pg) =>
+      pg.categories.map((c) => ({ ...c, page: pg.page, page_label: pg.page_label }))),
+    [pages],
+  );
+
+  const catFilter = useListFilter(allCategories, {
+    search: (c) => [c.label, c.category, c.page_label],
+    filters: {
+      page: (c, v) => c.page === v,
+      system: (c, v) => c.system === (v === 'system'),
+    },
+  });
+
+  const visiblePages = pages
+    .map((pg) => ({ ...pg, categories: catFilter.filtered.filter((c) => c.page === pg.page) }))
+    .filter((pg) => pg.categories.length > 0);
+
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="large">
       <Card title="بيانات تجريبية للاختبار" size="small">
@@ -71,9 +91,22 @@ export default function Settings() {
         <Tag icon={<LockOutlined />} color="gold">مقيّدة</Tag>{' '}
         — تقدر تعيد تسميتها وترتيبها وإخفاءها، لكن ما تقدرش تضيف/تحذف قيمها.
       </p>
+      <ListToolbar
+        searchPlaceholder="بحث باسم القائمة أو الصفحة"
+        query={catFilter.query} onQueryChange={catFilter.setQuery}
+        values={catFilter.values} onValueChange={catFilter.setValue}
+        onReset={catFilter.reset}
+        total={allCategories.length} shown={catFilter.filtered.length}
+        filters={[
+          { key: 'page', placeholder: 'الصفحة',
+            options: pages.map((pg) => ({ value: pg.page, label: pg.page_label })) },
+          { key: 'system', placeholder: 'نوع القائمة',
+            options: [{ value: 'system', label: 'مقيّدة (نظام)' }, { value: 'custom', label: 'حرة (مخصصة)' }] },
+        ]}
+      />
       <Collapse
         accordion
-        items={pages.map((pg) => ({
+        items={visiblePages.map((pg) => ({
           key: pg.page,
           label: <strong>{pg.page_label}</strong>,
           children: (
@@ -109,6 +142,14 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
   };
 
   useEffect(() => { load(); }, [meta.category]);
+
+  const filter = useListFilter(options, {
+    search: (o) => [o.value, o.label],
+    filters: {
+      is_system: (o, v) => o.is_system === (v === 'system'),
+      active: (o, v) => o.active === (v === 'visible'),
+    },
+  });
 
   const saveOption = async (opt: Option, patch: Partial<Option>) => {
     try {
@@ -195,7 +236,21 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
         </Button>
       )}
     >
-      <Table size="small" rowKey="id" loading={loading} dataSource={options} columns={columns}
+      <ListToolbar
+        searchPlaceholder="بحث في الخيارات"
+        searchSpan={7}
+        query={filter.query} onQueryChange={filter.setQuery}
+        values={filter.values} onValueChange={filter.setValue}
+        onReset={filter.reset}
+        total={options.length} shown={filter.filtered.length}
+        filters={[
+          { key: 'is_system', placeholder: 'المصدر',
+            options: [{ value: 'system', label: 'خيار نظام' }, { value: 'custom', label: 'خيار مخصص' }] },
+          { key: 'active', placeholder: 'الظهور',
+            options: [{ value: 'visible', label: 'ظاهر' }, { value: 'hidden', label: 'مخفي' }] },
+        ]}
+      />
+      <Table size="small" rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         pagination={false} />
 
       <Modal title={`إضافة خيار إلى: ${meta.label}`} open={addOpen} onCancel={() => setAddOpen(false)}

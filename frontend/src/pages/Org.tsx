@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 const ADD_LABELS: Record<string, string> = {
   governorates: 'إضافة محافظة',
@@ -42,6 +43,42 @@ export default function Org() {
   const [custodies, setCustodies] = useState<any[]>([]);
   const [governorates, setGovernorates] = useState<any[]>([]);
   const [reps, setReps] = useState<any[]>([]);
+
+  // Each tab keeps its own search/filter state so switching tabs never carries a stale filter over.
+  const holderName = (record: any) =>
+    record.holder_type === 'rep'
+      ? reps.find((r: any) => r.id === record.rep_id)?.full_name
+      : warehouses.find((w: any) => w.id === record.warehouse_id)?.name;
+
+  const govFilter = useListFilter(governorates, {
+    search: (g: any) => [g.id, g.name],
+  });
+
+  const branchFilter = useListFilter(branches, {
+    search: (b: any) => [b.id, b.name, governorates.find((g: any) => g.id === b.governorate_id)?.name],
+    filters: {
+      governorate_id: (b: any, v) => b.governorate_id === v,
+      is_head_office: (b: any, v) => !!b.is_head_office === (v === 'head'),
+      active: (b: any, v) => !!b.active === (v === 'active'),
+    },
+  });
+
+  const warehouseFilter = useListFilter(warehouses, {
+    search: (w: any) => [w.id, w.name, branches.find((b: any) => b.id === w.branch_id)?.name],
+    filters: {
+      warehouse_type: (w: any, v) => w.warehouse_type === v,
+      branch_id: (w: any, v) => w.branch_id === v,
+      active: (w: any, v) => !!w.active === (v === 'active'),
+    },
+  });
+
+  const custodyFilter = useListFilter(custodies, {
+    search: (c: any) => [c.id, holderName(c)],
+    filters: {
+      holder_type: (c: any, v) => c.holder_type === v,
+      active: (c: any, v) => !!c.active === (v === 'active'),
+    },
+  });
 
   const fetchData = async () => {
     setLoading(true);
@@ -328,28 +365,88 @@ export default function Org() {
       key: 'governorates',
       label: 'المحافظات',
       children: (
-        <Table dataSource={governorates} columns={governorateColumns} rowKey="id" loading={loading} />
+        <>
+          <ListToolbar
+            searchPlaceholder="بحث باسم المحافظة أو الكود"
+            searchSpan={10}
+            query={govFilter.query} onQueryChange={govFilter.setQuery}
+            values={govFilter.values} onValueChange={govFilter.setValue}
+            onReset={govFilter.reset}
+            total={governorates.length} shown={govFilter.filtered.length}
+          />
+          <Table dataSource={govFilter.filtered} columns={governorateColumns} rowKey="id" loading={loading} />
+        </>
       ),
     },
     {
       key: 'branches',
       label: 'الفروع والمكاتب',
       children: (
-        <Table dataSource={branches} columns={branchColumns} rowKey="id" loading={loading} />
+        <>
+          <ListToolbar
+            searchPlaceholder="بحث باسم الفرع أو الكود"
+            query={branchFilter.query} onQueryChange={branchFilter.setQuery}
+            values={branchFilter.values} onValueChange={branchFilter.setValue}
+            onReset={branchFilter.reset}
+            total={branches.length} shown={branchFilter.filtered.length}
+            filters={[
+              { key: 'governorate_id', placeholder: 'المحافظة',
+                options: governorates.map((g: any) => ({ value: g.id, label: g.name })) },
+              { key: 'is_head_office', placeholder: 'نوع الفرع',
+                options: [{ value: 'head', label: 'المركز الرئيسي' }, { value: 'regional', label: 'فرع إقليمي' }] },
+              { key: 'active', placeholder: 'الحالة',
+                options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
+            ]}
+          />
+          <Table dataSource={branchFilter.filtered} columns={branchColumns} rowKey="id" loading={loading} />
+        </>
       ),
     },
     {
       key: 'warehouses',
       label: 'المستودعات والمخازن',
       children: (
-        <Table dataSource={warehouses} columns={warehouseColumns} rowKey="id" loading={loading} />
+        <>
+          <ListToolbar
+            searchPlaceholder="بحث باسم المستودع أو الكود"
+            query={warehouseFilter.query} onQueryChange={warehouseFilter.setQuery}
+            values={warehouseFilter.values} onValueChange={warehouseFilter.setValue}
+            onReset={warehouseFilter.reset}
+            total={warehouses.length} shown={warehouseFilter.filtered.length}
+            filters={[
+              { key: 'warehouse_type', placeholder: 'نوع المستودع',
+                options: [{ value: 'central', label: 'مستودع مركزي' }, { value: 'branch', label: 'مستودع فرعي' }] },
+              { key: 'branch_id', placeholder: 'الفرع التابع له',
+                options: branches.map((b: any) => ({ value: b.id, label: b.name })) },
+              { key: 'active', placeholder: 'الحالة',
+                options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
+            ]}
+          />
+          <Table dataSource={warehouseFilter.filtered} columns={warehouseColumns} rowKey="id" loading={loading} />
+        </>
       ),
     },
     {
       key: 'custodies',
       label: 'العهد المالية والعينية',
       children: (
-        <Table dataSource={custodies} columns={custodyColumns} rowKey="id" loading={loading} />
+        <>
+          <ListToolbar
+            searchPlaceholder="بحث باسم المسؤول أو المستودع"
+            searchSpan={8}
+            query={custodyFilter.query} onQueryChange={custodyFilter.setQuery}
+            values={custodyFilter.values} onValueChange={custodyFilter.setValue}
+            onReset={custodyFilter.reset}
+            total={custodies.length} shown={custodyFilter.filtered.length}
+            filters={[
+              { key: 'holder_type', placeholder: 'نوع الحائز',
+                options: [{ value: 'rep', label: 'مندوب مبيعات' }, { value: 'warehouse', label: 'مستودع' }] },
+              { key: 'active', placeholder: 'الحالة',
+                options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
+            ]}
+          />
+          <Table dataSource={custodyFilter.filtered} columns={custodyColumns} rowKey="id" loading={loading} />
+        </>
       ),
     },
   ];

@@ -143,6 +143,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'sales_manager'],
     },
     {
+      key: '/stock-balance',
+      icon: <DatabaseOutlined />,
+      label: 'رصيد صنف',
+      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
+    },
+    {
       key: '/transfers',
       icon: <SwapOutlined />,
       label: 'تحويلات المخزون',

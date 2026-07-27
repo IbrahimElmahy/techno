@@ -19,6 +19,7 @@ import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { printDocument } from '../print/brand';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface ReportLine {
   account_id: number;
@@ -86,6 +87,10 @@ const FinanceReports: React.FC = () => {
   const [vat, setVat] = useState<VatReturn | null>(null);
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Aging and commissions can run to hundreds of parties — let the user jump straight to one.
+  const agingFilter = useListFilter(aging, { search: (r) => [r.party_name] });
+  const commissionFilter = useListFilter(commissions, { search: (r) => [r.rep_name] });
 
   const params = useCallback(() => {
     const p: Record<string, string> = {};
@@ -281,11 +286,18 @@ const FinanceReports: React.FC = () => {
                   />
                 }
               >
+                <ListToolbar
+                  searchPlaceholder={agingParty === 'customers' ? 'بحث باسم العميل' : 'بحث باسم المورد'}
+                  query={agingFilter.query} onQueryChange={agingFilter.setQuery}
+                  onReset={agingFilter.reset}
+                  total={aging.length} shown={agingFilter.filtered.length}
+                  searchSpan={10}
+                />
                 <Table<AgingRow>
                   rowKey="party_id"
                   size="small"
                   loading={loading}
-                  dataSource={aging}
+                  dataSource={agingFilter.filtered}
                   pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
                   columns={[
                     { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name' },
@@ -372,11 +384,18 @@ const FinanceReports: React.FC = () => {
             label: 'عمولات المناديب',
             children: (
               <Card title="عمولات المناديب">
+                <ListToolbar
+                  searchPlaceholder="بحث باسم المندوب"
+                  query={commissionFilter.query} onQueryChange={commissionFilter.setQuery}
+                  onReset={commissionFilter.reset}
+                  total={commissions.length} shown={commissionFilter.filtered.length}
+                  searchSpan={10}
+                />
                 <Table<CommissionRow>
                   rowKey="rep_user_id"
                   size="small"
                   loading={loading}
-                  dataSource={commissions}
+                  dataSource={commissionFilter.filtered}
                   pagination={false}
                   columns={[
                     { title: 'المندوب', dataIndex: 'rep_name' },

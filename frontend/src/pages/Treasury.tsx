@@ -5,6 +5,7 @@ import {
 import { PlusOutlined, RollbackOutlined, WalletOutlined, FileSearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface LedgerLine {
   id: number;
@@ -44,6 +45,21 @@ export default function Treasury() {
   const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
+
+  const branchName = (id: number | null) =>
+    id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام (إداري)';
+
+  const filter = useListFilter(entries, {
+    search: (e) => [e.id, e.entry_type, e.description, branchName(e.branch_id)],
+    filters: {
+      entry_type: (e, v) => e.entry_type === v,
+      branch_id: (e, v) => (v === 0 ? e.branch_id === null : e.branch_id === v),
+      reversal: (e, v) => (v === 'reversal' ? !!e.reverses_entry_id : !e.reverses_entry_id),
+    },
+  });
+
+  const entryTypeOptions = Array.from(new Set(entries.map((e) => e.entry_type).filter(Boolean)))
+    .map((t) => ({ value: t, label: t }));
 
   // Manual Journal inputs
   const [form] = Form.useForm();
@@ -297,8 +313,23 @@ export default function Treasury() {
           </Button>
         }
       >
+        <ListToolbar
+          searchPlaceholder="بحث برقم القيد أو النوع أو البيان"
+          query={filter.query} onQueryChange={filter.setQuery}
+          values={filter.values} onValueChange={filter.setValue}
+          onReset={filter.reset}
+          total={entries.length} shown={filter.filtered.length}
+          filters={[
+            { key: 'entry_type', placeholder: 'نوع القيد', options: entryTypeOptions },
+            { key: 'branch_id', placeholder: 'الفرع',
+              options: [{ value: 0, label: 'عام (إداري)' },
+                ...branches.map((b) => ({ value: b.id, label: b.name }))] },
+            { key: 'reversal', placeholder: 'العكس',
+              options: [{ value: 'reversal', label: 'قيود عكسية' }, { value: 'normal', label: 'قيود أصلية' }] },
+          ]}
+        />
         <Table
-          dataSource={entries}
+          dataSource={filter.filtered}
           columns={columns}
           rowKey="id"
           loading={loading}

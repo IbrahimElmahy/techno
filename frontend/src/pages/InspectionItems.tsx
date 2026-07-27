@@ -15,6 +15,7 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface ItemType {
   id: number;
@@ -119,6 +120,14 @@ const InspectionItems: React.FC = () => {
 
   const visible = showInactive ? rows : rows.filter((r) => r.active);
 
+  const filter = useListFilter(visible, {
+    search: (r) => [r.name, r.points],
+    filters: {
+      active: (r, v) => r.active === (v === 'active'),
+      has_points: (r, v) => (Number(r.points) > 0) === (v === 'yes'),
+    },
+  });
+
   return (
     <div>
       <Card
@@ -142,10 +151,23 @@ const InspectionItems: React.FC = () => {
           دي الأصناف اللي بتظهر في تطبيق المعاينات — أي تعديل هنا بيوصل للمناديب مع أول
           «تحديث الأصناف والقوائم» من التطبيق.
         </p>
+        <ListToolbar
+          searchPlaceholder="بحث باسم الصنف"
+          query={filter.query} onQueryChange={filter.setQuery}
+          values={filter.values} onValueChange={filter.setValue}
+          onReset={filter.reset}
+          total={visible.length} shown={filter.filtered.length}
+          filters={[
+            { key: 'active', placeholder: 'الحالة',
+              options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'موقوف' }] },
+            { key: 'has_points', placeholder: 'قيمة النقاط',
+              options: [{ value: 'yes', label: 'له نقاط' }, { value: 'no', label: 'بدون نقاط' }] },
+          ]}
+        />
         <Table<ItemType>
           rowKey="id"
           loading={loading}
-          dataSource={visible}
+          dataSource={filter.filtered}
           pagination={{ defaultPageSize: 50, showTotal: (t) => `إجمالي ${t}` }}
           columns={[
             { title: '#', width: 60, render: (_: any, __: any, i: number) => i + 1 },
