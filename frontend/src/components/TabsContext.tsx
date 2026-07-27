@@ -39,6 +39,7 @@ const BASE_TITLES: Record<string, string> = {
   '/fixed-assets': 'الأصول الثابتة',
   '/employees': 'الموظفون والوظائف',
   '/orders': 'طلبات البيع والشراء',
+  '/coupon-receipts': 'استلام الكوبونات',
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',
   '/finance-reports': 'القوائم المالية',

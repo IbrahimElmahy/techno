@@ -20,6 +20,7 @@ import AccountStatement from '../pages/AccountStatement';
 import FixedAssets from '../pages/FixedAssets';
 import Employees from '../pages/Employees';
 import Orders from '../pages/Orders';
+import CouponReceipts from '../pages/CouponReceipts';
 import Invoices from '../pages/Invoices';
 import Returns from '../pages/Returns';
 import Loyalty from '../pages/Loyalty';
@@ -70,6 +71,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/fixed-assets" element={<FixedAssets />} />
       <Route path="/employees" element={<Employees />} />
       <Route path="/orders" element={<Orders />} />
+      <Route path="/coupon-receipts" element={<CouponReceipts />} />
       <Route path="/treasury" element={<Treasury />} />
       <Route path="/vouchers" element={<Vouchers />} />
       <Route path="/finance-reports" element={<FinanceReports />} />

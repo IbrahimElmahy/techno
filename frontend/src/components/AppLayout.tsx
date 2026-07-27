@@ -227,6 +227,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'accountant'],
     },
     {
+      key: '/coupon-receipts',
+      icon: <GiftOutlined />,
+      label: 'استلام الكوبونات',
+      roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'],
+    },
+    {
       key: '/loyalty',
       icon: <GiftOutlined />,
       label: 'خدمة ما بعد البيع',
