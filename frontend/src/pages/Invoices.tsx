@@ -566,6 +566,11 @@ export default function Invoices() {
       entryId: (inv as any).ledger_entry_id ?? null,
       totalPoints: (inv.lines || []).reduce(
         (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
+      // (030) The paper number belongs on the printed document — it is how the customer's own
+      // filing refers to this sale.
+      extraMeta: (inv as any).external_document_number
+        ? ([['رقم المستند', (inv as any).external_document_number]] as [string, string][])
+        : undefined,
       lines: (inv.lines || []).map((l: any) => ({
         name: productName(l.item_id),
         itemId: l.item_id,
@@ -575,6 +580,7 @@ export default function Invoices() {
         discount_pct: l.discount_pct,
         points: (pointValues[l.item_id] || 0) * Number(l.quantity || 0),
         line_total: l.line_total,
+        warehouse: warehouses.find((w) => w.id === l.warehouse_id)?.name ?? null,
       })),
     };
   };

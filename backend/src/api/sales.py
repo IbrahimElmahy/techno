@@ -330,6 +330,7 @@ def get_standalone_return(
             "unit_price": str(ln.unit_price) if ln.unit_price is not None else None,
             "discount_pct": str(ln.discount_pct), "unit": ln.unit,
             "line_total": str(ln.line_total) if ln.line_total is not None else None,
+            "warehouse_id": ln.location_id,   # (030)
         }
         for ln in r.lines
     ]

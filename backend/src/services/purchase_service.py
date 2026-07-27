@@ -39,6 +39,8 @@ class PurchaseLine:
     quantity: Decimal
     unit_price: Decimal
     unit: str | None = None    # (008) unit of measure; None = base unit
+    # (030) receive this line into its own warehouse; None = the document's location
+    warehouse_id: int | None = None
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -57,6 +59,14 @@ def create_purchase(
     lines: list[PurchaseLine],
     actor_role: RoleName,
     actor_user_id: int,
+    # (030) document fields — all optional so pre-030 callers keep working unchanged.
+    rep_id: int | None = None,
+    expense_account_id: int | None = None,
+    external_document_number: str | None = None,
+    notes: str | None = None,
+    statement1: str | None = None,
+    statement2: str | None = None,
+    statement3: str | None = None,
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("A purchase needs at least one line.")
@@ -91,20 +101,27 @@ def create_purchase(
         supplier_id=supplier_id, location_kind=location_kind, location_id=location_id,
         total=total, cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         ledger_entry_id=None, actor_user_id=actor_user_id,
+        rep_id=rep_id, expense_account_id=expense_account_id,
+        external_document_number=(external_document_number or None),
+        notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
     )
     db.add(invoice)
     db.flush()
     for ln, line_total, factor in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock in base units
+        # (030) Each line may be received into its own warehouse.
+        line_kind, line_loc = ((LocationKind.warehouse, ln.warehouse_id)
+                               if ln.warehouse_id is not None else (location_kind, location_id))
         stock_service.post_movement(
-            db, item_id=ln.item_id, location_kind=location_kind, location_id=location_id,
+            db, item_id=ln.item_id, location_kind=line_kind, location_id=line_loc,
             movement_type="purchase_in", direction=StockDirection.in_, quantity=base_qty,
             actor_user_id=actor_user_id, source_doc_type="purchase", source_doc_id=invoice.id,
         )
         invoice.lines.append(
             PurchaseInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                                 unit_price=to_money(ln.unit_price), line_total=line_total,
-                                unit=ln.unit, unit_factor=factor)
+                                unit=ln.unit, unit_factor=factor,
+                                line_location_kind=line_kind, line_location_id=line_loc)
         )
 
     # Money: debit purchases_expense T; credit cash-location C + supplier_payable P.
@@ -154,6 +171,13 @@ def return_purchase(
         ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
         for ln in inv.lines
     }
+    # (030) Each received line remembers its warehouse, so the return takes the goods back out of
+    # exactly that one. Lines written before 030 fall back to the invoice's own location.
+    received_into = {
+        ln.item_id: (ln.line_location_kind or inv.location_kind,
+                     ln.line_location_id if ln.line_location_id is not None else inv.location_id)
+        for ln in inv.lines
+    }
     prior = _already_returned(db, purchase_invoice_id)
 
     value = ZERO
@@ -179,8 +203,9 @@ def return_purchase(
     db.flush()
     for item_id, qty in lines:
         base_qty = to_qty(Decimal(qty) * purchased[item_id][2])  # (008) reverse stock in base units
+        out_kind, out_loc = received_into[item_id]   # (030) out of the warehouse it came into
         stock_service.post_movement(
-            db, item_id=item_id, location_kind=inv.location_kind, location_id=inv.location_id,
+            db, item_id=item_id, location_kind=out_kind, location_id=out_loc,
             movement_type="purchase_return_out", direction=StockDirection.out, quantity=base_qty,
             actor_user_id=actor_user_id, source_doc_type="purchase_return", source_doc_id=ret.id,
         )

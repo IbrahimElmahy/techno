@@ -302,6 +302,7 @@ export default function Returns() {
         discount_pct: l.discount_pct,
         points: (pointValues[l.item_id] || 0) * Number(l.quantity || 0),
         line_total: l.line_total,
+        warehouse: warehouses.find((w) => w.id === l.warehouse_id)?.name ?? null,
       })),
     };
   };

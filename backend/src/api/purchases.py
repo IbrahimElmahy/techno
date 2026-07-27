@@ -31,6 +31,7 @@ class PurchaseLineIn(BaseModel):
     quantity: Decimal
     unit_price: Decimal
     unit: str | None = None    # (008) unit of measure; None = base
+    warehouse_id: int | None = None   # (030) receive this line into its own warehouse
 
 
 class PurchaseCreate(BaseModel):
@@ -39,6 +40,14 @@ class PurchaseCreate(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     lines: list[PurchaseLineIn]
+    # (030) document fields — the supplier's own invoice number and free text.
+    rep_id: int | None = None
+    expense_account_id: int | None = None
+    external_document_number: str | None = None
+    notes: str | None = None
+    statement1: str | None = None
+    statement2: str | None = None
+    statement3: str | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -142,8 +151,12 @@ def create_purchase(
             db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
             location_id=body.location.location_id, cash_amount=body.cash_amount,
             credit_amount=body.credit_amount,
-            lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit) for l in body.lines],
+            lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id)
+                   for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
+            rep_id=body.rep_id, expense_account_id=body.expense_account_id,
+            external_document_number=body.external_document_number, notes=body.notes,
+            statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
         )
     except (PurchaseError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "purchase_invalid", "message": str(exc)})

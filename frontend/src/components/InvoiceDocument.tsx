@@ -22,6 +22,7 @@ export interface InvoiceLine {
   points?: string | number;
   line_total: string | number;
   tier?: string | null;
+  warehouse?: string | null;   // (030) which warehouse this line moved through
 }
 
 export interface InvoiceDoc {
@@ -79,10 +80,15 @@ export function printInvoice(d: InvoiceDoc): void {
   // Only show a column when at least one line actually uses it.
   const anyDisc = d.lines.some((l) => Number(l.discount_pct || 0) > 0);
   const anyPts = d.lines.some((l) => Number(l.points || 0) > 0);
-  const cols = 6 + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
+  // (030) Only worth a column when the document actually spans more than one warehouse —
+  // printing the same name on every row would be noise.
+  const warehouses = new Set(d.lines.map((l) => l.warehouse).filter(Boolean));
+  const anyWh = warehouses.size > 1;
+  const cols = 6 + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
   const pts = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
   const rows = d.lines.map((l, i) => `
     <tr><td>${i + 1}</td><td style="text-align:right">${l.name}</td>
+    ${anyWh ? `<td>${l.warehouse || '-'}</td>` : ''}
     <td>${Number(l.quantity)}</td><td>${l.unit || '-'}</td>
     <td>${n(l.unit_price)}</td>${anyDisc ? `<td>${Number(l.discount_pct || 0)}%</td>` : ''}
     ${anyPts ? `<td>${pts(l.points)}</td>` : ''}
@@ -90,7 +96,7 @@ export function printInvoice(d: InvoiceDoc): void {
   const discount = Number(d.gross || 0) - Number(d.net || 0);
   const body = `
     <table class="grid">
-      <thead><tr><th>#</th><th>الصنف</th><th>الكمية</th><th>الوحدة</th>
+      <thead><tr><th>#</th><th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th><th>الوحدة</th>
         <th>سعر الوحدة</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>
@@ -158,6 +164,9 @@ export default function InvoiceDocument({
   const discount = Number(doc.gross || 0) - Number(doc.net || 0);
   const anyLineDiscount = doc.lines.some((l) => Number(l.discount_pct || 0) > 0);
   const anyLinePoints = doc.lines.some((l) => Number(l.points || 0) > 0);
+  // (030) Show the warehouse column only when the document spans more than one.
+  const anyLineWarehouse =
+    new Set(doc.lines.map((l) => l.warehouse).filter(Boolean)).size > 1;
   const pts = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
   const totals: [string, string, boolean?][] = [
     ['الإجمالي قبل الخصم', `${n(doc.gross)} ج.م`],
@@ -228,7 +237,8 @@ export default function InvoiceDocument({
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {['#', 'الصنف', 'الكمية', 'الوحدة', 'سعر الوحدة',
+              {['#', 'الصنف', ...(anyLineWarehouse ? ['المخزن'] : []),
+                'الكمية', 'الوحدة', 'سعر الوحدة',
                 ...(anyLineDiscount ? ['الخصم'] : []),
                 ...(anyLinePoints ? ['النقاط'] : []), 'الإجمالي'].map((h) => (
                 <th key={h} style={headCell}>{h}</th>
@@ -237,7 +247,8 @@ export default function InvoiceDocument({
           </thead>
           <tbody>
             {doc.lines.length === 0 ? (
-              <tr><td style={cell} colSpan={6 + (anyLineDiscount ? 1 : 0) + (anyLinePoints ? 1 : 0)}>
+              <tr><td style={cell} colSpan={6 + (anyLineWarehouse ? 1 : 0)
+                + (anyLineDiscount ? 1 : 0) + (anyLinePoints ? 1 : 0)}>
                 لا توجد أصناف</td></tr>
             ) : doc.lines.map((l, i) => (
               <tr key={i} style={i % 2 ? { background: '#f7fbf8' } : undefined}>
@@ -248,6 +259,7 @@ export default function InvoiceDocument({
                         style={{ color: BRAND.green, fontWeight: 600 }}>{l.name}</a>
                     : l.name}
                 </td>
+                {anyLineWarehouse && <td style={cell}>{l.warehouse || '-'}</td>}
                 <td style={cell}>{Number(l.quantity)}</td>
                 <td style={cell}>{l.unit || '-'}</td>
                 <td style={cell}>{n(l.unit_price)}</td>
