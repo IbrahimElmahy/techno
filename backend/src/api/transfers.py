@@ -39,19 +39,43 @@ class TransferOut(BaseModel):
     status: str
     route: str
     approved_by: int | None = None
+    # What actually moved, so the list reads without a lookup per row.
+    item_id: int | None = None
+    quantity: Decimal | None = None
+    source_location_kind: str | None = None
+    source_location_id: int | None = None
+    dest_location_kind: str | None = None
+    dest_location_id: int | None = None
+    created_at: str | None = None
 
 
 def _out(t) -> TransferOut:
-    return TransferOut(id=t.id, document_number=t.document_number, status=t.status.value,
-                       route=t.route.value, approved_by=t.approved_by)
+    return TransferOut(
+        id=t.id, document_number=t.document_number, status=t.status.value,
+        route=t.route.value, approved_by=t.approved_by,
+        item_id=t.item_id, quantity=t.quantity,
+        source_location_kind=t.source_location_kind.value,
+        source_location_id=t.source_location_id,
+        dest_location_kind=t.dest_location_kind.value,
+        dest_location_id=t.dest_location_id,
+        created_at=str(t.created_at) if t.created_at else None,
+    )
 
 
 @router.get("", response_model=list[TransferOut])
 def list_transfers(
+    status_filter: str | None = None,   # pending | approved | rejected | reversed
+    item_id: int | None = None,
     _: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> list[TransferOut]:
-    return [_out(t) for t in db.scalars(select(StockTransfer)).all()]
+    """Transfer documents, newest first, optionally narrowed by status or item."""
+    stmt = select(StockTransfer)
+    if status_filter:
+        stmt = stmt.where(StockTransfer.status == status_filter)
+    if item_id is not None:
+        stmt = stmt.where(StockTransfer.item_id == item_id)
+    return [_out(t) for t in db.scalars(stmt.order_by(StockTransfer.id.desc())).all()]
 
 
 @router.post("", response_model=TransferOut, status_code=status.HTTP_201_CREATED)
@@ -67,7 +91,10 @@ def create_transfer(
             dest_kind=body.dest.location_kind, dest_id=body.dest.location_id,
             initiated_by=current.id)
     except TransferError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "illegal_route", "message": str(exc)})
+        # Covers an illegal route, a non-positive quantity, same source/destination, and asking
+        # for more than the source holds.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "transfer_invalid", "message": str(exc)})
     db.commit()
     return _out(t)
 

@@ -58,6 +58,18 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
     want_src, want_dst = _ROUTE_KINDS[route]
     if source_kind != want_src or dest_kind != want_dst:
         raise TransferError(f"Illegal route {route.value} for the given location kinds.")
+    qty = Decimal(quantity)
+    if qty <= 0:
+        raise TransferError("Transfer quantity must be greater than zero.")
+    if source_kind == dest_kind and source_id == dest_id:
+        raise TransferError("Source and destination must be different locations.")
+    # Fail fast: never let a request be raised for more than the source actually holds. The
+    # authoritative no-negative guard still runs at approve time (stock can move in between).
+    available = stock_service.on_hand(db, item_id, source_kind, source_id)
+    if qty > available:
+        raise TransferError(
+            f"Requested {qty} exceeds the {available} available at the source location."
+        )
     transfer = StockTransfer(
         document_number=_doc_number(db), item_id=item_id, quantity=Decimal(quantity), route=route,
         source_location_kind=source_kind, source_location_id=source_id,
