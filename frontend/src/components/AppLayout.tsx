@@ -215,6 +215,12 @@ export default function AppLayout() {
       roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
     },
     {
+      key: '/trade-reports',
+      icon: <FileTextOutlined />,
+      label: 'تقارير المبيعات والمشتريات',
+      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
+    },
+    {
       key: '/settings',
       icon: <SettingOutlined />,
       label: 'إعدادات القوائم',

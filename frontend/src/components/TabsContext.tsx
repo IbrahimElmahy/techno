@@ -41,6 +41,7 @@ const BASE_TITLES: Record<string, string> = {
   '/inspections': 'المعاينات',
   '/inspection-items': 'أصناف المعاينة',
   '/reports': 'التقارير والإحصائيات',
+  '/trade-reports': 'تقارير المبيعات والمشتريات',
   '/settings': 'إعدادات القوائم',
 };
 

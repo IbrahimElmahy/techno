@@ -20,6 +20,7 @@ import Treasury from '../pages/Treasury';
 import GeneralLedger from '../pages/GeneralLedger';
 import Audit from '../pages/Audit';
 import Reports from '../pages/Reports';
+import TradeReports from '../pages/TradeReports';
 import Settings from '../pages/Settings';
 import Inspections from '../pages/Inspections';
 import InspectionItems from '../pages/InspectionItems';
@@ -64,6 +65,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/inspections" element={<Inspections />} />
       <Route path="/inspection-items" element={<InspectionItems />} />
       <Route path="/reports" element={<Reports />} />
+      <Route path="/trade-reports" element={<TradeReports />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>

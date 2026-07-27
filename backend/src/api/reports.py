@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
 from src.core.db import get_db
-from src.lib import reporting
+from src.lib import reporting, trade_reports
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
 from src.models.sales import SalesInvoice
@@ -58,6 +58,34 @@ def stagnant_report(
     db: Session = Depends(get_db),
 ):
     return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id)
+
+
+@router.get("/trade")
+def trade_report(
+    doc_type: str = Query("sale", description="sale | sale_return | purchase | purchase_return"),
+    level: str = Query("document", description="document | line"),
+    group_by: str = Query("none", description="none | party | item | warehouse"),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    party_id: int | None = Query(None),
+    item_id: int | None = Query(None),
+    warehouse_id: int | None = Query(None),
+    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+):
+    """Sales/purchase figures at any level and grouping, with profit where cost was captured.
+
+    One endpoint covers what the legacy system spread over ~16 reports — see
+    `src/lib/trade_reports.py` for why they are the same four shapes.
+    """
+    try:
+        return trade_reports.trade(
+            db, doc_type=doc_type, level=level, group_by=group_by,
+            date_from=date_from, date_to=date_to, party_id=party_id,
+            item_id=item_id, warehouse_id=warehouse_id,
+        )
+    except trade_reports.TradeReportError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
 
 @router.get("/reorder")
