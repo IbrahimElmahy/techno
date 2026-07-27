@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Statistic, Table, Tag, Typography, message,
+  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Result, Row, Select, Space, Statistic, Table, Tag, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, FileTextOutlined, PrinterOutlined, DeleteOutlined,
+  EditOutlined,
   ArrowRightOutlined, SearchOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -133,6 +134,9 @@ export default function Invoices() {
   const [customerTier, setCustomerTier] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
+  // Coupons already issued to this customer and not yet redeemed — the counter reads out their
+  // serial range when handing them over.
+  const [customerCoupons, setCustomerCoupons] = useState<any[]>([]);
   // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
   // be served from a different warehouse, so a single item-keyed map would answer the wrong
   // question. Stock can never go negative, so the form shows what is available and caps the
@@ -264,6 +268,7 @@ export default function Invoices() {
     setDiscountPct(0);
     setSelectedCustomerId(null);
     setCustomerBalance(null);
+    setCustomerCoupons([]);
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
@@ -411,9 +416,13 @@ export default function Invoices() {
     setCustomerTier(tier);
     setSelectedCustomerId(customerId);
     setCustomerBalance(null);
+    setCustomerCoupons([]);
     api.get(`/api/v1/customers/${customerId}/account`)
       .then((res) => setCustomerBalance(Number(res.data.balance || 0)))
       .catch((err) => console.error(err));
+    api.get('/api/v1/coupons', { params: { customer_id: customerId, status_filter: 'issued' } })
+      .then((res) => setCustomerCoupons(res.data || []))
+      .catch(() => setCustomerCoupons([]));
     setLines((prev) => prev.map((l) => l.item_id
       ? { ...l, tier: tier || 'consumer', unit_price: resolvePrice(l.item_id, tier || 'consumer', l.unit) }
       : { ...l, tier }));
@@ -526,7 +535,98 @@ export default function Invoices() {
     }
   };
 
+  /**
+   * حذف الفاتورة — a posted invoice is reversed, never erased.
+   *
+   * It moved stock, booked a ledger entry and put a debt on the customer; deleting the row would
+   * leave all three behind with nothing to explain them. A full return undoes exactly what the
+   * invoice did, and both documents stay visible, which is what makes the books answerable.
+   */
+  const reverseInvoice = async (record: InvoiceRecord): Promise<boolean> => {
+    try {
+      const det = await api.get(`/api/v1/sales/${record.id}`);
+      const lines = (det.data.lines || []).map((l: any) => ({
+        item_id: l.item_id, quantity: String(l.quantity),
+      }));
+      if (!lines.length) { message.error('الفاتورة من غير سطور'); return false; }
+      await api.post(`/api/v1/sales/${record.id}/returns`, { lines });
+      return true;
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message
+        || 'تعذر عكس الفاتورة — لو الأصناف اتباعت أو اتحوّلت بعدها، رجّعها الأول.');
+      return false;
+    }
+  };
+
+  const handleDeleteInvoice = async (record: InvoiceRecord) => {
+    if (await reverseInvoice(record)) {
+      message.success('اتعكست الفاتورة بالكامل');
+      fetchInvoices();
+    }
+  };
+
+  /**
+   * تعديل الفاتورة — reverse it, then reopen its contents as a fresh invoice to correct and post.
+   *
+   * The customer sees "edit"; the books see a return and a new sale, which is the only version of
+   * editing that cannot rewrite a month that has already been reported on.
+   */
+  const handleEditInvoice = async (record: InvoiceRecord) => {
+    let det: any;
+    try {
+      det = (await api.get(`/api/v1/sales/${record.id}`)).data;
+    } catch {
+      message.error('تعذر قراءة الفاتورة');
+      return;
+    }
+    if (!(await reverseInvoice(record))) return;
+
+    message.success('اتعكست الفاتورة — عدّل وارحّل من جديد');
+    fetchInvoices();
+
+    // Refill the form from what the invoice actually held, line by line.
+    const refilled: SaleLineItem[] = (det.lines || []).map((l: any, idx: number) => {
+      const product = products.find((p) => p.id === l.item_id);
+      return {
+        key: `${Date.now()}-${idx}`,
+        item_id: l.item_id,
+        category: product?.category ?? null,
+        tier: l.price_tier ?? null,
+        unit: l.unit ?? null,
+        quantity: Number(l.quantity) || 1,
+        unit_price: Number(l.unit_price) || 0,
+        serials: '',
+        // The invoice stored ONE combined discount; it comes back as the fixed part so the
+        // number the user sees is the number the line actually carried.
+        fixed_discount: Number(l.discount_pct) || 0,
+        variable_discount: 0,
+        warehouse_id: l.warehouse_id ?? null,
+      } as SaleLineItem;
+    });
+
+    setCreateVisible(true);
+    setLines(refilled);
+    setDiscountPct(0);
+    setCashAmount(Number(det.cash_amount) || 0);
+    createForm.setFieldsValue({ customer_id: det.customer_id });
+    onCustomerChange(det.customer_id);
+    const first = (det.lines || [])[0];
+    if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
+  };
+
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
+
+  /** First and last serial of the customer's outstanding coupons, sorted so the range is real. */
+  const couponRange = (() => {
+    const serials = customerCoupons.map((c) => c.serial).filter(Boolean).sort();
+    return { from: serials[0] ?? '—', to: serials[serials.length - 1] ?? '—' };
+  })();
+
+  /** The category the item belongs to, labelled the way the settings list labels it. */
+  const lineCategory = (l: SaleLineItem): string => {
+    const raw = products.find((p) => p.id === l.item_id)?.category;
+    return raw ? (categoryLabels[raw] || raw) : '';
+  };
 
   // Open a read-only detail view: invoice header + lines + its returns.
   const openDetail = async (record: InvoiceRecord) => {
@@ -681,6 +781,22 @@ export default function Invoices() {
           >
             إرجاع الفاتورة
           </Button>
+          <Popconfirm
+            title="تعديل الفاتورة؟"
+            description="هيتعمل مرتجع كامل للفاتورة، وتتفتح بنفس أصنافها عشان تعدّل وترحّل من جديد."
+            okText="تعديل" cancelText="إلغاء"
+            onConfirm={() => handleEditInvoice(record)}
+          >
+            <Button type="link" icon={<EditOutlined />}>تعديل</Button>
+          </Popconfirm>
+          <Popconfirm
+            title="حذف الفاتورة؟"
+            description="الفاتورة المرحّلة بتتعكس مش بتتمسح — المخزون والقيد والمديونية بيرجعوا زي ما كانوا، والمستندين بيفضلوا ظاهرين."
+            okText="عكس الفاتورة" cancelText="إلغاء"
+            onConfirm={() => handleDeleteInvoice(record)}
+          >
+            <Button type="link" danger icon={<DeleteOutlined />}>حذف</Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -823,15 +939,16 @@ export default function Invoices() {
 
                 {/* Column headers. */}
                 <Row gutter={8} style={{ padding: '6px 12px 0', color: '#8a8a8a', fontSize: 12 }}>
-                  <Col md={5}>المنتج</Col>
+                  <Col md={4}>المنتج</Col>
                   <Col md={3}>المخزن</Col>
+                  <Col md={2}>الفئة</Col>
                   <Col md={2}>فئة السعر</Col>
                   <Col md={2}>الكمية</Col>
-                  <Col md={3}>سعر الوحدة</Col>
+                  <Col md={2}>سعر الوحدة</Col>
                   <Col md={2}>خصم ثابت %</Col>
                   <Col md={2}>خصم متغير %</Col>
-                  <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
                   <Col md={2} style={{ textAlign: 'center' }}>الإجمالي</Col>
+                  <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
                   <Col md={1} />
                 </Row>
 
@@ -842,7 +959,7 @@ export default function Invoices() {
                     <div key={line.key}
                       style={{ padding: '4px 12px 6px', borderTop: '1px solid #f0f5ee' }}>
                       <Row gutter={8} align="middle">
-                        <Col md={5} xs={24}>
+                        <Col md={4} xs={24}>
                           <b>{productName(line.item_id as number)}</b>
                           {/* Stock never goes negative — show the ceiling right where it binds,
                               for THIS line's warehouse. */}
@@ -864,6 +981,14 @@ export default function Invoices() {
                             options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
                         </Col>
                         <Col md={2} xs={12}>
+                          {/* The category the item is sold out of — read from the item itself, so
+                              it always matches the catalogue rather than being typed per line. */}
+                          <Tag color="green" style={{ margin: 0, width: '100%',
+                            textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {lineCategory(line) || '—'}
+                          </Tag>
+                        </Col>
+                        <Col md={2} xs={12}>
                           <Select size="small" style={{ width: '100%' }} value={line.tier ?? undefined}
                             onChange={(val) => handleLineChange(line.key, 'tier', val)}>
                             {Object.entries(TIER_LABELS).map(([k, l]) => (
@@ -880,14 +1005,20 @@ export default function Invoices() {
                             value={line.quantity}
                             onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} />
                         </Col>
-                        <Col md={3} xs={8}>
+                        <Col md={2} xs={8}>
                           <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
                             value={line.unit_price}
                             onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
                         </Col>
                         <Col md={2} xs={8}>
-                          <InputNumber size="small" style={{ width: '100%' }}
-                            value={line.fixed_discount} disabled />
+                          {/* Prefilled from the item's own discount, but editable — the
+                              salesman on the counter is the one who knows when it does not
+                              apply. Combined with the variable discount it is still capped
+                              below 100%, because a line can never be given away twice. */}
+                          <InputNumber size="small" min={0} max={100} step={0.5}
+                            style={{ width: '100%' }} value={line.fixed_discount}
+                            onChange={(val) => handleLineChange(
+                              line.key, 'fixed_discount', val || 0)} />
                         </Col>
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={0} max={100} step={0.5} style={{ width: '100%' }}
@@ -895,12 +1026,12 @@ export default function Invoices() {
                             onChange={(val) => handleLineChange(line.key, 'variable_discount', val || 0)} />
                         </Col>
                         <Col md={2} xs={12} style={{ textAlign: 'center' }}>
+                          <b style={{ color: '#6AB42D' }}>{lineTotal(line).toFixed(2)}</b>
+                        </Col>
+                        <Col md={2} xs={12} style={{ textAlign: 'center' }}>
                           <span style={{ color: '#F5A11D', fontWeight: 600 }}>
                             {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
                           </span>
-                        </Col>
-                        <Col md={2} xs={12} style={{ textAlign: 'center' }}>
-                          <b style={{ color: '#6AB42D' }}>{lineTotal(line).toFixed(2)}</b>
                         </Col>
                         <Col md={1} xs={4} style={{ textAlign: 'center' }}>
                           <Button type="text" size="small" danger icon={<DeleteOutlined />}
@@ -978,24 +1109,49 @@ export default function Invoices() {
             {selectedCustomerId && customerBalance !== null && (
               <>
                 <Divider style={{ margin: '14px 0' }} />
+                {/* The customer's whole position after this invoice, read left to right the way
+                    the counter reads it: what he owed, what this invoice adds, what he paid,
+                    what is left. The paid amount reduces the WHOLE account, not just this
+                    invoice — an overpayment settles the old debt rather than sitting as credit. */}
                 <Row gutter={[16, 8]} justify="end" style={{ textAlign: 'center' }}>
-                  <Col xs={12} md={5}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي المستحق شامل الفاتورة</div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>{money(customerBalance + netTotal)} ج.م</div>
-                    <div style={{ fontSize: 11, color: '#b0b0b0' }}>
-                      ({money(customerBalance)} مديونية + {money(netTotal)} فاتورة)
+                  <Col xs={12} md={4}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>حساب سابق</div>
+                    <div style={{ fontSize: 16, fontWeight: 600,
+                      color: customerBalance > 0.001 ? '#cf1322' : '#6AB42D' }}>
+                      {money(customerBalance)} ج.م
+                    </div>
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي الفاتورة</div>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>{money(netTotal)} ج.م</div>
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>المدفوع</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: '#6AB42D' }}>
+                      {money(cashAmount)} ج.م
                     </div>
                   </Col>
                   <Col xs={12} md={5}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>يُخصم منه المدفوع نقداً</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: '#6AB42D' }}>− {money(cashAmount)} ج.م</div>
-                  </Col>
-                  <Col xs={24} md={6}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي المستحق على العميل بعد الفاتورة</div>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الباقي</div>
                     <div style={{ fontSize: 22, fontWeight: 800,
                       color: (customerBalance + netTotal - cashAmount) > 0.001 ? '#cf1322' : '#6AB42D' }}>
                       {money(customerBalance + netTotal - cashAmount)} ج.م
                     </div>
+                  </Col>
+                  <Col xs={24} md={7}>
+                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الكوبونات المصروفة</div>
+                    {customerCoupons.length ? (
+                      <>
+                        <div style={{ fontSize: 16, fontWeight: 600, color: '#F5A11D' }}>
+                          مباع عدد {customerCoupons.length}
+                        </div>
+                        <div style={{ fontSize: 12, color: '#8a8a8a' }}>
+                          من <b>{couponRange.from}</b> إلى <b>{couponRange.to}</b>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 14, color: '#b0b0b0' }}>لا توجد كوبونات</div>
+                    )}
                   </Col>
                 </Row>
               </>
