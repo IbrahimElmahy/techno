@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
+import TotalsLadder from '../components/TotalsLadder';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
@@ -475,70 +476,54 @@ export default function Returns() {
               </>
             )}
 
-            <div style={{ background: '#fdf6f3', border: '1px solid #f3e2da', borderRadius: 10, padding: 16 }}>
-              <Row gutter={[16, 8]} align="bottom">
-                <Col xs={12} md={5}>
-                  <Form.Item label="خصم على إجمالي المرتجع" style={{ marginBottom: 0 }}>
-                    <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
-                      value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} md={5}>
-                  <Form.Item label="المبلغ المسترد نقداً" style={{ marginBottom: 0 }}>
-                    <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
-                      value={cashRefund} onChange={(val) => setCashRefund(val || 0)} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} md={5}>
-                  <Form.Item label="خصم من حساب العميل (آجل)" style={{ marginBottom: 0 }}>
-                    <InputNumber disabled style={{ width: '100%' }} addonAfter="ج.م" value={creditReduction} />
-                  </Form.Item>
-                </Col>
-                <Col xs={12} md={9}>
-                  <div style={{ display: 'flex', gap: 24, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 12, color: '#8a8a8a' }}>الإجمالي قبل الخصم</div>
-                      <div style={{ fontSize: 16, fontWeight: 600 }}>{grossTotal.toFixed(2)} ج.م</div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 12, color: '#8a8a8a' }}>نقاط تُخصم من العميل</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: '#F5A11D' }}>
-                        {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })} نقطة
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: 12, color: '#8a8a8a' }}>صافي المرتجع</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: '#cf4b1a' }}>
-                        {netTotal.toFixed(2)} ج.م
-                      </div>
-                    </div>
-                  </div>
-                </Col>
-              </Row>
-
-              {customerId && customerBalance !== null && (
-                <>
-                  <Divider style={{ margin: '14px 0' }} />
-                  <Row gutter={[16, 8]} justify="end" style={{ textAlign: 'center' }}>
-                    <Col xs={8} md={5}>
-                      <div style={{ fontSize: 12, color: '#8a8a8a' }}>الرصيد الحالي على العميل</div>
-                      <div style={{ fontSize: 16, fontWeight: 600 }}>{money(customerBalance)} ج.م</div>
-                    </Col>
-                    <Col xs={8} md={5}>
-                      <div style={{ fontSize: 12, color: '#8a8a8a' }}>يُخصم من حسابه (آجل)</div>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: '#6AB42D' }}>− {money(creditReduction)} ج.م</div>
-                    </Col>
-                    <Col xs={8} md={6}>
-                      <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي المستحق بعد المرتجع</div>
-                      <div style={{ fontSize: 22, fontWeight: 800,
-                        color: (customerBalance - creditReduction) > 0 ? '#cf1322' : '#6AB42D' }}>
-                        {money(customerBalance - creditReduction)} ج.م
-                      </div>
-                    </Col>
-                  </Row>
-                </>
-              )}
-            </div>
+            {/* Same ladder as the invoice, mirrored: a return gives money back instead of
+                taking it, so the bottom line is what the customer still owes AFTER it. */}
+            {(() => {
+              const returnDiscount = grossTotal - netTotal;
+              const hasParty = !!customerId && customerBalance !== null;
+              const balance = customerBalance ?? 0;
+              const after = balance - creditReduction;
+              return (
+                <TotalsLadder
+                  tone="return"
+                  inputs={(
+                    <>
+                      <Form.Item label="خصم على إجمالي المرتجع" style={{ marginBottom: 12 }}>
+                        <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
+                          value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
+                      </Form.Item>
+                      <Form.Item label="المبلغ المسترد نقداً" style={{ marginBottom: 0 }}
+                        help="الباقي بيتخصم من حساب العميل">
+                        <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
+                          value={cashRefund} onChange={(val) => setCashRefund(val || 0)} />
+                      </Form.Item>
+                    </>
+                  )}
+                  rows={[
+                    { label: 'إجمالي الأصناف المرتجعة', value: grossTotal.toFixed(2) },
+                    { label: `خصم المرتجع (${discountPct}%)`,
+                      value: `− ${returnDiscount.toFixed(2)}`, color: '#cf1322',
+                      show: returnDiscount > 0.001 },
+                    { label: 'صافي المرتجع', value: netTotal.toFixed(2),
+                      strong: true, color: '#cf4b1a', rule: true },
+                    { label: 'حساب سابق على العميل', value: money(balance),
+                      color: balance > 0 ? '#cf1322' : '#6AB42D',
+                      show: hasParty && Math.abs(balance) > 0.001 },
+                    { label: 'يُخصم من حسابه (آجل)', value: `− ${money(creditReduction)}`,
+                      color: '#6AB42D', show: hasParty && creditReduction > 0.001 },
+                    { label: 'الباقي على العميل', value: money(after), big: true, rule: true,
+                      color: after > 0.001 ? '#cf1322' : '#6AB42D', show: hasParty },
+                  ]}
+                  notes={[
+                    <>نقاط تُخصم من العميل: <b style={{ color: '#F5A11D' }}>
+                      {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b></>,
+                    cashRefund > 0.001 ? (
+                      <>مسترد نقداً: <b style={{ color: '#cf4b1a' }}>{money(cashRefund)} ج.م</b></>
+                    ) : null,
+                  ]}
+                />
+              );
+            })()}
 
             <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

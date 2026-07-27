@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
+import TotalsLadder from '../components/TotalsLadder';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -489,35 +490,27 @@ export default function Purchases() {
 
           <Divider />
 
-          <Row gutter={16}>
-            <Col span={8}>
-              <div style={{ padding: 12, background: '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
-                <span style={{ fontSize: '14px', color: '#888' }}>إجمالي أصناف الفاتورة</span>
-                <h2 style={{ margin: '4px 0 0', color: '#6AB42D' }}>
-                  {invoiceTotal.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} ج.م
-                </h2>
-              </div>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="المبلغ المدفوع نقداً (ج.م)">
-                <InputNumber
-                  style={{ width: '100%' }}
-                  min={0}
-                  value={cashAmount}
-                  onChange={(val) => setCashAmount(val || 0)}
-                />
+          {/* Same ladder as the sales screens — the supplier side of the identical question:
+              what the goods cost, what we paid now, what we still owe him. */}
+          <TotalsLadder
+            tone="sale"
+            inputs={(
+              <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
+                help="الباقي بيتسجّل آجل على حساب المورد">
+                <InputNumber style={{ width: '100%' }} min={0} addonAfter="ج.م"
+                  value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
               </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item label="المبلغ المتبقي آجل (على الحساب)">
-                <InputNumber
-                  style={{ width: '100%' }}
-                  disabled
-                  value={creditAmount}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+            )}
+            rows={[
+              { label: 'إجمالي أصناف الفاتورة', value: invoiceTotal.toFixed(2),
+                strong: true, color: '#6AB42D' },
+              { label: 'المدفوع نقداً', value: `− ${cashAmount.toFixed(2)}`,
+                color: '#6AB42D', show: cashAmount > 0.001 },
+              { label: 'المتبقي آجل على المورد', value: creditAmount.toFixed(2),
+                big: true, rule: true,
+                color: creditAmount > 0.001 ? '#cf1322' : '#6AB42D' },
+            ]}
+          />
 
           <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
             <Button
