@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../theme.dart';
 import 'login_screen.dart';
+import 'coupon_receipt_screen.dart';
 import 'review_screen.dart';
 import 'sync_screen.dart';
 import 'visits_menu_screen.dart';
@@ -123,6 +124,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const VisitsMenuScreen()));
+                      _refresh();
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.confirmation_number_outlined,
+                    color: AppColors.accent,
+                    title: 'استلام كوبونات',
+                    subtitle: 'استلام كوبونات العميل والتأكد من صلاحيتها',
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const CouponReceiptScreen()));
                       _refresh();
                     },
                   ),

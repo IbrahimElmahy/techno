@@ -1,0 +1,72 @@
+"""استلام الكوبونات من العملاء — B-coupons.
+
+A coupon handed back at the door is a piece of paper with a number on it. On its own that number
+proves nothing: anyone can write one. What makes it real is that it falls inside the serial range
+issued on an actual sales invoice, to an actual customer — which is why the invoice stores that
+range, and why receiving one is a lookup rather than a data-entry field.
+
+The receipt is a document, not a flag on the coupon, because a rep collects a handful at once and
+the company needs to know who took them in and when. And a serial can only be on one receipt: the
+unique constraint is what stops the same coupon being handed in twice at two branches.
+"""
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.core.db import Base, BigIntPK
+
+
+class CouponReceipt(Base):
+    __tablename__ = "coupon_receipt"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True,
+                                                    index=True)
+    # The rep who physically took the coupons; the actor is whoever posted the document.
+    rep_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True,
+                                                    index=True)
+    received_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    coupon_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Idempotency key from the mobile app: the same queued receipt retried after a dropped
+    # connection must land once, not twice.
+    client_uuid: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True,
+                                                    index=True)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+    lines: Mapped[list["CouponReceiptLine"]] = relationship(  # noqa: UP037 — SQLAlchemy ref
+        back_populates="receipt", cascade="all, delete-orphan"
+    )
+
+
+class CouponReceiptLine(Base):
+    """One coupon serial, and the invoice whose range it came from."""
+
+    __tablename__ = "coupon_receipt_line"
+    __table_args__ = (
+        # A coupon is a bearer document — it can be handed in exactly once.
+        UniqueConstraint("serial", name="uq_coupon_receipt_serial"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    receipt_id: Mapped[int] = mapped_column(ForeignKey("coupon_receipt.id"), nullable=False,
+                                            index=True)
+    serial: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    sales_invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
+
+    receipt: Mapped[CouponReceipt] = relationship(back_populates="lines")

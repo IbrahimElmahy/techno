@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 4, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 5, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -23,6 +23,11 @@ class LocalDb {
         await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT)');
         await d.execute('ALTER TABLE inspection ADD COLUMN customer_id INTEGER');
       }
+      if (from < 5) {
+        // v5: coupons taken back from customers on the round. Queued like an inspection —
+        // the rep is at a door with no signal far more often than not.
+        await d.execute(_couponReceiptTable);
+      }
       if (from < 4) {
         // v4: the inspection point-items catalog + customer contact fields for autofill.
         await d.execute('CREATE TABLE insp_item_type('
@@ -31,6 +36,7 @@ class LocalDb {
         await d.execute('ALTER TABLE customer ADD COLUMN address TEXT');
       }
     }, onCreate: (d, v) async {
+      await d.execute(_couponReceiptTable);
       await d.execute('''
         CREATE TABLE inspection(
           local_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -300,4 +306,64 @@ class LocalDb {
       await tx.delete('inspection', where: 'local_id = ?', whereArgs: [localId]);
     });
   }
+
+  // ------------------------------------------------------------ coupon receipts
+
+  /// Queue a handover taken at the door. `client_uuid` is what makes a retry safe: the server
+  /// keys on it, so a receipt sent twice after a dropped connection lands once.
+  Future<int> saveCouponReceipt({
+    required String clientUuid,
+    required List<String> serials,
+    int? customerId,
+    String? customerName,
+    String? notes,
+  }) async {
+    return (await db).insert('coupon_receipt', {
+      'client_uuid': clientUuid,
+      'customer_id': customerId,
+      'customer_name': customerName,
+      'serials': serials.join(','),
+      'coupon_count': serials.length,
+      'notes': notes,
+      'synced': 0,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<List<Map<String, Object?>>> couponReceipts({bool? synced}) async {
+    return (await db).query('coupon_receipt',
+        where: synced == null ? null : 'synced = ?',
+        whereArgs: synced == null ? null : [synced ? 1 : 0],
+        orderBy: 'local_id DESC');
+  }
+
+  Future<void> markCouponReceiptSynced(String clientUuid, String documentNumber) async {
+    await (await db).update(
+        'coupon_receipt', {'synced': 1, 'document_number': documentNumber},
+        where: 'client_uuid = ?', whereArgs: [clientUuid]);
+  }
+
+  Future<int> pendingCouponReceiptCount() async {
+    final rows = await (await db)
+        .rawQuery('SELECT COUNT(*) AS c FROM coupon_receipt WHERE synced = 0');
+    return rows.first['c'] as int;
+  }
+
+  Future<void> deleteCouponReceipt(int localId) async {
+    await (await db).delete('coupon_receipt', where: 'local_id = ?', whereArgs: [localId]);
+  }
 }
+
+const _couponReceiptTable = '''
+  CREATE TABLE coupon_receipt(
+    local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_uuid TEXT UNIQUE NOT NULL,
+    customer_id INTEGER,
+    customer_name TEXT,
+    serials TEXT NOT NULL,
+    coupon_count INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    synced INTEGER NOT NULL DEFAULT 0,
+    document_number TEXT,
+    created_at TEXT NOT NULL
+  )''';

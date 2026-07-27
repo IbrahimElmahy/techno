@@ -17,6 +17,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     customers,
     inspections,  # Site inspections / معاينات (015)
     loyalty_settings,
+    coupon_receipts,  # استلام الكوبونات من العملاء
     employees,  # الموظفون والوظائف (B8)
     fixed_assets,  # الأصول الثابتة والإهلاك (B6)
     manufacturing,
@@ -118,6 +119,8 @@ def create_app() -> FastAPI:
     app.include_router(employees.router, prefix=prefix)
     # Sales / purchase orders (B9)
     app.include_router(orders.router, prefix=prefix)
+    # Coupon hand-back from customers (mobile app + office)
+    app.include_router(coupon_receipts.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
 

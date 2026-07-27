@@ -135,4 +135,53 @@ class ApiClient {
     await LocalDb.instance.setKv('last_sync', DateTime.now().toIso8601String());
     return results.length;
   }
+
+  // ------------------------------------------------------------ coupon receipts
+
+  /// Check one coupon before it is accepted, so the rep learns it is bad while the customer is
+  /// still standing there rather than after the handover is posted.
+  Future<Map<String, dynamic>> checkCoupon(String serial) async {
+    final r = await http
+        .get(await _uri('/coupon-receipts/check', {'serial': serial}),
+            headers: await _headers())
+        .timeout(const Duration(seconds: 20));
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// Push every queued handover. Each carries its client_uuid, so a receipt that went up before
+  /// the connection dropped is recognised by the server instead of being posted twice.
+  Future<int> pushCouponReceipts() async {
+    final pending = await LocalDb.instance.couponReceipts(synced: false);
+    var sent = 0;
+    for (final row in pending) {
+      final serials = (row['serials'] as String)
+          .split(',')
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
+      final r = await http
+          .post(await _uri('/coupon-receipts'),
+              headers: await _headers(),
+              body: jsonEncode({
+                'serials': serials,
+                'customer_id': row['customer_id'],
+                'notes': row['notes'],
+                'client_uuid': row['client_uuid'],
+              }))
+          .timeout(const Duration(seconds: 60));
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode == 201) {
+        final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+        await LocalDb.instance.markCouponReceiptSynced(
+            row['client_uuid'] as String, body['document_number'] as String);
+        sent++;
+        continue;
+      }
+      // A rejected handover must not sit in the queue retrying forever — the coupons were
+      // refused for a reason the rep needs to hear, so surface it and stop.
+      throw ApiException(r.statusCode, _error(r));
+    }
+    return sent;
+  }
 }

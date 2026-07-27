@@ -28,7 +28,9 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _refresh() async {
-    final p = await LocalDb.instance.pendingCount();
+    // Both queues are "work waiting to go up" as far as the rep is concerned.
+    final p = await LocalDb.instance.pendingCount() +
+        await LocalDb.instance.pendingCouponReceiptCount();
     final ls = await LocalDb.instance.getKv('last_sync');
     final lp = await LocalDb.instance.getKv('last_pull');
     _serverCtrl.text = await ApiClient.instance.baseUrl();
@@ -49,10 +51,17 @@ class _SyncScreenState extends State<SyncScreen> {
     });
     try {
       final pushed = await ApiClient.instance.pushInspections();
+      final coupons = await ApiClient.instance.pushCouponReceipts();
       await ApiClient.instance.pullReferenceData();
-      setState(() => _status = pushed == 0
-          ? 'مفيش معاينات جديدة — واتحدثت الأصناف والقوائم ✔'
-          : 'اترفعت $pushed معاينة واتحدثت الأصناف ✔');
+      setState(() {
+        final parts = <String>[
+          if (pushed > 0) 'اترفعت $pushed معاينة',
+          if (coupons > 0) 'اترفع $coupons استلام كوبونات',
+        ];
+        _status = parts.isEmpty
+            ? 'مفيش حاجة جديدة — واتحدثت الأصناف والقوائم ✔'
+            : '${parts.join(' و')} واتحدثت الأصناف ✔';
+      });
     } catch (e) {
       setState(() {
         _status = 'فشلت المزامنة: $e';

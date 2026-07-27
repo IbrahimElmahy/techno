@@ -166,6 +166,15 @@ for _role in (RoleName.system_admin, RoleName.after_sales_staff):
     ROLE_CAPABILITIES.setdefault(_role, set()).update(_LOYALTY_ALL)
 ALL_CAPABILITIES |= _LOYALTY_ALL
 
+# Receiving coupons back from customers is its own capability, deliberately NOT part of
+# _LOYALTY_ALL: the person who takes coupons at the door is the rep on his round, and he has no
+# business issuing them, converting points, or changing the loyalty settings.
+CAP_COUPON_RECEIVE = "coupon.receive"
+for _role in (RoleName.system_admin, RoleName.after_sales_staff, RoleName.branch_manager,
+              RoleName.sales_rep, RoleName.sales_manager):
+    ROLE_CAPABILITIES.setdefault(_role, set()).add(CAP_COUPON_RECEIVE)
+ALL_CAPABILITIES.add(CAP_COUPON_RECEIVE)
+
 # ---------------------------------------------------------------------------
 # General Ledger (005) capability extension — additive.
 # ---------------------------------------------------------------------------
