@@ -1078,111 +1078,120 @@ export default function Invoices() {
           </Col>
           </Row>
 
-          {/* Totals + payment — a single summary strip. */}
+          {/* Totals + payment.
+
+              Two halves and no repetition: on one side the only two numbers anyone TYPES, on
+              the other a single ladder the eye runs down — items, discount, invoice, previous
+              account, paid, left. Every figure appears exactly once and each line is the one
+              above it plus or minus something, which is what makes it checkable at a glance.
+              Rows that are zero (a discount nobody gave, an account nobody owes) stay hidden
+              rather than padding the ladder with noise. */}
           <div style={{
             background: '#f6faf3', border: '1px solid #e6efe3', borderRadius: 10, padding: 16,
           }}>
-            <Row gutter={[16, 8]} align="bottom">
-              <Col xs={12} md={5}>
-                <Form.Item label="خصم على إجمالي الفاتورة" style={{ marginBottom: 0 }}>
+            <Row gutter={[24, 16]}>
+              {/* ---- what the user types ---- */}
+              <Col xs={24} md={9}>
+                <Form.Item label="خصم على إجمالي الفاتورة" style={{ marginBottom: 12 }}>
                   <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
                     value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
                 </Form.Item>
-              </Col>
-              <Col xs={12} md={5}>
                 <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
                   help={selectedCustomerId && customerBalance !== null
-                    ? 'يمكن أن يزيد عن قيمة الفاتورة لسداد المديونية القديمة' : undefined}>
+                    ? 'ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة' : undefined}>
                   <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
                     value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={5}>
-                {creditAmount >= 0 ? (
-                  <Form.Item label="المتبقي آجل على الفاتورة" style={{ marginBottom: 0 }}>
-                    <InputNumber disabled style={{ width: '100%' }} addonAfter="ج.م" value={creditAmount} />
-                  </Form.Item>
-                ) : (
-                  <Form.Item label="سداد من المديونية القديمة" style={{ marginBottom: 0 }}>
-                    <InputNumber disabled addonAfter="ج.م" value={Math.abs(creditAmount)}
-                      style={{ width: '100%' }} />
-                  </Form.Item>
-                )}
-              </Col>
-              <Col xs={12} md={9}>
-                <div style={{
-                  display: 'flex', gap: 24, justifyContent: 'flex-end', flexWrap: 'wrap',
-                }}>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الإجمالي قبل خصم الفاتورة</div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>{grossTotal.toFixed(2)} ج.م</div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي نقاط الفاتورة</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: '#F5A11D' }}>
-                      {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })} نقطة
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الصافي المطلوب</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: '#6AB42D' }}>
-                      {netTotal.toFixed(2)} ج.م
-                    </div>
+
+              {/* ---- the ladder ---- */}
+              <Col xs={24} md={15}>
+                <div style={{ maxWidth: 460, marginInlineStart: 'auto' }}>
+                  {(() => {
+                    const line = (label: React.ReactNode, value: string, opts: {
+                      strong?: boolean; big?: boolean; color?: string; rule?: boolean;
+                    } = {}) => (
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                        padding: '5px 0',
+                        borderTop: opts.rule ? '1px solid #d8e6d2' : undefined,
+                        marginTop: opts.rule ? 4 : undefined,
+                      }}>
+                        <span style={{ fontSize: opts.big ? 14 : 13, color: '#7a7a7a' }}>{label}</span>
+                        <span style={{
+                          fontSize: opts.big ? 24 : 15,
+                          fontWeight: opts.strong || opts.big ? 800 : 600,
+                          color: opts.color,
+                        }}>{value} ج.م</span>
+                      </div>
+                    );
+                    const invoiceDiscount = grossTotal - netTotal;
+                    const due = (customerBalance ?? 0) + netTotal - cashAmount;
+                    return (
+                      <>
+                        {line('إجمالي الأصناف', grossTotal.toFixed(2))}
+                        {invoiceDiscount > 0.001
+                          && line(`خصم الفاتورة (${discountPct}%)`,
+                            `− ${invoiceDiscount.toFixed(2)}`, { color: '#cf1322' })}
+                        {line('صافي الفاتورة', netTotal.toFixed(2),
+                          { strong: true, color: '#6AB42D', rule: true })}
+
+                        {selectedCustomerId && customerBalance !== null && (
+                          <>
+                            {Math.abs(customerBalance) > 0.001
+                              && line('حساب سابق على العميل', money(customerBalance),
+                                { color: customerBalance > 0 ? '#cf1322' : '#6AB42D' })}
+                            {cashAmount > 0.001
+                              && line('المدفوع نقداً', `− ${money(cashAmount)}`,
+                                { color: '#6AB42D' })}
+                            {line('الباقي على العميل', money(due), {
+                              big: true, rule: true,
+                              color: due > 0.001 ? '#cf1322' : '#6AB42D',
+                            })}
+                          </>
+                        )}
+                      </>
+                    );
+                  })()}
+
+                  {/* Secondary facts — true, but not part of the money the customer pays, so
+                      they sit under the rule instead of competing with it. */}
+                  <div style={{
+                    display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, paddingTop: 8,
+                    borderTop: '1px dashed #d8e6d2', fontSize: 12, color: '#8a8a8a',
+                  }}>
+                    <span>
+                      النقاط:{' '}
+                      <b style={{ color: '#F5A11D' }}>
+                        {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                      </b>
+                    </span>
+                    {creditAmount < -0.001 && (
+                      <span>
+                        يسدّد من المديونية القديمة:{' '}
+                        <b style={{ color: '#6AB42D' }}>{money(Math.abs(creditAmount))} ج.م</b>
+                      </span>
+                    )}
+                    {creditAmount > 0.001 && (
+                      <span>
+                        آجل على الفاتورة دي:{' '}
+                        <b style={{ color: '#cf1322' }}>{money(creditAmount)} ج.م</b>
+                      </span>
+                    )}
+                    {selectedCustomerId && (
+                      <span>
+                        الكوبونات:{' '}
+                        {customerCoupons.length ? (
+                          <b style={{ color: '#F5A11D' }}>
+                            {customerCoupons.length} — من {couponRange.from} إلى {couponRange.to}
+                          </b>
+                        ) : <b>لا يوجد</b>}
+                      </span>
+                    )}
                   </div>
                 </div>
               </Col>
             </Row>
-
-            {selectedCustomerId && customerBalance !== null && (
-              <>
-                <Divider style={{ margin: '14px 0' }} />
-                {/* The customer's whole position after this invoice, read left to right the way
-                    the counter reads it: what he owed, what this invoice adds, what he paid,
-                    what is left. The paid amount reduces the WHOLE account, not just this
-                    invoice — an overpayment settles the old debt rather than sitting as credit. */}
-                <Row gutter={[16, 8]} justify="end" style={{ textAlign: 'center' }}>
-                  <Col xs={12} md={4}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>حساب سابق</div>
-                    <div style={{ fontSize: 16, fontWeight: 600,
-                      color: customerBalance > 0.001 ? '#cf1322' : '#6AB42D' }}>
-                      {money(customerBalance)} ج.م
-                    </div>
-                  </Col>
-                  <Col xs={12} md={4}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>إجمالي الفاتورة</div>
-                    <div style={{ fontSize: 16, fontWeight: 600 }}>{money(netTotal)} ج.م</div>
-                  </Col>
-                  <Col xs={12} md={4}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>المدفوع</div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: '#6AB42D' }}>
-                      {money(cashAmount)} ج.م
-                    </div>
-                  </Col>
-                  <Col xs={12} md={5}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الباقي</div>
-                    <div style={{ fontSize: 22, fontWeight: 800,
-                      color: (customerBalance + netTotal - cashAmount) > 0.001 ? '#cf1322' : '#6AB42D' }}>
-                      {money(customerBalance + netTotal - cashAmount)} ج.م
-                    </div>
-                  </Col>
-                  <Col xs={24} md={7}>
-                    <div style={{ fontSize: 12, color: '#8a8a8a' }}>الكوبونات المصروفة</div>
-                    {customerCoupons.length ? (
-                      <>
-                        <div style={{ fontSize: 16, fontWeight: 600, color: '#F5A11D' }}>
-                          مباع عدد {customerCoupons.length}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#8a8a8a' }}>
-                          من <b>{couponRange.from}</b> إلى <b>{couponRange.to}</b>
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize: 14, color: '#b0b0b0' }}>لا توجد كوبونات</div>
-                    )}
-                  </Col>
-                </Row>
-              </>
-            )}
           </div>
 
           <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
