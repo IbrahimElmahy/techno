@@ -6,19 +6,12 @@ import {
   UserOutlined,
   LogoutOutlined,
   DashboardOutlined,
-  TeamOutlined,
-  ApartmentOutlined,
   DollarOutlined,
   FileTextOutlined,
-  RollbackOutlined,
   SettingOutlined,
   MobileOutlined,
   DatabaseOutlined,
   ShopOutlined,
-  SwapOutlined,
-  BuildOutlined,
-  HistoryOutlined,
-  GiftOutlined,
   BookOutlined,
 } from '@ant-design/icons';
 import { useAuth, RoleName } from './AuthProvider';
@@ -80,207 +73,170 @@ export default function AppLayout() {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
 
-  // Define sidebar menu configurations
-  const menuItems = [
+  /**
+   * The sidebar, grouped.
+   *
+   * It had grown to nearly thirty flat entries, which is past the point where anyone reads a
+   * list — you scan it for a word you already know and give up if it isn't near the top. The
+   * groups are the ones the work actually splits into, so a salesman opens one section and a
+   * storekeeper another, and neither scrolls past the other's screens to reach his own.
+   *
+   * Roles stay declared per SCREEN, never per group: a group is a heading, not a permission.
+   * A group whose screens are all forbidden simply disappears.
+   */
+  const menuGroups: {
+    key: string;
+    icon: React.ReactNode;
+    label: string;
+    children: { key: string; label: string; roles: string[] }[];
+  }[] = [
     {
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'الرئيسية',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'after_sales_staff', 'accountant'],
-    },
-    {
-      key: '/users',
-      icon: <TeamOutlined />,
-      label: 'إدارة المستخدمين',
-      roles: ['system_admin', 'branch_manager'],
-    },
-    {
-      key: '/employees',
-      icon: <TeamOutlined />,
-      label: 'الموظفون والوظائف',
-      roles: ['system_admin', 'branch_manager'],
-    },
-    {
-      key: '/org',
-      icon: <ApartmentOutlined />,
-      label: 'الهيكل التنظيمي',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager'],
-    },
-    {
-      key: '/customers',
+      key: 'grp-sales',
       icon: <ShopOutlined />,
-      label: 'العملاء والذمم',
-      roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'],
+      label: 'المبيعات',
+      children: [
+        { key: '/invoices', label: 'فواتير البيع',
+          roles: ['system_admin', 'branch_manager', 'sales_manager'] },
+        { key: '/returns', label: 'مرتجعات المبيعات',
+          roles: ['system_admin', 'branch_manager', 'sales_manager'] },
+        { key: '/orders', label: 'طلبات البيع والشراء',
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'purchasing_manager'] },
+        { key: '/customers', label: 'العملاء والذمم',
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'] },
+        { key: '/coupon-receipts', label: 'استلام الكوبونات',
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'] },
+        { key: '/loyalty', label: 'خدمة ما بعد البيع',
+          roles: ['system_admin', 'after_sales_staff'] },
+      ],
     },
     {
-      key: '/suppliers',
-      icon: <TeamOutlined />,
-      label: 'الموردين والمدفوعات',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager'],
-    },
-    {
-      key: '/catalog',
-      icon: <DatabaseOutlined />,
-      label: 'كتالوج المنتجات',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'after_sales_staff'],
-    },
-    {
-      key: '/purchases',
+      key: 'grp-purchasing',
       icon: <FileTextOutlined />,
-      label: 'إدخال المشتريات',
-      roles: ['system_admin', 'purchasing_manager'],
+      label: 'المشتريات',
+      children: [
+        { key: '/purchases', label: 'إدخال المشتريات',
+          roles: ['system_admin', 'purchasing_manager'] },
+        { key: '/suppliers', label: 'الموردين والمدفوعات',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager'] },
+      ],
     },
     {
-      key: '/manufacturing',
-      icon: <BuildOutlined />,
-      label: 'عمليات التصنيع',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager'],
-    },
-    {
-      key: '/orders',
-      icon: <FileTextOutlined />,
-      label: 'طلبات البيع والشراء',
-      roles: ['system_admin', 'branch_manager', 'sales_manager', 'purchasing_manager'],
-    },
-    {
-      key: '/invoices',
-      icon: <FileTextOutlined />,
-      label: 'فواتير البيع',
-      roles: ['system_admin', 'branch_manager', 'sales_manager'],
-    },
-    {
-      key: '/returns',
-      icon: <RollbackOutlined />,
-      label: 'مرتجعات المبيعات',
-      roles: ['system_admin', 'branch_manager', 'sales_manager'],
-    },
-    {
-      key: '/stock-balance',
+      key: 'grp-stock',
       icon: <DatabaseOutlined />,
-      label: 'رصيد صنف',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
+      label: 'المخزون',
+      children: [
+        { key: '/catalog', label: 'كتالوج المنتجات',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager',
+            'after_sales_staff'] },
+        { key: '/stock-balance', label: 'رصيد صنف',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+        { key: '/item-card', label: 'كارت الصنف',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+        { key: '/stock-permits', label: 'أذونات المخزن',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+        { key: '/transfers', label: 'تحويلات المخزون',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+        { key: '/stocktake', label: 'جرد حق تاريخ',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+        { key: '/stock-alerts', label: 'تنبيهات المخزون',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+        { key: '/manufacturing', label: 'عمليات التصنيع',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager'] },
+      ],
     },
     {
-      key: '/item-card',
-      icon: <DatabaseOutlined />,
-      label: 'كارت الصنف',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
-    },
-    {
-      key: '/stock-permits',
-      icon: <SwapOutlined />,
-      label: 'أذونات المخزن',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
-    },
-    {
-      key: '/stocktake',
-      icon: <DatabaseOutlined />,
-      label: 'جرد حق تاريخ',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
-    },
-    {
-      key: '/stock-alerts',
-      icon: <DatabaseOutlined />,
-      label: 'تنبيهات المخزون',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
-    },
-    {
-      key: '/transfers',
-      icon: <SwapOutlined />,
-      label: 'تحويلات المخزون',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
-    },
-    {
-      key: '/treasury',
+      key: 'grp-finance',
       icon: <DollarOutlined />,
-      label: 'الحسابات والخزينة',
-      roles: ['system_admin', 'branch_manager'],
+      label: 'الحسابات',
+      children: [
+        { key: '/treasury', label: 'الحسابات والخزينة',
+          roles: ['system_admin', 'branch_manager'] },
+        { key: '/vouchers', label: 'سندات القبض والصرف',
+          roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager'] },
+        { key: '/account-statement', label: 'كشف حساب',
+          roles: ['system_admin', 'branch_manager', 'accountant'] },
+        { key: '/fixed-assets', label: 'الأصول الثابتة',
+          roles: ['system_admin', 'branch_manager', 'accountant'] },
+        { key: '/finance-reports', label: 'القوائم المالية',
+          roles: ['system_admin', 'branch_manager', 'accountant'] },
+        { key: '/general-ledger', label: 'الأستاذ العام والقيود',
+          roles: ['system_admin', 'accountant'] },
+      ],
     },
     {
-      key: '/account-statement',
-      icon: <DollarOutlined />,
-      label: 'كشف حساب',
-      roles: ['system_admin', 'branch_manager', 'accountant'],
-    },
-    {
-      key: '/vouchers',
-      icon: <DollarOutlined />,
-      label: 'سندات القبض والصرف',
-      roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager'],
-    },
-    {
-      key: '/fixed-assets',
+      key: 'grp-reports',
       icon: <BookOutlined />,
-      label: 'الأصول الثابتة',
-      roles: ['system_admin', 'branch_manager', 'accountant'],
+      label: 'التقارير',
+      children: [
+        { key: '/trade-reports', label: 'تقارير المبيعات والمشتريات',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+        { key: '/reports', label: 'التقارير والإحصائيات',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+      ],
     },
     {
-      key: '/finance-reports',
-      icon: <BookOutlined />,
-      label: 'القوائم المالية',
-      roles: ['system_admin', 'branch_manager', 'accountant'],
-    },
-    {
-      key: '/general-ledger',
-      icon: <BookOutlined />,
-      label: 'الأستاذ العام والقيود',
-      roles: ['system_admin', 'accountant'],
-    },
-    {
-      key: '/coupon-receipts',
-      icon: <GiftOutlined />,
-      label: 'استلام الكوبونات',
-      roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'],
-    },
-    {
-      key: '/loyalty',
-      icon: <GiftOutlined />,
-      label: 'خدمة ما بعد البيع',
-      roles: ['system_admin', 'after_sales_staff'],
-    },
-    {
-      key: '/audit',
-      icon: <HistoryOutlined />,
-      label: 'سجل العمليات',
-      roles: ['system_admin', 'branch_manager'],
-    },
-    {
-      key: '/inspections',
+      key: 'grp-inspections',
       icon: <MobileOutlined />,
       label: 'المعاينات',
-      roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'],
+      children: [
+        { key: '/inspections', label: 'المعاينات',
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'] },
+        { key: '/inspection-items', label: 'أصناف المعاينة',
+          roles: ['system_admin', 'branch_manager'] },
+      ],
     },
     {
-      key: '/inspection-items',
-      icon: <DatabaseOutlined />,
-      label: 'أصناف المعاينة',
-      roles: ['system_admin', 'branch_manager'],
-    },
-    {
-      key: '/reports',
-      icon: <FileTextOutlined />,
-      label: 'التقارير والإحصائيات',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
-    },
-    {
-      key: '/trade-reports',
-      icon: <FileTextOutlined />,
-      label: 'تقارير المبيعات والمشتريات',
-      roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'],
-    },
-    {
-      key: '/settings',
+      key: 'grp-admin',
       icon: <SettingOutlined />,
-      label: 'إعدادات القوائم',
-      roles: ['system_admin', 'branch_manager'],
+      label: 'الإدارة',
+      children: [
+        { key: '/users', label: 'إدارة المستخدمين',
+          roles: ['system_admin', 'branch_manager'] },
+        { key: '/employees', label: 'الموظفون والوظائف',
+          roles: ['system_admin', 'branch_manager'] },
+        { key: '/org', label: 'الهيكل التنظيمي',
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager'] },
+        { key: '/audit', label: 'سجل العمليات',
+          roles: ['system_admin', 'branch_manager'] },
+        { key: '/settings', label: 'إعدادات القوائم',
+          roles: ['system_admin', 'branch_manager'] },
+      ],
     },
   ];
 
-  // Filter items based on active user role
+  // The dashboard sits outside the groups: it is where everyone lands, not a section to open.
+  const dashboardItem = {
+    key: '/dashboard',
+    icon: <DashboardOutlined />,
+    label: 'الرئيسية',
+    roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager',
+      'after_sales_staff', 'accountant'],
+  };
+
+  // Filter by role at the SCREEN level, then drop any group left with nothing in it — a heading
+  // over an empty list is worse than no heading, because it reads as something broken.
   const userRole = user?.role || 'sales_rep';
-  const filteredMenuItems = menuItems
-    .filter((item) => item.roles.includes(userRole))
-    .map(({ key, icon, label }) => ({ key, icon, label }));
+  const filteredMenuItems = [
+    ...(dashboardItem.roles.includes(userRole)
+      ? [{ key: dashboardItem.key, icon: dashboardItem.icon, label: dashboardItem.label }]
+      : []),
+    ...menuGroups
+      .map((g) => ({
+        key: g.key,
+        icon: g.icon,
+        label: g.label,
+        children: g.children
+          .filter((c) => c.roles.includes(userRole))
+          .map(({ key, label }) => ({ key, label })),
+      }))
+      .filter((g) => g.children.length > 0),
+  ];
+
+  // Open the group the active screen lives in, so a tab restored on load doesn't leave the
+  // sidebar shut around a highlighted item nobody can see.
+  const openGroupKeys = menuGroups
+    .filter((g) => g.children.some((c) => c.key === (activeId || '/dashboard')))
+    .map((g) => g.key);
 
   // A menu click opens (or focuses) that section's tab.
   const handleMenuClick = ({ key }: { key: string }) => {
@@ -383,6 +339,7 @@ export default function AppLayout() {
               theme="light"
               mode="inline"
               selectedKeys={[activeBase]}
+              defaultOpenKeys={openGroupKeys}
               items={filteredMenuItems}
               onClick={handleMenuClick}
               style={{ borderInlineEnd: 0 }}
