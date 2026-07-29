@@ -101,7 +101,11 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
   // browser back/forward, deep link) finds no tab for that base → opens one. This one reconciler
   // keeps `id` and content from ever diverging, which is what avoids phantom/duplicate tabs.
   useEffect(() => {
-    const path = location.pathname === '/' ? '/dashboard' : location.pathname;
+    // The query string is part of the path a tab remembers: it is how one screen tells another
+    // which document to open (`/invoices?doc=12`). Dropping it here would make every deep link
+    // land on the bare screen and look like nothing happened.
+    const raw = location.pathname === '/' ? '/dashboard' : location.pathname;
+    const path = raw + (location.search || '');
     const base = baseOf(path);
     const title = titleForPath(path);
     setTabs((prev) => {
@@ -113,7 +117,7 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       return [...prev, { id: base, path, title }];
     });
     setActiveId(base);
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
   const openTab = useCallback((path: string) => {
     // Restore an already-open section where the user left it; otherwise open it fresh.

@@ -46,6 +46,7 @@ from src.models.sales import (  # noqa: E402
     SalesReturnLine,
     SalesSetting,
 )
+from src.models.sales_expense import SalesInvoiceExpense  # noqa: E402
 from src.models.stock import StockLocator, StockMovement, StockSetting  # noqa: E402
 from src.models.stock_permit import StockPermit, StockPermitLine  # noqa: E402
 
@@ -76,5 +77,5 @@ __all__ = [
     "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
-    "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord", "Employee", "JobTitle", "CouponReceipt", "CouponReceiptLine", "TradeOrder", "TradeOrderLine",
+    "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord", "Employee", "JobTitle", "CouponReceipt", "CouponReceiptLine", "TradeOrder", "TradeOrderLine", "SalesInvoiceExpense",
 ]

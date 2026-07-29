@@ -16,7 +16,7 @@ from src.core import hooks
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
-from src.models.ledger import Direction
+from src.models.ledger import Account, Direction
 from src.models.role import RoleName
 from src.models.sales import (
     SalesInvoice,
@@ -25,6 +25,7 @@ from src.models.sales import (
     SalesReturnLine,
     SalesSetting,
 )
+from src.models.sales_expense import ExpenseKind, SalesInvoiceExpense
 from src.models.stock import LocationKind, StockDirection
 from src.services import (
     account_resolver,
@@ -87,6 +88,32 @@ def _line_location(ln: SaleLine, doc_kind: LocationKind, doc_id: int) -> tuple[L
     if ln.warehouse_id is not None:
         return LocationKind.warehouse, ln.warehouse_id
     return doc_kind, doc_id
+
+
+def _split_expenses(db, expenses: list[dict] | None) -> tuple[Decimal, Decimal]:
+    """Total the invoice's expenses per kind, rejecting anything unpostable.
+
+    The account has to be a postable leaf: an expense aimed at a group heading would balance the
+    entry and still be unreadable in every report built on the chart.
+    """
+    billed = operating = ZERO
+    for exp in (expenses or []):
+        amount = to_money(exp.get("amount") or 0)
+        if amount <= ZERO:
+            raise SalesError("قيمة المصروف لازم تكون أكبر من صفر.")
+        account = db.get(Account, int(exp["account_id"]))
+        if account is None:
+            raise SalesError("حساب المصروف غير موجود.")
+        if not account.is_postable:
+            raise SalesError("حساب المصروف لازم يكون حساب ترحيل مش مجموعة.")
+        kind = str(exp.get("kind", "billed"))
+        if kind not in ("billed", "operating"):
+            raise SalesError("نوع المصروف غير صحيح.")
+        if kind == "operating":
+            operating = to_money(operating + amount)
+        else:
+            billed = to_money(billed + amount)
+    return billed, operating
 
 
 def _coupon_count(serial_from: str | None, serial_to: str | None,
@@ -169,6 +196,11 @@ def create_sale(
     coupon_serial_from: str | None = None,
     coupon_serial_to: str | None = None,
     coupon_count: int | None = None,
+    # The day the sale happened. It dates the document AND its ledger entry, because a document
+    # dated one day and posted on another makes every statement disagree with the paper.
+    invoice_date=None,
+    # مصروفات الفاتورة: [{account_id, kind: billed|operating, amount, description}]
+    expenses: list[dict] | None = None,
 ) -> SalesInvoice:
     if not lines:
         raise SalesError("A sale needs at least one line.")
@@ -228,11 +260,14 @@ def create_sale(
     net = compute_net(gross, combined)
     # VAT (021): zero rate ⇒ tax 0 and `payable == net`, i.e. the original contract exactly.
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
-    payable = to_money(net + tax)
+    billed_expenses, operating_expenses = _split_expenses(db, expenses)
+    # A billed expense is money the customer owes, so it is part of what has to be paid. An
+    # operating expense is ours — it never changes his side of the document.
+    payable = to_money(net + tax + billed_expenses)
     if to_money(cash_amount) + to_money(credit_amount) != payable:
         raise SalesError(
-            "cash + credit must equal the net total." if tax == ZERO
-            else f"cash + credit must equal the total including VAT ({payable})."
+            "cash + credit must equal the net total." if tax == ZERO and not billed_expenses
+            else f"cash + credit must equal the total including VAT and expenses ({payable})."
         )
 
     cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
@@ -256,6 +291,7 @@ def create_sale(
         coupon_serial_from=(coupon_serial_from or None),
         coupon_serial_to=(coupon_serial_to or None),
         coupon_count=_coupon_count(coupon_serial_from, coupon_serial_to, coupon_count),
+        invoice_date=invoice_date,
     )
     db.add(invoice)
     db.flush()
@@ -325,12 +361,42 @@ def create_sale(
     if tax > ZERO:  # output VAT is owed to the authority, not revenue
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id,
                                      Direction.credit, tax, statement="ضريبة القيمة المضافة"))
+    for exp in (expenses or []):
+        amount = to_money(exp.get("amount") or 0)
+        if amount <= ZERO:
+            continue
+        account_id = int(exp["account_id"])
+        if str(exp.get("kind", "billed")) == "operating":
+            # Ours to bear: the expense is incurred and paid out of the same till the sale was
+            # received into. Debit expense / credit cash — the pair balances on its own, so it
+            # leaves the customer's side of the invoice untouched.
+            entry_lines.append(LineInput(account_id, Direction.debit, amount,
+                                         statement=exp.get("description") or "مصروف تشغيل"))
+            entry_lines.append(LineInput(cash_acc.id, Direction.credit, amount,
+                                         statement=exp.get("description") or "مصروف تشغيل"))
+        else:
+            # Charged to him: he already pays it via cash/credit above, so this is the other side.
+            entry_lines.append(LineInput(account_id, Direction.credit, amount,
+                                         statement=exp.get("description") or "مصروف على العميل"))
     entry = ledger_service.post_entry(
         db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=actor_user_id if actor_role == RoleName.sales_rep else None,
         description=f"Sale {invoice.document_number}",
+        # Same date as the document: the books and the paper have to agree.
+        entry_date=invoice_date,
     )
     invoice.ledger_entry_id = entry.id
+    for exp in (expenses or []):
+        amount = to_money(exp.get("amount") or 0)
+        if amount <= ZERO:
+            continue
+        db.add(SalesInvoiceExpense(
+            invoice_id=invoice.id, account_id=int(exp["account_id"]),
+            kind=ExpenseKind(str(exp.get("kind", "billed"))), amount=amount,
+            description=exp.get("description"),
+        ))
+    invoice.expenses_billed = billed_expenses
+    invoice.expenses_operating = operating_expenses
     db.flush()
     audit_service.record(db, action="sale.create", actor_user_id=actor_user_id,
                          entity_type="sales_invoice", entity_id=invoice.id,

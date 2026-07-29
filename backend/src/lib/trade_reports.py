@@ -227,6 +227,8 @@ def trade(
         seen: dict[int, dict] = {}
         for r in flat:
             d = seen.setdefault(r["doc_id"], {
+                # Carried through so a report row can lead back to the document behind it.
+                "doc_id": r["doc_id"],
                 "document_number": r["document_number"], "date": str(r["date"]),
                 "party": party_label(r["party_id"]), "party_id": r["party_id"],
                 "quantity": ZERO_QTY, "amount": ZERO, "cost": ZERO, "has_cost": True,
@@ -243,6 +245,7 @@ def trade(
     elif group_by == "none" and level == "line":
         for r in flat:
             rows.append(_finish({
+                "doc_id": r["doc_id"],
                 "document_number": r["document_number"], "date": str(r["date"]),
                 "party": party_label(r["party_id"]), "party_id": r["party_id"],
                 "item": item_label(r["item_id"]), "item_id": r["item_id"],

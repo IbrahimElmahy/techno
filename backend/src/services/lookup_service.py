@@ -56,7 +56,8 @@ def categories() -> list[dict]:
 
 
 def create_option(db: Session, *, category: str, value: str, label: str,
-                  sort_order: int | None = None) -> LookupOption:
+                  sort_order: int | None = None,
+                  description: str | None = None) -> LookupOption:
     meta = CATEGORIES.get(category)
     if meta is None:
         raise LookupError("Unknown category.")
@@ -79,14 +80,15 @@ def create_option(db: Session, *, category: str, value: str, label: str,
         ).all()
         sort_order = (max(current) + 1) if current else 0
     opt = LookupOption(category=category, value=value, label=label, sort_order=sort_order,
-                       active=True, is_system=False)
+                       active=True, is_system=False, description=description)
     db.add(opt)
     db.flush()
     return opt
 
 
 def update_option(db: Session, *, option_id: int, label: str | None = None,
-                  sort_order: int | None = None, active: bool | None = None) -> LookupOption:
+                  sort_order: int | None = None, active: bool | None = None,
+                  description: str | None = None) -> LookupOption:
     opt = db.get(LookupOption, option_id)
     if opt is None:
         raise LookupError("Option not found.")
@@ -96,6 +98,9 @@ def update_option(db: Session, *, option_id: int, label: str | None = None,
         opt.sort_order = sort_order
     if active is not None:
         opt.active = active
+    if description is not None:
+        # Blank clears it; the field is a note, so an empty note is a valid state.
+        opt.description = description or None
     db.flush()
     return opt
 

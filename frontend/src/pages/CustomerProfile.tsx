@@ -12,6 +12,7 @@ import InvoiceDocument, { invoiceFooter } from '../components/InvoiceDocument';
 import VoucherDocument, { voucherFooter } from '../components/VoucherDocument';
 import CustomerEditModal from '../components/CustomerEditModal';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import DocumentLink from '../components/DocumentLink';
 
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
@@ -70,6 +71,15 @@ const docColumns = (amountTitle: string) => [
   { title: 'تفاصيل', dataIndex: 'detail', key: 'detail' },
 ];
 
+/** Which screen owns each row kind in this file. Rows the owning screen cannot act on are
+ *  simply not linked, rather than linked to somewhere that would refuse them. */
+const LINKABLE: Record<string, 'invoice' | 'return' | 'purchase' | 'purchase_return'> = {
+  invoice: 'invoice',
+  return: 'return',
+  purchase: 'purchase',
+  purchase_return: 'purchase_return',
+};
+
 export default function CustomerProfile() {
   const { customerId } = useParams();
   const navigate = useNavigate();
@@ -81,6 +91,8 @@ export default function CustomerProfile() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [record, setRecord] = useState<any>(null);          // the record popup
   const [recordLoading, setRecordLoading] = useState(false);
+  // What the open popup is showing — the footer needs it to link onwards.
+  const [recordRef, setRecordRef] = useState<{ kind: string; id: number } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
   // Every tab searches on its own, so narrowing the invoices never touches the cheques list.
@@ -153,6 +165,7 @@ export default function CustomerProfile() {
   // Any row in any tab opens the same popup; the server returns a render-ready shape
   // (fields + optional line table) so one component covers every document kind.
   const openRecord = async (kind: string, id: number) => {
+    setRecordRef({ kind, id });
     setRecordLoading(true);
     setRecord({ title: 'جارٍ التحميل…', fields: [], lines: [], line_columns: [] });
     try {
@@ -480,11 +493,29 @@ export default function CustomerProfile() {
         open={record !== null}
         title={record?.title || 'تفاصيل المستند'}
         onCancel={() => setRecord(null)}
-        footer={record?.doc
-          ? invoiceFooter(record.doc, () => setRecord(null))
-          : record?.voucher
-            ? voucherFooter(record.voucher, () => setRecord(null))
-            : <Button onClick={() => setRecord(null)}>إغلاق</Button>}
+        footer={(
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            {/* The row is no longer a dead end: from here the document opens in the screen that
+                owns it, where editing and reversing already live. */}
+            <span>
+              {recordRef && LINKABLE[recordRef.kind] && (
+                <DocumentLink
+                  kind={LINKABLE[recordRef.kind]}
+                  id={recordRef.id}
+                  allowEdit={recordRef.kind === 'invoice'}
+                  onNavigate={() => setRecord(null)}
+                />
+              )}
+            </span>
+            <span>
+              {record?.doc
+                ? invoiceFooter(record.doc, () => setRecord(null))
+                : record?.voucher
+                  ? voucherFooter(record.voucher, () => setRecord(null))
+                  : <Button onClick={() => setRecord(null)}>إغلاق</Button>}
+            </span>
+          </Space>
+        )}
         width={820}
         centered
         destroyOnHidden

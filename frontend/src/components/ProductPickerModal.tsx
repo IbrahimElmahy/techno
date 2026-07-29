@@ -1,0 +1,174 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Col, Empty, Input, Modal, Row, Space, Tag } from 'antd';
+import { normalizeAr } from './ListToolbar';
+
+/**
+ * اختيار الصنف — categories on one side, their products on the other, in a window of its own.
+ *
+ * As two inline dropdowns this cost a click to open, a scroll to find, a click to choose, twice
+ * per line. In a modal the whole catalogue is visible at once and the keyboard alone gets through
+ * it: type to filter, arrows to move, Enter to add. The counter is the place where a saved second
+ * per line is the difference between a queue that moves and one that does not.
+ *
+ * It closes on every pick rather than staying open, because the quantity is the next thing the
+ * user has to say — and the caller sends them straight back here when that quantity is entered.
+ */
+
+interface Props {
+  open: boolean;
+  categories: string[];
+  categoryLabels: Record<string, string>;
+  products: any[];
+  /** Category currently in focus; lifted so the caller's stock panel can follow it. */
+  activeCategory: string | null;
+  onCategoryChange: (category: string | null) => void;
+  onPick: (itemId: number) => void;
+  /** Add several at once. When given, the modal offers a اضافة مجمعة mode. */
+  onPickMany?: (itemIds: number[]) => void;
+  onCancel: () => void;
+  title?: string;
+  /** Quantity available for an item, when the caller knows it — shown beside the name. */
+  availableFor?: (itemId: number) => number | null;
+}
+
+const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+
+export default function ProductPickerModal({
+  open, categories, categoryLabels, products, activeCategory, onCategoryChange,
+  onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor,
+}: Props) {
+  const [query, setQuery] = useState('');
+  const [cursor, setCursor] = useState(0);
+  // اضافة مجمعة: for the storekeeper entering twenty lines off a paper list, one at a time is
+  // twenty round trips through this window. Ticking them and adding once is the same work in one.
+  const [bulk, setBulk] = useState(false);
+  const [picked, setPicked] = useState<number[]>([]);
+  const searchRef = useRef<any>(null);
+
+  // A search that spans categories is the fastest path when the user already knows the name, so
+  // typing overrides the category filter rather than narrowing inside it.
+  const visible = useMemo(() => {
+    const needle = normalizeAr(query);
+    if (needle) {
+      return products.filter((p) => normalizeAr(p.name).includes(needle)
+        || normalizeAr(p.code || '').includes(needle));
+    }
+    return activeCategory ? products.filter((p) => p.category === activeCategory) : [];
+  }, [query, activeCategory, products]);
+
+  useEffect(() => { setCursor(0); }, [query, activeCategory, open]);
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    setPicked([]);
+    setBulk(false);
+    setTimeout(() => searchRef.current?.focus?.(), 60);
+  }, [open]);
+
+  const toggle = (id: number) =>
+    setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(c + 1, visible.length - 1)); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
+    if (e.key === 'Enter' && visible[cursor]) {
+      e.preventDefault();
+      if (bulk) toggle(visible[cursor].id);
+      else onPick(visible[cursor].id);
+    }
+  };
+
+  return (
+    <Modal open={open} onCancel={onCancel} footer={null} width={860} title={title}
+      destroyOnHidden styles={{ body: { paddingTop: 8 } }}>
+      <Input
+        ref={searchRef} size="large" allowClear value={query}
+        placeholder="ابحث بالاسم أو الكود — أو اختر فئة من جنب"
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={onKeyDown}
+        style={{ marginBottom: 12 }}
+      />
+
+      <Row gutter={12}>
+        <Col xs={24} md={7}>
+          <div style={{ maxHeight: '52vh', overflowY: 'auto' }}>
+            {categories.map((c) => {
+              const active = c === activeCategory && !query;
+              return (
+                <div key={c}
+                  onClick={() => { setQuery(''); onCategoryChange(c); }}
+                  style={{
+                    padding: '8px 10px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
+                    background: active ? '#6AB42D' : '#f6faf3',
+                    color: active ? '#fff' : undefined,
+                    border: '1px solid #e6efe3', fontWeight: active ? 700 : 400,
+                  }}>
+                  {categoryLabels[c] || c}
+                </div>
+              );
+            })}
+          </div>
+        </Col>
+
+        <Col xs={24} md={17}>
+          <div style={{ maxHeight: '52vh', overflowY: 'auto' }} onKeyDown={onKeyDown}>
+            {visible.length === 0 ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={query ? 'مافيش صنف بالاسم ده' : 'اختر فئة أو ابحث بالاسم'} />
+            ) : visible.map((p, i) => {
+              const available = availableFor ? availableFor(p.id) : null;
+              return (
+                <div key={p.id}
+                  onClick={() => (bulk ? toggle(p.id) : onPick(p.id))}
+                  onMouseEnter={() => setCursor(i)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '9px 12px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
+                    background: i === cursor ? '#eaf5e2' : '#fff',
+                    border: `1px solid ${i === cursor ? '#6AB42D' : '#f0f0f0'}`,
+                  }}>
+                  <span>
+                    {bulk && (
+                      <span style={{ marginInlineEnd: 8 }}>
+                        {picked.includes(p.id) ? '☑' : '☐'}
+                      </span>
+                    )}
+                    <b>{p.name}</b>
+                    {p.code && <Tag style={{ marginInlineStart: 8 }}>{p.code}</Tag>}
+                  </span>
+                  {available !== null && (
+                    <span style={{ color: available > 0 ? '#6AB42D' : '#cf1322', fontSize: 13 }}>
+                      المتاح: {qty(available)}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Col>
+      </Row>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        marginTop: 10, gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+          اكتب للبحث · ↑↓ للتنقل · Enter {bulk ? 'للتحديد' : 'للإضافة'}
+        </span>
+        {onPickMany && (
+          <Space>
+            <Button size="small" onClick={() => { setBulk(!bulk); setPicked([]); }}>
+              {bulk ? 'اختيار فردي' : 'اضافة مجمعة'}
+            </Button>
+            {bulk && (
+              <Button
+                type="primary" size="small" disabled={!picked.length}
+                onClick={() => { onPickMany(picked); setPicked([]); }}
+              >
+                أضف {picked.length || ''} صنف
+              </Button>
+            )}
+          </Space>
+        )}
+      </div>
+    </Modal>
+  );
+}

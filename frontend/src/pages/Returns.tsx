@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row,
   Select, Space, Statistic, Table, Tag, message,
@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
+import ProductPickerModal from '../components/ProductPickerModal';
 import TotalsLadder from '../components/TotalsLadder';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
@@ -88,6 +89,12 @@ export default function Returns() {
   // The item the side stock panel is showing — on a return it answers "where should this go
   // back to", which is the same question the invoice asks in reverse.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
+  // Same as the invoice: the picker is a window, and the caret lands in the quantity of the line
+  // it just added. A return is typed at the same counter under the same pressure, so it should
+  // not be the one screen that still needs a mouse between every line.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const qtyRefs = useRef<Record<string, any>>({});
+  const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
   const [cashRefund, setCashRefund] = useState<number>(0);
   const [creditReduction, setCreditReduction] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
@@ -230,13 +237,29 @@ export default function Returns() {
     if (existing) {
       setLines((prev) => prev.map((x) => (x.key === existing.key
         ? { ...x, quantity: x.quantity + 1 } : x)));
+      // Focus the line that just changed, not a new one — the eye follows the number that moved.
+      setFocusLineKey(existing.key);
     } else {
+      const key = Date.now().toString();
       setLines((prev) => [...prev, {
-        key: Date.now().toString(), category: prod?.category ?? null, item_id: itemId,
+        key, category: prod?.category ?? null, item_id: itemId,
         quantity: 1, unit_price: price, discount: 0, warehouse_id: null,
       }]);
+      setFocusLineKey(key);
     }
   };
+
+  // The row does not exist until React has painted it, so the caret moves on the next tick
+  // rather than inside the handler that created it.
+  useEffect(() => {
+    if (!focusLineKey) return;
+    const input = qtyRefs.current[focusLineKey];
+    if (input?.focus) {
+      input.focus();
+      input.select?.();
+    }
+    setFocusLineKey(null);
+  }, [focusLineKey, lines.length]);
 
   const handleLineChange = (key: string, field: keyof ReturnLineItem, value: any) => {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, [field]: value } : l)));
@@ -358,27 +381,34 @@ export default function Returns() {
               <>
                 <Row gutter={16}>
                 <Col xs={24} lg={18}>
-                <Row gutter={12} style={{ marginBottom: 14 }}>
-                  <Col xs={24} md={7}>
-                    <Select showSearch style={{ width: '100%' }} size="large"
-                      placeholder="١) اختر الفئة" value={activeCategory ?? undefined}
-                      optionFilterProp="label"
-                      onChange={(val) => { setActiveCategory(val ?? null); setPanelItemId(null); }}
-                      options={productCategories.map((c) => ({ value: c, label: categoryLabels[c] || c }))} />
-                  </Col>
-                  <Col xs={24} md={17}>
-                    <Select showSearch value={null} size="large" style={{ width: '100%' }}
-                      disabled={!activeCategory}
-                      placeholder={activeCategory ? '٢) اختر صنفاً من الفئة لإضافته' : 'اختر الفئة أولاً'}
-                      optionFilterProp="label"
-                      onChange={(val) => {
-                        if (val) { setPanelItemId(val as number); addProductById(val as number); }
-                      }}
-                      options={products
-                        .filter((p) => p.category === activeCategory)
-                        .map((p) => ({ value: p.id, label: p.name }))} />
-                  </Col>
-                </Row>
+                <Button
+                  type="primary" danger size="large" icon={<PlusOutlined />} block
+                  style={{ marginBottom: 14, height: 46 }}
+                  onClick={() => setPickerOpen(true)}
+                >
+                  إضافة صنف للمرتجع
+                </Button>
+
+                <ProductPickerModal
+                  open={pickerOpen}
+                  title="اختر الصنف المرتجع"
+                  categories={productCategories}
+                  categoryLabels={categoryLabels}
+                  products={products}
+                  activeCategory={activeCategory}
+                  onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
+                  onCancel={() => setPickerOpen(false)}
+                  onPick={(id) => {
+                    setPickerOpen(false);
+                    setPanelItemId(id);
+                    addProductById(id);
+                  }}
+                  onPickMany={async (ids) => {
+                    setPickerOpen(false);
+                    for (const id of ids) await addProductById(id);
+                    if (ids.length) setPanelItemId(ids[ids.length - 1]);
+                  }}
+                />
 
                 {lines.length === 0 ? (
                   <Empty description="اختر الفئة ثم الأصناف لإضافتها للمرتجع" style={{ margin: '12px 0' }} />
@@ -435,8 +465,11 @@ export default function Returns() {
                               </Col>
                               <Col md={2} xs={8}>
                                 <InputNumber size="small" min={0.001} style={{ width: '100%' }}
+                                  ref={(el) => { qtyRefs.current[line.key] = el; }}
                                   value={line.quantity}
-                                  onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} />
+                                  onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)}
+                                  // Enter means "this line is done" — straight back to the picker.
+                                  onPressEnter={() => setPickerOpen(true)} />
                               </Col>
                               <Col md={3} xs={8}>
                                 <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}

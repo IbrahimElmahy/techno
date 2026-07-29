@@ -5,6 +5,15 @@ import {
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import DocumentLink, { DocKind } from '../components/DocumentLink';
+
+// Only the kinds that have a screen able to show them; a purchase return has no screen of its
+// own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
+const DOC_SCREEN: Partial<Record<DocType, DocKind>> = {
+  sale: 'invoice',
+  sale_return: 'return',
+  purchase: 'purchase',
+};
 
 /**
  * تقارير المبيعات والمشتريات — one screen instead of the sixteen the client has today.
@@ -140,13 +149,20 @@ export default function TradeReports() {
       { title: 'الصافي', dataIndex: 'net', align: 'left' as const,
         render: (v: string) => <b>{money(v)}</b> },
       ...profitColumns,
+      // A figure in a report is only useful if you can get to the document behind it.
+      { title: '', key: 'link', width: 140,
+        render: (_: any, r: any) => (r.doc_id && DOC_SCREEN[docType]
+          ? <DocumentLink kind={DOC_SCREEN[docType]} id={r.doc_id} size="small" />
+          : null) },
     ];
 
   /** Exported straight from what is on screen, so the file always matches the report read. */
   const exportCsv = () => {
     if (!rows.length) { message.info('لا توجد بيانات للتصدير'); return; }
-    const heads = columns.map((c) => c.title);
-    const keys = columns.map((c) => c.dataIndex);
+    // The action column has no data behind it — exporting it would add a blank column.
+    const exportable = columns.filter((c) => c.dataIndex);
+    const heads = exportable.map((c) => c.title);
+    const keys = exportable.map((c) => c.dataIndex);
     const lines = [heads.join(',')];
     rows.forEach((r) => lines.push(keys.map((k) => `"${r[k] ?? ''}"`).join(',')));
     // BOM so Excel opens the Arabic headers correctly.

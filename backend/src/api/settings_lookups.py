@@ -26,6 +26,7 @@ class OptionOut(BaseModel):
     sort_order: int
     active: bool
     is_system: bool
+    description: str | None = None
 
 
 class OptionCreate(BaseModel):
@@ -33,17 +34,20 @@ class OptionCreate(BaseModel):
     value: str
     label: str
     sort_order: int | None = None
+    description: str | None = None
 
 
 class OptionUpdate(BaseModel):
     label: str | None = None
     sort_order: int | None = None
     active: bool | None = None
+    description: str | None = None
 
 
 def _out(o) -> OptionOut:
     return OptionOut(id=o.id, category=o.category, value=o.value, label=o.label,
-                     sort_order=o.sort_order, active=o.active, is_system=o.is_system)
+                     sort_order=o.sort_order, active=o.active, is_system=o.is_system,
+                     description=getattr(o, 'description', None))
 
 
 @router.get("/categories")
@@ -74,7 +78,7 @@ def create_option(
     try:
         opt = lookup_service.create_option(
             db, category=body.category, value=body.value, label=body.label,
-            sort_order=body.sort_order)
+            sort_order=body.sort_order, description=body.description)
     except LookupError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "lookup_invalid", "message": str(exc)})
     db.commit()
@@ -91,7 +95,7 @@ def update_option(
     try:
         opt = lookup_service.update_option(
             db, option_id=option_id, label=body.label, sort_order=body.sort_order,
-            active=body.active)
+            active=body.active, description=body.description)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": str(exc)})
     db.commit()

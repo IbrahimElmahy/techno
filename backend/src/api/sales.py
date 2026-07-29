@@ -47,6 +47,13 @@ class SaleLineIn(BaseModel):
     warehouse_id: int | None = None
 
 
+class InvoiceExpenseIn(BaseModel):
+    account_id: int
+    amount: Decimal
+    kind: str = "billed"
+    description: str | None = None
+
+
 class SaleCreate(BaseModel):
     customer_id: int
     origin: LocationIn
@@ -67,6 +74,10 @@ class SaleCreate(BaseModel):
     coupon_serial_from: str | None = None
     coupon_serial_to: str | None = None
     coupon_count: int | None = None
+    # The day the sale happened — dates the document and its ledger entry alike.
+    invoice_date: date | None = None
+    # مصروفات الفاتورة — billed (على العميل، بتزيد الصافي) أو operating (على الشركة).
+    expenses: list[InvoiceExpenseIn] = []
 
 
 class ReturnLineIn(BaseModel):
@@ -121,6 +132,9 @@ class SalesInvoiceOut(BaseModel):
     coupon_serial_from: str | None = None
     coupon_serial_to: str | None = None
     coupon_count: int | None = None
+    invoice_date: date | None = None
+    expenses_billed: Decimal | None = None
+    expenses_operating: Decimal | None = None
 
 
 class InvoiceLineOut(BaseModel):
@@ -183,6 +197,8 @@ def create_sale(
             external_document_number=body.external_document_number, notes=body.notes,
             coupon_serial_from=body.coupon_serial_from,
             coupon_serial_to=body.coupon_serial_to, coupon_count=body.coupon_count,
+            invoice_date=body.invoice_date,
+            expenses=[e.model_dump() for e in body.expenses],
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
         )
     except SalesError as exc:
@@ -202,7 +218,9 @@ def _inv_out(inv: SalesInvoice) -> SalesInvoiceOut:
         created_at=str(inv.created_at) if inv.created_at else None,
         rep_id=inv.rep_id, external_document_number=inv.external_document_number,
         coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
-        coupon_count=inv.coupon_count,
+        coupon_count=inv.coupon_count, invoice_date=inv.invoice_date,
+        expenses_billed=getattr(inv, "expenses_billed", None),
+        expenses_operating=getattr(inv, "expenses_operating", None),
         notes=inv.notes,
     )
 

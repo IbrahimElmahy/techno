@@ -25,6 +25,11 @@ class LookupOption(Base):
     category: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
     value: Mapped[str] = mapped_column(String(64), nullable=False)   # the code business logic uses
     label: Mapped[str] = mapped_column(String(160), nullable=False)  # Arabic display text
+    # A free note on the option itself — what this category covers, when to pick this reason.
+    # Lives on the lookup rather than on a category table because the lookup IS the list: it
+    # already carries the name, the order and the hidden flag, and a second table holding one
+    # extra field would be two places to keep the same list.
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # True for options seeded from a backend Enum — value is locked, row cannot be deleted.

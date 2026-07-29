@@ -11,6 +11,7 @@ import InvoiceDocument, { invoiceFooter } from '../components/InvoiceDocument';
 import VoucherDocument, { voucherFooter } from '../components/VoucherDocument';
 import SupplierEditModal from '../components/SupplierEditModal';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import DocumentLink from '../components/DocumentLink';
 
 /**
  * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
@@ -65,6 +66,15 @@ const docColumns = (amountTitle: string) => [
   { title: 'تفاصيل', dataIndex: 'detail', key: 'detail' },
 ];
 
+/** Which screen owns each row kind in this file. Rows the owning screen cannot act on are
+ *  simply not linked, rather than linked to somewhere that would refuse them. */
+const LINKABLE: Record<string, 'invoice' | 'return' | 'purchase' | 'purchase_return'> = {
+  invoice: 'invoice',
+  return: 'return',
+  purchase: 'purchase',
+  purchase_return: 'purchase_return',
+};
+
 export default function SupplierProfile() {
   const { supplierId } = useParams();
   const navigate = useNavigate();
@@ -74,6 +84,8 @@ export default function SupplierProfile() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [record, setRecord] = useState<any>(null);
   const [recordLoading, setRecordLoading] = useState(false);
+  // What the open popup is showing — the footer needs it to link onwards.
+  const [recordRef, setRecordRef] = useState<{ kind: string; id: number } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
 
   // Each tab searches on its own list.
@@ -136,6 +148,7 @@ export default function SupplierProfile() {
   }, [supplierId]);
 
   const openRecord = async (kind: string, id: number) => {
+    setRecordRef({ kind, id });
     setRecordLoading(true);
     setRecord({ title: 'جارٍ التحميل…', fields: [], lines: [], line_columns: [] });
     try {
@@ -434,11 +447,29 @@ export default function SupplierProfile() {
         open={record !== null}
         title={record?.title || 'تفاصيل المستند'}
         onCancel={() => setRecord(null)}
-        footer={record?.doc
-          ? invoiceFooter(record.doc, () => setRecord(null))
-          : record?.voucher
-            ? voucherFooter(record.voucher, () => setRecord(null))
-            : <Button onClick={() => setRecord(null)}>إغلاق</Button>}
+        footer={(
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            {/* The row is no longer a dead end: from here the document opens in the screen that
+                owns it, where editing and reversing already live. */}
+            <span>
+              {recordRef && LINKABLE[recordRef.kind] && (
+                <DocumentLink
+                  kind={LINKABLE[recordRef.kind]}
+                  id={recordRef.id}
+                  allowEdit={recordRef.kind === 'invoice'}
+                  onNavigate={() => setRecord(null)}
+                />
+              )}
+            </span>
+            <span>
+              {record?.doc
+                ? invoiceFooter(record.doc, () => setRecord(null))
+                : record?.voucher
+                  ? voucherFooter(record.voucher, () => setRecord(null))
+                  : <Button onClick={() => setRecord(null)}>إغلاق</Button>}
+            </span>
+          </Space>
+        )}
         width={820}
         centered
         destroyOnHidden

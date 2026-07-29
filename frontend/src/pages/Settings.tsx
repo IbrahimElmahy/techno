@@ -12,6 +12,7 @@ interface PageGroup { page: string; page_label: string; categories: CategoryMeta
 interface Option {
   id: number; category: string; value: string; label: string;
   sort_order: number; active: boolean; is_system: boolean;
+  description?: string | null;
 }
 
 export default function Settings() {
@@ -214,6 +215,7 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
     try {
       await api.post('/api/v1/settings/lookups', {
         category: meta.category, value: values.value, label: values.label,
+        description: values.description || null,
       });
       message.success('تمت إضافة الخيار');
       setAddOpen(false);
@@ -234,6 +236,15 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
       title: 'الاسم المعروض', dataIndex: 'label',
       render: (_: string, r: Option) => (
         <EditableLabel value={r.label} onSave={(label) => saveOption(r, { label })} />
+      ),
+    },
+    {
+      // The note lives beside the name because that is where it is read: "which category is
+      // this again" is answered by the description, not by opening something.
+      title: 'الوصف', dataIndex: 'description',
+      render: (_: string, r: Option) => (
+        <EditableLabel value={r.description || ''} placeholder="اكتب وصفاً (اختياري)"
+          onSave={(description) => saveOption(r, { description })} />
       ),
     },
     {
@@ -311,13 +322,14 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
   );
 }
 
-function EditableLabel({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+function EditableLabel({ value, onSave, placeholder }:
+  { value: string; onSave: (v: string) => void; placeholder?: string }) {
   const [val, setVal] = useState(value);
   useEffect(() => setVal(value), [value]);
   const dirty = val !== value;
   return (
     <Space.Compact style={{ width: '100%', maxWidth: 320 }}>
-      <Input value={val} onChange={(e) => setVal(e.target.value)}
+      <Input value={val} placeholder={placeholder} onChange={(e) => setVal(e.target.value)}
         onPressEnter={() => dirty && onSave(val)} />
       <Button icon={<SaveOutlined />} type={dirty ? 'primary' : 'default'} disabled={!dirty}
         onClick={() => onSave(val)} />

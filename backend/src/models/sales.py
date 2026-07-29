@@ -5,9 +5,11 @@ proportionally (cash_refund/credit_reduction are system-derived, not caller-set)
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import (
+    BigInteger, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -43,6 +45,14 @@ class SalesInvoice(Base):
     # them and how the customer will present them back. Stored on the invoice because that is
     # the document that proves which coupons were his — the mobile app reads these when the
     # coupons are handed back in, to check a returned serial belongs to a sale that happened.
+    # The day the sale happened, which is not always the day it was typed. Drives the ledger
+    # entry date too — a document dated one day and posted on another would make every statement
+    # disagree with the paper.
+    invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    # Denormalised totals of the invoice's expense lines, so a report does not have to join in
+    # order to explain a figure the reader can already see on the document.
+    expenses_billed: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    expenses_operating: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     coupon_serial_from: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     coupon_serial_to: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     coupon_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -62,6 +72,9 @@ class SalesInvoice(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
     lines: Mapped[list[SalesInvoiceLine]] = relationship(cascade="all, save-update")
+    expenses: Mapped[list["SalesInvoiceExpense"]] = relationship(  # noqa: UP037
+        back_populates="invoice", cascade="all, delete-orphan"
+    )
 
 
 class SalesInvoiceLine(Base):

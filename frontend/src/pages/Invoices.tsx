@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Result, Row, Select, Space, Statistic, Table, Tag, Typography, message,
 } from 'antd';
@@ -7,7 +7,7 @@ import {
   EditOutlined,
   ArrowRightOutlined, SearchOutlined, ClearOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
@@ -15,6 +15,9 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/Invoic
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import ItemStockPanel from '../components/ItemStockPanel';
+import ProductPickerModal from '../components/ProductPickerModal';
+import InvoiceExpensesModal, { InvoiceExpense } from '../components/InvoiceExpensesModal';
+import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
@@ -116,6 +119,8 @@ export default function Invoices() {
   const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
 
   // Standalone invoice detail/view (separate from the return wizard)
+  // Each user hides the columns they never read; the choice is theirs alone and per screen.
+  const invoiceCols = useHiddenColumns('invoices-list');
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
@@ -144,6 +149,28 @@ export default function Invoices() {
   // asking right now without them having to ask it twice.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
   const [couponFrom, setCouponFrom] = useState('');
+  // The day the sale happened, asked for before the form opens. It is not always today — a rep
+  // comes back from a round, a branch catches up on a backlog — and it dates the ledger entry
+  // as well as the document, so it has to be settled before anything is typed rather than
+  // remembered at the end.
+  // Keyboard path for a fast counter: pick product -> land in its quantity -> Enter -> back to
+  // the product picker for the next one. Without it the salesman reaches for the mouse between
+  // every single line, which is most of what makes entering a twenty-line invoice slow.
+  const qtyRefs = useRef<Record<string, any>>({});
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // مصروفات الفاتورة — kept out of the line table on purpose: they are not goods, and mixing them
+  // in would put them into the quantities and the profit per item.
+  const [expenses, setExpenses] = useState<InvoiceExpense[]>([]);
+  const [expensesOpen, setExpensesOpen] = useState(false);
+  // A document arriving from somewhere else — a customer's file, an item's history, a report.
+  // The link carries only the intent; the acting lives here, where it already is and where it is
+  // already guarded, so no second screen learns how to reverse an invoice.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const handledIntent = useRef<string | null>(null);
+  const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
+
+  const [dateAsk, setDateAsk] = useState(false);
+  const [invoiceDate, setInvoiceDate] = useState<any>(dayjs());
   const [couponTo, setCouponTo] = useState('');
   // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
   // be served from a different warehouse, so a single item-keyed map would answer the wrong
@@ -279,6 +306,7 @@ export default function Invoices() {
     setCustomerCoupons([]);
     setCouponFrom('');
     setCouponTo('');
+    setExpenses([]);
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
@@ -301,8 +329,12 @@ export default function Invoices() {
     if (existing) {
       setLines((prev) => prev.map((x) => (x.key === existing.key
         ? { ...x, quantity: x.quantity + 1 } : x)));
+      // Focus the line that just changed, not a new one — the eye should follow the number
+      // that moved.
+      setFocusLineKey(existing.key);
     } else {
       setLines((prev) => [...prev, l]);
+      setFocusLineKey(l.key);
     }
   };
 
@@ -516,6 +548,13 @@ export default function Invoices() {
         }),
         // (030) document fields
         external_document_number: values.external_document_number || undefined,
+        invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
+        expenses: expenses
+          .filter((e) => e.account_id && Number(e.amount) > 0)
+          .map((e) => ({
+            account_id: e.account_id, kind: e.kind,
+            amount: String(e.amount), description: e.description || null,
+          })),
         // Coupons handed over with this invoice, as the serial range off the book. Kept on the
         // invoice because that is what proves which coupons were his when they come back in.
         coupon_serial_from: values.coupon_serial_from || undefined,
@@ -629,6 +668,33 @@ export default function Invoices() {
     if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
   };
 
+  useEffect(() => {
+    const docId = searchParams.get('doc');
+    const editId = searchParams.get('edit');
+    const intent = docId ? `doc:${docId}` : editId ? `edit:${editId}` : null;
+    // The list has to be loaded before a row can be found, and the intent must fire once —
+    // re-running it would reverse an invoice twice on a re-render.
+    if (!intent || !invoices.length || handledIntent.current === intent) return;
+    const target = invoices.find((i) => i.id === Number(docId || editId));
+    if (!target) return;
+    handledIntent.current = intent;
+    // Clear the parameter so a refresh, or coming back to this tab later, does not replay it.
+    setSearchParams({}, { replace: true });
+    if (docId) openDetail(target);
+    else handleEditInvoice(target);
+  }, [searchParams, invoices]);
+
+  /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
+  const neighbour = (step: number) => {
+    if (!viewInvoice) return null;
+    // The list itself is the order — the server already returns it filtered and sorted, and the
+    // table renders it unchanged, so the arrows walk exactly what the user is looking at.
+    const rows = invoices;
+    const at = rows.findIndex((r: any) => r.id === viewInvoice.id);
+    if (at < 0) return null;
+    return rows[at + step] ?? null;
+  };
+
   /** Extra header lines on the printed invoice: the paper number, and the coupon range if the
    *  sale issued any — the customer's own proof of which serials are his. */
   const printMeta = (inv: any): [string, string][] | undefined => {
@@ -644,8 +710,28 @@ export default function Invoices() {
 
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
 
+  // The row does not exist until React has painted it, so the caret is moved on the next tick
+  // rather than inside the handler that created it.
+  useEffect(() => {
+    if (!focusLineKey) return;
+    const input = qtyRefs.current[focusLineKey];
+    if (input?.focus) {
+      input.focus();
+      input.select?.();
+    }
+    setFocusLineKey(null);
+  }, [focusLineKey, lines.length]);
+
   /** How many coupons this invoice hands over — derived only when both serials are plain
    *  numbers, since a lettered book cannot be subtracted into a count anyone could check. */
+  // Only the billed ones move money the customer owes; the operating ones are ours to bear.
+  const billedExpenses = expenses
+    .filter((e) => e.kind === 'billed')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const operatingExpenses = expenses
+    .filter((e) => e.kind === 'operating')
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
   const couponCount = (() => {
     const a = parseInt(couponFrom.trim(), 10);
     const b = parseInt(couponTo.trim(), 10);
@@ -761,6 +847,13 @@ export default function Invoices() {
       render: (doc: string) => <Tag color="blue">{doc}</Tag>,
     },
     {
+      title: 'التاريخ',
+      dataIndex: 'invoice_date',
+      key: 'invoice_date',
+      // Falls back to when it was typed, for the invoices written before the date existed.
+      render: (d: string, r: any) => String(d || r.created_at || '').slice(0, 10) || '-',
+    },
+    {
       title: 'العميل',
       dataIndex: 'customer_id',
       key: 'customer_id',
@@ -842,7 +935,7 @@ export default function Invoices() {
   if (createVisible) {
     return (
       <div>
-        <Card
+      <Card
           title={
             <Space>
               <Button type="text" icon={<ArrowRightOutlined />}
@@ -850,6 +943,12 @@ export default function Invoices() {
               <Typography.Text strong style={{ fontSize: 16 }}>
                 تسجيل فاتورة بيع جديدة
               </Typography.Text>
+              {/* Kept visible and changeable: the person typing should see the day they are
+                  writing into, especially when it is not today. */}
+              <DatePicker
+                value={invoiceDate} allowClear={false} format="YYYY-MM-DD"
+                onChange={(v) => setInvoiceDate(v || dayjs())}
+              />
             </Space>
           }
         >
@@ -968,29 +1067,53 @@ export default function Invoices() {
           <Row gutter={16}>
           <Col xs={24} lg={18}>
 
-          {/* Choose a category once (keeps the product list short), then pick products from it —
-              each pick adds it instantly. Switch category to add from another. */}
-          <Row gutter={12} style={{ marginBottom: 14 }}>
-            <Col xs={24} md={7}>
-              <Select showSearch style={{ width: '100%' }} size="large"
-                placeholder="١) اختر الفئة" value={activeCategory ?? undefined}
-                optionFilterProp="label"
-                onChange={(val) => { setActiveCategory(val ?? null); setPanelItemId(null); }}
-                options={productCategories.map((c) => ({ value: c, label: categoryLabels[c] || c }))} />
-            </Col>
-            <Col xs={24} md={17}>
-              <Select showSearch value={null} size="large" style={{ width: '100%' }}
-                disabled={!activeCategory}
-                placeholder={activeCategory ? '٢) اختر منتجاً من الفئة لإضافته' : 'اختر الفئة أولاً'}
-                optionFilterProp="label"
-                onChange={(val) => {
-                  if (val) { setPanelItemId(val as number); addProductById(val as number); }
-                }}
-                options={products
-                  .filter((p) => p.category === activeCategory)
-                  .map((p) => ({ value: p.id, label: p.name }))} />
-            </Col>
-          </Row>
+          {/* One button, one window. As two inline dropdowns this cost a click to open, a
+              scroll to find and a click to choose — twice per line, all day. */}
+          <Button
+            type="primary" size="large" icon={<PlusOutlined />} block
+            style={{ marginBottom: 14, height: 46 }}
+            onClick={() => setPickerOpen(true)}
+          >
+            إضافة صنف للفاتورة
+          </Button>
+
+          <Button
+            size="large" block style={{ marginBottom: 14 }}
+            onClick={() => setExpensesOpen(true)}
+          >
+            مصروفات الفاتورة
+            {expenses.length ? ` (${expenses.length})` : ''}
+          </Button>
+
+          <InvoiceExpensesModal
+            open={expensesOpen}
+            expenses={expenses}
+            onChange={setExpenses}
+            onClose={() => setExpensesOpen(false)}
+          />
+
+          <ProductPickerModal
+            open={pickerOpen}
+            categories={productCategories}
+            categoryLabels={categoryLabels}
+            products={products}
+            activeCategory={activeCategory}
+            onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
+            availableFor={(id) => availableFor(id, null, docWarehouseId)}
+            onCancel={() => setPickerOpen(false)}
+            onPick={(id) => {
+              setPickerOpen(false);
+              setPanelItemId(id);
+              addProductById(id);
+            }}
+            onPickMany={async (ids) => {
+              setPickerOpen(false);
+              // Sequentially: each add reads the lines it is appending to, so firing them at once
+              // would have every one of them see the list as it was before any were added.
+              for (const id of ids) await addProductById(id);
+              if (ids.length) setPanelItemId(ids[ids.length - 1]);
+            }}
+          />
 
           {lines.length === 0 ? (
             <Empty description="اختر الفئة ثم المنتجات لإضافتها للفاتورة" style={{ margin: '12px 0' }} />
@@ -1073,12 +1196,16 @@ export default function Invoices() {
                         </Col>
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={1} style={{ width: '100%' }}
+                            ref={(el) => { qtyRefs.current[line.key] = el; }}
                             max={availableFor(line.item_id, line.unit, lineWarehouse(line)) || undefined}
                             status={line.quantity
                               > availableFor(line.item_id, line.unit, lineWarehouse(line))
                               ? 'error' : undefined}
                             value={line.quantity}
-                            onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)} />
+                            onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)}
+                            // Enter means "this line is done" — straight back to the picker for
+                            // the next product, so a whole invoice can be typed without a mouse.
+                            onPressEnter={() => setPickerOpen(true)} />
                         </Col>
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
@@ -1142,7 +1269,7 @@ export default function Invoices() {
             const invoiceDiscount = grossTotal - netTotal;
             const hasParty = !!selectedCustomerId && customerBalance !== null;
             const balance = customerBalance ?? 0;
-            const due = balance + netTotal - cashAmount;
+            const due = balance + netTotal + billedExpenses - cashAmount;
             return (
               <TotalsLadder
                 tone="sale"
@@ -1164,7 +1291,9 @@ export default function Invoices() {
                   { label: `خصم الفاتورة (${discountPct}%)`,
                     value: `− ${invoiceDiscount.toFixed(2)}`, color: '#cf1322',
                     show: invoiceDiscount > 0.001 },
-                  { label: 'صافي الفاتورة', value: netTotal.toFixed(2),
+                  { label: 'مصروفات على العميل', value: money(billedExpenses),
+                    color: '#cf1322', show: billedExpenses > 0.001 },
+                  { label: 'صافي الفاتورة', value: (netTotal + billedExpenses).toFixed(2),
                     strong: true, color: '#6AB42D', rule: true },
                   { label: 'حساب سابق على العميل', value: money(balance),
                     color: balance > 0 ? '#cf1322' : '#6AB42D',
@@ -1175,6 +1304,10 @@ export default function Invoices() {
                     color: due > 0.001 ? '#cf1322' : '#6AB42D', show: hasParty },
                 ]}
                 notes={[
+                  operatingExpenses > 0.001 ? (
+                    <>مصروفات على الشركة:{' '}
+                      <b style={{ color: '#F5A11D' }}>{money(operatingExpenses)} ج.م</b></>
+                  ) : null,
                   <>النقاط: <b style={{ color: '#F5A11D' }}>
                     {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b></>,
                   creditAmount < -0.001 ? (
@@ -1221,13 +1354,49 @@ export default function Invoices() {
 
   return (
     <div>
+      {/* Asked BEFORE the form opens rather than buried inside it: the date drives the ledger
+          entry too, so it is a decision about the document, not one more field on it. */}
+      <Modal
+        open={dateAsk}
+        title="تاريخ الفاتورة"
+        okText="ابدأ الفاتورة"
+        cancelText="إلغاء"
+        onCancel={() => setDateAsk(false)}
+        onOk={() => { setDateAsk(false); setCreateVisible(true); }}
+        destroyOnHidden
+      >
+        <DatePicker
+          style={{ width: '100%' }} size="large" allowClear={false} autoFocus
+          value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())}
+          format="YYYY-MM-DD"
+        />
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
+          في نفس اليوم.
+        </div>
+      </Modal>
+
       <Card
         title="الفواتير (سجل فواتير المبيعات)"
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
-            تسجيل فاتورة بيع
-          </Button>
-        }
+        extra={(
+          <Space>
+            <ColumnSettings
+              choices={columns.map((c: any) => ({
+                key: String(c.key ?? c.dataIndex ?? ''),
+                title: typeof c.title === 'string' ? c.title : 'إجراءات',
+                // The number is how a row is identified out loud; hiding it would leave a table
+                // nobody can refer to.
+                locked: c.key === 'document_number',
+              }))}
+              hidden={invoiceCols.hidden}
+              onChange={invoiceCols.setHidden}
+            />
+            <Button type="primary" icon={<PlusOutlined />}
+              onClick={() => { setInvoiceDate(dayjs()); setDateAsk(true); }}>
+              تسجيل فاتورة بيع
+            </Button>
+          </Space>
+        )}
       >
         {/* --- Search + filters (server-side, so they cover every invoice) --- */}
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
@@ -1297,7 +1466,7 @@ export default function Invoices() {
 
         <Table
           dataSource={invoices}
-          columns={columns}
+          columns={invoiceCols.apply(columns)}
           rowKey="id"
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
@@ -1359,7 +1528,22 @@ export default function Invoices() {
 
       {/* Invoice detail / view */}
       <Modal centered
-        title={`تفاصيل الفاتورة ${viewInvoice?.document_number ?? ''}`}
+        title={(
+          <Space>
+            <span>{`تفاصيل الفاتورة ${viewInvoice?.document_number ?? ''}`}</span>
+            {/* Reading a run of invoices is the common case — a mistake is usually near another
+                one. Stepping straight to the neighbour beats closing, finding the row, reopening.
+                Order follows the list on screen, so the arrows move through what was filtered. */}
+            <Button size="small" disabled={!neighbour(-1)}
+              onClick={() => { const n = neighbour(-1); if (n) openDetail(n); }}>
+              ‹ السابقة
+            </Button>
+            <Button size="small" disabled={!neighbour(1)}
+              onClick={() => { const n = neighbour(1); if (n) openDetail(n); }}>
+              التالية ›
+            </Button>
+          </Space>
+        )}
         width={640}
         open={detailVisible}
         onCancel={() => setDetailVisible(false)}

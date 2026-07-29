@@ -12,6 +12,7 @@ import { useAuth } from '../components/AuthProvider';
 import ItemEditModal from '../components/ItemEditModal';
 import { SerialsPanel, UnitsPanel } from '../components/ItemUnitsPanel';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import DocumentLink from '../components/DocumentLink';
 
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
@@ -330,6 +331,12 @@ export default function ItemProfile() {
                             render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
                           { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
                             render: (v: string) => `${money(v)} ج.م` },
+                          // The item's history used to be read-only rows; now each one leads
+                          // back to the invoice it came from.
+                          { title: '', key: 'link', width: 180,
+                            render: (_: any, r: any) => (r.invoice_id
+                              ? <DocumentLink kind="invoice" id={r.invoice_id} size="small" allowEdit />
+                              : null) },
                         ]}
                       />
                     </>
@@ -364,6 +371,10 @@ export default function ItemProfile() {
                             render: (v: string) => <b>{money(v)} ج.م</b> },
                           { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
                             render: (v: string) => `${money(v)} ج.م` },
+                          { title: '', key: 'link', width: 140,
+                            render: (_: any, r: any) => (r.invoice_id
+                              ? <DocumentLink kind="purchase" id={r.invoice_id} size="small" />
+                              : null) },
                         ]}
                       />
                     </>

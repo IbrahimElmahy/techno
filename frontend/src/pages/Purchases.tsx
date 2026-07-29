@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Card, Col, Descriptions, Divider, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -6,6 +6,7 @@ import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
   PrinterOutlined,
 } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
 import TotalsLadder from '../components/TotalsLadder';
@@ -93,6 +94,9 @@ export default function Purchases() {
   // The item the side stock panel is showing — a buyer about to reorder wants to see what the
   // branches are already sitting on before committing to a quantity.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
+  // Same contract as the sales screen: a link elsewhere names a document, this screen opens it.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const handledIntent = useRef<string | null>(null);
 
   // Form state
   const [form] = Form.useForm();
@@ -143,6 +147,16 @@ export default function Purchases() {
       setListLoading(false);
     }
   };
+
+  useEffect(() => {
+    const docId = searchParams.get('doc');
+    if (!docId || handledIntent.current === docId) return;
+    const target = purchases.find((p) => p.id === Number(docId));
+    if (!target) return;
+    handledIntent.current = docId;
+    setSearchParams({}, { replace: true });
+    openDetail(target);
+  }, [searchParams, purchases]);
 
   const openDetail = async (record: PurchaseRecord) => {
     setDetailVisible(true);
