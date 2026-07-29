@@ -130,6 +130,31 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
     return taken
 
 
+def relocate(db: Session, *, item_id: int, from_kind: LocationKind, from_id: int,
+             to_kind: LocationKind, to_id: int, quantity: Decimal) -> list[tuple[date, Decimal]]:
+    """Move `quantity` of a perishable item between locations, earliest-expiring lots first.
+
+    A transfer moves the goods; the lots record *when they expire*, so they move too. Leaving them
+    behind would make the source's expiry report list goods it no longer has and the destination's
+    list nothing at all — and FEFO at the destination would have nothing to draw from, so a sale
+    there would be refused for stock that is physically present.
+
+    Earliest-expiring first for the same reason FEFO does it: if some of a lot must move, the stock
+    that must be sold soonest should be where it can be sold.
+    """
+    item = db.get(Item, item_id)
+    if item is None:
+        raise BatchError("Item not found.")
+    if not getattr(item, "is_perishable", False):
+        return []
+    taken = consume_fefo(db, item_id=item_id, location_kind=from_kind, location_id=from_id,
+                         quantity=quantity)
+    for expiry, qty in taken:
+        _upsert(db, item_id=item_id, kind=to_kind, loc_id=to_id, expiry=expiry, quantity=qty)
+    db.flush()
+    return taken
+
+
 def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind,
                        location_id: int, expiry_date: date, quantity: Decimal) -> StockBatch:
     """Put returned goods back into the lot for their expiry date.

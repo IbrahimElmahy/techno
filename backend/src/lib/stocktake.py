@@ -21,6 +21,7 @@ from decimal import Decimal
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from src.core import clock
 from src.core.money import ZERO, to_money
 from src.models.catalog import Item
 from src.models.stock import LocationKind, StockDirection, StockMovement
@@ -59,7 +60,9 @@ def stock_as_of(
                   StockMovement.location_id)
     )
     if day is not None:
-        stmt = stmt.where(func.date(StockMovement.created_at) <= str(day))
+        # Compared against the UTC instant the business day ends, not against `date()` of a
+        # UTC timestamp — those differ by the office's offset every night after midnight.
+        stmt = stmt.where(StockMovement.created_at < clock.day_end_utc(day))
     if warehouse_id is not None:
         stmt = stmt.where(StockMovement.location_kind == LocationKind.warehouse,
                           StockMovement.location_id == warehouse_id)

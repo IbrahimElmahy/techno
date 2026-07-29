@@ -3,7 +3,7 @@ import {
   Card, Collapse, Table, Button, Input, InputNumber, Switch, Space, Tag, message, Popconfirm,
   Modal, Form, Tooltip, Select,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -110,6 +110,12 @@ export default function Settings() {
           </span>
         </Space>
       </Card>
+
+      <IntegrityCard />
+
+      <DocumentPolicyCard />
+
+      <AccountRoutingCard />
 
       <Card title="بيانات تجريبية للاختبار" size="small">
         <Space wrap>
@@ -334,5 +340,243 @@ function EditableLabel({ value, onSave, placeholder }:
       <Button icon={<SaveOutlined />} type={dirty ? 'primary' : 'default'} disabled={!dirty}
         onClick={() => onSave(val)} />
     </Space.Compact>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// التوجيه المحاسبي
+// ---------------------------------------------------------------------------
+interface RoutingRow {
+  role: string;
+  label: string;
+  account_id: number;
+  account_code: string;
+  account_name: string;
+  source: 'default' | 'configured';
+  nature_warning?: string | null;
+}
+
+/**
+ * Points each posting role at an account from the client's own chart.
+ *
+ * Every posting in the system names a role, not an account, and the default is an account this
+ * system seeded. That default is safe but presumptuous: an accountant who already has a chart
+ * wants revenue on *their* revenue account, where their auditor looks for it.
+ *
+ * Two things this screen is careful about. It shows whether each row is a default or something
+ * somebody configured — the two are indistinguishable once posted, and that distinction is the
+ * first question when a statement reads wrong. And every row can be put back, because the fastest
+ * fix for a role pointed somewhere wrong is the safe behaviour, immediately.
+ */
+function AccountRoutingCard() {
+  const [rows, setRows] = useState<RoutingRow[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [r, a] = await Promise.all([
+        api.get('/api/v1/account-routing'),
+        api.get('/api/v1/accounts', { params: { postable_only: true, active: true } }),
+      ]);
+      setRows(r.data || []);
+      setAccounts(a.data || []);
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async (role: string, accountId: number | null) => {
+    setSaving(role);
+    try {
+      const res = await api.put('/api/v1/account-routing', { role, account_id: accountId });
+      setRows(res.data || []);
+      message.success(accountId ? 'اتحفظ التوجيه' : 'رجع للحساب الافتراضي');
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ التوجيه');
+    } finally { setSaving(null); }
+  };
+
+  return (
+    <Card title="التوجيه المحاسبي" size="small" loading={loading}
+      extra={<Button icon={<ReloadOutlined />} onClick={load} />}>
+      <p style={{ color: '#888', marginTop: 0 }}>
+        كل دور محاسبي بيترحّل على أنهي حساب. سيبه فاضي والنظام يستخدم حسابه الافتراضي —
+        مش لازم تظبط حاجة عشان الترحيل يشتغل صح.
+      </p>
+      <Table<RoutingRow>
+        rowKey="role" size="small" dataSource={rows} pagination={false}
+        columns={[
+          { title: 'الدور', dataIndex: 'label', width: 200,
+            render: (l: string, r) => (
+              <>
+                <b>{l}</b>
+                {r.source === 'default'
+                  ? <Tag style={{ marginInlineStart: 8 }}>افتراضي</Tag>
+                  : <Tag color="blue" style={{ marginInlineStart: 8 }}>مظبوط</Tag>}
+              </>
+            ) },
+          { title: 'الحساب', key: 'acc',
+            render: (_: unknown, r) => (
+              <Select
+                style={{ minWidth: 320 }} showSearch optionFilterProp="label" allowClear
+                value={r.account_id} loading={saving === r.role}
+                placeholder="الحساب الافتراضي"
+                onChange={(v) => save(r.role, v ?? null)}
+                onClear={() => save(r.role, null)}
+                options={accounts.map((a) => ({
+                  value: a.id, label: `${a.code} — ${a.name}`,
+                }))}
+              />
+            ) },
+          { title: '', key: 'warn',
+            render: (_: unknown, r) => (r.nature_warning
+              ? <span style={{ color: '#d46b08' }}>{r.nature_warning}</span>
+              : null) },
+        ]}
+      />
+    </Card>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// قفل تعديل المستندات (أيام)
+// ---------------------------------------------------------------------------
+/**
+ * A rolling window: past N days from a document's date, only an admin may reverse it.
+ *
+ * Sits beside the hard period lock rather than replacing it. The lock is a deliberate act on a date
+ * the accountant picks, and it only ever protects a month somebody remembered to close; this closes
+ * the ordinary user's window on its own, so last month's invoice cannot be quietly reversed on a
+ * busy Tuesday and move a figure that has already been reported.
+ */
+function DocumentPolicyCard() {
+  const [days, setDays] = useState<number | null>(null);
+  const [fixedPct, setFixedPct] = useState<string>('0');
+  const [vatPct, setVatPct] = useState<string>('0');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/v1/settings/sales')
+      .then((r) => {
+        setDays(r.data?.edit_lock_days ?? null);
+        setFixedPct(String(r.data?.fixed_discount_pct ?? '0'));
+        setVatPct(String(r.data?.vat_rate_pct ?? '0'));
+      })
+      .catch(console.error);
+  }, []);
+
+  const save = async (value: number | null) => {
+    setSaving(true);
+    try {
+      // The other two are sent back unchanged: this endpoint replaces the whole settings row, so
+      // omitting them would silently reset the fixed discount and the VAT rate.
+      await api.put('/api/v1/settings/sales', {
+        fixed_discount_pct: fixedPct, vat_rate_pct: vatPct, edit_lock_days: value,
+      });
+      setDays(value || null);
+      message.success(value ? `التعديل مقفول بعد ${value} يوم` : 'قفل التعديل متوقّف');
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الإعداد');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Card title="إعدادات المستندات" size="small">
+      <Space wrap align="center">
+        <span>قفل تعديل المستندات بعد (أيام):</span>
+        <InputNumber
+          min={0} value={days ?? 0} disabled={saving} style={{ width: 120 }}
+          onBlur={(e) => {
+            const v = Number((e.target as HTMLInputElement).value || 0);
+            if ((v || null) !== days) save(v || null);
+          }}
+          onChange={(v) => setDays(v as number | null)}
+        />
+        <span style={{ color: '#888' }}>
+          بعد المدة دي من تاريخ المستند، العكس أو التعديل للمسؤول بس. صفر = متوقّف.
+          ده غير إقفال الفترة — الإقفال قرار بتاخده بتاريخ معيّن، وده بيقفل شبّاك المستخدم لوحده.
+        </span>
+      </Space>
+    </Card>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// فحص سلامة البيانات
+// ---------------------------------------------------------------------------
+interface IntegrityFinding {
+  check: string;
+  subject: string;
+  expected: string;
+  found: string;
+  detail: string;
+}
+
+/**
+ * Reports whether the stored data still agrees with itself. It does not repair anything.
+ *
+ * That is the deliberate part. Their equivalent screen recomputes and fixes balances, which it has
+ * to because it caches them; ours are always summed from the movements, so there is nothing to
+ * recompute. The two things that *are* stored beside the movements — expiry lots and serial numbers
+ * — can drift, and if they have, the cause is a code path that wrote one side without the other.
+ * Quietly correcting the numbers would hide that defect and guarantee it happens again unnoticed.
+ */
+function IntegrityCard() {
+  const [result, setResult] = useState<
+    { clean: boolean; checked: Record<string, number>; findings: IntegrityFinding[] } | null
+  >(null);
+  const [running, setRunning] = useState(false);
+
+  const run = async () => {
+    setRunning(true);
+    try {
+      const res = await api.get('/api/v1/admin/integrity');
+      setResult(res.data);
+      if (res.data?.clean) message.success('كل الأرصدة متطابقة');
+      else message.warning(`فيه ${res.data.findings.length} تعارض محتاج مراجعة`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر تشغيل الفحص');
+    } finally { setRunning(false); }
+  };
+
+  return (
+    <Card title="فحص سلامة البيانات" size="small"
+      extra={<Button type="primary" loading={running} onClick={run}>شغّل الفحص</Button>}>
+      <p style={{ color: '#888', marginTop: 0 }}>
+        بيتأكد إن دفعات الصلاحية والأرقام التسلسلية متطابقة مع أرصدة الحركات، وإن مافيش رصيد
+        سالب، وإن كل قيد متوازن. <b>بيقرأ ويقول بس — ما بيصلّحش.</b> لو طلع تعارض، ده باج
+        في كود لازم يتتبّع؛ تصليح الأرقام كان هيخفيه.
+      </p>
+      {result && (
+        <>
+          <Space wrap style={{ marginBottom: 8 }}>
+            {result.clean
+              ? <Tag color="green">كل حاجة متطابقة</Tag>
+              : <Tag color="red">{result.findings.length} تعارض</Tag>}
+            {Object.entries(result.checked).map(([k, v]) => (
+              <Tag key={k}>{k}: {v}</Tag>
+            ))}
+          </Space>
+          {!result.clean && (
+            <Table<IntegrityFinding>
+              rowKey={(f) => `${f.check}-${f.subject}`}
+              size="small" pagination={false} dataSource={result.findings}
+              columns={[
+                { title: 'الفحص', dataIndex: 'check', width: 220 },
+                { title: 'المحل', dataIndex: 'subject', width: 220 },
+                { title: 'المتوقّع', dataIndex: 'expected', width: 110 },
+                { title: 'الموجود', dataIndex: 'found', width: 110 },
+                { title: 'التفصيل', dataIndex: 'detail' },
+              ]}
+            />
+          )}
+        </>
+      )}
+    </Card>
   );
 }

@@ -82,6 +82,53 @@ def assert_sale_serials(
         raise SerialError("Serial count must equal the line quantity.")
 
 
+def relocate(
+    db: Session,
+    *,
+    item: Item,
+    from_kind: LocationKind,
+    from_id: int,
+    to_kind: LocationKind,
+    to_id: int,
+    quantity: Decimal | int,
+) -> list[ItemSerial]:
+    """Move N in-stock serials from one location to another, oldest first.
+
+    A transfer moves the goods; the serials describe *which* goods, so they have to move with them.
+    Without this the serials stay behind: the destination cannot sell what it physically holds
+    (the serial is not there), and the source shows serials for units that have left.
+
+    No stock movement is posted here — the transfer posts its own out/in pair, and posting again
+    would double the quantity. The two sides move together, which is the invariant the integrity
+    check for serials verifies.
+
+    Oldest first is arbitrary but has to be *something* deterministic: two runs of the same transfer
+    must move the same serials, or a reversal could not put them back where they came from.
+    """
+    if not item.is_serialized:
+        return []
+    count = int(Decimal(str(quantity)))
+    if count <= 0:
+        return []
+    rows = db.scalars(
+        select(ItemSerial).where(
+            ItemSerial.item_id == item.id,
+            ItemSerial.status == SerialStatus.in_stock,
+            ItemSerial.location_kind == from_kind,
+            ItemSerial.location_id == from_id,
+        ).order_by(ItemSerial.id).limit(count)
+    ).all()
+    if len(rows) < count:
+        raise SerialError(
+            f"عدد الأرقام التسلسلية في المصدر ({len(rows)}) أقل من الكمية المنقولة ({count})."
+        )
+    for row in rows:
+        row.location_kind = to_kind
+        row.location_id = to_id
+    db.flush()
+    return list(rows)
+
+
 def mark_sold(
     db: Session,
     *,

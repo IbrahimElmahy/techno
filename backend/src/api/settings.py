@@ -21,6 +21,9 @@ class SalesSettingsBody(BaseModel):
     fixed_discount_pct: Decimal
     # VAT % (021). 0 = off, which keeps invoice posting exactly as it was before VAT existed.
     vat_rate_pct: Decimal = Decimal("0")
+    # «قفل تعديل المستندات (أيام)» — after N days from a document's date, only an admin may reverse
+    # it. None/0 = off.
+    edit_lock_days: int | None = None
 
 
 def _get_or_create(db: Session) -> SalesSetting:
@@ -40,7 +43,8 @@ def get_sales_settings(
     s = _get_or_create(db)
     db.commit()
     return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct),
-                             vat_rate_pct=Decimal(s.vat_rate_pct or 0))
+                             vat_rate_pct=Decimal(s.vat_rate_pct or 0),
+                             edit_lock_days=getattr(s, "edit_lock_days", None))
 
 
 @router.put("/sales", response_model=SalesSettingsBody)
@@ -53,13 +57,18 @@ def update_sales_settings(
     if body.vat_rate_pct < 0 or body.vat_rate_pct > 100:
         raise HTTPException(422, {"code": "validation",
                                   "message": "نسبة الضريبة لازم تكون بين 0 و 100."})
+    if body.edit_lock_days is not None and body.edit_lock_days < 0:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "عدد أيام قفل التعديل ما ينفعش يكون بالسالب."})
     s.fixed_discount_pct = body.fixed_discount_pct
     s.vat_rate_pct = body.vat_rate_pct
+    s.edit_lock_days = body.edit_lock_days or None
     s.updated_by = current.id
     db.flush()
     db.commit()
     return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct),
-                             vat_rate_pct=Decimal(s.vat_rate_pct or 0))
+                             vat_rate_pct=Decimal(s.vat_rate_pct or 0),
+                             edit_lock_days=getattr(s, "edit_lock_days", None))
 
 
 class StockSettingsBody(BaseModel):

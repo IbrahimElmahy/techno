@@ -1,4 +1,8 @@
-"""Admin utilities — demo data seeding and company-data import (system admin only)."""
+"""Admin utilities — demo data seeding, company-data import and the integrity check.
+
+Admin-only because the integrity report names internal ids and would read as alarming to anyone who
+does not know what the invariants are.
+"""
 from __future__ import annotations
 
 import tempfile
@@ -78,3 +82,37 @@ def purge_demo_data(
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "purge_failed", "message": str(exc)}) from exc
+
+
+@router.get("/integrity")
+def integrity_check(
+    _: CurrentUser = Depends(_require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """فحص سلامة البيانات — read-only.
+
+    Their أدوات خاصة *repairs* recomputed balances. Ours has nothing to recompute: on-hand is always
+    summed from the movements, never cached, so it cannot go stale. What this checks is the two
+    things that genuinely are stored beside the movements — expiry lots and serial numbers — plus
+    the two invariants everything else rests on: no negative stock anywhere, and every ledger entry
+    balanced.
+
+    It reports and repairs nothing, deliberately. A finding here means some code path wrote one side
+    without the other, and quietly correcting the numbers would hide the defect that produced them —
+    the next occurrence would be corrected just as quietly, and nobody would ever learn why the
+    counts drifted.
+    """
+    from src.lib import integrity
+
+    report = integrity.run_all(db)
+    return {
+        "clean": report.clean,
+        "checked": report.checked,
+        "findings": [
+            {
+                "check": f.check, "subject": f.subject, "expected": f.expected,
+                "found": f.found, "detail": f.detail,
+            }
+            for f in report.findings
+        ],
+    }

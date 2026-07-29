@@ -41,6 +41,16 @@ class AccountResolutionError(Exception):
     """Raised when a required account (e.g., a rep's custody) cannot be resolved."""
 
 
+def _routed(db: Session, account_type: AccountType, branch_id: int) -> Account | None:
+    """The admin-configured account for this type, if any. Imported late to avoid a cycle."""
+    from src.services import account_routing_service
+
+    for role, typ in account_routing_service.ROUTABLE.items():
+        if typ == account_type:
+            return account_routing_service.routed_account(db, role, branch_id=branch_id)
+    return None
+
+
 def get_or_create_singleton(
     db: Session, account_type: AccountType, *, branch_id: int | None = None
 ) -> Account:
@@ -54,6 +64,12 @@ def get_or_create_singleton(
     from src.services import org_service
 
     bid = org_service.resolve_branch_id(db, branch_id)
+    # التوجيه المحاسبي: if an admin has pointed this role at one of their own accounts, that wins.
+    # Checked here rather than in each caller so every posting in the system obeys the setting —
+    # a routing half the modules respect would be worse than none.
+    routed = _routed(db, account_type, bid)
+    if routed is not None:
+        return routed
     acc = db.scalar(
         select(Account).where(
             Account.account_type == account_type,

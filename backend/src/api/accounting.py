@@ -25,11 +25,13 @@ from src.auth.rbac import (
 from src.core.db import get_db
 from src.models.ledger import Account, AccountNature, Direction, LedgerEntry, LedgerLine
 from src.services import (
+    account_routing_service,
     chart_service,
     journal_service,
     opening_balance_service,
     trial_balance_service,
 )
+from src.services.account_routing_service import RoutingError
 from src.services.chart_service import ChartError
 from src.services.journal_service import JournalError, JournalLineInput
 from src.services.opening_balance_service import OpeningLineInput
@@ -416,3 +418,60 @@ def get_trial_balance(
         grand_total_credit=result.grand_total_credit,
         balanced=result.balanced,
     )
+
+
+# ---------------------------------------------------------------------------
+# التوجيه المحاسبي — which account each posting role uses.
+# ---------------------------------------------------------------------------
+class RoutingOut(BaseModel):
+    role: str
+    label: str
+    account_id: int
+    account_code: str
+    account_name: str
+    # "default" = the account this system seeded; "configured" = one an admin pointed it at. The
+    # two are indistinguishable once posted, and an admin chasing a wrong statement needs to know
+    # whether somebody changed this or nobody ever did.
+    source: str
+    nature_warning: str | None = None
+
+
+class RoutingIn(BaseModel):
+    role: str
+    # None restores the default — the way back when a role is pointed somewhere wrong.
+    account_id: int | None = None
+
+
+@router.get("/account-routing", response_model=list[RoutingOut])
+def read_account_routing(
+    branch_id: int | None = None,
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    db: Session = Depends(get_db),
+) -> list[RoutingOut]:
+    """كل دور محاسبي والحساب اللي بيترحّل عليه فعلاً."""
+    rows = account_routing_service.current_routing(db, branch_id=branch_id)
+    db.commit()  # get-or-create may have seeded a default account on first read
+    return [RoutingOut(**r) for r in rows]
+
+
+@router.put("/account-routing", response_model=list[RoutingOut])
+def set_account_routing(
+    body: RoutingIn,
+    branch_id: int | None = None,
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
+    db: Session = Depends(get_db),
+) -> list[RoutingOut]:
+    """وجّه دور لحساب، أو ابعت account_id فاضي للرجوع للافتراضي.
+
+    Returns the full routing rather than the one row, so the caller never has to guess whether the
+    rest still says what it said before the change.
+    """
+    try:
+        account_routing_service.set_routing(
+            db, body.role, account_id=body.account_id, branch_id=branch_id)
+    except RoutingError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "routing_invalid", "message": str(exc)}) from exc
+    rows = account_routing_service.current_routing(db, branch_id=branch_id)
+    db.commit()
+    return [RoutingOut(**r) for r in rows]

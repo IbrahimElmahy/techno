@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
+from src.core import clock
 from src.core.db import get_db
 from src.lib import reporting, stocktake, trade_reports
 from src.models.ledger import Account, AccountType
@@ -128,9 +129,9 @@ def get_summary(
 ):
     def _apply_dates(stmt, col):
         if date_from:
-            stmt = stmt.where(func.date(col) >= date_from)
+            stmt = stmt.where(col >= clock.day_start_utc(date_from))
         if date_to:
-            stmt = stmt.where(func.date(col) <= date_to)
+            stmt = stmt.where(col < clock.day_end_utc(date_to))
         return stmt
 
     # Calculate total sales (optionally within the requested date range).

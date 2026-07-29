@@ -98,6 +98,46 @@ def post_entry(
     return entry
 
 
+def _assert_within_edit_window(db: Session, original: LedgerEntry, actor_user_id: int) -> None:
+    """«قفل تعديل المستندات (أيام)» — after N days, only an admin may reverse a document.
+
+    A rolling companion to the hard period lock, not a replacement: the lock is a deliberate act on
+    a date the accountant chooses, and it only ever protects a month somebody remembered to close.
+    This closes the ordinary user's window by itself, so last month's invoice cannot be quietly
+    reversed on a busy Tuesday and quietly change a figure already reported.
+
+    Enforced here, in the one path every financial reversal takes, so no document type is exempt by
+    accident. The actor's role is read from the database rather than passed in — a guard that
+    depends on seven callers remembering to hand it the role is a guard that silently does nothing.
+
+    Off by default (NULL/0). Stock-only documents that post no ledger entry — stock permits,
+    transfers, production orders — do not pass through here and are not covered; that gap is real
+    and is documented rather than papered over.
+    """
+    from src.models.role import RoleName
+    from src.models.sales import SalesSetting
+    from src.models.user import User
+
+    setting = db.scalar(select(SalesSetting).order_by(SalesSetting.id.desc()).limit(1))
+    days = getattr(setting, "edit_lock_days", None) if setting else None
+    if not days or int(days) <= 0:
+        return
+
+    doc_date = original.entry_date or date.today()
+    age = (date.today() - doc_date).days
+    if age <= int(days):
+        return
+
+    actor = db.get(User, actor_user_id)
+    # `User.role` is the Role row, not the enum — its `.name` is the RoleName.
+    role_name = getattr(getattr(actor, "role", None), "name", None)
+    if role_name == RoleName.system_admin:
+        return
+    raise LedgerError(
+        f"المستند بتاريخ {doc_date} عدّى {days} يوم — التعديل أو العكس للمسؤول بس."
+    )
+
+
 def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> LedgerEntry:
     """Create the mirror reversal of an entry (debits<->credits swapped).
 
@@ -113,6 +153,7 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
     )
     if existing is not None:
         raise LedgerError("Entry has already been reversed (reverse-once).")
+    _assert_within_edit_window(db, original, actor_user_id)
 
     swapped = [
         LineInput(

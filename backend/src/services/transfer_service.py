@@ -16,7 +16,8 @@ from src.models.stock import LocationKind, StockDirection
 from src.models.transfer import StockTransfer, TransferRoute, TransferStatus
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse
-from src.services import audit_service, stock_service
+from src.models.catalog import Item
+from src.services import audit_service, batch_service, serial_service, stock_service
 
 _ROUTE_KINDS = {
     TransferRoute.central_to_branch: (LocationKind.warehouse, LocationKind.warehouse),
@@ -109,6 +110,24 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
         direction=StockDirection.in_, quantity=transfer.quantity, actor_user_id=approver_user_id,
         source_doc_type="transfer", source_doc_id=transfer.id,
     )
+    # The quantity has moved; the things that describe *which* units moved have to follow it.
+    # Leaving them behind is the drift the serial/batch integrity checks exist to catch — and did
+    # catch, which is how this was found.
+    item = db.get(Item, transfer.item_id)
+    if item is not None:
+        if getattr(item, "is_serialized", False):
+            serial_service.relocate(
+                db, item=item,
+                from_kind=transfer.source_location_kind, from_id=transfer.source_location_id,
+                to_kind=transfer.dest_location_kind, to_id=transfer.dest_location_id,
+                quantity=transfer.quantity)
+        if getattr(item, "is_perishable", False):
+            batch_service.relocate(
+                db, item_id=item.id,
+                from_kind=transfer.source_location_kind, from_id=transfer.source_location_id,
+                to_kind=transfer.dest_location_kind, to_id=transfer.dest_location_id,
+                quantity=transfer.quantity)
+
     transfer.status = TransferStatus.approved
     transfer.approved_by = approver_user_id
     transfer.approved_at = datetime(2026, 1, 1)  # set by caller-side clock in prod; fixed for tests

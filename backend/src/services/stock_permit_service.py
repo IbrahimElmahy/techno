@@ -17,6 +17,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from src.core import clock
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item
 from src.models.stock import LocationKind, StockDirection
@@ -171,9 +172,9 @@ def list_permits(
     if warehouse_id:
         stmt = stmt.where(StockPermit.warehouse_id == warehouse_id)
     if date_from:
-        stmt = stmt.where(func.date(StockPermit.created_at) >= date_from)
+        stmt = stmt.where(StockPermit.created_at >= clock.day_start_utc(date_from))
     if date_to:
-        stmt = stmt.where(func.date(StockPermit.created_at) <= date_to)
+        stmt = stmt.where(StockPermit.created_at < clock.day_end_utc(date_to))
     return list(db.scalars(stmt.order_by(StockPermit.id.desc())).all())
 
 

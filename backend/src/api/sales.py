@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -17,6 +17,7 @@ from src.auth.rbac import (
     CAP_SELL_BELOW_PRICE,
     role_has_capability,
 )
+from src.core import clock
 from src.core.db import get_db
 from src.models.catalog import PriceTier
 from src.models.customer import Customer
@@ -253,9 +254,9 @@ def list_sales(
     if customer_id is not None:
         stmt = stmt.where(SalesInvoice.customer_id == customer_id)
     if date_from is not None:
-        stmt = stmt.where(func.date(SalesInvoice.created_at) >= date_from)
+        stmt = stmt.where(SalesInvoice.created_at >= clock.day_start_utc(date_from))
     if date_to is not None:
-        stmt = stmt.where(func.date(SalesInvoice.created_at) <= date_to)
+        stmt = stmt.where(SalesInvoice.created_at < clock.day_end_utc(date_to))
     if payment == "cash":       # fully paid (nothing on credit)
         stmt = stmt.where(SalesInvoice.credit_amount == 0)
     elif payment == "credit":   # fully on credit (nothing paid)
@@ -312,9 +313,9 @@ def list_standalone_returns(
     if customer_id is not None:
         stmt = stmt.where(SalesReturn.customer_id == customer_id)
     if date_from is not None:
-        stmt = stmt.where(func.date(SalesReturn.created_at) >= date_from)
+        stmt = stmt.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
     if date_to is not None:
-        stmt = stmt.where(func.date(SalesReturn.created_at) <= date_to)
+        stmt = stmt.where(SalesReturn.created_at < clock.day_end_utc(date_to))
     return [_standalone_return_out(r) for r in db.scalars(stmt.order_by(SalesReturn.id.desc())).all()]
 
 

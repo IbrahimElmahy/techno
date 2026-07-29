@@ -61,11 +61,13 @@ from src.models.commission import CommissionRule  # noqa: E402
 from src.models.treasury import PeriodLock, Treasury  # noqa: E402
 from src.models.voucher import Voucher  # noqa: E402
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine  # noqa: E402
+from src.models.account_routing import AccountRouting  # noqa: E402
 from src.models.employee import Employee, JobTitle  # noqa: E402
 from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 
 __all__ = [
+    "AccountRouting",
     "AuditLogEntry", "Item", "Customer", "CustomerAccount", "Account", "LedgerEntry",
     "LedgerLine", "Branch", "Governorate", "HeadOffice", "Territory", "Role", "User",
     "Custody", "Warehouse", "Supplier", "SupplierAccount", "StockLocator", "StockMovement",

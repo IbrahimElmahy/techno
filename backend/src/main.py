@@ -155,6 +155,8 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # «قفل تعديل المستندات (أيام)» (a5 parity: اعدادات القاعدة).
+    ("sales_setting", "edit_lock_days", "INT"),
     # Production document header (a5 parity: انتاج حسب النسب).
     ("manufacturing_order", "production_date", "DATE"),
     ("manufacturing_order", "branch_id", "BIGINT"),

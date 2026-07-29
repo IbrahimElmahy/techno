@@ -172,6 +172,17 @@ class SalesSetting(Base):
     # VAT / ضريبة القيمة المضافة (021). Zero = off, which is the shipped default: at 0 the
     # posting is byte-identical to the pre-VAT behaviour, so enabling it is a deliberate act.
     vat_rate_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
+    # «قفل تعديل المستندات (أيام)» — after this many days from a document's date, only an admin may
+    # reverse it. NULL/0 = off, which is the shipped default.
+    #
+    # This is a *rolling* rule, and it complements the hard period lock rather than replacing it:
+    # the lock is a deliberate act by the accountant on a date they choose, while this closes the
+    # ordinary user's window automatically so last month's invoice cannot be quietly reversed on a
+    # busy Tuesday. Both are needed — the lock is only ever set after somebody remembers to set it.
+    #
+    # It lives here because this singleton is already where company-wide values sit (the VAT rate is
+    # not a sales-only setting either); a fourth settings table would be one more place to look.
+    edit_lock_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
