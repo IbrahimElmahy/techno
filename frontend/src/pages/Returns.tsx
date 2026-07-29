@@ -598,7 +598,11 @@ export default function Returns() {
     },
     {
       title: 'العميل', dataIndex: 'customer_id', key: 'customer_id',
-      render: (cId: number) => customers.find((c) => c.id === cId)?.name ?? `عميل #${cId}`,
+      render: (cId: number) => (
+        <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
+          {customers.find((c) => c.id === cId)?.name ?? `عميل #${cId}`}
+        </a>
+      ),
     },
     {
       title: 'صافي المرتجع', dataIndex: 'net', key: 'net',

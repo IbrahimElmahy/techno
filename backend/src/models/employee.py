@@ -47,6 +47,9 @@ class Employee(Base):
     salary: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
+    # The store this employee works out of — a driver's van, a storekeeper's floor. It is how
+    # «who is responsible for this stock» is answered without reading a custody document.
+    warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
     # Set only for the employees who also log in; NULL for everyone else.
     user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True, unique=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

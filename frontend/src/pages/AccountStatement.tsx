@@ -4,7 +4,9 @@ import {
 } from 'antd';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import DocumentLink, { DocKind } from '../components/DocumentLink';
 
 /**
  * كشف حساب — any account in the chart, not only customers and suppliers.
@@ -16,6 +18,9 @@ import { api } from '../api/client';
  */
 
 interface StatementLine {
+  doc_kind?: DocKind | null;
+  doc_id?: number | null;
+  doc_number?: string | null;
   entry_id: number;
   entry_date: string;
   entry_type: string;
@@ -46,6 +51,11 @@ export default function AccountStatement() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [statement, setStatement] = useState<StatementOut | null>(null);
   const [loading, setLoading] = useState(false);
+  // ?account=<id> — the customer and supplier files hand the account over rather than making the
+  // reader find it again in a dropdown they have just come from.
+  const [search] = useSearchParams();
+  const asked = Number(search.get('account')) || undefined;
+  useEffect(() => { if (asked) setAccountId(asked); }, [asked]);
 
   useEffect(() => {
     api.get('/api/v1/accounts')
@@ -167,6 +177,14 @@ export default function AccountStatement() {
                 render: (v: string) => (Number(v) ? money(v) : '-') },
               { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left',
                 render: (v: string) => <b>{money(v)}</b> },
+              // The whole point of a statement is to answer «إيه السطر ده؟» — so the answer is
+              // one click away rather than a number to memorise and search for elsewhere.
+              { title: 'المستند', key: 'doc', align: 'center',
+                render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
+                  <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
+                    label={l.doc_number || undefined}
+                    allowEdit={l.doc_kind === 'invoice'} />
+                ) : <span style={{ color: '#bbb' }}>قيد يدوي</span>) },
             ]}
           />
         </>

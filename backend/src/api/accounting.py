@@ -62,6 +62,7 @@ class AccountOut(BaseModel):
     is_system: bool
     active: bool
     appears_in: str | None = None
+    main_level: str | None = None
     balance: Decimal
     children: list[AccountOut] | None = None
 
@@ -72,13 +73,17 @@ class AccountCreate(BaseModel):
     parent_id: int | None = None
     nature: AccountNature
     is_postable: bool
+    # trading | profit_loss | balance_sheet — omit to let the account's nature decide.
+    appears_in: str | None = None
+    main_level: str | None = None
 
 
 class AccountUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
-    # «يظهر في» — balance_sheet | income_statement | none, or "" to follow the nature (B8).
+    # «يظهر في» — trading | profit_loss | balance_sheet | none, or "" to follow the nature.
     appears_in: str | None = None
+    main_level: str | None = None
 
 
 class JournalLineIn(BaseModel):
@@ -163,6 +168,7 @@ def _account_out(db: Session, acc: Account, *, with_children: bool = False) -> A
         id=acc.id, code=acc.code, name=acc.name, parent_id=acc.parent_id, nature=acc.nature,
         normal_side=acc.normal_side, is_postable=acc.is_postable, is_system=acc.is_system,
         active=acc.active, appears_in=acc.appears_in,
+        main_level=getattr(acc, "main_level", None),
         balance=chart_service.account_balance(db, acc.id), children=children,
     )
 
@@ -215,6 +221,7 @@ def create_account(
         acc = chart_service.create_account(
             db, code=body.code, name=body.name, nature=body.nature,
             is_postable=body.is_postable, parent_id=body.parent_id,
+            appears_in=body.appears_in, main_level=body.main_level,
         )
     except ChartError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "chart_conflict", "message": str(exc)})
@@ -244,7 +251,7 @@ def update_account(
     try:
         acc = chart_service.update_account(
             db, account_id=account_id, name=body.name, active=body.active,
-            appears_in=body.appears_in,
+            appears_in=body.appears_in, main_level=body.main_level,
         )
     except ChartError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "chart_conflict", "message": str(exc)})

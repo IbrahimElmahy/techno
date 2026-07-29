@@ -4,7 +4,7 @@ import {
   Tabs, Table, Descriptions, Statistic, Row, Col, Card, Tag, Spin,
   DatePicker, Space, Button, Empty, Typography, Modal,
 } from 'antd';
-import { ReloadOutlined, ArrowRightOutlined, EditOutlined } from '@ant-design/icons';
+import { ReloadOutlined, ArrowRightOutlined, EditOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import InvoiceDocument, { invoiceFooter } from '../components/InvoiceDocument';
@@ -186,6 +186,10 @@ export default function SupplierProfile() {
           <Space>
             <Button type="primary" icon={<EditOutlined />} onClick={() => setEditOpen(true)}>
               تعديل البيانات
+            </Button>
+            <Button icon={<FileTextOutlined />} disabled={!data?.account_id}
+              onClick={() => navigate(`/account-statement?account=${data?.account_id}`)}>
+              كشف الحساب التفصيلي
             </Button>
             <Button icon={<ReloadOutlined />} onClick={() => { load(); loadStatement(); }}>
               تحديث

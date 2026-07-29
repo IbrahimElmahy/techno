@@ -8,16 +8,15 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from sqlalchemy import (
-    BigInteger, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, func,
+    BigInteger, Date, DateTime, Enum, ForeignKey, Integer, String, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, QTY
+from src.core.money import MONEY, PCT, QTY
 from src.models.catalog import PriceTier
 from src.models.stock import LocationKind
 
-PCT = Numeric(5, 2)
 
 
 class SalesInvoice(Base):

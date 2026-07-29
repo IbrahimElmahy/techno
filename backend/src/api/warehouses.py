@@ -27,11 +27,14 @@ class WarehouseCreate(BaseModel):
     name: str
     warehouse_type: WarehouseType
     branch_id: int | None = None
+    # «مخزن السيارة أ» explains itself; «مخزن ٣» does not.
+    description: str | None = None
 
 
 class WarehouseUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
+    description: str | None = None
 
 
 class CustodyUpdate(BaseModel):
@@ -43,6 +46,7 @@ class WarehouseOut(BaseModel):
     name: str
     warehouse_type: WarehouseType
     branch_id: int | None
+    description: str | None = None
     active: bool
 
 
@@ -80,7 +84,7 @@ def list_warehouses(
     return [
         WarehouseOut(
             id=w.id, name=w.name, warehouse_type=w.warehouse_type,
-            branch_id=w.branch_id, active=w.active,
+            description=w.description, branch_id=w.branch_id, active=w.active,
         )
         for w in db.scalars(stmt).all()
     ]
@@ -94,13 +98,14 @@ def create_warehouse(
 ) -> WarehouseOut:
     if body.warehouse_type == WarehouseType.branch and body.branch_id is None:
         raise HTTPException(422, {"code": "validation", "message": "branch warehouse needs branch_id"})
-    wh = Warehouse(name=body.name, warehouse_type=body.warehouse_type, branch_id=body.branch_id)
+    wh = Warehouse(name=body.name, warehouse_type=body.warehouse_type,
+                   branch_id=body.branch_id, description=body.description)
     db.add(wh)
     db.flush()
     db.commit()
     return WarehouseOut(
         id=wh.id, name=wh.name, warehouse_type=wh.warehouse_type,
-        branch_id=wh.branch_id, active=wh.active,
+        description=wh.description, branch_id=wh.branch_id, active=wh.active,
     )
 
 
@@ -116,6 +121,8 @@ def update_warehouse(
         raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
     if body.name is not None:
         wh.name = body.name
+    if body.description is not None:
+        wh.description = body.description
     if body.active is not None:
         wh.active = body.active
     db.flush()
@@ -123,6 +130,7 @@ def update_warehouse(
                          entity_type="warehouse", entity_id=wh.id)
     db.commit()
     return WarehouseOut(id=wh.id, name=wh.name, warehouse_type=wh.warehouse_type,
+                        description=wh.description,
                         branch_id=wh.branch_id, active=wh.active)
 
 

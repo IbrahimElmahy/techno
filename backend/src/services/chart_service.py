@@ -148,6 +148,8 @@ def create_account(
     nature: AccountNature,
     is_postable: bool,
     parent_id: int | None,
+    appears_in: str | None = None,
+    main_level: str | None = None,
 ) -> Account:
     """Create a chart node. Enforces: unique code, child code prefixed by parent code, and that
     the parent (if any) is a group node (FR-001/002/003/017)."""
@@ -181,17 +183,31 @@ def create_account(
         is_system=False,
         parent_id=parent_id,
     )
+    if appears_in:
+        if appears_in not in _APPEARS_IN:
+            raise ChartError(
+                "«يظهر في» لازم تكون: متاجرة (trading) أو أرباح وخسائر (profit_loss) "
+                "أو ميزانية عمومية (balance_sheet)."
+            )
+        acc.appears_in = appears_in
+    if main_level:
+        acc.main_level = main_level
     db.add(acc)
     db.flush()
     return acc
 
 
-_APPEARS_IN = {"balance_sheet", "income_statement", "none"}
+# «يظهر في» — the three faces an account can be presented on. Egyptian practice splits the
+# income statement in two: المتاجرة carries sales and cost of sales down to gross profit, and
+# أرباح وخسائر carries indirect expenses and other income down to net profit. Collapsing them
+# into one "income statement" loses the gross-profit line, which is the number a trader reads
+# first — so the split is kept.
+_APPEARS_IN = {"trading", "profit_loss", "balance_sheet", "none"}
 
 
 def update_account(
     db: Session, *, account_id: int, name: str | None = None, active: bool | None = None,
-    appears_in: str | None = None,
+    appears_in: str | None = None, main_level: str | None = None,
 ) -> Account:
     """Rename, (de)activate, and/or set «يظهر في». System accounts may be renamed but not
     deactivated if they still have active children (FR-005)."""
@@ -203,8 +219,16 @@ def update_account(
     if appears_in is not None:
         # Empty string means "follow the account's nature", which is the shipped behaviour.
         if appears_in and appears_in not in _APPEARS_IN:
-            raise ChartError("قيمة «يظهر في» غير صحيحة.")
+            raise ChartError(
+                "«يظهر في» لازم تكون: متاجرة (trading) أو أرباح وخسائر (profit_loss) "
+                "أو ميزانية عمومية (balance_sheet)."
+            )
         acc.appears_in = appears_in or None
+    if main_level is not None:
+        # Free text on purpose: every accountant has their own set of standard groupings
+        # («أصول متداولة»، «مصروفات غير مباشرة»)، and an enum we invented would be wrong for the
+        # first client whose chart is arranged differently.
+        acc.main_level = main_level or None
     if active is not None:
         if active is False:
             _assert_deactivatable(db, acc)

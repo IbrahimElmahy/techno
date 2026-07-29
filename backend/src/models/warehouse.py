@@ -30,6 +30,9 @@ class Warehouse(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     warehouse_type: Mapped[WarehouseType] = mapped_column(Enum(WarehouseType), nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
+    # A note on what the store holds or where it is — «مخزن السيارة أ» explains itself, «مخزن ٣»
+    # does not.
+    description: Mapped[str | None] = mapped_column(String(300), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
 

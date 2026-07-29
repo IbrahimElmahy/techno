@@ -52,6 +52,10 @@ class ItemCreate(BaseModel):
     min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool = False
+    # التعبئة + a free note (a5 parity).
+    piece_name: str | None = None
+    pieces_per_unit: Decimal | None = None
+    description: str | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -67,6 +71,9 @@ class ItemUpdate(BaseModel):
     min_stock: Decimal | None = None          # (011)
     max_stock: Decimal | None = None
     is_perishable: bool | None = None
+    piece_name: str | None = None
+    pieces_per_unit: Decimal | None = None
+    description: str | None = None
 
 
 class ItemOut(BaseModel):
@@ -86,6 +93,10 @@ class ItemOut(BaseModel):
     min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool = False
+    # التعبئة + a free note (a5 parity).
+    piece_name: str | None = None
+    pieces_per_unit: Decimal | None = None
+    description: str | None = None
     # Total on-hand across all locations — filled on the list endpoint (one grouped query).
     on_hand: Decimal | None = None
 
@@ -98,6 +109,8 @@ def _out(it: Item) -> ItemOut:
         default_warehouse_id=it.default_warehouse_id, category=it.category,
         default_discount_pct=it.default_discount_pct,
         min_stock=it.min_stock, max_stock=it.max_stock, is_perishable=it.is_perishable,
+        piece_name=it.piece_name, pieces_per_unit=it.pieces_per_unit,
+        description=it.description,
     )
 
 
@@ -160,6 +173,8 @@ def create_item(
         default_discount_pct=body.default_discount_pct or 0,
         min_stock=body.min_stock, max_stock=body.max_stock,   # (011) advisory
         is_perishable=body.is_perishable,
+        piece_name=body.piece_name, pieces_per_unit=body.pieces_per_unit,
+        description=body.description,
     )
     db.add(item)
     db.flush()
@@ -170,6 +185,9 @@ def create_item(
 class TierPrice(BaseModel):
     tier: PriceTier
     price: Decimal
+    # Each tier carries its own allowance: a wholesaler and a walk-in do not get the same one.
+    discount_pct: Decimal = Decimal("0")
+    vat_pct: Decimal = Decimal("0")
 
 
 class ItemPricesOut(BaseModel):
@@ -186,7 +204,9 @@ def _prices_out(db: Session, item: Item) -> ItemPricesOut:
     rows = db.scalars(select(ItemPrice).where(ItemPrice.item_id == item.id)).all()
     return ItemPricesOut(
         item_id=item.id, base_sale_price=item.sale_price,
-        tiers=[TierPrice(tier=r.tier, price=r.price) for r in rows],
+        tiers=[TierPrice(tier=r.tier, price=r.price,
+                         discount_pct=getattr(r, "discount_pct", 0) or 0,
+                         vat_pct=getattr(r, "vat_pct", 0) or 0) for r in rows],
     )
 
 
@@ -228,7 +248,8 @@ def set_item_prices(
             old_value=row.price if row is not None else None,
             new_value=to_money(tp.price), actor_user_id=current.id)
         if row is None:
-            db.add(ItemPrice(item_id=item.id, tier=tp.tier, price=to_money(tp.price)))
+            db.add(ItemPrice(item_id=item.id, tier=tp.tier, price=to_money(tp.price),
+                             discount_pct=tp.discount_pct or 0, vat_pct=tp.vat_pct or 0))
         else:
             row.price = to_money(tp.price)
     db.flush()
@@ -546,7 +567,8 @@ def update_item(
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
                   "default_warehouse_id", "category",
                   "default_discount_pct",
-                  "min_stock", "max_stock", "is_perishable"):   # (011)
+                  "min_stock", "max_stock", "is_perishable",   # (011)
+                  "piece_name", "pieces_per_unit", "description"):
         val = getattr(body, field)
         if val is None:
             continue

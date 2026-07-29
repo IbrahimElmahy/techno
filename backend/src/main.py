@@ -142,6 +142,7 @@ def create_app() -> FastAPI:
         _relax_configurable_enum_columns(engine)
         _relax_not_null(engine)
         _backfill_branch(engine)
+        _migrate_appears_in(engine)
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
 
@@ -154,6 +155,20 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # «المستوى الرئيسي» on a chart account (a5 parity).
+    ("account", "main_level", "VARCHAR(80)"),
+    # Master-data parity: the supplier's location, the store's note, the employee's store.
+    ("supplier", "branch_id", "BIGINT"),
+    ("supplier", "governorate_id", "BIGINT"),
+    ("supplier", "markaz", "VARCHAR(120)"),
+    ("warehouse", "description", "VARCHAR(300)"),
+    ("employee", "warehouse_id", "BIGINT"),
+    # Item packing + note, and per-tier allowances (a5 parity).
+    ("item", "piece_name", "VARCHAR(32)"),
+    ("item", "pieces_per_unit", "DECIMAL(18,3)"),
+    ("item", "description", "VARCHAR(500)"),
+    ("item_price", "discount_pct", "DECIMAL(5,2)"),
+    ("item_price", "vat_pct", "DECIMAL(5,2)"),
     # A free note on a configurable list option (a5 parity: فئات الأصناف have a وصف).
     ("lookup_option", "description", "VARCHAR(300)"),
     # Invoice expense totals (a5 parity): billed to the customer vs borne by us.
@@ -252,6 +267,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).
 _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
+    # A sixth price tier (سعر اللستة) added after release; MySQL stores this as a native ENUM.
+    ("item_price", "tier",
+     "ENUM('commercial','semi_commercial','wholesale','semi_wholesale','consumer','list_price')"),
     # v4: points are fractional — "6 pieces = 1 point".
     ("product_point_value", "point_value", "NUMERIC(18,3)"),
     ("point_record", "delta", "NUMERIC(18,3)"),
@@ -374,6 +392,37 @@ def _backfill_branch(engine) -> None:
         logging.getLogger("uvicorn.error").info("branch backfill skipped: %s", exc)
     finally:
         db.close()
+
+
+def _migrate_appears_in(engine) -> None:
+    """Move accounts off the collapsed «income_statement» onto أرباح وخسائر. Idempotent.
+
+    «يظهر في» used to take one income-statement value; Egyptian practice prints two — المتاجرة
+    down to gross profit and أرباح وخسائر down to net profit — so the single value became a lie
+    about which statement the account appears on.
+
+    Old rows land on profit_loss rather than trading because that is the safer wrong answer: an
+    account wrongly on المتاجرة would inflate cost of sales and move gross profit, while one
+    wrongly on أرباح وخسائر only sits lower down the same statement. Migrations run on a real
+    deployment; this covers the serverless one, where they do not.
+    """
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    inspector = sa_inspect(engine)
+    if "account" not in set(inspector.get_table_names()):
+        return
+    if "appears_in" not in {c["name"] for c in inspector.get_columns("account")}:
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE account SET appears_in = 'profit_loss' "
+                "WHERE appears_in = 'income_statement'"))
+    except Exception as exc:  # pragma: no cover — best-effort
+        logging.getLogger("uvicorn.error").info("appears_in migration skipped: %s", exc)
 
 
 def _ensure_columns(engine) -> None:

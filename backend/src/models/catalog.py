@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, QTY
+from src.core.money import MONEY, PCT, QTY
 from src.models.stock import LocationKind
 
 
@@ -35,13 +35,19 @@ class ItemKind(str, enum.Enum):
 
 
 class PriceTier(str, enum.Enum):
-    """Five sale price tiers (007) — A5Group's تجارى/نصف تجارى/جملة/نصف جملة/مستهلك."""
+    """Sale price tiers (007) — تجارى/نصف تجارى/جملة/نصف جملة/مستهلك، plus سعر اللستة.
+
+    `list_price` is the published price the company quotes from, which is not one of the five
+    negotiated tiers: it is the number on the printed list, and a salesman needs to see it beside
+    whatever tier the customer actually gets so he knows how far he has discounted.
+    """
 
     commercial = "commercial"
     semi_commercial = "semi_commercial"
     wholesale = "wholesale"
     semi_wholesale = "semi_wholesale"
     consumer = "consumer"
+    list_price = "list_price"
 
 
 class Item(Base):
@@ -57,6 +63,13 @@ class Item(Base):
     sale_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)      # products
     # Item category (v4) — an admin-configurable lookup value (`item_category`), free text.
     category: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    # التعبئة: one selling unit contains N pieces, and the piece has its own name («قطعة»،
+    # «متر»، «شيكارة»). Stored on the item because it describes the goods, not a conversion the
+    # user picks per line — the multi-unit table (`item_unit`) is still what a line converts by.
+    piece_name: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    pieces_per_unit: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    # A free note on the item itself, printed nowhere and searched everywhere.
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Default line discount % for this item (v4), e.g. 10.00 = 10%. Used as the suggested discount
     # on invoice lines; the posted document always stores the ACTUAL discount charged.
     default_discount_pct: Mapped[object] = mapped_column(
@@ -92,6 +105,11 @@ class ItemPrice(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     tier: Mapped[PriceTier] = mapped_column(Enum(PriceTier), nullable=False)
     price: Mapped[object] = mapped_column(MONEY, nullable=False)
+    # Each tier carries its own discount and VAT rate: a wholesaler and a walk-in do not get the
+    # same allowance, and putting one rate on the item would force the salesman to re-derive the
+    # difference by hand on every line.
+    discount_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
+    vat_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
 
 
 class ItemPriceHistory(Base):

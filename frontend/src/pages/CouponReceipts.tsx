@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 /**
@@ -314,7 +315,10 @@ export default function CouponReceipts() {
                   { title: 'رقم الكوبون', dataIndex: 'serial',
                     render: (v: string) => <b>{v}</b> },
                   { title: 'من فاتورة', dataIndex: 'sales_invoice_id',
-                    render: (v: number) => <Tag>#{v}</Tag> },
+                    render: (v: number) => (v
+                      ? <DocumentLink kind="invoice" id={v} size="small" label={`#${v}`}
+                          onNavigate={() => setDetail(null)} />
+                      : <Tag>غير معروفة</Tag>) },
                 ]}
               />
             ) : <Empty description="لا توجد سطور" />}

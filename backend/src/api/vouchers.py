@@ -17,7 +17,7 @@ from src.core.db import get_db
 from src.models.role import RoleName
 from src.models.treasury import TreasuryKind
 from src.models.voucher import VoucherKind
-from src.services import statement_service, treasury_service, voucher_service
+from src.services import document_resolver, statement_service, treasury_service, voucher_service
 from src.services.ledger_service import LedgerError
 from src.services.statement_service import StatementError
 from src.services.treasury_service import TreasuryError
@@ -133,6 +133,11 @@ class VoucherOut(BaseModel):
 
 class StatementLineOut(BaseModel):
     entry_id: int
+    # The document that posted this line, when one did. A manual journal entry has none, and
+    # saying so is more useful than leaving the reader to guess.
+    doc_kind: str | None = None
+    doc_id: int | None = None
+    doc_number: str | None = None
     entry_date: date
     entry_type: str
     description: str
@@ -171,7 +176,8 @@ def _treasury_out(db: Session, t) -> TreasuryOut:
     )
 
 
-def _statement_out(s) -> StatementOut:
+def _statement_out(s, docs: dict | None = None) -> StatementOut:
+    docs = docs or {}
     return StatementOut(
         account_id=s.account_id, account_name=s.account_name,
         opening_balance=s.opening_balance,
@@ -180,7 +186,10 @@ def _statement_out(s) -> StatementOut:
         lines=[StatementLineOut(
             entry_id=ln.entry_id, entry_date=ln.entry_date, entry_type=ln.entry_type,
             description=ln.description, debit=ln.debit, credit=ln.credit,
-            balance_before=ln.balance_before, balance=ln.balance)
+            balance_before=ln.balance_before, balance=ln.balance,
+            doc_kind=(docs.get(ln.entry_id) or {}).get("kind"),
+            doc_id=(docs.get(ln.entry_id) or {}).get("id"),
+            doc_number=(docs.get(ln.entry_id) or {}).get("document_number"))
             for ln in s.lines],
     )
 
@@ -442,7 +451,8 @@ def customer_statement(
     except (VoucherError, StatementError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)})
-    return _statement_out(s)
+    return _statement_out(
+        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))
 
 
 @router.get("/accounts/{account_id}/statement", response_model=StatementOut)
@@ -464,7 +474,8 @@ def any_account_statement(
     except StatementError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)}) from exc
-    return _statement_out(s)
+    return _statement_out(
+        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))
 
 
 @router.get("/suppliers/{supplier_id}/statement", response_model=StatementOut)
@@ -483,7 +494,8 @@ def supplier_statement(
     except (VoucherError, StatementError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)})
-    return _statement_out(s)
+    return _statement_out(
+        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))
 
 
 @router.get("/reps/{rep_user_id}/cash-statement", response_model=StatementOut)
@@ -508,4 +520,5 @@ def rep_cash_statement(
                             {"code": "not_found", "message": "المندوب ليس له عهدة بحساب نقدي."})
     s = statement_service.account_statement(
         db, account_id=custody.account_id, date_from=date_from, date_to=date_to)
-    return _statement_out(s)
+    return _statement_out(
+        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))

@@ -4,7 +4,9 @@ import {
 } from 'antd';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import DocumentLink, { docKindOf } from '../components/DocumentLink';
 
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
@@ -70,6 +72,10 @@ export default function ItemCard() {
   const [movementType, setMovementType] = useState<string | undefined>();
   const [card, setCard] = useState<CardOut | null>(null);
   const [loading, setLoading] = useState(false);
+  // ?item=<id> — arrived at from the item's own file, which already knows which item this is.
+  const [search] = useSearchParams();
+  const askedItem = Number(search.get('item')) || undefined;
+  useEffect(() => { if (askedItem) setItemId(askedItem); }, [askedItem]);
 
   useEffect(() => {
     Promise.all([api.get('/api/v1/items'), api.get('/api/v1/warehouses')])
@@ -225,8 +231,15 @@ export default function ItemCard() {
                 render: (v: string) => <b>{qty(v)}</b> },
               { title: 'الموقع', dataIndex: 'location' },
               { title: 'المستند', dataIndex: 'source_doc_id',
+                // Reading a card is asking «الحركة دي جات منين؟» — so the row opens its document
+                // when it has one, and stays a plain tag when there is no screen to open.
                 render: (id: number | null, r) => (id
-                  ? <Tag>{r.source_doc_type} #{id}</Tag> : '-') },
+                  ? (docKindOf(r.source_doc_type)
+                      ? <DocumentLink kind={docKindOf(r.source_doc_type)!} id={id} size="small"
+                          label={`#${id}`}
+                          allowEdit={r.source_doc_type === 'sale'} />
+                      : <Tag>{r.source_doc_type} #{id}</Tag>)
+                  : '-') },
             ]}
           />
         </>

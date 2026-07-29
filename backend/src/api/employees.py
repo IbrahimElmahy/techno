@@ -43,6 +43,7 @@ class EmployeeIn(BaseModel):
     hire_date: date | None = None
     salary: Decimal | None = None
     branch_id: int | None = None
+    warehouse_id: int | None = None
     user_id: int | None = None
     notes: str | None = None
 
@@ -56,6 +57,7 @@ class EmployeePatch(BaseModel):
     hire_date: date | None = None
     salary: Decimal | None = None
     branch_id: int | None = None
+    warehouse_id: int | None = None
     user_id: int | None = None
     notes: str | None = None
     active: bool | None = None
@@ -73,6 +75,7 @@ class EmployeeOut(BaseModel):
     hire_date: date | None
     salary: Decimal | None
     branch_id: int | None
+    warehouse_id: int | None = None
     user_id: int | None
     active: bool
     notes: str | None
@@ -84,7 +87,8 @@ def _out(db: Session, e: Employee) -> EmployeeOut:
         id=e.id, code=e.code, name=e.name, job_title_id=e.job_title_id,
         job_title=title.name if title else None, department=e.department, phone=e.phone,
         national_id=e.national_id, hire_date=e.hire_date, salary=e.salary,
-        branch_id=e.branch_id, user_id=e.user_id, active=e.active, notes=e.notes,
+        branch_id=e.branch_id, warehouse_id=e.warehouse_id,
+        user_id=e.user_id, active=e.active, notes=e.notes,
     )
 
 
@@ -171,6 +175,7 @@ def create_employee(
         code=f"EMP-{n + 1:04d}", name=name, job_title_id=body.job_title_id,
         department=body.department, phone=body.phone, national_id=body.national_id,
         hire_date=body.hire_date, salary=body.salary, branch_id=body.branch_id,
+        warehouse_id=body.warehouse_id,
         user_id=body.user_id, notes=body.notes,
     )
     db.add(emp)

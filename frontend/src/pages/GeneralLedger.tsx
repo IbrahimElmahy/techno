@@ -18,6 +18,8 @@ interface Account {
   name: string | null;
   parent_id: number | null;
   nature: string | null;
+  appears_in?: string | null;
+  main_level?: string | null;
   normal_side: 'debit' | 'credit';
   is_postable: boolean;
   is_system: boolean;
@@ -66,6 +68,7 @@ interface LineDraft {
 }
 
 interface CostCenter {
+  level?: number;
   id: number;
   code: string;
   name: string;
@@ -77,6 +80,27 @@ interface CostCenter {
 const NATURE_LABEL: Record<string, string> = {
   asset: 'أصول', liability: 'التزامات', equity: 'حقوق ملكية', income: 'إيرادات', expense: 'مصروفات',
 };
+/**
+ * «يظهر في» — which statement the account is presented on. Egyptian practice reads three, not
+ * two: المتاجرة carries sales and cost of sales down to gross profit, أرباح وخسائر carries the
+ * indirect expenses and other income down to net profit, and الميزانية carries the balances.
+ * Merging the first two would lose the gross-profit line, which is the figure a trader looks at
+ * before any other.
+ */
+const APPEARS_IN_LABEL: Record<string, string> = {
+  trading: 'متاجرة',
+  profit_loss: 'أرباح وخسائر',
+  balance_sheet: 'ميزانية عمومية',
+};
+
+/** «المستوى الرئيسي» — the standard grouping the account rolls up into. Suggestions, not a
+ *  closed list: the field is free text because every chart arranges these differently. */
+const MAIN_LEVELS = [
+  'أصول متداولة', 'أصول ثابتة', 'التزامات متداولة', 'حقوق الملكية',
+  'الإيرادات / المبيعات', 'تكلفة الإيرادات / المبيعات',
+  'مصروفات مباشرة', 'مصروفات غير مباشرة', 'إيرادات متنوعة',
+];
+
 const NATURE_COLOR: Record<string, string> = {
   asset: 'green', liability: 'volcano', equity: 'gold', income: 'blue', expense: 'orange',
 };
@@ -113,6 +137,7 @@ function ChartTab() {
     search: (a) => flatten(a).flatMap((n) => [n.code, n.name]),
     filters: {
       nature: (a, v) => flatten(a).some((n) => n.nature === v),
+      appears_in: (a, v) => flatten(a).some((n) => n.appears_in === v),
       is_postable: (a, v) => flatten(a).some((n) => n.is_postable === (v === 'postable')),
       active: (a, v) => flatten(a).some((n) => n.active === (v === 'active')),
     },
@@ -134,6 +159,8 @@ function ChartTab() {
       await api.post('/api/v1/accounts', {
         code: v.code, name: v.name, parent_id: v.parent_id ?? null,
         nature: v.nature, is_postable: v.is_postable,
+        appears_in: v.appears_in ?? null,
+        main_level: (Array.isArray(v.main_level) ? v.main_level[0] : v.main_level) || null,
       });
       message.success('تم إنشاء الحساب');
       setDrawer(false); form.resetFields(); load();
@@ -149,6 +176,12 @@ function ChartTab() {
     { title: 'التصنيف', dataIndex: 'is_postable', key: 'is_postable', width: 120,
       render: (p: boolean, r: Account) =>
         p ? <Tag color="green">قابل للترحيل</Tag> : <Tag>مجموعة</Tag> },
+    { title: 'المستوى الرئيسي', dataIndex: 'main_level', key: 'main_level', width: 170,
+      render: (m: string | null) => m || '-' },
+    { title: 'يظهر في', dataIndex: 'appears_in', key: 'appears_in', width: 140,
+      render: (a: string | null) => (a && APPEARS_IN_LABEL[a]
+        ? <Tag color="geekblue">{APPEARS_IN_LABEL[a]}</Tag>
+        : <span style={{ color: '#bbb' }}>حسب الطبيعة</span>) },
     { title: 'النظام', dataIndex: 'is_system', key: 'is_system', width: 90,
       render: (s: boolean) => s ? <Tag color="purple">نظام</Tag> : '-' },
     { title: 'الرصيد (ج.م)', dataIndex: 'balance', key: 'balance', align: 'left' as const,
@@ -176,6 +209,8 @@ function ChartTab() {
             options: Object.entries(NATURE_LABEL).map(([v, l]) => ({ value: v, label: l })) },
           { key: 'is_postable', placeholder: 'التصنيف',
             options: [{ value: 'postable', label: 'قابل للترحيل' }, { value: 'group', label: 'مجموعة' }] },
+          { key: 'appears_in', placeholder: 'يظهر في',
+            options: Object.entries(APPEARS_IN_LABEL).map(([v, l]) => ({ value: v, label: l })) },
           { key: 'active', placeholder: 'الحالة',
             options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطّل' }] },
         ]}
@@ -213,6 +248,19 @@ function ChartTab() {
               { value: true, label: 'حساب قابل للترحيل (ورقة)' },
               { value: false, label: 'مجموعة (تجميعية فقط)' },
             ]} />
+          </Form.Item>
+          <Form.Item name="main_level" label="المستوى الرئيسي"
+            extra="اختر من القائمة أو اكتب مستوى جديد">
+            <Select allowClear showSearch placeholder="مثال: مصروفات غير مباشرة"
+              options={MAIN_LEVELS.map((l) => ({ value: l, label: l }))}
+              // Free text on purpose — the suggestions cover the common chart, not every chart.
+              onSearch={() => {}} filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              mode="tags" maxCount={1} />
+          </Form.Item>
+          <Form.Item name="appears_in" label="يظهر في"
+            extra="اتركه فارغاً ليتبع طبيعة الحساب تلقائياً">
+            <Select allowClear placeholder="حسب الطبيعة"
+              options={Object.entries(APPEARS_IN_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
           </Form.Item>
           <Button type="primary" htmlType="submit" block>حفظ الحساب</Button>
         </Form>
@@ -665,6 +713,10 @@ function CostCenterTab() {
   const columns = [
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 160, render: (c: string) => <Tag color="geekblue">{c}</Tag> },
     { title: 'الاسم', dataIndex: 'name', key: 'name' },
+    // «مستوي مركز التكلفة» — the depth, computed from the parent chain by the backend so the
+    // number can never disagree with the tree drawn beside it.
+    { title: 'المستوى', dataIndex: 'level', key: 'level', width: 100,
+      render: (l: number) => <Tag>{l ?? 1}</Tag> },
     { title: 'الحالة', dataIndex: 'active', key: 'active', width: 120,
       render: (a: boolean) => a ? <Tag color="green">نشط</Tag> : <Tag>معطّل</Tag> },
     { title: '', key: 'actions', width: 120,

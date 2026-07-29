@@ -857,9 +857,15 @@ export default function Invoices() {
       title: 'العميل',
       dataIndex: 'customer_id',
       key: 'customer_id',
+      // The customer's name opens their file — from a list of invoices the next question is
+      // almost always «العميل ده عليه إيه؟», and that answer lives one screen away.
       render: (cId: number) => {
         const c = customers.find((cust) => cust.id === cId);
-        return c ? c.name : `عميل #${cId}`;
+        return (
+          <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
+            {c ? c.name : `عميل #${cId}`}
+          </a>
+        );
       },
     },
     {

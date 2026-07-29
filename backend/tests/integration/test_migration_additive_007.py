@@ -32,11 +32,19 @@ def test_columns_added():
 
 
 def test_price_tier_enum_has_five_values():
+    """The five negotiated tiers of 007 are all still there.
+
+    `list_price` (سعر اللستة) joined the enum later and is deliberately not one of them: it is the
+    published price a salesman quotes from and discounts against, not a tier a customer is put on.
+    So this asserts the five are present rather than that they are the only members — the feature's
+    claim is «كل صنف له خمس فئات بيع», not «الجدول ده مش هيكبر تاني».
+    """
     from src.models.catalog import PriceTier
 
-    assert {t.value for t in PriceTier} == {
-        "commercial", "semi_commercial", "wholesale", "semi_wholesale", "consumer"
-    }
+    negotiated = {"commercial", "semi_commercial", "wholesale", "semi_wholesale", "consumer"}
+    values = {t.value for t in PriceTier}
+    assert negotiated <= values
+    assert "list_price" in values
 
 
 def test_item_price_unique_item_tier():

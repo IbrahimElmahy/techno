@@ -94,6 +94,10 @@ class Account(Base):
     # usual answer, so this is the override for the cases where it does not: a contra account, or
     # a memo account the client does not want on either face. NULL = follow the nature.
     appears_in: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # «المستوى الرئيسي» — the standard statement grouping this account rolls up into
+    # («أصول متداولة»، «تكلفة الإيرادات»، «مصروفات غير مباشرة»). Free text, because every chart
+    # arranges these differently and an enum of ours would be wrong for the next client.
+    main_level: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     lines: Mapped[list[LedgerLine]] = relationship(back_populates="account")
     parent: Mapped[Account | None] = relationship(remote_side=[id], backref="children")

@@ -26,6 +26,10 @@ class CostCenterOut(BaseModel):
     name: str
     parent_id: int | None
     active: bool
+    # «مستوي مركز التكلفة» — 1 for a root, 2 for its child, and so on. Derived from the parent
+    # chain rather than stored: a stored level can disagree with the tree it describes, and then
+    # the report grouped by level and the tree on screen tell two different stories.
+    level: int = 1
     children: list[CostCenterOut] | None = None
 
 
@@ -40,6 +44,18 @@ class CostCenterUpdate(BaseModel):
     active: bool | None = None
 
 
+def _level(db: Session, cc: CostCenter) -> int:
+    """Depth of this centre, 1-based. Walks up; the guard is for a cycle that should not exist."""
+    level, seen, node = 1, {cc.id}, cc
+    while node.parent_id is not None and node.parent_id not in seen:
+        seen.add(node.parent_id)
+        parent = db.get(CostCenter, node.parent_id)
+        if parent is None:
+            break
+        node, level = parent, level + 1
+    return level
+
+
 def _out(db: Session, cc: CostCenter, *, with_children: bool = False) -> CostCenterOut:
     children = None
     if with_children:
@@ -49,7 +65,7 @@ def _out(db: Session, cc: CostCenter, *, with_children: bool = False) -> CostCen
         children = [_out(db, k, with_children=True) for k in kids]
     return CostCenterOut(
         id=cc.id, code=cc.code, name=cc.name, parent_id=cc.parent_id, active=cc.active,
-        children=children,
+        level=_level(db, cc), children=children,
     )
 
 

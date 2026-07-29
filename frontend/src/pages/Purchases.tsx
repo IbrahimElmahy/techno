@@ -6,7 +6,7 @@ import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
   PrinterOutlined,
 } from '@ant-design/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
 import TotalsLadder from '../components/TotalsLadder';
@@ -86,6 +86,7 @@ const fmtDate = (v: string) => {
 };
 
 export default function Purchases() {
+  const navigate = useNavigate();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [items, setItems] = useState<RawMaterial[]>([]);
@@ -552,7 +553,11 @@ export default function Purchases() {
       title: 'المورد',
       dataIndex: 'supplier_name',
       key: 'supplier_name',
-      render: (name: string, record: PurchaseRecord) => name || `مورد #${record.supplier_id}`,
+      render: (name: string, record: PurchaseRecord) => (
+        <a onClick={(e) => { e.stopPropagation(); navigate(`/suppliers/${record.supplier_id}`); }}>
+          {name || `مورد #${record.supplier_id}`}
+        </a>
+      ),
     },
     {
       title: 'الإجمالي',

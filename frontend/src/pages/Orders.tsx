@@ -6,6 +6,7 @@ import {
 import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 /**
@@ -212,7 +213,10 @@ export default function Orders() {
             render: (s: string, r) => (
               <>
                 <Tag color={STATUS_LABELS[s]?.color}>{STATUS_LABELS[s]?.text || s}</Tag>
-                {r.converted_invoice_id && <Tag>فاتورة #{r.converted_invoice_id}</Tag>}
+                {r.converted_invoice_id && (
+                  <DocumentLink kind="invoice" id={r.converted_invoice_id} size="small"
+                    label={`فاتورة #${r.converted_invoice_id}`} />
+                )}
               </>
             ) },
         ]}
@@ -359,7 +363,9 @@ export default function Orders() {
 
             {detail.converted_invoice_id && (
               <Alert type="success" showIcon
-                message={`اتحوّل لفاتورة رقم #${detail.converted_invoice_id}`} />
+                message={`اتحوّل لفاتورة رقم #${detail.converted_invoice_id}`}
+                action={<DocumentLink kind="invoice" id={detail.converted_invoice_id}
+                  size="small" allowEdit onNavigate={() => setDetail(null)} />} />
             )}
           </>
         )}

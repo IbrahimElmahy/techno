@@ -49,3 +49,29 @@ def test_active_filter(cost_centers, client, login):
     ids = {c["id"] for c in active}
     assert cost_centers["cc_maadi"] not in ids
     assert cost_centers["cc_nasr"] in ids
+
+
+def test_the_level_is_derived_from_the_parent_chain(client, chart, login):
+    """«مستوي مركز التكلفة» — 1 for a root, 2 for its child, 3 for the grandchild.
+
+    Derived, never stored: a stored level can drift out of step with the tree it claims to
+    describe, and then a report grouped by level disagrees with the tree drawn on screen.
+    """
+    admin = login("admin")
+    root = client.post("/api/v1/cost-centers", headers=admin,
+                       json={"code": "CC-L1", "name": "الإدارة"})
+    assert root.status_code == 201, root.text
+    assert root.json()["level"] == 1
+
+    child = client.post("/api/v1/cost-centers", headers=admin, json={
+        "code": "CC-L2", "name": "قسم", "parent_id": root.json()["id"]})
+    assert child.status_code == 201, child.text
+    assert child.json()["level"] == 2
+
+    grandchild = client.post("/api/v1/cost-centers", headers=admin, json={
+        "code": "CC-L3", "name": "فرع القسم", "parent_id": child.json()["id"]})
+    assert grandchild.json()["level"] == 3
+
+    listed = {c["code"]: c["level"]
+              for c in client.get("/api/v1/cost-centers", headers=admin).json()}
+    assert listed["CC-L1"] == 1 and listed["CC-L2"] == 2 and listed["CC-L3"] == 3

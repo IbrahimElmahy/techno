@@ -28,6 +28,10 @@ class SupplierCreate(BaseModel):
     name: str
     phone: str | None = None
     address: str | None = None            # (v4)
+    # Where he is and who deals with him — the customer has carried these since 001.
+    branch_id: int | None = None
+    governorate_id: int | None = None
+    markaz: str | None = None
     phones: list[str] | None = None       # (v4) extra numbers
 
 
@@ -36,6 +40,9 @@ class SupplierUpdate(BaseModel):
     phone: str | None = None
     active: bool | None = None
     address: str | None = None
+    branch_id: int | None = None
+    governorate_id: int | None = None
+    markaz: str | None = None
     phones: list[str] | None = None
 
 
@@ -46,6 +53,9 @@ class SupplierOut(BaseModel):
     phone: str | None
     active: bool
     address: str | None = None
+    branch_id: int | None = None
+    governorate_id: int | None = None
+    markaz: str | None = None
     phones: list[str] = []
     # Payable balance — filled on the list endpoint (one grouped query, not per row).
     balance: Decimal | None = None
@@ -54,7 +64,9 @@ class SupplierOut(BaseModel):
 def _sup_out(s: Supplier, db: Session | None = None) -> SupplierOut:
     extra = contact_service.phone_values(db, PhoneOwner.supplier, s.id) if db is not None else []
     return SupplierOut(id=s.id, code=s.code, name=s.name, phone=s.phone, active=s.active,
-                       address=s.address, phones=extra)
+                       address=s.address, branch_id=s.branch_id,
+                       governorate_id=s.governorate_id, markaz=s.markaz,
+                       phones=extra)
 
 
 def _delete_supplier(db: Session, s: Supplier, actor_user_id: int) -> None:
@@ -145,7 +157,8 @@ def create_supplier(
     db.add(acc)
     db.flush()
     supplier = Supplier(code=f"SUP-{n + 1:05d}", name=body.name, phone=body.phone,
-                        address=body.address)
+                        address=body.address, branch_id=body.branch_id,
+                        governorate_id=body.governorate_id, markaz=body.markaz)
     db.add(supplier)
     db.flush()
     sa = SupplierAccount(supplier_id=supplier.id, account_id=acc.id)
@@ -187,6 +200,10 @@ def update_supplier(
         s.active = body.active
     if body.address is not None:
         s.address = body.address
+    for field in ("branch_id", "governorate_id", "markaz"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(s, field, val)
     contact_service.set_phones(db, PhoneOwner.supplier, s.id, body.phones)
     db.flush()
     audit_service.record(db, action="supplier.update", actor_user_id=current.id,

@@ -16,6 +16,12 @@ class Supplier(Base):
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)  # primary number
     # (v4) full address; extra numbers live in `contact_phone` (owner_type='supplier').
     address: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    # Where the supplier is and who deals with him. The customer has carried these since 001;
+    # the supplier was the thinner record for no reason other than that nobody had asked.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
+    governorate_id: Mapped[int | None] = mapped_column(ForeignKey("governorate.id"),
+                                                       nullable=True)
+    markaz: Mapped[str | None] = mapped_column(String(120), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     account: Mapped[SupplierAccount] = relationship(back_populates="supplier", uselist=False)

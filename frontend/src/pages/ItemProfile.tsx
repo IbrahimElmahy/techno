@@ -5,7 +5,7 @@ import {
   Space, Button, Empty, Typography,
 } from 'antd';
 import {
-  ReloadOutlined, ArrowRightOutlined, RiseOutlined, FallOutlined, EditOutlined,
+  ReloadOutlined, ArrowRightOutlined, RiseOutlined, FallOutlined, EditOutlined, FileTextOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -129,6 +129,10 @@ export default function ItemProfile() {
         }
         extra={
           <Space>
+            <Button icon={<FileTextOutlined />} disabled={!itemId}
+              onClick={() => navigate(`/item-card?item=${itemId}`)}>
+              كارت الصنف
+            </Button>
             {canEdit && (
               <Button type="primary" icon={<EditOutlined />} onClick={() => setEditOpen(true)}>
                 تعديل البيانات والأسعار والنقاط

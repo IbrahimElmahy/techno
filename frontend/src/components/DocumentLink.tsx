@@ -17,17 +17,36 @@ import { useNavigate } from 'react-router-dom';
  * invoice is a second place that can get reversal wrong.
  */
 
-export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return';
+export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return' | 'voucher';
 
 const SCREEN: Record<DocKind, string> = {
   invoice: '/invoices',
   return: '/returns',
   purchase: '/purchases',
   purchase_return: '/purchases',
+  voucher: '/vouchers',
 };
+
+/**
+ * A stock movement names its source in the stock module's own vocabulary («sale», «sale_return»);
+ * the mapping lives here so every screen that shows movements agrees on it. Types absent from the
+ * map (transfer, manufacturing, inspection) have no single-document screen to open yet, and
+ * returning null lets the caller keep showing the plain tag instead of a link that goes nowhere.
+ */
+export function docKindOf(sourceDocType: string | null | undefined): DocKind | null {
+  switch (sourceDocType) {
+    case 'sale': return 'invoice';
+    case 'sale_return': return 'return';
+    case 'purchase': return 'purchase';
+    case 'purchase_return': return 'purchase_return';
+    default: return null;
+  }
+}
 
 interface Props {
   kind: DocKind;
+  /** The document's own number, shown instead of the generic label when known. */
+  label?: string;
   id: number;
   /** Show the edit button. Only the sales invoice screen implements editing today. */
   allowEdit?: boolean;
@@ -37,7 +56,7 @@ interface Props {
 }
 
 export default function DocumentLink({
-  kind, id, allowEdit = false, size = 'middle', onNavigate,
+  kind, id, label, allowEdit = false, size = 'middle', onNavigate,
 }: Props) {
   const navigate = useNavigate();
 
@@ -52,7 +71,7 @@ export default function DocumentLink({
     <Space size={4}>
       <Tooltip title="افتح المستند في شاشته">
         <Button size={size} icon={<ExportOutlined />} onClick={() => go('doc')}>
-          فتح المستند
+          {label || 'فتح المستند'}
         </Button>
       </Tooltip>
       {allowEdit && kind === 'invoice' && (

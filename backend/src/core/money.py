@@ -12,6 +12,7 @@ from sqlalchemy import Numeric
 # Reusable column types.
 MONEY = Numeric(18, 2)
 QTY = Numeric(18, 3)  # stock quantities — decimal, per-item unit of measure (FR-002a)
+PCT = Numeric(5, 2)   # percentages: discount, VAT, depreciation rate
 
 TWO_PLACES = Decimal("0.01")
 THREE_PLACES = Decimal("0.001")
