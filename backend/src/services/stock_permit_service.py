@@ -26,9 +26,13 @@ from src.services import audit_service, costing_service, stock_service
 
 ZERO_QTY = to_qty(0)
 
-_PREFIX = {PermitKind.receipt: "ADD", PermitKind.issue: "ISS"}
+_PREFIX = {PermitKind.receipt: "ADD", PermitKind.issue: "ISS",
+           PermitKind.opening: "OPEN"}
 _MOVEMENT = {PermitKind.receipt: ("permit_in", StockDirection.in_),
-             PermitKind.issue: ("permit_out", StockDirection.out)}
+             PermitKind.issue: ("permit_out", StockDirection.out),
+             # A distinct movement type so the item card says «أول المدة» rather than passing the
+             # opening off as a receipt that never happened.
+             PermitKind.opening: ("opening_in", StockDirection.in_)}
 
 
 class StockPermitError(Exception):
@@ -63,7 +67,7 @@ def create_permit(
         quantity = to_qty(raw.get("quantity") or 0)
         if quantity <= ZERO_QTY:
             raise StockPermitError(f"كمية «{item.name}» لازم تكون أكبر من صفر.")
-        if permit_kind == PermitKind.receipt:
+        if permit_kind in (PermitKind.receipt, PermitKind.opening):
             raw_cost = raw.get("unit_cost")
             cost = to_money(raw_cost) if raw_cost not in (None, "") \
                 else costing_service.unit_cost(db, item.id)
@@ -122,7 +126,10 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
     if already is not None:
         raise StockPermitError("الإذن اتعكس قبل كده.")
 
-    mirror_kind = (PermitKind.issue if original.kind == PermitKind.receipt
+    # An opening reverses as an issue: what went in has to come out, and the reversal is a
+    # correction of the opening, not a second opening.
+    mirror_kind = (PermitKind.issue
+                   if original.kind in (PermitKind.receipt, PermitKind.opening)
                    else PermitKind.receipt)
     reversal = StockPermit(
         document_number=_doc_number(db, mirror_kind), kind=mirror_kind,

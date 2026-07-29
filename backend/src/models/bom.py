@@ -52,7 +52,17 @@ class Bom(Base):
 
 
 class BomComponent(Base):
-    """One raw-material input of a recipe. `quantity` is base units consumed per recipe batch."""
+    """One raw-material input of a recipe, per batch.
+
+    `quantity` is expressed in `unit`, exactly as the person writing the recipe typed it; base
+    units consumed are `quantity × unit_factor`. Storing the entered unit rather than converting
+    on the way in matters twice: a recipe written as «٢ كرتونة» keeps reading as «٢ كرتونة» when
+    it is opened again, and if the carton's factor is ever corrected, the recipe follows the
+    correction instead of silently keeping an old conversion nobody remembers making.
+
+    Same `unit` + `unit_factor` pair the sale, return and purchase lines use (008) — one way of
+    saying «in which unit» across the system, not a second one here.
+    """
 
     __tablename__ = "bom_component"
 
@@ -60,6 +70,10 @@ class BomComponent(Base):
     bom_id: Mapped[int] = mapped_column(ForeignKey("bom.id"), nullable=False, index=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
+    # NULL = the item's base unit, and factor 1 — which is what every recipe written before this
+    # column existed means, so they keep consuming exactly what they always consumed.
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
 
     bom: Mapped[Bom] = relationship(back_populates="components")
 

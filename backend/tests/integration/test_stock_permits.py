@@ -159,3 +159,57 @@ def test_a_permit_shows_up_on_the_item_card(client, inv_world, login):
     assert card["rows"][0]["movement_type"] == "permit_in"
     assert card["rows"][0]["source_doc_type"] == "stock_permit"
     assert Decimal(card["closing_balance"]) == Decimal("5.000")
+
+
+def test_opening_stock_is_its_own_kind_of_permit(client, inv_world, login):
+    """بضاعة أول المدة — the stock the company already had on the day it started.
+
+    Mechanically a receipt: same direction, same typed cost. Kept as a kind of its own because the
+    label is the point — «إمتى بدأنا؟» has to be answerable, and a stock-as-of-date report for a day
+    before go-live must not show goods the system was not yet keeping.
+    """
+    h = login("admin")
+    wh = inv_world["central_wh"]
+    item = client.post("/api/v1/items", headers=h, json={
+        "name": "صنف أول المدة", "kind": "product", "unit_of_measure": "piece",
+        "sale_price": "100"}).json()
+
+    permit = client.post("/api/v1/stock/permits", headers=h, json={
+        "kind": "opening", "warehouse_id": wh, "permit_date": "2026-01-01",
+        "reason": "رصيد أول المدة",
+        "lines": [{"item_id": item["id"], "quantity": "40", "unit_cost": "25"}]})
+    assert permit.status_code == 201, permit.text
+    body = permit.json()
+    assert body["kind"] == "opening"
+    assert body["document_number"].startswith("OPEN")
+    # The typed cost is kept — only the person loading the opening knows what the goods cost.
+    assert Decimal(body["total_cost"]) == Decimal("1000.00")
+
+    on_hand = client.get("/api/v1/stock/on-hand", headers=h, params={
+        "item_id": item["id"], "location_kind": "warehouse", "location_id": wh}).json()
+    assert Decimal(on_hand["on_hand"]) == Decimal("40.000")
+
+    # It is filterable on its own, which is what makes the label useful.
+    openings = client.get("/api/v1/stock/permits", headers=h, params={"kind": "opening"}).json()
+    assert any(p["id"] == body["id"] for p in openings)
+    receipts = client.get("/api/v1/stock/permits", headers=h, params={"kind": "receipt"}).json()
+    assert all(p["id"] != body["id"] for p in receipts)
+
+
+def test_an_opening_reverses_as_an_issue(client, inv_world, login):
+    """What went in has to come out — the reversal is a correction, not a second opening."""
+    h = login("admin")
+    wh = inv_world["central_wh"]
+    item = client.post("/api/v1/items", headers=h, json={
+        "name": "صنف أول المدة ٢", "kind": "product", "unit_of_measure": "piece",
+        "sale_price": "100"}).json()
+    permit = client.post("/api/v1/stock/permits", headers=h, json={
+        "kind": "opening", "warehouse_id": wh,
+        "lines": [{"item_id": item["id"], "quantity": "10", "unit_cost": "5"}]}).json()
+
+    rev = client.post(f"/api/v1/stock/permits/{permit['id']}/reverse", headers=h)
+    assert rev.status_code == 201, rev.text
+    assert rev.json()["kind"] == "issue"
+    on_hand = client.get("/api/v1/stock/on-hand", headers=h, params={
+        "item_id": item["id"], "location_kind": "warehouse", "location_id": wh}).json()
+    assert Decimal(on_hand["on_hand"]) == Decimal("0.000")

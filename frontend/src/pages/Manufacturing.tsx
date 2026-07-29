@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
@@ -16,7 +16,8 @@ interface Item {
   kind: 'raw_material' | 'product'; unit_of_measure: string;
   purchase_price: string | null; active: boolean;
 }
-interface Component { item_id: number; quantity: string; }
+interface Component { item_id: number; quantity: string; unit?: string | null; unit_factor?: string; }
+interface AltUnit { name: string; factor: string }
 type ResourceKind = 'labor' | 'machine' | 'overhead' | 'other';
 interface BomResource { kind: ResourceKind; name: string; quantity: string; rate: string; }
 interface OrderResource { kind: ResourceKind; name: string; quantity: string; rate: string; cost: string; }
@@ -32,6 +33,8 @@ interface OrderConsumption {
 interface Order {
   id: number; document_number: string; product_id: number; bom_id: number | null;
   quantity: string; unit_cost: string; total_cost: string;
+  production_date?: string | null; branch_id?: number | null;
+  work_order_ref?: string | null; notes?: string | null;
   material_cost?: string; resource_cost?: string;
   reversed: boolean; is_reversal: boolean;
   consumptions: OrderConsumption[]; resources?: OrderResource[];
@@ -53,6 +56,7 @@ const fmtMoney = (v: string | number) =>
 
 export default function Manufacturing() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [rawMaterials, setRawMaterials] = useState<Item[]>([]);
   const [products, setProducts] = useState<Item[]>([]);
   const [boms, setBoms] = useState<Bom[]>([]);
@@ -87,14 +91,16 @@ export default function Manufacturing() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [whRes, itemsRes, bomRes, orderRes, wasteRes] = await Promise.all([
+      const [whRes, brRes, itemsRes, bomRes, orderRes, wasteRes] = await Promise.all([
         api.get('/api/v1/warehouses'),
+        api.get('/api/v1/branches'),
         api.get('/api/v1/items'),
         api.get('/api/v1/manufacturing/boms'),
         api.get('/api/v1/manufacturing/orders'),
         api.get('/api/v1/wastage'),
       ]);
       setWarehouses(whRes.data);
+      setBranches(brRes.data || []);
       setRawMaterials(itemsRes.data.filter((i: Item) => i.kind === 'raw_material'));
       setProducts(itemsRes.data.filter((i: Item) => i.kind === 'product'));
       setBoms(bomRes.data);
@@ -118,7 +124,7 @@ export default function Manufacturing() {
           label: <span><BuildOutlined /> أوامر التصنيع</span>,
           children: (
             <OrdersTab
-              orders={orders} products={products} warehouses={warehouses}
+              orders={orders} products={products} warehouses={warehouses} branches={branches}
               rawById={rawById} itemName={itemName} whName={whName}
               activeBomByProduct={activeBomByProduct}
               loading={loading} reload={loadAll}
@@ -155,9 +161,11 @@ export default function Manufacturing() {
 // Manufacturing Orders tab
 // ---------------------------------------------------------------------------
 function OrdersTab({
-  orders, products, warehouses, rawById, itemName, whName, activeBomByProduct, loading, reload,
+  orders, products, warehouses, branches, rawById, itemName, whName, activeBomByProduct,
+  loading, reload,
 }: {
   orders: Order[]; products: Item[]; warehouses: Warehouse[];
+  branches: { id: number; name: string }[];
   rawById: Map<number, Item>; itemName: (id: number) => string;
   whName: (id: number | null | undefined) => string;
   activeBomByProduct: Map<number, Bom>; loading: boolean; reload: () => void;
@@ -176,7 +184,9 @@ function OrdersTab({
     const scale = Number(quantity) / Number(selectedBom.output_quantity);
     let total = 0;
     const rows = selectedBom.components.map((c) => {
-      const consumed = Number(c.quantity) * scale;
+      // × the unit factor, same as the backend: a recipe line reading «٢ كرتونة» consumes 24
+      // pieces, and a preview that showed 2 would send the storekeeper looking for the other 22.
+      const consumed = Number(c.quantity) * scale * Number(c.unit_factor ?? 1);
       const unit = Number(rawById.get(c.item_id)?.purchase_price ?? 0);
       const line = consumed * unit;
       total += line;
@@ -188,7 +198,7 @@ function OrdersTab({
   const [lastResult, setLastResult] = useState<Order | null>(null);
 
   const filter = useListFilter(orders, {
-    search: (o) => [o.document_number, itemName(o.product_id)],
+    search: (o) => [o.document_number, itemName(o.product_id), o.work_order_ref || ''],
     filters: {
       product_id: (o, v) => o.product_id === v,
       status: (o, v) => (v === 'reversal' ? o.is_reversal
@@ -207,6 +217,13 @@ function OrdersTab({
         product_id: values.product_id,
         quantity: values.quantity,
         location: { location_kind: 'warehouse', location_id: values.warehouse_id },
+        // The day production happened, not the day it was typed — the workshop closes a batch in
+        // the evening and the office enters it next morning.
+        production_date: values.production_date
+          ? values.production_date.format('YYYY-MM-DD') : undefined,
+        branch_id: values.branch_id ?? undefined,
+        work_order_ref: values.work_order_ref || undefined,
+        notes: values.notes || undefined,
         ...(wastes.length ? { wastes } : {}),
       });
       setLastResult(res.data);
@@ -234,8 +251,18 @@ function OrdersTab({
   const columns = [
     { title: 'المستند', dataIndex: 'document_number', key: 'doc',
       render: (d: string) => <Tag color="blue">{d}</Tag> },
+    // Their انتاج حسب النسب list reads التاريخ · أمر تشغيل · اجمالي خامات · مصروفات; ours now shows
+    // the same, plus what it already had.
+    { title: 'التاريخ', dataIndex: 'production_date', key: 'pdate', width: 110,
+      render: (d: string | null) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'المنتج', key: 'product', render: (_: any, r: Order) => itemName(r.product_id) },
+    { title: 'أمر التشغيل', dataIndex: 'work_order_ref', key: 'wo', width: 130,
+      render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : '-') },
     { title: 'الكمية المنتجة', dataIndex: 'quantity', key: 'qty', render: (q: string) => Number(q) },
+    { title: 'إجمالي الخامات', dataIndex: 'material_cost', key: 'mat',
+      render: (v: string) => `${fmtMoney(v ?? 0)} ج.م` },
+    { title: 'المصروفات', dataIndex: 'resource_cost', key: 'res',
+      render: (v: string) => `${fmtMoney(v ?? 0)} ج.م` },
     { title: 'إجمالي التكلفة', dataIndex: 'total_cost', key: 'total',
       render: (v: string) => `${fmtMoney(v)} ج.م` },
     { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit',
@@ -357,6 +384,22 @@ function OrdersTab({
                 options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
             </Form.Item>
 
+            <Divider orientation="right">بيانات المستند</Divider>
+            <Form.Item name="production_date" label="تاريخ الإنتاج"
+              extra="اتركه فارغاً لتاريخ اليوم">
+              <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+            </Form.Item>
+            <Form.Item name="branch_id" label="الفرع">
+              <Select allowClear placeholder="الفرع"
+                options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+            </Form.Item>
+            <Form.Item name="work_order_ref" label="أمر التشغيل">
+              <Input placeholder="رقم أمر التشغيل / الدوكيت" maxLength={60} />
+            </Form.Item>
+            <Form.Item name="notes" label="ملاحظات">
+              <Input.TextArea rows={2} maxLength={500} />
+            </Form.Item>
+
             {selectedBom && (
               <>
                 <Divider orientation="right">هالك الخامات (اختياري)</Divider>
@@ -409,6 +452,21 @@ function RecipesTab({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Bom | null>(null);
   const [form] = Form.useForm();
+  // Alternate units per raw material, fetched the first time one is picked. Loading every
+  // material's units up front would be a request per material to fill a dropdown most recipes
+  // never open.
+  const [unitOpts, setUnitOpts] = useState<Record<number, AltUnit[]>>({});
+  const loadUnits = async (itemId: number) => {
+    if (!itemId || unitOpts[itemId]) return;
+    try {
+      const r = await api.get(`/api/v1/items/${itemId}/units`);
+      setUnitOpts((prev) => ({ ...prev, [itemId]: r.data?.units || [] }));
+    } catch {
+      // A material with no alternate units is normal, not an error — the row then offers the
+      // base unit only, which is what it always did.
+      setUnitOpts((prev) => ({ ...prev, [itemId]: [] }));
+    }
+  };
 
   const filter = useListFilter(boms, {
     search: (b) => [b.name, itemName(b.product_id)],
@@ -426,10 +484,13 @@ function RecipesTab({
   };
   const openEdit = (bom: Bom) => {
     setEditing(bom);
+    bom.components.forEach((c) => loadUnits(c.item_id));
     form.setFieldsValue({
       product_id: bom.product_id, name: bom.name,
       output_quantity: Number(bom.output_quantity),
-      components: bom.components.map((c) => ({ item_id: c.item_id, quantity: Number(c.quantity) })),
+      components: bom.components.map((c) => ({
+        item_id: c.item_id, quantity: Number(c.quantity), unit: c.unit || undefined,
+      })),
       resources: (bom.resources || []).map((r) => ({
         kind: r.kind, name: r.name, quantity: Number(r.quantity), rate: Number(r.rate),
       })),
@@ -445,7 +506,9 @@ function RecipesTab({
       product_id: values.product_id,
       name: values.name,
       output_quantity: values.output_quantity,
-      components: (values.components || []).map((c: any) => ({ item_id: c.item_id, quantity: c.quantity })),
+      components: (values.components || []).map((c: any) => ({
+        item_id: c.item_id, quantity: c.quantity, unit: c.unit || null,
+      })),
       resources,
     };
     try {
@@ -480,7 +543,11 @@ function RecipesTab({
       render: (_: any, r: Bom) => (
         <Space size={[0, 4]} wrap>
           {r.components.map((c) => (
-            <Tag key={c.item_id}>{itemName(c.item_id)} × {Number(c.quantity)}</Tag>
+            // Shows the unit it was written in, so «× ٢ كرتونة» never reads as «× ٢» of
+            // something unstated.
+            <Tag key={c.item_id}>
+              {itemName(c.item_id)} × {Number(c.quantity)}{c.unit ? ` ${c.unit}` : ''}
+            </Tag>
           ))}
         </Space>
       ) },
@@ -553,11 +620,43 @@ function RecipesTab({
                     <Form.Item {...field} name={[field.name, 'item_id']} style={{ flex: 1, marginBottom: 0 }}
                       rules={[{ required: true, message: 'اختر الخامة' }]}>
                       <Select placeholder="الخامة" style={{ minWidth: 220 }}
+                        // Picking the material loads its units, and clears any unit carried over
+                        // from the previous choice — a unit that belonged to another item would
+                        // be rejected on save, and worse, might not be.
+                        onChange={(v: number) => {
+                          loadUnits(v);
+                          const rows = form.getFieldValue('components') || [];
+                          if (rows[field.name]) {
+                            rows[field.name] = { ...rows[field.name], unit: undefined };
+                            form.setFieldsValue({ components: rows });
+                          }
+                        }}
                         options={rawMaterials.map((r) => ({ value: r.id, label: `${r.name} (${r.unit_of_measure})` }))} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
                       <InputNumber min={0.001} placeholder="الكمية" />
+                    </Form.Item>
+                    {/* «الوحدة» — the recipe is written in whatever unit the workshop speaks
+                        («٢ كرتونة»)، and the conversion to base units happens when the order
+                        consumes, not in someone's head at the keyboard. */}
+                    <Form.Item noStyle shouldUpdate>
+                      {({ getFieldValue }) => {
+                        const iid = getFieldValue(['components', field.name, 'item_id']);
+                        const raw = rawMaterials.find((r) => r.id === iid);
+                        const alts = unitOpts[iid] || [];
+                        return (
+                          <Form.Item {...field} name={[field.name, 'unit']}
+                            style={{ marginBottom: 0 }}>
+                            <Select allowClear style={{ minWidth: 130 }} disabled={!iid}
+                              placeholder={raw?.unit_of_measure || 'الوحدة'}
+                              options={alts.map((u) => ({
+                                value: u.name,
+                                label: `${u.name} (=${Number(u.factor)} ${raw?.unit_of_measure || ''})`,
+                              }))} />
+                          </Form.Item>
+                        );
+                      }}
                     </Form.Item>
                     <DeleteOutlined onClick={() => remove(field.name)} style={{ color: '#ff4d4f' }} />
                   </Space>

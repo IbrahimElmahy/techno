@@ -5,6 +5,7 @@ that posts a mirror stock movement (reverse-once).
 """
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -22,7 +23,7 @@ from src.models.manufacturing import (
     ManufacturingOrderResource,
 )
 from src.models.stock import LocationKind, StockDirection
-from src.services import audit_service, stock_service
+from src.services import audit_service, stock_service, uom_service
 
 
 class ManufacturingError(Exception):
@@ -109,6 +110,22 @@ def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
 # ---------------------------------------------------------------------------
 # Bill of materials (recipes) — 012-manufacturing-bom.
 # ---------------------------------------------------------------------------
+def _component_rows(components):
+    """Normalise recipe components to (item_id, quantity, unit).
+
+    Callers written before units existed pass `(item_id, quantity)` and mean the base unit; both
+    shapes are accepted so no existing caller has to be touched to keep meaning what it meant.
+    """
+    rows = []
+    for comp in components or []:
+        if len(comp) >= 3:
+            item_id, qty, unit = comp[0], comp[1], comp[2]
+        else:
+            item_id, qty, unit = comp[0], comp[1], None
+        rows.append((item_id, qty, unit or None))
+    return rows
+
+
 def _validate_recipe(db: Session, *, product_id: int, output_quantity, components,
                      resources=None) -> None:
     product = db.get(Item, product_id)
@@ -119,7 +136,7 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
     if not components:
         raise ManufacturingError("A recipe needs at least one raw-material component.")
     seen: set[int] = set()
-    for item_id, qty in components:
+    for item_id, qty, unit in _component_rows(components):
         if item_id in seen:
             raise ManufacturingError("A raw material appears more than once in the recipe.")
         seen.add(item_id)
@@ -128,6 +145,15 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
             raise ManufacturingError("Recipe components must be raw materials.")
         if to_qty(qty) <= to_qty(0):
             raise ManufacturingError("Each component quantity must be positive.")
+        # Rejected here rather than at order time: a recipe saved with a unit the item does not
+        # have would fail every order made from it, long after whoever typed it has moved on.
+        if unit:
+            try:
+                uom_service.resolve_factor(db, comp, unit)
+            except Exception as exc:
+                raise ManufacturingError(
+                    f"وحدة «{unit}» غير معرّفة للصنف «{comp.name}»."
+                ) from exc
     for kind, name, qty, rate in (resources or []):
         try:
             ResourceKind(kind)
@@ -138,8 +164,11 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
 
 
 def _persist_recipe_lines(db: Session, bom: Bom, components, resources) -> None:
-    for item_id, qty in components:
-        db.add(BomComponent(bom_id=bom.id, item_id=item_id, quantity=to_qty(qty)))
+    for item_id, qty, unit in _component_rows(components):
+        item = db.get(Item, item_id)
+        factor = uom_service.resolve_factor(db, item, unit) if unit else Decimal(1)
+        db.add(BomComponent(bom_id=bom.id, item_id=item_id, quantity=to_qty(qty),
+                            unit=unit, unit_factor=to_qty(factor)))
     for kind, name, qty, rate in (resources or []):
         db.add(BomResource(bom_id=bom.id, kind=ResourceKind(kind), name=name,
                            quantity=to_qty(qty), rate=to_money(rate)))
@@ -231,6 +260,10 @@ def create_order(
     actor_user_id: int,
     resources=None,          # (014) override list of (kind, name, quantity, rate); None = use recipe
     wastes=None,             # (014) {component_item_id: waste_quantity} recorded per line
+    production_date=None,    # the day production happened; defaults to today
+    branch_id: int | None = None,
+    work_order_ref: str | None = None,   # «امر تشغيل» — the shop-floor docket, free text
+    notes: str | None = None,
 ) -> ManufacturingOrder:
     """Consume the product's recipe components (scaled) and produce the product in one document.
 
@@ -256,11 +289,16 @@ def create_order(
     scale = production.scale_factor(bom.output_quantity, qty)
     wastes = wastes or {}
 
+    # Defaulted here rather than in the column so an order always carries a real production day —
+    # a NULL would push every report that groups by day into guessing.
+    production_date = production_date or date.today()
     order = ManufacturingOrder(
         document_number=_order_doc_number(db), product_id=product_id, bom_id=bom.id,
         location_kind=location_kind, location_id=location_id, quantity=qty,
         unit_cost=ZERO, total_cost=ZERO, material_cost=ZERO, resource_cost=ZERO,
         stock_movement_id=None, actor_user_id=actor_user_id,
+        production_date=production_date, branch_id=branch_id,
+        work_order_ref=(work_order_ref or None), notes=(notes or None),
     )
     db.add(order)
     db.flush()
@@ -268,7 +306,10 @@ def create_order(
     # --- Materials: route each component to its own warehouse, consume, cost ---
     material_cost = ZERO
     for comp in bom.components:
-        consumed = production.consumed_quantity(comp.quantity, scale)
+        # `comp.quantity` is in the unit the recipe was written in; the factor turns it into the
+        # base units stock actually moves in.
+        consumed = production.consumed_quantity(
+            comp.quantity, scale, getattr(comp, "unit_factor", 1) or 1)
         raw = db.get(Item, comp.item_id)
         wk, wid = production.resolve_warehouse(
             raw.default_warehouse_id if raw else None, location_kind, location_id)

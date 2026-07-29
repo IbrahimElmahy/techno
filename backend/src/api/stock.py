@@ -158,7 +158,7 @@ class PermitLineIn(BaseModel):
 
 
 class PermitIn(BaseModel):
-    kind: str  # receipt | issue
+    kind: str  # receipt | issue | opening (بضاعة أول المدة)
     warehouse_id: int
     lines: list[PermitLineIn]
     reason: str | None = None

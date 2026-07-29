@@ -37,6 +37,11 @@ const MOVEMENT_LABELS: Record<string, string> = {
   reverse_inspection_out: 'عكس معاينة',
   loyalty_gift_out: 'هدية نقاط',
   serial_receive_in: 'استلام أرقام تسلسلية',
+  permit_in: 'إذن إضافة',
+  permit_out: 'إذن صرف',
+  // Its own line on the card: opening stock is what the company already had, not a movement that
+  // happened, and reading it as a receipt would invent a day it arrived.
+  opening_in: 'بضاعة أول المدة',
 };
 
 interface CardRow {

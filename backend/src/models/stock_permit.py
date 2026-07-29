@@ -23,6 +23,12 @@ from src.core.money import MONEY, QTY
 class PermitKind(str, enum.Enum):
     receipt = "receipt"  # إذن إضافة — stock in
     issue = "issue"      # إذن صرف — stock out
+    # بضاعة أول المدة — the stock the company already had on the day it started using the system.
+    # Mechanically a receipt: same direction, same typed cost. It is a kind of its own because the
+    # label is the whole point — «إمتى بدأنا؟» has to be answerable, a stock-as-of-date report for a
+    # day before go-live must not show goods the system was not yet keeping, and opening stock must
+    # never be read as a movement that happened.
+    opening = "opening"
 
 
 class StockPermit(Base):

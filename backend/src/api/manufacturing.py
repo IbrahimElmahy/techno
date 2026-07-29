@@ -4,10 +4,11 @@ Two layers: manual consume/produce ops (kept) + recipe-driven manufacturing orde
 """
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -101,6 +102,8 @@ def reverse(
 class ComponentIn(BaseModel):
     item_id: int
     quantity: Decimal
+    # The unit the quantity is written in; omit for the item's base unit (008).
+    unit: str | None = None
 
 
 class ResourceIn(BaseModel):
@@ -128,6 +131,8 @@ class BomUpdate(BaseModel):
 class ComponentOut(BaseModel):
     item_id: int
     quantity: Decimal
+    unit: str | None = None
+    unit_factor: Decimal = Decimal("1")
 
 
 class ResourceOut(BaseModel):
@@ -151,7 +156,10 @@ def _bom_out(bom) -> BomOut:
     return BomOut(
         id=bom.id, product_id=bom.product_id, name=bom.name,
         output_quantity=bom.output_quantity, active=bom.active,
-        components=[ComponentOut(item_id=c.item_id, quantity=c.quantity) for c in bom.components],
+        components=[ComponentOut(
+            item_id=c.item_id, quantity=c.quantity, unit=getattr(c, "unit", None),
+            unit_factor=getattr(c, "unit_factor", None) or Decimal("1"),
+        ) for c in bom.components],
         resources=[ResourceOut(kind=r.kind.value, name=r.name, quantity=r.quantity, rate=r.rate)
                    for r in bom.resources],
     )
@@ -189,7 +197,7 @@ def create_bom(
     try:
         bom = manufacturing_service.create_bom(
             db, product_id=body.product_id, name=body.name, output_quantity=body.output_quantity,
-            components=[(c.item_id, c.quantity) for c in body.components],
+            components=[(c.item_id, c.quantity, c.unit) for c in body.components],
             resources=[(r.kind, r.name, r.quantity, r.rate) for r in body.resources],
             actor_user_id=current.id)
     except ManufacturingError as exc:
@@ -208,7 +216,7 @@ def update_bom(
     try:
         bom = manufacturing_service.update_bom(
             db, bom_id=bom_id, name=body.name, output_quantity=body.output_quantity,
-            components=[(c.item_id, c.quantity) for c in body.components],
+            components=[(c.item_id, c.quantity, c.unit) for c in body.components],
             resources=[(r.kind, r.name, r.quantity, r.rate) for r in body.resources],
             actor_user_id=current.id)
     except ManufacturingError as exc:
@@ -252,6 +260,12 @@ class OrderIn(BaseModel):
     bom_id: int | None = None
     resources: list[OrderResourceIn] | None = None  # override recipe resources; omit = use recipe
     wastes: list[OrderWasteIn] = []                  # per-component waste recorded on the order
+    # Document fields: the day production happened (defaults to today), the branch, the shop-floor
+    # work order («امر تشغيل») and notes.
+    production_date: date | None = None
+    branch_id: int | None = None
+    work_order_ref: str | None = Field(default=None, max_length=60)
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class OrderConsumptionOut(BaseModel):
@@ -283,6 +297,10 @@ class OrderOut(BaseModel):
     resource_cost: Decimal
     reversed: bool
     is_reversal: bool
+    production_date: date | None = None
+    branch_id: int | None = None
+    work_order_ref: str | None = None
+    notes: str | None = None
     consumptions: list[OrderConsumptionOut]
     resources: list[OrderResourceOut]
 
@@ -306,6 +324,10 @@ def _order_out(order, reversed_ids: set[int]) -> OrderOut:
         total_cost=order.total_cost, material_cost=order.material_cost,
         resource_cost=order.resource_cost, reversed=order.id in reversed_ids,
         is_reversal=order.reverses_order_id is not None,
+        production_date=getattr(order, "production_date", None),
+        branch_id=getattr(order, "branch_id", None),
+        work_order_ref=getattr(order, "work_order_ref", None),
+        notes=getattr(order, "notes", None),
         consumptions=[OrderConsumptionOut(item_id=c.item_id, quantity=c.quantity,
                                           unit_cost=c.unit_cost, line_cost=c.line_cost,
                                           waste_quantity=c.waste_quantity, warehouse_id=c.warehouse_id)
@@ -349,7 +371,9 @@ def create_order(
             bom_id=body.bom_id, actor_user_id=current.id,
             resources=([(r.kind, r.name, r.quantity, r.rate) for r in body.resources]
                        if body.resources is not None else None),
-            wastes={w.item_id: w.quantity for w in body.wastes})
+            wastes={w.item_id: w.quantity for w in body.wastes},
+            production_date=body.production_date, branch_id=body.branch_id,
+            work_order_ref=body.work_order_ref, notes=body.notes)
     except (ManufacturingError, StockError) as exc:
         raise _conflict(exc)
     db.commit()

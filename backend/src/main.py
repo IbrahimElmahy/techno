@@ -155,6 +155,14 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # Production document header (a5 parity: انتاج حسب النسب).
+    ("manufacturing_order", "production_date", "DATE"),
+    ("manufacturing_order", "branch_id", "BIGINT"),
+    ("manufacturing_order", "work_order_ref", "VARCHAR(60)"),
+    ("manufacturing_order", "notes", "VARCHAR(500)"),
+    # The unit a recipe component is written in (a5 parity: نسب انتاج ← الوحدة).
+    ("bom_component", "unit", "VARCHAR(16)"),
+    ("bom_component", "unit_factor", "DECIMAL(18,3) NOT NULL DEFAULT 1"),
     # «المستوى الرئيسي» on a chart account (a5 parity).
     ("account", "main_level", "VARCHAR(80)"),
     # Master-data parity: the supplier's location, the store's note, the employee's store.

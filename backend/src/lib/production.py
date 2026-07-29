@@ -20,9 +20,20 @@ def scale_factor(output_quantity, produced_quantity) -> Decimal:
     return to_qty(produced_quantity) / batch
 
 
-def consumed_quantity(component_quantity, scale) -> Decimal:
-    """Base units of a component consumed = per-batch quantity × scale."""
-    return to_qty(Decimal(component_quantity) * Decimal(scale))
+def consumed_quantity(component_quantity, scale, unit_factor=1) -> Decimal:
+    """Base units of a component consumed = per-batch quantity × scale × unit factor.
+
+    The recipe stores the quantity in whatever unit it was written in («٢ كرتونة»), so the factor
+    is applied here — at the one place that turns a recipe into stock movement — rather than at
+    entry. A recipe written in cartons therefore follows the carton factor if it is ever corrected,
+    instead of carrying a conversion made once and forgotten.
+
+    `unit_factor` defaults to 1, which is what every recipe written before units existed means.
+    """
+    factor = to_qty(unit_factor or 1)
+    if factor <= to_qty(0):
+        raise ValueError("Unit factor must be positive.")
+    return to_qty(Decimal(component_quantity) * Decimal(scale) * factor)
 
 
 def resolve_warehouse(

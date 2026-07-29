@@ -10,9 +10,9 @@ Two layers coexist:
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -75,6 +75,17 @@ class ManufacturingOrder(Base):
     reverses_order_id: Mapped[int | None] = mapped_column(
         ForeignKey("manufacturing_order.id"), unique=True, nullable=True
     )
+    # --- Document fields, read off their انتاج حسب النسب header -------------------------------
+    # The day production happened, which is not always the day it was typed: a workshop closes a
+    # batch in the evening and the office enters it next morning. Dating the document by entry
+    # would put the output in the wrong day on every production report.
+    production_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True, index=True)
+    # «امر تشغيل» — the shop-floor work order this production belongs to. Free text on purpose: it
+    # is somebody else's numbering (a paper docket, a customer order), and validating it against a
+    # table we own would reject the very references it exists to record.
+    work_order_ref: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 

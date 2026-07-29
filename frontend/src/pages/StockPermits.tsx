@@ -18,7 +18,17 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
  * issue does not, because stock going out is worth what it cost us, not what someone types.
  */
 
-type Kind = 'receipt' | 'issue';
+type Kind = 'receipt' | 'issue' | 'opening';
+
+/** «بضاعة أول المدة» behaves like a receipt — same direction, same typed cost — and is labelled
+ *  separately so «إمتى بدأنا؟» stays answerable and a stock-as-of-date report for a day before
+ *  go-live does not show goods the system was not yet keeping. */
+const KIND_LABEL: Record<Kind, string> = {
+  receipt: 'إضافة', issue: 'صرف', opening: 'أول المدة',
+};
+const KIND_COLOR: Record<Kind, string> = {
+  receipt: 'green', issue: 'red', opening: 'blue',
+};
 
 interface PermitLine {
   id: number; item_id: number; item_name: string | null;
@@ -103,7 +113,7 @@ export default function StockPermits() {
       .filter((l) => l.item_id && Number(l.quantity) > 0)
       .map((l) => ({
         item_id: l.item_id, quantity: String(l.quantity),
-        ...(kind === 'receipt' && l.unit_cost !== undefined
+        ...(kind !== 'issue' && l.unit_cost !== undefined
           ? { unit_cost: String(l.unit_cost) } : {}),
       }));
     if (!payload.length) { message.warning('أضف سطراً واحداً على الأقل'); return; }
@@ -114,7 +124,8 @@ export default function StockPermits() {
         reason: reason || null, notes: notes || null,
         permit_date: permitDate.format('YYYY-MM-DD'),
       });
-      message.success(kind === 'receipt' ? 'اتسجّل إذن الإضافة' : 'اتسجّل إذن الصرف');
+      message.success(kind === 'issue' ? 'اتسجّل إذن الصرف'
+        : kind === 'opening' ? 'اتسجّلت بضاعة أول المدة' : 'اتسجّل إذن الإضافة');
       setCreating(false); resetDraft(); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الإذن');
@@ -138,7 +149,8 @@ export default function StockPermits() {
     <Modal
       open={creating} onCancel={() => setCreating(false)} onOk={submit}
       confirmLoading={saving} width={860} destroyOnHidden
-      title={kind === 'receipt' ? 'إذن إضافة مخزني' : 'إذن صرف مخزني'}
+      title={kind === 'issue' ? 'إذن صرف مخزني'
+        : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}
       okText="ترحيل الإذن" cancelText="إلغاء"
     >
       <Segmented
@@ -147,6 +159,7 @@ export default function StockPermits() {
         options={[
           { value: 'receipt', label: 'إذن إضافة (دخول للمخزن)' },
           { value: 'issue', label: 'إذن صرف (خروج من المخزن)' },
+          { value: 'opening', label: 'بضاعة أول المدة' },
         ]}
       />
 
@@ -197,7 +210,7 @@ export default function StockPermits() {
                   ? { ...l, quantity: q as number } : l)))}
               />
             ) },
-          ...(kind === 'receipt' ? [{
+          ...(kind !== 'issue' ? [{
             title: 'تكلفة الوحدة', dataIndex: 'unit_cost', width: 160,
             render: (v: any, r: DraftLine) => (
               <InputNumber
@@ -220,7 +233,7 @@ export default function StockPermits() {
                 ...prev, { key: Math.max(...prev.map((l) => l.key)) + 1 }])}>
               سطر جديد
             </Button>
-            {kind === 'receipt' && (
+            {kind !== 'issue' && (
               <span>إجمالي التكلفة: <b>{money(draftTotal)}</b></span>
             )}
           </Space>
@@ -248,6 +261,8 @@ export default function StockPermits() {
             onClick={() => { setKind('receipt'); setCreating(true); }}>إذن إضافة</Button>
           <Button icon={<PlusOutlined />}
             onClick={() => { setKind('issue'); setCreating(true); }}>إذن صرف</Button>
+          <Button icon={<PlusOutlined />}
+            onClick={() => { setKind('opening'); setCreating(true); }}>بضاعة أول المدة</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
       )}
@@ -263,6 +278,7 @@ export default function StockPermits() {
         filters={[{ key: 'kind', placeholder: 'نوع الإذن', options: [
           { value: 'receipt', label: 'إذن إضافة' },
           { value: 'issue', label: 'إذن صرف' },
+          { value: 'opening', label: 'بضاعة أول المدة' },
         ] }]}
       />
 
@@ -277,9 +293,7 @@ export default function StockPermits() {
           { title: 'النوع', dataIndex: 'kind',
             render: (k: Kind, r) => (
               <>
-                <Tag color={k === 'receipt' ? 'green' : 'red'}>
-                  {k === 'receipt' ? 'إضافة' : 'صرف'}
-                </Tag>
+                <Tag color={KIND_COLOR[k]}>{KIND_LABEL[k] || k}</Tag>
                 {r.is_reversal && <Tag color="orange">عكسي</Tag>}
                 {r.reversed_by && <Tag color="default">اتعكس</Tag>}
               </>
