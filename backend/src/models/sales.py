@@ -76,6 +76,36 @@ class SalesInvoice(Base):
     )
 
 
+class SalesInvoiceCoupon(Base):
+    """A book of coupons handed over with one invoice — one row per KIND.
+
+    The invoice used to carry a single serial range and a single count, which said «coupons were
+    given» but never WHICH. A counter handing out a hundred gold and fifty silver had one range to
+    put them in and had to pick which truth to record.
+
+    A row per kind instead, each with its own count and its own range. The range stays because it
+    is what the returns app checks a serial against; the kind is what makes «مئة ذهبي» something
+    the books can say rather than something the storekeeper remembers.
+
+    `coupon_type_id` is nullable: a book with no type on it is still a book, and refusing to record
+    it would push the count back to being remembered rather than written.
+    """
+
+    __tablename__ = "sales_invoice_coupon"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    # Indexes are declared in the migration rather than here: `create_all` runs on import in
+    # some environments AND from the test fixtures, and two passes over a brand-new table race to
+    # create the same named index.
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
+    coupon_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("coupon_type.id"), nullable=True
+    )
+    count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    serial_from: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    serial_to: Mapped[str | None] = mapped_column(String(24), nullable=True)
+
+
 class SalesInvoiceLine(Base):
     __tablename__ = "sales_invoice_line"
 

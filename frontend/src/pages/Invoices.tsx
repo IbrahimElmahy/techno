@@ -178,7 +178,14 @@ export default function Invoices() {
   // product they picked, or a line they clicked — so the panel answers the question they are
   // asking right now without them having to ask it twice.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
-  const [couponFrom, setCouponFrom] = useState('');
+  /** الكوبونات المصروفة مع الفاتورة — a row per KIND, because a counter handing out a hundred
+   *  gold and fifty silver was previously given one range to put both in and had to choose which
+   *  of the two to record. */
+  const [couponRows, setCouponRows] = useState<
+    { key: string; coupon_type_id?: number; count?: number; serial_from?: string;
+      serial_to?: string }[]
+  >([]);
+  const [couponTypes, setCouponTypes] = useState<{ id: number; name: string }[]>([]);
   // The day the sale happened, asked for before the form opens. It is not always today — a rep
   // comes back from a round, a branch catches up on a backlog — and it dates the ledger entry
   // as well as the document, so it has to be settled before anything is typed rather than
@@ -199,7 +206,6 @@ export default function Invoices() {
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
 
   const [invoiceDate, setInvoiceDate] = useState<any>(dayjs());
-  const [couponTo, setCouponTo] = useState('');
   // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
   // be served from a different warehouse, so a single item-keyed map would answer the wrong
   // question. Stock can never go negative, so the form shows what is available and caps the
@@ -208,15 +214,19 @@ export default function Invoices() {
   // (030) the party picker + what it filled into the document header
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   /**
-   * Opening a sale is a sequence of doors, one question behind each: التاريخ، then العميل، then
-   * المخزن، and only then the invoice itself.
+   * Opening a sale is a sequence of doors, one question behind each: التاريخ، then العميل، and
+   * then the invoice itself.
+   *
+   * The store used to be a third door and is not any more: it follows from the customer — his rep,
+   * and the rep's van — so asking was asking a question whose answer was already on screen. It is
+   * still a field on the document, changeable when the goods really do leave from somewhere else.
    *
    * Asked one at a time rather than on one crowded dialog because that is how the person doing it
    * thinks — each answer is settled and gone before the next is put. It also means every step can
    * be answered with Enter and nothing else, which is the point of the whole keyboard pass: from
    * the button to the first product without touching the mouse.
    */
-  const [newStep, setNewStep] = useState<null | 'date' | 'party' | 'warehouse'>(null);
+  const [newStep, setNewStep] = useState<null | 'date' | 'party'>(null);
   const [party, setParty] = useState<Party | null>(null);
   // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
@@ -270,7 +280,7 @@ export default function Invoices() {
 
   const loadLookups = async () => {
     try {
-      const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes] = await Promise.all([
+      const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes, ctRes] = await Promise.all([
         api.get('/api/v1/customers'),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
@@ -278,6 +288,7 @@ export default function Invoices() {
         api.get('/api/v1/employees', { params: { active: true } }),
         api.get('/api/v1/users'),
         api.get('/api/v1/accounts?postable_only=true').catch(() => ({ data: [] })),
+        api.get('/api/v1/loyalty/coupon-types').catch(() => ({ data: [] })),
       ]);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
@@ -285,6 +296,7 @@ export default function Invoices() {
       setEmployees(empRes.data);
       setReps(userRes.data.filter((u: any) => u.role === 'sales_rep'));
       setPostingAccounts(acctRes.data || []);
+      setCouponTypes(ctRes.data || []);
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
       setPointValues(pts);
@@ -348,8 +360,7 @@ export default function Invoices() {
     setSelectedCustomerId(null);
     setCustomerBalance(null);
     setCustomerCoupons([]);
-    setCouponFrom('');
-    setCouponTo('');
+    setCouponRows([]);
     setExpenses([]);
     setAvailability({});
     setParty(null);
@@ -426,6 +437,37 @@ export default function Invoices() {
     if (field === 'item_id' && value) await fetchPrices(value);
     // (030) A line moved to another warehouse needs THAT warehouse's stock to cap against.
     if (field === 'warehouse_id' && value) await loadWarehouseStock(value);
+
+    // A quantity bigger than the store holds is refused AS IT IS TYPED, not at save.
+    //
+    // The check already existed on submit, and the server enforces it too — but by then the
+    // invoice is written and the person is told a basket they spent five minutes on cannot be
+    // posted. Saying it at the box, on the line, while the wrong number is still under the
+    // cursor, is the difference between a correction and a rewrite.
+    //
+    // It caps rather than reverts: typing 40 against a stock of 12 means «all of it», and putting
+    // 12 there is what the person would have typed had they known. Reverting to the old value
+    // would leave them guessing what the ceiling is.
+    if (field === 'quantity' && value != null) {
+      const line = lines.find((l) => l.key === key);
+      // Only when a store is actually chosen. «No store picked yet» reads as zero on hand, and
+      // capping against that would refuse every quantity on the invoice while telling the person
+      // the goods are out of stock — which is a different sentence from «you have not said where
+      // they leave from», and sends them looking in the wrong place. The store is required at
+      // save, and that is where its absence gets named.
+      if (line?.item_id && lineWarehouse(line)) {
+        const stock = availableFor(line.item_id, line.unit, lineWarehouse(line));
+        if (Number(value) > stock) {
+          const name = productName(line.item_id);
+          const store = warehouses.find((w) => w.id === lineWarehouse(line))?.name ?? 'المخزن';
+          message.warning(stock > 0
+            ? `«${name}»: المتاح في ${store} هو ${stock} — اتسجّلت ${stock}.`
+            : `«${name}»: مفيش رصيد في ${store}.`);
+          value = stock;
+        }
+      }
+    }
+
     setLines((prev) =>
       prev.map((l) => {
         if (l.key !== key) return l;
@@ -483,7 +525,9 @@ export default function Invoices() {
     setPartyPickerOpen(false);
     // Mid-invoice this only swaps the party — nothing restarts. During the opening sequence it is
     // the second door, so it hands over to the third rather than opening the document.
-    if (newStep === 'party') setNewStep('warehouse');
+    // The customer is the last question. His rep fills in المندوب and the rep's store fills in
+    // المستودع, so the document opens knowing all three.
+    if (newStep === 'party') { setNewStep(null); setCreateVisible(true); }
     createForm.setFieldsValue({ customer_id: picked.id });
     // A brand-new customer isn't in the loaded list yet; add it so the field renders its name.
     setCustomers((prev) => (prev.some((c) => c.id === picked.id) ? prev : [
@@ -665,9 +709,14 @@ export default function Invoices() {
           })),
         // Coupons handed over with this invoice, as the serial range off the book. Kept on the
         // invoice because that is what proves which coupons were his when they come back in.
-        coupon_serial_from: values.coupon_serial_from || undefined,
-        coupon_serial_to: values.coupon_serial_to || undefined,
-        coupon_count: couponCount ?? undefined,
+        coupons: couponRows
+          .filter((r) => r.coupon_type_id || r.count || r.serial_from || r.serial_to)
+          .map((r) => ({
+            coupon_type_id: r.coupon_type_id ?? null,
+            count: r.count ?? null,
+            serial_from: r.serial_from || null,
+            serial_to: r.serial_to || null,
+          })),
         notes: values.notes || undefined,
       });
 
@@ -907,12 +956,6 @@ export default function Invoices() {
     .filter((e) => e.kind === 'operating')
     .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
-  const couponCount = (() => {
-    const a = parseInt(couponFrom.trim(), 10);
-    const b = parseInt(couponTo.trim(), 10);
-    if (String(a) !== couponFrom.trim() || String(b) !== couponTo.trim()) return null;
-    return b >= a ? b - a + 1 : null;
-  })();
 
   /** First and last serial of the customer's outstanding coupons, sorted so the range is real. */
   const couponRange = (() => {
@@ -1370,34 +1413,57 @@ export default function Invoices() {
             </Col>
           </Row>
 
-          {/* Coupons handed to the customer with this invoice. A range, not a list, because
-              they come off a printed book — and stored on the invoice so that when the customer
-              brings one back, the app can trace the serial to a sale that really happened. */}
-          <Row gutter={16} align="bottom">
-            <Col xs={12} md={5}>
-              <Form.Item name="coupon_serial_from" label="كوبونات من رقم"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="مثال: 1200"
-                  onChange={(e) => setCouponFrom(e.target.value)} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={5}>
-              <Form.Item name="coupon_serial_to" label="إلى رقم" style={{ marginBottom: 8 }}>
-                <Input placeholder="مثال: 1249"
-                  onChange={(e) => setCouponTo(e.target.value)} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={14}>
-              <div style={{ paddingBottom: 8, fontSize: 13, color: '#8a8a8a' }}>
-                {couponCount !== null
-                  ? <>عدد الكوبونات المصروفة:{' '}
-                      <b style={{ color: '#F5A11D' }}>{couponCount}</b></>
-                  : (couponFrom || couponTo)
-                    ? 'الأرقام مش متسلسلة رقمياً — هتتحفظ زي ما هي من غير عدّ.'
-                    : 'سيبها فاضية لو الفاتورة من غير كوبونات.'}
-              </div>
-            </Col>
-          </Row>
+          {/* الكوبونات المصروفة — one row per kind, added and removed freely.
+              It used to be a single range, which recorded THAT coupons were handed over and never
+              WHICH: a hundred gold and fifty silver had one pair of boxes between them. The serial
+              range stays on each row because that is what the returns app checks a returned serial
+              against; the kind is what lets the books say what was given. */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontWeight: 600 }}>الكوبونات المصروفة</span>
+              <Button size="small" icon={<PlusOutlined />}
+                onClick={() => setCouponRows((r) => [...r, { key: String(Date.now()) }])}>
+                إضافة نوع
+              </Button>
+              <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+                {couponRows.length === 0
+                  ? 'سيبها فاضية لو الفاتورة من غير كوبونات.'
+                  : `الإجمالي: ${couponRows.reduce((t, r) => t + Number(r.count || 0), 0)} كوبون`}
+              </span>
+            </div>
+            {couponRows.map((row) => (
+              <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
+                <Col xs={24} md={7}>
+                  <Select allowClear showSearch style={{ width: '100%' }}
+                    placeholder="نوع الكوبون" optionFilterProp="label"
+                    value={row.coupon_type_id}
+                    onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                      ? { ...x, coupon_type_id: v as number } : x)))}
+                    options={couponTypes.map((t) => ({ value: t.id, label: t.name }))} />
+                </Col>
+                <Col xs={8} md={4}>
+                  <InputNumber style={{ width: '100%' }} min={1} placeholder="العدد"
+                    value={row.count}
+                    onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                      ? { ...x, count: (v as number) ?? undefined } : x)))} />
+                </Col>
+                <Col xs={8} md={5}>
+                  <Input placeholder="من رقم" value={row.serial_from || ''}
+                    onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                      ? { ...x, serial_from: e.target.value } : x)))} />
+                </Col>
+                <Col xs={8} md={5}>
+                  <Input placeholder="إلى رقم" value={row.serial_to || ''}
+                    onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                      ? { ...x, serial_to: e.target.value } : x)))} />
+                </Col>
+                <Col xs={24} md={3}>
+                  <Button type="text" danger icon={<DeleteOutlined />}
+                    onClick={() => setCouponRows((rs) => rs.filter((x) => x.key !== row.key))} />
+                </Col>
+              </Row>
+            ))}
+          </div>
 
           {/* (030) The party's standing at a glance — what he owes, and how to reach him. */}
           {party && (
@@ -1962,32 +2028,6 @@ export default function Invoices() {
         </div>
       </Modal>
 
-      {/* الباب الثالث: المخزن. Already filled from the chosen customer's rep, so the common case
-          is one Enter — but it is still ASKED, because the goods leaving the wrong store is the
-          kind of mistake nobody notices until stocktake. */}
-      <Modal
-        open={newStep === 'warehouse'}
-        title="مستودع الصرف والتسليم"
-        okText="ابدأ الفاتورة"
-        cancelText="رجوع"
-        onCancel={() => setNewStep('party')}
-        onOk={() => { setNewStep(null); setCreateVisible(true); }}
-        okButtonProps={{ disabled: !docWarehouseId }}
-        destroyOnHidden
-      >
-        <Select
-          style={{ width: '100%' }} size="large" autoFocus showSearch
-          placeholder="اختر المستودع"
-          optionFilterProp="label"
-          value={docWarehouseId ?? undefined}
-          onChange={(v) => { onWarehouseChange(v as number); createForm.setFieldsValue({ warehouse_id: v }); }}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-        />
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
-          {party?.name ? `العميل: ${party.name} — ` : ''}
-          المستودع اتملى من مخزن المندوب. غيّره لو البضاعة هتخرج من مكان تاني.
-        </div>
-      </Modal>
     </div>
   );
 }

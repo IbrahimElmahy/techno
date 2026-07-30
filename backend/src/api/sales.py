@@ -21,7 +21,8 @@ from src.core import clock
 from src.core.db import get_db
 from src.models.catalog import PriceTier
 from src.models.customer import Customer
-from src.models.sales import SalesInvoice, SalesReturn
+from src.models.loyalty import CouponType
+from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind
 from src.models.warehouse import Custody
 from src.services import sales_service
@@ -55,6 +56,19 @@ class InvoiceExpenseIn(BaseModel):
     description: str | None = None
 
 
+class InvoiceCouponIn(BaseModel):
+    coupon_type_id: int | None = None
+    count: int | None = None
+    serial_from: str | None = None
+    serial_to: str | None = None
+
+
+class InvoiceCouponOut(InvoiceCouponIn):
+    id: int
+    # Resolved on read so a printed invoice can name the kind rather than showing an id.
+    coupon_type_name: str | None = None
+
+
 class SaleCreate(BaseModel):
     customer_id: int
     origin: LocationIn
@@ -75,6 +89,9 @@ class SaleCreate(BaseModel):
     coupon_serial_from: str | None = None
     coupon_serial_to: str | None = None
     coupon_count: int | None = None
+    # …or as one entry per KIND, which is what a counter handing out gold and silver together
+    # actually did. The three fields above stay for a hand-over that names no kind.
+    coupons: list[InvoiceCouponIn] = []
     # The day the sale happened — dates the document and its ledger entry alike.
     invoice_date: date | None = None
     # مصروفات الفاتورة — billed (على العميل، بتزيد الصافي) أو operating (على الشركة).
@@ -137,6 +154,7 @@ class SalesInvoiceOut(BaseModel):
     coupon_serial_from: str | None = None
     coupon_serial_to: str | None = None
     coupon_count: int | None = None
+    coupons: list[InvoiceCouponOut] = []
     invoice_date: date | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
@@ -168,6 +186,9 @@ class SalesInvoiceDetail(BaseModel):
     cash_account_id: int
     ledger_entry_id: int
     lines: list[InvoiceLineOut]
+    # The coupon books handed over, one row per kind — read back so the printed invoice can name
+    # them instead of showing a bare range.
+    coupons: list[InvoiceCouponOut] = []
 
 
 def _rep_scope_check(db: Session, current: CurrentUser, customer_id: int, origin: LocationIn) -> None:
@@ -210,12 +231,43 @@ def create_sale(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "sale_invalid", "message": str(exc)})
     except StockError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "no_negative_stock", "message": str(exc)})
+    # Written after the sale so they hang off a document that exists. A row with nothing in it at
+    # all is dropped rather than stored: an empty coupon line is one somebody started and left, and
+    # keeping it would read as a hand-over of nothing.
+    for c in body.coupons:
+        if c.coupon_type_id is None and not c.count and not c.serial_from and not c.serial_to:
+            continue
+        db.add(SalesInvoiceCoupon(
+            invoice_id=inv.id, coupon_type_id=c.coupon_type_id, count=c.count,
+            serial_from=c.serial_from, serial_to=c.serial_to,
+        ))
+    db.flush()
     db.commit()
-    return _inv_out(inv)
+    return _inv_out(inv, db)
 
 
-def _inv_out(inv: SalesInvoice) -> SalesInvoiceOut:
+def _inv_out(inv: SalesInvoice, db: Session | None = None) -> SalesInvoiceOut:
+    coupons: list[InvoiceCouponOut] = []
+    if db is not None:
+        rows = db.scalars(
+            select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.invoice_id == inv.id)
+        ).all()
+        names = {}
+        ids = [r.coupon_type_id for r in rows if r.coupon_type_id]
+        if ids:
+            names = dict(db.execute(
+                select(CouponType.id, CouponType.name).where(CouponType.id.in_(ids))
+            ).all())
+        coupons = [
+            InvoiceCouponOut(
+                id=r.id, coupon_type_id=r.coupon_type_id, count=r.count,
+                serial_from=r.serial_from, serial_to=r.serial_to,
+                coupon_type_name=names.get(r.coupon_type_id),
+            )
+            for r in rows
+        ]
     return SalesInvoiceOut(
+        coupons=coupons,
         id=inv.id, document_number=inv.document_number, customer_id=inv.customer_id,
         gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net, cash_amount=inv.cash_amount,
         credit_amount=inv.credit_amount, cash_account_id=inv.cash_account_id,
@@ -387,6 +439,7 @@ def get_sale(
     if inv is None:
         raise HTTPException(404, {"code": "not_found", "message": "Sale not found"})
     return SalesInvoiceDetail(
+        coupons=_inv_out(inv, db).coupons,
         id=inv.id,
         document_number=inv.document_number,
         customer_id=inv.customer_id,
