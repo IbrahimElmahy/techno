@@ -47,16 +47,34 @@ export default function ProductPickerModal({
 
   // A search that spans categories is the fastest path when the user already knows the name, so
   // typing overrides the category filter rather than narrowing inside it.
+  //
+  // With neither a search nor a category, EVERY product is listed. It used to show nothing and
+  // wait to be told where to look — which meant opening the window put you in front of an empty
+  // box with nothing highlighted, so the arrows had nothing to move between and Enter had nothing
+  // to add. A full list costs a scroll; an empty one costs a decision before you can start.
   const visible = useMemo(() => {
     const needle = normalizeAr(query);
     if (needle) {
       return products.filter((p) => normalizeAr(p.name).includes(needle)
         || normalizeAr(p.code || '').includes(needle));
     }
-    return activeCategory ? products.filter((p) => p.category === activeCategory) : [];
+    return activeCategory ? products.filter((p) => p.category === activeCategory) : products;
   }, [query, activeCategory, products]);
 
+  // Back to the top whenever the list underneath changes, so the highlight is never left pointing
+  // at a row that scrolled out from under it.
   useEffect(() => { setCursor(0); }, [query, activeCategory, open]);
+  // …and never past the end when a search narrows the list.
+  useEffect(() => {
+    setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
+  }, [visible.length]);
+
+  // Keep the highlighted row on screen — arrowing past the fold is how a keyboard user loses
+  // track of what Enter is about to add.
+  const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  useEffect(() => {
+    rowRefs.current[cursor]?.scrollIntoView({ block: 'nearest' });
+  }, [cursor]);
   useEffect(() => {
     if (!open) return;
     setQuery('');
@@ -114,11 +132,12 @@ export default function ProductPickerModal({
           <div style={{ maxHeight: '52vh', overflowY: 'auto' }} onKeyDown={onKeyDown}>
             {visible.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={query ? 'مافيش صنف بالاسم ده' : 'اختر فئة أو ابحث بالاسم'} />
+                description={query ? 'مافيش صنف بالاسم ده' : 'مافيش أصناف'} />
             ) : visible.map((p, i) => {
               const available = availableFor ? availableFor(p.id) : null;
               return (
                 <div key={p.id}
+                  ref={(el) => { rowRefs.current[i] = el; }}
                   onClick={() => (bulk ? toggle(p.id) : onPick(p.id))}
                   onMouseEnter={() => setCursor(i)}
                   style={{

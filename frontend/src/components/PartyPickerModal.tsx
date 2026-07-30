@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Col, DatePicker, Empty, Form, Input, Modal, Row, Select, Space, Spin, Tag, message,
 } from 'antd';
@@ -61,6 +61,10 @@ export default function PartyPickerModal({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [branchId, setBranchId] = useState<number | undefined>();
+  // The highlighted row. The list opens with the first one lit so Enter has something to answer
+  // and the arrows have somewhere to move from — the same as «اختر الصنف» a step later.
+  const [cursor, setCursor] = useState(0);
+  const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [creating, setCreating] = useState(false);
   const [createForm] = Form.useForm();
   const [saving, setSaving] = useState(false);
@@ -93,6 +97,25 @@ export default function PartyPickerModal({
       return normalizeAr(p.name).includes(needle) || normalizeAr(p.phone).includes(needle);
     });
   }, [parties, query, branchId]);
+
+  // Back to the top when the list changes, and never past its end.
+  useEffect(() => { setCursor(0); }, [query, branchId, open]);
+  useEffect(() => {
+    setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
+  }, [visible.length]);
+  useEffect(() => {
+    rowRefs.current[cursor]?.scrollIntoView({ block: 'nearest' });
+  }, [cursor]);
+
+  /** ↑↓ to move, Enter to take the highlighted one — the same keys as «اختر الصنف», so the two
+   *  steps of opening a document are driven identically. */
+  const onListKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault(); setCursor((c) => Math.min(c + 1, visible.length - 1));
+    }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
+    if (e.key === 'Enter' && visible[cursor]) { e.preventDefault(); onPick(visible[cursor]); }
+  };
 
   /** Create the party inline and hand it straight back — the document keeps everything it had. */
   const handleCreate = async (values: any) => {
@@ -181,7 +204,8 @@ export default function PartyPickerModal({
             <Col xs={24} md={date ? 8 : 14}>
               <Input allowClear autoFocus prefix={<SearchOutlined />}
                 placeholder="بحث بالاسم أو الهاتف"
-                value={query} onChange={(e) => setQuery(e.target.value)} />
+                value={query} onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onListKey} />
             </Col>
             <Col xs={24} md={date ? 8 : 10}>
               <Select allowClear style={{ width: '100%' }} placeholder="كل الفروع"
@@ -203,21 +227,23 @@ export default function PartyPickerModal({
           )}
 
           <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid #f0f0f0',
-                        borderRadius: 8 }}>
+                        borderRadius: 8 }} onKeyDown={onListKey}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
             ) : visible.length === 0 ? (
               <Empty description="لا توجد نتائج — استخدم زر الإنشاء بالأسفل"
                 style={{ margin: '32px 0' }} />
-            ) : visible.map((p) => (
+            ) : visible.map((p, i) => (
               <div key={p.id} onClick={() => onPick(p)}
+                ref={(el) => { rowRefs.current[i] = el; }}
+                onMouseEnter={() => setCursor(i)}
                 style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   gap: 8, padding: '10px 14px', cursor: 'pointer',
                   borderTop: '1px solid #f5f5f5',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#f2f9f3'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}>
+                  background: i === cursor ? '#eaf5e2' : undefined,
+                  boxShadow: i === cursor ? 'inset 2px 0 0 #6AB42D' : undefined,
+                }}>
                 <Space size={12}>
                   {p.phone && <span style={{ color: '#8a8a8a', fontSize: 12 }}>{p.phone}</span>}
                   {p.balance != null && Number(p.balance) !== 0 && (
@@ -232,7 +258,7 @@ export default function PartyPickerModal({
             ))}
           </div>
           <div style={{ marginTop: 6, color: '#8a8a8a', fontSize: 12 }}>
-            {visible.length} من {parties.length}
+            {visible.length} من {parties.length} · ↑↓ للتنقل · Enter للاختيار
           </div>
         </>
       )}
