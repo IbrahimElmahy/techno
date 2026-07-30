@@ -798,6 +798,34 @@ export default function Invoices() {
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
 
+  /** The toolbar over a SAVED invoice. Here التالى/السابق are what they are on their screen:
+   *  a step to the neighbouring document, in the order the list is currently showing. */
+  const viewToolbar = (): ToolbarAction[] => [
+    { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+      onClick: () => { setDetailVisible(false); setInvoiceDate(dayjs()); setNewStep('date'); } },
+    { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+      onClick: () => { if (viewInvoice) { setDetailVisible(false); handleEditInvoice(viewInvoice); } } },
+    { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: true },
+    { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
+    { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+      disabled: !neighbour(1),
+      onClick: () => { const n = neighbour(1); if (n) openDetail(n); } },
+    { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+      onClick: () => setDetailVisible(false) },
+    { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+      disabled: !neighbour(-1),
+      onClick: () => { const n = neighbour(-1); if (n) openDetail(n); } },
+    { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+      onClick: () => { if (viewInvoice) { setDetailVisible(false); handleDeleteInvoice(viewInvoice); } } },
+    { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+      onClick: () => window.print() },
+    { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+      disabled: !viewInvoice?.customer_id,
+      onClick: () => viewInvoice?.customer_id && navigate(`/customers/${viewInvoice.customer_id}`) },
+    { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
+      onClick: () => { if (viewInvoice) openDetail(viewInvoice); } },
+  ];
+
   /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
   const neighbour = (step: number) => {
     if (!viewInvoice) return null;
@@ -1156,6 +1184,29 @@ export default function Invoices() {
   // The create form is a full inner page (not a modal) — a big invoice form reads better on a
   // full page than boxed inside a scrolling modal.
   /**
+   * Walking into the register from an unsaved draft.
+   *
+   * Their system is always ON a document and steps between them; ours can be on one that does not
+   * exist yet, and there is no «next» from a thing with no place in the order. So these open the
+   * newest saved invoice — and ASK first when the draft has lines on it, because stepping away is
+   * one key and losing an hour of typing to it is not a trade anybody agreed to.
+   */
+  const stepFromDraft = (index: number) => {
+    const target = invoices[index];
+    if (!target) return;
+    const typed = lines.filter((l) => l.item_id !== null).length;
+    const go = () => { closeCreate(); openDetail(target); };
+    if (typed === 0) { go(); return; }
+    Modal.confirm({
+      title: 'سيبان الفاتورة دي؟',
+      content: `الفاتورة اللي بتكتبها فيها ${typed} صنف ولسه ماتحفظتش. لو مشيت دلوقتي هتضيع.`,
+      okText: 'سيبها وامشي', cancelText: 'ارجع للفاتورة',
+      okButtonProps: { danger: true },
+      onOk: go,
+    });
+  };
+
+  /**
    * The toolbar over the document — the row of verbs their old system puts there.
    *
    * Every entry is wired to something that already exists on this screen, and the ones that have
@@ -1177,10 +1228,14 @@ export default function Invoices() {
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: lineCount === 0,
         onClick: () => createForm.submit() },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: invoices.length === 0,
+        onClick: () => stepFromDraft(0) },
       { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
         onClick: () => setPickerOpen(true) },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: invoices.length === 0,
+        onClick: () => stepFromDraft(1) },
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: lineCount === 0,
         onClick: () => { setLines([]); } },
@@ -1789,18 +1844,11 @@ export default function Invoices() {
       <Modal centered
         title={(
           <Space>
+            {/* Stepping between neighbours moved into the toolbar below, under التالى/السابق —
+                the same verbs their old screen puts there. Two sets of arrows for one action is
+                one set too many, and the toolbar is the one that keeps its place on every
+                document. */}
             <span>{`تفاصيل الفاتورة ${viewInvoice?.document_number ?? ''}`}</span>
-            {/* Reading a run of invoices is the common case — a mistake is usually near another
-                one. Stepping straight to the neighbour beats closing, finding the row, reopening.
-                Order follows the list on screen, so the arrows move through what was filtered. */}
-            <Button size="small" disabled={!neighbour(-1)}
-              onClick={() => { const n = neighbour(-1); if (n) openDetail(n); }}>
-              ‹ السابقة
-            </Button>
-            <Button size="small" disabled={!neighbour(1)}
-              onClick={() => { const n = neighbour(1); if (n) openDetail(n); }}>
-              التالية ›
-            </Button>
           </Space>
         )}
         width={640}
@@ -1809,6 +1857,7 @@ export default function Invoices() {
         destroyOnHidden
         footer={invoiceFooter(invoiceDoc(viewInvoice), () => setDetailVisible(false))}
       >
+        {viewInvoice && <DocumentToolbar actions={viewToolbar()} />}
         {viewInvoice && (
           <>
             <InvoiceDocument doc={invoiceDoc(viewInvoice)!}
