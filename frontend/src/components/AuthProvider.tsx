@@ -7,7 +7,7 @@ import { api } from '../api/client';
 // who keeps using the system stays signed in indefinitely.
 const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
-export type RoleName = 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant';
+export type RoleName = 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant' | 'viewer';
 
 export interface User {
   username: string;

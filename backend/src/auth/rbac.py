@@ -229,6 +229,23 @@ ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).update(_VOUCHER_ALL)
 ALL_CAPABILITIES |= _VOUCHER_ALL
 
 
+# ---------------------------------------------------------------------------
+# «قارئ» — the read-only role.
+# ---------------------------------------------------------------------------
+# Derived by rule instead of listed: every capability whose name ends in `.read`, and nothing else.
+# A hand-written list would need remembering every time a module adds a capability — and the failure
+# mode of forgetting is asymmetric. Forget to add a read and a viewer is merely blind on one screen;
+# forget that a new capability is a write and hand-maintenance could grant it. The rule cannot grant
+# a write, because a write capability never ends in `.read`.
+#
+# Placed at the end of the file on purpose: every module has finished registering into
+# ALL_CAPABILITIES by this point, so a capability added by a future module is picked up with no
+# change here.
+ROLE_CAPABILITIES[RoleName.viewer] = {
+    cap for cap in ALL_CAPABILITIES if cap.endswith(".read")
+}
+
+
 def role_has_capability(role: RoleName, capability: str) -> bool:
     """Deny-by-default: True only if explicitly granted."""
     return capability in ROLE_CAPABILITIES.get(role, set())

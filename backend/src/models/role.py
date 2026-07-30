@@ -18,6 +18,12 @@ class RoleName(str, enum.Enum):
     sales_rep = "sales_rep"
     # General Ledger (005) — manages the chart, posts/reverses journals, reads the trial balance.
     accountant = "accountant"
+    # «قارئ» — sees everything, changes nothing (their نوع المستخدم has exactly this alongside
+    # «مدخل بيانات»). The owner who wants to watch the business without being able to touch a
+    # document, the auditor given a login for a week, the new hire being shown around. Without it
+    # those people get handed a manager's account «for now», and «for now» is how a system ends up
+    # with five people able to reverse an invoice.
+    viewer = "viewer"
 
 
 class Role(Base):

@@ -24,6 +24,8 @@ const ROLE_LABELS: Record<RoleName, string> = {
   after_sales_staff: 'موظف خدمة ما بعد البيع',
   sales_rep: 'مندوب مبيعات',
   accountant: 'المحاسب',
+  // «قارئ» — يشوف ويطبع، ما يغيّرش حاجة.
+  viewer: 'قارئ (عرض فقط)',
 };
 
 // Roles the backend requires a branch for (see UserCreate/UserUpdate validation).

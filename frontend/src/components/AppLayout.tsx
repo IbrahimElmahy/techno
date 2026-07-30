@@ -21,6 +21,12 @@ import TabWorkspace from './TabWorkspace';
 
 const { Header, Sider, Content } = Layout;
 
+/**
+ * «قارئ» reaches the screens whose job is looking — lists, cards, statements, reports — and none of
+ * the entry screens. A viewer cannot post on those anyway; offering a screen where every button is
+ * refused is worse than not offering it, because the user has to discover the refusal one click at
+ * a time. The backend is the real guard either way: this only decides what is worth showing.
+ */
 // Role translations in Arabic
 const ROLE_LABELS: Record<RoleName, string> = {
   system_admin: 'مدير النظام الرئيسي',
@@ -30,6 +36,8 @@ const ROLE_LABELS: Record<RoleName, string> = {
   after_sales_staff: 'موظف خدمة ما بعد البيع',
   sales_rep: 'مندوب مبيعات',
   accountant: 'المحاسب',
+  // «قارئ» — يشوف ويطبع، ما يغيّرش حاجة.
+  viewer: 'قارئ (عرض فقط)',
 };
 
 export default function AppLayout() {
@@ -96,13 +104,13 @@ export default function AppLayout() {
       label: 'المبيعات',
       children: [
         { key: '/invoices', label: 'فواتير البيع',
-          roles: ['system_admin', 'branch_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'viewer'] },
         { key: '/returns', label: 'مرتجعات المبيعات',
-          roles: ['system_admin', 'branch_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'viewer'] },
         { key: '/orders', label: 'طلبات البيع والشراء',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'purchasing_manager'] },
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'purchasing_manager', 'viewer'] },
         { key: '/customers', label: 'العملاء والذمم',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'] },
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff', 'viewer'] },
         { key: '/coupon-receipts', label: 'استلام الكوبونات',
           roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'] },
         { key: '/loyalty', label: 'خدمة ما بعد البيع',
@@ -117,7 +125,7 @@ export default function AppLayout() {
         { key: '/purchases', label: 'إدخال المشتريات',
           roles: ['system_admin', 'purchasing_manager'] },
         { key: '/suppliers', label: 'الموردين والمدفوعات',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'viewer'] },
       ],
     },
     {
@@ -127,19 +135,19 @@ export default function AppLayout() {
       children: [
         { key: '/catalog', label: 'كتالوج المنتجات',
           roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager',
-            'after_sales_staff'] },
+            'after_sales_staff', 'viewer'] },
         { key: '/stock-balance', label: 'رصيد صنف',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
         { key: '/item-card', label: 'كارت الصنف',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
         { key: '/stock-permits', label: 'أذونات المخزن',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
         { key: '/transfers', label: 'تحويلات المخزون',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
         { key: '/stocktake', label: 'جرد حق تاريخ',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
         { key: '/stock-alerts', label: 'تنبيهات المخزون',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
         { key: '/manufacturing', label: 'عمليات التصنيع',
           roles: ['system_admin', 'branch_manager', 'purchasing_manager'] },
       ],
@@ -152,15 +160,15 @@ export default function AppLayout() {
         { key: '/treasury', label: 'الحسابات والخزينة',
           roles: ['system_admin', 'branch_manager'] },
         { key: '/vouchers', label: 'سندات القبض والصرف',
-          roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager', 'viewer'] },
         { key: '/account-statement', label: 'كشف حساب',
-          roles: ['system_admin', 'branch_manager', 'accountant'] },
+          roles: ['system_admin', 'branch_manager', 'accountant', 'viewer'] },
         { key: '/fixed-assets', label: 'الأصول الثابتة',
-          roles: ['system_admin', 'branch_manager', 'accountant'] },
+          roles: ['system_admin', 'branch_manager', 'accountant', 'viewer'] },
         { key: '/finance-reports', label: 'القوائم المالية',
-          roles: ['system_admin', 'branch_manager', 'accountant'] },
+          roles: ['system_admin', 'branch_manager', 'accountant', 'viewer'] },
         { key: '/general-ledger', label: 'الأستاذ العام والقيود',
-          roles: ['system_admin', 'accountant'] },
+          roles: ['system_admin', 'accountant', 'viewer'] },
       ],
     },
     {
@@ -169,9 +177,9 @@ export default function AppLayout() {
       label: 'التقارير',
       children: [
         { key: '/trade-reports', label: 'تقارير المبيعات والمشتريات',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
         { key: '/reports', label: 'التقارير والإحصائيات',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'] },
+          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
       ],
     },
     {
@@ -180,7 +188,7 @@ export default function AppLayout() {
       label: 'المعاينات',
       children: [
         { key: '/inspections', label: 'المعاينات',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'] },
+          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff', 'viewer'] },
         { key: '/inspection-items', label: 'أصناف المعاينة',
           roles: ['system_admin', 'branch_manager'] },
       ],
