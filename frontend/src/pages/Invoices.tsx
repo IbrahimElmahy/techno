@@ -83,13 +83,15 @@ interface SaleLineItem {
   key: string;
   category: string | null;         // chosen first; filters the item list
   item_id: number | null;
-  quantity: number;
+  /** null = «not typed yet». A quantity box that starts at 1 makes «5» into «15» for anybody who
+   *  types without clearing it first, and the invoice is out by ten with nothing looking wrong. */
+  quantity: number | null;
   unit_price: number;
   tier: string | null;
   unit: string | null;
   serials: string;
   fixed_discount: number;          // the item's own fixed discount (auto)
-  variable_discount: number;       // a typed extra discount on this line
+  variable_discount: number | null;  // a typed extra discount on this line; null until typed
   warehouse_id: number | null;     // (030) this line is served from its own warehouse
 }
 
@@ -159,8 +161,8 @@ export default function Invoices() {
 
   // Create invoice dynamic lines
   const blankLine = (key: string, tier: string | null = null): SaleLineItem => ({
-    key, category: null, item_id: null, quantity: 1, unit_price: 0, tier, unit: null,
-    serials: '', fixed_discount: 0, variable_discount: 0, warehouse_id: null,
+    key, category: null, item_id: null, quantity: null, unit_price: 0, tier, unit: null,
+    serials: '', fixed_discount: 0, variable_discount: null, warehouse_id: null,
   });
   const [lines, setLines] = useState<SaleLineItem[]>([]);
   // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
@@ -317,7 +319,7 @@ export default function Invoices() {
   // A line's amount AFTER its own (fixed + variable) discount.
   const lineTotal = (l: SaleLineItem) => {
     const disc = Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
-    return l.quantity * l.unit_price * (1 - disc / 100);
+    return Number(l.quantity || 0) * l.unit_price * (1 - disc / 100);
   };
 
   // Loyalty points a line earns = the product's point value × quantity.
@@ -370,7 +372,7 @@ export default function Invoices() {
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
       setLines((prev) => prev.map((x) => (x.key === existing.key
-        ? { ...x, quantity: x.quantity + 1 } : x)));
+        ? { ...x, quantity: Number(x.quantity || 0) + 1 } : x)));
       // Focus the line that just changed, not a new one — the eye should follow the number
       // that moved.
       setFocusLineKey(existing.key);
@@ -577,6 +579,14 @@ export default function Invoices() {
       message.error('يرجى إضافة منتج واحد صالح على الأقل!');
       return;
     }
+    // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has
+    // to be caught here rather than posted as a zero-quantity line nobody meant to write.
+    const noQty = validLines.find((l) => !Number(l.quantity));
+    if (noQty) {
+      message.error(`«${productName(noQty.item_id as number)}»: اكتب الكمية.`);
+      qtyRefs.current[noQty.key]?.focus?.();
+      return;
+    }
 
     // Never sell more than a warehouse holds. Checked on the SUM per (item × warehouse), because
     // two lines of 3 against a stock of 5 each look affordable alone — the server applies the
@@ -584,7 +594,7 @@ export default function Invoices() {
     const wanted = new Map<string, number>();
     validLines.forEach((l) => {
       const key = `${lineWarehouse(l)}:${l.item_id}`;
-      wanted.set(key, (wanted.get(key) ?? 0) + l.quantity);
+      wanted.set(key, (wanted.get(key) ?? 0) + Number(l.quantity || 0));
     });
     const short = validLines.find((l) => {
       const asked = wanted.get(`${lineWarehouse(l)}:${l.item_id}`) ?? 0;
@@ -608,7 +618,7 @@ export default function Invoices() {
       const prod = products.find((p) => p.id === l.item_id);
       if (prod?.is_serialized) {
         const ser = parseSerials(l.serials);
-        if (ser.length !== l.quantity) {
+        if (ser.length !== Number(l.quantity || 0)) {
           message.error(`«${prod.name}»: عدد الأرقام التسلسلية يجب أن يساوي الكمية (${l.quantity})`);
           return;
         }
@@ -632,7 +642,7 @@ export default function Invoices() {
           const prod = products.find((p) => p.id === l.item_id);
           return {
             item_id: l.item_id,
-            quantity: l.quantity,
+            quantity: Number(l.quantity || 0),
             tier: l.tier,
             unit: l.unit,
             unit_price: l.unit_price.toFixed(2),
@@ -698,7 +708,7 @@ export default function Invoices() {
     try {
       const det = await api.get(`/api/v1/sales/${record.id}`);
       const lines = (det.data.lines || []).map((l: any) => ({
-        item_id: l.item_id, quantity: String(l.quantity),
+        item_id: l.item_id, quantity: String(Number(l.quantity || 0)),
       }));
       if (!lines.length) { message.error('الفاتورة من غير سطور'); return false; }
       await api.post(`/api/v1/sales/${record.id}/returns`, { lines });
@@ -1531,14 +1541,23 @@ export default function Invoices() {
                           <InputNumber size="small" min={1} style={{ width: '100%' }}
                             ref={(el) => { qtyRefs.current[line.key] = el; }}
                             max={availableFor(line.item_id, line.unit, lineWarehouse(line)) || undefined}
-                            status={line.quantity
+                            status={Number(line.quantity || 0)
                               > availableFor(line.item_id, line.unit, lineWarehouse(line))
                               ? 'error' : undefined}
-                            value={line.quantity}
-                            onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)}
-                            // Enter means "this line is done" — straight back to the picker for
-                            // the next product, so a whole invoice can be typed without a mouse.
-                            onPressEnter={() => setPickerOpen(true)} />
+                            placeholder="الكمية"
+                            value={line.quantity ?? undefined}
+                            // Clearing it leaves it EMPTY rather than snapping back to 1 — the
+                            // box has to be blankable for «type over it» to mean anything.
+                            onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
+                            // Enter means «this line is done» — straight back to the picker for
+                            // the next product, so a whole invoice is: pick, type a quantity,
+                            // Enter, pick, type, Enter, without ever leaving the keyboard.
+                            //
+                            // preventDefault is what makes the loop hold: the global «Enter moves
+                            // to the next field» listens on the window and would otherwise run
+                            // after this and drag the caret off to the next input, so the picker
+                            // opened onto a cursor that had already wandered.
+                            onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }} />
                         </Col>
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
@@ -1557,8 +1576,9 @@ export default function Invoices() {
                         </Col>
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={0} max={100} step={0.5} style={{ width: '100%' }}
-                            value={line.variable_discount}
-                            onChange={(val) => handleLineChange(line.key, 'variable_discount', val || 0)} />
+                            placeholder="0"
+                            value={line.variable_discount ?? undefined}
+                            onChange={(val) => handleLineChange(line.key, 'variable_discount', val ?? null)} />
                         </Col>
                         <Col md={2} xs={12} style={{ textAlign: 'center' }}>
                           <b style={{ color: '#6AB42D' }}>{lineTotal(line).toFixed(2)}</b>
