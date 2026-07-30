@@ -3,7 +3,7 @@ import {
   Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import {
-  PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined,
+  PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -26,6 +26,26 @@ interface WarehouseRecord {
   active: boolean;
 }
 
+interface EmployeeRecord {
+  id: number;
+  code: string;
+  name: string;
+  job_title: string | null;
+  warehouse_id: number | null;
+  // NULL means on the payroll with no login. Such a person can hold stock but can own no
+  // customers, because «المندوب» on a customer is a login — so the screen says so rather than
+  // offering a name that silently serves no one.
+  user_id: number | null;
+}
+
+interface CustomerRecord {
+  id: number;
+  code: string;
+  name: string;
+  phone: string | null;
+  rep_id: number;
+}
+
 const TYPE_LABELS: Record<string, string> = {
   central: 'مركزي',
   branch: 'فرعي',
@@ -39,6 +59,18 @@ export default function Warehouses() {
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<WarehouseRecord | null>(null);
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
+  // The store whose reps are being edited, and the ids picked so far. Held as a draft so closing
+  // without saving changes nothing — assigning reps moves them off other stores, which is not a
+  // thing to do one careless click at a time.
+  const [repsFor, setRepsFor] = useState<WarehouseRecord | null>(null);
+  const [repsDraft, setRepsDraft] = useState<number[]>([]);
+  // The rep whose customers are being edited: his current ones, the search results to pick from,
+  // and the picks not yet saved.
+  const [customersFor, setCustomersFor] = useState<EmployeeRecord | null>(null);
+  const [repCustomers, setRepCustomers] = useState<CustomerRecord[]>([]);
+  const [customerSearch, setCustomerSearch] = useState<CustomerRecord[]>([]);
+  const [customerDraft, setCustomerDraft] = useState<number[]>([]);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
@@ -47,16 +79,83 @@ export default function Warehouses() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [wh, br] = await Promise.all([
+      const [wh, br, emp] = await Promise.all([
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/branches'),
+        // Reps come from الموظفين, not from logins: the payroll is where who-drives-which-van is
+        // already recorded, and `employee.warehouse_id` has held that answer all along.
+        api.get('/api/v1/employees', { params: { active: true } }),
       ]);
       setRows(wh.data);
       setBranches(br.data);
+      setEmployees(emp.data);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const repsOf = (warehouseId: number) =>
+    employees.filter((e) => e.warehouse_id === warehouseId);
+
+  // Saving the list is also how somebody comes off it — the endpoint owns the set. Naming an
+  // employee here MOVES him: one person, one store, so whatever store he was on stops being his.
+  const saveReps = async () => {
+    if (!repsFor) return;
+    try {
+      await api.put(`/api/v1/warehouses/${repsFor.id}/reps`, { employee_ids: repsDraft });
+      message.success('اتحفظ مناديب المخزن');
+      setRepsFor(null);
+      await fetchAll();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openReps = (record: WarehouseRecord) => {
+    setRepsFor(record);
+    setRepsDraft(repsOf(record.id).map((e) => e.id));
+  };
+
+  // ---- عملاء المندوب ----------------------------------------------------------------
+  // The third rung of the ladder the whole screen is: store → its reps → their customers.
+
+  const openCustomers = async (emp: EmployeeRecord) => {
+    setCustomersFor(emp);
+    setCustomerDraft([]);
+    setCustomerSearch([]);
+    if (!emp.user_id) return;   // no login, no customers — the modal says so instead
+    try {
+      const res = await api.get('/api/v1/customers', { params: { rep_id: emp.user_id } });
+      setRepCustomers(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Searched on the server rather than loading every customer: a rep's own list is short, but the
+  // list he might be given from is the whole book.
+  const searchCustomers = async (q: string) => {
+    if (!q.trim()) { setCustomerSearch([]); return; }
+    try {
+      const res = await api.get('/api/v1/customers', { params: { q: q.trim() } });
+      setCustomerSearch(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const saveCustomers = async () => {
+    if (!customersFor?.user_id || !customerDraft.length) { setCustomersFor(null); return; }
+    try {
+      await api.post('/api/v1/customers/assign-rep', {
+        rep_id: customersFor.user_id, customer_ids: customerDraft,
+      });
+      message.success(`اتسند ${customerDraft.length} عميل للمندوب`);
+      setCustomersFor(null);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -176,12 +275,24 @@ export default function Warehouses() {
         <Tag color={t === 'central' ? 'blue' : 'default'}>{TYPE_LABELS[t] || t}</Tag>
       ),
     },
+    {
+      title: 'المناديب',
+      key: 'reps',
+      width: 110,
+      render: (_: any, record: WarehouseRecord) => {
+        const n = repsOf(record.id).length;
+        return n ? <Tag color="blue">{n}</Tag> : <span style={{ color: '#bbb' }}>—</span>;
+      },
+    },
     ...(canWrite ? [{
       title: '',
       key: 'actions',
-      width: 90,
+      width: 120,
       render: (_: any, record: WarehouseRecord) => (
         <Space size={2}>
+          <Tooltip title="مناديب المخزن">
+            <Button type="text" icon={<TeamOutlined />} onClick={() => openReps(record)} />
+          </Tooltip>
           <Tooltip title="تعديل">
             <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           </Tooltip>
@@ -194,6 +305,33 @@ export default function Warehouses() {
       ),
     }] : []),
   ];
+
+  // Opening a store shows who works out of it — the answer to «مين بيبيع من المخزن ده».
+  const expandedRow = (record: WarehouseRecord) => {
+    const mine = repsOf(record.id);
+    if (!mine.length) {
+      return <span style={{ color: '#888' }}>مفيش مناديب على المخزن ده.</span>;
+    }
+    return (
+      <Space size={8} wrap style={{ paddingInlineStart: 8 }}>
+        {mine.map((e) => (
+          <Button key={e.id} size="small" type={e.user_id ? 'default' : 'text'}
+            icon={<TeamOutlined />}
+            // Clicking a rep opens his customers — the third rung of the ladder this screen is:
+            // store → its reps → their customers.
+            disabled={!canWrite || !e.user_id}
+            onClick={() => openCustomers(e)}
+          >
+            {e.name}
+            {e.job_title ? ` · ${e.job_title}` : ''}
+            {/* No login means no customer can point at him — say it here rather than let
+                somebody wonder why he never appears on an invoice. */}
+            {!e.user_id && ' · بدون مستخدم'}
+          </Button>
+        ))}
+      </Space>
+    );
+  };
 
   const formFields = (
     <>
@@ -254,6 +392,7 @@ export default function Warehouses() {
           loading={loading}
           size="middle"
           tableLayout="fixed"
+          expandable={{ expandedRowRender: expandedRow }}
           pagination={{ defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `عدد: ${t}` }}
         />
@@ -280,6 +419,98 @@ export default function Warehouses() {
             <Button onClick={() => setEditing(null)}>تراجع</Button>
           </Space>
         </Form>
+      </Modal>
+
+      {/* مناديب المخزن — picked from الموظفين. Saving owns the list: whoever is ticked works out
+          of this store, whoever is not comes off it. */}
+      <Modal centered destroyOnHidden width={620}
+        title={`مناديب المخزن — ${repsFor?.name ?? ''}`}
+        open={!!repsFor}
+        onCancel={() => setRepsFor(null)}
+        onOk={saveReps}
+        okText="حفظ"
+        cancelText="تراجع"
+      >
+        <p style={{ color: '#888' }}>
+          الموظف له مخزن واحد — لو كان على مخزن تاني هيتنقل لهنا. وشيل العلامة معناه إنه يخرج من
+          المخزن ده.
+        </p>
+        <Select
+          mode="multiple"
+          style={{ width: '100%' }}
+          placeholder="اختر الموظفين"
+          value={repsDraft}
+          onChange={setRepsDraft}
+          optionFilterProp="label"
+          options={employees.map((e) => ({
+            value: e.id,
+            // The current store is on the label so moving somebody is a visible act, not a
+            // surprise discovered later on another screen.
+            label: [
+              e.name,
+              e.job_title || null,
+              e.warehouse_id && e.warehouse_id !== repsFor?.id
+                ? `حالياً: ${rows.find((w) => w.id === e.warehouse_id)?.name ?? '—'}`
+                : null,
+              e.user_id ? null : 'بدون مستخدم',
+            ].filter(Boolean).join(' · '),
+          }))}
+        />
+      </Modal>
+
+      {/* عملاء المندوب — who this rep may work with and sell to. */}
+      <Modal centered destroyOnHidden width={620}
+        title={`عملاء المندوب — ${customersFor?.name ?? ''}`}
+        open={!!customersFor}
+        onCancel={() => setCustomersFor(null)}
+        onOk={saveCustomers}
+        okText="إسناد"
+        okButtonProps={{ disabled: !customerDraft.length }}
+        cancelText="تراجع"
+      >
+        {!customersFor?.user_id ? (
+          <p>الموظف ده مالوش مستخدم، فمش ممكن يتسند له عملاء. اربطه بمستخدم من شاشة الموظفين الأول.</p>
+        ) : (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <strong>عملاؤه حالياً ({repCustomers.length})</strong>
+              <div style={{ maxHeight: 160, overflowY: 'auto', marginTop: 8 }}>
+                {repCustomers.length === 0
+                  ? <span style={{ color: '#888' }}>لسه مفيش عملاء مسندين له.</span>
+                  : (
+                    <Space size={4} wrap>
+                      {repCustomers.map((c) => (
+                        <Tag key={c.id}>{c.name}</Tag>
+                      ))}
+                    </Space>
+                  )}
+              </div>
+            </div>
+            {/* A customer always has exactly one rep, so this adds — and adding TAKES the customer
+                from whoever had him. Moving him back is the same act from the other rep's side,
+                which is why there is no «remove» here that would leave a customer with nobody. */}
+            <strong>إضافة عملاء</strong>
+            <Select
+              mode="multiple"
+              style={{ width: '100%', marginTop: 8 }}
+              placeholder="ابحث بالاسم أو الكود أو الهاتف"
+              value={customerDraft}
+              onChange={setCustomerDraft}
+              onSearch={searchCustomers}
+              filterOption={false}
+              notFoundContent={null}
+              options={customerSearch.map((c) => ({
+                value: c.id,
+                label: `${c.name} · ${c.code}${c.phone ? ` · ${c.phone}` : ''}`
+                  + (c.rep_id === customersFor?.user_id ? ' · عنده بالفعل' : ''),
+                disabled: c.rep_id === customersFor?.user_id,
+              }))}
+            />
+            <p style={{ color: '#888', marginTop: 8 }}>
+              العميل له مندوب واحد — إسناده هنا معناه إنه بيخرج من عند مندوبه القديم.
+            </p>
+          </>
+        )}
       </Modal>
     </div>
   );

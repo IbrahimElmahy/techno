@@ -14,6 +14,8 @@ from src.core.db import get_db
 from src.models.catalog import PriceTier
 from src.models.contact import PhoneOwner
 from src.models.customer import Customer, CustomerAccount
+from src.models.role import Role, RoleName
+from src.models.user import User
 from src.services import (
     audit_service,
     contact_service,
@@ -314,6 +316,63 @@ def reassign_customer(
     )
     db.commit()
     return _out(c)
+
+
+class CustomerBulkAssign(BaseModel):
+    """Assign a batch of customers to one rep — «عملاء المندوب» from the rep's side."""
+
+    rep_id: int
+    customer_ids: list[int]
+    # Left out, each customer keeps the territory he already had. A rep's round is not the same
+    # thing as a customer's area, and moving a hundred customers onto the rep's territory as a
+    # side effect of naming their rep would quietly rewrite the sales geography.
+    territory_id: int | None = None
+
+
+@router.post("/assign-rep", response_model=list[CustomerOut])
+def assign_customers_to_rep(
+    body: CustomerBulkAssign,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_REASSIGN)),
+    db: Session = Depends(get_db),
+) -> list[CustomerOut]:
+    """Point several customers at one rep in a single call.
+
+    All or nothing. Assigning ninety of a hundred customers and failing on the ninety-first
+    leaves nobody able to say which ninety moved — so an unknown id, a user who is not a sales
+    rep, or a customer type the rep may not hold rejects the whole batch before anything is
+    written.
+    """
+    rep = db.get(User, body.rep_id)
+    if rep is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Rep not found"})
+    role = db.get(Role, rep.role_id)
+    if role is None or role.name != RoleName.sales_rep:
+        raise HTTPException(422, {"code": "validation", "message": "User is not a sales rep"})
+
+    customers = list(db.scalars(select(Customer).where(Customer.id.in_(body.customer_ids))).all())
+    found = {c.id for c in customers}
+    missing = [cid for cid in body.customer_ids if cid not in found]
+    if missing:
+        raise HTTPException(404, {"code": "not_found",
+                                  "message": f"Customers not found: {missing}"})
+
+    # (v4) a plumber must stay with an after-sales rep — checked for every customer up front.
+    for c in customers:
+        try:
+            customer_service.assert_rep_matches_type(
+                db, customer_type=c.customer_type, rep_id=body.rep_id)
+        except CustomerError as exc:
+            raise HTTPException(422, {"code": "validation",
+                                      "message": f"«{c.name}»: {exc}"}) from exc
+
+    for c in customers:
+        customer_service.reassign_customer(
+            db, customer=c, new_rep_id=body.rep_id,
+            new_territory_id=body.territory_id or c.territory_id,
+            actor_user_id=current.id,
+        )
+    db.commit()
+    return [_out(c, db) for c in customers]
 
 
 class ProfileDocOut(BaseModel):

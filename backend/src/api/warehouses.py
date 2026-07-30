@@ -17,6 +17,7 @@ from src.auth.rbac import (
 )
 from src.core.db import get_db
 from src.models.ledger import Account, AccountType, Direction
+from src.models.employee import Employee, JobTitle
 from src.models.warehouse import Custody, HolderType, Warehouse, WarehouseType
 from src.services import audit_service, ledger_service
 
@@ -257,3 +258,88 @@ def custody_balance(
     if custody is None or custody.account_id is None:
         raise HTTPException(404, {"code": "not_found", "message": "Custody not found"})
     return BalanceOut(account_id=custody.account_id, balance=ledger_service.balance_of(db, custody.account_id))
+
+
+class WarehouseRepsIn(BaseModel):
+    employee_ids: list[int]
+
+
+class WarehouseRepOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    job_title: str | None = None
+    # The login this employee signs in with. NULL means the person is on the payroll but has no
+    # account — they can hold stock, but no customer can be assigned to them, because «مندوب» on
+    # a customer is a login.
+    user_id: int | None = None
+    active: bool
+
+
+def _rep_out(db: Session, e: Employee) -> WarehouseRepOut:
+    title = db.get(JobTitle, e.job_title_id) if e.job_title_id else None
+    return WarehouseRepOut(
+        id=e.id, code=e.code, name=e.name, job_title=title.name if title else None,
+        user_id=e.user_id, active=e.active,
+    )
+
+
+@router.get("/warehouses/{warehouse_id}/reps", response_model=list[WarehouseRepOut])
+def list_warehouse_reps(
+    warehouse_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_READ)),
+    db: Session = Depends(get_db),
+) -> list[WarehouseRepOut]:
+    """The employees who work out of this store.
+
+    Reps are picked from الموظفين, not from logins: the payroll is where the client already
+    records who drives which van, and `employee.warehouse_id` has held that answer all along.
+    """
+    if db.get(Warehouse, warehouse_id) is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
+    rows = db.scalars(
+        select(Employee).where(Employee.warehouse_id == warehouse_id).order_by(Employee.name)
+    ).all()
+    return [_rep_out(db, e) for e in rows]
+
+
+@router.put("/warehouses/{warehouse_id}/reps", response_model=list[WarehouseRepOut])
+def set_warehouse_reps(
+    warehouse_id: int,
+    body: WarehouseRepsIn,
+    current: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_WRITE)),
+    db: Session = Depends(get_db),
+) -> list[WarehouseRepOut]:
+    """Replace the set of employees working out of this store.
+
+    This endpoint OWNS the set rather than adding to it, because the alternative — a PATCH per
+    employee — has no way to say «and nobody else». Taking somebody off a store means clearing
+    their `warehouse_id`, and a PATCH that reads a missing field as «leave alone» cannot tell an
+    omitted store from a cleared one. Owning the set makes removal an ordinary part of saving
+    instead of a separate verb nobody remembers to call.
+
+    An employee has one store, so naming him here MOVES him: whatever store he was on stops being
+    his. That is the intended meaning — «مندوب السيارة أ» drives one car.
+    """
+    if db.get(Warehouse, warehouse_id) is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
+
+    employees = list(db.scalars(select(Employee).where(Employee.id.in_(body.employee_ids))).all())
+    found = {e.id for e in employees}
+    missing = [eid for eid in body.employee_ids if eid not in found]
+    if missing:
+        raise HTTPException(404, {"code": "not_found",
+                                  "message": f"Employees not found: {missing}"})
+
+    # Anyone currently on this store and not in the new list comes off it.
+    for e in db.scalars(select(Employee).where(Employee.warehouse_id == warehouse_id)).all():
+        if e.id not in found:
+            e.warehouse_id = None
+    for e in employees:
+        e.warehouse_id = warehouse_id
+    db.flush()
+    audit_service.record(db, action="warehouse.set_reps", actor_user_id=current.id,
+                         entity_type="warehouse", entity_id=warehouse_id,
+                         after={"employee_ids": sorted(found)})
+    db.commit()
+    return [_rep_out(db, e) for e in employees]

@@ -37,6 +37,18 @@ interface Customer {
   id: number;
   name: string;
   default_price_tier: string | null;
+  // Every customer has exactly one rep, required since 001. It is the first link in the chain
+  // that lets choosing a customer fill in who is selling and which store the goods leave from.
+  rep_id: number;
+}
+
+/** An employee — the payroll record. `warehouse_id` is the store this person works out of, and
+ *  `user_id` is the login they sell under. Together they turn a customer's rep into a store. */
+interface RepEmployee {
+  id: number;
+  name: string;
+  warehouse_id: number | null;
+  user_id: number | null;
 }
 
 const money = (v: any) =>
@@ -109,6 +121,8 @@ export default function Invoices() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [employees, setEmployees] = useState<RepEmployee[]>([]);
+  const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
   const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -231,15 +245,19 @@ export default function Invoices() {
 
   const loadLookups = async () => {
     try {
-      const [custRes, prodRes, whRes, ptRes] = await Promise.all([
+      const [custRes, prodRes, whRes, ptRes, empRes, userRes] = await Promise.all([
         api.get('/api/v1/customers'),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
+        api.get('/api/v1/employees', { params: { active: true } }),
+        api.get('/api/v1/users'),
       ]);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
       setWarehouses(whRes.data);
+      setEmployees(empRes.data);
+      setReps(userRes.data.filter((u: any) => u.role === 'sales_rep'));
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
       setPointValues(pts);
@@ -451,10 +469,35 @@ export default function Invoices() {
     return f > 0 ? base / f : base;
   };
 
+  /** The store a rep sells out of, found through his employee record.
+   *
+   *  customer → rep (a login) → employee (by `user_id`) → store. The store lives on the employee
+   *  and nowhere else, so this walk is the only honest way to it; copying it onto the user would
+   *  give two answers that eventually disagree.
+   */
+  const storeOfRep = (repId: number | null | undefined): number | null => {
+    if (!repId) return null;
+    return employees.find((e) => e.user_id === repId)?.warehouse_id ?? null;
+  };
+
   const onCustomerChange = (customerId: number) => {
     const c = customers.find((x) => x.id === customerId);
     const tier = c?.default_price_tier ?? null;
     setCustomerTier(tier);
+    // Choosing the customer fills in his rep, and the rep fills in his store. Both are DEFAULTS,
+    // not locks: a rep on leave and a van that ran out are ordinary days, and a field that
+    // refuses them is a field people work around by putting the sale on the wrong customer.
+    //
+    // Only filled when empty, so re-picking a customer never silently undoes a store somebody
+    // chose on purpose.
+    if (c?.rep_id) {
+      createForm.setFieldsValue({ rep_id: c.rep_id });
+      const store = storeOfRep(c.rep_id);
+      if (store && !createForm.getFieldValue('warehouse_id')) {
+        createForm.setFieldsValue({ warehouse_id: store });
+        onWarehouseChange(store);
+      }
+    }
     setSelectedCustomerId(customerId);
     setCustomerBalance(null);
     setCustomerCoupons([]);
@@ -522,6 +565,9 @@ export default function Invoices() {
     try {
       await api.post('/api/v1/sales', {
         customer_id: values.customer_id,
+        // Who sold it. Recorded on the document so a commission report and a rep's own list of
+        // invoices do not have to re-derive it from whoever owns the customer today.
+        rep_id: values.rep_id ?? null,
         origin: {
           location_kind: 'warehouse',
           location_id: values.warehouse_id,
@@ -993,13 +1039,28 @@ export default function Invoices() {
                   }))} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col span={6}>
+              {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
+              <Form.Item name="rep_id" label="المندوب">
+                <Select allowClear showSearch placeholder="من العميل"
+                  optionFilterProp="label"
+                  onChange={(v) => {
+                    const store = storeOfRep(v as number);
+                    if (store) {
+                      createForm.setFieldsValue({ warehouse_id: store });
+                      onWarehouseChange(store);
+                    }
+                  }}
+                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+              </Form.Item>
+            </Col>
+            <Col span={6}>
               <Form.Item
                 name="warehouse_id"
                 label="مستودع الصرف والتسليم"
                 rules={[{ required: true, message: 'يرجى اختيار مستودع الصرف!' }]}
               >
-                <Select placeholder="اختر المستودع" onChange={onWarehouseChange}>
+                <Select placeholder="من المندوب" onChange={onWarehouseChange}>
                   {warehouses.map((w) => (
                     <Select.Option key={w.id} value={w.id}>
                       {w.name}
