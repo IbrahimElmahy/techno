@@ -13,7 +13,14 @@ import {
   DatabaseOutlined,
   ShopOutlined,
   BookOutlined,
+  ApartmentOutlined,
+  ShoppingCartOutlined,
+  BuildOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
+import {
+  NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
+} from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
 import Logo from './Logo';
 import { useTabs } from './TabsContext';
@@ -38,6 +45,18 @@ const ROLE_LABELS: Record<RoleName, string> = {
   accountant: 'المحاسب',
   // «قارئ» — يشوف ويطبع، ما يغيّرش حاجة.
   viewer: 'قارئ (عرض فقط)',
+};
+
+/** One icon per top-level section. Their menu has no icons; ours does, and it costs nothing. */
+const SECTION_ICONS: Record<string, React.ReactNode> = {
+  'grp-setup': <ApartmentOutlined />,
+  'grp-sales': <ShopOutlined />,
+  'grp-purchasing': <ShoppingCartOutlined />,
+  'grp-stock': <DatabaseOutlined />,
+  'grp-accounts': <DollarOutlined />,
+  'grp-production': <BuildOutlined />,
+  'grp-settings': <SettingOutlined />,
+  'grp-extra': <MobileOutlined />,
 };
 
 export default function AppLayout() {
@@ -92,159 +111,54 @@ export default function AppLayout() {
    * Roles stay declared per SCREEN, never per group: a group is a heading, not a permission.
    * A group whose screens are all forbidden simply disappears.
    */
-  const menuGroups: {
-    key: string;
-    icon: React.ReactNode;
-    label: string;
-    children: { key: string; label: string; roles: string[] }[];
-  }[] = [
-    {
-      key: 'grp-sales',
-      icon: <ShopOutlined />,
-      label: 'المبيعات',
-      children: [
-        { key: '/invoices', label: 'فواتير البيع',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'viewer'] },
-        { key: '/returns', label: 'مرتجعات المبيعات',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'viewer'] },
-        { key: '/orders', label: 'طلبات البيع والشراء',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'purchasing_manager', 'viewer'] },
-        { key: '/customers', label: 'العملاء والذمم',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff', 'viewer'] },
-        { key: '/coupon-receipts', label: 'استلام الكوبونات',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff'] },
-        { key: '/loyalty', label: 'خدمة ما بعد البيع',
-          roles: ['system_admin', 'after_sales_staff'] },
-      ],
-    },
-    {
-      key: 'grp-purchasing',
-      icon: <FileTextOutlined />,
-      label: 'المشتريات',
-      children: [
-        { key: '/purchases', label: 'إدخال المشتريات',
-          roles: ['system_admin', 'purchasing_manager'] },
-        { key: '/suppliers', label: 'الموردين والمدفوعات',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'viewer'] },
-      ],
-    },
-    {
-      key: 'grp-stock',
-      icon: <DatabaseOutlined />,
-      label: 'المخزون',
-      children: [
-        { key: '/catalog', label: 'كتالوج المنتجات',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager',
-            'after_sales_staff', 'viewer'] },
-        { key: '/stock-balance', label: 'رصيد صنف',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-        { key: '/item-card', label: 'كارت الصنف',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-        { key: '/stock-permits', label: 'أذونات المخزن',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-        { key: '/transfers', label: 'تحويلات المخزون',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-        { key: '/stocktake', label: 'جرد حق تاريخ',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-        { key: '/stock-alerts', label: 'تنبيهات المخزون',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-        { key: '/manufacturing', label: 'عمليات التصنيع',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager'] },
-      ],
-    },
-    {
-      key: 'grp-finance',
-      icon: <DollarOutlined />,
-      label: 'الحسابات',
-      children: [
-        { key: '/treasury', label: 'الحسابات والخزينة',
-          roles: ['system_admin', 'branch_manager'] },
-        { key: '/vouchers', label: 'سندات القبض والصرف',
-          roles: ['system_admin', 'branch_manager', 'accountant', 'sales_manager', 'viewer'] },
-        { key: '/account-statement', label: 'كشف حساب',
-          roles: ['system_admin', 'branch_manager', 'accountant', 'viewer'] },
-        { key: '/fixed-assets', label: 'الأصول الثابتة',
-          roles: ['system_admin', 'branch_manager', 'accountant', 'viewer'] },
-        { key: '/finance-reports', label: 'القوائم المالية',
-          roles: ['system_admin', 'branch_manager', 'accountant', 'viewer'] },
-        { key: '/general-ledger', label: 'الأستاذ العام والقيود',
-          roles: ['system_admin', 'accountant', 'viewer'] },
-      ],
-    },
-    {
-      key: 'grp-reports',
-      icon: <BookOutlined />,
-      label: 'التقارير',
-      children: [
-        { key: '/trade-reports', label: 'تقارير المبيعات والمشتريات',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-        { key: '/reports', label: 'التقارير والإحصائيات',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager', 'viewer'] },
-      ],
-    },
-    {
-      key: 'grp-inspections',
-      icon: <MobileOutlined />,
-      label: 'المعاينات',
-      children: [
-        { key: '/inspections', label: 'المعاينات',
-          roles: ['system_admin', 'branch_manager', 'sales_manager', 'after_sales_staff', 'viewer'] },
-        { key: '/inspection-items', label: 'أصناف المعاينة',
-          roles: ['system_admin', 'branch_manager'] },
-      ],
-    },
-    {
-      key: 'grp-admin',
-      icon: <SettingOutlined />,
-      label: 'الإدارة',
-      children: [
-        { key: '/users', label: 'إدارة المستخدمين',
-          roles: ['system_admin', 'branch_manager'] },
-        { key: '/employees', label: 'الموظفون والوظائف',
-          roles: ['system_admin', 'branch_manager'] },
-        { key: '/org', label: 'الهيكل التنظيمي',
-          roles: ['system_admin', 'branch_manager', 'purchasing_manager'] },
-        { key: '/audit', label: 'سجل العمليات',
-          roles: ['system_admin', 'branch_manager'] },
-        { key: '/settings', label: 'إعدادات القوائم',
-          roles: ['system_admin', 'branch_manager'] },
-      ],
-    },
-  ];
-
-  // The dashboard sits outside the groups: it is where everyone lands, not a section to open.
-  const dashboardItem = {
-    key: '/dashboard',
-    icon: <DashboardOutlined />,
-    label: 'الرئيسية',
-    roles: ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager',
-      'after_sales_staff', 'accountant'],
-  };
-
-  // Filter by role at the SCREEN level, then drop any group left with nothing in it — a heading
-  // over an empty list is worse than no heading, because it reads as something broken.
+  // The tree itself lives in `navigation.ts` — it mirrors the a5 menu the client's people already
+  // know, section for section. See that file for why the arrangement is copied and the appearance
+  // is not.
   const userRole = user?.role || 'sales_rep';
+
+  /**
+   * Build antd's menu items from the tree, dropping what this role may not open.
+   *
+   * Recursive because the tree is two deep (section → group → screen), and filtering has to happen
+   * at the leaves: a group is a heading, not a permission. A group left with nothing permitted is
+   * removed rather than rendered empty, since a heading over an empty list reads as broken.
+   */
+  const buildItems = (nodes: (NavScreen | NavGroup)[]): any[] =>
+    nodes
+      .map((node) => {
+        if (!isGroup(node)) {
+          return node.roles.includes(userRole) ? { key: node.key, label: node.label } : null;
+        }
+        const children = buildItems(node.children);
+        return children.length ? { key: node.key, label: node.label, children } : null;
+      })
+      .filter(Boolean);
+
   const filteredMenuItems = [
-    ...(dashboardItem.roles.includes(userRole)
-      ? [{ key: dashboardItem.key, icon: dashboardItem.icon, label: dashboardItem.label }]
+    ...(HOME_SCREEN.roles.includes(userRole)
+      ? [{ key: HOME_SCREEN.key, icon: <DashboardOutlined />, label: HOME_SCREEN.label }]
       : []),
-    ...menuGroups
-      .map((g) => ({
-        key: g.key,
-        icon: g.icon,
-        label: g.label,
-        children: g.children
-          .filter((c) => c.roles.includes(userRole))
-          .map(({ key, label }) => ({ key, label })),
-      }))
-      .filter((g) => g.children.length > 0),
+    ...buildItems([...NAVIGATION, ...EXTRA_SECTIONS]).map((item, i) => ({
+      ...item,
+      icon: SECTION_ICONS[item.key] ?? <AppstoreOutlined />,
+    })),
   ];
 
-  // Open the group the active screen lives in, so a tab restored on load doesn't leave the
-  // sidebar shut around a highlighted item nobody can see.
-  const openGroupKeys = menuGroups
-    .filter((g) => g.children.some((c) => c.key === (activeId || '/dashboard')))
-    .map((g) => g.key);
+  // Open every ancestor of the active screen, so a tab restored on load never leaves the sidebar
+  // shut around a highlighted item nobody can see — with two levels, opening only the section
+  // would still hide a report inside its group.
+  const ancestorsOf = (target: string, nodes: (NavScreen | NavGroup)[], trail: string[] = []): string[] => {
+    for (const node of nodes) {
+      if (!isGroup(node)) {
+        if (node.key === target || node.key.split('?')[0] === target) return trail;
+        continue;
+      }
+      const found = ancestorsOf(target, node.children, [...trail, node.key]);
+      if (found.length || node.children.some((c) => !isGroup(c) && c.key === target)) return found;
+    }
+    return [];
+  };
+  const openGroupKeys = ancestorsOf(activeId || '/dashboard', [...NAVIGATION, ...EXTRA_SECTIONS]);
 
   // A menu click opens (or focuses) that section's tab.
   const handleMenuClick = ({ key }: { key: string }) => {

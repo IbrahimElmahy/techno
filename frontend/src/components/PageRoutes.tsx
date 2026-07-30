@@ -13,6 +13,7 @@ import Manufacturing from '../pages/Manufacturing';
 import Transfers from '../pages/Transfers';
 import StockBalance from '../pages/StockBalance';
 import StockAlerts from '../pages/StockAlerts';
+import PendingScreen from '../pages/PendingScreen';
 import ItemCard from '../pages/ItemCard';
 import StockPermits from '../pages/StockPermits';
 import Stocktake from '../pages/Stocktake';
@@ -83,7 +84,9 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/reports" element={<Reports />} />
       <Route path="/trade-reports" element={<TradeReports />} />
       <Route path="/settings" element={<Settings />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* A menu entry whose screen is not built yet lands here and says so, naming the a5 screen
+          it will mirror. Bouncing to the dashboard instead would read as the click having failed. */}
+      <Route path="*" element={<PendingScreen />} />
     </Routes>
   );
 }
