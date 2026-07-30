@@ -8,8 +8,10 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
-import { useSearchParams } from 'react-router-dom';
 import { useQueryTab } from '../components/useQueryTab';
+import {
+  APPEARS_IN_LABEL, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
+} from '../utils/accounts';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 
@@ -79,43 +81,16 @@ interface CostCenter {
   children?: CostCenter[] | null;
 }
 
-const NATURE_LABEL: Record<string, string> = {
-  asset: 'أصول', liability: 'التزامات', equity: 'حقوق ملكية', income: 'إيرادات', expense: 'مصروفات',
-};
-/**
- * «يظهر في» — which statement the account is presented on. Egyptian practice reads three, not
- * two: المتاجرة carries sales and cost of sales down to gross profit, أرباح وخسائر carries the
- * indirect expenses and other income down to net profit, and الميزانية carries the balances.
- * Merging the first two would lose the gross-profit line, which is the figure a trader looks at
- * before any other.
- */
-const APPEARS_IN_LABEL: Record<string, string> = {
-  trading: 'متاجرة',
-  profit_loss: 'أرباح وخسائر',
-  balance_sheet: 'ميزانية عمومية',
-};
-
-/** «المستوى الرئيسي» — the standard grouping the account rolls up into. Suggestions, not a
- *  closed list: the field is free text because every chart arranges these differently. */
-const MAIN_LEVELS = [
-  'أصول متداولة', 'أصول ثابتة', 'التزامات متداولة', 'حقوق الملكية',
-  'الإيرادات / المبيعات', 'تكلفة الإيرادات / المبيعات',
-  'مصروفات مباشرة', 'مصروفات غير مباشرة', 'إيرادات متنوعة',
-];
-
-const NATURE_COLOR: Record<string, string> = {
-  asset: 'green', liability: 'volcano', equity: 'gold', income: 'blue', expense: 'orange',
-};
-const egp = (v: string | number) =>
-  parseFloat(String(v)).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // الشجرة تُفلتر بالعقدة أو أي فرع تحتها، حتى لا يختفي حساب مطابق داخل مجموعة غير مطابقة.
 const flatten = <T extends { children?: T[] | null }>(node: T): T[] =>
   [node, ...(node.children || []).flatMap(flatten)];
 
 export default function GeneralLedger() {
-  // Three of these tabs are separate menu entries in the system the client is migrating from
-  // (الحسابات الرئيسيه · الحسابات الفرعيه · مراكز التكلفة), so each entry carries the tab it means.
+  // مراكز التكلفة is a separate menu entry in the system the client is migrating from, so the
+  // entry carries the tab it means. الحسابات الرئيسيه and الحسابات الفرعيه used to be narrowed
+  // views of the chart tab; they are their own screens now, and this tab is the whole tree again
+  // — which is what somebody opening «دليل الحسابات» came for.
   const [activeTab, selectTab] = useQueryTab('chart');
   return (
     <Tabs
@@ -141,15 +116,7 @@ function ChartTab() {
   // «الحسابات الرئيسيه» and «الحسابات الفرعيه» are two menu entries there and one chart here. The
   // distinction is real in the data — a group node versus a postable leaf — so the entry narrows to
   // what it names instead of dropping the reader into the whole tree and leaving them to squint.
-  const [params] = useSearchParams();
-  const scope = params.get('scope');
-  const scopedTree = useMemo(() => {
-    if (scope === 'main') return tree.filter((a) => !a.is_postable);
-    if (scope === 'sub') return tree.flatMap(flatten).filter((a) => a.is_postable);
-    return tree;
-  }, [tree, scope]);
-
-  const filter = useListFilter(scopedTree, {
+  const filter = useListFilter(tree, {
     search: (a) => flatten(a).flatMap((n) => [n.code, n.name]),
     filters: {
       nature: (a, v) => flatten(a).some((n) => n.nature === v),
@@ -206,8 +173,7 @@ function ChartTab() {
 
   return (
     <Card
-      title={scope === 'main' ? 'الحسابات الرئيسيه'
-        : scope === 'sub' ? 'الحسابات الفرعيه' : 'الهيكل الشجري لدليل الحسابات'}
+      title="الهيكل الشجري لدليل الحسابات"
       extra={
         <Space>
           <Button icon={<ReloadOutlined />} onClick={load} />
@@ -220,7 +186,7 @@ function ChartTab() {
         query={filter.query} onQueryChange={filter.setQuery}
         values={filter.values} onValueChange={filter.setValue}
         onReset={filter.reset}
-        total={scopedTree.length} shown={filter.filtered.length}
+        total={tree.length} shown={filter.filtered.length}
         filters={[
           { key: 'nature', placeholder: 'طبيعة الحساب',
             options: Object.entries(NATURE_LABEL).map(([v, l]) => ({ value: v, label: l })) },

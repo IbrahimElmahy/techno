@@ -4,6 +4,8 @@ import Users from '../pages/Users';
 import Org from '../pages/Org';
 import Warehouses from '../pages/Warehouses';
 import Branches from '../pages/Branches';
+import MainAccounts from '../pages/MainAccounts';
+import SubAccounts from '../pages/SubAccounts';
 import Customers from '../pages/Customers';
 import CustomerProfile from '../pages/CustomerProfile';
 import SupplierProfile from '../pages/SupplierProfile';
@@ -59,6 +61,8 @@ export default function PageRoutes({ location }: { location?: string }) {
           that lands you on a tabbed page is an entry you have to be taught. */}
       <Route path="/warehouses" element={<Warehouses />} />
       <Route path="/branches" element={<Branches />} />
+      <Route path="/main-accounts" element={<MainAccounts />} />
+      <Route path="/sub-accounts" element={<SubAccounts />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:customerId" element={<CustomerProfile />} />
       <Route path="/suppliers" element={<Suppliers />} />

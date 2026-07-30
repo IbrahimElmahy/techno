@@ -67,6 +67,11 @@ class AccountOut(BaseModel):
     main_level: str | None = None
     balance: Decimal
     children: list[AccountOut] | None = None
+    # An account opened FOR somebody — a customer, a supplier, a safe, a rep's custody — carries
+    # `owner_ref` and no name of its own. These two say who it belongs to and under which heading,
+    # derived on read so renaming the customer renames his account with him.
+    owner_name: str | None = None
+    owner_group: str | None = None
 
 
 class AccountCreate(BaseModel):
@@ -159,19 +164,23 @@ class TrialBalanceOut(BaseModel):
 
 # --- Serialization helpers -------------------------------------------------------------------
 
-def _account_out(db: Session, acc: Account, *, with_children: bool = False) -> AccountOut:
+def _account_out(db: Session, acc: Account, *, with_children: bool = False,
+                 owner_names: dict[int, str] | None = None) -> AccountOut:
     children = None
     if with_children:
         kids = db.scalars(
             select(Account).where(Account.parent_id == acc.id).order_by(Account.code)
         ).all()
-        children = [_account_out(db, k, with_children=True) for k in kids]
+        children = [_account_out(db, k, with_children=True, owner_names=owner_names)
+                    for k in kids]
     return AccountOut(
         id=acc.id, code=acc.code, name=acc.name, parent_id=acc.parent_id, nature=acc.nature,
         normal_side=acc.normal_side, is_postable=acc.is_postable, is_system=acc.is_system,
         active=acc.active, appears_in=acc.appears_in,
         main_level=getattr(acc, "main_level", None),
         balance=chart_service.account_balance(db, acc.id), children=children,
+        owner_name=(owner_names or {}).get(acc.id),
+        owner_group=chart_service.owner_group_label(acc.account_type),
     )
 
 
@@ -209,8 +218,12 @@ def list_accounts(
         stmt = stmt.where(Account.is_postable.is_(True))
     if active is not None:
         stmt = stmt.where(Account.active.is_(active))
-    accounts = db.scalars(stmt.order_by(Account.code)).all()
-    return [_account_out(db, a, with_children=tree) for a in accounts]
+    accounts = list(db.scalars(stmt.order_by(Account.code)).all())
+    # Resolved for the whole page at once rather than per row: a chart has one account per
+    # customer, so per-row lookups would be a query per customer on every load.
+    scope = accounts if not tree else list(db.scalars(select(Account)).all())
+    owner_names = chart_service.bulk_owner_names(db, scope)
+    return [_account_out(db, a, with_children=tree, owner_names=owner_names) for a in accounts]
 
 
 @router.post("/accounts", response_model=AccountOut, status_code=status.HTTP_201_CREATED)

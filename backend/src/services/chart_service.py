@@ -274,3 +274,94 @@ def account_balance(db: Session, account_id: int) -> Decimal:
 def is_postable_leaf(db: Session, account_id: int) -> bool:
     acc = db.get(Account, account_id)
     return bool(acc and acc.is_postable and acc.active)
+
+
+# --------------------------------------------------------------- owner-derived names
+
+
+# The account types whose rows are created FOR something else — a customer, a supplier, a safe, a
+# rep's custody — rather than typed into the chart by hand. They carry `owner_ref` and no name.
+_OWNER_LABEL: dict[AccountType, str] = {
+    AccountType.customer_receivable: "العملاء",
+    AccountType.supplier_payable: "الموردين",
+    AccountType.treasury: "الخزينة والبنوك",
+    AccountType.custody: "العهد",
+}
+
+
+def bulk_owner_names(db: Session, accounts: list[Account]) -> dict[int, str]:
+    """Names for the accounts that were opened on behalf of somebody — ONE query per kind.
+
+    A customer's receivable account IS his line in the chart, and until now it had no name in it:
+    the الحسابات الفرعيه screen showed a column of «-» against real balances, which is a list you
+    cannot read and therefore cannot check.
+
+    Resolved by walking the LINK TABLES back to the account (`supplier_account.account_id`), not
+    forward through `Account.owner_ref`. Both directions exist, but only one is reliable:
+    `owner_ref` is set by the API when it creates the pair and is missing on every row a seeding
+    or import script wrote, so two of three suppliers in the dev database came back nameless
+    while the third worked. The link row is what actually holds the relationship; `owner_ref` is
+    a convenience that was never backfilled.
+
+    Derived, never stored. Renaming a customer has to rename his account too, and a copy taken at
+    creation would drift the first time somebody fixed a spelling.
+    """
+    from src.models.customer import Customer, CustomerAccount
+    from src.models.supplier import Supplier, SupplierAccount
+    from src.models.treasury import Treasury
+    from src.models.user import User
+    from src.models.warehouse import Custody, HolderType, Warehouse
+
+    wanted = [a.id for a in accounts if not a.name and a.account_type in _OWNER_LABEL]
+    if not wanted:
+        return {}
+
+    out: dict[int, str] = {}
+
+    def _link(link_model, owner_model, link_fk, prefix: str) -> None:
+        for account_id, name in db.execute(
+            select(link_model.account_id, owner_model.name)
+            .join(owner_model, link_fk == owner_model.id)
+            .where(link_model.account_id.in_(wanted))
+        ).all():
+            if name:
+                out[account_id] = f"{prefix} — {name}"
+
+    _link(CustomerAccount, Customer, CustomerAccount.customer_id, "عميل")
+    _link(SupplierAccount, Supplier, SupplierAccount.supplier_id, "مورد")
+
+    for account_id, name in db.execute(
+        select(Treasury.account_id, Treasury.name).where(Treasury.account_id.in_(wanted))
+    ).all():
+        if name:
+            out[account_id] = f"خزينة — {name}"
+
+    custodies = list(db.scalars(
+        select(Custody).where(Custody.account_id.in_(wanted))
+    ).all())
+    if custodies:
+        rep_names = dict(db.execute(
+            select(User.id, User.full_name)
+            .where(User.id.in_([c.rep_id for c in custodies if c.rep_id]))
+        ).all())
+        wh_names = dict(db.execute(
+            select(Warehouse.id, Warehouse.name)
+            .where(Warehouse.id.in_([c.warehouse_id for c in custodies if c.warehouse_id]))
+        ).all())
+        for c in custodies:
+            who = (rep_names.get(c.rep_id) if c.holder_type == HolderType.rep
+                   else wh_names.get(c.warehouse_id))
+            if who and c.account_id:
+                out[c.account_id] = f"عهدة — {who}"
+
+    return out
+
+
+def owner_group_label(account_type: AccountType) -> str | None:
+    """«العملاء», «الموردين» … — the group an owner-derived account belongs under.
+
+    Their chart files every customer under one «العملاء» heading. Ours reaches the same reading
+    without a real parent row for each kind, so the screen can show where a nameless account
+    belongs even when its `parent_id` points at the standard chart instead.
+    """
+    return _OWNER_LABEL.get(account_type)
