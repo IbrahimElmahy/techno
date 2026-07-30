@@ -32,6 +32,12 @@ class Branch(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     governorate_id: Mapped[int] = mapped_column(ForeignKey("governorate.id"), nullable=False)
     is_head_office: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # «بيان ١» و«بيان ٢» — two free note lines off their الفروع form (031). Deliberately unnamed
+    # and unvalidated: a branch collects things that belong to no column — a landlord's number, a
+    # licence reference, «التسليم من باب المخزن مش الشارع» — and giving them a shape now would
+    # only be a shape somebody has to work around later.
+    note1: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    note2: Mapped[str | None] = mapped_column(String(300), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     governorate: Mapped[Governorate] = relationship()

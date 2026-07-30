@@ -35,6 +35,11 @@ class WarehouseUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
     description: str | None = None
+    # A store does move between branches, and its type does get corrected after the fact. Leaving
+    # these out of the update meant the only way to fix either was to make a second store and
+    # retire the first — which splits its movement history across two records for a typo.
+    branch_id: int | None = None
+    warehouse_type: WarehouseType | None = None
 
 
 class CustodyUpdate(BaseModel):
@@ -125,6 +130,10 @@ def update_warehouse(
         wh.description = body.description
     if body.active is not None:
         wh.active = body.active
+    if body.branch_id is not None:
+        wh.branch_id = body.branch_id
+    if body.warehouse_type is not None:
+        wh.warehouse_type = body.warehouse_type
     db.flush()
     audit_service.record(db, action="warehouse.update", actor_user_id=current.id,
                          entity_type="warehouse", entity_id=wh.id)

@@ -30,12 +30,17 @@ class BranchCreate(BaseModel):
     name: str
     governorate_id: int
     is_head_office: bool = False
+    # «بيان ١» و«بيان ٢» — two free note lines off their الفروع form (031).
+    note1: str | None = None
+    note2: str | None = None
 
 
 class BranchUpdate(BaseModel):
     name: str | None = None
     governorate_id: int | None = None
     active: bool | None = None
+    note1: str | None = None
+    note2: str | None = None
 
 
 class TerritoryUpdate(BaseModel):
@@ -49,6 +54,8 @@ class BranchOut(BaseModel):
     governorate_id: int
     is_head_office: bool
     active: bool
+    note1: str | None = None
+    note2: str | None = None
 
 
 class TerritoryCreate(BaseModel):
@@ -112,6 +119,15 @@ def list_governorates(
     return [GovernorateOut(id=g.id, name=g.name) for g in db.scalars(select(Governorate)).all()]
 
 
+def _branch_out(b: Branch) -> BranchOut:
+    """One place builds a BranchOut. Three hand-written copies is how a new field ends up
+    returned by the list and missing from the create response."""
+    return BranchOut(
+        id=b.id, name=b.name, governorate_id=b.governorate_id,
+        is_head_office=b.is_head_office, active=b.active, note1=b.note1, note2=b.note2,
+    )
+
+
 @router.get("/branches", response_model=list[BranchOut])
 def list_branches(
     current: CurrentUser = Depends(require_capability(CAP_BRANCH_READ)),
@@ -120,16 +136,7 @@ def list_branches(
     stmt = select(Branch)
     if not current.is_admin:
         stmt = stmt.where(Branch.id == current.branch_id)
-    return [
-        BranchOut(
-            id=b.id,
-            name=b.name,
-            governorate_id=b.governorate_id,
-            is_head_office=b.is_head_office,
-            active=b.active,
-        )
-        for b in db.scalars(stmt).all()
-    ]
+    return [_branch_out(b) for b in db.scalars(stmt).all()]
 
 
 @router.post("/branches", response_model=BranchOut, status_code=status.HTTP_201_CREATED)
@@ -139,7 +146,8 @@ def create_branch(
     db: Session = Depends(get_db),
 ) -> BranchOut:
     branch = Branch(
-        name=body.name, governorate_id=body.governorate_id, is_head_office=body.is_head_office
+        name=body.name, governorate_id=body.governorate_id, is_head_office=body.is_head_office,
+        note1=body.note1, note2=body.note2,
     )
     db.add(branch)
     db.flush()
@@ -148,10 +156,7 @@ def create_branch(
         entity_id=branch.id, after={"name": branch.name},
     )
     db.commit()
-    return BranchOut(
-        id=branch.id, name=branch.name, governorate_id=branch.governorate_id,
-        is_head_office=branch.is_head_office, active=branch.active,
-    )
+    return _branch_out(branch)
 
 
 @router.patch("/branches/{branch_id}", response_model=BranchOut)
@@ -170,12 +175,16 @@ def update_branch(
         b.governorate_id = body.governorate_id
     if body.active is not None:
         b.active = body.active
+    # Omitted stays omitted: renaming a branch must not blank a note somebody left on it.
+    for field in ("note1", "note2"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(b, field, val)
     db.flush()
     audit_service.record(db, action="branch.update", actor_user_id=current.id,
                          entity_type="branch", entity_id=b.id)
     db.commit()
-    return BranchOut(id=b.id, name=b.name, governorate_id=b.governorate_id,
-                     is_head_office=b.is_head_office, active=b.active)
+    return _branch_out(b)
 
 
 @router.delete("/branches/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)

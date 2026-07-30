@@ -2,6 +2,8 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Users from '../pages/Users';
 import Org from '../pages/Org';
+import Warehouses from '../pages/Warehouses';
+import Branches from '../pages/Branches';
 import Customers from '../pages/Customers';
 import CustomerProfile from '../pages/CustomerProfile';
 import SupplierProfile from '../pages/SupplierProfile';
@@ -53,6 +55,10 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/dashboard" element={<Placeholder name="الرئيسية" />} />
       <Route path="/users" element={<Users />} />
       <Route path="/org" element={<Org />} />
+      {/* Split out of /org: their menu has each as its own screen, and a menu entry
+          that lands you on a tabbed page is an entry you have to be taught. */}
+      <Route path="/warehouses" element={<Warehouses />} />
+      <Route path="/branches" element={<Branches />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:customerId" element={<CustomerProfile />} />
       <Route path="/suppliers" element={<Suppliers />} />
