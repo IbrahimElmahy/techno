@@ -182,7 +182,6 @@ export default function Invoices() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
 
-  const [dateAsk, setDateAsk] = useState(false);
   const [invoiceDate, setInvoiceDate] = useState<any>(dayjs());
   const [couponTo, setCouponTo] = useState('');
   // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
@@ -429,6 +428,10 @@ export default function Invoices() {
   const handlePartyPicked = (picked: Party) => {
     setParty(picked);
     setPartyPickerOpen(false);
+    // Choosing who the document is for is what OPENS it — the same single step their «انشاء»
+    // does. When a document is already on screen this only swaps the party, so re-picking a
+    // customer mid-invoice does not restart anything.
+    if (!createVisible) setCreateVisible(true);
     createForm.setFieldsValue({ customer_id: picked.id });
     // A brand-new customer isn't in the loaded list yet; add it so the field renders its name.
     setCustomers((prev) => (prev.some((c) => c.id === picked.id) ? prev : [
@@ -1429,35 +1432,15 @@ export default function Invoices() {
 
         <PartyPickerModal
           open={partyPickerOpen} kind="customer"
-          onPick={handlePartyPicked} onCancel={() => setPartyPickerOpen(false)} />
+          onPick={handlePartyPicked} onCancel={() => setPartyPickerOpen(false)}
+          date={createVisible ? undefined : invoiceDate}
+          onDateChange={setInvoiceDate} />
       </div>
     );
   }
 
   return (
     <div>
-      {/* Asked BEFORE the form opens rather than buried inside it: the date drives the ledger
-          entry too, so it is a decision about the document, not one more field on it. */}
-      <Modal
-        open={dateAsk}
-        title="تاريخ الفاتورة"
-        okText="ابدأ الفاتورة"
-        cancelText="إلغاء"
-        onCancel={() => setDateAsk(false)}
-        onOk={() => { setDateAsk(false); setCreateVisible(true); }}
-        destroyOnHidden
-      >
-        <DatePicker
-          style={{ width: '100%' }} size="large" allowClear={false} autoFocus
-          value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())}
-          format="YYYY-MM-DD"
-        />
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
-          التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
-          في نفس اليوم.
-        </div>
-      </Modal>
-
       <Card
         title="الفواتير (سجل فواتير المبيعات)"
         extra={(
@@ -1474,7 +1457,7 @@ export default function Invoices() {
               onChange={invoiceCols.setHidden}
             />
             <Button type="primary" icon={<PlusOutlined />}
-              onClick={() => { setInvoiceDate(dayjs()); setDateAsk(true); }}>
+              onClick={() => { setInvoiceDate(dayjs()); setPartyPickerOpen(true); }}>
               تسجيل فاتورة بيع
             </Button>
           </Space>
@@ -1657,6 +1640,14 @@ export default function Invoices() {
           </>
         )}
       </Modal>
+
+      {/* The one step that opens a document: who it is for, and when. It lives in BOTH views —
+          the create view renders its own copy for changing the party mid-invoice — and only one
+          of the two is ever mounted, because the create view returns early. */}
+      <PartyPickerModal
+        open={partyPickerOpen} kind="customer"
+        onPick={handlePartyPicked} onCancel={() => setPartyPickerOpen(false)}
+        date={invoiceDate} onDateChange={setInvoiceDate} />
     </div>
   );
 }

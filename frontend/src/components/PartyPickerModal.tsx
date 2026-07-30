@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Col, Empty, Form, Input, Modal, Row, Select, Space, Spin, Tag, message } from 'antd';
+import {
+  Button, Col, DatePicker, Empty, Form, Input, Modal, Row, Select, Space, Spin, Tag, message,
+} from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { normalizeAr } from './ListToolbar';
 
@@ -11,6 +14,12 @@ import { normalizeAr } from './ListToolbar';
  * search and a branch filter, and a party that does not exist yet can be created **without
  * leaving the half-filled document** — walking away to the customers screen used to lose the
  * lines already entered.
+ *
+ * It also carries the document DATE when asked to (`date` + `onDateChange`), because that is how
+ * the system this client is migrating from opens a document: one step that asks who it is for and
+ * when, and then the invoice is on screen. We used to ask the date in a modal of its own and the
+ * party in another — two dialogs to answer two questions that are the same decision, and two
+ * things to dismiss before typing the first line.
  */
 
 export type PartyKind = 'customer' | 'supplier';
@@ -31,12 +40,16 @@ const KIND_ENDPOINT: Record<PartyKind, string> = {
 };
 
 export default function PartyPickerModal({
-  open, kind, onPick, onCancel,
+  open, kind, onPick, onCancel, date, onDateChange,
 }: {
   open: boolean;
   kind: PartyKind;
   onPick: (party: Party) => void;
   onCancel: () => void;
+  /** Pass both to show the document date here. Omit them and the picker is just a picker — which
+   *  is what it still is when a document that already has a date changes its party. */
+  date?: Dayjs;
+  onDateChange?: (d: Dayjs) => void;
 }) {
   const [parties, setParties] = useState<Party[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -165,17 +178,29 @@ export default function PartyPickerModal({
       ) : (
         <>
           <Row gutter={8} style={{ marginBottom: 10 }}>
-            <Col xs={24} md={14}>
+            <Col xs={24} md={date ? 8 : 14}>
               <Input allowClear autoFocus prefix={<SearchOutlined />}
                 placeholder="بحث بالاسم أو الهاتف"
                 value={query} onChange={(e) => setQuery(e.target.value)} />
             </Col>
-            <Col xs={24} md={10}>
+            <Col xs={24} md={date ? 8 : 10}>
               <Select allowClear style={{ width: '100%' }} placeholder="كل الفروع"
                 value={branchId} onChange={(v) => setBranchId(v)}
                 options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
             </Col>
+            {date && onDateChange && (
+              <Col xs={24} md={8}>
+                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                  value={date} onChange={(v) => v && onDateChange(v)} />
+              </Col>
+            )}
           </Row>
+          {date && (
+            <div style={{ marginBottom: 8, color: '#8a8a8a', fontSize: 12 }}>
+              التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
+              في نفس اليوم.
+            </div>
+          )}
 
           <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid #f0f0f0',
                         borderRadius: 8 }}>
