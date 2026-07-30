@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, message } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  Button, Card, Descriptions, Dropdown, Form, Input, Modal, Popconfirm, Space, Table, Tooltip,
+  message,
+} from 'antd';
+import {
+  PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, PrinterOutlined,
+  EyeOutlined, DownOutlined, CloseCircleOutlined, CheckCircleOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -35,6 +41,54 @@ export default function Categories() {
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
   const searchRef = React.useRef<any>(null);
+  const [viewing, setViewing] = useState<Category | null>(null);
+
+  /**
+   * «المزيد» — the same four entries their screen offers.
+   *
+   * Export and the two templates are produced here, from what is already on screen: a CSV with a
+   * BOM so Excel opens Arabic correctly rather than as mojibake, which is the whole difference
+   * between a file somebody uses and a file somebody reports as broken.
+   *
+   * Import is not offered yet. It needs an endpoint that validates a whole sheet and refuses it as
+   * a unit — a half-applied import of two hundred categories is worse than no import, because
+   * nobody can tell which half landed.
+   */
+  const csv = (name: string, rows: (string | number)[][]) => {
+    const body = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','));
+    // The BOM matters: without it Excel opens Arabic as mojibake, which is the whole difference
+    // between a file someone uses and a file someone reports as broken.
+    const blob = new Blob(['﻿' + body.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const moreMenu = [
+    {
+      key: 'export',
+      label: 'تصدير',
+      onClick: () => csv('categories.csv', [
+        ['رقم', 'الاسم', 'مخفي', 'وصف'],
+        ...rows.map((r) => [r.id, r.label, r.active ? '' : 'نعم', r.description || '']),
+      ]),
+    },
+    {
+      key: 'tpl-create',
+      label: 'تنزيل قالب الإنشاء',
+      onClick: () => csv('categories-create-template.csv', [['الاسم', 'وصف']]),
+    },
+    {
+      key: 'tpl-update',
+      label: 'تنزيل قالب التحديث',
+      onClick: () => csv('categories-update-template.csv', [
+        ['رقم', 'الاسم', 'وصف'],
+        ...rows.map((r) => [r.id, r.label, r.description || '']),
+      ]),
+    },
+  ];
 
   const load = async () => {
     setLoading(true);
@@ -110,11 +164,18 @@ export default function Categories() {
 
   return (
     <Card
-      title="فئات الاصناف"
+      // Their page is titled «الفئات» while the menu entry reads «فئات الاصناف». Both are kept as
+      // they are: the menu is how you find it, the title is what it calls itself, and changing
+      // either to match the other would be us tidying up someone else's vocabulary.
+      title="الفئات"
       extra={(
         <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>فئة جديدة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load} />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} />
+          <Button type="primary" onClick={load}>اعادة تحميل</Button>
+          <Dropdown menu={{ items: moreMenu }}>
+            <Button>المزيد <DownOutlined /></Button>
+          </Dropdown>
+          <Button icon={<PrinterOutlined />} onClick={() => window.print()} />
         </Space>
       )}
     >
@@ -133,24 +194,51 @@ export default function Categories() {
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد فئات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        // Their column order exactly: رقم · الاسم · مخفي · وصف, then the row's three icons.
         columns={[
-          { title: 'رقم', dataIndex: 'id', width: 80, render: (v: number) => <Tag>{v}</Tag> },
+          { title: 'رقم', dataIndex: 'id', width: 70, align: 'center' as const },
           { title: 'الاسم', dataIndex: 'label' },
-          { title: 'وصف', dataIndex: 'description', render: (v: string) => v || '-' },
-          { title: 'الحالة', dataIndex: 'active', width: 110,
-            render: (a: boolean) => (a ? <Tag color="green">ظاهرة</Tag> : <Tag>مخفية</Tag>) },
-          { title: 'إجراء', key: 'act', width: 160,
+          // They show hidden-ness rather than active-ness, as an icon. Same fact, their way round —
+          // and worth matching, because a column that means the opposite of what someone expects is
+          // read wrong at a glance long before anyone notices the label changed.
+          { title: 'مخفي', dataIndex: 'active', width: 90, align: 'center' as const,
+            render: (a: boolean) => (a
+              ? <CloseCircleOutlined style={{ color: '#cf1322' }} />
+              : <CheckCircleOutlined style={{ color: '#6AB42D' }} />) },
+          { title: 'وصف', dataIndex: 'description', render: (v: string) => v || '' },
+          { title: '', key: 'act', width: 110, align: 'center' as const,
             render: (_: unknown, row: Category) => (
-              <Space>
-                <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(row)}>تعديل</Button>
+              <Space size={4}>
                 <Popconfirm title="تشيل الفئة دي؟" okText="أيوه" cancelText="لأ"
                   onConfirm={() => remove(row)}>
-                  <Button type="link" danger icon={<DeleteOutlined />}>حذف</Button>
+                  <Tooltip title="حذف">
+                    <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+                  </Tooltip>
                 </Popconfirm>
+                <Tooltip title="تعديل">
+                  <Button type="text" size="small" icon={<EditOutlined />}
+                    onClick={() => openEdit(row)} />
+                </Tooltip>
+                <Tooltip title="عرض">
+                  <Button type="text" size="small" icon={<EyeOutlined />}
+                    onClick={() => setViewing(row)} />
+                </Tooltip>
               </Space>
             ) },
         ]}
       />
+
+      <Modal
+        open={!!viewing} onCancel={() => setViewing(null)} footer={null} destroyOnHidden
+        title="بيانات الفئة" width={420}
+      >
+        <Descriptions column={1} size="small" bordered>
+          <Descriptions.Item label="رقم">{viewing?.id}</Descriptions.Item>
+          <Descriptions.Item label="الاسم">{viewing?.label}</Descriptions.Item>
+          <Descriptions.Item label="مخفي">{viewing?.active ? 'لا' : 'نعم'}</Descriptions.Item>
+          <Descriptions.Item label="وصف">{viewing?.description || '—'}</Descriptions.Item>
+        </Descriptions>
+      </Modal>
 
       <Modal
         open={open} onCancel={() => setOpen(false)} footer={null} destroyOnHidden
