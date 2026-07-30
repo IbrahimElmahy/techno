@@ -22,6 +22,19 @@ class Supplier(Base):
     governorate_id: Mapped[int | None] = mapped_column(ForeignKey("governorate.id"),
                                                        nullable=True)
     markaz: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # ---- card fields read off their الموردين form (031) ----
+    # Free string, like the customer's — admin-configurable via lookups (013), not an enum, so
+    # nothing branches on it and a purchasing manager can add a kind we never thought of.
+    supplier_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    tax_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    commercial_register: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # نقدي — paid on delivery rather than run as an account.
+    #
+    # Their supplier form has no خصم, no ض.م and no default price tier, unlike their customer
+    # form. That is a real difference in how the two are dealt with, not an oversight on their
+    # side, so it is not invented here either.
+    is_cash: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     account: Mapped[SupplierAccount] = relationship(back_populates="supplier", uselist=False)

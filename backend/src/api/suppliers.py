@@ -24,7 +24,18 @@ from src.services import (
 router = APIRouter(tags=["suppliers"], prefix="/suppliers")
 
 
-class SupplierCreate(BaseModel):
+# The card fields read off their الموردين form (031). Shared by create and update so the two can
+# never drift apart. No discount, VAT or price tier: their supplier form carries none of the
+# three, unlike their customer form, and that difference is theirs to make.
+class _SupplierCard(BaseModel):
+    supplier_type: str | None = None
+    email: str | None = None
+    tax_number: str | None = None
+    commercial_register: str | None = None
+    is_cash: bool | None = None
+
+
+class SupplierCreate(_SupplierCard):
     name: str
     phone: str | None = None
     address: str | None = None            # (v4)
@@ -35,7 +46,7 @@ class SupplierCreate(BaseModel):
     phones: list[str] | None = None       # (v4) extra numbers
 
 
-class SupplierUpdate(BaseModel):
+class SupplierUpdate(_SupplierCard):
     name: str | None = None
     phone: str | None = None
     active: bool | None = None
@@ -57,6 +68,12 @@ class SupplierOut(BaseModel):
     governorate_id: int | None = None
     markaz: str | None = None
     phones: list[str] = []
+    # Card fields (031) — their الموردين form.
+    supplier_type: str | None = None
+    email: str | None = None
+    tax_number: str | None = None
+    commercial_register: str | None = None
+    is_cash: bool = False
     # Payable balance — filled on the list endpoint (one grouped query, not per row).
     balance: Decimal | None = None
 
@@ -66,7 +83,21 @@ def _sup_out(s: Supplier, db: Session | None = None) -> SupplierOut:
     return SupplierOut(id=s.id, code=s.code, name=s.name, phone=s.phone, active=s.active,
                        address=s.address, branch_id=s.branch_id,
                        governorate_id=s.governorate_id, markaz=s.markaz,
+                       supplier_type=s.supplier_type, email=s.email, tax_number=s.tax_number,
+                       commercial_register=s.commercial_register, is_cash=s.is_cash,
                        phones=extra)
+
+
+def _apply_card(s: Supplier, body: _SupplierCard) -> None:
+    """Copy the الموردين card fields onto the supplier, skipping the ones not sent.
+
+    Omitted stays omitted, same as the customer's: a PATCH that names only the phone must not
+    blank the tax number somebody entered off a paper invoice months ago.
+    """
+    for field in ("supplier_type", "email", "tax_number", "commercial_register", "is_cash"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(s, field, val)
 
 
 def _delete_supplier(db: Session, s: Supplier, actor_user_id: int) -> None:
@@ -159,6 +190,7 @@ def create_supplier(
     supplier = Supplier(code=f"SUP-{n + 1:05d}", name=body.name, phone=body.phone,
                         address=body.address, branch_id=body.branch_id,
                         governorate_id=body.governorate_id, markaz=body.markaz)
+    _apply_card(supplier, body)
     db.add(supplier)
     db.flush()
     sa = SupplierAccount(supplier_id=supplier.id, account_id=acc.id)
@@ -204,6 +236,7 @@ def update_supplier(
         val = getattr(body, field)
         if val is not None:
             setattr(s, field, val)
+    _apply_card(s, body)
     contact_service.set_phones(db, PhoneOwner.supplier, s.id, body.phones)
     db.flush()
     audit_service.record(db, action="supplier.update", actor_user_id=current.id,

@@ -1,13 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Statistic, Switch, Table, Tag, message,
+  Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Statistic,
+  Table, Tag, Tooltip, message,
 } from 'antd';
 import {
-  PlusOutlined, MinusCircleOutlined, SearchOutlined, ClearOutlined, DeleteOutlined,
+  PlusOutlined, MinusCircleOutlined, EyeOutlined, StopOutlined,
+  SearchOutlined, ClearOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface SupplierRecord {
   id: number;
@@ -18,6 +21,15 @@ interface SupplierRecord {
   phones: string[] | null;
   active: boolean;
   balance?: string | null;   // payable balance, sent with the list (one grouped query)
+  branch_id: number | null;
+  governorate_id: number | null;
+  markaz: string | null;
+  // Card fields read off their الموردين form (031).
+  supplier_type: string | null;
+  email: string | null;
+  tax_number: string | null;
+  commercial_register: string | null;
+  is_cash: boolean;
 }
 
 interface Filters {
@@ -62,7 +74,11 @@ const SupplierBalance = ({ value }: { value?: string | null }) => {
 };
 
 export default function Suppliers() {
+  const { options: typeOptions } = useLookup('supplier_type');
+  const typeLabels = labelMap(typeOptions);
   const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [governorates, setGovernorates] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [form] = Form.useForm();
@@ -109,8 +125,23 @@ export default function Suppliers() {
     return { count: suppliers.length, total, due };
   }, [suppliers]);
 
+  // الفرع and محافظه are columns on their list, so the names have to be on hand to render it.
+  const fetchLookups = async () => {
+    try {
+      const [branchesRes, governoratesRes] = await Promise.all([
+        api.get('/api/v1/branches'),
+        api.get('/api/v1/governorates'),
+      ]);
+      setBranches(branchesRes.data);
+      setGovernorates(governoratesRes.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchSuppliers();
+    fetchLookups();
   }, []);
 
   // Form.List rows can be blank/undefined; only send real numbers.
@@ -119,11 +150,17 @@ export default function Suppliers() {
 
   const onCreateSupplier = async (values: any) => {
     try {
-      await api.post('/api/v1/suppliers', {
-        ...values,
+      const { hidden, ...rest } = values;
+      const created = await api.post('/api/v1/suppliers', {
+        ...rest,
         address: values.address ?? null,
+        is_cash: !!values.is_cash,
         phones: cleanPhones(values.phones),
       });
+      // «مخفي» is a state a supplier is put into, not one he is born in, so it is a separate edit.
+      if (hidden && created.data?.id) {
+        await api.patch(`/api/v1/suppliers/${created.data.id}`, { active: false });
+      }
       message.success('تم تسجيل المورد بنجاح');
       setDrawerVisible(false);
       form.resetFields();
@@ -171,23 +208,46 @@ export default function Suppliers() {
     });
   };
 
+  // Their six columns, in their order — `رقم · الفرع · الاسم · الهاتف · محافظه · مدينة` — plus
+  // the balance, and that is the whole table. Same shape as their العملاء list minus the rep,
+  // which a supplier has no equivalent of, and it fits the screen for the same reason that one
+  // does: تصنيف and العنوان moved into the expanded row, «مخفي» is a tag on the name, and the
+  // actions are the three icons their own rows use.
   const columns = [
     {
-      title: 'كود المورد',
+      title: 'رقم',
       dataIndex: 'code',
       key: 'code',
+      width: 110,
       render: (code: string) => <Tag color="orange">{code}</Tag>,
     },
     {
-      title: 'اسم المورد',
-      dataIndex: 'name',
-      key: 'name',
-      render: (name: string) => <span style={{ fontWeight: 600 }}>{name}</span>,
+      title: 'الفرع',
+      dataIndex: 'branch_id',
+      key: 'branch_id',
+      ellipsis: true,
+      render: (bId: number | null) => {
+        const branch = branches.find((b) => b.id === bId);
+        return branch ? branch.name : '-';
+      },
     },
     {
-      title: 'رقم الهاتف',
+      title: 'الاسم',
+      dataIndex: 'name',
+      key: 'name',
+      ellipsis: true,
+      render: (name: string, record: SupplierRecord) => (
+        <Space size={4}>
+          <span style={{ fontWeight: 600 }}>{name}</span>
+          {!record.active && <Tag color="red">مخفي</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: 'الهاتف',
       dataIndex: 'phone',
       key: 'phone',
+      width: 140,
       render: (phone: string | null, record: SupplierRecord) => (
         <Space size={4}>
           <span>{phone || '-'}</span>
@@ -200,49 +260,78 @@ export default function Suppliers() {
       ),
     },
     {
-      title: 'العنوان',
-      dataIndex: 'address',
-      key: 'address',
-      render: (address: string | null) => address || '-',
+      title: 'محافظه',
+      dataIndex: 'governorate_id',
+      key: 'governorate_id',
+      ellipsis: true,
+      render: (gId: number | null) => {
+        const gov = governorates.find((g) => g.id === gId);
+        return gov ? gov.name : '-';
+      },
     },
     {
-      title: 'الحالة',
-      dataIndex: 'active',
-      key: 'active',
-      render: (active: boolean) => (
-        <Tag color={active ? 'green' : 'red'}>{active ? 'نشط' : 'معطل'}</Tag>
-      ),
+      title: 'مدينة',
+      dataIndex: 'markaz',
+      key: 'markaz',
+      ellipsis: true,
+      render: (v: string | null) => v || '-',
     },
     {
       title: 'الرصيد الدائن',
       key: 'balance',
+      width: 140,
+      align: 'left' as const,
       render: (_: any, record: SupplierRecord) => <SupplierBalance value={record.balance} />,
       sorter: (a: SupplierRecord, b: SupplierRecord) =>
         Number(a.balance || 0) - Number(b.balance || 0),
     },
     {
-      title: 'الإجراءات',
+      title: '',
       key: 'actions',
+      width: 110,
       // Row clicks open the supplier file, so the buttons must not bubble up to it.
       render: (_: any, record: SupplierRecord) => (
-        <Space size="middle" onClick={(e) => e.stopPropagation()}>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="عرض الملف">
+            <Button type="text" icon={<EyeOutlined />}
+              onClick={() => navigate(`/suppliers/${record.id}`)} />
+          </Tooltip>
           {record.active && (
-            <Button type="link" onClick={() => onDeactivate(record)}>
-              إلغاء تفعيل
-            </Button>
+            <Tooltip title="إخفاء">
+              <Button type="text" icon={<StopOutlined />} onClick={() => onDeactivate(record)} />
+            </Tooltip>
           )}
-          <Button type="link" danger icon={<DeleteOutlined />} onClick={() => onDelete(record)}>
-            حذف
-          </Button>
+          <Tooltip title="حذف">
+            <Button type="text" danger icon={<DeleteOutlined />}
+              onClick={() => onDelete(record)} />
+          </Tooltip>
         </Space>
       ),
     },
   ];
 
+  // Ours, given back in full one click away rather than made narrower for everyone.
+  const expandedRow = (record: SupplierRecord) => (
+    <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
+      <span>
+        <span style={{ color: '#888' }}>تصنيف: </span>
+        {record.supplier_type ? (typeLabels[record.supplier_type] || record.supplier_type) : '—'}
+      </span>
+      <span><span style={{ color: '#888' }}>العنوان: </span>{record.address || '—'}</span>
+      {record.email && (
+        <span><span style={{ color: '#888' }}>البريد: </span>{record.email}</span>
+      )}
+      {record.tax_number && (
+        <span><span style={{ color: '#888' }}>رقم ضريبي: </span>{record.tax_number}</span>
+      )}
+      {record.is_cash && <Tag color="green">نقدي</Tag>}
+    </Space>
+  );
+
   return (
     <div>
       <Card
-        title="إدارة حسابات الموردين والمدفوعات"
+        title="الموردين"
         extra={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
             إضافة مورد
@@ -306,6 +395,9 @@ export default function Suppliers() {
           columns={columns}
           rowKey="id"
           loading={loading}
+          size="middle"
+          tableLayout="fixed"
+          expandable={{ expandedRowRender: expandedRow }}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           // The whole row opens the supplier file.
           onRow={(record) => ({
@@ -315,44 +407,105 @@ export default function Suppliers() {
         />
       </Card>
 
-      {/* Add Supplier Drawer */}
+      {/* مورد جديد — laid out field for field against their الموردين form: the same groups, three
+          to a row, in their order. Note what their form does NOT have — no خصم, no ض.م, no default
+          price tier, all three of which their customer form does. That asymmetry is theirs, and
+          adding the three here would invent a negotiation this relationship is not run on. */}
       <Modal footer={null} centered
-        title="إضافة مورد جديد"
-        width={400}
+        title="مورد جديد"
+        width={860}
         onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={onCreateSupplier} requiredMark={false}>
-          <Form.Item
-            name="name"
-            label="اسم جهة التوريد / المورد"
-            rules={[{ required: true, message: 'يرجى إدخال اسم المورد!' }]}
-          >
-            <Input placeholder="مثال: مصنع النصر للأنابيب" />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="branch_id" label="الفرع">
+                <Select allowClear showSearch placeholder="اختر الفرع"
+                  options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="name" label="الاسم"
+                rules={[{ required: true, message: 'يرجى إدخال اسم المورد!' }]}>
+                <Input placeholder="مثال: مصنع النصر للأنابيب" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="email" label="البريد الالكترونى"
+                rules={[{ type: 'email', message: 'بريد غير صحيح' }]}>
+                <Input placeholder="sales@example.com" />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item
-            name="phone"
-            label="رقم الهاتف"
-          >
-            <Input placeholder="مثال: 02-23456789" />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="tax_number" label="رقم الضريبي">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="commercial_register" label="السجل التجاري">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="address" label="العنوان">
+                <Input placeholder="مثال: 15 شارع الجمهورية، وسط البلد" />
+              </Form.Item>
+            </Col>
+          </Row>
 
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="phone" label="الهاتف">
+                <Input placeholder="مثال: 02-23456789" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="supplier_type" label="تصنيف">
+                <Select allowClear placeholder="اختر التصنيف"
+                  options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="governorate_id" label="محافظات">
+                <Select allowClear showSearch placeholder="اختر المحافظة"
+                  options={governorates.map((g) => ({ value: g.id, label: g.name }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="markaz" label="مدن">
+                <Input placeholder="مثال: دمنهور" />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <Space size={24} style={{ marginTop: 30 }}>
+                <Form.Item name="is_cash" valuePropName="checked" noStyle>
+                  <Checkbox>نقدي</Checkbox>
+                </Form.Item>
+                <Form.Item name="hidden" valuePropName="checked" noStyle>
+                  <Checkbox>مخفي</Checkbox>
+                </Form.Item>
+              </Space>
+            </Col>
+          </Row>
+
+          {/* Ours, kept after theirs: their form has no room for a second number. */}
+          <Divider orientation="right" style={{ margin: '8px 0' }}>إضافات تكنو ثيرم</Divider>
           <ExtraPhonesList />
 
-          <Form.Item name="address" label="العنوان">
-            <Input.TextArea rows={3} placeholder="مثال: 15 شارع الجمهورية، وسط البلد، القاهرة" />
-          </Form.Item>
-
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                تسجيل المورد
-              </Button>
-              <Button onClick={() => setDrawerVisible(false)}>إلغاء</Button>
-            </Space>
-          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit">حفظ</Button>
+            <Button onClick={() => setDrawerVisible(false)}>تراجع</Button>
+          </Space>
         </Form>
       </Modal>
 

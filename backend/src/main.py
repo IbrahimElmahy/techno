@@ -164,6 +164,16 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer", "discount_pct", "DECIMAL(5,2)"),
     ("customer", "vat_pct", "DECIMAL(5,2)"),
     ("customer", "is_cash", "BOOLEAN DEFAULT FALSE NOT NULL"),
+    # «بيان ١» و«بيان ٢» off their الفروع form — two free note lines on the branch.
+    ("branch", "note1", "VARCHAR(300)"),
+    ("branch", "note2", "VARCHAR(300)"),
+    # Supplier card fields read off their الموردين form. No discount/VAT/tier: their supplier
+    # form has none of the three, unlike their customer form.
+    ("supplier", "supplier_type", "VARCHAR(32)"),
+    ("supplier", "email", "VARCHAR(160)"),
+    ("supplier", "tax_number", "VARCHAR(40)"),
+    ("supplier", "commercial_register", "VARCHAR(40)"),
+    ("supplier", "is_cash", "BOOLEAN DEFAULT FALSE NOT NULL"),
     # Employee card fields read off their الموظفين form.
     ("employee", "address", "VARCHAR(240)"),
     ("employee", "work_start", "VARCHAR(20)"),

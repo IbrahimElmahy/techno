@@ -36,6 +36,14 @@ CATEGORIES: dict[str, dict] = {
         "page": "customers", "label": "أنواع العملاء", "system": False,
         "defaults": [("trader", "تاجر"), ("plumber", "سباك"), ("other", "أخرى")],
     },
+    # --- Suppliers page ---
+    # Free list, exactly like customer_type: their الموردين form has a تصنيف dropdown, and a fixed
+    # list of our own invention would be wrong for the first company that buys differently.
+    "supplier_type": {
+        "page": "suppliers", "label": "أنواع الموردين", "system": False,
+        "defaults": [("manufacturer", "مصنع"), ("importer", "مستورد"),
+                     ("distributor", "موزع"), ("other", "أخرى")],
+    },
     # --- Loyalty page ---
     "coupon_kind": {
         "page": "loyalty", "label": "أنواع الكوبونات", "system": True,
