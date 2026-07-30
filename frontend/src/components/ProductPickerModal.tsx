@@ -98,6 +98,11 @@ export default function ProductPickerModal({
 
   return (
     <Modal open={open} onCancel={onCancel} footer={null} width={860} title={title}
+      // Do NOT hand focus back to whatever opened this. In the entry loop the opener is the
+      // PREVIOUS line's quantity box, and restoring to it stole the caret back from the new
+      // line the pick had just created — which is why the first product landed on its quantity
+      // and every one after it did not. The screen decides where the caret goes next.
+      focusTriggerAfterClose={false}
       destroyOnHidden styles={{ body: { paddingTop: 8 } }}>
       <Input
         ref={searchRef} size="large" allowClear value={query}

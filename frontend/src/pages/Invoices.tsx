@@ -584,7 +584,7 @@ export default function Invoices() {
     const noQty = validLines.find((l) => !Number(l.quantity));
     if (noQty) {
       message.error(`«${productName(noQty.item_id as number)}»: اكتب الكمية.`);
-      qtyRefs.current[noQty.key]?.focus?.();
+      setFocusLineKey(noQty.key);
       return;
     }
 
@@ -865,14 +865,37 @@ export default function Invoices() {
   // The row does not exist until React has painted it, so the caret is moved on the next tick
   // rather than inside the handler that created it.
   useEffect(() => {
-    if (!focusLineKey) return;
-    const input = qtyRefs.current[focusLineKey];
-    if (input?.focus) {
-      input.focus();
-      input.select?.();
-    }
-    setFocusLineKey(null);
-  }, [focusLineKey, lines.length]);
+    if (!focusLineKey) return undefined;
+    // Wait for the picker to be GONE before reaching for the caret. An open modal traps focus by
+    // design, so a `focus()` fired while it is still closing is not lost to a race — it is refused
+    // outright. Waiting is the difference between «usually works» and «works».
+    if (pickerOpen) return undefined;
+    // Keep asking for the caret until it actually arrives.
+    //
+    // One attempt is not enough: the picker is still closing when the line appears, its own
+    // search box still holds focus, and a single `focus()` fired into that moment is simply
+    // overwritten. Rather than guess a delay long enough to be safe — which is a delay long
+    // enough to be felt — this retries each frame and stops the moment the box has it. In
+    // practice that is one or two frames; the cap is only there so a line that never renders
+    // cannot leave a loop running.
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      // Found by a data attribute rather than through the component ref: antd's InputNumber ref
+      // hands back a wrapper, so there is no way to ASK whether the caret arrived — and without
+      // that question this loop cannot know when to stop.
+      const el = document.querySelector<HTMLInputElement>(
+        `input[data-qty-key="${focusLineKey}"]`
+      );
+      if (el && document.activeElement === el) { setFocusLineKey(null); return; }
+      el?.focus();
+      el?.select();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusLineKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusLineKey, lines.length, pickerOpen]);
 
   /** How many coupons this invoice hands over — derived only when both serials are plain
    *  numbers, since a lettered book cannot be subtracted into a count anyone could check. */
@@ -1540,6 +1563,7 @@ export default function Invoices() {
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={1} style={{ width: '100%' }}
                             ref={(el) => { qtyRefs.current[line.key] = el; }}
+                            data-qty-key={line.key}
                             max={availableFor(line.item_id, line.unit, lineWarehouse(line)) || undefined}
                             status={Number(line.quantity || 0)
                               > availableFor(line.item_id, line.unit, lineWarehouse(line))
