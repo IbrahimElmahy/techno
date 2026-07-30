@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Result, Row, Select, Space, Statistic, Table, Tag, Typography, message,
+  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Result, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, FileTextOutlined, PrinterOutlined, DeleteOutlined,
@@ -123,6 +123,8 @@ export default function Invoices() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [employees, setEmployees] = useState<RepEmployee[]>([]);
   const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
+  // Only to put a NAME on «الحساب الفرعي» in the list — the id alone tells a reader nothing.
+  const [postingAccounts, setPostingAccounts] = useState<any[]>([]);
   const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -134,7 +136,17 @@ export default function Invoices() {
 
   // Standalone invoice detail/view (separate from the return wizard)
   // Each user hides the columns they never read; the choice is theirs alone and per screen.
-  const invoiceCols = useHiddenColumns('invoices-list');
+  // All of their columns exist; these start hidden. A sales list is read for «who, when, how much,
+  // how much is still owed» — the paper trail and the two expense figures are there when a question
+  // needs them, and «حدد الأعمدة» turns any of them on for good.
+  const invoiceCols = useHiddenColumns('invoices-list', [
+    // Theirs carries a row number AND the invoice number. Ours is the invoice number people
+    // actually say out loud, so the bare sequence starts hidden rather than spending width on a
+    // second identifier for the same row.
+    'id',
+    'external_document_number', 'revenue_account_id', 'gross', 'discount_value',
+    'combined_pct', 'expenses_billed', 'expenses_operating', 'notes',
+  ]);
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
@@ -254,19 +266,21 @@ export default function Invoices() {
 
   const loadLookups = async () => {
     try {
-      const [custRes, prodRes, whRes, ptRes, empRes, userRes] = await Promise.all([
+      const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes] = await Promise.all([
         api.get('/api/v1/customers'),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
         api.get('/api/v1/employees', { params: { active: true } }),
         api.get('/api/v1/users'),
+        api.get('/api/v1/accounts?postable_only=true').catch(() => ({ data: [] })),
       ]);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
       setWarehouses(whRes.data);
       setEmployees(empRes.data);
       setReps(userRes.data.filter((u: any) => u.role === 'sales_rep'));
+      setPostingAccounts(acctRes.data || []);
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
       setPointValues(pts);
@@ -936,25 +950,69 @@ export default function Invoices() {
     });
   };
 
+  // Their invoice list, in their order:
+  //   `رقم · التاريخ · نوع · مستند رقم · الفاتورة رقم · الحساب الفرعي · جهه التعامل · مندوب ·
+  //    اجمالي قبل · خصم · خصم% · ض.م · ض.م % · الاجمالي · مصروفات · الصافى · تم السداد · الباقى ·
+  //    مصروفات تشغيل · ملاحظات · مراكز التكلفة`
+  //
+  // Twenty-one columns is more than any screen shows at once, and theirs does not show them all
+  // either — it has «حدد الأعمدة» for exactly this. So all of them exist here, in their order and
+  // under their names, and the ones a sales list is not usually read for start hidden. Turning one
+  // on is a click, and the choice is remembered.
+  //
+  // Three of theirs have no honest source here and are left out rather than faked:
+  //   **نوع** — theirs mixes sales and returns in one list; ours are separate screens, so every
+  //   row here would read «فاتورة بيع» and the column would carry no information.
+  //   **ض.م · ض.م %** — VAT is held per price tier on the item, not as a figure on the document.
+  //   **مراكز التكلفة** — the cost centre is a dimension on ledger entries, not on the invoice.
   const columns = [
     {
-      title: 'رقم الفاتورة',
-      dataIndex: 'document_number',
-      key: 'document_number',
-      // The whole row is clickable (see the table's onRow); just show the number.
-      render: (doc: string) => <Tag color="blue">{doc}</Tag>,
+      title: 'رقم',
+      dataIndex: 'id',
+      key: 'id',
+      width: 80,
+      render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
     },
     {
       title: 'التاريخ',
       dataIndex: 'invoice_date',
       key: 'invoice_date',
+      width: 95,
       // Falls back to when it was typed, for the invoices written before the date existed.
       render: (d: string, r: any) => String(d || r.created_at || '').slice(0, 10) || '-',
     },
     {
-      title: 'العميل',
+      title: 'مستند رقم',
+      dataIndex: 'external_document_number',
+      key: 'external_document_number',
+      width: 120,
+      render: (v: string | null) => v || '-',
+    },
+    {
+      title: 'الفاتورة رقم',
+      dataIndex: 'document_number',
+      key: 'document_number',
+      width: 115,
+      // The whole row is clickable (see the table's onRow); just show the number.
+      render: (doc: string) => <Tag color="blue">{doc}</Tag>,
+    },
+    {
+      title: 'الحساب الفرعي',
+      dataIndex: 'revenue_account_id',
+      key: 'revenue_account_id',
+      width: 150,
+      ellipsis: true,
+      render: (id: number | null) => {
+        if (!id) return <span style={{ color: '#bbb' }}>الافتراضي</span>;
+        const a = postingAccounts.find((x: any) => x.id === id);
+        return a ? (a.name || a.code || `#${id}`) : `#${id}`;
+      },
+    },
+    {
+      title: 'جهه التعامل',
       dataIndex: 'customer_id',
       key: 'customer_id',
+      ellipsis: true,
       // The customer's name opens their file — from a list of invoices the next question is
       // almost always «العميل ده عليه إيه؟», and that answer lives one screen away.
       render: (cId: number) => {
@@ -967,59 +1025,116 @@ export default function Invoices() {
       },
     },
     {
-      title: 'القيمة الإجمالية (Gross)',
+      title: 'مندوب',
+      dataIndex: 'rep_id',
+      key: 'rep_id',
+      width: 95,
+      ellipsis: true,
+      render: (id: number | null) => reps.find((r) => r.id === id)?.full_name || '-',
+    },
+    {
+      title: 'اجمالي قبل',
       dataIndex: 'gross',
       key: 'gross',
+      width: 120,
+      align: 'left' as const,
       render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
     },
     {
-      title: 'نسبة الخصم المدمج',
+      title: 'خصم',
+      key: 'discount_value',
+      width: 110,
+      align: 'left' as const,
+      // The money, not the rate — derived from the two figures beside it so it can never disagree
+      // with them, which is what a stored third copy eventually does.
+      render: (_: any, r: InvoiceRecord) => {
+        const cut = Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100);
+        return `${cut.toFixed(2)} ج.م`;
+      },
+    },
+    {
+      title: 'خصم%',
       dataIndex: 'combined_pct',
       key: 'combined_pct',
+      width: 90,
       render: (val: string) => `${parseFloat(val).toFixed(0)}%`,
     },
     {
-      title: 'الصافي المطلوب (Net)',
+      title: 'مصروفات',
+      dataIndex: 'expenses_billed',
+      key: 'expenses_billed',
+      width: 110,
+      align: 'left' as const,
+      render: (v: string | null) => `${parseFloat(String(v || 0)).toFixed(2)} ج.م`,
+    },
+    {
+      title: 'الصافى',
       dataIndex: 'net',
       key: 'net',
+      width: 110,
+      align: 'left' as const,
       render: (val: string) => <strong style={{ color: '#6AB42D' }}>{parseFloat(val).toFixed(2)} ج.م</strong>,
     },
     {
-      title: 'المدفوع نقداً',
+      title: 'تم السداد',
       dataIndex: 'cash_amount',
       key: 'cash_amount',
+      width: 100,
+      align: 'left' as const,
       render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
     },
     {
-      title: 'المتبقي آجل',
+      title: 'الباقى',
       dataIndex: 'credit_amount',
       key: 'credit_amount',
-      render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
+      width: 100,
+      align: 'left' as const,
+      render: (val: string) => {
+        const n = parseFloat(val);
+        return <span style={{ color: n > 0 ? '#cf1322' : undefined }}>{n.toFixed(2)} ج.م</span>;
+      },
     },
     {
-      title: 'الإجراءات',
+      title: 'مصروفات تشغيل',
+      dataIndex: 'expenses_operating',
+      key: 'expenses_operating',
+      width: 130,
+      align: 'left' as const,
+      render: (v: string | null) => `${parseFloat(String(v || 0)).toFixed(2)} ج.م`,
+    },
+    {
+      title: 'ملاحظات',
+      dataIndex: 'notes',
+      key: 'notes',
+      ellipsis: true,
+      render: (v: string | null) => v || '-',
+    },
+    {
+      title: '',
       key: 'actions',
+      width: 120,
+      // Icons, like the row icons on their own lists. Four words apiece cost more width than
+      // «الصافى» and «الباقى» together — and those are the two numbers the list exists for.
       render: (_: any, record: InvoiceRecord) => (
-        <Space size="middle" onClick={(e) => e.stopPropagation()}>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
           {/* Loads the lines first, then prints — the list row alone has no line detail. */}
-          <Button type="link" icon={<PrinterOutlined />}
-            onClick={async () => { await openDetail(record); }}>
-            طباعة
-          </Button>
-          <Button
-            type="dashed"
-            icon={<RollbackOutlined />}
-            onClick={() => openReturnWizard(record)}
-          >
-            إرجاع الفاتورة
-          </Button>
+          <Tooltip title="طباعة">
+            <Button type="text" icon={<PrinterOutlined />}
+              onClick={async () => { await openDetail(record); }} />
+          </Tooltip>
+          <Tooltip title="إرجاع الفاتورة">
+            <Button type="text" icon={<RollbackOutlined />}
+              onClick={() => openReturnWizard(record)} />
+          </Tooltip>
           <Popconfirm
             title="تعديل الفاتورة؟"
             description="هيتعمل مرتجع كامل للفاتورة، وتتفتح بنفس أصنافها عشان تعدّل وترحّل من جديد."
             okText="تعديل" cancelText="إلغاء"
             onConfirm={() => handleEditInvoice(record)}
           >
-            <Button type="link" icon={<EditOutlined />}>تعديل</Button>
+            <Tooltip title="تعديل">
+              <Button type="text" icon={<EditOutlined />} />
+            </Tooltip>
           </Popconfirm>
           <Popconfirm
             title="حذف الفاتورة؟"
@@ -1027,7 +1142,9 @@ export default function Invoices() {
             okText="عكس الفاتورة" cancelText="إلغاء"
             onConfirm={() => handleDeleteInvoice(record)}
           >
-            <Button type="link" danger icon={<DeleteOutlined />}>حذف</Button>
+            <Tooltip title="حذف">
+              <Button type="text" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -1566,6 +1683,7 @@ export default function Invoices() {
         <Table
           dataSource={invoices}
           columns={invoiceCols.apply(columns)}
+          tableLayout="fixed"
           rowKey="id"
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}

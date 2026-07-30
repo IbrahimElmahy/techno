@@ -128,6 +128,10 @@ class SalesInvoiceOut(BaseModel):
     rep_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # «الحساب الفرعي» on their invoice list — the account this sale is posted to. Set on every
+    # invoice since 030 and never returned, so the column that names where the money landed could
+    # not be shown beside the money.
+    revenue_account_id: int | None = None
     # The coupon range issued with this invoice — the mobile app reads it when the customer
     # brings the coupons back, to check a serial belongs to a sale that really happened.
     coupon_serial_from: str | None = None
@@ -223,6 +227,7 @@ def _inv_out(inv: SalesInvoice) -> SalesInvoiceOut:
         expenses_billed=getattr(inv, "expenses_billed", None),
         expenses_operating=getattr(inv, "expenses_operating", None),
         notes=inv.notes,
+        revenue_account_id=inv.revenue_account_id,
     )
 
 

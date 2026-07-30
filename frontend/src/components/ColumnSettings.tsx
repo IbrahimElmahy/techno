@@ -24,13 +24,16 @@ export interface ColumnChoice {
 
 /** Reads the saved choice for a screen. Unknown keys default to visible, so a column added in a
  *  later release shows up instead of silently staying hidden for everyone who used the old one. */
-export function useHiddenColumns(storageKey: string) {
+export function useHiddenColumns(storageKey: string, defaultHidden: string[] = []) {
   const full = `cols:${storageKey}`;
   const [hidden, setHidden] = React.useState<string[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem(full) || '[]');
+      // No stored preference means the table has never been tuned, so the defaults apply. A
+      // stored `[]` is a real choice — somebody turned everything ON — and is left alone.
+      const saved = localStorage.getItem(full);
+      return saved === null ? defaultHidden : JSON.parse(saved);
     } catch {
-      return [];
+      return defaultHidden;
     }
   });
 
