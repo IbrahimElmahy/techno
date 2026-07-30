@@ -24,6 +24,7 @@ interface Asset {
   accumulated_depreciation: string; book_value: string;
   disposal_date: string | null; disposal_proceeds: string | null;
   gain_loss: string | null; notes: string | null;
+  branch_id: number | null;
 }
 
 interface ScheduleRow {
@@ -41,6 +42,7 @@ const METHOD_LABELS: Record<string, string> = {
 
 export default function FixedAssets() {
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Asset | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRow[]>([]);
@@ -48,7 +50,7 @@ export default function FixedAssets() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<any>({
     name: '', cost: undefined, salvage_value: 0, useful_life_months: 60,
-    method: 'straight_line', category: '', notes: '',
+    method: 'straight_line', category: '', notes: '', branch_id: undefined,
   });
   const [acquired, setAcquired] = useState<Dayjs>(dayjs());
   const [saving, setSaving] = useState(false);
@@ -63,12 +65,37 @@ export default function FixedAssets() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/fixed-assets');
+      const [res, br] = await Promise.all([
+        api.get('/api/v1/fixed-assets'),
+        api.get('/api/v1/branches'),
+      ]);
+      setBranches(br.data);
       setAssets(res.data || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
+
+  // Ours that used to be columns. The book value is the number an accountant opens this screen
+  // for, but eight of their columns plus five of ours is a table nobody can read across.
+  const expandedRow = (r: Asset) => (
+    <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
+      <span><span style={{ color: '#888' }}>الفئة: </span>{r.category || '—'}</span>
+      <span>
+        <span style={{ color: '#888' }}>مجمع الإهلاك: </span>
+        <span style={{ color: '#cf1322' }}>{money(r.accumulated_depreciation)}</span>
+      </span>
+      <span>
+        <span style={{ color: '#888' }}>القيمة الدفترية: </span>
+        <b style={{ color: '#0B5CA8' }}>{money(r.book_value)}</b>
+      </span>
+      <span><span style={{ color: '#888' }}>الطريقة: </span>{METHOD_LABELS[r.method] || r.method}</span>
+      <span><span style={{ color: '#888' }}>قيمة الخردة: </span>{money(r.salvage_value)}</span>
+      {r.status === 'active'
+        ? <Tag color="green">قائم</Tag>
+        : <Tag>متصرّف فيه {r.disposal_date ? `· ${String(r.disposal_date).slice(0, 10)}` : ''}</Tag>}
+    </Space>
+  );
 
   useEffect(() => {
     if (!detail) { setSchedule([]); return; }
@@ -158,7 +185,7 @@ export default function FixedAssets() {
 
   return (
     <Card
-      title="الأصول الثابتة والإهلاك"
+      title="الاصول الثابتة"
       extra={(
         <Space>
           <Button type="primary" icon={<PlusOutlined />}
@@ -221,24 +248,34 @@ export default function FixedAssets() {
         onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد أصول مسجّلة' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-        scroll={{ x: 'max-content' }}
+        tableLayout="fixed"
+        expandable={{ expandedRowRender: expandedRow }}
         columns={[
-          { title: 'الكود', dataIndex: 'code', render: (v: string) => <Tag>{v}</Tag> },
-          { title: 'الأصل', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
-          { title: 'الفئة', dataIndex: 'category', render: (v: string) => v || '-' },
-          { title: 'تاريخ الشراء', dataIndex: 'acquisition_date',
+          // Their eight, in their order: `رقم · تاريخ البداية · الاسم · الفرع · فترة الاهلاك ·
+          // نسبه الاهلاك · التكلفه · وصف`. Ours moved into the expanded row.
+          { title: 'رقم', dataIndex: 'code', width: 110, render: (v: string) => <Tag>{v}</Tag> },
+          { title: 'تاريخ البداية', dataIndex: 'acquisition_date', width: 120,
             render: (d: string) => String(d).slice(0, 10) },
-          { title: 'التكلفة', dataIndex: 'cost', align: 'left',
+          { title: 'الاسم', dataIndex: 'name', ellipsis: true,
+            render: (v: string, r: Asset) => (
+              <Space size={4}>
+                <b>{v}</b>
+                {r.status !== 'active' && <Tag>متصرّف فيه</Tag>}
+              </Space>
+            ) },
+          { title: 'الفرع', dataIndex: 'branch_id', ellipsis: true,
+            render: (id: number | null) => branches.find((b) => b.id === id)?.name || '-' },
+          { title: 'فترة الاهلاك', dataIndex: 'useful_life_months', width: 110,
+            render: (m: number) => `${m} شهر` },
+          // Derived, not stored. Their form asks for the rate AND the period, which lets the two
+          // contradict each other; one is the other, so we keep the period and show the rate.
+          { title: 'نسبه الاهلاك', key: 'rate', width: 110,
+            render: (_: any, r: Asset) => (r.useful_life_months
+              ? `${(1200 / r.useful_life_months).toFixed(2)}%` : '-') },
+          { title: 'التكلفه', dataIndex: 'cost', align: 'left', width: 130,
             render: (v: string) => money(v) },
-          { title: 'مجمع الإهلاك', dataIndex: 'accumulated_depreciation', align: 'left',
-            render: (v: string) => <span style={{ color: '#cf1322' }}>{money(v)}</span> },
-          { title: 'القيمة الدفترية', dataIndex: 'book_value', align: 'left',
-            render: (v: string) => <b style={{ color: '#0B5CA8' }}>{money(v)}</b> },
-          { title: 'الطريقة', dataIndex: 'method',
-            render: (m: string) => METHOD_LABELS[m] || m },
-          { title: 'الحالة', dataIndex: 'status',
-            render: (s: string) => (s === 'active'
-              ? <Tag color="green">قائم</Tag> : <Tag>متصرّف فيه</Tag>) },
+          { title: 'وصف', dataIndex: 'notes', ellipsis: true,
+            render: (v: string | null) => v || '-' },
         ]}
       />
 
@@ -280,6 +317,15 @@ export default function FixedAssets() {
                 { value: 'straight_line', label: 'القسط الثابت' },
                 { value: 'declining_balance', label: 'القسط المتناقص' },
               ]} />
+          </Col>
+          {/* الفرع — their fourth column. The API has accepted it since the feature shipped; the
+              form never asked, so it was always null and the column had nothing to show. */}
+          <Col xs={24} md={12}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="الفرع"
+              value={form.branch_id}
+              onChange={(v) => setForm({ ...form, branch_id: v })}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))} />
           </Col>
           <Col xs={24}>
             <Input.TextArea rows={2} placeholder="ملاحظات" value={form.notes}

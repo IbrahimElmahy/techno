@@ -88,6 +88,7 @@ class TreasuryPatch(BaseModel):
     account_number: str | None = Field(default=None, max_length=60)
     is_default: bool | None = None
     active: bool | None = None
+    branch_id: int | None = None
 
 
 class TreasuryOut(BaseModel):
@@ -358,7 +359,7 @@ def update_treasury(
         t = treasury_service.update_treasury(
             db, treasury_id=treasury_id, actor_user_id=current.id, name=body.name,
             bank_name=body.bank_name, account_number=body.account_number,
-            is_default=body.is_default, active=body.active)
+            is_default=body.is_default, active=body.active, branch_id=body.branch_id)
     except TreasuryError as exc:
         raise _conflict(exc)
     db.commit()

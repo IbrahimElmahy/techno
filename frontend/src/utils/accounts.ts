@@ -61,3 +61,19 @@ export interface ChartAccount {
   /** «العملاء», «الموردين» … — the heading such an account belongs under. */
   owner_group?: string | null;
 }
+
+/** مركز التكلفة — the analytic dimension entries can be tagged with.
+ *
+ * Shared because three screens need it: its own list, and the journal and trial-balance tabs that
+ * tag and filter by it. */
+export interface CostCenter {
+  id: number;
+  code: string;
+  name: string;
+  parent_id: number | null;
+  active: boolean;
+  /** Depth, computed by the backend from the parent chain, so the number can never disagree with
+   *  the tree it is drawn beside. */
+  level?: number;
+  children?: CostCenter[] | null;
+}

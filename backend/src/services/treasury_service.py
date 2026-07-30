@@ -97,6 +97,7 @@ def update_treasury(
     db: Session, *, treasury_id: int, actor_user_id: int, name: str | None = None,
     bank_name: str | None = None, account_number: str | None = None,
     is_default: bool | None = None, active: bool | None = None,
+    branch_id: int | None = None,
 ) -> Treasury:
     treasury = db.get(Treasury, treasury_id)
     if treasury is None:
@@ -110,6 +111,11 @@ def update_treasury(
         treasury.bank_name = bank_name
     if account_number is not None:
         treasury.account_number = account_number
+    # A safe does get reassigned between branches. Leaving it out of the update meant the only
+    # fix was a second safe and retiring the first — which splits its cash history over two
+    # ledger accounts because of a wrong pick on the day it was opened.
+    if branch_id is not None:
+        treasury.branch_id = branch_id
     if is_default:
         for other in db.scalars(select(Treasury).where(Treasury.is_default.is_(True))).all():
             other.is_default = False

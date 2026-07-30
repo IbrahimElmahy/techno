@@ -6,6 +6,8 @@ import Warehouses from '../pages/Warehouses';
 import Branches from '../pages/Branches';
 import MainAccounts from '../pages/MainAccounts';
 import SubAccounts from '../pages/SubAccounts';
+import Treasuries from '../pages/Treasuries';
+import CostCenters from '../pages/CostCenters';
 import Customers from '../pages/Customers';
 import CustomerProfile from '../pages/CustomerProfile';
 import SupplierProfile from '../pages/SupplierProfile';
@@ -63,6 +65,8 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/branches" element={<Branches />} />
       <Route path="/main-accounts" element={<MainAccounts />} />
       <Route path="/sub-accounts" element={<SubAccounts />} />
+      <Route path="/treasuries" element={<Treasuries />} />
+      <Route path="/cost-centers" element={<CostCenters />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:customerId" element={<CustomerProfile />} />
       <Route path="/suppliers" element={<Suppliers />} />

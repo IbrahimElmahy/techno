@@ -50,6 +50,10 @@ class AssetOut(BaseModel):
     asset_account_id: int
     accumulated_account_id: int
     expense_account_id: int
+    # Accepted on the way in since the feature shipped and never returned on the way out, so the
+    # branch an asset belongs to could be recorded and never read. It is the fourth column on
+    # their الاصول الثابتة list.
+    branch_id: int | None = None
     cost_center_id: int | None = None
     disposal_date: date | None = None
     disposal_proceeds: Decimal | None = None
@@ -76,6 +80,7 @@ def _out(db: Session, a) -> AssetOut:
         useful_life_months=a.useful_life_months, method=a.method.value, status=a.status.value,
         accumulated_depreciation=accumulated,
         book_value=fixed_asset_service.book_value_of(db, a),
+        branch_id=a.branch_id,
         asset_account_id=a.asset_account_id,
         accumulated_account_id=a.accumulated_account_id,
         expense_account_id=a.expense_account_id, cost_center_id=a.cost_center_id,

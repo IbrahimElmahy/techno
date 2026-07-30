@@ -4,13 +4,13 @@ import {
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
-  ReloadOutlined, ApartmentOutlined, SearchOutlined,
+  ReloadOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import {
-  APPEARS_IN_LABEL, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
+  APPEARS_IN_LABEL, CostCenter, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
 } from '../utils/accounts';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
@@ -71,15 +71,6 @@ interface LineDraft {
   cost_center_id?: number | null;
 }
 
-interface CostCenter {
-  level?: number;
-  id: number;
-  code: string;
-  name: string;
-  parent_id: number | null;
-  active: boolean;
-  children?: CostCenter[] | null;
-}
 
 
 // الشجرة تُفلتر بالعقدة أو أي فرع تحتها، حتى لا يختفي حساب مطابق داخل مجموعة غير مطابقة.
@@ -87,10 +78,10 @@ const flatten = <T extends { children?: T[] | null }>(node: T): T[] =>
   [node, ...(node.children || []).flatMap(flatten)];
 
 export default function GeneralLedger() {
-  // مراكز التكلفة is a separate menu entry in the system the client is migrating from, so the
-  // entry carries the tab it means. الحسابات الرئيسيه and الحسابات الفرعيه used to be narrowed
-  // views of the chart tab; they are their own screens now, and this tab is the whole tree again
-  // — which is what somebody opening «دليل الحسابات» came for.
+  // What is left here is what «الأستاذ العام» actually means: the chart, the entries, and the
+  // trial balance. الحسابات الرئيسيه، الفرعيه and مراكز التكلفة were tabs of this page and are
+  // their own screens now — each is master data you set up once, which is a different job from
+  // reading balances, and their menu had always said so.
   const [activeTab, selectTab] = useQueryTab('chart');
   return (
     <Tabs
@@ -99,7 +90,6 @@ export default function GeneralLedger() {
         { key: 'chart', label: <span><BookOutlined /> دليل الحسابات</span>, children: <ChartTab /> },
         { key: 'journal', label: <span><FileAddOutlined /> القيود اليومية</span>, children: <JournalTab /> },
         { key: 'trial', label: <span><BankOutlined /> ميزان المراجعة</span>, children: <TrialBalanceTab /> },
-        { key: 'cc', label: <span><ApartmentOutlined /> مراكز التكلفة</span>, children: <CostCenterTab /> },
       ]}
     />
   );
@@ -643,109 +633,6 @@ function TrialBalanceTab() {
           </div>
         </>
       ) : <Empty description="لا توجد بيانات" />}
-    </Card>
-  );
-}
-
-// --- Tab 4: Cost Centers ------------------------------------------------------------------
-function CostCenterTab() {
-  const [tree, setTree] = useState<CostCenter[]>([]);
-  const [flat, setFlat] = useState<CostCenter[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [drawer, setDrawer] = useState(false);
-  const [form] = Form.useForm();
-
-  const filter = useListFilter(tree, {
-    search: (c) => flatten(c).flatMap((n) => [n.code, n.name]),
-    filters: {
-      active: (c, v) => flatten(c).some((n) => n.active === (v === 'active')),
-    },
-  });
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [t, f] = await Promise.all([
-        api.get('/api/v1/cost-centers?tree=true'),
-        api.get('/api/v1/cost-centers'),
-      ]);
-      setTree(t.data); setFlat(f.data);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
-
-  const onCreate = async (v: any) => {
-    try {
-      await api.post('/api/v1/cost-centers', { code: v.code, name: v.name, parent_id: v.parent_id ?? null });
-      message.success('تم إنشاء مركز التكلفة');
-      setDrawer(false); form.resetFields(); load();
-    } catch (err) { console.error(err); }
-  };
-
-  const onDeactivate = (r: CostCenter) => {
-    showReversalConfirm({
-      title: 'تعطيل مركز التكلفة',
-      content: `هل تريد تعطيل «${r.name}»؟ لن يُحذف؛ تبقى الحركات التاريخية موسومة به ولا يمكن اختياره لقيود جديدة.`,
-      onOk: async () => {
-        try { await api.delete(`/api/v1/cost-centers/${r.id}`); message.success('تم التعطيل'); load(); }
-        catch (err) { console.error(err); }
-      },
-    });
-  };
-
-  const columns = [
-    { title: 'الكود', dataIndex: 'code', key: 'code', width: 160, render: (c: string) => <Tag color="geekblue">{c}</Tag> },
-    { title: 'الاسم', dataIndex: 'name', key: 'name' },
-    // «مستوي مركز التكلفة» — the depth, computed from the parent chain by the backend so the
-    // number can never disagree with the tree drawn beside it.
-    { title: 'المستوى', dataIndex: 'level', key: 'level', width: 100,
-      render: (l: number) => <Tag>{l ?? 1}</Tag> },
-    { title: 'الحالة', dataIndex: 'active', key: 'active', width: 120,
-      render: (a: boolean) => a ? <Tag color="green">نشط</Tag> : <Tag>معطّل</Tag> },
-    { title: '', key: 'actions', width: 120,
-      render: (_: any, r: CostCenter) => r.active
-        ? <Button type="link" danger onClick={() => onDeactivate(r)}>تعطيل</Button> : null },
-  ];
-
-  return (
-    <Card
-      title="مراكز التكلفة (البُعد التحليلي)"
-      extra={
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={load} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawer(true)}>مركز جديد</Button>
-        </Space>
-      }
-    >
-      <ListToolbar
-        searchPlaceholder="بحث بكود المركز أو الاسم"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset}
-        total={tree.length} shown={filter.filtered.length}
-        filters={[
-          { key: 'active', placeholder: 'الحالة',
-            options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطّل' }] },
-        ]}
-      />
-      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns} pagination={false}
-        expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }} />
-
-      <Modal footer={null} centered title="إضافة مركز تكلفة" width={420} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
-        <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}>
-          <Form.Item name="parent_id" label="المركز الأب (اختياري)">
-            <Select allowClear placeholder="مركز جذر" showSearch optionFilterProp="label"
-              options={flat.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
-          </Form.Item>
-          <Form.Item name="code" label="الكود" rules={[{ required: true, message: 'أدخل الكود' }]}>
-            <Input placeholder="مثال: 1.01" />
-          </Form.Item>
-          <Form.Item name="name" label="الاسم" rules={[{ required: true, message: 'أدخل الاسم' }]}>
-            <Input placeholder="مثال: معرض مدينة نصر" />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" block>حفظ</Button>
-        </Form>
-      </Modal>
     </Card>
   );
 }

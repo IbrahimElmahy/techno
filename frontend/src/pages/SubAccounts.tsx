@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
@@ -6,6 +6,7 @@ import {
   PlusOutlined, EditOutlined, SearchOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { ChartAccount, NATURE_COLOR, NATURE_LABEL, egp } from '../utils/accounts';
 
@@ -22,6 +23,7 @@ export default function SubAccounts() {
   const [groups, setGroups] = useState<ChartAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const searchRef = useRef<any>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ChartAccount | null>(null);
   const [form] = Form.useForm();
@@ -43,6 +45,15 @@ export default function SubAccounts() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
+  // habit carries from one to the next instead of being relearned per page.
+  useScreenShortcuts({
+    onNew: canWrite ? () => setCreateOpen(true) : undefined,
+    onSearch: () => searchRef.current?.focus(),
+    onClose: () => { setCreateOpen(false); },
+  });
+
 
   // What this account sits under. Accounts opened for a customer or a supplier are filed by
   // their kind — «العملاء», «الموردين» — which is exactly how their own subaccounts screen reads.
@@ -207,6 +218,7 @@ export default function SubAccounts() {
         <Row style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
             <Input allowClear value={search} placeholder="بحث بالاسم أو الكود أو الحساب الرئيسي"
+              ref={searchRef}
               prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
           </Col>
         </Row>

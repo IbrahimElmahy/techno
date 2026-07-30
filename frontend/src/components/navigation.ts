@@ -64,11 +64,11 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
       { key: '/warehouses', label: 'المخازن', roles: R(STOCK), a5: '/stores' },
       { key: '/branches', label: 'الفروع', roles: OFFICE, a5: '/branches' },
-      { key: '/treasury', label: 'الخزينه و البنوك', roles: R(BOOKS), a5: '/payment-methods' },
+      { key: '/treasuries', label: 'الخزينه و البنوك', roles: R(BOOKS), a5: '/payment-methods' },
       { key: '/main-accounts', label: 'الحسابات الرئيسيه', roles: R(BOOKS), a5: '/mainaccounts' },
       { key: '/sub-accounts', label: 'الحسابات الفرعيه', roles: R(BOOKS), a5: '/subaccounts' },
       { key: '/fixed-assets', label: 'الاصول الثابتة', roles: R(BOOKS), a5: '/fixed-assets' },
-      { key: '/general-ledger?tab=cc', label: 'مراكز التكلفة', roles: R(BOOKS), a5: '/cost_centers' },
+      { key: '/cost-centers', label: 'مراكز التكلفة', roles: R(BOOKS), a5: '/cost_centers' },
     ],
   },
 

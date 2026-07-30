@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Button, Card, Checkbox, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip,
   message,
@@ -7,6 +7,7 @@ import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 
@@ -36,6 +37,7 @@ export default function Branches() {
   const [governorates, setGovernorates] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const searchRef = useRef<any>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<BranchRecord | null>(null);
   const [form] = Form.useForm();
@@ -60,6 +62,15 @@ export default function Branches() {
   };
 
   useEffect(() => { fetchAll(); }, []);
+
+  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
+  // habit carries from one to the next instead of being relearned per page.
+  useScreenShortcuts({
+    onNew: canWrite ? () => setCreateOpen(true) : undefined,
+    onSearch: () => searchRef.current?.focus(),
+    onClose: () => { setCreateOpen(false); },
+  });
+
 
   const govName = (id: number) => governorates.find((g) => g.id === id)?.name || '-';
 
@@ -242,6 +253,7 @@ export default function Branches() {
         <Row style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
             <Input allowClear value={search} placeholder="بحث بالاسم أو المحافظة أو البيان"
+              ref={searchRef}
               prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
           </Col>
         </Row>
