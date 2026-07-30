@@ -191,6 +191,16 @@ export default function Invoices() {
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
   // (030) the party picker + what it filled into the document header
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
+  /**
+   * Opening a sale is a sequence of doors, one question behind each: التاريخ، then العميل، then
+   * المخزن، and only then the invoice itself.
+   *
+   * Asked one at a time rather than on one crowded dialog because that is how the person doing it
+   * thinks — each answer is settled and gone before the next is put. It also means every step can
+   * be answered with Enter and nothing else, which is the point of the whole keyboard pass: from
+   * the button to the first product without touching the mouse.
+   */
+  const [newStep, setNewStep] = useState<null | 'date' | 'party' | 'warehouse'>(null);
   const [party, setParty] = useState<Party | null>(null);
   // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
@@ -424,14 +434,38 @@ export default function Invoices() {
     );
   };
 
+  /**
+   * On the open invoice, Enter opens the product picker.
+   *
+   * The last door of the sequence leaves you on the document with nothing selected, and the next
+   * thing anybody does is add a line — so Enter does that instead of nothing. It stays out of the
+   * way while you are inside a field, where Enter already means «next field», and while any other
+   * dialog is open, where it means whatever that dialog says.
+   */
+  useEffect(() => {
+    if (!createVisible) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (pickerOpen || partyPickerOpen || newStep) return;
+      const el = e.target as HTMLElement | null;
+      if (el && typeof el.closest === 'function') {
+        if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) return;
+        if (el.closest('.ant-select, .ant-modal, button')) return;
+      }
+      e.preventDefault();
+      setPickerOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [createVisible, pickerOpen, partyPickerOpen, newStep]);
+
   /** Chosen from the picker (existing or just-created) — fills the form and the header strip. */
   const handlePartyPicked = (picked: Party) => {
     setParty(picked);
     setPartyPickerOpen(false);
-    // Choosing who the document is for is what OPENS it — the same single step their «انشاء»
-    // does. When a document is already on screen this only swaps the party, so re-picking a
-    // customer mid-invoice does not restart anything.
-    if (!createVisible) setCreateVisible(true);
+    // Mid-invoice this only swaps the party — nothing restarts. During the opening sequence it is
+    // the second door, so it hands over to the third rather than opening the document.
+    if (newStep === 'party') setNewStep('warehouse');
     createForm.setFieldsValue({ customer_id: picked.id });
     // A brand-new customer isn't in the loaded list yet; add it so the field renders its name.
     setCustomers((prev) => (prev.some((c) => c.id === picked.id) ? prev : [
@@ -1457,7 +1491,7 @@ export default function Invoices() {
               onChange={invoiceCols.setHidden}
             />
             <Button type="primary" icon={<PlusOutlined />}
-              onClick={() => { setInvoiceDate(dayjs()); setPartyPickerOpen(true); }}>
+              onClick={() => { setInvoiceDate(dayjs()); setNewStep('date'); }}>
               تسجيل فاتورة بيع
             </Button>
           </Space>
@@ -1645,9 +1679,62 @@ export default function Invoices() {
           the create view renders its own copy for changing the party mid-invoice — and only one
           of the two is ever mounted, because the create view returns early. */}
       <PartyPickerModal
-        open={partyPickerOpen} kind="customer"
-        onPick={handlePartyPicked} onCancel={() => setPartyPickerOpen(false)}
-        date={invoiceDate} onDateChange={setInvoiceDate} />
+        open={partyPickerOpen || newStep === 'party'} kind="customer"
+        onPick={handlePartyPicked}
+        onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
+
+      {/* الباب الأول: التاريخ. It lands on the ledger entry as well as the invoice, so it is
+          settled before anything is priced rather than after. */}
+      <Modal
+        open={newStep === 'date'}
+        title="تاريخ الفاتورة"
+        okText="التالي"
+        cancelText="إلغاء"
+        onCancel={() => setNewStep(null)}
+        onOk={() => setNewStep('party')}
+        destroyOnHidden
+      >
+        {/* Enter on the date is «done, next» — the DatePicker has no onPressEnter of its own,
+            so the key is caught on the wrapper. */}
+        <div onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setNewStep('party'); } }}>
+          <DatePicker
+            style={{ width: '100%' }} size="large" allowClear={false} autoFocus
+            value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())}
+            format="YYYY-MM-DD"
+          />
+        </div>
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
+          في نفس اليوم.
+        </div>
+      </Modal>
+
+      {/* الباب الثالث: المخزن. Already filled from the chosen customer's rep, so the common case
+          is one Enter — but it is still ASKED, because the goods leaving the wrong store is the
+          kind of mistake nobody notices until stocktake. */}
+      <Modal
+        open={newStep === 'warehouse'}
+        title="مستودع الصرف والتسليم"
+        okText="ابدأ الفاتورة"
+        cancelText="رجوع"
+        onCancel={() => setNewStep('party')}
+        onOk={() => { setNewStep(null); setCreateVisible(true); }}
+        okButtonProps={{ disabled: !docWarehouseId }}
+        destroyOnHidden
+      >
+        <Select
+          style={{ width: '100%' }} size="large" autoFocus showSearch
+          placeholder="اختر المستودع"
+          optionFilterProp="label"
+          value={docWarehouseId ?? undefined}
+          onChange={(v) => { onWarehouseChange(v as number); createForm.setFieldsValue({ warehouse_id: v }); }}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+        />
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          {party?.name ? `العميل: ${party.name} — ` : ''}
+          المستودع اتملى من مخزن المندوب. غيّره لو البضاعة هتخرج من مكان تاني.
+        </div>
+      </Modal>
     </div>
   );
 }
