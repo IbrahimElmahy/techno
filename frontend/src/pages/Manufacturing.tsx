@@ -615,8 +615,8 @@ function RecipesTab({
           <Form.List name="components">
             {(fields, { add, remove }) => (
               <>
-                {fields.map((field) => (
-                  <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
+                {fields.map(({ key, ...field }) => (
+                  <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
                     <Form.Item {...field} name={[field.name, 'item_id']} style={{ flex: 1, marginBottom: 0 }}
                       rules={[{ required: true, message: 'اختر الخامة' }]}>
                       <Select placeholder="الخامة" style={{ minWidth: 220 }}
@@ -672,8 +672,8 @@ function RecipesTab({
           <Form.List name="resources">
             {(fields, { add, remove }) => (
               <>
-                {fields.map((field) => (
-                  <Space key={field.key} align="baseline" style={{ display: 'flex', marginBottom: 8 }} wrap>
+                {fields.map(({ key, ...field }) => (
+                  <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }} wrap>
                     <Form.Item {...field} name={[field.name, 'kind']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'النوع' }]}>
                       <Select placeholder="النوع" style={{ minWidth: 110 }} options={RESOURCE_KIND_OPTIONS} />

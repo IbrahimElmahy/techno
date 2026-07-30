@@ -166,7 +166,6 @@ export default function Invoices() {
   // The link carries only the intent; the acting lives here, where it already is and where it is
   // already guarded, so no second screen learns how to reverse an invoice.
   const [searchParams, setSearchParams] = useSearchParams();
-  const handledIntent = useRef<string | null>(null);
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
 
   const [dateAsk, setDateAsk] = useState(false);
@@ -668,19 +667,35 @@ export default function Invoices() {
     if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
   };
 
+  // A deep link (`?doc=5` / `?edit=5`) is captured into a ref the moment it is seen, and acted on
+  // as soon as the list can satisfy it. One effect on both dependencies, because the two arrive in
+  // either order: on a cold open the parameter is there before the list has loaded, and on a repeat
+  // click the list is already loaded and only the parameter changes. Splitting them into an effect
+  // per dependency broke the second case — the list never changed, so nothing ever fired, and
+  // clicking the same statement line a second time did nothing.
+  const pendingIntent = useRef<{ id: number; mode: 'view' | 'edit' } | null>(null);
+
   useEffect(() => {
-    const docId = searchParams.get('doc');
-    const editId = searchParams.get('edit');
-    const intent = docId ? `doc:${docId}` : editId ? `edit:${editId}` : null;
-    // The list has to be loaded before a row can be found, and the intent must fire once —
-    // re-running it would reverse an invoice twice on a re-render.
-    if (!intent || !invoices.length || handledIntent.current === intent) return;
-    const target = invoices.find((i) => i.id === Number(docId || editId));
-    if (!target) return;
-    handledIntent.current = intent;
-    // Clear the parameter so a refresh, or coming back to this tab later, does not replay it.
-    setSearchParams({}, { replace: true });
-    if (docId) openDetail(target);
+    const doc = searchParams.get('doc');
+    const edit = searchParams.get('edit');
+    if (doc || edit) {
+      pendingIntent.current = { id: Number(doc || edit), mode: doc ? 'view' : 'edit' };
+      // Cleared immediately so a refresh, or returning to this tab later, cannot replay it.
+      setSearchParams({}, { replace: true });
+    }
+    const wanted = pendingIntent.current;
+    if (!wanted || !invoices.length) return;
+    // Consuming the ref IS the once-only guard, so a re-render cannot fire the same intent twice —
+    // which for an edit would mean reversing an invoice a second time. It used to be guarded by
+    // remembering the intent's *value*, which quietly made a link work only once per session.
+    pendingIntent.current = null;
+    const target = invoices.find((i) => i.id === wanted.id);
+    if (!target) {
+      // Saying so beats a silent no-op, which the user cannot tell apart from a broken link.
+      message.warning('المستند مش في القائمة المعروضة — وسّع الفلتر أو ابحث برقمه.');
+      return;
+    }
+    if (wanted.mode === 'view') openDetail(target);
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
 
