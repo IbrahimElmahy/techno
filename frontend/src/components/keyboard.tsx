@@ -57,6 +57,16 @@ interface KeyboardContextValue {
 
 const KeyboardContext = createContext<KeyboardContextValue>({ register: () => () => {} });
 
+/**
+ * Whether the screen reading this is the one on screen.
+ *
+ * Open tabs stay MOUNTED and are merely `display:none`, which keeps their half-typed forms alive —
+ * and means five screens can be registering shortcuts at once. Without this, F2 and Esc went to
+ * whichever screen happened to mount last, so Esc «worked» by closing a dialog on a tab nobody was
+ * looking at. Defaults to true so a screen rendered outside the tab workspace still keeps its keys.
+ */
+export const TabActiveContext = createContext(true);
+
 /** True when the key should be treated as text rather than a command. */
 function isTyping(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement | null;
@@ -71,6 +81,91 @@ function isTyping(e: KeyboardEvent): boolean {
   // Function keys and modified keys are commands even mid-typing — that is the point of them.
   if (/^F\d+$/.test(e.key)) return false;
   if (e.ctrlKey || e.altKey || e.metaKey) return false;
+  // Escape is never text. Treating it as typing meant «اقفل» did nothing at the one moment anyone
+  // presses it — standing in a field, halfway through a form they have changed their mind about.
+  if (e.key === 'Escape') return false;
+  return true;
+}
+
+
+/** Every control in `container` that a person can land on, in the order they read them.
+ *
+ * Deliberately DOM order and not tabindex: forms here are laid out in the order the paper form
+ * asks its questions, and honouring anything else would send the cursor somewhere the eye is not.
+ */
+function fieldsIn(container: HTMLElement): HTMLElement[] {
+  // An antd Select is a div wrapper (`.ant-select-selector`) around a real `input[role=combobox]`.
+  // The wrapper is what you see; the input is what can hold focus. Targeting the wrapper makes
+  // `.focus()` a no-op, and the cursor then sticks on the field BEFORE every dropdown — which is
+  // exactly how far it got the first time this was written.
+  const sel = [
+    'input:not([type=hidden]):not([disabled])',
+    'textarea:not([disabled]):not([readonly])',
+    'select:not([disabled])',
+  ].join(',');
+  return [...container.querySelectorAll<HTMLElement>(sel)]
+    // `readonly` normally means «not a field to land on» — except on a Select without a search
+    // box, where antd marks its combobox readonly precisely because you pick rather than type.
+    // Excluding those skipped every plain dropdown on the form, which is most of them.
+    .filter((el) => !el.hasAttribute('readonly') || el.closest('.ant-select') !== null)
+    // Rendered but not on screen — a field inside a collapsed section is not somewhere to land.
+    .filter((el) => el.offsetParent !== null || el.closest('.ant-select') !== null);
+}
+
+/** The form, modal or drawer the focused control belongs to — the boundary Enter walks inside.
+ *
+ * Scoped rather than global on purpose: a screen commonly has a filter bar above a table and a
+ * modal on top of it, and Enter in the modal must not walk out into the filters behind it. */
+function formOf(el: HTMLElement): HTMLElement | null {
+  return el.closest('.ant-modal-content, .ant-drawer-body, form') as HTMLElement | null;
+}
+
+/**
+ * Enter moves to the next field — the habit the old system built and fingers keep.
+ *
+ * Someone entering documents all day never reaches for the mouse: they type, press Enter, type,
+ * press Enter. A form where Enter instead submits half-filled work, or does nothing at all, makes
+ * them stop and look down, and that pause is the whole cost of the screen.
+ *
+ * Returns true when it handled the key.
+ */
+function enterMovesOn(e: KeyboardEvent): boolean {
+  if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
+  const el = e.target as HTMLElement | null;
+  if (!el || typeof el.closest !== 'function') return false;
+
+  // A textarea is where Enter means «new line», and «وصف» is exactly the field people write two
+  // lines in. Taking that away to save a keystroke elsewhere is a bad trade.
+  if (el.tagName === 'TEXTAREA') return false;
+  // On a button — including «حفظ» — Enter is the press, not a move.
+  if (el.tagName === 'BUTTON' || el.closest('button')) return false;
+  // An open dropdown owns Enter: it is choosing the highlighted option. The move happens on the
+  // NEXT Enter, once the choice has been made, which is what picking from a list feels like.
+  const select = el.closest('.ant-select');
+  if (select && select.classList.contains('ant-select-open')) return false;
+
+  const form = formOf(el);
+  if (!form) return false;
+  const fields = fieldsIn(form);
+  // Focus can sit on the Select's wrapper rather than its input when a click put it there.
+  const current = (el.classList.contains('ant-select-selector')
+    ? select?.querySelector('input') : el) as HTMLElement | null;
+  const i = current ? fields.indexOf(current) : -1;
+  if (i === -1) return false;
+
+  e.preventDefault();
+  const next = fields[i + 1];
+  if (next) {
+    next.focus();
+    if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
+    return true;
+  }
+  // Past the last field, land on the primary button rather than pressing it. Enter again saves,
+  // so saving is still one key — but it is never something the form did while you were typing.
+  const submit = form.querySelector<HTMLElement>(
+    'button[type=submit], .ant-modal-footer .ant-btn-primary, .ant-btn-primary'
+  );
+  submit?.focus();
   return true;
 }
 
@@ -94,6 +189,9 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Before the typing guard: Enter-to-next-field only ever fires while typing, which is the
+      // one case that guard exists to skip.
+      if (enterMovesOn(e)) return;
       if (isTyping(e)) return;
       const handlers = top();
 
@@ -199,11 +297,12 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
  */
 export function useScreenShortcuts(handlers: ScreenShortcuts, enabled = true) {
   const { register } = useContext(KeyboardContext);
+  const onScreen = useContext(TabActiveContext);
   const latest = useRef(handlers);
   latest.current = handlers;
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || !onScreen) return undefined;
     const proxy: ScreenShortcuts = {
       onNew: () => latest.current.onNew?.(),
       onSave: () => latest.current.onSave?.(),
@@ -219,5 +318,6 @@ export function useScreenShortcuts(handlers: ScreenShortcuts, enabled = true) {
       if (!handlers[src]) delete proxy[src];
     });
     return register(proxy);
-  }, [enabled, register, Object.keys(handlers).filter((k) => (handlers as any)[k]).join(',')]);
+  }, [enabled, onScreen, register,
+    Object.keys(handlers).filter((k) => (handlers as any)[k]).join(',')]);
 }
