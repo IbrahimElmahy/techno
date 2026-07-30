@@ -90,6 +90,10 @@ interface ItemRecord {
   active: boolean;
   default_warehouse_id: number | null;
   category: string | null;
+  barcode: string | null;
+  consumer_price: string | null;
+  piece_name: string | null;
+  pieces_per_unit: string | null;
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -397,13 +401,30 @@ export default function Catalog() {
       }
       // Barcodes are set as a whole list, not appended one by one — the endpoint owns the set, so
       // sending them together is the only way both survive.
-      const barcodes = [
-        ...(values.barcode ? [{ barcode: values.barcode }] : []),
-        ...(values.piece_barcode
-          ? [{ barcode: values.piece_barcode, unit: values.piece_name || null }] : []),
-      ];
-      if (itemId && barcodes.length) {
-        await api.put(`/api/v1/items/${itemId}/barcodes`, { barcodes });
+      //
+      // A barcode may only name a unit the item actually has: the base unit, or an alternate one
+      // defined in «الوحدات». The piece from «عدد القطع» is not one of those — it is smaller than
+      // the base, and the alternate-unit table counts in base units per unit, so the piece has
+      // nowhere to be defined yet. The server refuses the request when it sees that unit, and
+      // because the endpoint replaces the whole set, refusing it used to drop the plain باركود as
+      // well — while the screen still said «اتسجّل الصنف». So: try both, and if the piece is not
+      // a unit this item has, save the one that is and say plainly that the other was not saved.
+      const baseBarcode = values.barcode ? [{ barcode: values.barcode }] : [];
+      const pieceBarcode = values.piece_barcode
+        ? [{ barcode: values.piece_barcode, unit: values.piece_name || null }] : [];
+      if (itemId && (baseBarcode.length || pieceBarcode.length)) {
+        try {
+          await api.put(`/api/v1/items/${itemId}/barcodes`,
+            { barcodes: [...baseBarcode, ...pieceBarcode] });
+        } catch {
+          if (baseBarcode.length) {
+            await api.put(`/api/v1/items/${itemId}/barcodes`, { barcodes: baseBarcode });
+          }
+          message.warning(
+            'اتسجّل الصنف، لكن «باركود القطعة» مااتسجّلش: لازم الأول تعرّف «'
+            + `${values.piece_name || 'القطعة'}» كوحدة للصنف من «الوحدات».`,
+          );
+        }
       }
       // «مخفي» is a state an item is put into, not one it is born in, so it is a separate edit.
       if (itemId && values.hidden) {
@@ -486,32 +507,82 @@ export default function Catalog() {
     setDrawerVisible(true);
   };
 
+  // Their eight columns, in their order — `رقم · الفئه · الاسم · باركود · الوحدة · عدد القطع ·
+  // القطعة · مستهلك` — and then ours after them. Somebody scanning this list for a price reads
+  // along a row they already know the shape of; reordering it is the difference between reading
+  // and searching. What we have and they don't keeps its place at the end rather than being
+  // dropped, and the table scrolls sideways instead of squeezing thirteen columns into the width
+  // of eight.
   const columns = [
     {
-      title: 'كود الصنف',
+      title: 'رقم',
       dataIndex: 'code',
       key: 'code',
+      width: 120,
       render: (code: string) => <Tag>{code}</Tag>,
     },
     {
-      title: 'اسم الصنف',
-      dataIndex: 'name',
-      key: 'name',
+      title: 'الفئه',
+      dataIndex: 'category',
+      key: 'category',
+      width: 130,
+      render: (category: string | null) =>
+        category ? <Tag color="purple">{categoryLabels[category] || category}</Tag> : '-',
     },
     {
-      title: 'نوع الصنف',
-      dataIndex: 'kind',
-      key: 'kind',
-      render: (kind: string) => (
-        <Tag color={kind === 'product' ? 'green' : 'orange'}>
-          {kindLabels[kind] || KIND_LABELS[kind] || kind}
-        </Tag>
-      ),
+      title: 'الاسم',
+      dataIndex: 'name',
+      key: 'name',
+      width: 220,
     },
+    {
+      title: 'باركود',
+      dataIndex: 'barcode',
+      key: 'barcode',
+      width: 140,
+      // Monospaced so a digit that differs in the middle of a long code is visible without
+      // counting across from either end.
+      render: (v: string | null) =>
+        v ? <span style={{ fontFamily: 'monospace', direction: 'ltr' }}>{v}</span> : '-',
+    },
+    {
+      title: 'الوحدة',
+      dataIndex: 'unit_of_measure',
+      key: 'unit_of_measure',
+      width: 100,
+    },
+    {
+      title: 'عدد القطع',
+      dataIndex: 'pieces_per_unit',
+      key: 'pieces_per_unit',
+      width: 100,
+      render: (v: string | null) => (v ? Number(v).toLocaleString('ar-EG') : '-'),
+    },
+    {
+      title: 'القطعة',
+      dataIndex: 'piece_name',
+      key: 'piece_name',
+      width: 100,
+      render: (v: string | null) => v || '-',
+    },
+    {
+      title: 'مستهلك',
+      key: 'consumer_price',
+      width: 130,
+      // The tier row is what gets charged; where an item has none, 007's own rule falls the sale
+      // back to `sale_price`, so that is the number shown — a blank here would claim the item
+      // cannot be sold to a walk-in when it can.
+      render: (_: any, r: ItemRecord) => {
+        const price = r.consumer_price ?? r.sale_price;
+        return price ? `${parseFloat(price).toFixed(2)} ج.م` : '-';
+      },
+    },
+    // ---- ours, kept after theirs ----
     {
       title: 'الرصيد الحالي',
       dataIndex: 'on_hand',
       key: 'on_hand',
+      width: 140,
       render: (v: string | null, r: any) => {
         const n = Number(v || 0);
         return (
@@ -523,34 +594,28 @@ export default function Catalog() {
       sorter: (a: any, b: any) => Number(a.on_hand || 0) - Number(b.on_hand || 0),
     },
     {
-      title: 'الفئة',
-      dataIndex: 'category',
-      key: 'category',
-      render: (category: string | null) =>
-        category ? <Tag color="purple">{categoryLabels[category] || category}</Tag> : '-',
-    },
-    {
-      title: 'وحدة القياس',
-      dataIndex: 'unit_of_measure',
-      key: 'unit_of_measure',
-    },
-    {
-      title: 'سعر البيع المرجعي',
-      dataIndex: 'sale_price',
-      key: 'sale_price',
-      render: (price: string | null) =>
-        price ? `${parseFloat(price).toFixed(2)} ج.م` : '-',
+      title: 'تصنيف',
+      dataIndex: 'kind',
+      key: 'kind',
+      width: 130,
+      render: (kind: string) => (
+        <Tag color={kind === 'product' ? 'green' : 'orange'}>
+          {kindLabels[kind] || KIND_LABELS[kind] || kind}
+        </Tag>
+      ),
     },
     {
       title: 'سعر الشراء المرجعي',
       dataIndex: 'purchase_price',
       key: 'purchase_price',
+      width: 150,
       render: (price: string | null) =>
         price ? `${parseFloat(price).toFixed(2)} ج.م` : '-',
     },
     {
       title: 'نقاط المنتج',
       key: 'points',
+      width: 130,
       render: (_: any, record: ItemRecord) => {
         if (record.kind !== 'product') return '-';
         // Read-only here: points are edited inside the item file, with everything else.
@@ -558,15 +623,21 @@ export default function Catalog() {
       },
     },
     {
-      title: 'الحالة',
+      // «مخفي», not «الحالة» — the same fact, read the other way round. The الفئات screen was
+      // matched to their wording for exactly this reason, and two screens labelling one flag in
+      // opposite directions is worse than either wording on its own.
+      title: 'مخفي',
       dataIndex: 'active',
-      key: 'active',
+      key: 'hidden',
+      width: 90,
       render: (active: boolean) =>
-        active ? <Tag color="green">نشط</Tag> : <Tag color="red">غير نشط</Tag>,
+        active ? <span style={{ color: '#bbb' }}>—</span> : <Tag color="red">مخفي</Tag>,
     },
     ...(canManageItems ? [{
       title: 'إجراءات',
       key: 'actions',
+      width: 180,
+      fixed: 'right' as const,
       render: (_: any, record: ItemRecord) => (
         <Space onClick={(e) => e.stopPropagation()}>
           {record.active && (
@@ -683,6 +754,7 @@ export default function Catalog() {
             columns={columns}
             rowKey="id"
             loading={loading}
+            scroll={{ x: 'max-content' }}
             pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
             // The whole row opens the product file.
             onRow={(record) => ({
@@ -724,6 +796,7 @@ export default function Catalog() {
                   rowKey="id"
                   size="small"
                   loading={loading}
+                  scroll={{ x: 'max-content' }}
                   pagination={g.rows.length > 10
                     ? { defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }
                     : false}

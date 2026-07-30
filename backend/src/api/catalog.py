@@ -99,6 +99,10 @@ class ItemOut(BaseModel):
     description: str | None = None
     # Total on-hand across all locations — filled on the list endpoint (one grouped query).
     on_hand: Decimal | None = None
+    # Their list carries باركود and the مستهلك price as columns; both live in their own tables,
+    # so the list endpoint fills them in bulk rather than making the screen ask per row.
+    barcode: str | None = None
+    consumer_price: Decimal | None = None
 
 
 def _out(it: Item) -> ItemOut:
@@ -143,10 +147,16 @@ def list_items(
     rows = list(db.scalars(stmt).all())
     on_hand = item_profile_service.bulk_on_hand(db, [i.id for i in rows])
     rows = item_profile_service.filter_by_stock(rows, on_hand, stock_filter)
+    # Looked up after the stock filter, so the extra two queries only cover rows that survive it.
+    ids = [i.id for i in rows]
+    barcodes = item_profile_service.bulk_base_barcode(db, ids)
+    consumer = item_profile_service.bulk_tier_price(db, ids, PriceTier.consumer)
     out = []
     for i in rows:
         o = _out(i)
         o.on_hand = on_hand.get(i.id, Decimal("0.000"))
+        o.barcode = barcodes.get(i.id)
+        o.consumer_price = consumer.get(i.id)
         out.append(o)
     return out
 

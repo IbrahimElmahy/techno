@@ -14,7 +14,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
-from src.models.catalog import Item, ItemKind, ItemPrice, ItemPriceHistory
+from src.models.catalog import Item, ItemBarcode, ItemKind, ItemPrice, ItemPriceHistory, PriceTier
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
 from src.models.sales import SalesInvoice, SalesInvoiceLine
 from src.models.stock import StockDirection, StockMovement
@@ -49,6 +49,54 @@ def bulk_on_hand(db: Session, item_ids: list[int] | None = None) -> dict[int, De
             return {}
         stmt = stmt.where(StockMovement.item_id.in_(item_ids))
     return {iid: _qty(total) for iid, total in db.execute(stmt).all()}
+
+
+# ------------------------------------------------- list columns (barcode + shelf price)
+
+
+def bulk_base_barcode(db: Session, item_ids: list[int]) -> dict[int, str]:
+    """The one barcode to show per item in a list — ONE query for the whole page.
+
+    An item can carry several barcodes: one for the unit and one per alternate unit (010). The
+    list has room for one, and the one that belongs there is the **base-unit** barcode — that is
+    what the item *is*, and what a scanner at the counter reads by default. A piece barcode is
+    shown only when there is nothing else, so a row is never blank while a barcode exists.
+    """
+    if not item_ids:
+        return {}
+    rows = db.execute(
+        select(ItemBarcode.item_id, ItemBarcode.barcode, ItemBarcode.unit)
+        .where(ItemBarcode.item_id.in_(item_ids))
+        .order_by(ItemBarcode.item_id, ItemBarcode.id)
+    ).all()
+    out: dict[int, str] = {}
+    have_base: set[int] = set()
+    for item_id, barcode, unit in rows:
+        if unit is None:
+            # A base-unit barcode replaces an alternate already held; the first base one wins.
+            if item_id not in have_base:
+                out[item_id] = barcode
+                have_base.add(item_id)
+        elif item_id not in out:
+            out[item_id] = barcode
+    return out
+
+
+def bulk_tier_price(db: Session, item_ids: list[int], tier: PriceTier) -> dict[int, Decimal]:
+    """One tier's price per item — ONE query for the whole page.
+
+    Read from `item_price` rather than from `item.sale_price`: the two agree when an item is
+    created, but the tier grid is edited on its own afterwards, so the tier row is the one that
+    is actually charged. Items with no row for the tier are absent — not zero. A blank cell
+    reads as "not sold at this tier", which is what it means; a zero reads as free.
+    """
+    if not item_ids:
+        return {}
+    rows = db.execute(
+        select(ItemPrice.item_id, ItemPrice.price)
+        .where(ItemPrice.item_id.in_(item_ids), ItemPrice.tier == tier)
+    ).all()
+    return {iid: to_money(price) for iid, price in rows}
 
 
 # ------------------------------------------------------------------------- search
