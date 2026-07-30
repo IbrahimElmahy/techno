@@ -131,6 +131,11 @@ function formOf(el: HTMLElement): HTMLElement | null {
  */
 function enterMovesOn(e: KeyboardEvent): boolean {
   if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
+  // Somebody already answered this key. A picker that selects the highlighted row on Enter, a
+  // search that submits — they call preventDefault and mean it. This listener sits on the window
+  // and therefore runs LAST, so without this check it would undo their work by moving focus on
+  // afterwards: «اختر الصنف» picked the product and then the cursor walked away from it.
+  if (e.defaultPrevented) return false;
   const el = e.target as HTMLElement | null;
   if (!el || typeof el.closest !== 'function') return false;
 
