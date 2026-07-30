@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, InputNumber, Modal, Row,
   Segmented, Select,
-  Space, Statistic, Switch, Table, Tag, message,
+  Space, Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
 import {
   PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined,
@@ -511,21 +511,23 @@ export default function Catalog() {
   // القطعة · مستهلك` — and then ours after them. Somebody scanning this list for a price reads
   // along a row they already know the shape of; reordering it is the difference between reading
   // and searching. What we have and they don't keeps its place at the end rather than being
-  // dropped, and the table scrolls sideways instead of squeezing thirteen columns into the width
-  // of eight.
+  // dropped — تصنيف، سعر الشراء and نقاط المنتج moved into the expanded row, «مخفي» became a tag
+  // on the name, and the actions became icons. All eight of theirs stay on screen and the table
+  // fits without dragging sideways, which is the only way the price is ever beside the name you
+  // looked it up by.
   const columns = [
     {
       title: 'رقم',
       dataIndex: 'code',
       key: 'code',
-      width: 120,
+      width: 100,
       render: (code: string) => <Tag>{code}</Tag>,
     },
     {
       title: 'الفئه',
       dataIndex: 'category',
       key: 'category',
-      width: 130,
+      ellipsis: true,
       render: (category: string | null) =>
         category ? <Tag color="purple">{categoryLabels[category] || category}</Tag> : '-',
     },
@@ -533,13 +535,19 @@ export default function Catalog() {
       title: 'الاسم',
       dataIndex: 'name',
       key: 'name',
-      width: 220,
+      ellipsis: true,
+      render: (name: string, record: ItemRecord) => (
+        <Space size={4}>
+          <span>{name}</span>
+          {!record.active && <Tag color="red">مخفي</Tag>}
+        </Space>
+      ),
     },
     {
       title: 'باركود',
       dataIndex: 'barcode',
       key: 'barcode',
-      width: 140,
+      width: 125,
       // Monospaced so a digit that differs in the middle of a long code is visible without
       // counting across from either end.
       render: (v: string | null) =>
@@ -549,26 +557,26 @@ export default function Catalog() {
       title: 'الوحدة',
       dataIndex: 'unit_of_measure',
       key: 'unit_of_measure',
-      width: 100,
+      width: 75,
     },
     {
       title: 'عدد القطع',
       dataIndex: 'pieces_per_unit',
       key: 'pieces_per_unit',
-      width: 100,
+      width: 85,
       render: (v: string | null) => (v ? Number(v).toLocaleString('ar-EG') : '-'),
     },
     {
       title: 'القطعة',
       dataIndex: 'piece_name',
       key: 'piece_name',
-      width: 100,
+      width: 80,
       render: (v: string | null) => v || '-',
     },
     {
       title: 'مستهلك',
       key: 'consumer_price',
-      width: 130,
+      width: 105,
       // The tier row is what gets charged; where an item has none, 007's own rule falls the sale
       // back to `sale_price`, so that is the number shown — a blank here would claim the item
       // cannot be sold to a walk-in when it can.
@@ -579,86 +587,72 @@ export default function Catalog() {
     },
     // ---- ours, kept after theirs ----
     {
-      title: 'الرصيد الحالي',
+      title: 'الرصيد',
       dataIndex: 'on_hand',
       key: 'on_hand',
-      width: 140,
-      render: (v: string | null, r: any) => {
+      width: 90,
+      align: 'left' as const,
+      // The unit is already its own column two along, so repeating it here only bought width.
+      render: (v: string | null) => {
         const n = Number(v || 0);
         return (
           <b style={{ color: n > 0 ? '#3f8600' : n < 0 ? '#cf1322' : '#999' }}>
-            {n.toLocaleString('ar-EG', { maximumFractionDigits: 3 })} {r.unit_of_measure}
+            {n.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
           </b>
         );
       },
       sorter: (a: any, b: any) => Number(a.on_hand || 0) - Number(b.on_hand || 0),
     },
-    {
-      title: 'تصنيف',
-      dataIndex: 'kind',
-      key: 'kind',
-      width: 130,
-      render: (kind: string) => (
-        <Tag color={kind === 'product' ? 'green' : 'orange'}>
-          {kindLabels[kind] || KIND_LABELS[kind] || kind}
-        </Tag>
-      ),
-    },
-    {
-      title: 'سعر الشراء المرجعي',
-      dataIndex: 'purchase_price',
-      key: 'purchase_price',
-      width: 150,
-      render: (price: string | null) =>
-        price ? `${parseFloat(price).toFixed(2)} ج.م` : '-',
-    },
-    {
-      title: 'نقاط المنتج',
-      key: 'points',
-      width: 130,
-      render: (_: any, record: ItemRecord) => {
-        if (record.kind !== 'product') return '-';
-        // Read-only here: points are edited inside the item file, with everything else.
-        return <ProductPoints itemId={record.id} isEditable={false} />;
-      },
-    },
-    {
-      // «مخفي», not «الحالة» — the same fact, read the other way round. The الفئات screen was
-      // matched to their wording for exactly this reason, and two screens labelling one flag in
-      // opposite directions is worse than either wording on its own.
-      title: 'مخفي',
-      dataIndex: 'active',
-      key: 'hidden',
-      width: 90,
-      render: (active: boolean) =>
-        active ? <span style={{ color: '#bbb' }}>—</span> : <Tag color="red">مخفي</Tag>,
-    },
     ...(canManageItems ? [{
-      title: 'إجراءات',
+      title: '',
       key: 'actions',
-      width: 180,
-      fixed: 'right' as const,
+      width: 80,
       render: (_: any, record: ItemRecord) => (
-        <Space onClick={(e) => e.stopPropagation()}>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
           {record.active && (
-            <Button size="small" type="link" icon={<StopOutlined />}
-              onClick={() => deactivateItem(record)}>
-              إلغاء تفعيل
-            </Button>
+            <Tooltip title="إخفاء">
+              <Button type="text" icon={<StopOutlined />}
+                onClick={() => deactivateItem(record)} />
+            </Tooltip>
           )}
-          <Button size="small" type="link" danger icon={<DeleteOutlined />}
-            onClick={() => deleteItem(record)}>
-            حذف
-          </Button>
+          <Tooltip title="حذف">
+            <Button type="text" danger icon={<DeleteOutlined />}
+              onClick={() => deleteItem(record)} />
+          </Tooltip>
         </Space>
       ),
     }] : []),
   ];
 
+  // Ours that used to be columns. «نقاط المنتج» in particular belongs here rather than in the
+  // grid: it fetched once per visible row, so a page of 200 items fired 200 requests to fill a
+  // column most people never read. Expanded, it is fetched for the one row actually opened.
+  const expandedRow = (record: ItemRecord) => (
+    <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
+      <span>
+        <span style={{ color: '#888' }}>تصنيف: </span>
+        <Tag color={record.kind === 'product' ? 'green' : 'orange'}>
+          {kindLabels[record.kind] || KIND_LABELS[record.kind] || record.kind}
+        </Tag>
+      </span>
+      <span>
+        <span style={{ color: '#888' }}>سعر الشراء المرجعي: </span>
+        {record.purchase_price ? `${parseFloat(record.purchase_price).toFixed(2)} ج.م` : '—'}
+      </span>
+      {record.kind === 'product' && (
+        <span>
+          <span style={{ color: '#888' }}>نقاط المنتج: </span>
+          <ProductPoints itemId={record.id} isEditable={false} />
+        </span>
+      )}
+      {!record.active && <Tag color="red">مخفي</Tag>}
+    </Space>
+  );
+
   return (
     <div>
       <Card
-        title="كتالوج المنتجات والمواد الخام"
+        title="الأصناف"
         extra={
           user?.role === 'system_admin' || user?.role === 'purchasing_manager' ? (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
@@ -754,7 +748,9 @@ export default function Catalog() {
             columns={columns}
             rowKey="id"
             loading={loading}
-            scroll={{ x: 'max-content' }}
+            size="middle"
+            tableLayout="fixed"
+            expandable={{ expandedRowRender: expandedRow }}
             pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
             // The whole row opens the product file.
             onRow={(record) => ({
@@ -796,7 +792,8 @@ export default function Catalog() {
                   rowKey="id"
                   size="small"
                   loading={loading}
-                  scroll={{ x: 'max-content' }}
+                  tableLayout="fixed"
+                  expandable={{ expandedRowRender: expandedRow }}
                   pagination={g.rows.length > 10
                     ? { defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }
                     : false}

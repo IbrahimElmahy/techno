@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Checkbox, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space,
-  Statistic, Table, Tag, message,
+  Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
 import {
-  UserAddOutlined, PlusOutlined, MinusCircleOutlined,
+  UserAddOutlined, PlusOutlined, MinusCircleOutlined, EyeOutlined, StopOutlined,
   SearchOutlined, ClearOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
@@ -252,21 +252,26 @@ export default function Customers() {
   };
 
   // Their seven columns, in their order — `رقم · الفرع · الاسم · الهاتف · مندوب · محافظه ·
-  // مدينة` — and ours after them. Theirs leads with the branch, which we had the data for only
-  // after this screen was rebuilt; ours led with a code and put the geography last.
+  // مدينة` — plus the balance, and that is the whole table. It fits the screen, which is the
+  // point: a list you have to drag sideways to read is one where the number you came for is
+  // never on screen beside the name you looked it up by.
+  //
+  // What we have and they do not has NOT been dropped — تصنيف، المنطقة and الفئة السعرية moved
+  // into the expanded row, «مخفي» is a tag on the name, and the actions became the three icons
+  // their own rows use. Nothing left the screen; it stopped costing a column.
   const columns = [
     {
       title: 'رقم',
       dataIndex: 'code',
       key: 'code',
-      width: 120,
+      width: 110,
       render: (code: string) => <Tag color="blue">{code}</Tag>,
     },
     {
       title: 'الفرع',
       dataIndex: 'branch_id',
       key: 'branch_id',
-      width: 140,
+      ellipsis: true,
       render: (bId: number | null) => {
         const branch = branches.find((b) => b.id === bId);
         return branch ? branch.name : '-';
@@ -276,21 +281,26 @@ export default function Customers() {
       title: 'الاسم',
       dataIndex: 'name',
       key: 'name',
-      width: 200,
-      render: (name: string) => <span style={{ fontWeight: 600 }}>{name}</span>,
+      ellipsis: true,
+      render: (name: string, record: CustomerRecord) => (
+        <Space size={4}>
+          <span style={{ fontWeight: 600 }}>{name}</span>
+          {!record.active && <Tag color="red">مخفي</Tag>}
+        </Space>
+      ),
     },
     {
       title: 'الهاتف',
       dataIndex: 'phone',
       key: 'phone',
-      width: 130,
+      width: 125,
       render: (phone: string | null) => phone || '-',
     },
     {
       title: 'مندوب',
       dataIndex: 'rep_id',
       key: 'rep_id',
-      width: 150,
+      ellipsis: true,
       render: (repId: number) => {
         const rep = reps.find((r) => r.id === repId);
         return rep ? rep.full_name : `مندوب #${repId}`;
@@ -300,7 +310,7 @@ export default function Customers() {
       title: 'محافظه',
       dataIndex: 'governorate_id',
       key: 'governorate_id',
-      width: 120,
+      ellipsis: true,
       render: (gId: number | null) => {
         const gov = governorates.find((g) => g.id === gId);
         return gov ? gov.name : '-';
@@ -310,71 +320,70 @@ export default function Customers() {
       title: 'مدينة',
       dataIndex: 'markaz',
       key: 'markaz',
-      width: 120,
+      ellipsis: true,
       render: (v: string | null) => v || '-',
     },
-    // ---- ours, kept after theirs ----
     {
-      title: 'تصنيف',
-      dataIndex: 'customer_type',
-      key: 'customer_type',
-      width: 130,
-      render: (type: string) => typeLabels[type] || TYPE_LABELS[type] || type,
-    },
-    {
-      title: 'المنطقة',
-      dataIndex: 'territory_id',
-      key: 'territory_id',
-      width: 130,
-      render: (tId: number) => {
-        const territory = territories.find((t) => t.id === tId);
-        return territory ? territory.name : `منطقة #${tId}`;
-      },
-    },
-    {
-      title: 'الفئة السعرية',
-      dataIndex: 'default_price_tier',
-      key: 'default_price_tier',
-      width: 140,
-      render: (t: string | null) => t ? <Tag color="geekblue">{TIER_LABELS[t] || t}</Tag> : <Tag>مستهلك (افتراضي)</Tag>,
-    },
-    {
-      title: 'رصيد المديونية (الذمة)',
+      title: 'الرصيد',
       key: 'balance',
-      width: 160,
+      width: 130,
+      align: 'left' as const,
       render: (_: any, record: CustomerRecord) => <CustomerBalance value={record.balance} />,
       sorter: (a: CustomerRecord, b: CustomerRecord) =>
         Number(a.balance || 0) - Number(b.balance || 0),
     },
     {
-      // «مخفي», not «الحالة», for the same reason الفئات and الأصناف were matched to their wording.
-      title: 'مخفي',
-      dataIndex: 'active',
-      key: 'hidden',
-      width: 90,
-      render: (active: boolean) =>
-        active ? <span style={{ color: '#bbb' }}>—</span> : <Tag color="red">مخفي</Tag>,
-    },
-    {
-      title: 'الإجراءات',
+      title: '',
       key: 'actions',
-      width: 180,
-      fixed: 'right' as const,
-      // Row clicks open the customer file, so the buttons must not bubble up to it.
+      width: 110,
+      // Icons, like their rows use — three of them in the width two words used to take. Row
+      // clicks open the customer file, so the buttons must not bubble up to it.
       render: (_: any, record: CustomerRecord) => (
-        <Space size="middle" onClick={(e) => e.stopPropagation()}>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="عرض الملف">
+            <Button type="text" icon={<EyeOutlined />}
+              onClick={() => navigate(`/customers/${record.id}`)} />
+          </Tooltip>
           {record.active && (
-            <Button type="link" onClick={() => onDeactivate(record)}>
-              إلغاء تفعيل
-            </Button>
+            <Tooltip title="إخفاء">
+              <Button type="text" icon={<StopOutlined />} onClick={() => onDeactivate(record)} />
+            </Tooltip>
           )}
-          <Button type="link" danger icon={<DeleteOutlined />} onClick={() => onDelete(record)}>
-            حذف
-          </Button>
+          <Tooltip title="حذف">
+            <Button type="text" danger icon={<DeleteOutlined />}
+              onClick={() => onDelete(record)} />
+          </Tooltip>
         </Space>
       ),
     },
   ];
+
+  // The three of ours that used to be columns. Opening a row costs one click and gives them back
+  // in full, rather than making every row narrower for everyone who never looks at them.
+  const expandedRow = (record: CustomerRecord) => (
+    <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
+      <span>
+        <span style={{ color: '#888' }}>تصنيف: </span>
+        {typeLabels[record.customer_type] || TYPE_LABELS[record.customer_type]
+          || record.customer_type}
+      </span>
+      <span>
+        <span style={{ color: '#888' }}>المنطقة: </span>
+        {territories.find((t) => t.id === record.territory_id)?.name
+          || `منطقة #${record.territory_id}`}
+      </span>
+      <span>
+        <span style={{ color: '#888' }}>الفئة السعرية: </span>
+        {record.default_price_tier
+          ? <Tag color="geekblue">{TIER_LABELS[record.default_price_tier]
+              || record.default_price_tier}</Tag>
+          : <Tag>مستهلك (افتراضي)</Tag>}
+      </span>
+      {record.address && (
+        <span><span style={{ color: '#888' }}>العنوان: </span>{record.address}</span>
+      )}
+    </Space>
+  );
 
   return (
     <div>
@@ -473,7 +482,9 @@ export default function Customers() {
           columns={columns}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 'max-content' }}
+          size="middle"
+          tableLayout="fixed"
+          expandable={{ expandedRowRender: expandedRow }}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}` }}
           // The whole row opens the customer file — no dedicated button needed.
           onRow={(record) => ({
