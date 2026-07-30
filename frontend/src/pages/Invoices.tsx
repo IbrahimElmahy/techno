@@ -5,7 +5,8 @@ import {
 import {
   PlusOutlined, RollbackOutlined, FileTextOutlined, PrinterOutlined, DeleteOutlined,
   EditOutlined,
-  ArrowRightOutlined, SearchOutlined, ClearOutlined,
+  ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
+  FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -14,6 +15,7 @@ import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
+import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
 import InvoiceExpensesModal, { InvoiceExpense } from '../components/InvoiceExpensesModal';
@@ -1153,6 +1155,45 @@ export default function Invoices() {
 
   // The create form is a full inner page (not a modal) — a big invoice form reads better on a
   // full page than boxed inside a scrolling modal.
+  /**
+   * The toolbar over the document — the row of verbs their old system puts there.
+   *
+   * Every entry is wired to something that already exists on this screen, and the ones that have
+   * no meaning yet on the open document are shown DISABLED rather than dropped, so the positions
+   * stay where the hand expects them. Each carries its F-key, because the toolbar and the keyboard
+   * are the same commands and neither should teach a different set.
+   */
+  const docToolbar = (): ToolbarAction[] => {
+    const lineCount = lines.filter((l) => l.item_id !== null).length;
+    return [
+      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+        onClick: () => { closeCreate(); setInvoiceDate(dayjs()); setNewStep('date'); } },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        // The open document IS the editable one; on a saved invoice this is «reverse and reopen».
+        disabled: true },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        disabled: lineCount === 0,
+        onClick: () => { setLines([]); setActiveCategory(null); } },
+      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
+        disabled: lineCount === 0,
+        onClick: () => createForm.submit() },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+        onClick: () => setPickerOpen(true) },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+        disabled: lineCount === 0,
+        onClick: () => { setLines([]); } },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        // Nothing to print until it is saved — a document that does not exist has no paper.
+        disabled: true },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+        disabled: !selectedCustomerId,
+        onClick: () => selectedCustomerId && navigate(`/customers/${selectedCustomerId}`) },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
+    ];
+  };
+
   if (createVisible) {
     return (
       <div>
@@ -1173,6 +1214,7 @@ export default function Invoices() {
             </Space>
           }
         >
+        <DocumentToolbar actions={docToolbar()} />
         <Form form={createForm} layout="vertical" onFinish={handleCreateSubmit} requiredMark={false}>
           <Row gutter={16}>
             <Col span={12}>
