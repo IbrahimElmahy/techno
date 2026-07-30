@@ -13,6 +13,7 @@ import Manufacturing from '../pages/Manufacturing';
 import Transfers from '../pages/Transfers';
 import StockBalance from '../pages/StockBalance';
 import StockAlerts from '../pages/StockAlerts';
+import Categories from '../pages/Categories';
 import PendingScreen from '../pages/PendingScreen';
 import ItemCard from '../pages/ItemCard';
 import StockPermits from '../pages/StockPermits';
@@ -56,6 +57,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/customers/:customerId" element={<CustomerProfile />} />
       <Route path="/suppliers" element={<Suppliers />} />
       <Route path="/suppliers/:supplierId" element={<SupplierProfile />} />
+      <Route path="/categories" element={<Categories />} />
       <Route path="/catalog" element={<Catalog />} />
       <Route path="/catalog/:itemId" element={<ItemProfile />} />
       <Route path="/purchases" element={<Purchases />} />

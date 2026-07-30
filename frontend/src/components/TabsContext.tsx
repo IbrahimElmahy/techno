@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { allScreens } from './navigation';
 
 /**
  * Chrome-style workspace tabs. One tab per top-level section, keyed by its base path. Every open
@@ -53,12 +54,31 @@ const BASE_TITLES: Record<string, string> = {
   '/settings': 'إعدادات القوائم',
 };
 
+/**
+ * Which workspace tab a path belongs to.
+ *
+ * A menu entry is a tab. That matters more than it sounds since the menu was rebuilt to mirror the
+ * a5 structure, where several of our tabbed screens appear as separate entries: «الحسابات الرئيسيه»
+ * and «مراكز التكلفة» are one component here and two screens there. Keyed by path alone they would
+ * fight over a single tab — open one and the other's tab silently changes under you — so an entry
+ * that the navigation tree knows gets a tab of its own, query string and all.
+ *
+ * Everything else still collapses to its first path segment, so drilling from a customer list into
+ * a customer file stays in the tab the user opened.
+ */
+const NAV_KEYS = new Set(allScreens().map((s) => s.key));
+
 export function baseOf(path: string): string {
+  if (NAV_KEYS.has(path)) return path;
   const seg = path.split('?')[0].split('/').filter(Boolean);
   return `/${seg[0] || 'dashboard'}`;
 }
 
 export function titleForPath(path: string): string {
+  // The navigation tree is the source of screen names now — it carries the a5 label for every
+  // entry, including the ones that differ only by query string.
+  const named = allScreens().find((s) => s.key === path);
+  if (named) return named.label;
   const seg = path.split('?')[0].split('/').filter(Boolean);
   const base = `/${seg[0] || 'dashboard'}`;
   if (seg.length >= 2) {

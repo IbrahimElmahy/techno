@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tabs, Tag, Tree, message,
 } from 'antd';
@@ -8,6 +8,8 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
+import { useSearchParams } from 'react-router-dom';
+import { useQueryTab } from '../components/useQueryTab';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 
@@ -112,9 +114,12 @@ const flatten = <T extends { children?: T[] | null }>(node: T): T[] =>
   [node, ...(node.children || []).flatMap(flatten)];
 
 export default function GeneralLedger() {
+  // Three of these tabs are separate menu entries in the system the client is migrating from
+  // (الحسابات الرئيسيه · الحسابات الفرعيه · مراكز التكلفة), so each entry carries the tab it means.
+  const [activeTab, selectTab] = useQueryTab('chart');
   return (
     <Tabs
-      defaultActiveKey="chart"
+      activeKey={activeTab} onChange={selectTab}
       items={[
         { key: 'chart', label: <span><BookOutlined /> دليل الحسابات</span>, children: <ChartTab /> },
         { key: 'journal', label: <span><FileAddOutlined /> القيود اليومية</span>, children: <JournalTab /> },
@@ -133,7 +138,18 @@ function ChartTab() {
   const [drawer, setDrawer] = useState(false);
   const [form] = Form.useForm();
 
-  const filter = useListFilter(tree, {
+  // «الحسابات الرئيسيه» and «الحسابات الفرعيه» are two menu entries there and one chart here. The
+  // distinction is real in the data — a group node versus a postable leaf — so the entry narrows to
+  // what it names instead of dropping the reader into the whole tree and leaving them to squint.
+  const [params] = useSearchParams();
+  const scope = params.get('scope');
+  const scopedTree = useMemo(() => {
+    if (scope === 'main') return tree.filter((a) => !a.is_postable);
+    if (scope === 'sub') return tree.flatMap(flatten).filter((a) => a.is_postable);
+    return tree;
+  }, [tree, scope]);
+
+  const filter = useListFilter(scopedTree, {
     search: (a) => flatten(a).flatMap((n) => [n.code, n.name]),
     filters: {
       nature: (a, v) => flatten(a).some((n) => n.nature === v),
@@ -190,7 +206,8 @@ function ChartTab() {
 
   return (
     <Card
-      title="الهيكل الشجري لدليل الحسابات"
+      title={scope === 'main' ? 'الحسابات الرئيسيه'
+        : scope === 'sub' ? 'الحسابات الفرعيه' : 'الهيكل الشجري لدليل الحسابات'}
       extra={
         <Space>
           <Button icon={<ReloadOutlined />} onClick={load} />
@@ -203,7 +220,7 @@ function ChartTab() {
         query={filter.query} onQueryChange={filter.setQuery}
         values={filter.values} onValueChange={filter.setValue}
         onReset={filter.reset}
-        total={tree.length} shown={filter.filtered.length}
+        total={scopedTree.length} shown={filter.filtered.length}
         filters={[
           { key: 'nature', placeholder: 'طبيعة الحساب',
             options: Object.entries(NATURE_LABEL).map(([v, l]) => ({ value: v, label: l })) },

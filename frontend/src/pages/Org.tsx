@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Tabs, Table, Button, Space, Modal, Form, Input, Select, Checkbox, Tag, message } from 'antd';
 import { PlusOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -27,7 +28,9 @@ const EDIT_TITLES: Record<string, string> = {
 };
 
 export default function Org() {
-  const [activeTab, setActiveTab] = useState('branches');
+  // الفروع and المخازن are two separate entries in the a5 menu the client knows, so each carries
+  // the tab it means rather than landing everyone on branches and asking them to look around.
+  const [activeTab, selectTab] = useQueryTab('branches');
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [form] = Form.useForm();
@@ -461,7 +464,7 @@ export default function Org() {
           </Button>
         }
       >
-        <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} />
+        <Tabs activeKey={activeTab} onChange={selectTab} items={tabItems} />
       </Card>
 
       <Modal

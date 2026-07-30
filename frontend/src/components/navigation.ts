@@ -62,13 +62,13 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/employees', label: 'الموظفين', roles: OFFICE, a5: '/employees' },
       { key: '/customers', label: 'العملاء', roles: R([...SALES, 'after_sales_staff']), a5: '/clients' },
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
-      { key: '/stores', label: 'المخازن', roles: R(STOCK), a5: '/stores' },
-      { key: '/branches', label: 'الفروع', roles: OFFICE, a5: '/branches' },
+      { key: '/org?tab=warehouses', label: 'المخازن', roles: R(STOCK), a5: '/stores' },
+      { key: '/org?tab=branches', label: 'الفروع', roles: OFFICE, a5: '/branches' },
       { key: '/treasury', label: 'الخزينه و البنوك', roles: R(BOOKS), a5: '/payment-methods' },
-      { key: '/main-accounts', label: 'الحسابات الرئيسيه', roles: R(BOOKS), a5: '/mainaccounts' },
-      { key: '/sub-accounts', label: 'الحسابات الفرعيه', roles: R(BOOKS), a5: '/subaccounts' },
+      { key: '/general-ledger?tab=chart&scope=main', label: 'الحسابات الرئيسيه', roles: R(BOOKS), a5: '/mainaccounts' },
+      { key: '/general-ledger?tab=chart&scope=sub', label: 'الحسابات الفرعيه', roles: R(BOOKS), a5: '/subaccounts' },
       { key: '/fixed-assets', label: 'الاصول الثابتة', roles: R(BOOKS), a5: '/fixed-assets' },
-      { key: '/cost-centers', label: 'مراكز التكلفة', roles: R(BOOKS), a5: '/cost_centers' },
+      { key: '/general-ledger?tab=cc', label: 'مراكز التكلفة', roles: R(BOOKS), a5: '/cost_centers' },
     ],
   },
 
@@ -140,7 +140,7 @@ export const NAVIGATION: NavGroup[] = [
     label: 'اداره المشتريات',
     children: [
       { key: '/purchases', label: 'فاتوره شراء', roles: R(BUYING), a5: '/purchases/create' },
-      { key: '/purchase-returns', label: 'مردودات شراء', roles: R(BUYING), a5: '/purchasesreturns/create' },
+      { key: '/purchases?tab=returns', label: 'مردودات شراء', roles: R(BUYING), a5: '/purchasesreturns/create' },
       {
         key: 'grp-purchase-reports',
         label: 'تقارير مشتريات',
@@ -227,8 +227,8 @@ export const NAVIGATION: NavGroup[] = [
     label: 'اداره الحسابات',
     children: [
       { key: '/account-statement', label: 'كشف حساب', roles: R(BOOKS), a5: '/entriesreport' },
-      { key: '/journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
-      { key: '/treasury-movement', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
+      { key: '/general-ledger?tab=journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
+      { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
       {
         key: 'grp-balances',
         label: 'الأرصدة',
@@ -250,7 +250,7 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-acct-reports',
         label: 'تقارير المحاسبية',
         children: [
-          { key: '/ledger', label: 'دفتر الإستاذ', roles: R(BOOKS), a5: '/ledger' },
+          { key: '/general-ledger?tab=trial', label: 'دفتر الإستاذ', roles: R(BOOKS), a5: '/ledger' },
           { key: '/finance-reports?view=balance-sheet', label: 'ميزانية ختامية', roles: R(BOOKS), a5: '/finalbalancesheet' },
           { key: '/finance-reports?view=balance-sheet-period', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
           { key: '/finance-reports?view=financial-position', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
