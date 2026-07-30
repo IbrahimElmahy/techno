@@ -3,6 +3,7 @@ import { Button, Card, Form, Input, Modal, Popconfirm, Space, Table, Tag, messag
 import { PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useScreenShortcuts } from '../components/keyboard';
 
 /**
  * فئات الاصناف — the item categories, on a screen of their own.
@@ -33,6 +34,7 @@ export default function Categories() {
   const [editing, setEditing] = useState<Category | null>(null);
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
+  const searchRef = React.useRef<any>(null);
 
   const load = async () => {
     setLoading(true);
@@ -96,6 +98,15 @@ export default function Categories() {
       message.error(err?.response?.data?.detail?.message || 'تعذر الحذف');
     }
   };
+
+  // F2 adds, F3 finds, F9 saves, Esc closes — the same four everywhere, so the hand learns them
+  // once instead of per screen.
+  useScreenShortcuts({
+    onNew: openCreate,
+    onSearch: () => searchRef.current?.focus(),
+    onSave: open ? () => form.submit() : undefined,
+    onClose: open ? () => setOpen(false) : undefined,
+  });
 
   return (
     <Card
