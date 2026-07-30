@@ -35,6 +35,7 @@ export default function Employees() {
   const [titles, setTitles] = useState<JobTitle[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   const [editing, setEditing] = useState<Employee | null>(null);
@@ -58,6 +59,7 @@ export default function Employees() {
   useEffect(() => {
     load();
     api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(() => {});
+    api.get('/api/v1/warehouses').then((r) => setWarehouses(r.data || [])).catch(() => {});
     api.get('/api/v1/users').then((r) => setUsers(r.data || [])).catch(() => {});
   }, []);
 
@@ -79,6 +81,10 @@ export default function Employees() {
       name: e.name, job_title_id: e.job_title_id, department: e.department, phone: e.phone,
       national_id: e.national_id, salary: e.salary ? Number(e.salary) : undefined,
       branch_id: e.branch_id, user_id: e.user_id, notes: e.notes,
+      warehouse_id: (e as any).warehouse_id, address: (e as any).address,
+      work_start: (e as any).work_start, work_end: (e as any).work_end,
+      collection_commission_pct: (e as any).collection_commission_pct
+        ? Number((e as any).collection_commission_pct) : undefined,
     });
     setHireDate(e.hire_date ? dayjs(e.hire_date) : null);
     setOpen(true);
@@ -153,11 +159,15 @@ export default function Employees() {
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
         columns={[
-          { title: 'الكود', dataIndex: 'code', render: (v: string) => <Tag>{v}</Tag> },
+          // Their column order: رقم · الاسم · المخزن · الفرع · الوظيفة · مخفي.
+          { title: 'رقم', dataIndex: 'code', width: 100, render: (v: string) => <Tag>{v}</Tag> },
           { title: 'الاسم', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
-          { title: 'الوظيفة', dataIndex: 'job_title', render: (v: string) => v || '-' },
-          { title: 'القسم', dataIndex: 'department', render: (v: string) => v || '-' },
-          { title: 'التليفون', dataIndex: 'phone', render: (v: string) => v || '-' },
+          { title: 'المخزن', dataIndex: 'warehouse_id',
+            render: (v: number) => warehouses.find((w) => w.id === v)?.name || '' },
+          { title: 'الفرع', dataIndex: 'branch_id',
+            render: (v: number) => branches.find((b) => b.id === v)?.name || '' },
+          { title: 'الوظيفة', dataIndex: 'job_title', render: (v: string) => v || '' },
+          { title: 'التليفون', dataIndex: 'phone', render: (v: string) => v || '' },
           { title: 'تاريخ التعيين', dataIndex: 'hire_date',
             render: (v: string) => (v ? String(v).slice(0, 10) : '-') },
           { title: 'الراتب', dataIndex: 'salary', align: 'left',
@@ -187,53 +197,71 @@ export default function Employees() {
         title={editing ? `تعديل ${editing.name}` : 'موظف جديد'}
         okText="حفظ" cancelText="إلغاء" destroyOnHidden width={720}
       >
+        {/* Their موظف جديد form, group for group: name/branch/job, then contact, then the
+            working details, then the commission. Ordered as theirs because whoever fills this in
+            has the employee's paper in front of them in that order. */}
         <Row gutter={[8, 8]}>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
             <Input placeholder="الاسم" value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </Col>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
+            <Select allowClear style={{ width: '100%' }} placeholder="الفرع"
+              value={form.branch_id} onChange={(v) => setForm({ ...form, branch_id: v })}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+          </Col>
+          <Col xs={24} md={8}>
             <Select allowClear style={{ width: '100%' }} placeholder="الوظيفة"
               value={form.job_title_id}
               onChange={(v) => setForm({ ...form, job_title_id: v })}
               options={titles.filter((t) => t.active)
                 .map((t) => ({ value: t.id, label: t.name }))} />
           </Col>
+
           <Col xs={24} md={12}>
-            <Input placeholder="القسم" value={form.department}
-              onChange={(e) => setForm({ ...form, department: e.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Input placeholder="التليفون" value={form.phone}
+            <Input placeholder="الهاتف" value={form.phone}
               onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </Col>
           <Col xs={24} md={12}>
-            <Input placeholder="الرقم القومي" value={form.national_id}
-              onChange={(e) => setForm({ ...form, national_id: e.target.value })} />
+            <Input placeholder="العنوان" value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </Col>
-          <Col xs={24} md={12}>
+
+          <Col xs={24} md={6}>
             <DatePicker style={{ width: '100%' }} value={hireDate} onChange={setHireDate}
-              placeholder="تاريخ التعيين" />
+              placeholder="يوم بدايه العمل" />
           </Col>
-          <Col xs={24} md={12}>
-            <InputNumber style={{ width: '100%' }} min={0} placeholder="الراتب"
+          <Col xs={24} md={6}>
+            {/* Free text, not a time picker: what gets written is «٨ ص» as often as a clean time,
+                and a field that refuses that is a field nobody fills. */}
+            <Input placeholder="الحضور" value={form.work_start}
+              onChange={(e) => setForm({ ...form, work_start: e.target.value })} />
+          </Col>
+          <Col xs={24} md={6}>
+            <Input placeholder="انصراف" value={form.work_end}
+              onChange={(e) => setForm({ ...form, work_end: e.target.value })} />
+          </Col>
+          <Col xs={24} md={6}>
+            <InputNumber style={{ width: '100%' }} min={0} placeholder="المرتب"
               value={form.salary} onChange={(v) => setForm({ ...form, salary: v })} />
           </Col>
-          <Col xs={24} md={12}>
-            <Select allowClear style={{ width: '100%' }} placeholder="الفرع"
-              value={form.branch_id} onChange={(v) => setForm({ ...form, branch_id: v })}
-              options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+
+          <Col xs={24} md={8}>
+            <InputNumber style={{ width: '100%' }} min={0} max={100} addonAfter="%"
+              placeholder="عمولة تحصيلات" value={form.collection_commission_pct}
+              onChange={(v) => setForm({ ...form, collection_commission_pct: v })} />
           </Col>
-          <Col xs={24} md={12}>
+          <Col xs={24} md={8}>
+            <Select allowClear style={{ width: '100%' }} placeholder="المخزن"
+              value={form.warehouse_id} onChange={(v) => setForm({ ...form, warehouse_id: v })}
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          </Col>
+          <Col xs={24} md={8}>
             <Select allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
               placeholder="مربوط بمستخدم (اختياري)" value={form.user_id}
               onChange={(v) => setForm({ ...form, user_id: v })}
               options={users.map((u) => ({
                 value: u.id, label: u.full_name || u.username }))} />
-          </Col>
-          <Col xs={24}>
-            <Input.TextArea rows={2} placeholder="ملاحظات" value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </Col>
         </Row>
       </Modal>

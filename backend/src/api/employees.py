@@ -46,6 +46,10 @@ class EmployeeIn(BaseModel):
     warehouse_id: int | None = None
     user_id: int | None = None
     notes: str | None = None
+    address: str | None = None
+    work_start: str | None = None
+    work_end: str | None = None
+    collection_commission_pct: Decimal | None = None
 
 
 class EmployeePatch(BaseModel):
@@ -61,6 +65,10 @@ class EmployeePatch(BaseModel):
     user_id: int | None = None
     notes: str | None = None
     active: bool | None = None
+    address: str | None = None
+    work_start: str | None = None
+    work_end: str | None = None
+    collection_commission_pct: Decimal | None = None
 
 
 class EmployeeOut(BaseModel):
@@ -78,6 +86,10 @@ class EmployeeOut(BaseModel):
     warehouse_id: int | None = None
     user_id: int | None
     active: bool
+    address: str | None = None
+    work_start: str | None = None
+    work_end: str | None = None
+    collection_commission_pct: Decimal | None = None
     notes: str | None
 
 
@@ -87,6 +99,9 @@ def _out(db: Session, e: Employee) -> EmployeeOut:
         id=e.id, code=e.code, name=e.name, job_title_id=e.job_title_id,
         job_title=title.name if title else None, department=e.department, phone=e.phone,
         national_id=e.national_id, hire_date=e.hire_date, salary=e.salary,
+        address=getattr(e, "address", None), work_start=getattr(e, "work_start", None),
+        work_end=getattr(e, "work_end", None),
+        collection_commission_pct=getattr(e, "collection_commission_pct", None),
         branch_id=e.branch_id, warehouse_id=e.warehouse_id,
         user_id=e.user_id, active=e.active, notes=e.notes,
     )
@@ -177,6 +192,8 @@ def create_employee(
         hire_date=body.hire_date, salary=body.salary, branch_id=body.branch_id,
         warehouse_id=body.warehouse_id,
         user_id=body.user_id, notes=body.notes,
+        address=body.address, work_start=body.work_start, work_end=body.work_end,
+        collection_commission_pct=body.collection_commission_pct,
     )
     db.add(emp)
     db.commit()

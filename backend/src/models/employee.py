@@ -15,7 +15,7 @@ from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY
+from src.core.money import MONEY, PCT
 
 
 class JobTitle(Base):
@@ -45,6 +45,16 @@ class Employee(Base):
     national_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     salary: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    address: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    # الحضور / انصراف — the shift this employee is expected to work, stored as plain text rather
+    # than a time type on purpose: what gets written here is «٨ ص» or «٨:٣٠-٤» as often as a clean
+    # time, and a column that refuses those makes people stop filling it in at all.
+    work_start: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    work_end: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # «عمولة تحصيلات» — the percentage this employee earns on what they collect. Per employee, not
+    # per role: two reps on the same round are routinely on different rates, and one rate for the
+    # role would quietly pay one of them wrong every month.
+    collection_commission_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
     # The store this employee works out of — a driver's van, a storekeeper's floor. It is how
