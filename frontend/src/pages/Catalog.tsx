@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Card, Col, Collapse, Empty, Form, Input, InputNumber, Modal, Row, Segmented, Select,
+  Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, InputNumber, Modal, Row,
+  Segmented, Select,
   Space, Statistic, Switch, Table, Tag, message,
 } from 'antd';
 import {
@@ -14,12 +15,17 @@ import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
+// The five negotiated tiers plus the published list price, in the order and wording their form
+// uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
+// order means checking every line instead of typing six numbers. The labels are theirs too — «نص
+// تجاري» is what the salesmen say, and renaming it to «نصف تجاري» makes them stop to translate.
 const PRICE_TIERS: { key: string; label: string }[] = [
-  { key: 'commercial', label: 'تجاري' },
-  { key: 'semi_commercial', label: 'نصف تجاري' },
-  { key: 'wholesale', label: 'جملة' },
-  { key: 'semi_wholesale', label: 'نصف جملة' },
   { key: 'consumer', label: 'مستهلك' },
+  { key: 'commercial', label: 'تجاري' },
+  { key: 'semi_commercial', label: 'نص تجاري' },
+  { key: 'wholesale', label: 'جمله' },
+  { key: 'semi_wholesale', label: 'نص جمله' },
+  { key: 'list_price', label: 'سعر اللسنة' },
 ];
 
 // Modal editor for an item's five sale price tiers (007).
@@ -357,18 +363,53 @@ export default function Catalog() {
 
   const onCreateItem = async (values: any) => {
     try {
+      const tiers = Object.entries(values.prices || {})
+        .map(([tier, row]: [string, any]) => ({
+          tier,
+          price: row?.price ?? 0,
+          discount_pct: row?.discount_pct ?? 0,
+          vat_pct: row?.vat_pct ?? 0,
+        }))
+        // A tier left blank is a tier the item is not sold at, not a tier priced at zero — sending
+        // it as zero would let it be sold for nothing.
+        .filter((t) => Number(t.price) > 0);
+
       const payload = {
         name: values.name,
         kind: values.kind,
         unit_of_measure: values.unit_of_measure,
-        purchase_price: values.kind === 'raw_material' ? values.purchase_price : null,
-        sale_price: values.kind === 'product' ? values.sale_price : null,
-        default_warehouse_id: values.default_warehouse_id ?? null,
         category: values.category ?? null,
+        default_warehouse_id: values.default_warehouse_id ?? null,
+        piece_name: values.piece_name || null,
+        pieces_per_unit: values.pieces_per_unit ?? 1,
+        description: values.description || null,
+        min_stock: values.min_stock ?? null,
+        is_serialized: !!values.is_serialized,
+        is_perishable: !!values.is_perishable,
+        // The consumer price doubles as the reference sale price the rest of the system reads.
+        sale_price: values.prices?.consumer?.price ?? null,
       };
 
-      await api.post('/api/v1/items', { ...payload, is_serialized: !!values.is_serialized });
-      message.success('تم تسجيل الصنف في الكتالوج بنجاح');
+      const created = await api.post('/api/v1/items', payload);
+      const itemId = created.data?.id;
+      if (itemId && tiers.length) {
+        await api.put(`/api/v1/items/${itemId}/prices`, { tiers });
+      }
+      // Barcodes are set as a whole list, not appended one by one — the endpoint owns the set, so
+      // sending them together is the only way both survive.
+      const barcodes = [
+        ...(values.barcode ? [{ barcode: values.barcode }] : []),
+        ...(values.piece_barcode
+          ? [{ barcode: values.piece_barcode, unit: values.piece_name || null }] : []),
+      ];
+      if (itemId && barcodes.length) {
+        await api.put(`/api/v1/items/${itemId}/barcodes`, { barcodes });
+      }
+      // «مخفي» is a state an item is put into, not one it is born in, so it is a separate edit.
+      if (itemId && values.hidden) {
+        await api.patch(`/api/v1/items/${itemId}`, { active: false });
+      }
+      message.success('اتسجّل الصنف');
       setDrawerVisible(false);
       form.resetFields();
       fetchItems();
@@ -697,102 +738,154 @@ export default function Catalog() {
         )}
       </Card>
 
-      {/* Add Item Drawer */}
+      {/* صنف جديد — laid out field for field against their الأصناف form: the same groups in the
+          same order, because someone entering a hundred items a week does it by muscle memory, and
+          a reordered form makes every one of them slower. */}
       <Modal footer={null} centered
-        title="إضافة صنف جديد للكتالوج"
-        width={400}
+        title="صنف جديد"
+        width={860}
         onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" onFinish={onCreateItem} requiredMark={false}>
-          <Form.Item
-            name="name"
-            label="اسم الصنف"
-            rules={[{ required: true, message: 'يرجى إدخال اسم الصنف!' }]}
-          >
-            <Input placeholder="مثال: ماسورة مياه 3/4 بوصة" />
-          </Form.Item>
-
-          <Form.Item
-            name="kind"
-            label="نوع الصنف"
-            rules={[{ required: true, message: 'يرجى تحديد نوع الصنف!' }]}
-          >
-            <Select placeholder="اختر النوع"
-              options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
-          </Form.Item>
-
-          <Form.Item
-            name="unit_of_measure"
-            label="وحدة القياس"
-            rules={[{ required: true, message: 'يرجى إدخال وحدة القياس!' }]}
-          >
-            <Select
-              showSearch
-              placeholder="اختر وحدة القياس (تُدار من الإعدادات)"
-              options={uomOptions.map((o) => ({ value: o.value, label: o.label }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)}
-            />
-          </Form.Item>
-
-          <Form.Item name="category" label="الفئة"
-            extra="تُدار قائمة الفئات من الإعدادات">
-            <Select allowClear showSearch placeholder="اختر فئة الصنف (اختياري)"
-              options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
-          </Form.Item>
-
-          <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
-            <Select allowClear placeholder="اختر المخزن الافتراضي (اختياري)"
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-          </Form.Item>
-
-          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.kind !== curr.kind}>
-            {({ getFieldValue }) => {
-              const kind = getFieldValue('kind');
-              if (kind === 'product') {
-                return (
-                  <Form.Item
-                    name="sale_price"
-                    label="سعر البيع المرجعي (ج.م)"
-                    rules={[{ required: true, message: 'يرجى إدخال سعر البيع!' }]}
-                  >
-                    <Input type="number" min={0} step="0.01" placeholder="0.00" />
-                  </Form.Item>
-                );
-              } else if (kind === 'raw_material') {
-                return (
-                  <Form.Item
-                    name="purchase_price"
-                    label="سعر الشراء المرجعي (ج.م)"
-                    rules={[{ required: true, message: 'يرجى إدخال سعر الشراء!' }]}
-                  >
-                    <Input type="number" min={0} step="0.01" placeholder="0.00" />
-                  </Form.Item>
-                );
-              }
-              return null;
-            }}
-          </Form.Item>
-
-          <Form.Item noStyle shouldUpdate={(prev, curr) => prev.kind !== curr.kind}>
-            {({ getFieldValue }) => getFieldValue('kind') === 'product' ? (
-              <Form.Item name="is_serialized" label="صنف بأرقام تسلسلية؟" valuePropName="checked"
-                extra="عند التفعيل يلزم إدخال الأرقام التسلسلية عند الاستلام والبيع">
-                <Switch checkedChildren="نعم" unCheckedChildren="لا" />
+        <Form form={form} layout="vertical" onFinish={onCreateItem} requiredMark={false}
+          initialValues={{ pieces_per_unit: 1, kind: 'product' }}>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="category" label="الفئه">
+                <Select allowClear showSearch placeholder="اختر الفئة"
+                  options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
               </Form.Item>
-            ) : null}
+            </Col>
+            <Col span={16}>
+              <Form.Item name="name" label="الاسم"
+                rules={[{ required: true, message: 'اكتب اسم الصنف' }]}>
+                <Input placeholder="مثال: ماسورة مياه ٣/٤ بوصة" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* اسم الوحدة · عدد القطع · اسم القطعة — the packing, their triple, in their order. */}
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="unit_of_measure" label="اسم الوحدة"
+                rules={[{ required: true, message: 'اختر الوحدة' }]}>
+                <Select showSearch placeholder="وحده"
+                  options={uomOptions.map((o) => ({ value: o.value, label: o.label }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="pieces_per_unit" label="عدد القطع">
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="piece_name" label="اسم القطعة">
+                <Input placeholder="قطعه" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="barcode" label="باركود" extra="سيبه فاضي والنظام يولّده">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="kind" label="تصنيف" rules={[{ required: true }]}>
+                <Select options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="piece_barcode" label="باركود القطعة">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Space size={24} style={{ marginBottom: 16 }}>
+            <Form.Item name="hidden" valuePropName="checked" noStyle>
+              <Checkbox>مخفي</Checkbox>
+            </Form.Item>
+            <Form.Item name="is_perishable" valuePropName="checked" noStyle>
+              <Checkbox>يستخدم صلاحية</Checkbox>
+            </Form.Item>
+            <Form.Item name="is_serialized" valuePropName="checked" noStyle>
+              <Checkbox>يستخدم سيريال نمبر</Checkbox>
+            </Form.Item>
+          </Space>
+
+          {/* Six tiers down, four columns across, in their order. «السعر الصافي» is computed and
+              read-only: it is the price after its own discount and VAT — the number actually quoted
+              — and letting it be typed is how it stops agreeing with the three fields beside it. */}
+          <Divider orientation="right" style={{ margin: '8px 0' }}>الأسعار</Divider>
+          <Row gutter={8} style={{ marginBottom: 4, color: '#888' }}>
+            <Col span={4} />
+            <Col span={5}>السعر</Col>
+            <Col span={5}>خصم</Col>
+            <Col span={5}>ض.م</Col>
+            <Col span={5}>السعر الصافي</Col>
+          </Row>
+          {PRICE_TIERS.map((tier) => (
+            <Row gutter={8} key={tier.key} align="middle" style={{ marginBottom: 6 }}>
+              <Col span={4}>{tier.label}</Col>
+              <Col span={5}>
+                <Form.Item name={['prices', tier.key, 'price']} style={{ marginBottom: 0 }}>
+                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0" />
+                </Form.Item>
+              </Col>
+              <Col span={5}>
+                <Form.Item name={['prices', tier.key, 'discount_pct']} style={{ marginBottom: 0 }}>
+                  <InputNumber min={0} max={100} step={0.01} style={{ width: '100%' }} placeholder="0" />
+                </Form.Item>
+              </Col>
+              <Col span={5}>
+                <Form.Item name={['prices', tier.key, 'vat_pct']} style={{ marginBottom: 0 }}>
+                  <InputNumber min={0} max={100} step={0.01} style={{ width: '100%' }} placeholder="0" />
+                </Form.Item>
+              </Col>
+              <Col span={5}>
+                <Form.Item shouldUpdate style={{ marginBottom: 0 }}>
+                  {({ getFieldValue }) => {
+                    const row = getFieldValue(['prices', tier.key]) || {};
+                    const price = Number(row.price || 0);
+                    const net = price * (1 - Number(row.discount_pct || 0) / 100)
+                      * (1 + Number(row.vat_pct || 0) / 100);
+                    return (
+                      <InputNumber value={Number(net.toFixed(2))} disabled
+                        style={{ width: '100%' }} />
+                    );
+                  }}
+                </Form.Item>
+              </Col>
+            </Row>
+          ))}
+
+          <Row gutter={12} style={{ marginTop: 16 }}>
+            <Col span={8}>
+              <Form.Item name="min_stock" label="حد اعادة الطلب">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
+                <Select allowClear placeholder="اختياري"
+                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item name="description" label="وصف">
+            <Input.TextArea rows={3} maxLength={500} />
           </Form.Item>
 
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                حفظ وإضافة
-              </Button>
-              <Button onClick={() => setDrawerVisible(false)}>إلغاء</Button>
-            </Space>
-          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit">حفظ</Button>
+            <Button onClick={() => setDrawerVisible(false)}>تراجع</Button>
+          </Space>
         </Form>
       </Modal>
 
