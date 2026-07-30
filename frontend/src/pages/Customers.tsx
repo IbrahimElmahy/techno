@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Statistic, Switch, Table, Tag, message,
+  Button, Card, Checkbox, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space,
+  Statistic, Table, Tag, message,
 } from 'antd';
 import {
   UserAddOutlined, PlusOutlined, MinusCircleOutlined,
@@ -27,6 +28,14 @@ interface CustomerRecord {
   default_price_tier: string | null;
   active: boolean;
   balance?: string | null;   // receivable balance, sent with the list (one grouped query)
+  // Card fields read off their العملاء form (031).
+  branch_id: number | null;
+  email: string | null;
+  tax_number: string | null;
+  commercial_register: string | null;
+  discount_pct: string | null;
+  vat_pct: string | null;
+  is_cash: boolean;
 }
 
 interface Filters {
@@ -100,6 +109,7 @@ export default function Customers() {
   const [reps, setReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
   const [governorates, setGovernorates] = useState<Governorate[]>([]);
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [filters, setFilters] = useState<Filters>({});
@@ -150,14 +160,16 @@ export default function Customers() {
 
   const fetchLookups = async () => {
     try {
-      const [usersRes, territoriesRes, governoratesRes] = await Promise.all([
+      const [usersRes, territoriesRes, governoratesRes, branchesRes] = await Promise.all([
         api.get('/api/v1/users'),
         api.get('/api/v1/territories'),
         api.get('/api/v1/governorates'),
+        api.get('/api/v1/branches'),
       ]);
       setReps(usersRes.data.filter((u: any) => u.role === 'sales_rep'));
       setTerritories(territoriesRes.data);
       setGovernorates(governoratesRes.data);
+      setBranches(branchesRes.data);
     } catch (err) {
       console.error(err);
     }
@@ -174,13 +186,23 @@ export default function Customers() {
 
   const onCreateCustomer = async (values: any) => {
     try {
-      await api.post('/api/v1/customers', {
-        ...values,
+      const { hidden, ...rest } = values;
+      const created = await api.post('/api/v1/customers', {
+        ...rest,
         governorate_id: values.governorate_id ?? null,
         markaz: values.markaz ?? null,
         address: values.address ?? null,
+        // Left blank stays blank, not zero: «مفيش اتفاق» and «الاتفاق صفر» are different facts,
+        // and the server keeps them apart only if the screen does too.
+        discount_pct: values.discount_pct ?? null,
+        vat_pct: values.vat_pct ?? null,
+        is_cash: !!values.is_cash,
         phones: cleanPhones(values.phones),
       });
+      // «مخفي» is a state a customer is put into, not one he is born in, so it is a separate edit.
+      if (hidden && created.data?.id) {
+        await api.patch(`/api/v1/customers/${created.data.id}`, { active: false });
+      }
       message.success('تم تسجيل العميل بنجاح');
       setDrawerVisible(false);
       form.resetFields();
@@ -229,44 +251,81 @@ export default function Customers() {
     });
   };
 
+  // Their seven columns, in their order — `رقم · الفرع · الاسم · الهاتف · مندوب · محافظه ·
+  // مدينة` — and ours after them. Theirs leads with the branch, which we had the data for only
+  // after this screen was rebuilt; ours led with a code and put the geography last.
   const columns = [
     {
-      title: 'كود العميل',
+      title: 'رقم',
       dataIndex: 'code',
       key: 'code',
+      width: 120,
       render: (code: string) => <Tag color="blue">{code}</Tag>,
     },
     {
-      title: 'اسم العميل',
+      title: 'الفرع',
+      dataIndex: 'branch_id',
+      key: 'branch_id',
+      width: 140,
+      render: (bId: number | null) => {
+        const branch = branches.find((b) => b.id === bId);
+        return branch ? branch.name : '-';
+      },
+    },
+    {
+      title: 'الاسم',
       dataIndex: 'name',
       key: 'name',
+      width: 200,
       render: (name: string) => <span style={{ fontWeight: 600 }}>{name}</span>,
     },
     {
-      title: 'نوع العميل',
-      dataIndex: 'customer_type',
-      key: 'customer_type',
-      render: (type: string) => typeLabels[type] || TYPE_LABELS[type] || type,
-    },
-    {
-      title: 'رقم الهاتف',
+      title: 'الهاتف',
       dataIndex: 'phone',
       key: 'phone',
+      width: 130,
       render: (phone: string | null) => phone || '-',
     },
     {
-      title: 'المندوب المسؤول',
+      title: 'مندوب',
       dataIndex: 'rep_id',
       key: 'rep_id',
+      width: 150,
       render: (repId: number) => {
         const rep = reps.find((r) => r.id === repId);
         return rep ? rep.full_name : `مندوب #${repId}`;
       },
     },
     {
+      title: 'محافظه',
+      dataIndex: 'governorate_id',
+      key: 'governorate_id',
+      width: 120,
+      render: (gId: number | null) => {
+        const gov = governorates.find((g) => g.id === gId);
+        return gov ? gov.name : '-';
+      },
+    },
+    {
+      title: 'مدينة',
+      dataIndex: 'markaz',
+      key: 'markaz',
+      width: 120,
+      render: (v: string | null) => v || '-',
+    },
+    // ---- ours, kept after theirs ----
+    {
+      title: 'تصنيف',
+      dataIndex: 'customer_type',
+      key: 'customer_type',
+      width: 130,
+      render: (type: string) => typeLabels[type] || TYPE_LABELS[type] || type,
+    },
+    {
       title: 'المنطقة',
       dataIndex: 'territory_id',
       key: 'territory_id',
+      width: 130,
       render: (tId: number) => {
         const territory = territories.find((t) => t.id === tId);
         return territory ? territory.name : `منطقة #${tId}`;
@@ -276,18 +335,31 @@ export default function Customers() {
       title: 'الفئة السعرية',
       dataIndex: 'default_price_tier',
       key: 'default_price_tier',
+      width: 140,
       render: (t: string | null) => t ? <Tag color="geekblue">{TIER_LABELS[t] || t}</Tag> : <Tag>مستهلك (افتراضي)</Tag>,
     },
     {
       title: 'رصيد المديونية (الذمة)',
       key: 'balance',
+      width: 160,
       render: (_: any, record: CustomerRecord) => <CustomerBalance value={record.balance} />,
       sorter: (a: CustomerRecord, b: CustomerRecord) =>
         Number(a.balance || 0) - Number(b.balance || 0),
     },
     {
+      // «مخفي», not «الحالة», for the same reason الفئات and الأصناف were matched to their wording.
+      title: 'مخفي',
+      dataIndex: 'active',
+      key: 'hidden',
+      width: 90,
+      render: (active: boolean) =>
+        active ? <span style={{ color: '#bbb' }}>—</span> : <Tag color="red">مخفي</Tag>,
+    },
+    {
       title: 'الإجراءات',
       key: 'actions',
+      width: 180,
+      fixed: 'right' as const,
       // Row clicks open the customer file, so the buttons must not bubble up to it.
       render: (_: any, record: CustomerRecord) => (
         <Space size="middle" onClick={(e) => e.stopPropagation()}>
@@ -307,7 +379,7 @@ export default function Customers() {
   return (
     <div>
       <Card
-        title="إدارة حسابات العملاء والذمم"
+        title="العملاء"
         extra={
           <Button type="primary" icon={<UserAddOutlined />} onClick={() => setDrawerVisible(true)}>
             إضافة عميل
@@ -401,6 +473,7 @@ export default function Customers() {
           columns={columns}
           rowKey="id"
           loading={loading}
+          scroll={{ x: 'max-content' }}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}` }}
           // The whole row opens the customer file — no dedicated button needed.
           onRow={(record) => ({
@@ -410,100 +483,150 @@ export default function Customers() {
         />
       </Card>
 
-      {/* Add Customer Drawer */}
+      {/* عميل جديد — laid out field for field against their العملاء form: the same groups, three
+          to a row, in their order. Whoever registers customers off a paper application reads down
+          it in that order, and a form that asks in a different one turns typing into searching. */}
       <Modal footer={null} centered
-        title="إضافة عميل جديد"
-        width={450}
+        title="عميل جديد"
+        width={860}
         onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" onFinish={onCreateCustomer} requiredMark={false}>
-          <Form.Item
-            name="name"
-            label="اسم العميل (الكامل)"
-            rules={[{ required: true, message: 'يرجى إدخال اسم العميل!' }]}
-          >
-            <Input placeholder="مثال: شركة النور للسباكة" />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="branch_id" label="الفرع">
+                <Select allowClear showSearch placeholder="اختر الفرع"
+                  options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="rep_id" label="مندوب"
+                rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
+                <Select showSearch placeholder="اختر المندوب"
+                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="default_price_tier" label="السعر الافتراضي"
+                extra="تُستخدم تلقائياً على فواتيره (الافتراضي: مستهلك)">
+                <Select allowClear placeholder="مستهلك (افتراضي)"
+                  options={Object.entries(TIER_LABELS).map(([k, l]) => ({ value: k, label: l }))} />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item
-            name="customer_type"
-            label="تصنيف العميل"
-            rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}
-          >
-            <Select placeholder="اختر تصنيف العميل"
-              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="name" label="الاسم"
+                rules={[{ required: true, message: 'يرجى إدخال اسم العميل!' }]}>
+                <Input placeholder="مثال: شركة النور للسباكة" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="email" label="البريد الالكترونى"
+                rules={[{ type: 'email', message: 'بريد غير صحيح' }]}>
+                <Input placeholder="nour@example.com" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="tax_number" label="رقم الضريبي">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item
-            name="phone"
-            label="رقم الهاتف"
-          >
-            <Input placeholder="مثال: 01000000000" />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="commercial_register" label="السجل التجاري">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="address" label="العنوان">
+                <Input placeholder="مثال: 22 شارع سعد زغلول، بجوار مسجد النور" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="phone" label="الهاتف">
+                <Input placeholder="مثال: 01000000000" />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <ExtraPhonesList />
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="customer_type" label="تصنيف"
+                rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}>
+                <Select placeholder="اختر التصنيف"
+                  options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="governorate_id" label="محافظات">
+                <Select allowClear showSearch placeholder="اختر المحافظة"
+                  options={governorates.map((g) => ({ value: g.id, label: g.name }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="markaz" label="مدن">
+                <Input placeholder="مثال: دمنهور" />
+              </Form.Item>
+            </Col>
+          </Row>
 
-          <Form.Item name="governorate_id" label="المحافظة">
-            <Select allowClear showSearch placeholder="اختر المحافظة"
-              options={governorates.map((g) => ({ value: g.id, label: g.name }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
-          </Form.Item>
+          {/* خصم and ض.م are left EMPTY by default, not zero: empty means nothing was agreed and
+              the item's own rate applies, zero means an agreed rate of nothing. Pre-filling them
+              with 0 would silently turn every customer into one who negotiated a zero rate. */}
+          <Row gutter={12}>
+            <Col span={4}>
+              <Form.Item name="discount_pct" label="خصم"
+                extra="سيبه فاضي = مفيش اتفاق">
+                <InputNumber min={0} max={100} step={0.01} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={4}>
+              <Form.Item name="vat_pct" label="ض.م">
+                <InputNumber min={0} max={100} step={0.01} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <Space size={24} style={{ marginTop: 30 }}>
+                <Form.Item name="is_cash" valuePropName="checked" noStyle>
+                  <Checkbox>نقدي</Checkbox>
+                </Form.Item>
+                <Form.Item name="hidden" valuePropName="checked" noStyle>
+                  <Checkbox>مخفي</Checkbox>
+                </Form.Item>
+              </Space>
+            </Col>
+          </Row>
 
-          <Form.Item name="markaz" label="المركز">
-            <Input placeholder="مثال: مركز طنطا" />
-          </Form.Item>
+          {/* Ours, kept after theirs: their form has no territory and no room for a second
+              number, and dropping either would lose data we already hold. */}
+          <Divider orientation="right" style={{ margin: '8px 0' }}>إضافات تكنو ثيرم</Divider>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item name="territory_id" label="المنطقة الجغرافية"
+                rules={[{ required: true, message: 'يرجى تحديد المنطقة!' }]}>
+                <Select showSearch placeholder="اختر المنطقة"
+                  options={territories.map((t) => ({ value: t.id, label: t.name }))}
+                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <ExtraPhonesList />
+            </Col>
+          </Row>
 
-          <Form.Item name="address" label="العنوان">
-            <Input.TextArea rows={3} placeholder="مثال: 22 شارع سعد زغلول، بجوار مسجد النور" />
-          </Form.Item>
-
-          <Form.Item
-            name="rep_id"
-            label="مندوب المبيعات المسؤول"
-            rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}
-          >
-            <Select placeholder="اختر المندوب لمتابعة العميل">
-              {reps.map((r) => (
-                <Select.Option key={r.id} value={r.id}>
-                  {r.full_name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="territory_id"
-            label="المنطقة الجغرافية"
-            rules={[{ required: true, message: 'يرجى تحديد المنطقة!' }]}
-          >
-            <Select placeholder="اختر المنطقة">
-              {territories.map((t) => (
-                <Select.Option key={t.id} value={t.id}>
-                  {t.name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="default_price_tier" label="الفئة السعرية الافتراضية"
-            extra="تُستخدم تلقائياً على فواتير هذا العميل (الافتراضي: مستهلك)">
-            <Select allowClear placeholder="مستهلك (افتراضي)">
-              {Object.entries(TIER_LABELS).map(([k, l]) => (
-                <Select.Option key={k} value={k}>{l}</Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item style={{ marginTop: 24 }}>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                تسجيل العميل
-              </Button>
-              <Button onClick={() => setDrawerVisible(false)}>إلغاء</Button>
-            </Space>
-          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit">حفظ</Button>
+            <Button onClick={() => setDrawerVisible(false)}>تراجع</Button>
+          </Space>
         </Form>
       </Modal>
 

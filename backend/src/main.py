@@ -155,6 +155,15 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:
+    # NULL is «nothing agreed», 0 is «agreed, and it is zero».
+    ("customer", "branch_id", "BIGINT"),
+    ("customer", "email", "VARCHAR(160)"),
+    ("customer", "tax_number", "VARCHAR(40)"),
+    ("customer", "commercial_register", "VARCHAR(40)"),
+    ("customer", "discount_pct", "DECIMAL(5,2)"),
+    ("customer", "vat_pct", "DECIMAL(5,2)"),
+    ("customer", "is_cash", "BOOLEAN DEFAULT FALSE NOT NULL"),
     # Employee card fields read off their الموظفين form.
     ("employee", "address", "VARCHAR(240)"),
     ("employee", "work_start", "VARCHAR(20)"),

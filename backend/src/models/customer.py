@@ -13,6 +13,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
+from src.core.money import PCT
 from src.models.catalog import PriceTier
 
 
@@ -43,6 +44,20 @@ class Customer(Base):
     territory_id: Mapped[int] = mapped_column(ForeignKey("territory.id"), nullable=False)
     # Default sale price tier (007); NULL resolves to the consumer tier.
     default_price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
+    # ---- card fields read off their العملاء form (031) ----
+    # The branch the customer belongs to. Nullable: it is the first column on their list, but an
+    # existing customer recorded before the field existed is not invalid for lacking one.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    tax_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    commercial_register: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # A standing allowance and VAT rate for this customer. NULL is not 0: NULL means "nothing
+    # agreed, use whatever the line/item says", while 0 means "agreed, and it is zero" — and a
+    # customer who negotiated 0% is a different fact from one nobody has negotiated with.
+    discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    vat_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    # نقدي — a walk-in who pays on the spot rather than running an account.
+    is_cash: Mapped[bool] = mapped_column(default=False, nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

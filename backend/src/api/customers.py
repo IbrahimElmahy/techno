@@ -26,7 +26,22 @@ from src.services.customer_service import CustomerError
 router = APIRouter(tags=["customers"], prefix="/customers")
 
 
-class CustomerCreate(BaseModel):
+# The card fields read off their العملاء form (031). Shared by create and update so the two can
+# never drift apart — a field you can set on creation and not afterwards is a field that quietly
+# becomes uneditable.
+class _CustomerCard(BaseModel):
+    branch_id: int | None = None
+    email: str | None = None
+    tax_number: str | None = None
+    commercial_register: str | None = None
+    # NULL is «nothing agreed»; 0 is «agreed, and it is zero». Keeping them distinct is the whole
+    # point of leaving these nullable.
+    discount_pct: Decimal | None = None
+    vat_pct: Decimal | None = None
+    is_cash: bool | None = None
+
+
+class CustomerCreate(_CustomerCard):
     name: str
     customer_type: str  # free string (013) — validated against the lookup list, not an enum
     rep_id: int
@@ -39,7 +54,7 @@ class CustomerCreate(BaseModel):
     phones: list[str] | None = None       # (v4) extra numbers
 
 
-class CustomerUpdate(BaseModel):
+class CustomerUpdate(_CustomerCard):
     name: str | None = None
     phone: str | None = None
     customer_type: str | None = None
@@ -65,6 +80,14 @@ class CustomerOut(BaseModel):
     markaz: str | None = None
     address: str | None = None
     phones: list[str] = []
+    # Card fields (031) — their العملاء form.
+    branch_id: int | None = None
+    email: str | None = None
+    tax_number: str | None = None
+    commercial_register: str | None = None
+    discount_pct: Decimal | None = None
+    vat_pct: Decimal | None = None
+    is_cash: bool = False
     # Receivable balance — filled on the list endpoint (one grouped query, not per row).
     balance: Decimal | None = None
 
@@ -93,7 +116,25 @@ def _out(c: Customer, db: Session | None = None) -> CustomerOut:
         phone=c.phone, rep_id=c.rep_id, territory_id=c.territory_id,
         default_price_tier=c.default_price_tier, active=c.active,
         governorate_id=c.governorate_id, markaz=c.markaz, address=c.address, phones=extra,
+        branch_id=c.branch_id, email=c.email, tax_number=c.tax_number,
+        commercial_register=c.commercial_register, discount_pct=c.discount_pct,
+        vat_pct=c.vat_pct, is_cash=c.is_cash,
     )
+
+
+def _apply_card(c: Customer, body: _CustomerCard) -> None:
+    """Copy the العملاء card fields onto the customer, skipping the ones not sent.
+
+    Omitted stays omitted: a PATCH that names only the phone must not blank the tax number. That
+    does mean these fields cannot be cleared back to NULL through this route — clearing a
+    negotiated discount is a different act from not mentioning it, and it deserves its own
+    deliberate call rather than being a side effect of leaving a box empty.
+    """
+    for field in ("branch_id", "email", "tax_number", "commercial_register",
+                  "discount_pct", "vat_pct", "is_cash"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(c, field, val)
 
 
 def _scope_filter(stmt, current: CurrentUser):
@@ -167,6 +208,7 @@ def create_customer(
     c.governorate_id = body.governorate_id
     c.markaz = body.markaz
     c.address = body.address
+    _apply_card(c, body)
     db.flush()
     contact_service.set_phones(db, PhoneOwner.customer, c.id, body.phones)
     db.commit()
@@ -206,6 +248,7 @@ def update_customer(
         val = getattr(body, field)
         if val is not None:
             setattr(c, field, val)
+    _apply_card(c, body)
     contact_service.set_phones(db, PhoneOwner.customer, c.id, body.phones)
     db.flush()
     audit_service.record(db, action="customer.update", actor_user_id=current.id,
