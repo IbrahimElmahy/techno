@@ -258,6 +258,7 @@ def create_order(
     location_id: int,
     bom_id: int | None = None,
     actor_user_id: int,
+    components=None,         # (031) explicit [(item_id, quantity)] for انتاج حر; None = use recipe
     resources=None,          # (014) override list of (kind, name, quantity, rate); None = use recipe
     wastes=None,             # (014) {component_item_id: waste_quantity} recorded per line
     production_date=None,    # the day production happened; defaults to today
@@ -265,7 +266,17 @@ def create_order(
     work_order_ref: str | None = None,   # «امر تشغيل» — the shop-floor docket, free text
     notes: str | None = None,
 ) -> ManufacturingOrder:
-    """Consume the product's recipe components (scaled) and produce the product in one document.
+    """Consume components and produce the product in one document.
+
+    Components come from the product's recipe, scaled to the quantity produced — unless the caller
+    passes `components`, which is **انتاج حر**: production that happened without a stored recipe, so
+    the person states what actually went in. Same document, same reversal, `bom_id` left NULL
+    because there was no recipe; a fabricated one would be a recipe nobody wrote and everyone
+    would later find in the recipe list.
+
+    Free production is one call on purpose. Consuming raw materials through several requests and
+    producing through another leaves stock spent with nothing made if any of them fails, and that
+    half-state is exactly what a document boundary exists to prevent.
 
     Inventory routing (014): each component is pulled from its own default warehouse and the product
     is produced into its default warehouse (falling back to the order's location). Cost = materials
@@ -278,22 +289,44 @@ def create_order(
     product = db.get(Item, product_id)
     if product is None or product.kind != ItemKind.product:
         raise ManufacturingError("A manufacturing order produces a product.")
-    bom = db.get(Bom, bom_id) if bom_id is not None else active_bom_for(db, product_id)
-    if bom is None:
-        raise ManufacturingError("No recipe found for this product. Create a recipe first.")
-    if bom.product_id != product_id:
-        raise ManufacturingError("Recipe does not belong to this product.")
-    if not bom.components:
-        raise ManufacturingError("Recipe has no components.")
+    free = components is not None
+    if free:
+        bom = None
+        # Stated quantities are what actually went in, so there is nothing to scale — scaling a
+        # figure somebody measured would silently change it.
+        scale = None
+        comp_rows = [(int(iid), to_qty(q)) for iid, q in components]
+        if not comp_rows:
+            raise ManufacturingError("Free production needs at least one component.")
+        if any(q <= to_qty(0) for _, q in comp_rows):
+            raise ManufacturingError("Component quantity must be positive.")
+        if len({iid for iid, _ in comp_rows}) != len(comp_rows):
+            # Two rows for one item would each post their own movement and each be reversed, so
+            # the total is right by luck and every per-line reading of it is wrong.
+            raise ManufacturingError("An item can appear only once in a free production order.")
+    else:
+        bom = db.get(Bom, bom_id) if bom_id is not None else active_bom_for(db, product_id)
+        if bom is None:
+            raise ManufacturingError("No recipe found for this product. Create a recipe first.")
+        if bom.product_id != product_id:
+            raise ManufacturingError("Recipe does not belong to this product.")
+        if not bom.components:
+            raise ManufacturingError("Recipe has no components.")
+        scale = production.scale_factor(bom.output_quantity, qty)
+        comp_rows = [
+            (c.item_id, production.consumed_quantity(
+                c.quantity, scale, getattr(c, "unit_factor", 1) or 1))
+            for c in bom.components
+        ]
 
-    scale = production.scale_factor(bom.output_quantity, qty)
     wastes = wastes or {}
 
     # Defaulted here rather than in the column so an order always carries a real production day —
     # a NULL would push every report that groups by day into guessing.
     production_date = production_date or date.today()
     order = ManufacturingOrder(
-        document_number=_order_doc_number(db), product_id=product_id, bom_id=bom.id,
+        document_number=_order_doc_number(db), product_id=product_id,
+        bom_id=bom.id if bom is not None else None,
         location_kind=location_kind, location_id=location_id, quantity=qty,
         unit_cost=ZERO, total_cost=ZERO, material_cost=ZERO, resource_cost=ZERO,
         stock_movement_id=None, actor_user_id=actor_user_id,
@@ -305,28 +338,26 @@ def create_order(
 
     # --- Materials: route each component to its own warehouse, consume, cost ---
     material_cost = ZERO
-    for comp in bom.components:
-        # `comp.quantity` is in the unit the recipe was written in; the factor turns it into the
-        # base units stock actually moves in.
-        consumed = production.consumed_quantity(
-            comp.quantity, scale, getattr(comp, "unit_factor", 1) or 1)
-        raw = db.get(Item, comp.item_id)
+    for comp_item_id, consumed in comp_rows:
+        raw = db.get(Item, comp_item_id)
+        if raw is None:
+            raise ManufacturingError("Component item not found.")
         wk, wid = production.resolve_warehouse(
             raw.default_warehouse_id if raw else None, location_kind, location_id)
         unit_cost = to_money(raw.purchase_price) if raw and raw.purchase_price is not None else ZERO
         line_cost = production.line_cost(consumed, unit_cost)
         material_cost += line_cost
-        waste_qty = to_qty(wastes.get(comp.item_id, 0))
+        waste_qty = to_qty(wastes.get(comp_item_id, 0))
         if waste_qty < to_qty(0) or waste_qty > consumed:
             raise ManufacturingError("Waste quantity must be between 0 and the consumed quantity.")
         mv = stock_service.post_movement(
-            db, item_id=comp.item_id, location_kind=wk, location_id=wid,
+            db, item_id=comp_item_id, location_kind=wk, location_id=wid,
             movement_type="consumption_out", direction=StockDirection.out, quantity=consumed,
             actor_user_id=actor_user_id, source_doc_type="manufacturing_order", source_doc_id=order.id,
         )
         order.consumptions.append(
             ManufacturingOrderConsumption(
-                item_id=comp.item_id, quantity=consumed, unit_cost=unit_cost, line_cost=line_cost,
+                item_id=comp_item_id, quantity=consumed, unit_cost=unit_cost, line_cost=line_cost,
                 waste_quantity=waste_qty,
                 warehouse_id=wid if wk == LocationKind.warehouse else None,
                 stock_movement_id=mv.id,
@@ -335,8 +366,12 @@ def create_order(
 
     # --- Resources: recipe standard (scaled) unless the caller overrides per order ---
     if resources is None:
-        res_lines = [(r.kind.value, r.name, to_qty(Decimal(r.quantity) * scale), to_money(r.rate))
-                     for r in bom.resources]
+        # Free production has no recipe to read a standard off, so an order that states no labour
+        # or machine time costs materials only rather than borrowing another product's figures.
+        res_lines = [] if bom is None else [
+            (r.kind.value, r.name, to_qty(Decimal(r.quantity) * scale), to_money(r.rate))
+            for r in bom.resources
+        ]
     else:
         res_lines = [(kind, name, to_qty(q), to_money(rate)) for kind, name, q, rate in resources]
     resource_cost = ZERO

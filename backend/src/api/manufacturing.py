@@ -253,11 +253,19 @@ class OrderWasteIn(BaseModel):
     quantity: Decimal
 
 
+class OrderComponentIn(BaseModel):
+    item_id: int
+    quantity: Decimal
+
+
 class OrderIn(BaseModel):
     product_id: int
     quantity: Decimal
     location: LocationIn
     bom_id: int | None = None
+    # (031) انتاج حر — production that happened without a stored recipe, so the components are
+    # stated rather than derived. Omit for a recipe-driven order; the two are the same document.
+    components: list[OrderComponentIn] | None = None
     resources: list[OrderResourceIn] | None = None  # override recipe resources; omit = use recipe
     wastes: list[OrderWasteIn] = []                  # per-component waste recorded on the order
     # Document fields: the day production happened (defaults to today), the branch, the shop-floor
@@ -369,6 +377,8 @@ def create_order(
             db, product_id=body.product_id, quantity=body.quantity,
             location_kind=body.location.location_kind, location_id=body.location.location_id,
             bom_id=body.bom_id, actor_user_id=current.id,
+            components=([(c.item_id, c.quantity) for c in body.components]
+                        if body.components is not None else None),
             resources=([(r.kind, r.name, r.quantity, r.rate) for r in body.resources]
                        if body.resources is not None else None),
             wastes={w.item_id: w.quantity for w in body.wastes},
