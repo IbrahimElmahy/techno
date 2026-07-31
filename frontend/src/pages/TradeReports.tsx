@@ -5,6 +5,7 @@ import {
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink, { DocKind } from '../components/DocumentLink';
 
 // Only the kinds that have a screen able to show them; a purchase return has no screen of its
@@ -49,10 +50,58 @@ interface Totals {
   lines_without_cost: number | null; document_count: number;
 }
 
+
+/**
+ * The fifteen reports their menu lists, each as (which documents · what grain · grouped by what).
+ *
+ * Their system has fifteen separate report screens; ours has one engine that answers all of them,
+ * which was the right way to BUILD it and the wrong way to SHIP it. Somebody who has run «ارباح
+ * اصناف» every Sunday for six years does not want a screen with three switches and a note saying
+ * their report is combination four — they want «ارباح اصناف». So the menu carries their fifteen
+ * names, each opens in its own tab under that name, and the switches arrive already set.
+ *
+ * The switches stay live. Once here, the whole engine is still reachable — a question their system
+ * could not ask is one switch away instead of a report nobody ever built. Moving one just says so
+ * beside the title, so the person knows they are no longer looking at the report they opened.
+ */
+export interface ReportView {
+  label: string;
+  docType: DocType;
+  level: Level;
+  groupBy: GroupBy;
+  /** Their route, kept so this stays auditable against the map. */
+  a5: string;
+}
+
+export const REPORT_VIEWS: Record<string, ReportView> = {
+  // تقارير مبيعات
+  'sales-invoices': { label: 'مبيعات فواتير', docType: 'sale', level: 'document', groupBy: 'none', a5: '/sales/invoice-search' },
+  'sales-invoices-grouped': { label: 'مجمع مبيعات فواتير', docType: 'sale', level: 'document', groupBy: 'party', a5: '/sales/invoice-grouped' },
+  'sales-items': { label: 'مبيعات اصناف', docType: 'sale', level: 'line', groupBy: 'none', a5: '/sales/itemsearch' },
+  'sales-items-grouped': { label: 'مبيعات اصناف مجمعة', docType: 'sale', level: 'line', groupBy: 'item', a5: '/sales/item-grouped' },
+  'invoice-profits': { label: 'ارباح فواتير', docType: 'sale', level: 'document', groupBy: 'none', a5: '/invoicesprofits' },
+  'item-profits': { label: 'ارباح اصناف', docType: 'sale', level: 'line', groupBy: 'item', a5: '/sales/itemprofits' },
+  // تقارير مردود مبيعات
+  'sales-return-items': { label: 'مرتجعات أصناف المبيعات', docType: 'sale_return', level: 'line', groupBy: 'item', a5: '/salesreturns/itemsearch' },
+  // هامش مبيعات — the same lines, gathered by the thing being judged.
+  'margin-by-store': { label: 'هامش مبيعات مخازن', docType: 'sale', level: 'line', groupBy: 'warehouse', a5: '/sales/reports/store-margin' },
+  'margin-by-customer': { label: 'هامش مبيعات عملاء', docType: 'sale', level: 'line', groupBy: 'party', a5: '/sales/reports/customer-margin' },
+  // تقارير مشتريات
+  'purchase-invoices': { label: 'مشتريات فواتير', docType: 'purchase', level: 'document', groupBy: 'none', a5: '/purchases/invoice-search' },
+  'purchase-invoices-grouped': { label: 'مجمع مشتريات فواتير', docType: 'purchase', level: 'document', groupBy: 'party', a5: '/purchases/invoice-grouped' },
+  'purchase-items': { label: 'مشتريات اصناف', docType: 'purchase', level: 'line', groupBy: 'none', a5: '/purchases/itemsearch' },
+  'purchase-items-grouped': { label: 'مشتريات اصناف مجمعة', docType: 'purchase', level: 'line', groupBy: 'item', a5: '/purchases/item-grouped' },
+  // تقارير مردود مشتريات
+  'purchase-return-items': { label: 'مرتجعات أصناف المشتريات', docType: 'purchase_return', level: 'line', groupBy: 'item', a5: '/purchasesreturns/itemsearch' },
+};
+
 export default function TradeReports() {
-  const [docType, setDocType] = useState<DocType>('sale');
-  const [level, setLevel] = useState<Level>('document');
-  const [groupBy, setGroupBy] = useState<GroupBy>('none');
+  const [viewKey] = useQueryTab('', 'view');
+  const view: ReportView | undefined = REPORT_VIEWS[viewKey];
+
+  const [docType, setDocType] = useState<DocType>(view?.docType ?? 'sale');
+  const [level, setLevel] = useState<Level>(view?.level ?? 'document');
+  const [groupBy, setGroupBy] = useState<GroupBy>(view?.groupBy ?? 'none');
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
     [dayjs().startOf('month'), dayjs()]);
   const [partyId, setPartyId] = useState<number | undefined>();
@@ -80,6 +129,17 @@ export default function TradeReports() {
       setItems(i.data || []); setWarehouses(w.data || []);
     }).catch(console.error);
   }, []);
+
+  // The named report reasserts itself when the route changes — the tab workspace keeps every open
+  // screen mounted, so arriving at a different report must reset the switches rather than inherit
+  // whatever the last one left behind.
+  useEffect(() => {
+    if (!view) return;
+    setDocType(view.docType); setLevel(view.level); setGroupBy(view.groupBy);
+  }, [viewKey]);
+
+  const offPreset = !!view && (docType !== view.docType || level !== view.level
+    || groupBy !== view.groupBy);
 
   // Switching between customers and suppliers must drop a party filter that no longer applies.
   useEffect(() => { setPartyId(undefined); }, [docType]);
@@ -176,7 +236,16 @@ export default function TradeReports() {
 
   return (
     <Card
-      title="تقارير المبيعات والمشتريات"
+      title={(
+        <span>
+          {view ? view.label : 'تقارير المبيعات والمشتريات'}
+          {offPreset ? (
+            <Tag color="orange" style={{ marginInlineStart: 8, fontWeight: 400 }}>
+              معدّل
+            </Tag>
+          ) : null}
+        </span>
+      )}
       extra={(
         <>
           <Button icon={<DownloadOutlined />} onClick={exportCsv} style={{ marginInlineEnd: 8 }}>

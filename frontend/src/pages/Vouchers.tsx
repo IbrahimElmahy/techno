@@ -31,6 +31,7 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import { printDocument } from '../print/brand';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
@@ -189,6 +190,10 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
 };
 
 const Vouchers: React.FC = () => {
+  // أوراق قبض / أوراق دفع are two of their screens and one tab of ours (الشيكات).
+  const [tab, setTab] = useQueryTab('receipt');
+  // «أوراق قبض» / «أوراق دفع» are two entries in their menu and two directions of الشيكات here.
+  const [chequeDir] = useQueryTab('', 'direction');
   const [vouchers, setVouchers] = useState<VoucherRecord[]>([]);
   const [customers, setCustomers] = useState<Party[]>([]);
   const [suppliers, setSuppliers] = useState<Party[]>([]);
@@ -309,6 +314,7 @@ const Vouchers: React.FC = () => {
     : vouchers;
 
   const chequeFilter = useListFilter<any>(cheques, {
+    initialValues: chequeDir ? { direction: chequeDir } : {},
     search: (c) => [c.document_number, c.cheque_number, c.bank_name, c.amount, chequeParty(c)],
     filters: {
       direction: (c, v) => c.direction === v,
@@ -536,7 +542,7 @@ const Vouchers: React.FC = () => {
       )}
 
       <Tabs
-        defaultActiveKey="receipt"
+        activeKey={tab} onChange={setTab}
         items={[
           {
             key: 'receipt',
@@ -900,7 +906,9 @@ const Vouchers: React.FC = () => {
                     }
                   }}
                 >
-                  <Form.Item name="direction" label="النوع" initialValue="incoming" rules={[{ required: true }]}>
+                  {/* On أوراق دفع the form has to open on «صادر» too. Landing the list on outgoing while the
+                      form still says وارد is how somebody records a payment note as a receipt. */}
+                  <Form.Item name="direction" label="النوع" initialValue={chequeDir || 'incoming'} rules={[{ required: true }]}>
                     <Select
                       style={{ width: 130 }}
                       options={[

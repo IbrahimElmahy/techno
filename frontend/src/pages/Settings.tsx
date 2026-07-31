@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useSectionParam } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface CategoryMeta { category: string; label: string; system: boolean; }
@@ -16,6 +17,8 @@ interface Option {
 }
 
 export default function Settings() {
+  // «أدوات خاصة» in their menu is فحص سلامة البيانات here, a card down this page.
+  useSectionParam();
   const [pages, setPages] = useState<PageGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -111,7 +114,7 @@ export default function Settings() {
         </Space>
       </Card>
 
-      <IntegrityCard />
+      <div id="section-integrity"><IntegrityCard /></div>
 
       <DocumentPolicyCard />
 

@@ -42,18 +42,24 @@ export interface UseListFilterOptions<T> {
   filters?: Record<string, (row: T, value: any) => boolean>;
   /** Row date used by the date-range filter. */
   dateOf?: (row: T) => string | null | undefined;
+  /**
+   * Filter values the list opens with. A menu entry naming one slice of a list — «أوراق قبض» is
+   * the incoming half of الشيكات — has to arrive with that slice chosen, not with the whole list
+   * and a hint. The person can still clear it; it is a starting point, not a lock.
+   */
+  initialValues?: Record<string, any>;
 }
 
 /** Client-side search + filtering for a loaded list. */
 export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {}) {
   const [query, setQuery] = useState('');
-  const [values, setValues] = useState<Record<string, any>>({});
+  const [values, setValues] = useState<Record<string, any>>(options.initialValues ?? {});
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
 
   const setValue = (key: string, value: any) =>
     setValues((prev) => ({ ...prev, [key]: value }));
 
-  const reset = () => { setQuery(''); setValues({}); setRange(null); };
+  const reset = () => { setQuery(''); setValues(options.initialValues ?? {}); setRange(null); };
 
   const filtered = useMemo(() => {
     const needle = normalizeAr(query);

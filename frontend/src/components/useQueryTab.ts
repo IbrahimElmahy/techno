@@ -36,3 +36,27 @@ export function useQueryTab(fallback: string, param = 'tab'): [string, (key: str
 
   return [active, select];
 }
+
+/**
+ * Scroll to a card the menu entry named, for a screen that is a stack of cards rather than tabs.
+ *
+ * Same purpose as `useQueryTab`: their «أدوات خاصة» is a screen, ours is فحص سلامة البيانات partway
+ * down الإعدادات. Landing at the top of a long settings page and expecting somebody to scroll for
+ * the thing they clicked is the same failure as landing on the wrong tab.
+ */
+export function useSectionParam(): string | null {
+  const [searchParams] = useSearchParams();
+  const wanted = searchParams.get('section');
+
+  useEffect(() => {
+    if (!wanted) return;
+    // The card is painted by the same render that runs this; wait a frame for it to exist.
+    const id = requestAnimationFrame(() => {
+      document.getElementById(`section-${wanted}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [wanted]);
+
+  return wanted;
+}

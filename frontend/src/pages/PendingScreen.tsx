@@ -1,7 +1,79 @@
 import React from 'react';
-import { Card, Empty, Tag, Typography } from 'antd';
-import { useLocation } from 'react-router-dom';
+import { Button, Card, Empty, Tag, Typography } from 'antd';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { allScreens } from '../components/navigation';
+
+/**
+ * What each unbuilt screen will do, and the nearest thing that exists today.
+ *
+ * «لسه بتتبني» alone leaves the person with nothing to do next. Half of these have data already in
+ * the system reachable from another screen — the serials are on the documents, the expiry lots are
+ * in the alerts — so saying only «not yet» sends somebody away from an answer they could have had.
+ * The other half genuinely have nothing standing in for them, and say so rather than pointing at
+ * something that would waste the trip.
+ */
+interface Pending {
+  /** What the screen will do, in one sentence. */
+  what: string;
+  /** Where its data can be reached today, where anywhere can. */
+  insteadLabel?: string;
+  insteadPath?: string;
+  /** Why it is not built, where there is a reason worth stating. */
+  note?: string;
+}
+
+const PENDING: Record<string, Pending> = {
+  '/reservations': {
+    what: 'حجز كمية من صنف لعميل لمدة محدودة، فتتحجز عن البيع لغيره لحد ما الحجز يتحوّل لفاتورة أو ينتهي.',
+    note: 'الحجز بيمسك رصيد من غير ما يبيعه، يعني لازم يدخل في حساب المتاح على كل شاشة بتبيع — مش شاشة لوحدها.',
+  },
+  '/serials': {
+    what: 'قائمة السرايل المسجّلة، كل سيريال ومكانه وحالته.',
+    insteadLabel: 'كارت الصنف',
+    insteadPath: '/item-card',
+    note: 'السرايل نفسها متسجّلة على المستندات من زمان؛ الناقص شاشة بتعرضها مجمّعة.',
+  },
+  '/serials?view=movements': {
+    what: 'حركة كل سيريال: دخل امتى وبأنهي مستند، وخرج امتى ولمين.',
+    insteadLabel: 'كارت الصنف',
+    insteadPath: '/item-card',
+  },
+  '/expiry?view=movements': {
+    what: 'حركة لوطات الصلاحية: اللوط دخل امتى وبكام، واتصرف منه امتى وعلى أنهي فاتورة.',
+    insteadLabel: 'كميات انتهاء الصلاحية',
+    insteadPath: '/stock-alerts?tab=expiring',
+  },
+  '/price-display': {
+    what: 'شاشة سعر للعميل — يتقرا الباركود فيظهر اسم الصنف وسعره على شاشة تانية.',
+    note: 'محتاجة شاشة تانية عند الكاشير، مش بس كود.',
+  },
+  '/rep-reports?view=collections': {
+    what: 'تحصيلات كل مندوب خلال فترة: قبض كام ومن أنهي عملاء.',
+    insteadLabel: 'عمولة تحصيلات المندوبين',
+    insteadPath: '/finance-reports?tab=commissions',
+  },
+  '/rep-reports?view=collections-by-customer': {
+    what: 'نفس التحصيلات مفصّلة بالعميل: كل مندوب وعملاؤه واللي حصّله من كل واحد.',
+    insteadLabel: 'عمولة تحصيلات المندوبين',
+    insteadPath: '/finance-reports?tab=commissions',
+  },
+  '/purchase-returns': {
+    what: 'مردود شراء: بضاعة راجعة للمورد، بترجع من المخزن وبتقلّل المستحق له.',
+    insteadLabel: 'سجل المشتريات',
+    insteadPath: '/purchases',
+    note: 'المرتجع شغال فعلاً — بيتعمل من داخل فاتورة الشراء نفسها، والناقص شاشة مستقلة زي مردود المبيعات.',
+  },
+  '/free-production': {
+    what: 'إنتاج من غير وصفة: تحدد الخامات اللي اتصرفت والمنتج اللي طلع بإيدك، من غير ما ترتبط بنسب محفوظة.',
+    insteadLabel: 'أوامر التصنيع',
+    insteadPath: '/manufacturing',
+    note: 'الصرف والإنتاج الحر موجودين في الـAPI من زمان؛ الناقص الشاشة اللي تشغّلهم.',
+  },
+  '/rep-reports?view=items': {
+    what: 'مبيعات الأصناف لكل مندوب: كل مندوب باع إيه وبكام.',
+    note: 'المندوب متسجّل على الفاتورة؛ التقرير محتاج محرك التقارير يجمّع بالمندوب زي ما بيجمّع بالعميل.',
+  },
+};
 
 /**
  * What a menu entry shows before its screen exists.
@@ -17,21 +89,47 @@ import { allScreens } from '../components/navigation';
  */
 export default function PendingScreen() {
   const { pathname, search } = useLocation();
+  const navigate = useNavigate();
   const here = pathname + (search || '');
-  const screen = allScreens().find((s) => s.key === here || s.key.split('?')[0] === pathname);
+  // Exact match first, across the WHOLE list, before falling back to the path alone. Two entries
+  // can share a path and differ only by query — «السرايل» and «حركات سرايل» are both `/serials` —
+  // and a single find() with an `||` lets whichever comes first in the menu answer for both, so
+  // «حركات سرايل» opened under the title «السرايل».
+  const screens = allScreens();
+  const screen = screens.find((s) => s.key === here)
+    ?? screens.find((s) => s.key.split('?')[0] === pathname);
+  const pending = PENDING[here] || PENDING[pathname];
 
   return (
     <Card>
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', maxWidth: 520, margin: '0 auto' }}>
             <Typography.Title level={4} style={{ marginBottom: 4 }}>
               {screen?.label || 'شاشة غير معروفة'}
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
               الشاشة دي لسه بتتبني. موجودة في المنيو عشان الترتيب يبقى كامل من أول يوم.
             </Typography.Paragraph>
+            {pending && (
+              <Typography.Paragraph style={{ marginBottom: 8 }}>
+                {pending.what}
+              </Typography.Paragraph>
+            )}
+            {pending?.note && (
+              <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 8 }}>
+                {pending.note}
+              </Typography.Paragraph>
+            )}
+            {pending?.insteadPath && (
+              <Typography.Paragraph style={{ marginBottom: 8 }}>
+                <Typography.Text type="secondary">لحد ما تتعمل، أقرب حاجة موجودة:</Typography.Text>
+                <Button type="link" onClick={() => navigate(pending.insteadPath!)}>
+                  {pending.insteadLabel}
+                </Button>
+              </Typography.Paragraph>
+            )}
             {screen?.a5 && (
               <Tag color="blue">تقابل عندهم: {screen.a5}</Tag>
             )}

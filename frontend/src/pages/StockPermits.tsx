@@ -6,6 +6,7 @@ import {
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 /**
@@ -58,7 +59,9 @@ export default function StockPermits() {
   const [detail, setDetail] = useState<Permit | null>(null);
 
   const [creating, setCreating] = useState(false);
-  const [kind, setKind] = useState<Kind>('receipt');
+  // «أول المدة» is a screen of its own in their menu. Here it is one of three permit kinds, so
+  // that entry opens this screen with the kind already chosen rather than on إذن إضافة.
+  const [kind, setKind] = useQueryTab('receipt') as unknown as [Kind, (k: Kind) => void];
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [permitDate, setPermitDate] = useState<Dayjs>(dayjs());
   const [reason, setReason] = useState('');
@@ -96,7 +99,10 @@ export default function StockPermits() {
       .catch(console.error);
   }, [kind, warehouseId]);
 
+  // «أول المدة» is their own screen, so the entry must show أذون أول المدة — not the whole permits
+  // list with the right kind waiting inside a modal nobody has opened yet.
   const filter = useListFilter(permits, {
+    initialValues: kind === 'opening' ? { kind: 'opening' } : {},
     search: (p) => [p.document_number, p.reason, p.warehouse_name],
     filters: { kind: (p, v) => p.kind === v },
     dateOf: (p) => p.created_at,

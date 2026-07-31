@@ -5,6 +5,7 @@ import {
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 /**
@@ -42,6 +43,8 @@ interface BatchRow {
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function StockAlerts() {
+  // «كميات انتهاء الصلاحية» is their own screen; ours is the second tab here.
+  const [tab, setTab] = useQueryTab('reorder');
   const [reorder, setReorder] = useState<ReorderRow[]>([]);
   const [summary, setSummary] = useState({ below_min: 0, above_max: 0 });
   const [batches, setBatches] = useState<BatchRow[]>([]);
@@ -87,6 +90,7 @@ export default function StockAlerts() {
 
   return (
     <Tabs
+      activeKey={tab} onChange={setTab}
       items={[
         {
           key: 'reorder',

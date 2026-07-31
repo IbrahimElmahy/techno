@@ -18,6 +18,7 @@ import {
 import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import { printDocument } from '../print/brand';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -76,6 +77,9 @@ const money = (v: string | number) =>
 const BUCKETS = ['0-30', '31-60', '61-90', '90+'];
 
 const FinanceReports: React.FC = () => {
+  // «مديونيه عملاء» and «ارصده موردين» are separate entries in their menu; both live in أعمار
+  // الديون here, so the entry has to land on it rather than on قائمة الدخل.
+  const [tab, setTab] = useQueryTab('income');
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([
     dayjs().startOf('year'),
     dayjs(),
@@ -83,7 +87,8 @@ const FinanceReports: React.FC = () => {
   const [income, setIncome] = useState<IncomeStatement | null>(null);
   const [sheet, setSheet] = useState<BalanceSheet | null>(null);
   const [aging, setAging] = useState<AgingRow[]>([]);
-  const [agingParty, setAgingParty] = useState<'customers' | 'suppliers'>('customers');
+  const [agingParty, setAgingParty] = useQueryTab('customers', 'side') as
+    unknown as ['customers' | 'suppliers', (v: 'customers' | 'suppliers') => void];
   const [vat, setVat] = useState<VatReturn | null>(null);
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -170,7 +175,7 @@ const FinanceReports: React.FC = () => {
       </Space>
 
       <Tabs
-        defaultActiveKey="income"
+        activeKey={tab} onChange={setTab}
         items={[
           {
             key: 'income',

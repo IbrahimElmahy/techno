@@ -120,7 +120,7 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/rep-reports?view=collections', label: 'تحصيلات المندوبين', roles: R(SALES), a5: '/salesagentscollections' },
           { key: '/rep-reports?view=collections-by-customer', label: 'تحصيلات المندوبين عملاء', roles: R(SALES), a5: '/salesagentsclients' },
           { key: '/rep-reports?view=items', label: 'مبيعات اصناف مندوبين', roles: R(SALES), a5: '/salesagentsitems' },
-          { key: '/rep-reports?view=commission', label: 'عمولة تحصيلات مندوبين', roles: OFFICE, a5: '/salesagentcommission' },
+          { key: '/finance-reports?tab=commissions', label: 'عمولة تحصيلات مندوبين', roles: OFFICE, a5: '/salesagentcommission' },
         ],
       },
       {
@@ -140,7 +140,7 @@ export const NAVIGATION: NavGroup[] = [
     label: 'اداره المشتريات',
     children: [
       { key: '/purchases', label: 'فاتوره شراء', roles: R(BUYING), a5: '/purchases/create' },
-      { key: '/purchases?tab=returns', label: 'مردودات شراء', roles: R(BUYING), a5: '/purchasesreturns/create' },
+      { key: '/purchase-returns', label: 'مردودات شراء', roles: R(BUYING), a5: '/purchasesreturns/create' },
       {
         key: 'grp-purchase-reports',
         label: 'تقارير مشتريات',
@@ -214,7 +214,7 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/serials', label: 'السرايل', roles: R(STOCK), a5: '/serials' },
           { key: '/serials?view=movements', label: 'حركات سرايل', roles: R(STOCK), a5: '/serialtransactions' },
           { key: '/expiry?view=movements', label: 'حركات انتهاء الصلاحية', roles: R(STOCK), a5: '/expiretransactions' },
-          { key: '/expiry?view=quantities', label: 'كميات انتهاء الصلاحية', roles: R(STOCK), a5: '/expirequantities' },
+          { key: '/stock-alerts?tab=expiring', label: 'كميات انتهاء الصلاحية', roles: R(STOCK), a5: '/expirequantities' },
           { key: '/price-display', label: 'شاشة معلومات المنتج', roles: R(STOCK), a5: '/price-display-screen' },
         ],
       },
@@ -233,17 +233,17 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-balances',
         label: 'الأرصدة',
         children: [
-          { key: '/receivables', label: 'مديونيه عملاء', roles: R(BOOKS), a5: '/client-receivables' },
-          { key: '/payables', label: 'ارصده موردين', roles: R(BOOKS), a5: '/supplier-payables' },
-          { key: '/account-balances', label: 'أرصدة الحسابات', roles: R(BOOKS), a5: '/account-balances' },
+          { key: '/finance-reports?tab=aging&side=customers', label: 'مديونيه عملاء', roles: R(BOOKS), a5: '/client-receivables' },
+          { key: '/finance-reports?tab=aging&side=suppliers', label: 'ارصده موردين', roles: R(BOOKS), a5: '/supplier-payables' },
+          { key: '/general-ledger?tab=chart', label: 'أرصدة الحسابات', roles: R(BOOKS), a5: '/account-balances' },
         ],
       },
       {
         key: 'grp-notes',
         label: 'أوراق قبض ودفع',
         children: [
-          { key: '/notes?kind=receivable', label: 'أوراق قبض', roles: R(BOOKS), a5: '/notes-receivable' },
-          { key: '/notes?kind=payable', label: 'أوراق دفع', roles: R(BOOKS), a5: '/notes-payable' },
+          { key: '/vouchers?tab=cheques&direction=incoming', label: 'أوراق قبض', roles: R(BOOKS), a5: '/notes-receivable' },
+          { key: '/vouchers?tab=cheques&direction=outgoing', label: 'أوراق دفع', roles: R(BOOKS), a5: '/notes-payable' },
         ],
       },
       {
@@ -266,7 +266,7 @@ export const NAVIGATION: NavGroup[] = [
     label: 'ادارة انتاج',
     children: [
       { key: '/manufacturing?tab=recipes', label: 'نسب انتاج', roles: BUYING, a5: '/production-proportions' },
-      { key: '/manufacturing?tab=free', label: 'انتاج حر', roles: BUYING, a5: '/productions/free' },
+      { key: '/free-production', label: 'انتاج حر', roles: BUYING, a5: '/productions/free' },
       { key: '/manufacturing?tab=orders', label: 'انتاج حسب النسب', roles: BUYING, a5: '/productions/proportion' },
       { key: '/reports?view=production', label: 'تقرير الانتاج', roles: R(BUYING), a5: '/productions/report' },
     ],
@@ -278,9 +278,9 @@ export const NAVIGATION: NavGroup[] = [
     label: 'الاعدادات',
     children: [
       { key: '/users', label: 'المستخدمين', roles: OFFICE, a5: '/userscontroller' },
-      { key: '/opening', label: 'أول المدة', roles: OFFICE, a5: '/beginning' },
+      { key: '/stock-permits?tab=opening', label: 'أول المدة', roles: OFFICE, a5: '/beginning' },
       { key: '/settings', label: 'اعدادات القاعدة', roles: OFFICE, a5: '/database/settings' },
-      { key: '/system-tools', label: 'أدوات خاصة', roles: ADMIN, a5: '/database/systemtools' },
+      { key: '/settings?section=integrity', label: 'أدوات خاصة', roles: ADMIN, a5: '/database/systemtools' },
     ],
   },
 ];
