@@ -98,6 +98,23 @@ class PurchaseDetailOut(PurchaseListOut):
     returns: list[PurchaseReturnOut]
 
 
+class PurchaseReturnListOut(BaseModel):
+    """A purchase return as its own row, for the standalone مردودات شراء register.
+
+    A purchase return is a leaner document than a sales return: no discount, no tax, no cash
+    settlement — goods go back to the supplier and what we owe them drops by the value. So this
+    carries the value and the purchase it came off, and nothing invented to fill a column.
+    """
+    id: int
+    document_number: str
+    purchase_invoice_id: int
+    purchase_document_number: str | None
+    supplier_id: int | None
+    supplier_name: str | None
+    value: Decimal
+    created_at: str
+
+
 @router.get("", response_model=list[PurchaseListOut])
 def list_purchases(
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
@@ -113,6 +130,46 @@ def list_purchases(
         )
         for p in rows
     ]
+
+
+# Declared BEFORE `/{purchase_id}` on purpose: FastAPI matches in declaration order, and a later
+# `/returns` would be swallowed by the id route and fail parsing "returns" as an int.
+@router.get("/returns", response_model=list[PurchaseReturnListOut])
+def list_purchase_returns(
+    supplier_id: int | None = None,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> list[PurchaseReturnListOut]:
+    """Every purchase return, newest first — the register their «مردودات شراء» opens on.
+
+    The returns have always been recorded; they could only be seen by opening the purchase they
+    came off, which answers «what came back off THIS invoice» and never «what went back to
+    suppliers this month».
+    """
+    rows = db.scalars(select(PurchaseReturn).order_by(PurchaseReturn.id.desc())).all()
+    invoices = {
+        p.id: p for p in db.scalars(
+            select(PurchaseInvoice).where(
+                PurchaseInvoice.id.in_({r.purchase_invoice_id for r in rows})
+            )
+        ).all()
+    } if rows else {}
+    names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
+
+    out = []
+    for r in rows:
+        inv = invoices.get(r.purchase_invoice_id)
+        sup_id = inv.supplier_id if inv else None
+        if supplier_id is not None and sup_id != supplier_id:
+            continue
+        out.append(PurchaseReturnListOut(
+            id=r.id, document_number=r.document_number,
+            purchase_invoice_id=r.purchase_invoice_id,
+            purchase_document_number=inv.document_number if inv else None,
+            supplier_id=sup_id, supplier_name=names.get(sup_id) if sup_id else None,
+            value=r.value, created_at=str(r.created_at),
+        ))
+    return out
 
 
 @router.get("/{purchase_id}", response_model=PurchaseDetailOut)

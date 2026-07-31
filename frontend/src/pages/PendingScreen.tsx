@@ -43,6 +43,17 @@ const PENDING: Record<string, Pending> = {
     insteadLabel: 'كميات انتهاء الصلاحية',
     insteadPath: '/stock-alerts?tab=expiring',
   },
+  '/inventory-count': {
+    what: 'جرد مخزن واحد: تطبع كشف بأرصدته، تعدّ على الورق، تدخّل المعدود، والفرق يتقفل بتسوية.',
+    insteadLabel: 'جرد حتى تاريخ',
+    insteadPath: '/stocktake',
+    note: 'اللي عندنا بيقرا الرصيد الدفتري في يوم معيّن؛ اللي ناقص هو دورة العدّ نفسها — كشف، ومعدود، وفرق.',
+  },
+  '/inventory-count-general': {
+    what: 'نفس دورة الجرد بس على كل المخازن مرة واحدة.',
+    insteadLabel: 'جرد حتى تاريخ',
+    insteadPath: '/stocktake',
+  },
   '/price-display': {
     what: 'شاشة سعر للعميل — يتقرا الباركود فيظهر اسم الصنف وسعره على شاشة تانية.',
     note: 'محتاجة شاشة تانية عند الكاشير، مش بس كود.',
@@ -56,18 +67,6 @@ const PENDING: Record<string, Pending> = {
     what: 'نفس التحصيلات مفصّلة بالعميل: كل مندوب وعملاؤه واللي حصّله من كل واحد.',
     insteadLabel: 'عمولة تحصيلات المندوبين',
     insteadPath: '/finance-reports?tab=commissions',
-  },
-  '/purchase-returns': {
-    what: 'مردود شراء: بضاعة راجعة للمورد، بترجع من المخزن وبتقلّل المستحق له.',
-    insteadLabel: 'سجل المشتريات',
-    insteadPath: '/purchases',
-    note: 'المرتجع شغال فعلاً — بيتعمل من داخل فاتورة الشراء نفسها، والناقص شاشة مستقلة زي مردود المبيعات.',
-  },
-  '/free-production': {
-    what: 'إنتاج من غير وصفة: تحدد الخامات اللي اتصرفت والمنتج اللي طلع بإيدك، من غير ما ترتبط بنسب محفوظة.',
-    insteadLabel: 'أوامر التصنيع',
-    insteadPath: '/manufacturing',
-    note: 'الصرف والإنتاج الحر موجودين في الـAPI من زمان؛ الناقص الشاشة اللي تشغّلهم.',
   },
   '/rep-reports?view=items': {
     what: 'مبيعات الأصناف لكل مندوب: كل مندوب باع إيه وبكام.',
