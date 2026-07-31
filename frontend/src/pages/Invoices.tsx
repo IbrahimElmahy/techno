@@ -12,10 +12,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import PrintOptionsMenu from '../components/PrintOptionsMenu';
+import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
 import InvoiceExpensesModal, { InvoiceExpense } from '../components/InvoiceExpensesModal';
@@ -129,6 +131,11 @@ export default function Invoices() {
   const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
   // Only to put a NAME on «الحساب الفرعي» in the list — the id alone tells a reader nothing.
   const [postingAccounts, setPostingAccounts] = useState<any[]>([]);
+  // مفاتيح الطباعة — read once from the browser they are saved in, and passed to every print
+  // from this screen so the switches and the paper never disagree.
+  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
+  // Only to NAME the branch on the printed head — the customer carries its id.
+  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -280,7 +287,8 @@ export default function Invoices() {
 
   const loadLookups = async () => {
     try {
-      const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes, ctRes] = await Promise.all([
+      const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes, ctRes,
+        brRes] = await Promise.all([
         api.get('/api/v1/customers'),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
@@ -289,6 +297,7 @@ export default function Invoices() {
         api.get('/api/v1/users'),
         api.get('/api/v1/accounts?postable_only=true').catch(() => ({ data: [] })),
         api.get('/api/v1/loyalty/coupon-types').catch(() => ({ data: [] })),
+        api.get('/api/v1/branches').catch(() => ({ data: [] })),
       ]);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
@@ -297,6 +306,7 @@ export default function Invoices() {
       setReps(userRes.data.filter((u: any) => u.role === 'sales_rep'));
       setPostingAccounts(acctRes.data || []);
       setCouponTypes(ctRes.data || []);
+      setBranches(brRes.data || []);
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
       setPointValues(pts);
@@ -877,7 +887,9 @@ export default function Invoices() {
     { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
       onClick: () => { if (viewInvoice) { setDetailVisible(false); handleDeleteInvoice(viewInvoice); } } },
     { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-      onClick: () => window.print() },
+      // The document, on the letterhead, through مفاتيح الطباعة — not the browser printing the
+      // screen it happens to be showing.
+      onClick: () => { const doc = invoiceDoc(viewInvoice); if (doc) printInvoice(doc, printOpts); } },
     { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
       disabled: !viewInvoice?.customer_id,
       onClick: () => viewInvoice?.customer_id && navigate(`/customers/${viewInvoice.customer_id}`) },
@@ -995,7 +1007,16 @@ export default function Invoices() {
       partyLabel: 'العميل',
       partyName: customer?.name ?? `#${inv.customer_id}`,
       partyPhone: (customer as any)?.phone ?? null,
+      partyAddress: (customer as any)?.address ?? null,
       partyId: inv.customer_id ?? null,
+      // Only meaningful when the matching switch is on; the document carries them either way so
+      // flipping a switch does not need the invoice reloaded.
+      branchName: branches.find((b) => b.id === (customer as any)?.branch_id)?.name ?? null,
+      repName: reps.find((r) => r.id === inv.rep_id)?.full_name ?? null,
+      partyAccount: (() => {
+        const a = postingAccounts.find((x: any) => x.id === inv.revenue_account_id);
+        return a ? (a.name || a.code || null) : null;
+      })(),
       gross: inv.gross,
       discountPct: inv.combined_pct,
       net: inv.net,
@@ -1814,6 +1835,7 @@ export default function Invoices() {
               hidden={invoiceCols.hidden}
               onChange={invoiceCols.setHidden}
             />
+            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" icon={<PlusOutlined />}
               onClick={() => { setInvoiceDate(dayjs()); setNewStep('date'); }}>
               تسجيل فاتورة بيع

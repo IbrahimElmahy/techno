@@ -3,6 +3,7 @@ import { Button, Space } from 'antd';
 import { PrinterOutlined } from '@ant-design/icons';
 import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
+import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import { COMPANY, companyLines } from '../config/company';
 
 /**
@@ -45,6 +46,11 @@ export interface InvoiceDoc {
   partyId?: number | null;   // set → the party name links to its profile
   totalPoints?: string | number;
   extraMeta?: [string, string][];
+  /** «الفرع» and «مندوب» on the printed head, when the switches ask for them. */
+  branchName?: string | null;
+  repName?: string | null;
+  /** «حساب العميل» — the party's ledger account, for the file copy. */
+  partyAccount?: string | null;
 }
 
 
@@ -75,8 +81,32 @@ const NOTE: Record<InvoiceDoc['kind'], string> = {
   sale_return: 'تم استرجاع الأصناف المذكورة أعلاه إلى المخزن وتسوية قيمتها لحساب العميل.',
 };
 
-/** Print this invoice on the shared company letterhead. */
-export function printInvoice(d: InvoiceDoc): void {
+/** The head cells, filtered by مفاتيح الطباعة.
+ *
+ * The party's NAME always prints — a document that does not say who it is for is not a document.
+ * «بيانات العميل» governs the detail beside it: the phone and address a file copy wants and a
+ * receipt handed across a counter does not.
+ */
+function headMeta(d: InvoiceDoc, o: PrintOptions): [string, string][] {
+  const rows: [string, string][] = [[d.partyLabel, d.partyName]];
+  if (o.customerDetails) {
+    rows.push(['الهاتف', d.partyPhone || '-']);
+    if (d.partyAddress) rows.push(['العنوان', d.partyAddress]);
+  }
+  if (o.customerAccount && d.partyAccount) rows.push(['حساب العميل', d.partyAccount]);
+  if (o.branch && d.branchName) rows.push(['الفرع', d.branchName]);
+  if (o.rep && d.repName) rows.push(['مندوب', d.repName]);
+  rows.push(['التاريخ',
+    d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString('ar-EG')]);
+  if (o.paidAndRemaining) {
+    rows.push(['طريقة السداد', Number(d.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي']);
+  }
+  return [...rows, ...(d.extraMeta || [])];
+}
+
+/** Print this invoice on the shared company letterhead, honouring مفاتيح الطباعة. */
+export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
+  const o = opts ?? loadPrintOptions();
   // Only show a column when at least one line actually uses it.
   const anyDisc = d.lines.some((l) => Number(l.discount_pct || 0) > 0);
   const anyPts = d.lines.some((l) => Number(l.points || 0) > 0);
@@ -107,9 +137,9 @@ export function printInvoice(d: InvoiceDoc): void {
       <tr><td>الصافي</td><td style="text-align:left">${n(d.net)} ج.م</td></tr>
       ${Number(d.tax || 0) > 0 ? `<tr><td>ضريبة القيمة المضافة</td>
         <td style="text-align:left">${n(d.tax)} ج.م</td></tr>` : ''}
-      <tr><td>${cashLabel(d)}</td>
+      ${o.paidAndRemaining ? `<tr><td>${cashLabel(d)}</td>
           <td style="text-align:left">${n(d.cash)} ج.م</td></tr>
-      <tr><td>${creditLabel(d)}</td><td style="text-align:left">${n(d.credit)} ج.م</td></tr>
+      <tr><td>${creditLabel(d)}</td><td style="text-align:left">${n(d.credit)} ج.م</td></tr>` : ''}
       <tr><td>${payableLabel(d)}</td><td style="text-align:left">${n(payable(d))} ج.م</td></tr>
       ${Number(d.totalPoints || 0) > 0 ? `<tr><td>نقاط الولاء المكتسبة</td>
         <td style="text-align:left">${pts(d.totalPoints)} نقطة</td></tr>` : ''}
@@ -123,15 +153,14 @@ export function printInvoice(d: InvoiceDoc): void {
     {
       title: titleOf(d),
       number: d.document_number,
-      meta: [
-        [d.partyLabel, d.partyName],
-        ['الهاتف', d.partyPhone || '-'],
-        ...(d.partyAddress ? ([['العنوان', d.partyAddress]] as [string, string][]) : []),
-        ['التاريخ', d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString('ar-EG')],
-        ['طريقة السداد', Number(d.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي'],
-        ...(d.extraMeta || []),
-      ],
+      meta: headMeta(d, o),
       note: NOTE[d.kind],
+      hide: {
+        logo: !o.logo,
+        companyName: !o.companyName,
+        invoiceNumber: !o.invoiceNumber,
+        invoiceTitle: !o.invoiceTitle,
+      },
     },
     body,
   );

@@ -17,6 +17,17 @@ export interface DocMeta {
   meta?: [string, string][];
   /** Small note under the footer rule, e.g. terms. */
   note?: string;
+  /** Parts of the head to leave OFF this print. Omitted = print everything.
+   *
+   *  A company printing onto pre-printed letterhead already has its logo and name on the paper;
+   *  printing them again puts two of each on the page. The person at the counter is the only one
+   *  who knows what is in the printer, so it is their switch to throw. */
+  hide?: {
+    logo?: boolean;
+    companyName?: boolean;
+    invoiceNumber?: boolean;
+    invoiceTitle?: boolean;
+  };
 }
 
 import { COMPANY, companyLines } from '../config/company';
@@ -77,19 +88,24 @@ export function letterhead(meta: DocMeta): string {
   const metaRows = (meta.meta || [])
     .map(([k, v]) => `<tr><td class="k">${k}</td><td>${v ?? '-'}</td></tr>`)
     .join('');
-  return `
+  const h = meta.hide || {};
+  // The whole strip goes only when BOTH halves are off — one of the two alone still needs the
+  // rule under it to separate the head from the document.
+  const head = (h.logo && h.companyName) ? '' : `
   <div class="letterhead">
-    <div class="who">
+    ${h.companyName ? '' : `<div class="who">
       <b>${COMPANY.nameAr}</b>
       ${companyLines().map((l) => `<span>${l}</span>`).join('')}
-    </div>
-    ${logoSvg(190)}
+    </div>`}
+    ${h.logo ? '' : logoSvg(190)}
   </div>
-  <div class="accent"></div>
+  <div class="accent"></div>`;
+  const title = (h.invoiceTitle && h.invoiceNumber) ? '' : `
   <div class="doc-title">
-    <h1>${meta.title}</h1>
-    ${meta.number ? `<div class="doc-no">${meta.number}</div>` : ''}
-  </div>
+    ${h.invoiceTitle ? '' : `<h1>${meta.title}</h1>`}
+    ${(meta.number && !h.invoiceNumber) ? `<div class="doc-no">${meta.number}</div>` : ''}
+  </div>`;
+  return `${head}${title}
   ${metaRows ? `<table class="meta">${metaRows}</table>` : ''}`;
 }
 
