@@ -6,6 +6,7 @@ import {
 import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -56,7 +57,8 @@ export default function Orders() {
   const [detail, setDetail] = useState<Order | null>(null);
 
   const [creating, setCreating] = useState(false);
-  const [kind, setKind] = useState<Kind>('sale');
+  // «طلب بيع» and «طلب شراء» are two entries in their menu and one screen here.
+  const [kind, setKind] = useQueryTab('sale', 'kind') as unknown as [Kind, (k: Kind) => void];
   const [partyId, setPartyId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [dueDate, setDueDate] = useState<Dayjs | null>(null);
@@ -88,6 +90,9 @@ export default function Orders() {
   useEffect(() => { setPartyId(undefined); }, [kind]);
 
   const filter = useListFilter(orders, {
+    // «طلب بيع» and «طلب شراء» are two screens in their menu. The kind belongs on the list, not
+    // only inside the create dialog — an entry that shows both kinds is not the screen it names.
+    initialValues: { kind },
     search: (o) => [o.document_number, o.notes],
     filters: {
       kind: (o, v) => o.kind === v,

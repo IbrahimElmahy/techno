@@ -179,9 +179,9 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-count',
         label: 'جرد',
         children: [
-          { key: '/stocktake?mode=count', label: 'جرد المخازن', roles: STOCK, a5: '/inventorycount' },
-          { key: '/stocktake?mode=general', label: 'جرد عام المخازن', roles: STOCK, a5: '/generalinventorycount' },
-          { key: '/stocktake?mode=as-of', label: 'جرد حتى تاريخ', roles: R(STOCK), a5: '/inventory/period-inventory' },
+          { key: '/inventory-count', label: 'جرد المخازن', roles: STOCK, a5: '/inventorycount' },
+          { key: '/inventory-count-general', label: 'جرد عام المخازن', roles: STOCK, a5: '/generalinventorycount' },
+          { key: '/stocktake', label: 'جرد حتى تاريخ', roles: R(STOCK), a5: '/inventory/period-inventory' },
         ],
       },
       {
@@ -209,7 +209,7 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-stock-reports',
         label: 'تقارير المخازن',
         children: [
-          { key: '/stock-alerts?view=reorder', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
+          { key: '/stock-alerts?tab=reorder', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
           { key: '/reports?view=stagnant', label: 'اصناف راكدة', roles: R(STOCK), a5: '/stagnant-items' },
           { key: '/serials', label: 'السرايل', roles: R(STOCK), a5: '/serials' },
           { key: '/serials?view=movements', label: 'حركات سرايل', roles: R(STOCK), a5: '/serialtransactions' },
@@ -251,10 +251,10 @@ export const NAVIGATION: NavGroup[] = [
         label: 'تقارير المحاسبية',
         children: [
           { key: '/general-ledger?tab=trial', label: 'دفتر الإستاذ', roles: R(BOOKS), a5: '/ledger' },
-          { key: '/finance-reports?view=balance-sheet', label: 'ميزانية ختامية', roles: R(BOOKS), a5: '/finalbalancesheet' },
-          { key: '/finance-reports?view=balance-sheet-period', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
-          { key: '/finance-reports?view=financial-position', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
-          { key: '/finance-reports?view=financial-position-period', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
+          { key: '/finance-reports?tab=sheet', label: 'ميزانية ختامية', roles: R(BOOKS), a5: '/finalbalancesheet' },
+          { key: '/finance-reports?tab=sheet&period=1', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
+          { key: '/finance-reports?tab=income', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
+          { key: '/finance-reports?tab=income&period=1', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
         ],
       },
     ],
@@ -278,7 +278,7 @@ export const NAVIGATION: NavGroup[] = [
     label: 'الاعدادات',
     children: [
       { key: '/users', label: 'المستخدمين', roles: OFFICE, a5: '/userscontroller' },
-      { key: '/stock-permits?tab=opening', label: 'أول المدة', roles: OFFICE, a5: '/beginning' },
+      { key: '/stock-permits?kind=opening', label: 'أول المدة', roles: OFFICE, a5: '/beginning' },
       { key: '/settings', label: 'اعدادات القاعدة', roles: OFFICE, a5: '/database/settings' },
       { key: '/settings?section=integrity', label: 'أدوات خاصة', roles: ADMIN, a5: '/database/systemtools' },
     ],

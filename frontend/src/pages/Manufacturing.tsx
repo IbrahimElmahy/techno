@@ -7,6 +7,7 @@ import {
   BuildOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -55,6 +56,8 @@ const fmtMoney = (v: string | number) =>
   Number(v).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function Manufacturing() {
+  // «نسب انتاج» and «انتاج حسب النسب» are two entries in their menu and two tabs here.
+  const [tab, setTab] = useQueryTab('orders');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [rawMaterials, setRawMaterials] = useState<Item[]>([]);
@@ -117,7 +120,7 @@ export default function Manufacturing() {
 
   return (
     <Tabs
-      defaultActiveKey="orders"
+      activeKey={tab} onChange={setTab}
       items={[
         {
           key: 'orders',

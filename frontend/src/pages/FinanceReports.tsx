@@ -80,8 +80,12 @@ const FinanceReports: React.FC = () => {
   // «مديونيه عملاء» and «ارصده موردين» are separate entries in their menu; both live in أعمار
   // الديون here, so the entry has to land on it rather than on قائمة الدخل.
   const [tab, setTab] = useQueryTab('income');
+  // Their four accounting reports are two of ours, each asked twice: «ختامية» reads from the start
+  // of the year, «خلال فترة» reads a window you choose. Same report, different span — so the entry
+  // decides where the range starts and the picker stays free afterwards.
+  const [period] = useQueryTab('', 'period');
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([
-    dayjs().startOf('year'),
+    period ? dayjs().startOf('month') : dayjs().startOf('year'),
     dayjs(),
   ]);
   const [income, setIncome] = useState<IncomeStatement | null>(null);

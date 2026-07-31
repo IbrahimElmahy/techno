@@ -8,6 +8,7 @@ import {
   DeleteOutlined, HourglassOutlined, ShoppingOutlined,
 } from '@ant-design/icons';
 import { api, getApiBaseURL } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 
@@ -61,6 +62,8 @@ function ExportButton({ type, label }: { type: string; label: string }) {
 
 // --- Root ---------------------------------------------------------------------------------
 export default function Reports() {
+  // Four of their report screens are four tabs here, so the entry has to land on its own.
+  const [tab, setTab] = useQueryTab('stagnant', 'view');
   const [period, setPeriod] = useState<Period>('month');
   const [range, setRange] = useState<Range>([dayjs().startOf('month'), dayjs().endOf('month')]);
   const [warehouses, setWarehouses] = useState<Lookup[]>([]);
@@ -96,7 +99,7 @@ export default function Reports() {
       </Space>
 
       <Tabs
-        defaultActiveKey="stagnant"
+        activeKey={tab} onChange={setTab}
         items={[
           { key: 'production', label: <span><BuildOutlined /> الإنتاج والاستهلاك</span>, children: <ProductionTab {...shared} /> },
           { key: 'inventory', label: <span><DatabaseOutlined /> المخازن (الأرصدة)</span>, children: <InventoryTab {...shared} /> },

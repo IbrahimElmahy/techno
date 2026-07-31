@@ -61,7 +61,7 @@ export default function StockPermits() {
   const [creating, setCreating] = useState(false);
   // «أول المدة» is a screen of its own in their menu. Here it is one of three permit kinds, so
   // that entry opens this screen with the kind already chosen rather than on إذن إضافة.
-  const [kind, setKind] = useQueryTab('receipt') as unknown as [Kind, (k: Kind) => void];
+  const [kind, setKind] = useQueryTab('receipt', 'kind') as unknown as [Kind, (k: Kind) => void];
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [permitDate, setPermitDate] = useState<Dayjs>(dayjs());
   const [reason, setReason] = useState('');
