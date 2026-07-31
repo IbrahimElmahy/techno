@@ -18,7 +18,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.core.money import to_qty
-from src.models.catalog import Item, StockBatch
+from src.models.catalog import (
+    BatchMovementKind, StockBatchMovement, Item, StockBatch,
+)
 from src.models.stock import LocationKind, StockDirection
 from src.services import stock_service
 
@@ -27,6 +29,23 @@ ZERO_QTY = Decimal("0.000")
 
 class BatchError(Exception):
     """Invalid batch operation (not perishable, missing expiry, insufficient lots, ...)."""
+
+
+def _log(
+    db: Session, *, item_id: int, expiry, location_kind: LocationKind, location_id: int,
+    kind: BatchMovementKind, quantity, document_type: str | None = None,
+    document_id: int | None = None, actor_user_id: int | None = None,
+) -> None:
+    """Record a draw on a lot.
+
+    Written at the moment it happens because it cannot be worked out later: a stock movement says
+    how much moved and when, never which expiry lot it came out of. FEFO makes that choice here.
+    """
+    db.add(StockBatchMovement(
+        item_id=item_id, expiry_date=expiry, location_kind=location_kind,
+        location_id=location_id, kind=kind, quantity=quantity,
+        document_type=document_type, document_id=document_id, actor_user_id=actor_user_id,
+    ))
 
 
 def _require_perishable(item: Item) -> None:
@@ -82,12 +101,18 @@ def receive(db: Session, *, item_id: int, location_kind: LocationKind, location_
         movement_type="batch_in", direction=StockDirection.in_, quantity=qty,
         actor_user_id=actor_user_id, source_doc_type="batch_receive", source_doc_id=None,
     )
-    return _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
-                   expiry=expiry_date, quantity=qty)
+    batch = _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
+                    expiry=expiry_date, quantity=qty)
+    _log(db, item_id=item_id, expiry=expiry_date, location_kind=location_kind,
+         location_id=location_id, kind=BatchMovementKind.received, quantity=qty,
+         document_type="batch_receive", actor_user_id=actor_user_id)
+    return batch
 
 
 def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, location_id: int,
-                 quantity: Decimal) -> list[tuple[date, Decimal]]:
+                 quantity: Decimal, log_kind: BatchMovementKind | None = None,
+                 document_type: str | None = None, document_id: int | None = None,
+                 actor_user_id: int | None = None) -> list[tuple[date, Decimal]]:
     """Draw `quantity` from the lots that expire soonest. Returns what came from each lot.
 
     Only the batch side moves here — the caller (a sale) posts its own stock-out, so the two stay
@@ -126,12 +151,19 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
         batch.quantity = to_qty(have - use)
         remaining = to_qty(remaining - use)
         taken.append((batch.expiry_date, use))
+        # `log_kind` rather than a fixed «consumed»: a relocation draws down the source through
+        # this same path, and calling that a consumption would say goods were sold that only moved.
+        _log(db, item_id=item_id, expiry=batch.expiry_date, location_kind=location_kind,
+             location_id=location_id, kind=log_kind or BatchMovementKind.consumed, quantity=use,
+             document_type=document_type, document_id=document_id, actor_user_id=actor_user_id)
     db.flush()
     return taken
 
 
 def relocate(db: Session, *, item_id: int, from_kind: LocationKind, from_id: int,
-             to_kind: LocationKind, to_id: int, quantity: Decimal) -> list[tuple[date, Decimal]]:
+             to_kind: LocationKind, to_id: int, quantity: Decimal,
+             transfer_id: int | None = None,
+             actor_user_id: int | None = None) -> list[tuple[date, Decimal]]:
     """Move `quantity` of a perishable item between locations, earliest-expiring lots first.
 
     A transfer moves the goods; the lots record *when they expire*, so they move too. Leaving them
@@ -148,15 +180,22 @@ def relocate(db: Session, *, item_id: int, from_kind: LocationKind, from_id: int
     if not getattr(item, "is_perishable", False):
         return []
     taken = consume_fefo(db, item_id=item_id, location_kind=from_kind, location_id=from_id,
-                         quantity=quantity)
+                         quantity=quantity, log_kind=BatchMovementKind.relocated_out,
+                         document_type="transfer", document_id=transfer_id,
+                         actor_user_id=actor_user_id)
     for expiry, qty in taken:
         _upsert(db, item_id=item_id, kind=to_kind, loc_id=to_id, expiry=expiry, quantity=qty)
+        _log(db, item_id=item_id, expiry=expiry, location_kind=to_kind, location_id=to_id,
+             kind=BatchMovementKind.relocated_in, quantity=qty,
+             document_type="transfer", document_id=transfer_id, actor_user_id=actor_user_id)
     db.flush()
     return taken
 
 
 def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind,
-                       location_id: int, expiry_date: date, quantity: Decimal) -> StockBatch:
+                       location_id: int, expiry_date: date, quantity: Decimal,
+                       invoice_id: int | None = None,
+                       actor_user_id: int | None = None) -> StockBatch:
     """Put returned goods back into the lot for their expiry date.
 
     The caller's return already posts the stock-in; this only moves the batch side. The expiry has
@@ -172,8 +211,12 @@ def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind
     qty = to_qty(quantity)
     if qty <= ZERO_QTY:
         raise BatchError("Returned quantity must be greater than zero.")
-    return _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
-                   expiry=expiry_date, quantity=qty)
+    batch = _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
+                    expiry=expiry_date, quantity=qty)
+    _log(db, item_id=item_id, expiry=expiry_date, location_kind=location_kind,
+         location_id=location_id, kind=BatchMovementKind.returned, quantity=qty,
+         document_type="sales_invoice", document_id=invoice_id, actor_user_id=actor_user_id)
+    return batch
 
 
 def expiring(db: Session, *, before: date, item_id: int | None = None,

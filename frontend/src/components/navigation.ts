@@ -213,7 +213,7 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/reports?view=stagnant', label: 'اصناف راكدة', roles: R(STOCK), a5: '/stagnant-items' },
           { key: '/serials', label: 'السرايل', roles: R(STOCK), a5: '/serials' },
           { key: '/serials?view=movements', label: 'حركات سرايل', roles: R(STOCK), a5: '/serialtransactions' },
-          { key: '/expiry?view=movements', label: 'حركات انتهاء الصلاحية', roles: R(STOCK), a5: '/expiretransactions' },
+          { key: '/stock-alerts?tab=movements', label: 'حركات انتهاء الصلاحية', roles: R(STOCK), a5: '/expiretransactions' },
           { key: '/stock-alerts?tab=expiring', label: 'كميات انتهاء الصلاحية', roles: R(STOCK), a5: '/expirequantities' },
           { key: '/price-display', label: 'شاشة معلومات المنتج', roles: R(STOCK), a5: '/price-display-screen' },
         ],

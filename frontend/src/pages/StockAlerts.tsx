@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Statistic, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Select, Statistic, Table, Tabs, Tag, message, Space,
 } from 'antd';
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -29,6 +29,27 @@ interface ReorderRow {
   flag: 'below_min' | 'above_max';
 }
 
+interface BatchMove {
+  id: number; item_id: number; item_name: string | null; expiry_date: string;
+  kind: 'received' | 'consumed' | 'relocated_out' | 'relocated_in' | 'returned';
+  location_kind: string; location_id: number; location_name: string | null;
+  quantity: string; document_type: string | null; document_id: number | null; created_at: string;
+}
+
+const MOVE_KIND: Record<BatchMove['kind'], { text: string; color: string }> = {
+  received: { text: 'استلام', color: 'green' },
+  consumed: { text: 'صرف بالبيع', color: 'volcano' },
+  relocated_out: { text: 'خرج بتحويل', color: 'blue' },
+  relocated_in: { text: 'دخل بتحويل', color: 'cyan' },
+  returned: { text: 'مرتجع', color: 'gold' },
+};
+
+const MOVE_DOC: Record<string, string> = {
+  sales_invoice: 'فاتورة بيع',
+  transfer: 'إذن تحويل',
+  batch_receive: 'استلام تشغيلة',
+};
+
 interface BatchRow {
   batch_id: number;
   item_id: number;
@@ -45,6 +66,11 @@ const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFraction
 export default function StockAlerts() {
   // «كميات انتهاء الصلاحية» is their own screen; ours is the second tab here.
   const [tab, setTab] = useQueryTab('reorder');
+  // «حركات انتهاء الصلاحية» — where each lot went, beside «كميات انتهاء الصلاحية» which is what
+  // is left of it. Two of their screens, and the second only answers half the question.
+  const [moves, setMoves] = useState<BatchMove[]>([]);
+  const [movesLoading, setMovesLoading] = useState(false);
+  const [tracedLot, setTracedLot] = useState<{ item_id: number; expiry: string } | null>(null);
   const [reorder, setReorder] = useState<ReorderRow[]>([]);
   const [summary, setSummary] = useState({ below_min: 0, above_max: 0 });
   const [batches, setBatches] = useState<BatchRow[]>([]);
@@ -72,6 +98,20 @@ export default function StockAlerts() {
       setBatches(res.data || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
+
+  const loadMoves = async () => {
+    setMovesLoading(true);
+    try {
+      const params: any = {};
+      if (tracedLot) { params.item_id = tracedLot.item_id; params.expiry_date = tracedLot.expiry; }
+      const res = await api.get('/api/v1/stock/batches/movements', { params });
+      setMoves(res.data || []);
+    } catch (err) { console.error(err); } finally { setMovesLoading(false); }
+  };
+
+  // Following one lot is a fresh query, not a client-side filter: a recall asks about a lot that
+  // may have emptied months ago, and the loaded page only holds the last thousand rows.
+  useEffect(() => { if (tab === 'movements') loadMoves(); }, [tab, tracedLot]);
 
   useEffect(() => {
     loadReorder();
@@ -215,6 +255,64 @@ export default function StockAlerts() {
                     } },
                   { title: 'الكمية المتبقية', dataIndex: 'quantity',
                     render: (v: string) => <b style={{ color: '#6AB42D' }}>{qty(v)}</b> },
+                ]}
+              />
+            </Card>
+          ),
+        },
+        {
+          key: 'movements',
+          label: 'حركات انتهاء الصلاحية',
+          children: (
+            <Card
+              title={tracedLot
+                ? `حركة التشغيلة المنتهية ${tracedLot.expiry}`
+                : 'حركات التشغيلات'}
+              extra={(
+                <Space>
+                  {tracedLot && <Button onClick={() => setTracedLot(null)}>عرض الكل</Button>}
+                  <Button icon={<ReloadOutlined />} onClick={loadMoves}>تحديث</Button>
+                </Space>
+              )}
+            >
+              <Table
+                rowKey="id" size="small" loading={movesLoading} dataSource={moves}
+                tableLayout="fixed"
+                locale={{
+                  emptyText: (
+                    // Lots received before this trail existed have none, and saying so beats an
+                    // empty table that reads like a fault.
+                    'مفيش حركات مسجّلة. التشغيلات اللي دخلت قبل ما السجل ده يتعمل مالهاش أثر.'
+                  ),
+                }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                  showTotal: (t) => `الإجمالي: ${t}` }}
+                columns={[
+                  { title: 'التاريخ', dataIndex: 'created_at', width: 150,
+                    render: (v: string) => String(v).slice(0, 16) },
+                  { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
+                    render: (n: string | null, r: BatchMove) => n ?? `صنف #${r.item_id}` },
+                  { title: 'تاريخ الانتهاء', dataIndex: 'expiry_date', width: 150,
+                    render: (d: string, r: BatchMove) => (
+                      <a onClick={() => setTracedLot({ item_id: r.item_id, expiry: d })}>
+                        <Tag color={dayjs(d).isBefore(dayjs()) ? 'red' : 'orange'}>{d}</Tag>
+                      </a>
+                    ) },
+                  { title: 'الحركة', dataIndex: 'kind', width: 130,
+                    render: (k: BatchMove['kind']) => (
+                      <Tag color={MOVE_KIND[k].color}>{MOVE_KIND[k].text}</Tag>
+                    ) },
+                  { title: 'المخزن', dataIndex: 'location_name', width: 170,
+                    render: (v: string | null) => v ?? '-' },
+                  { title: 'الكمية', dataIndex: 'quantity', width: 100, align: 'left' as const,
+                    render: (v: string) => <b>{qty(v)}</b> },
+                  { title: 'المستند', key: 'doc', width: 175,
+                    render: (_: any, r: BatchMove) => (r.document_type
+                      ? <span>{MOVE_DOC[r.document_type] ?? r.document_type}
+                        {r.document_id
+                          ? <Tag style={{ marginInlineStart: 6 }}>#{r.document_id}</Tag> : null}
+                      </span>
+                      : '-') },
                 ]}
               />
             </Card>

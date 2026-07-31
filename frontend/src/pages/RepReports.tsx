@@ -1,0 +1,226 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Button, Card, DatePicker, Select, Space, Statistic, Table, Tabs, Tag, message,
+} from 'antd';
+import { ReloadOutlined, TeamOutlined } from '@ant-design/icons';
+import dayjs, { Dayjs } from 'dayjs';
+import { api } from '../api/client';
+import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useQueryTab } from '../components/useQueryTab';
+
+/**
+ * تقارير مندوبين — three of their four report screens; the fourth (عمولة تحصيلات مندوبين) already
+ * lives on the finance screen and its menu entry points there.
+ *
+ * Nothing new is recorded to produce these. A receipt has always carried who took it and from whom,
+ * and an invoice has always carried its rep — what was missing was reading it that way round.
+ *
+ * The period is shared across the three tabs on purpose: «how much did he collect» and «what did he
+ * sell» are asked about the same month, and two pickers that can disagree is how somebody compares
+ * March against April without noticing.
+ */
+
+interface CollectionRow {
+  rep_user_id: number; rep_name: string; receipts: number; collected: string;
+}
+interface ByCustomerRow extends CollectionRow {
+  customer_id: number | null; customer_name: string | null;
+}
+interface RepItemRow {
+  rep_user_id: number; rep_name: string; item_id: number; item_name: string;
+  quantity: string; net: string;
+}
+
+const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
+const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+
+export default function RepReports() {
+  const [tab, setTab] = useQueryTab('collections', 'view');
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
+    [dayjs().startOf('month'), dayjs()]);
+  const [repId, setRepId] = useState<number | undefined>();
+
+  const [collections, setCollections] = useState<CollectionRow[]>([]);
+  const [byCustomer, setByCustomer] = useState<ByCustomerRow[]>([]);
+  const [items, setItems] = useState<RepItemRow[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const params = useMemo(() => {
+    const p: any = {};
+    if (range) { p.date_from = range[0].format('YYYY-MM-DD'); p.date_to = range[1].format('YYYY-MM-DD'); }
+    if (repId) p.rep_id = repId;
+    return p;
+  }, [range, repId]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [c, b, i] = await Promise.all([
+        api.get('/api/v1/rep-reports/collections', { params }),
+        api.get('/api/v1/rep-reports/collections-by-customer', { params }),
+        api.get('/api/v1/rep-reports/items', { params }),
+      ]);
+      setCollections(c.data || []); setByCustomer(b.data || []); setItems(i.data || []);
+    } catch {
+      message.error('تعذر تحميل تقارير المندوبين');
+    } finally { setLoading(false); }
+  }, [params]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // The rep list comes from the figures themselves rather than from a users call: these screens are
+  // about who actually collected or sold, and a rep with nothing in the period has nothing to show.
+  const repOptions = useMemo(() => {
+    const seen = new Map<number, string>();
+    [...collections, ...byCustomer, ...items]
+      .forEach((r: any) => seen.set(r.rep_user_id, r.rep_name));
+    return [...seen].map(([value, label]) => ({ value, label }));
+  }, [collections, byCustomer, items]);
+
+  const totalCollected = collections.reduce((s, r) => s + Number(r.collected || 0), 0);
+  const totalSold = items.reduce((s, r) => s + Number(r.net || 0), 0);
+
+  const collectionFilter = useListFilter<CollectionRow>(collections, {
+    search: (r) => [r.rep_name],
+  });
+  const customerFilter = useListFilter<ByCustomerRow>(byCustomer, {
+    search: (r) => [r.rep_name, r.customer_name],
+    filters: { rep_user_id: (r, v) => r.rep_user_id === v },
+  });
+  const itemFilter = useListFilter<RepItemRow>(items, {
+    search: (r) => [r.rep_name, r.item_name],
+    filters: { rep_user_id: (r, v) => r.rep_user_id === v },
+  });
+
+  const header = (
+    <Space wrap>
+      <DatePicker.RangePicker
+        value={range as any} onChange={(v) => setRange(v as any)} allowClear={false}
+      />
+      <Select
+        allowClear showSearch optionFilterProp="label" style={{ minWidth: 200 }}
+        placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions}
+      />
+      <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+    </Space>
+  );
+
+  return (
+    <Card title={<span><TeamOutlined /> تقارير المندوبين</span>} extra={header}>
+      <Space size="large" style={{ marginBottom: 12 }}>
+        <Statistic title="إجمالي المُحصّل" value={totalCollected} precision={2} suffix="ج.م"
+          valueStyle={{ color: '#6AB42D' }} />
+        <Statistic title="إجمالي المبيعات (صافي)" value={totalSold} precision={2} suffix="ج.م" />
+      </Space>
+
+      <Tabs
+        activeKey={tab} onChange={setTab}
+        items={[
+          {
+            key: 'collections',
+            label: 'تحصيلات المندوبين',
+            children: (
+              <>
+                <ListToolbar
+                  searchPlaceholder="بحث باسم المندوب"
+                  query={collectionFilter.query} onQueryChange={collectionFilter.setQuery}
+                  onReset={collectionFilter.reset}
+                  total={collections.length} shown={collectionFilter.filtered.length}
+                  searchSpan={10}
+                />
+                <Table
+                  rowKey="rep_user_id" size="middle" loading={loading}
+                  dataSource={collectionFilter.filtered}
+                  locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
+                  pagination={false}
+                  columns={[
+                    { title: 'المندوب', dataIndex: 'rep_name', render: (v: string) => <b>{v}</b> },
+                    { title: 'عدد السندات', dataIndex: 'receipts', width: 140 },
+                    { title: 'المُحصّل', dataIndex: 'collected', width: 180,
+                      align: 'left' as const,
+                      render: (v: string) => (
+                        <b style={{ color: '#6AB42D' }}>{money(v)} ج.م</b>
+                      ) },
+                  ]}
+                />
+              </>
+            ),
+          },
+          {
+            key: 'collections-by-customer',
+            label: 'تحصيلات المندوبين عملاء',
+            children: (
+              <>
+                <ListToolbar
+                  searchPlaceholder="بحث بالمندوب أو العميل"
+                  query={customerFilter.query} onQueryChange={customerFilter.setQuery}
+                  values={customerFilter.values} onValueChange={customerFilter.setValue}
+                  onReset={customerFilter.reset}
+                  total={byCustomer.length} shown={customerFilter.filtered.length}
+                  filters={[{ key: 'rep_user_id', placeholder: 'المندوب', span: 7,
+                    options: repOptions }]}
+                />
+                <Table
+                  rowKey={(r) => `${r.rep_user_id}-${r.customer_id ?? 0}`}
+                  size="middle" loading={loading} dataSource={customerFilter.filtered}
+                  locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
+                  pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                    showTotal: (t) => `الإجمالي: ${t}` }}
+                  columns={[
+                    { title: 'المندوب', dataIndex: 'rep_name', width: 200,
+                      render: (v: string) => <b>{v}</b> },
+                    { title: 'العميل', dataIndex: 'customer_name',
+                      // Money with no customer on it is still money the rep collected; dropping the
+                      // row would make this screen's total disagree with the one beside it.
+                      render: (v: string | null) => v ?? <Tag>بدون عميل</Tag> },
+                    { title: 'عدد السندات', dataIndex: 'receipts', width: 130 },
+                    { title: 'المُحصّل', dataIndex: 'collected', width: 165,
+                      align: 'left' as const,
+                      render: (v: string) => <b>{money(v)} ج.م</b> },
+                  ]}
+                />
+              </>
+            ),
+          },
+          {
+            key: 'items',
+            label: 'مبيعات اصناف مندوبين',
+            children: (
+              <>
+                <ListToolbar
+                  searchPlaceholder="بحث بالمندوب أو الصنف"
+                  query={itemFilter.query} onQueryChange={itemFilter.setQuery}
+                  values={itemFilter.values} onValueChange={itemFilter.setValue}
+                  onReset={itemFilter.reset}
+                  total={items.length} shown={itemFilter.filtered.length}
+                  filters={[{ key: 'rep_user_id', placeholder: 'المندوب', span: 7,
+                    options: repOptions }]}
+                />
+                <Table
+                  rowKey={(r) => `${r.rep_user_id}-${r.item_id}`}
+                  size="middle" loading={loading} dataSource={itemFilter.filtered}
+                  locale={{ emptyText: 'مفيش مبيعات في الفترة دي' }}
+                  pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                    showTotal: (t) => `الإجمالي: ${t}` }}
+                  columns={[
+                    { title: 'المندوب', dataIndex: 'rep_name', width: 200,
+                      render: (v: string) => <b>{v}</b> },
+                    { title: 'الصنف', dataIndex: 'item_name' },
+                    { title: 'الكمية', dataIndex: 'quantity', width: 120,
+                      render: (v: string) => qty(v) },
+                    // Net of the document's discount, so these add up to the invoices rather than
+                    // showing a rep selling more than the customer was billed.
+                    { title: 'الصافي', dataIndex: 'net', width: 165, align: 'left' as const,
+                      render: (v: string) => <b>{money(v)} ج.م</b> },
+                  ]}
+                />
+              </>
+            ),
+          },
+        ]}
+      />
+    </Card>
+  );
+}

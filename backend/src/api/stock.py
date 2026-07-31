@@ -12,9 +12,9 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
-from src.models.catalog import Item
+from src.models.catalog import Item, StockBatchMovement
 from src.models.stock import LocationKind, StockDirection, StockMovement
-from src.models.warehouse import Custody
+from src.models.warehouse import Custody, Warehouse
 from src.services import batch_service, stock_permit_service
 from src.services.stock_service import StockError, on_hand
 
@@ -91,6 +91,54 @@ def expiring_batches(
     """كميات انتهاء الصلاحية — lots at or before a cutoff that still hold stock, soonest first."""
     return batch_service.expiring(db, before=before, item_id=item_id,
                                   location_kind=location_kind, location_id=location_id)
+
+
+@router.get("/batches/movements", response_model=list[dict])
+def batch_movements(
+    item_id: int | None = None,
+    expiry_date: date | None = None,
+    kind: str | None = None,
+    location_kind: LocationKind | None = None,
+    location_id: int | None = None,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """حركات انتهاء الصلاحية — every draw on every lot, newest first.
+
+    `StockBatch` holds what REMAINS of a lot, which answers «how much of the March batch is left»
+    and never «where did the rest of it go» — the question asked the day a lot is recalled and each
+    unit has to be traced to the invoice that sold it. FEFO picks the lot at the moment of sale; if
+    that choice is not written down then it is gone.
+    """
+    stmt = select(StockBatchMovement)
+    if item_id is not None:
+        stmt = stmt.where(StockBatchMovement.item_id == item_id)
+    if expiry_date is not None:
+        stmt = stmt.where(StockBatchMovement.expiry_date == expiry_date)
+    if kind:
+        stmt = stmt.where(StockBatchMovement.kind == kind)
+    if location_kind is not None:
+        stmt = stmt.where(StockBatchMovement.location_kind == location_kind)
+    if location_id is not None:
+        stmt = stmt.where(StockBatchMovement.location_id == location_id)
+
+    items = {i.id: i.name for i in db.scalars(select(Item)).all()}
+    warehouses = {w.id: w.name for w in db.scalars(select(Warehouse)).all()}
+    rows = db.scalars(stmt.order_by(StockBatchMovement.id.desc()).limit(1000)).all()
+    return [
+        {
+            "id": m.id, "item_id": m.item_id, "item_name": items.get(m.item_id),
+            "expiry_date": str(m.expiry_date), "kind": m.kind.value,
+            "location_kind": m.location_kind.value, "location_id": m.location_id,
+            "location_name": (warehouses.get(m.location_id)
+                              if m.location_kind == LocationKind.warehouse
+                              else f"عهدة #{m.location_id}"),
+            "quantity": str(m.quantity),
+            "document_type": m.document_type, "document_id": m.document_id,
+            "created_at": str(m.created_at),
+        }
+        for m in rows
+    ]
 
 
 @router.get("/on-hand", response_model=OnHandOut)
