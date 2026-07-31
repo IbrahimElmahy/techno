@@ -12,7 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.core.money import to_qty
-from src.models.catalog import Item, ItemSerial, SerialStatus
+from src.models.catalog import (
+    Item, ItemSerial, ItemSerialMovement, SerialMovementKind, SerialStatus,
+)
 from src.models.stock import LocationKind, StockDirection
 from src.services import stock_service
 
@@ -25,6 +27,29 @@ def _get(db: Session, item_id: int, serial: str) -> ItemSerial | None:
     return db.scalar(
         select(ItemSerial).where(ItemSerial.item_id == item_id, ItemSerial.serial == serial)
     )
+
+
+def _log(
+    db: Session,
+    row: ItemSerial,
+    kind: SerialMovementKind,
+    *,
+    location_kind=None,
+    location_id=None,
+    document_type: str | None = None,
+    document_id: int | None = None,
+    actor_user_id: int | None = None,
+) -> None:
+    """Write where a serial ended up and on what document.
+
+    Called at each of the four points a serial moves. Deriving this later from stock movements is
+    not possible: those carry quantities, and a quantity does not name which unit moved.
+    """
+    db.add(ItemSerialMovement(
+        serial_id=row.id, item_id=row.item_id, serial=row.serial, kind=kind,
+        location_kind=location_kind, location_id=location_id,
+        document_type=document_type, document_id=document_id, actor_user_id=actor_user_id,
+    ))
 
 
 def receive(
@@ -54,6 +79,10 @@ def receive(
         db.add(row)
         rows.append(row)
     db.flush()
+    for row in rows:
+        _log(db, row, SerialMovementKind.received, location_kind=location_kind,
+             location_id=location_id, document_type="serial_receive", document_id=item.id,
+             actor_user_id=actor_user_id)
     stock_service.post_movement(
         db, item_id=item.id, location_kind=location_kind, location_id=location_id,
         movement_type="serial_receive_in", direction=StockDirection.in_,
@@ -91,6 +120,8 @@ def relocate(
     to_kind: LocationKind,
     to_id: int,
     quantity: Decimal | int,
+    transfer_id: int | None = None,
+    actor_user_id: int | None = None,
 ) -> list[ItemSerial]:
     """Move N in-stock serials from one location to another, oldest first.
 
@@ -126,6 +157,9 @@ def relocate(
         row.location_kind = to_kind
         row.location_id = to_id
     db.flush()
+    for row in rows:
+        _log(db, row, SerialMovementKind.relocated, location_kind=to_kind, location_id=to_id,
+             document_type="transfer", document_id=transfer_id, actor_user_id=actor_user_id)
     return list(rows)
 
 
@@ -137,6 +171,7 @@ def mark_sold(
     origin_id: int,
     serials: list[str],
     invoice_id: int,
+    actor_user_id: int | None = None,
 ) -> None:
     """Each serial must be in_stock at the origin; set sold + link the invoice (FR-004)."""
     for s in serials:
@@ -149,6 +184,10 @@ def mark_sold(
         row.location_kind = None
         row.location_id = None
         row.sold_invoice_id = invoice_id
+        # No location: the unit left. Recording the origin here would keep sold units in a
+        # store's list of what it holds.
+        _log(db, row, SerialMovementKind.sold, document_type="sales_invoice",
+             document_id=invoice_id, actor_user_id=actor_user_id)
     db.flush()
 
 
@@ -160,6 +199,7 @@ def restore_for_return(
     origin_kind: LocationKind,
     origin_id: int,
     serials: list[str],
+    actor_user_id: int | None = None,
 ) -> None:
     """Each serial must have been sold on this invoice; restore to in_stock@origin (FR-005)."""
     for s in serials:
@@ -170,4 +210,7 @@ def restore_for_return(
         row.location_kind = origin_kind
         row.location_id = origin_id
         row.sold_invoice_id = None
+        _log(db, row, SerialMovementKind.returned, location_kind=origin_kind,
+             location_id=origin_id, document_type="sales_invoice", document_id=invoice_id,
+             actor_user_id=actor_user_id)
     db.flush()

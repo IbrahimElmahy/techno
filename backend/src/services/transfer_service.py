@@ -120,13 +120,15 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
                 db, item=item,
                 from_kind=transfer.source_location_kind, from_id=transfer.source_location_id,
                 to_kind=transfer.dest_location_kind, to_id=transfer.dest_location_id,
-                quantity=transfer.quantity)
+                quantity=transfer.quantity, transfer_id=transfer.id,
+                actor_user_id=transfer.approved_by or transfer.initiated_by)
         if getattr(item, "is_perishable", False):
             batch_service.relocate(
                 db, item_id=item.id,
                 from_kind=transfer.source_location_kind, from_id=transfer.source_location_id,
                 to_kind=transfer.dest_location_kind, to_id=transfer.dest_location_id,
-                quantity=transfer.quantity)
+                quantity=transfer.quantity, transfer_id=transfer.id,
+                actor_user_id=transfer.approved_by or transfer.initiated_by)
 
     transfer.status = TransferStatus.approved
     transfer.approved_by = approver_user_id

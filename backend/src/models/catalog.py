@@ -181,6 +181,91 @@ class ItemSerial(Base):
     )
 
 
+class SerialMovementKind(str, enum.Enum):
+    received = "received"       # entered stock
+    relocated = "relocated"     # moved between locations with a transfer
+    sold = "sold"               # left on an invoice
+    returned = "returned"       # came back off that invoice
+
+
+class ItemSerialMovement(Base):
+    """Every time a serial changed hands — 031, «حركات سرايل».
+
+    `ItemSerial` holds only where a unit is NOW. That answers «where is serial X?» and cannot answer
+    «where has it been, and on which document?» — which is the question asked when a customer
+    returns a unit claiming they never bought it, or when one turns up in a store nobody sent it to.
+    The four places a serial moves each write a row here, so the trail is a record rather than
+    something reconstructed later from stock quantities that do not name the unit.
+
+    The row keeps where the serial ENDED. A sale ends nowhere, so its location is NULL — the unit
+    left, and pretending it is still at the origin would put sold units in a store's list.
+    """
+
+    __tablename__ = "item_serial_movement"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    serial_id: Mapped[int] = mapped_column(
+        ForeignKey("item_serial.id"), nullable=False
+    )
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
+    # Copied rather than joined: a serial can be deleted from a mis-keyed receipt, and the trail of
+    # what moved must survive the row it described.
+    serial: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[SerialMovementKind] = mapped_column(Enum(SerialMovementKind), nullable=False)
+    location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
+    location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Which document did this: «sales_invoice», «transfer», «serial_receive».
+    document_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    document_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class BatchMovementKind(str, enum.Enum):
+    received = "received"             # a lot came into stock
+    consumed = "consumed"             # drawn down by a sale, earliest expiry first
+    relocated_out = "relocated_out"   # left a location on a transfer
+    relocated_in = "relocated_in"     # arrived at one
+    returned = "returned"             # came back off an invoice
+
+
+class StockBatchMovement(Base):
+    """Every draw on an expiry lot — 031, «حركات انتهاء الصلاحية».
+
+    `StockBatch` holds what REMAINS of a lot. That answers «how much of the batch expiring in
+    March is left» and cannot answer «where did the rest of it go» — the question asked when a lot
+    is recalled and every unit of it has to be traced to the invoice that sold it.
+
+    Like the serial trail, it cannot be derived afterwards: a stock movement carries a quantity and
+    a date, not which expiry lot the quantity came out of. FEFO makes that choice at the moment of
+    sale, and if it is not written down then it is gone.
+
+    A relocation is two rows, out of the source and into the destination. One row with two
+    locations would need a reader to know which end it was looking at.
+    """
+
+    __tablename__ = "stock_batch_movement"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
+    # The lot is identified by its expiry date rather than by a row id: lots merge and split as
+    # goods move, and the date is what stays true about the goods themselves.
+    expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
+    location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    kind: Mapped[BatchMovementKind] = mapped_column(Enum(BatchMovementKind), nullable=False)
+    # Always positive; `kind` says which way it went.
+    quantity: Mapped[object] = mapped_column(QTY, nullable=False)
+    document_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    document_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
 class ItemBarcode(Base):
     """A scan-target barcode for an item (010). Globally unique; optionally tied to a unit (008)."""
 

@@ -328,6 +328,7 @@ def create_sale(
                 serial_service.mark_sold(
                     db, item=item, origin_kind=line_kind, origin_id=line_loc,
                     serials=ln.serials, invoice_id=invoice.id,
+                    actor_user_id=actor_user_id,
                 )
             except SerialError as exc:
                 raise SalesError(str(exc)) from exc
@@ -339,6 +340,8 @@ def create_sale(
                 batch_service.consume_fefo(
                     db, item_id=ln.item_id, location_kind=line_kind,
                     location_id=line_loc, quantity=base_qty,
+                    document_type="sales_invoice", document_id=invoice.id,
+                    actor_user_id=actor_user_id,
                 )
             except batch_service.BatchError as exc:
                 raise SalesError(str(exc)) from exc
@@ -493,6 +496,7 @@ def return_sale(
                 batch_service.restore_for_return(
                     db, item_id=item_id, location_kind=back_kind, location_id=back_loc,
                     expiry_date=(expiry_dates or {}).get(item_id), quantity=base_qty,
+                    invoice_id=inv.id, actor_user_id=actor_user_id,
                 )
             except batch_service.BatchError as exc:
                 raise SalesError(str(exc)) from exc
@@ -503,7 +507,7 @@ def return_sale(
             try:
                 serial_service.restore_for_return(
                     db, item=item, invoice_id=inv.id, origin_kind=back_kind,
-                    origin_id=back_loc, serials=ser,
+                    origin_id=back_loc, serials=ser, actor_user_id=actor_user_id,
                 )
             except SerialError as exc:
                 raise SalesError(str(exc)) from exc

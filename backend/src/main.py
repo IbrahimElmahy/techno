@@ -27,7 +27,9 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     product_points,
     purchases,
     reports,
+    rep_reports,  # تقارير مندوبين (031)
     sales,
+    serials,  # السرايل و حركات سرايل (031)
     settings_lookups,  # Configurable dropdown lists (013)
     stock,
     suppliers,
@@ -83,6 +85,8 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix=prefix)
     # Sales & Inventory (002)
     app.include_router(catalog.router, prefix=prefix)
+    app.include_router(serials.router, prefix=prefix)
+    app.include_router(rep_reports.router, prefix=prefix)
     app.include_router(catalog.lookup_router, prefix=prefix)  # /barcodes/{code} (010)
     app.include_router(stock.router, prefix=prefix)
     app.include_router(suppliers.router, prefix=prefix)

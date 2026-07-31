@@ -23,6 +23,8 @@ import Categories from '../pages/Categories';
 import PendingScreen from '../pages/PendingScreen';
 import PurchaseReturns from '../pages/PurchaseReturns';
 import FreeProduction from '../pages/FreeProduction';
+import Serials from '../pages/Serials';
+import RepReports from '../pages/RepReports';
 import ItemCard from '../pages/ItemCard';
 import StockPermits from '../pages/StockPermits';
 import Stocktake from '../pages/Stocktake';
@@ -102,6 +104,8 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/reports" element={<Reports />} />
       <Route path="/purchase-returns" element={<PurchaseReturns />} />
       <Route path="/free-production" element={<FreeProduction />} />
+      <Route path="/serials" element={<Serials />} />
+      <Route path="/rep-reports" element={<RepReports />} />
       <Route path="/trade-reports" element={<TradeReports />} />
       <Route path="/settings" element={<Settings />} />
       {/* A menu entry whose screen is not built yet lands here and says so, naming the a5 screen

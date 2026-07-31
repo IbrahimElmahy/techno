@@ -27,22 +27,6 @@ const PENDING: Record<string, Pending> = {
     what: 'حجز كمية من صنف لعميل لمدة محدودة، فتتحجز عن البيع لغيره لحد ما الحجز يتحوّل لفاتورة أو ينتهي.',
     note: 'الحجز بيمسك رصيد من غير ما يبيعه، يعني لازم يدخل في حساب المتاح على كل شاشة بتبيع — مش شاشة لوحدها.',
   },
-  '/serials': {
-    what: 'قائمة السرايل المسجّلة، كل سيريال ومكانه وحالته.',
-    insteadLabel: 'كارت الصنف',
-    insteadPath: '/item-card',
-    note: 'السرايل نفسها متسجّلة على المستندات من زمان؛ الناقص شاشة بتعرضها مجمّعة.',
-  },
-  '/serials?view=movements': {
-    what: 'حركة كل سيريال: دخل امتى وبأنهي مستند، وخرج امتى ولمين.',
-    insteadLabel: 'كارت الصنف',
-    insteadPath: '/item-card',
-  },
-  '/expiry?view=movements': {
-    what: 'حركة لوطات الصلاحية: اللوط دخل امتى وبكام، واتصرف منه امتى وعلى أنهي فاتورة.',
-    insteadLabel: 'كميات انتهاء الصلاحية',
-    insteadPath: '/stock-alerts?tab=expiring',
-  },
   '/inventory-count': {
     what: 'جرد مخزن واحد: تطبع كشف بأرصدته، تعدّ على الورق، تدخّل المعدود، والفرق يتقفل بتسوية.',
     insteadLabel: 'جرد حتى تاريخ',
@@ -57,20 +41,6 @@ const PENDING: Record<string, Pending> = {
   '/price-display': {
     what: 'شاشة سعر للعميل — يتقرا الباركود فيظهر اسم الصنف وسعره على شاشة تانية.',
     note: 'محتاجة شاشة تانية عند الكاشير، مش بس كود.',
-  },
-  '/rep-reports?view=collections': {
-    what: 'تحصيلات كل مندوب خلال فترة: قبض كام ومن أنهي عملاء.',
-    insteadLabel: 'عمولة تحصيلات المندوبين',
-    insteadPath: '/finance-reports?tab=commissions',
-  },
-  '/rep-reports?view=collections-by-customer': {
-    what: 'نفس التحصيلات مفصّلة بالعميل: كل مندوب وعملاؤه واللي حصّله من كل واحد.',
-    insteadLabel: 'عمولة تحصيلات المندوبين',
-    insteadPath: '/finance-reports?tab=commissions',
-  },
-  '/rep-reports?view=items': {
-    what: 'مبيعات الأصناف لكل مندوب: كل مندوب باع إيه وبكام.',
-    note: 'المندوب متسجّل على الفاتورة؛ التقرير محتاج محرك التقارير يجمّع بالمندوب زي ما بيجمّع بالعميل.',
   },
 };
 
