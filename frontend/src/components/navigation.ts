@@ -179,8 +179,8 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-count',
         label: 'جرد',
         children: [
-          { key: '/inventory-count', label: 'جرد المخازن', roles: STOCK, a5: '/inventorycount' },
-          { key: '/inventory-count-general', label: 'جرد عام المخازن', roles: STOCK, a5: '/generalinventorycount' },
+          { key: '/stock-counts?mode=single', label: 'جرد المخازن', roles: STOCK, a5: '/inventorycount' },
+          { key: '/stock-counts?mode=general', label: 'جرد عام المخازن', roles: STOCK, a5: '/generalinventorycount' },
           { key: '/stocktake', label: 'جرد حتى تاريخ', roles: R(STOCK), a5: '/inventory/period-inventory' },
         ],
       },
