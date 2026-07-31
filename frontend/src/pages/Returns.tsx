@@ -17,6 +17,7 @@ import TotalsLadder from '../components/TotalsLadder';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
@@ -30,6 +31,8 @@ import { useLookup, labelMap } from '../hooks/useLookup';
  */
 
 interface ReturnRecord {
+  sales_invoice_id?: number | null;
+  invoice_document_number?: string | null;
   id: number;
   document_number: string;
   customer_id: number;
@@ -114,6 +117,11 @@ export default function Returns() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewReturn, setViewReturn] = useState<any>(null);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
+  // All of their columns exist; these start hidden. A returns list is read for «who, when, how
+  // much came back and what it cost us» — the rest are there when a question needs them.
+  const returnCols = useHiddenColumns('returns-list', [
+    'id', 'gross', 'discount_value', 'combined_pct', 'tax_amount',
+  ]);
   // Purchase-history popup for a line's "آخر سعر شراء" tag.
   const [histModal, setHistModal] = useState<{ name: string; rows: HistRow[] } | null>(null);
 
@@ -659,13 +667,39 @@ export default function Returns() {
   }
 
   // --- The list --------------------------------------------------------------------------------
+  // Their مردود مبيعات list, in their order:
+  //   `رقم · التاريخ · مستند رقم · الفاتورة رقم · الحساب الفرعي · جهه التعامل · مندوب · اجمالي قبل ·
+  //    خصم · خصم% · ض.م · ض.م % · الاجمالي · مصروفات · الصافى · تم السداد · الباقى ·
+  //    مصروفات تشغيل · ملاحظات · مراكز التكلفة`
+  //
+  // Same treatment as the sales list: everything we can answer honestly, in their order and under
+  // their wording, with the ones a returns list is not usually read for starting hidden.
+  //
+  // Left out because a return does not carry them: مستند رقم · الحساب الفرعي · مندوب · مصروفات ·
+  // مصروفات تشغيل · ملاحظات · مراكز التكلفة. Their return document holds the same fields as their
+  // sale; ours is a leaner record, and inventing empty columns for it would say we had the data.
   const columns = [
     {
-      title: 'رقم السند', dataIndex: 'document_number', key: 'document_number',
+      title: 'رقم', dataIndex: 'id', key: 'id', width: 80,
+      render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
+    },
+    {
+      title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', width: 105,
+      render: (v: string) => (v ? String(v).slice(0, 10) : '-'),
+    },
+    {
+      title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', width: 125,
       render: (doc: string) => <Tag color="volcano">{doc}</Tag>,
     },
     {
-      title: 'العميل', dataIndex: 'customer_id', key: 'customer_id',
+      // Which sale this undoes. The link was always stored and never shown.
+      title: 'الفاتورة رقم', dataIndex: 'invoice_document_number', key: 'invoice_document_number',
+      width: 125,
+      render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag>
+        : <span style={{ color: '#bbb' }}>مستقل</span>),
+    },
+    {
+      title: 'جهه التعامل', dataIndex: 'customer_id', key: 'customer_id', ellipsis: true,
       render: (cId: number) => (
         <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
           {customers.find((c) => c.id === cId)?.name ?? `عميل #${cId}`}
@@ -673,14 +707,34 @@ export default function Returns() {
       ),
     },
     {
-      title: 'صافي المرتجع', dataIndex: 'net', key: 'net',
+      title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross', width: 115,
+      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+    },
+    {
+      title: 'خصم', key: 'discount_value', width: 105, align: 'left' as const,
+      // Derived from the two beside it, so it can never disagree with them.
+      render: (_: any, r: ReturnRecord) =>
+        `${money(Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100))} ج.م`,
+    },
+    {
+      title: 'خصم%', dataIndex: 'combined_pct', key: 'combined_pct', width: 85,
+      render: (v: string) => `${Number(v || 0).toFixed(0)}%`,
+    },
+    {
+      title: 'ض.م', dataIndex: 'tax_amount', key: 'tax_amount', width: 100,
+      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+    },
+    {
+      title: 'الصافى', dataIndex: 'net', key: 'net', width: 115, align: 'left' as const,
       render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)} ج.م</strong>,
     },
-    { title: 'المسترد نقداً', dataIndex: 'cash_refund', key: 'cash_refund', render: (v: string) => `${money(v)} ج.م` },
-    { title: 'خصم من الحساب', dataIndex: 'credit_reduction', key: 'credit_reduction', render: (v: string) => `${money(v)} ج.م` },
     {
-      title: 'التاريخ', dataIndex: 'created_at', key: 'created_at',
-      render: (v: string) => (v ? String(v).slice(0, 10) : '-'),
+      title: 'تم السداد', dataIndex: 'cash_refund', key: 'cash_refund', width: 110,
+      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+    },
+    {
+      title: 'الباقى', dataIndex: 'credit_reduction', key: 'credit_reduction', width: 110,
+      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
     },
   ];
 
@@ -689,9 +743,24 @@ export default function Returns() {
       <Card
         title="مرتجعات المبيعات"
         extra={
-          <Button type="primary" danger icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
-            تسجيل مرتجع بيع
-          </Button>
+          <Space>
+            <ColumnSettings
+              choices={columns.map((c: any) => ({
+                key: String(c.key ?? c.dataIndex ?? ''),
+                title: typeof c.title === 'string' ? c.title : '',
+                // The document number is how a return is named out loud; hiding it would leave a
+                // table nobody can refer to.
+                locked: c.key === 'document_number',
+              }))}
+              hidden={returnCols.hidden}
+              onChange={returnCols.setHidden}
+            />
+            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+            <Button type="primary" danger icon={<PlusOutlined />}
+              onClick={() => setCreateVisible(true)}>
+              تسجيل مرتجع بيع
+            </Button>
+          </Space>
         }
       >
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
@@ -730,7 +799,8 @@ export default function Returns() {
         </Row>
 
         <Table
-          dataSource={returns} columns={columns} rowKey="id" loading={loading}
+          dataSource={returns} columns={returnCols.apply(columns)} rowKey="id" loading={loading}
+          size="middle" tableLayout="fixed"
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           onRow={(record) => ({ onClick: () => openDetail(record), style: { cursor: 'pointer' } })}
         />

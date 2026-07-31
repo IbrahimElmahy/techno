@@ -327,13 +327,21 @@ def list_sales(
 # Declared BEFORE /{sale_id} so the literal "returns"/"customer-item-history" paths win over the
 # int path param.
 
-def _standalone_return_out(r: SalesReturn) -> dict:
+def _standalone_return_out(r: SalesReturn, db: Session | None = None) -> dict:
+    # «الفاتورة رقم» on their مردود مبيعات list — the sale this came back from. The link has always
+    # been stored; the number was never returned, so the column that says WHICH sale a return
+    # undoes could not be shown beside it.
+    invoice_no = None
+    if db is not None and r.sales_invoice_id:
+        inv = db.get(SalesInvoice, r.sales_invoice_id)
+        invoice_no = inv.document_number if inv else None
     return {
         "id": r.id, "document_number": r.document_number, "customer_id": r.customer_id,
         "gross": str(r.gross), "combined_pct": str(r.combined_pct), "net": str(r.value),
         "tax_amount": str(r.tax_amount), "cash_refund": str(r.cash_refund),
         "credit_reduction": str(r.credit_reduction), "ledger_entry_id": r.ledger_entry_id,
         "created_at": str(r.created_at) if r.created_at else None,
+        "sales_invoice_id": r.sales_invoice_id, "invoice_document_number": invoice_no,
     }
 
 
@@ -373,7 +381,8 @@ def list_standalone_returns(
         stmt = stmt.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
     if date_to is not None:
         stmt = stmt.where(SalesReturn.created_at < clock.day_end_utc(date_to))
-    return [_standalone_return_out(r) for r in db.scalars(stmt.order_by(SalesReturn.id.desc())).all()]
+    return [_standalone_return_out(r, db)
+            for r in db.scalars(stmt.order_by(SalesReturn.id.desc())).all()]
 
 
 @router.post("/returns", response_model=dict, status_code=status.HTTP_201_CREATED)
