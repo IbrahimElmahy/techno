@@ -11,13 +11,16 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.core.money import to_qty
 from src.models.role import RoleName
 from src.models.stock import LocationKind, StockDirection
 from src.models.transfer import StockTransfer, TransferRoute, TransferStatus
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse
 from src.models.catalog import Item
-from src.services import audit_service, batch_service, serial_service, stock_service
+from src.services import (
+    audit_service, batch_service, reservation_service, serial_service, stock_service,
+)
 
 _ROUTE_KINDS = {
     TransferRoute.central_to_branch: (LocationKind.warehouse, LocationKind.warehouse),
@@ -66,8 +69,19 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         raise TransferError("Source and destination must be different locations.")
     # Fail fast: never let a request be raised for more than the source actually holds. The
     # authoritative no-negative guard still runs at approve time (stock can move in between).
-    available = stock_service.on_hand(db, item_id, source_kind, source_id)
+    # (031) Reserved stock does not move. A hold is a promise to a customer at THIS location, and
+    # sending the goods to another branch breaks it as completely as selling them would — with the
+    # difference that nobody notices until the customer arrives.
+    on_hand = stock_service.on_hand(db, item_id, source_kind, source_id)
+    held = reservation_service.held_against(
+        db, item_id=item_id, location_kind=source_kind, location_id=source_id)
+    available = to_qty(Decimal(str(on_hand)) - Decimal(str(held)))
     if qty > available:
+        if held > to_qty(0):
+            raise TransferError(
+                f"المتاح للتحويل {available} أقل من المطلوب {qty} — فيه {held} محجوزة لعملاء "
+                f"في المخزن ده."
+            )
         raise TransferError(
             f"Requested {qty} exceeds the {available} available at the source location."
         )

@@ -28,6 +28,7 @@ from src.models.sales import (
 from src.models.sales_expense import ExpenseKind, SalesInvoiceExpense
 from src.models.stock import LocationKind, StockDirection
 from src.services import (
+    reservation_service,
     account_resolver,
     audit_service,
     batch_service,
@@ -136,23 +137,38 @@ def _coupon_count(serial_from: str | None, serial_to: str | None,
 
 
 def _assert_lines_available(
-    db: Session, built_locations: list[tuple[int, LocationKind, int, Decimal]]
+    db: Session, built_locations: list[tuple[int, LocationKind, int, Decimal]],
+    customer_id: int | None = None,
 ) -> None:
-    """Reject the document if the SUM of its lines exceeds what a location holds.
+    """Reject the document if the SUM of its lines exceeds what a location has FREE.
 
     Checking a line at a time would let two lines of 3 through against a stock of 5: each looks
     affordable on its own. Stock is grouped per (item × location) first, so the document is
     refused as a whole before anything moves.
+
+    (031) Free, not merely on-hand: stock held by a live reservation for a DIFFERENT customer is
+    not available to this sale. Excluding this customer's own holds is what makes the reservation
+    worth anything — otherwise it would block the one sale it exists to guarantee.
     """
     wanted: dict[tuple[int, LocationKind, int], Decimal] = {}
     for item_id, kind, loc_id, base_qty in built_locations:
         key = (item_id, kind, loc_id)
         wanted[key] = wanted.get(key, ZERO) + base_qty
     for (item_id, kind, loc_id), needed in wanted.items():
-        available = stock_service.on_hand(db, item_id, kind, loc_id)
+        on_hand = stock_service.on_hand(db, item_id, kind, loc_id)
+        held = reservation_service.held_against(
+            db, item_id=item_id, location_kind=kind, location_id=loc_id,
+            except_customer_id=customer_id,
+        )
+        available = to_qty(Decimal(str(on_hand)) - Decimal(str(held)))
         if needed > available:
+            if held > ZERO:
+                raise stock_service.StockError(
+                    f"المتاح {available} أقل من المطلوب {needed} — فيه {held} محجوزة لعميل تاني "
+                    f"(صنف {item_id}، {kind.value} {loc_id})."
+                )
             raise stock_service.StockError(
-                f"No-negative-stock: on-hand {available} < requested out {needed} "
+                f"No-negative-stock: on-hand {on_hand} < requested out {needed} "
                 f"(item {item_id}, {kind.value} {loc_id})."
             )
 
@@ -301,7 +317,7 @@ def create_sale(
         (ln.item_id, *_line_location(ln, origin_location_kind, origin_location_id),
          to_qty(Decimal(ln.quantity) * factor))
         for ln, _price, _total, _tier, factor, _disc in built
-    ])
+    ], customer_id=customer_id)
     for ln, unit_price, line_total, tier, factor, line_disc in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock moves in the base unit
         line_kind, line_loc = _line_location(ln, origin_location_kind, origin_location_id)
