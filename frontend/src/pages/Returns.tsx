@@ -5,6 +5,8 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
+  FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -14,6 +16,9 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import TotalsLadder from '../components/TotalsLadder';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
+import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import PrintOptionsMenu from '../components/PrintOptionsMenu';
+import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
@@ -54,7 +59,9 @@ interface ReturnLineItem {
   key: string;
   category: string | null;
   item_id: number | null;
-  quantity: number;
+  /** null = «not typed yet» — same rule as the sale: a box that opens at 1 makes «5» into «15»
+   *  for anybody who types over it without clearing first. */
+  quantity: number | null;
   unit_price: number;
   discount: number;   // per-line discount %
   warehouse_id: number | null;   // (030) this line comes back into its own warehouse
@@ -106,6 +113,7 @@ export default function Returns() {
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewReturn, setViewReturn] = useState<any>(null);
+  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
   // Purchase-history popup for a line's "آخر سعر شراء" tag.
   const [histModal, setHistModal] = useState<{ name: string; rows: HistRow[] } | null>(null);
 
@@ -172,7 +180,7 @@ export default function Returns() {
   }, [lines]);
 
   const lineTotal = (l: ReturnLineItem) =>
-    l.quantity * l.unit_price * (1 - Math.min(99.99, l.discount || 0) / 100);
+    Number(l.quantity || 0) * l.unit_price * (1 - Math.min(99.99, l.discount || 0) / 100);
   const linePoints = (l: ReturnLineItem) =>
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
@@ -236,39 +244,91 @@ export default function Returns() {
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
       setLines((prev) => prev.map((x) => (x.key === existing.key
-        ? { ...x, quantity: x.quantity + 1 } : x)));
+        ? { ...x, quantity: Number(x.quantity || 0) + 1 } : x)));
       // Focus the line that just changed, not a new one — the eye follows the number that moved.
       setFocusLineKey(existing.key);
     } else {
       const key = Date.now().toString();
       setLines((prev) => [...prev, {
         key, category: prod?.category ?? null, item_id: itemId,
-        quantity: 1, unit_price: price, discount: 0, warehouse_id: null,
+        quantity: null, unit_price: price, discount: 0, warehouse_id: null,
       }]);
       setFocusLineKey(key);
     }
   };
 
-  // The row does not exist until React has painted it, so the caret moves on the next tick
-  // rather than inside the handler that created it.
+  // The caret goes to the new line's quantity — the same rule, and the same three traps, as the
+  // sale. Wait for the picker to be GONE (an open modal traps focus by design), then keep asking
+  // per frame until the box actually has it, finding the box by attribute because antd's ref
+  // hands back a wrapper and cannot answer «did it land?».
   useEffect(() => {
-    if (!focusLineKey) return;
-    const input = qtyRefs.current[focusLineKey];
-    if (input?.focus) {
-      input.focus();
-      input.select?.();
-    }
-    setFocusLineKey(null);
-  }, [focusLineKey, lines.length]);
+    if (!focusLineKey) return undefined;
+    if (pickerOpen) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      const el = document.querySelector<HTMLInputElement>(
+        `input[data-qty-key="${focusLineKey}"]`
+      );
+      if (el && document.activeElement === el) { setFocusLineKey(null); return; }
+      el?.focus();
+      el?.select();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusLineKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusLineKey, lines.length, pickerOpen]);
+
+  /** On the open return, Enter opens the item picker — the next thing anybody does is add a line. */
+  useEffect(() => {
+    if (!createVisible) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (pickerOpen) return;
+      const el = e.target as HTMLElement | null;
+      if (el && typeof el.closest === 'function') {
+        if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) return;
+        if (el.closest('.ant-select, .ant-modal, button')) return;
+      }
+      e.preventDefault();
+      setPickerOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [createVisible, pickerOpen]);
 
   const handleLineChange = (key: string, field: keyof ReturnLineItem, value: any) => {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, [field]: value } : l)));
   };
   const handleRemoveLine = (key: string) => setLines(lines.filter((l) => l.key !== key));
 
+  /** شريط أدوات المستند on the return, the same row in the same order. */
+  const returnToolbar = (): ToolbarAction[] => {
+    const typed = lines.filter((l) => l.item_id !== null).length;
+    return [
+      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+        onClick: () => { createForm.resetFields(); setLines([]); } },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
+        onClick: () => setLines([]) },
+      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
+        disabled: typed === 0, onClick: () => createForm.submit() },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+        onClick: () => setPickerOpen(true) },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+        disabled: typed === 0, onClick: () => setLines([]) },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
+    ];
+  };
+
   const handleSubmit = (values: any) => {
     if (!customerId) { message.warning('يرجى اختيار العميل'); return; }
-    const valid = lines.filter((l) => l.item_id !== null && l.quantity > 0);
+    const valid = lines.filter((l) => l.item_id !== null && Number(l.quantity || 0) > 0);
     if (valid.length === 0) { message.warning('أضف صنفاً واحداً على الأقل للمرتجع'); return; }
     const cash = parseFloat(cashRefund.toString()) || 0;
     if (cash + creditReduction - netTotal > 0.01 || netTotal - (cash + creditReduction) > 0.01) {
@@ -287,7 +347,7 @@ export default function Returns() {
             cash_refund: cash,
             credit_reduction: creditReduction,
             lines: valid.map((l) => ({
-              item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
+              item_id: l.item_id, quantity: Number(l.quantity || 0), unit_price: l.unit_price,
               discount_pct: l.discount || 0,
               // (030) only when the line differs from the document's warehouse
               warehouse_id: l.warehouse_id ?? undefined,
@@ -347,7 +407,11 @@ export default function Returns() {
   if (createVisible) {
     return (
       <div>
-        <Card title="تسجيل مرتجع مبيعات جديد">
+        <Card title="تسجيل مرتجع مبيعات جديد"
+          extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
+          {/* Same eleven verbs in the same eleven places as the sale — a return is the sale read
+              backwards, and the hand should not have to relearn the row for it. */}
+          <DocumentToolbar actions={returnToolbar()} />
           <Form form={createForm} layout="vertical" onFinish={handleSubmit}>
             <Row gutter={16}>
               <Col span={12}>
@@ -466,10 +530,14 @@ export default function Returns() {
                               <Col md={2} xs={8}>
                                 <InputNumber size="small" min={0.001} style={{ width: '100%' }}
                                   ref={(el) => { qtyRefs.current[line.key] = el; }}
-                                  value={line.quantity}
-                                  onChange={(val) => handleLineChange(line.key, 'quantity', val || 1)}
-                                  // Enter means "this line is done" — straight back to the picker.
-                                  onPressEnter={() => setPickerOpen(true)} />
+                                  data-qty-key={line.key}
+                                  placeholder="الكمية"
+                                  value={line.quantity ?? undefined}
+                                  onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
+                                  // Enter means «this line is done» — straight back to the picker.
+                                  // preventDefault so the global «Enter moves to the next field»
+                                  // does not run after this and drag the caret off the new line.
+                                  onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }} />
                               </Col>
                               <Col md={3} xs={8}>
                                 <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}

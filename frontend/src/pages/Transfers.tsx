@@ -54,7 +54,9 @@ interface TransferLine {
   category: string | null;
   unit: string | null;
   available: number;
-  quantity: number;
+  /** null = «not typed yet», same as on the sale and the purchase: a box that opens at 1 turns
+   *  «5» into «15» for anybody who types over it without clearing first. */
+  quantity: number | null;
 }
 
 const ROUTE_LABELS: Record<string, string> = {
@@ -217,19 +219,27 @@ export default function Transfers() {
     if (existing) {
       // Bump by one, but never past what the source holds.
       setLines((prev) => prev.map((l) => (l.item_id === itemId
-        ? { ...l, quantity: Math.min(l.available, l.quantity + 1) } : l)));
+        ? { ...l, quantity: Math.min(l.available, Number(l.quantity || 0) + 1) } : l)));
       return;
     }
     setLines((prev) => [...prev, {
       key: `${itemId}-${prev.length}`, item_id: itemId, name: row.name,
-      category: row.category, unit: row.unit_of_measure, available, quantity: 1,
+      category: row.category, unit: row.unit_of_measure, available, quantity: null,
     }]);
   };
 
-  const setLineQty = (key: string, value: number) => {
+  const setLineQty = (key: string, value: number | null) => {
+    const line = lines.find((l) => l.key === key);
+    // Hard clamp: the form can never express more than is available — but it SAYS SO now. Silently
+    // rewriting somebody's number is how a transfer of forty is sent as twelve and nobody notices
+    // until the receiving store counts.
+    if (line && value != null && value > line.available) {
+      message.warning(line.available > 0
+        ? `«${line.name}»: المتاح ${qty(line.available)} — اتسجّلت ${qty(line.available)}.`
+        : `«${line.name}»: مفيش رصيد في المخزن المصدر.`);
+    }
     setLines((prev) => prev.map((l) => (l.key === key
-      // Hard clamp: the form can never express more than is available.
-      ? { ...l, quantity: Math.max(0, Math.min(l.available, value || 0)) } : l)));
+      ? { ...l, quantity: value == null ? null : Math.max(0, Math.min(l.available, value)) } : l)));
   };
 
   const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key));
@@ -246,9 +256,9 @@ export default function Transfers() {
       message.error('التحويل من عهدة مندوب إلى مخزن غير متاح حالياً — استخدم تسليم العهدة');
       return;
     }
-    const valid = lines.filter((l) => l.quantity > 0);
+    const valid = lines.filter((l) => Number(l.quantity || 0) > 0);
     if (!valid.length) { message.warning('أضف صنفاً واحداً على الأقل بكمية أكبر من صفر'); return; }
-    const over = valid.find((l) => l.quantity > l.available);
+    const over = valid.find((l) => Number(l.quantity || 0) > l.available);
     if (over) { message.error(`«${over.name}»: الكمية تتجاوز المتاح (${qty(over.available)})`); return; }
 
     const src = parseLoc(source);
@@ -260,7 +270,7 @@ export default function Transfers() {
     for (const l of valid) {
       try {
         await api.post('/api/v1/transfers', {
-          item_id: l.item_id, quantity: l.quantity, route,
+          item_id: l.item_id, quantity: Number(l.quantity || 0), route,
           source: { location_kind: src.kind, location_id: src.id },
           dest: { location_kind: dst.kind, location_id: dst.id },
         });
@@ -401,7 +411,7 @@ export default function Transfers() {
                       onChange={(val) => setLineQty(r.key, Number(val))} />
                   ) },
                 { title: 'المتبقي بعد التحويل',
-                  render: (_: any, r: TransferLine) => qty(r.available - r.quantity) },
+                  render: (_: any, r: TransferLine) => qty(r.available - Number(r.quantity || 0)) },
                 { title: '', width: 50,
                   render: (_: any, r: TransferLine) => (
                     <Button type="text" size="small" danger icon={<DeleteOutlined />}

@@ -4,13 +4,17 @@ import {
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
-  PrinterOutlined,
+  PrinterOutlined, FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
 import TotalsLadder from '../components/TotalsLadder';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
+import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import PrintOptionsMenu from '../components/PrintOptionsMenu';
+import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface Supplier {
@@ -36,7 +40,9 @@ interface RawMaterial {
 interface PurchaseItem {
   key: string;
   item_id: number | null;
-  quantity: number;
+  /** null = «not typed yet». A box that opens at 1 turns «5» into «15» for anybody who types
+   *  without clearing it first, and the document is out by ten with nothing looking wrong. */
+  quantity: number | null;
   unit_price: number;
   unit: string | null;
 }
@@ -102,7 +108,7 @@ export default function Purchases() {
   // Form state
   const [form] = Form.useForm();
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([
-    { key: '1', item_id: null, quantity: 1, unit_price: 0, unit: null },
+    { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null },
   ]);
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
 
@@ -116,6 +122,14 @@ export default function Purchases() {
   // Active tab + purchases history list
   const [activeTab, setActiveTab] = useState<string>('create');
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
+  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
+  /** The row whose item box should take the caret next — the purchase's version of the sale's
+   *  «pick, type a quantity, Enter, pick again». There is no picker window here, so Enter on a
+   *  quantity opens the NEXT LINE and lands on its item box. */
+  const [focusRowKey, setFocusRowKey] = useState<string | null>(null);
+  // antd's Select will not take focus through its inner input reliably — it exposes `focus()` on
+  // its own ref, and that is the only handle that works.
+  const itemRefs = useRef<Record<string, any>>({});
   const [listLoading, setListLoading] = useState(false);
 
   // Detail drawer
@@ -224,13 +238,33 @@ export default function Purchases() {
     fetchPurchases();
   }, []);
 
-  const handleAddItem = () => {
+  const handleAddItem = (focusIt = false) => {
     const newKey = Date.now().toString();
     setPurchaseItems([
       ...purchaseItems,
-      { key: newKey, item_id: null, quantity: 1, unit_price: 0, unit: null },
+      { key: newKey, item_id: null, quantity: null, unit_price: 0, unit: null },
     ]);
+    if (focusIt) setFocusRowKey(newKey);
   };
+
+  // Keep asking for the caret until it arrives — one attempt lands in whatever the browser is
+  // doing that frame. Found by attribute because antd's Select ref cannot answer «did it land?».
+  useEffect(() => {
+    if (!focusRowKey) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      // Asked through the component's own ref, and CHECKED against the DOM: the wrapper carries
+      // the row key, so «did the caret land inside this row's box?» is answerable.
+      const inside = document.activeElement?.closest?.(`[data-item-key="${focusRowKey}"]`);
+      if (inside) { setFocusRowKey(null); return; }
+      itemRefs.current[focusRowKey]?.focus?.();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusRowKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusRowKey, purchaseItems.length]);
 
   const fetchUnits = async (itemId: number) => {
     if (unitsCache[itemId]) return;
@@ -269,7 +303,7 @@ export default function Purchases() {
 
   // Calculations
   const calculateTotal = () => {
-    return purchaseItems.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+    return purchaseItems.reduce((sum, item) => sum + Number(item.quantity || 0) * item.unit_price, 0);
   };
 
   const invoiceTotal = calculateTotal();
@@ -285,6 +319,33 @@ export default function Purchases() {
     handleSplitBalance();
   }, [cashAmount, invoiceTotal]);
 
+  /** شريط أدوات المستند — wired to what a purchase actually has. The rest keep their positions
+   *  greyed rather than vanishing, so the row does not shift under a practised hand. */
+  const purchaseToolbar = (): ToolbarAction[] => {
+    const typed = purchaseItems.filter((i) => i.item_id !== null).length;
+    return [
+      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+        onClick: () => { form.resetFields(); setPurchaseItems([
+          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]); } },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
+        onClick: () => setPurchaseItems([
+          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]) },
+      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
+        disabled: typed === 0, onClick: () => form.submit() },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />, disabled: true },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+        disabled: typed === 0,
+        onClick: () => setPurchaseItems([
+          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]) },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
+    ];
+  };
+
   const handleSubmit = async (values: any) => {
     const totalSplit = cashAmount + creditAmount;
     if (Math.abs(totalSplit - invoiceTotal) > 0.01) {
@@ -295,6 +356,14 @@ export default function Purchases() {
     const validLines = purchaseItems.filter((i) => i.item_id !== null);
     if (validLines.length === 0) {
       message.error('يرجى إضافة صنف واحد صالح على الأقل!');
+      return;
+    }
+    // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has to
+    // be caught rather than posted as whatever the default happened to be.
+    const noQty = validLines.find((l) => !Number(l.quantity));
+    if (noQty) {
+      const name = items.find((i) => i.id === noQty.item_id)?.name ?? 'الصنف';
+      message.error(`«${name}»: اكتب الكمية.`);
       return;
     }
 
@@ -310,7 +379,7 @@ export default function Purchases() {
         credit_amount: creditAmount,
         lines: validLines.map((l) => ({
           item_id: l.item_id,
-          quantity: l.quantity,
+          quantity: Number(l.quantity || 0),
           unit_price: l.unit_price,
           unit: l.unit,
         })),
@@ -320,7 +389,7 @@ export default function Purchases() {
       setDocResult(res.data);
       message.success('تم تسجيل فاتورة الشراء بنجاح');
       form.resetFields();
-      setPurchaseItems([{ key: '1', item_id: null, quantity: 1, unit_price: 0, unit: null }]);
+      setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]);
       setCashAmount(0);
       setCreditAmount(0);
       fetchPurchases();
@@ -341,6 +410,10 @@ export default function Purchases() {
         <Select
           placeholder="اختر المادة الخام"
           style={{ width: '100%' }}
+          showSearch
+          optionFilterProp="children"
+          data-item-key={record.key}
+          ref={(el) => { itemRefs.current[record.key] = el; }}
           value={itemId}
           onChange={(val) => { setPanelItemId(val as number); handleItemChange(record.key, 'item_id', val); }}
         >
@@ -379,7 +452,12 @@ export default function Purchases() {
           min={0.01}
           style={{ width: '100%' }}
           value={qty}
-          onChange={(val) => handleItemChange(record.key, 'quantity', val || 1)}
+          placeholder="الكمية"
+          onChange={(val) => handleItemChange(record.key, 'quantity', val ?? null)}
+          // Enter means «this line is done» — a new line, with the caret on its item box, so a
+          // whole purchase is typed without reaching for the mouse. preventDefault so the global
+          // «Enter moves to the next field» does not run after this and take the caret elsewhere.
+          onPressEnter={(e) => { e.preventDefault(); handleAddItem(true); }}
         />
       ),
     },
@@ -404,7 +482,7 @@ export default function Purchases() {
       width: '15%',
       render: (_: any, record: PurchaseItem) => (
         <span style={{ fontWeight: 'bold' }}>
-          {(record.quantity * record.unit_price).toFixed(2)}
+          {(Number(record.quantity || 0) * record.unit_price).toFixed(2)}
         </span>
       ),
     },
@@ -439,7 +517,12 @@ export default function Purchases() {
       </Card>
     </div>
   ) : (
-    <Card title="فاتورة شراء جديدة">
+    <Card title="فاتورة شراء جديدة"
+      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
+      {/* The same strip of verbs the sale carries, in the same places — a purchase is the same
+          job from the other side, and a hand that has learned one row should not have to learn
+          a second. */}
+      <DocumentToolbar actions={purchaseToolbar()} />
       <Form form={form} layout="vertical" onFinish={handleSubmit} requiredMark={false}>
           <Row gutter={16}>
             <Col span={12}>
@@ -488,7 +571,7 @@ export default function Purchases() {
 
               <Button
                 type="dashed"
-                onClick={handleAddItem}
+                onClick={() => handleAddItem()}
                 block
                 icon={<PlusOutlined />}
                 style={{ marginBottom: 24 }}
