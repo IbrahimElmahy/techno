@@ -2,9 +2,9 @@
 return money reversal."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -30,6 +30,11 @@ class PurchaseInvoice(Base):
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # (031) The day the goods were received, which is not always the day the invoice was typed —
+    # the same field the sale has as `invoice_date` and the return as `return_date`, and for the
+    # same reason: a document dated one day and posted on another makes every statement disagree
+    # with the paper.
+    purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     total: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)

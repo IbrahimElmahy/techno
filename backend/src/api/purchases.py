@@ -1,6 +1,7 @@
 """Purchases router (T024). FR-009–012."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -48,6 +49,7 @@ class PurchaseCreate(BaseModel):
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
+    purchase_date: date | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -74,6 +76,11 @@ class PurchaseListOut(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     created_at: str
+    # (031) The day the goods arrived. `created_at` is when the row was typed, which is a different
+    # question and the one nobody was asking.
+    purchase_date: str | None = None
+    external_document_number: str | None = None
+    notes: str | None = None
 
 
 class PurchaseLineOut(BaseModel):
@@ -127,6 +134,8 @@ def list_purchases(
             id=p.id, document_number=p.document_number, supplier_id=p.supplier_id,
             supplier_name=names.get(p.supplier_id), total=p.total, cash_amount=p.cash_amount,
             credit_amount=p.credit_amount, created_at=str(p.created_at),
+            purchase_date=str(p.purchase_date) if p.purchase_date else None,
+            external_document_number=p.external_document_number, notes=p.notes,
         )
         for p in rows
     ]
@@ -189,6 +198,8 @@ def get_purchase(
         id=p.id, document_number=p.document_number, supplier_id=p.supplier_id,
         supplier_name=supplier.name if supplier else None, total=p.total,
         cash_amount=p.cash_amount, credit_amount=p.credit_amount, created_at=str(p.created_at),
+        purchase_date=str(p.purchase_date) if p.purchase_date else None,
+        external_document_number=p.external_document_number, notes=p.notes,
         location_kind=p.location_kind.value, location_id=p.location_id,
         lines=[PurchaseLineOut(item_id=ln.item_id, quantity=ln.quantity, unit_price=ln.unit_price,
                                line_total=ln.line_total, unit=ln.unit) for ln in p.lines],
@@ -214,6 +225,7 @@ def create_purchase(
             rep_id=body.rep_id, expense_account_id=body.expense_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
+            purchase_date=body.purchase_date,
         )
     except (PurchaseError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "purchase_invalid", "message": str(exc)})

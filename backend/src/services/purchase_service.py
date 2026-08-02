@@ -7,6 +7,7 @@ cash/credit split (research R9).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -67,6 +68,7 @@ def create_purchase(
     statement1: str | None = None,
     statement2: str | None = None,
     statement3: str | None = None,
+    purchase_date=None,
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("A purchase needs at least one line.")
@@ -104,6 +106,9 @@ def create_purchase(
         rep_id=rep_id, expense_account_id=expense_account_id,
         external_document_number=(external_document_number or None),
         notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
+        # Defaulted here rather than in the column so a purchase always carries a real day — a
+        # NULL would push every report that groups by day into guessing.
+        purchase_date=purchase_date or date.today(),
     )
     db.add(invoice)
     db.flush()

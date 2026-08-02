@@ -168,6 +168,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # days later — a Saturday return entered on Monday would land in the wrong week on every
     # report that groups by day.
     ("sales_return", "return_date", "DATE"),
+    ("purchase_invoice", "purchase_date", "DATE"),
     # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:
     # NULL is «nothing agreed», 0 is «agreed, and it is zero».
     ("customer", "branch_id", "BIGINT"),

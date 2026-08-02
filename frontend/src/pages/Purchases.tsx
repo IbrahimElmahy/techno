@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Descriptions, Divider, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message,
+  Button, Card, Col, Descriptions, Divider, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message, DatePicker,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
@@ -8,6 +8,7 @@ import {
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
 import TotalsLadder from '../components/TotalsLadder';
@@ -16,6 +17,9 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import PartyPickerModal, { Party } from '../components/PartyPickerModal';
+import ProductPickerModal from '../components/ProductPickerModal';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface Supplier {
   id: number;
@@ -127,6 +131,20 @@ export default function Purchases() {
    *  «pick, type a quantity, Enter, pick again». There is no picker window here, so Enter on a
    *  quantity opens the NEXT LINE and lands on its item box. */
   const [focusRowKey, setFocusRowKey] = useState<string | null>(null);
+  // The sale opens as a run of doors — التاريخ, then the party, then the page. The purchase is the
+  // same document from the other side, so it opens the same way. No coupons and no points: those
+  // are things a SALE hands out, and a purchase has neither to give.
+  const [newStep, setNewStep] = useState<null | 'date' | 'party'>(null);
+  const [purchaseDate, setPurchaseDate] = useState<Dayjs>(dayjs());
+  const [partyPickerOpen, setPartyPickerOpen] = useState(false);
+  // The picker window, so a line is added by typing rather than by hunting a dropdown — the same
+  // round trip the sale and the return use.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const qtyRefs = useRef<Record<string, any>>({});
+  const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
   // antd's Select will not take focus through its inner input reliably — it exposes `focus()` on
   // its own ref, and that is the only handle that works.
   const itemRefs = useRef<Record<string, any>>({});
@@ -238,6 +256,33 @@ export default function Purchases() {
     fetchPurchases();
   }, []);
 
+  // Keep asking until the caret lands in the new line's quantity. One attempt lands in whatever
+  // the browser is doing that frame, and antd's ref cannot answer «did it arrive?» — so the box is
+  // found by attribute and checked against document.activeElement.
+  useEffect(() => {
+    if (!focusLineKey || pickerOpen) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      const el = document.querySelector<HTMLInputElement>(
+        `input[data-qty-key="${focusLineKey}"]`);
+      if (el && document.activeElement === el) { setFocusLineKey(null); return; }
+      el?.focus(); el?.select();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusLineKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusLineKey, pickerOpen, purchaseItems]);
+
+  /** The categories the picker groups by — taken from what is actually in the list, so a heading
+   *  never appears for a category with nothing under it. */
+  const itemCategories = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach((p: any) => { if (p.category) set.add(p.category); });
+    return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
+  }, [items]);
+
   const handleAddItem = (focusIt = false) => {
     const newKey = Date.now().toString();
     setPurchaseItems([
@@ -326,7 +371,8 @@ export default function Purchases() {
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => { form.resetFields(); setPurchaseItems([
-          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]); } },
+          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]);
+          setPurchaseDate(dayjs()); setNewStep('date'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setPurchaseItems([
@@ -383,6 +429,9 @@ export default function Purchases() {
           unit_price: l.unit_price,
           unit: l.unit,
         })),
+        // The day the goods were received, taken from the first door — not the day this row was
+        // typed, which is what `created_at` would have recorded.
+        purchase_date: purchaseDate.format('YYYY-MM-DD'),
       };
 
       const res = await api.post('/api/v1/purchases', payload);
@@ -398,6 +447,36 @@ export default function Purchases() {
     } finally {
       setSubmitLoading(false);
     }
+  };
+
+  /** الباب التاني: المورد. Mid-document this only swaps the party; during the opening run it is
+   *  the second door and hands over to the page — the same order the sale opens in. */
+  const handlePartyPicked = (picked: Party) => {
+    setPartyPickerOpen(false);
+    if (newStep === 'party') setNewStep(null);
+    form.setFieldsValue({ supplier_id: picked.id });
+    // A supplier created inside the picker is not in the loaded list yet, so the field would show
+    // a bare id until the next reload.
+    setSuppliers((prev) => (prev.some((x) => x.id === picked.id)
+      ? prev : [...prev, { id: picked.id, name: picked.name, code: '' } as any]));
+  };
+
+  /** A picked product becomes a line, and the caret lands in its quantity — so the next thing
+   *  typed is the number, not a hunt for the box. Same loop as the sale and the return. */
+  const handleProductPicked = (item: any) => {
+    setPickerOpen(false);
+    // Reuse a blank row rather than leaving an empty line above the real one.
+    const blank = purchaseItems.find((l) => l.item_id === null);
+    const key = blank ? blank.key : String(Date.now());
+    if (!blank) {
+      setPurchaseItems((prev) => [...prev,
+        { key, item_id: null, quantity: null, unit_price: 0, unit: null }]);
+    }
+    setPanelItemId(item.id);
+    // Through the same handler the dropdown uses, so the purchase price and the unit list are
+    // filled in one place rather than two that can drift.
+    setTimeout(() => handleItemChange(key, 'item_id', item.id), 0);
+    setFocusLineKey(key);
   };
 
   const columns = [
@@ -454,10 +533,12 @@ export default function Purchases() {
           value={qty}
           placeholder="الكمية"
           onChange={(val) => handleItemChange(record.key, 'quantity', val ?? null)}
-          // Enter means «this line is done» — a new line, with the caret on its item box, so a
-          // whole purchase is typed without reaching for the mouse. preventDefault so the global
-          // «Enter moves to the next field» does not run after this and take the caret elsewhere.
-          onPressEnter={(e) => { e.preventDefault(); handleAddItem(true); }}
+          data-qty-key={record.key}
+          data-grid-col="qty" keyboard={false}
+          // Enter means «this line is done» — the picker opens for the next product, exactly as
+          // on the sale and the return. preventDefault so the global «Enter moves to the next
+          // field» does not run after this and take the caret elsewhere.
+          onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
         />
       ),
     },
@@ -509,7 +590,7 @@ export default function Purchases() {
           title="تم تسجيل فاتورة الشراء بنجاح"
           subTitle={`رقم مستند الفاتورة: ${docResult.document_number} | رقم قيد اليومية: ${docResult.ledger_entry_id || 'لا يوجد'}`}
           extra={[
-            <Button type="primary" key="new" onClick={() => setDocResult(null)}>
+            <Button data-shortcut="F2" type="primary" key="new" onClick={() => setDocResult(null)}>
               تسجيل فاتورة جديدة
             </Button>,
           ]}
@@ -531,13 +612,14 @@ export default function Purchases() {
                 label="المورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
               >
-                <Select placeholder="اختر المورد لربط المديونية">
-                  {suppliers.map((s) => (
-                    <Select.Option key={s.id} value={s.id}>
-                      {s.name} ({s.code})
-                    </Select.Option>
-                  ))}
-                </Select>
+                {/* The same window the second door opens — searchable, with inline create.
+                    Changing the supplier mid-document goes through the same place it was first
+                    chosen, so there is one way to answer «مين». */}
+                <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
+                  placeholder="اضغط لاختيار المورد"
+                  onClick={() => setPartyPickerOpen(true)}
+                  options={suppliers.map((sp) => ({
+                    value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -571,12 +653,12 @@ export default function Purchases() {
 
               <Button
                 type="dashed"
-                onClick={() => handleAddItem()}
+                onClick={() => setPickerOpen(true)}
                 block
                 icon={<PlusOutlined />}
                 style={{ marginBottom: 24 }}
               >
-                إضافة صنف جديد
+                إضافة صنف
               </Button>
             </Col>
             <Col xs={24} lg={6}>
@@ -722,8 +804,57 @@ export default function Purchases() {
     { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (v: string) => fmtDate(v) },
   ];
 
+  /** The opening run — التاريخ then المورد — and the product window. No coupons and no points:
+   *  those are what a SALE hands out, and a purchase has neither to give. Everything else is the
+   *  sale's flow, because a person who has learned one of these screens has learned both. */
+  const doors = (
+    <>
+      <PartyPickerModal
+        open={partyPickerOpen || newStep === 'party'} kind="supplier"
+        onPick={handlePartyPicked}
+        onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
+
+      <ProductPickerModal
+        open={pickerOpen}
+        title="اختر الصنف المشترى"
+        categories={itemCategories}
+        categoryLabels={categoryLabels}
+        products={items as any}
+        activeCategory={activeCategory}
+        onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
+        onCancel={() => setPickerOpen(false)}
+        onPick={(id) => {
+          const picked = items.find((i) => i.id === id);
+          if (picked) handleProductPicked(picked);
+        }} />
+
+      <Modal
+        open={newStep === 'date'}
+        title="تاريخ فاتورة الشراء"
+        okText="التالي" cancelText="إلغاء"
+        onCancel={() => setNewStep(null)}
+        onOk={() => setNewStep('party')}
+        destroyOnHidden
+      >
+        <div onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); setNewStep('party'); }
+        }}>
+          <DatePicker
+            style={{ width: '100%' }} size="large" allowClear={false} autoFocus
+            value={purchaseDate} onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())}
+            format="YYYY-MM-DD"
+          />
+        </div>
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          ده يوم استلام البضاعة، مش يوم ما اتكتبت الفاتورة.
+        </div>
+      </Modal>
+    </>
+  );
+
   return (
     <div>
+      {doors}
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}
