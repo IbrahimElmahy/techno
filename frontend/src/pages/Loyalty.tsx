@@ -402,7 +402,7 @@ export default function Loyalty() {
       children: (
         <div>
           <div style={{ marginBottom: 16, textAlign: 'left' }}>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setTypeVisible(true)}>
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setTypeVisible(true)}>
               إضافة نوع كوبون
             </Button>
           </div>

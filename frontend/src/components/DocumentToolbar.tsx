@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Tooltip } from 'antd';
+import { KEY_MAP, ShortcutAction, ScreenShortcuts, useScreenShortcuts } from './keyboard';
 
 /**
  * شريط أدوات المستند — the strip of actions across the top of a document screen.
@@ -15,8 +16,12 @@ import { Tooltip } from 'antd';
  * A button that disappears makes the row shift and the next one land where the eye expected the
  * last — which is how a practised hand deletes something it meant to print.
  *
- * **The key is on the button.** Each action shows its F-key in the tooltip, so the toolbar teaches
- * the keyboard rather than competing with it. The two are the same commands.
+ * **The key is on the button, and the button IS the key.** Each action shows its F-key in the
+ * tooltip — and the toolbar registers that key itself, wired to the same `onClick` the button
+ * calls. Before this the tooltips advertised F2 · F9 · F7 on every document screen in the system
+ * and not one of them was bound to anything: the toolbar promised a keyboard the keyboard never
+ * had. Binding here rather than in each screen also means the two can never drift, because there
+ * is only one of them.
  *
  * **Colour is ours.** Their icons are the 16-colour palette of the machine they were drawn on. The
  * layout carries over; the paint does not.
@@ -34,7 +39,29 @@ export interface ToolbarAction {
   danger?: boolean;
 }
 
+/** «F9» as written on the button → the action the keyboard knows it by. */
+const BY_KEYS: Record<string, ShortcutAction> = Object.fromEntries(
+  KEY_MAP.map((k) => [k.keys.toLowerCase(), k.action]));
+
 export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] }) {
+  const handlers = useMemo(() => {
+    const out: ScreenShortcuts = {};
+    actions.forEach((a) => {
+      // A greyed button does nothing when clicked, so its key must do nothing when pressed — and
+      // must not be registered at all, or it would swallow the key from a screen underneath that
+      // could have answered it.
+      if (a.disabled || !a.onClick || !a.shortcut) return;
+      const action = BY_KEYS[a.shortcut.trim().toLowerCase()];
+      if (!action) return;
+      const slot = `on${action[0].toUpperCase()}${action.slice(1)}` as keyof ScreenShortcuts;
+      // First writer wins: a toolbar showing two «حفظ» is a mistake, and the left-most is the one
+      // the eye and the finger both reach for.
+      if (!out[slot]) out[slot] = a.onClick;
+    });
+    return out;
+  }, [actions]);
+  useScreenShortcuts(handlers);
+
   return (
     <div
       style={{

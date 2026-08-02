@@ -619,7 +619,7 @@ export default function Catalog() {
         title="الأصناف"
         extra={
           user?.role === 'system_admin' || user?.role === 'purchasing_manager' ? (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
               إضافة صنف للكتالوج
             </Button>
           ) : null

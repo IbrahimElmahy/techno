@@ -170,7 +170,7 @@ function ChartTab() {
       extra={
         <Space>
           <Button icon={<ReloadOutlined />} onClick={load} />
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawer(true)}>حساب جديد</Button>
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawer(true)}>حساب جديد</Button>
         </Space>
       }
     >

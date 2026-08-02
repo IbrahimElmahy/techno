@@ -163,7 +163,7 @@ export default function Orders() {
       title="طلبات البيع والشراء"
       extra={(
         <Space>
-          <Button type="primary" icon={<PlusOutlined />}
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
             onClick={() => { setKind('sale'); setCreating(true); }}>طلب بيع</Button>
           <Button icon={<PlusOutlined />}
             onClick={() => { setKind('purchase'); setCreating(true); }}>طلب شراء</Button>

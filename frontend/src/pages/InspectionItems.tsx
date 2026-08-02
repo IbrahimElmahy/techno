@@ -141,7 +141,7 @@ const InspectionItems: React.FC = () => {
             <Button icon={<ReloadOutlined />} onClick={load}>
               تحديث
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openNew}>
               إضافة صنف
             </Button>
           </Space>

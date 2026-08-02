@@ -459,7 +459,7 @@ export default function Org() {
       <Card
         title="إدارة البنية التنظيمية"
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
             {ADD_LABELS[activeTab] || 'إضافة'}
           </Button>
         }

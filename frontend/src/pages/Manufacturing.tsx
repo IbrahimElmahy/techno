@@ -285,7 +285,7 @@ function OrdersTab({
   return (
     <div>
       <div style={{ marginBottom: 16, textAlign: 'left' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
           أمر تصنيع جديد
         </Button>
       </div>

@@ -208,7 +208,7 @@ export default function SubAccounts() {
           <Space>
             <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
             {canWrite && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
                 حساب فرعي جديد
               </Button>
             )}

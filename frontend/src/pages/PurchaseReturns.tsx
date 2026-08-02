@@ -208,7 +208,7 @@ export default function PurchaseReturns() {
               hidden={cols.hidden} onChange={cols.setHidden}
             />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-            <Button type="primary" danger icon={<PlusOutlined />} onClick={openCreate}>
+            <Button data-shortcut="F2" type="primary" danger icon={<PlusOutlined />} onClick={openCreate}>
               تسجيل مردود شراء
             </Button>
           </Space>

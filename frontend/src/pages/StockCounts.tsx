@@ -181,7 +181,7 @@ export default function StockCounts() {
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-            <Button type="primary" icon={<PlusOutlined />}
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
               onClick={() => { setWarehouseId(undefined); setNotes(''); setOpenVisible(true); }}>
               فتح كشف جرد
             </Button>

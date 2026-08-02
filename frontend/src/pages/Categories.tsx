@@ -170,7 +170,7 @@ export default function Categories() {
       title="الفئات"
       extra={(
         <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} />
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openCreate} />
           <Button type="primary" onClick={load}>اعادة تحميل</Button>
           <Dropdown menu={{ items: moreMenu }}>
             <Button>المزيد <DownOutlined /></Button>

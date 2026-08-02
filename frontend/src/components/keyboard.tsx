@@ -174,6 +174,82 @@ function enterMovesOn(e: KeyboardEvent): boolean {
   return true;
 }
 
+
+/**
+ * Arrows move between the LINES of a document — up a row, down a row, in the same column.
+ *
+ * Enter walks a form field by field, which is right for a form: its questions have an order. A
+ * document's lines are not a form. They are a column of the same question asked twenty times, and
+ * the movement anybody actually wants there is up and down — go back to line four because the
+ * quantity was wrong, without leaving the keyboard or counting Enters to get there.
+ *
+ * **The trade this makes.** On a number box, antd binds Up and Down to «+1 / -1». Those keys can
+ * only mean one thing, so the line inputs are declared `keyboard={false}` and the arrows are spent
+ * on moving instead of stepping. Stepping a quantity by one is worth very little to somebody who
+ * types the number anyway; getting back to the wrong line is worth a lot.
+ *
+ * Left and right are deliberately NOT taken. In a text box they move the caret, and in an RTL
+ * screen «the next column to the right» is the PREVIOUS one — a direction that means two different
+ * things is worse than a direction that means nothing.
+ *
+ * A cell opts in with `data-grid-col="<name>"`. Movement is within one table and one column, so a
+ * screen with a lines table above a totals table never jumps between them.
+ */
+function arrowsMoveLines(e: KeyboardEvent): boolean {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return false;
+  if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (e.defaultPrevented) return false;
+  const el = e.target as HTMLElement | null;
+  if (!el || typeof el.closest !== 'function') return false;
+  const cell = el.closest<HTMLElement>('[data-grid-col]');
+  if (!cell) return false;
+  // An open dropdown owns the arrows: they are moving the highlight through its options.
+  const select = cell.closest('.ant-select');
+  if (select && select.classList.contains('ant-select-open')) return false;
+
+  const table = cell.closest('table') || cell.closest('.ant-table');
+  if (!table) return false;
+  const col = cell.getAttribute('data-grid-col');
+  const cells = [...table.querySelectorAll<HTMLElement>(`[data-grid-col="${col}"]`)]
+    .filter((c) => c.offsetParent !== null);
+  const i = cells.indexOf(cell);
+  if (i === -1) return false;
+  const next = cells[e.key === 'ArrowDown' ? i + 1 : i - 1];
+  // At the top or the bottom, do nothing rather than wrap. Wrapping means a held arrow key cycles
+  // forever and the line you land on is whichever one you stopped on — silently, twenty rows away.
+  if (!next) { e.preventDefault(); return true; }
+  e.preventDefault();
+  next.focus();
+  if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
+  return true;
+}
+
+/**
+ * The last resort: press the button the key is written on.
+ *
+ * Thirty list screens have a «جديد» button and no way to reach it from the keyboard. Registering a
+ * handler on each one means thirty copies of a function that already exists, and every copy is a
+ * place where the key and the button can quietly come to mean different things.
+ *
+ * So the button carries `data-shortcut="F2"` and the key CLICKS IT. There is nothing to keep in
+ * sync, because there is only the button. A disabled button ignores `.click()` for free, which is
+ * exactly the behaviour wanted — a key that cannot be pressed with the mouse cannot be pressed with
+ * the keyboard either.
+ *
+ * Hidden tabs stay mounted, so a visibility test is what keeps F2 from opening a form on a screen
+ * nobody is looking at.
+ */
+function pressMarkedButton(keys: string): boolean {
+  const all = [...document.querySelectorAll<HTMLElement>(`[data-shortcut="${keys}"]`)]
+    .filter((el) => el.offsetParent !== null);
+  // More than one visible claimant means the screen is ambiguous about what F2 does; the first in
+  // reading order is the one at the top of the page, which is where the eye looks for it.
+  const el = all[0];
+  if (!el) return false;
+  el.click();
+  return true;
+}
+
 export function KeyboardProvider({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   // A stack, not a single slot: a modal open over a list registers its own handlers and must take
@@ -190,15 +266,30 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const top = () => stack.current[stack.current.length - 1];
+  /**
+   * The nearest screen that implements this action, searching from the top of the stack down.
+   *
+   * NOT simply the top entry. `useScreenShortcuts` already strips the actions a screen does not
+   * implement, saying in as many words that the stack must not swallow a key a screen underneath
+   * would have handled — and then the dispatcher only ever read the topmost set, so the stripping
+   * did nothing. A search bar that registers F3 alone would have taken F2 away from the list it
+   * sits in. Each key now finds its own owner, and the topmost implementer still wins.
+   */
+  const handlerFor = (action: keyof ScreenShortcuts) => {
+    for (let i = stack.current.length - 1; i >= 0; i -= 1) {
+      const fn = stack.current[i][action];
+      if (fn) return fn;
+    }
+    return undefined;
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Before the typing guard: Enter-to-next-field only ever fires while typing, which is the
       // one case that guard exists to skip.
       if (enterMovesOn(e)) return;
+      if (arrowsMoveLines(e)) return;
       if (isTyping(e)) return;
-      const handlers = top();
 
       // --- global -------------------------------------------------------------------------
       if (e.key === 'F1') { e.preventDefault(); setHelpOpen(true); return; }
@@ -213,12 +304,15 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
         fn();
         return true;
       };
-      if (e.key === 'F2' && fire(handlers?.onNew)) return;
-      if (e.key === 'F3' && fire(handlers?.onSearch)) return;
-      if (e.key === 'F9' && fire(handlers?.onSave)) return;
-      if (e.key === 'F7' && fire(handlers?.onPrint)) return;
-      if (e.key === 'F8' && fire(handlers?.onDelete)) return;
-      if (e.key === 'Escape' && fire(handlers?.onClose)) return;
+      if (e.key === 'F2' && fire(handlerFor('onNew'))) return;
+      // Only once nothing registered it: a screen that says what New means for it always wins over
+      // a button that merely looks like it.
+      if (e.key === 'F2' && pressMarkedButton('F2')) { e.preventDefault(); return; }
+      if (e.key === 'F3' && fire(handlerFor('onSearch'))) return;
+      if (e.key === 'F9' && fire(handlerFor('onSave'))) return;
+      if (e.key === 'F7' && fire(handlerFor('onPrint'))) return;
+      if (e.key === 'F8' && fire(handlerFor('onDelete'))) return;
+      if (e.key === 'Escape' && fire(handlerFor('onClose'))) return;
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -280,6 +374,10 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
             { keys: 'F1', label: 'القائمة دي' },
             { keys: 'F4 أو Ctrl+K', label: 'اذهب إلى شاشة — بحث بالاسم في كل شاشات النظام' },
             ...KEY_MAP.map((k) => ({ keys: k.keys, label: k.label })),
+            // The movement keys. They were the two things in here nobody could find out about
+            // except by pressing them and noticing — which is the definition of undiscoverable.
+            { keys: 'Enter', label: 'الخانة اللي بعدها — وفي سطور المستند: يفتح نافذة الصنف' },
+            { keys: '↑ ↓', label: 'سطر فوق / سطر تحت في جدول المستند، في نفس العمود' },
           ]}
           renderItem={(row) => (
             <List.Item>

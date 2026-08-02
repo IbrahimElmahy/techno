@@ -135,7 +135,7 @@ export default function Employees() {
       title="الموظفون"
       extra={(
         <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={startCreate}>موظف جديد</Button>
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={startCreate}>موظف جديد</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
       )}

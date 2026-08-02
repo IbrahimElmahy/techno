@@ -232,7 +232,7 @@ export default function Reservations() {
               hidden={cols.hidden} onChange={cols.setHidden}
             />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>حجز جديد</Button>
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openCreate}>حجز جديد</Button>
           </Space>
         }
       >

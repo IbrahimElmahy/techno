@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Button, Col, DatePicker, Input, Row, Select, Tag } from 'antd';
 import { SearchOutlined, ClearOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useScreenShortcuts } from './keyboard';
 
 /**
  * One search-and-filter bar for every list in the system.
@@ -110,11 +111,19 @@ export default function ListToolbar({
   shown?: number;
   searchSpan?: number;
 }) {
+  const searchRef = useRef<any>(null);
+  // F3 belongs to the search box, and the search box lives here — so declaring it once here gives
+  // every list in the system the key, instead of thirty screens each remembering to ask for it.
+  // It costs nothing where a screen has its own idea of F3: the stack hands the key to whoever
+  // registered nearer the top, and this bar is always underneath the screen it sits in.
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
   return (
     <Row gutter={[8, 8]} style={{ marginBottom: 12 }} align="middle">
       <Col xs={24} md={searchSpan}>
         <Input
           allowClear
+          ref={searchRef}
           value={query}
           placeholder={searchPlaceholder}
           prefix={<SearchOutlined />}

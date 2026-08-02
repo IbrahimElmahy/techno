@@ -263,7 +263,7 @@ export default function StockPermits() {
       title="أذونات المخزن"
       extra={(
         <Space>
-          <Button type="primary" icon={<PlusOutlined />}
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
             onClick={() => { setKind('receipt'); setCreating(true); }}>إذن إضافة</Button>
           <Button icon={<PlusOutlined />}
             onClick={() => { setKind('issue'); setCreating(true); }}>إذن صرف</Button>

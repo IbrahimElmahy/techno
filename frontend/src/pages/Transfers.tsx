@@ -12,6 +12,9 @@ import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import ProductPickerModal from '../components/ProductPickerModal';
+import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 
 /**
  * تحويلات المخزون — move stock between locations.
@@ -106,6 +109,12 @@ export default function Transfers() {
 
   // Create page
   const [createVisible, setCreateVisible] = useState(false);
+  // The sale opens as a run of doors. A transfer's «who» is two places rather than one party, so
+  // it asks them one at a time in the order the goods actually move: out of here, into there.
+  const [newStep, setNewStep] = useState<null | 'source' | 'dest'>(null);
+  // The product window, so a line is added by typing rather than by hunting a grid.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [dest, setDest] = useState<string | null>(null);
   const [sourceStock, setSourceStock] = useState<StockRow[]>([]);
@@ -222,11 +231,32 @@ export default function Transfers() {
         ? { ...l, quantity: Math.min(l.available, Number(l.quantity || 0) + 1) } : l)));
       return;
     }
+    const key = `${itemId}-${lines.length}`;
     setLines((prev) => [...prev, {
-      key: `${itemId}-${prev.length}`, item_id: itemId, name: row.name,
+      key, item_id: itemId, name: row.name,
       category: row.category, unit: row.unit_of_measure, available, quantity: null,
     }]);
+    setFocusLineKey(key);
   };
+
+  // Keep asking until the caret lands in the new line's quantity. One attempt lands in whatever
+  // the browser is doing that frame, so it is retried and CHECKED — the same loop the sale, the
+  // return and the purchase use.
+  useEffect(() => {
+    if (!focusLineKey || pickerOpen) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      const el = document.querySelector<HTMLInputElement>(
+        `input[data-qty-key="${focusLineKey}"]`);
+      if (el && document.activeElement === el) { setFocusLineKey(null); return; }
+      el?.focus(); el?.select();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusLineKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusLineKey, pickerOpen, lines]);
 
   const setLineQty = (key: string, value: number | null) => {
     const line = lines.find((l) => l.key === key);
@@ -243,6 +273,11 @@ export default function Transfers() {
   };
 
   const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key));
+
+  /** One way in, whichever button was pressed — the list's «جديد» and the toolbar's F2. */
+  const startNew = () => {
+    setSource(null); setDest(null); setLines([]); setCreateVisible(false); setNewStep('source');
+  };
 
   const closeCreate = () => {
     setCreateVisible(false);
@@ -312,11 +347,81 @@ export default function Transfers() {
   const totalUnits = lines.reduce((s, l) => s + (l.quantity || 0), 0);
 
   // ---------------------------------------------------------------- create page
+  /** The two doors and the product window. A transfer's «who» is two places, so it asks them one
+   *  at a time in the order the goods move: out of here, into there — and only then what. */
+  const doors = (
+    <>
+      <ProductPickerModal
+        open={pickerOpen}
+        title="اختر الصنف المحوَّل"
+        categories={categories.map((c) => c.value)}
+        categoryLabels={categoryLabels}
+        products={sourceStock.map((r) => ({
+          id: r.item_id, name: r.name, category: r.category })) as any}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+        onCancel={() => setPickerOpen(false)}
+        onPick={(id: number) => { setPickerOpen(false); addItem(id); }} />
+
+      <Modal
+        open={newStep === 'source'}
+        title="التحويل من فين؟"
+        okText="التالي" cancelText="إلغاء"
+        onCancel={() => setNewStep(null)}
+        onOk={() => { if (source) setNewStep('dest'); }}
+        okButtonProps={{ disabled: !source }}
+        destroyOnHidden
+      >
+        <Select showSearch size="large" style={{ width: '100%' }} autoFocus
+          placeholder="اختر المخزن أو العهدة المصدر" optionFilterProp="label"
+          value={source ?? undefined}
+          onChange={(v) => { onSourceChange(v); }}
+          options={locationOptions} />
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          البضاعة بتطلع من هنا — والرصيد المتاح بيتحمّل على أساسه.
+        </div>
+      </Modal>
+
+      <Modal
+        open={newStep === 'dest'}
+        title="التحويل لفين؟"
+        okText="ابدأ" cancelText="رجوع"
+        onCancel={() => setNewStep('source')}
+        onOk={() => { if (dest) { setNewStep(null); setCreateVisible(true); } }}
+        okButtonProps={{ disabled: !dest }}
+        destroyOnHidden
+      >
+        <Select showSearch size="large" style={{ width: '100%' }} autoFocus
+          placeholder="اختر المخزن أو العهدة الوجهة" optionFilterProp="label"
+          value={dest ?? undefined} onChange={(v) => setDest(v)}
+          options={locationOptions.filter((o: any) => o.value !== source)} />
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          المصدر مستبعد من القايمة — تحويل لنفس المكان مش تحويل.
+        </div>
+      </Modal>
+    </>
+  );
+
+  /** The same strip the sale, the return and the purchase carry — same verbs, same places, and
+   *  the keys it advertises are bound by the toolbar itself. */
+  const transferToolbar = (): ToolbarAction[] => [
+    { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+      onClick: startNew },
+    { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
+      onClick: handleSubmit, disabled: !source || !dest || lines.length === 0 },
+    { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+      onClick: () => setLines([]), disabled: lines.length === 0 },
+    { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowLeftOutlined />,
+      onClick: closeCreate },
+  ];
+
   if (createVisible) {
     const stockOfCategory = sourceStock.filter((s) => (
       activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
     return (
       <div>
+        {doors}
+        <DocumentToolbar actions={transferToolbar()} />
         <Card title={(
           <Space>
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={closeCreate}>رجوع</Button>
@@ -408,6 +513,11 @@ export default function Transfers() {
                   render: (v: number, r: TransferLine) => (
                     <InputNumber size="small" min={0} max={r.available} step={1} value={v}
                       style={{ width: 120 }}
+                      data-qty-key={r.key}
+                      data-grid-col="qty" keyboard={false}
+                      // Enter means «this line is done» — the window opens for the next item,
+                      // exactly as on the sale, the return and the purchase.
+                      onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
                       onChange={(val) => setLineQty(r.key, Number(val))} />
                   ) },
                 { title: 'المتبقي بعد التحويل',
@@ -508,10 +618,15 @@ export default function Transfers() {
 
   return (
     <div>
+      {/* The doors belong to BOTH branches. The create page is an early return, so a door declared
+          only there unmounts at the instant it opens the page behind it — which is how the return
+          ended up with a dialog on screen that no state could close. */}
+      {doors}
       <Card
         title="إدارة تحويلات ومناقلات المخزون"
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+            onClick={startNew}>
             طلب تحويل مخزني
           </Button>
         }

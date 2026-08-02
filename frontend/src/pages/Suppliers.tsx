@@ -333,7 +333,7 @@ export default function Suppliers() {
       <Card
         title="الموردين"
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
             إضافة مورد
           </Button>
         }

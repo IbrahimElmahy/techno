@@ -743,7 +743,7 @@ export default function Returns() {
               <>
                 <Row gutter={16}>
                 <Col xs={24} lg={18}>
-                <Button
+                <Button data-shortcut="F2"
                   type="primary" danger size="large" icon={<PlusOutlined />} block
                   style={{ marginBottom: 14, height: 46 }}
                   onClick={() => setPickerOpen(true)}
@@ -829,6 +829,7 @@ export default function Returns() {
                                 <InputNumber size="small" min={0.001} style={{ width: '100%' }}
                                   ref={(el) => { qtyRefs.current[line.key] = el; }}
                                   data-qty-key={line.key}
+                                  data-grid-col="qty" keyboard={false}
                                   placeholder="الكمية"
                                   value={line.quantity ?? undefined}
                                   onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}

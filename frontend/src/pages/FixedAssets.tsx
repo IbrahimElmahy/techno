@@ -188,7 +188,7 @@ export default function FixedAssets() {
       title="الاصول الثابتة"
       extra={(
         <Space>
-          <Button type="primary" icon={<PlusOutlined />}
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
             onClick={() => setCreating(true)}>أصل جديد</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>

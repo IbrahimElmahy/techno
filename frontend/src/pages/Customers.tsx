@@ -390,7 +390,8 @@ export default function Customers() {
       <Card
         title="العملاء"
         extra={
-          <Button type="primary" icon={<UserAddOutlined />} onClick={() => setDrawerVisible(true)}>
+          <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
+            onClick={() => setDrawerVisible(true)}>
             إضافة عميل
           </Button>
         }

@@ -227,7 +227,8 @@ export default function Users() {
       <Card
         title="إدارة مستخدمي النظام"
         extra={
-          <Button type="primary" icon={<UserAddOutlined />} onClick={() => setDrawerVisible(true)}>
+          <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
+            onClick={() => setDrawerVisible(true)}>
             إضافة مستخدم
           </Button>
         }

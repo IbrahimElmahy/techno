@@ -1522,7 +1522,7 @@ export default function Invoices() {
 
           {/* One button, one window. As two inline dropdowns this cost a click to open, a
               scroll to find and a click to choose — twice per line, all day. */}
-          <Button
+          <Button data-shortcut="F2"
             type="primary" size="large" icon={<PlusOutlined />} block
             style={{ marginBottom: 14, height: 46 }}
             onClick={() => setPickerOpen(true)}
@@ -1651,6 +1651,7 @@ export default function Invoices() {
                           <InputNumber size="small" min={1} style={{ width: '100%' }}
                             ref={(el) => { qtyRefs.current[line.key] = el; }}
                             data-qty-key={line.key}
+                            data-grid-col="qty" keyboard={false}
                             max={availableFor(line.item_id, line.unit, lineWarehouse(line)) || undefined}
                             status={Number(line.quantity || 0)
                               > availableFor(line.item_id, line.unit, lineWarehouse(line))
