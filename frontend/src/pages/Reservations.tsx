@@ -9,6 +9,9 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import ProductPickerModal from '../components/ProductPickerModal';
+import PartyPickerModal from '../components/PartyPickerModal';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
  * حجز عملاء — stock held for a customer without being sold to them yet.
@@ -49,6 +52,14 @@ export default function Reservations() {
   const [loading, setLoading] = useState(false);
 
   const [creating, setCreating] = useState(false);
+  // A reservation is one customer holding one item, so the doors are exactly those two questions
+  // in that order — and both are answered in the same windows the documents use.
+  const [newStep, setNewStep] = useState<null | 'customer'>(null);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [customerId, setCustomerId] = useState<number | undefined>();
   const [itemId, setItemId] = useState<number | undefined>();
@@ -89,7 +100,9 @@ export default function Reservations() {
   const openCreate = () => {
     setCustomerId(undefined); setItemId(undefined); setWarehouseId(undefined);
     setQuantity(null); setExpiresOn(dayjs().add(7, 'day')); setNotes(''); setAvail(null);
-    setCreating(true);
+    // «مين» first, in a door of its own — a hold is held FOR somebody, and that is the fact the
+    // rest of the form is about.
+    setCreating(false); setNewStep('customer');
   };
 
   const submit = async () => {
@@ -269,6 +282,25 @@ export default function Reservations() {
         />
       </Card>
 
+      <PartyPickerModal
+        open={newStep === 'customer' || customerPickerOpen} kind="customer"
+        onPick={(party) => {
+          setCustomerId(party.id); setCustomerPickerOpen(false);
+          if (newStep === 'customer') { setNewStep(null); setCreating(true); }
+        }}
+        onCancel={() => { setCustomerPickerOpen(false); setNewStep(null); }} />
+
+      <ProductPickerModal
+        open={itemPickerOpen}
+        title="اختر الصنف المحجوز"
+        categories={[...new Set(items.map((i: any) => i.category).filter(Boolean))] as string[]}
+        categoryLabels={categoryLabels}
+        products={items}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+        onCancel={() => setItemPickerOpen(false)}
+        onPick={(id: number) => { setItemId(id); setItemPickerOpen(false); }} />
+
       <Modal
         centered title="حجز جديد" open={creating} width={640} destroyOnHidden
         onCancel={() => setCreating(false)} onOk={submit} confirmLoading={saving}
@@ -277,15 +309,19 @@ export default function Reservations() {
         <Form layout="vertical">
           <Row gutter={12}>
             <Col span={24}>
+              {/* Both fields open the same windows the doors opened — one way to answer each
+                  question, not two that can behave differently. */}
               <Form.Item label="العميل" required style={{ marginBottom: 12 }}>
                 <Select showSearch optionFilterProp="label" placeholder="اختر العميل"
-                  value={customerId} onChange={setCustomerId} options={customerOptions} />
+                  value={customerId} open={false} onClick={() => setCustomerPickerOpen(true)}
+                  onChange={setCustomerId} options={customerOptions} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item label="الصنف" required style={{ marginBottom: 12 }}>
                 <Select showSearch optionFilterProp="label" placeholder="اختر الصنف"
-                  value={itemId} onChange={setItemId}
+                  value={itemId} open={false} onClick={() => setItemPickerOpen(true)}
+                  onChange={setItemId}
                   options={items.map((i) => ({ value: i.id, label: i.name }))} />
               </Form.Item>
             </Col>
