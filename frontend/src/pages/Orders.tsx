@@ -9,6 +9,9 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import ProductPickerModal from '../components/ProductPickerModal';
+import PartyPickerModal from '../components/PartyPickerModal';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
  * طلبات البيع والشراء — the paperwork that exists before the trade.
@@ -63,7 +66,15 @@ export default function Orders() {
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [dueDate, setDueDate] = useState<Dayjs | null>(null);
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([{ key: 1 }]);
+  const [lines, setLines] = useState<DraftLine[]>([]);
+  // The doors, in the order the paper form asks: which kind of order, then who, then what.
+  const [newStep, setNewStep] = useState<null | 'party'>(null);
+  const [partyPickerOpen, setPartyPickerOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [invoiceId, setInvoiceId] = useState<number | undefined>();
@@ -107,6 +118,38 @@ export default function Orders() {
 
   const draftTotal = lines.reduce(
     (sum, l) => sum + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
+
+  /** One way in — the list buttons and F2 both come through here. */
+  const startNew = (k: Kind) => {
+    setKind(k); setPartyId(undefined); setLines([]); setCreating(false); setNewStep('party');
+  };
+
+  const addItem = (itemId: number) => {
+    setPickerOpen(false);
+    const key = (lines[lines.length - 1]?.key ?? 0) + 1;
+    const it = items.find((i) => i.id === itemId);
+    // An order is a price quoted in advance, so the line opens on the item's own price rather
+    // than empty — the person is confirming a number, not inventing one.
+    setLines((prev) => [...prev, { key, item_id: itemId,
+      unit_price: Number(kind === 'sale' ? it?.sale_price_1 : it?.purchase_price) || undefined }]);
+    setFocusLineKey(key);
+  };
+
+  useEffect(() => {
+    if (focusLineKey === null || pickerOpen) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      const el = document.querySelector<HTMLInputElement>(
+        `input[data-qty-key="${focusLineKey}"]`);
+      if (el && document.activeElement === el) { setFocusLineKey(null); return; }
+      el?.focus(); el?.select();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusLineKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusLineKey, pickerOpen, lines]);
 
   const submit = async () => {
     if (!partyId) { message.warning(kind === 'sale' ? 'اختر العميل' : 'اختر المورد'); return; }
@@ -164,9 +207,9 @@ export default function Orders() {
       extra={(
         <Space>
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={() => { setKind('sale'); setCreating(true); }}>طلب بيع</Button>
+            onClick={() => startNew('sale')}>طلب بيع</Button>
           <Button icon={<PlusOutlined />}
-            onClick={() => { setKind('purchase'); setCreating(true); }}>طلب شراء</Button>
+            onClick={() => startNew('purchase')}>طلب شراء</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
       )}
@@ -227,14 +270,42 @@ export default function Orders() {
         ]}
       />
 
+      {/* The doors and the window. Declared once and rendered here, above the create modal, so
+          neither can unmount the other by opening. */}
+      <PartyPickerModal
+        open={newStep === 'party' || partyPickerOpen}
+        kind={kind === 'sale' ? 'customer' : 'supplier'}
+        onPick={(party) => {
+          setPartyId(party.id); setPartyPickerOpen(false);
+          if (newStep === 'party') { setNewStep(null); setCreating(true); }
+        }}
+        onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
+
+      <ProductPickerModal
+        open={pickerOpen}
+        title={kind === 'sale' ? 'اختر الصنف المطلوب' : 'اختر الصنف المطلوب شراؤه'}
+        categories={[...new Set(items.map((i) => i.category).filter(Boolean))] as string[]}
+        categoryLabels={categoryLabels}
+        products={items.filter((i) => !lines.some((l) => l.item_id === i.id))}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+        onCancel={() => setPickerOpen(false)}
+        onPick={addItem} />
+
       <Modal
         open={creating} onCancel={() => setCreating(false)} onOk={submit}
         confirmLoading={saving} width={840} destroyOnHidden
         title={kind === 'sale' ? 'طلب بيع جديد' : 'طلب شراء جديد'}
         okText="حفظ الطلب" cancelText="إلغاء"
       >
+        {/* Changing the kind asks «مين» again rather than keeping the answer. A customer is not a
+            supplier, and `submit` sends the party under whichever field the kind chose — so a
+            silently kept party would have been dropped on save with nothing said. */}
         <Segmented
-          block value={kind} onChange={(v) => setKind(v as Kind)} style={{ marginBottom: 12 }}
+          block value={kind}
+          onChange={(v) => { setKind(v as Kind); setPartyId(undefined); setLines([]);
+            setNewStep('party'); }}
+          style={{ marginBottom: 12 }}
           options={[
             { value: 'sale', label: 'طلب بيع (عميل)' },
             { value: 'purchase', label: 'طلب شراء (مورد)' },
@@ -243,10 +314,14 @@ export default function Orders() {
 
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
+            {/* The field opens the same window the door opened, so there is one way to answer
+                «مين» — the way it was first answered. */}
             <Select
               showSearch optionFilterProp="label" style={{ width: '100%' }}
               placeholder={kind === 'sale' ? 'العميل' : 'المورد'}
-              value={partyId} onChange={setPartyId}
+              value={partyId} open={false}
+              onClick={() => setPartyPickerOpen(true)}
+              onChange={setPartyId}
               options={(kind === 'sale' ? customers : suppliers)
                 .map((p) => ({ value: p.id, label: p.name }))}
             />
@@ -266,20 +341,14 @@ export default function Orders() {
           size="small" rowKey="key" dataSource={lines} pagination={false}
           style={{ marginBottom: 12 }}
           columns={[
+            // Picked in the window; the line knows its item before it exists.
             { title: 'الصنف', dataIndex: 'item_id', width: '45%',
-              render: (v, r) => (
-                <Select
-                  showSearch optionFilterProp="label" style={{ width: '100%' }}
-                  placeholder="اختر الصنف" value={v}
-                  onChange={(id) => setLines((prev) => prev.map((l) => (l.key === r.key
-                    ? { ...l, item_id: id } : l)))}
-                  options={items.map((i) => ({ value: i.id, label: i.name }))}
-                />
-              ) },
+              render: (v: any) => items.find((i) => i.id === v)?.name ?? `صنف #${v}` },
             { title: 'الكمية', dataIndex: 'quantity', width: 130,
               render: (v, r) => (
                 <InputNumber min={0} style={{ width: '100%' }} value={v}
-                  data-grid-col="qty" keyboard={false}
+                  data-qty-key={r.key} data-grid-col="qty" keyboard={false}
+                  onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
                   onChange={(q) => setLines((prev) => prev.map((l) => (l.key === r.key
                     ? { ...l, quantity: q as number } : l)))} />
               ) },
@@ -293,16 +362,13 @@ export default function Orders() {
             { title: '', width: 50,
               render: (_: any, r: DraftLine) => (
                 <Button type="text" danger icon={<DeleteOutlined />}
-                  disabled={lines.length === 1}
                   onClick={() => setLines((prev) => prev.filter((l) => l.key !== r.key))} />
               ) },
           ]}
           footer={() => (
             <Space>
-              <Button icon={<PlusOutlined />} size="small"
-                onClick={() => setLines((prev) => [
-                  ...prev, { key: Math.max(...prev.map((l) => l.key)) + 1 }])}>
-                سطر جديد
+              <Button icon={<PlusOutlined />} size="small" onClick={() => setPickerOpen(true)}>
+                إضافة صنف
               </Button>
               <span>الإجمالي: <b>{money(draftTotal)}</b></span>
             </Space>
