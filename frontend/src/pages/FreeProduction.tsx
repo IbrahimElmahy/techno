@@ -9,6 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import ProductPickerModal from '../components/ProductPickerModal';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
  * انتاج حر — production that happened without a stored recipe.
@@ -63,7 +65,12 @@ export default function FreeProduction() {
   const [notes, setNotes] = useState('');
   // Every typed box opens empty. A quantity that starts at 1 turns «5» into «15» for anybody who
   // types over it without clearing first — the same rule as every other document here.
-  const [lines, setLines] = useState<DraftLine[]>([{ key: 1 }]);
+  const [lines, setLines] = useState<DraftLine[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -87,6 +94,43 @@ export default function FreeProduction() {
 
   const products = useMemo(() => items.filter((i) => i.kind === 'product' && i.active), [items]);
   const materials = useMemo(() => items.filter((i) => i.active), [items]);
+
+  /** A material picked in the window becomes a line, and the caret goes to its quantity. */
+  const addMaterial = (itemId: number) => {
+    setPickerOpen(false);
+    const key = (lines[lines.length - 1]?.key ?? 0) + 1;
+    setLines((prev) => [...prev, { key, item_id: itemId }]);
+    setFocusLineKey(key);
+  };
+
+  useEffect(() => {
+    if (focusLineKey === null || pickerOpen) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      const el = document.querySelector<HTMLInputElement>(
+        `input[data-qty-key="${focusLineKey}"]`);
+      if (el && document.activeElement === el) { setFocusLineKey(null); return; }
+      el?.focus(); el?.select();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusLineKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusLineKey, pickerOpen, lines]);
+
+  const productWindow = (
+    <ProductPickerModal
+      open={pickerOpen}
+      title="اختر الخامة المصروفة"
+      categories={[...new Set(materials.map((m: any) => m.category).filter(Boolean))] as string[]}
+      categoryLabels={categoryLabels}
+      products={materials.filter((m) => !lines.some((l) => l.item_id === m.id))}
+      activeCategory={activeCategory}
+      onCategoryChange={setActiveCategory}
+      onCancel={() => setPickerOpen(false)}
+      onPick={addMaterial} />
+  );
   const itemName = (id: number) => items.find((i) => i.id === id)?.name ?? `صنف #${id}`;
   const priceOf = (id?: number) => Number(items.find((i) => i.id === id)?.purchase_price || 0);
 
@@ -202,6 +246,7 @@ export default function FreeProduction() {
 
   return (
     <div>
+      {productWindow}
       <Card
         title={<span><BuildOutlined /> إنتاج حر</span>}
         style={{ marginBottom: 16 }}
@@ -261,23 +306,19 @@ export default function FreeProduction() {
         <Table
           size="small" pagination={false} rowKey="key" dataSource={lines}
           columns={[
+            // Picked in the window, not hunted in a dropdown inside an empty row.
             {
               title: 'الصنف', width: '55%',
               render: (_: any, l: DraftLine) => (
-                <Select
-                  style={{ width: '100%' }} showSearch optionFilterProp="label"
-                  placeholder="اختر الخامة" value={l.item_id}
-                  onChange={(v) => setLines((p) => p.map((x) => (
-                    x.key === l.key ? { ...x, item_id: v } : x)))}
-                  options={materials.map((m) => ({ value: m.id, label: m.name }))}
-                />
+                <span>{materials.find((m) => m.id === l.item_id)?.name ?? `صنف #${l.item_id}`}</span>
               ),
             },
             {
               title: 'الكمية', width: 150,
               render: (_: any, l: DraftLine) => (
                 <InputNumber
-                  data-grid-col="qty2" keyboard={false}
+                  data-qty-key={l.key} data-grid-col="qty2" keyboard={false}
+                  onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
                   style={{ width: '100%' }} min={0} value={l.quantity ?? null} placeholder="—"
                   onChange={(v) => setLines((p) => p.map((x) => (
                     x.key === l.key ? { ...x, quantity: v as number | null } : x)))}
@@ -294,7 +335,7 @@ export default function FreeProduction() {
               title: '', width: 50,
               render: (_: any, l: DraftLine) => (
                 <Button
-                  type="text" danger icon={<DeleteOutlined />} disabled={lines.length === 1}
+                  type="text" danger icon={<DeleteOutlined />}
                   onClick={() => setLines((p) => p.filter((x) => x.key !== l.key))}
                 />
               ),
@@ -305,7 +346,7 @@ export default function FreeProduction() {
         <Space style={{ marginTop: 12 }}>
           <Button
             icon={<PlusOutlined />}
-            onClick={() => setLines((p) => [...p, { key: Math.max(...p.map((l) => l.key)) + 1 }])}
+            onClick={() => setPickerOpen(true)}
           >
             إضافة خامة
           </Button>

@@ -168,6 +168,8 @@ def return_purchase(
     lines: list[tuple[int, Decimal]],  # (item_id, quantity)
     actor_role: RoleName,
     actor_user_id: int,
+    return_date: date | None = None,
+    notes: str | None = None,
 ) -> PurchaseReturn:
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
@@ -203,6 +205,9 @@ def return_purchase(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
         purchase_invoice_id=purchase_invoice_id, value=value, ledger_entry_id=None,
         actor_user_id=actor_user_id,
+        # Defaulted here rather than on the column: returns recorded before this existed have no
+        # captured day, and a column default would have invented one for them.
+        return_date=return_date or date.today(), notes=notes,
     )
     db.add(ret)
     db.flush()

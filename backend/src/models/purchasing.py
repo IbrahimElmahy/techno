@@ -74,6 +74,12 @@ class PurchaseReturn(Base):
         ForeignKey("purchase_invoice.id"), nullable=False
     )
     value: Mapped[object] = mapped_column(MONEY, nullable=False)
+    # The day the goods actually went back — not the day the row was typed. `created_at` is when
+    # somebody sat at the screen, and goods returned on Thursday and entered on Sunday would land
+    # in the wrong week on every report that groups by day. The sale return got this in 0055 and
+    # the purchase in 0056; this is the fourth and last trade document to carry its own date.
+    return_date: Mapped[object | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Nullable so the row can be inserted before its ledger entry exists (Postgres enforces FKs;
     # a 0 placeholder would violate the constraint). Always set to the real id before commit.
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)

@@ -59,6 +59,10 @@ class ReturnLineIn(BaseModel):
 
 class ReturnCreate(BaseModel):
     lines: list[ReturnLineIn]
+    # The day the goods went back, and why. Both were columns the payload could not reach — the
+    # third document in a row to be found in that state.
+    return_date: date | None = None
+    notes: str | None = None
 
 
 class DocOut(BaseModel):
@@ -120,6 +124,10 @@ class PurchaseReturnListOut(BaseModel):
     supplier_name: str | None
     value: Decimal
     created_at: str
+    # Stored and returned in the same change. The sales return and the purchase were each found
+    # storing a date that came back from nothing, so the screen could write it and never see it.
+    return_date: date | None = None
+    notes: str | None = None
 
 
 @router.get("", response_model=list[PurchaseListOut])
@@ -175,6 +183,7 @@ def list_purchase_returns(
             id=r.id, document_number=r.document_number,
             purchase_invoice_id=r.purchase_invoice_id,
             purchase_document_number=inv.document_number if inv else None,
+            return_date=r.return_date, notes=r.notes,
             supplier_id=sup_id, supplier_name=names.get(sup_id) if sup_id else None,
             value=r.value, created_at=str(r.created_at),
         ))
@@ -245,6 +254,7 @@ def return_purchase(
             db, purchase_invoice_id=purchase_id,
             lines=[(l.item_id, l.quantity) for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
+            return_date=body.return_date, notes=body.notes,
         )
     except (PurchaseError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "return_invalid", "message": str(exc)})

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, Divider, Form, InputNumber, Modal, Select, Space, Table, Tag, message,
+  Alert, Button, Card, DatePicker, Divider, Form, Input, InputNumber, Modal, Select, Space,
+  Table, Tag, message,
 } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
@@ -8,6 +9,7 @@ import { api } from '../api/client';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import dayjs, { Dayjs } from 'dayjs';
 
 /**
  * مردودات شراء — goods going back to the supplier, as a register of its own.
@@ -28,6 +30,8 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
  */
 
 interface ReturnRow {
+  return_date?: string | null;
+  notes?: string | null;
   id: number;
   document_number: string;
   purchase_invoice_id: number;
@@ -57,6 +61,11 @@ export default function PurchaseReturns() {
   const [purchases, setPurchases] = useState<any[]>([]);
 
   const [creating, setCreating] = useState(false);
+  // The date is asked first, the way the sale and the sales return ask it — the day the goods
+  // went back is a fact about the goods, not about when somebody got to the screen.
+  const [newStep, setNewStep] = useState<null | 'date'>(null);
+  const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
+  const [notes, setNotes] = useState('');
   const [purchaseId, setPurchaseId] = useState<number | undefined>();
   const [detail, setDetail] = useState<any>(null);
   // Keyed by item, and empty until typed — a box that opens at 1 turns «5» into «15» for anybody
@@ -109,7 +118,8 @@ export default function PurchaseReturns() {
   const itemName = (id: number) => items.find((i) => i.id === id)?.name ?? `صنف #${id}`;
 
   const openCreate = () => {
-    setPurchaseId(undefined); setDetail(null); setQty({}); setCreating(true);
+    setPurchaseId(undefined); setDetail(null); setQty({});
+    setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('date');
   };
 
   const choosePurchase = async (id: number) => {
@@ -139,7 +149,11 @@ export default function PurchaseReturns() {
     if (!lines.length) { message.warning('اكتب الكمية المرتجعة على صنف واحد على الأقل'); return; }
     setSaving(true);
     try {
-      await api.post(`/api/v1/purchases/${purchaseId}/returns`, { lines });
+      await api.post(`/api/v1/purchases/${purchaseId}/returns`, {
+        lines,
+        return_date: returnDate.format('YYYY-MM-DD'),
+        notes: notes || null,
+      });
       message.success('اتسجّل مردود الشراء');
       setCreating(false);
       load();
@@ -154,8 +168,14 @@ export default function PurchaseReturns() {
       render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
     },
     {
-      title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', width: 105,
-      render: (v: string) => (v ? String(v).slice(0, 10) : '-'),
+      // The day the goods went back, falling back to when the row was typed for returns recorded
+      // before the document had a date of its own. Not silently: those rows say so.
+      title: 'التاريخ', dataIndex: 'return_date', key: 'return_date', width: 115,
+      render: (v: string | null, r: ReturnRow) => (v ? String(v).slice(0, 10) : (
+        <span style={{ color: '#8a8a8a' }} title="مردود قديم — التاريخ ده يوم التسجيل">
+          {r.created_at ? `${String(r.created_at).slice(0, 10)}*` : '-'}
+        </span>
+      )),
     },
     {
       title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', width: 125,
@@ -234,6 +254,23 @@ export default function PurchaseReturns() {
         />
       </Card>
 
+      {/* The date door. Declared beside the form, not inside it, so opening the form cannot
+          unmount the door that opened it. */}
+      <Modal
+        open={newStep === 'date'}
+        title="تاريخ مردود الشراء"
+        okText="التالي" cancelText="إلغاء"
+        onCancel={() => setNewStep(null)}
+        onOk={() => { setNewStep(null); setCreating(true); }}
+        destroyOnHidden
+      >
+        <DatePicker style={{ width: '100%' }} size="large" autoFocus
+          value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          اليوم اللي البضاعة رجعت فيه للمورد — مش يوم ما اتكتب في النظام.
+        </div>
+      </Modal>
+
       <Modal
         centered title="تسجيل مردود شراء" open={creating} width={760} destroyOnHidden
         onCancel={() => setCreating(false)} onOk={submit} confirmLoading={saving}
@@ -246,6 +283,14 @@ export default function PurchaseReturns() {
         />
 
         <Form layout="vertical">
+          <Form.Item label="تاريخ المردود">
+            <DatePicker style={{ width: '100%' }} value={returnDate}
+              onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
+          </Form.Item>
+          <Form.Item label="ملاحظات">
+            <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
+              value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </Form.Item>
           <Form.Item label="فاتورة الشراء" required>
             <Select
               showSearch optionFilterProp="label" value={purchaseId} onChange={choosePurchase}

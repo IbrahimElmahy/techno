@@ -169,6 +169,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # report that groups by day.
     ("sales_return", "return_date", "DATE"),
     ("purchase_invoice", "purchase_date", "DATE"),
+    ("purchase_return", "return_date", "DATE"),
+    ("purchase_return", "notes", "VARCHAR(500)"),
     # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:
     # NULL is «nothing agreed», 0 is «agreed, and it is zero».
     ("customer", "branch_id", "BIGINT"),
