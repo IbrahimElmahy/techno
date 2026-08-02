@@ -42,6 +42,10 @@ class TrialBalanceRow:
     period_debit: Decimal
     period_credit: Decimal
     closing: Decimal
+    # (031) Which of the four books a row belongs in — أصول · خصوم · مصروفات · ايرادات. Their
+    # دفتر الإستاذ is four tables on one screen, and without this the caller would have to fetch
+    # every account again just to sort the rows it already has.
+    nature: str | None = None
 
 
 @dataclass
@@ -122,6 +126,7 @@ def trial_balance(
             period_debit=to_money(b.period_debit),
             period_credit=to_money(b.period_credit),
             closing=to_money(b.closing * sign),
+            nature=acc.nature.value if acc.nature else None,
         )
         leaf_rows[account_id] = row
         result.grand_total_debit += row.period_debit
@@ -174,6 +179,7 @@ def _group_rows(db: Session, buckets: dict[int, _Bucket]) -> list[TrialBalanceRo
                 period_debit=to_money(gb.period_debit),
                 period_credit=to_money(gb.period_credit),
                 closing=to_money(gb.closing * sign),
+                nature=grp.nature.value if grp.nature else None,
             )
         )
     return rows

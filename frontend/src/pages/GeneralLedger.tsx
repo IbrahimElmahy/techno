@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tabs, Tag, Tree, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tabs, Tag, Tree, message, Radio,
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
@@ -60,6 +60,9 @@ interface TrialRow {
   period_debit: string;
   period_credit: string;
   closing: string;
+  // (031) Which book the row belongs in. Their دفتر الإستاذ is four tables on one screen; this is
+  // what lets one fetch answer both that view and the flat one.
+  nature: 'asset' | 'liability' | 'equity' | 'income' | 'expense' | null;
 }
 
 interface LineDraft {
@@ -547,6 +550,26 @@ function JournalTab() {
 }
 
 // --- Tab 3: Trial Balance -----------------------------------------------------------------
+/**
+ * Their دفتر الإستاذ shows four books on one screen — اصول · خصوم · مصروفات · ايرادات — each with
+ * `رقم · الاسم · مدين · دائن · رصيد`.
+ *
+ * **حقوق الملكية is a fifth here.** It is not among their four, and leaving capital off a ledger
+ * would hide the side the books balance against — a section that is empty says «nothing here»,
+ * while a section that does not exist says nothing at all.
+ *
+ * Every row carries more than theirs does: an opening balance, and the period and cost-centre
+ * filters this screen already had. Grouping is a toggle rather than a replacement, so the flat
+ * trial balance — which is the auditor's view and reads its own way — is still one click away.
+ */
+const BOOKS: { nature: TrialRow['nature']; label: string }[] = [
+  { nature: 'asset', label: 'اصول' },
+  { nature: 'liability', label: 'خصوم' },
+  { nature: 'equity', label: 'حقوق ملكية' },
+  { nature: 'expense', label: 'مصروفات' },
+  { nature: 'income', label: 'ايرادات' },
+];
+
 function TrialBalanceTab() {
   const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('year'), dayjs().endOf('year')]);
   const [branchId, setBranchId] = useState<number | undefined>();
@@ -557,6 +580,8 @@ function TrialBalanceTab() {
   const [loading, setLoading] = useState(false);
   // الفترة والفرع ومركز التكلفة من السيرفر — البحث النصي فوق الصفوف المعروضة.
   const [rowQuery, setRowQuery] = useState('');
+  // Their four-book view is the default: it is the one somebody arriving from a5 expects.
+  const [grouped, setGrouped] = useState(true);
 
   const rows: TrialRow[] = data?.rows ?? [];
   const shownRows = rowQuery
@@ -608,10 +633,54 @@ function TrialBalanceTab() {
         <Select allowClear placeholder="كل مراكز التكلفة" style={{ width: 220 }} value={costCenterId}
           onChange={setCostCenterId} showSearch optionFilterProp="label"
           options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
+        <Radio.Group size="small" value={grouped} onChange={(e: any) => setGrouped(e.target.value)}>
+          <Radio.Button value>مقسّم بالطبيعة</Radio.Button>
+          <Radio.Button value={false}>ميزان مسطّح</Radio.Button>
+        </Radio.Group>
         <Button type="primary" icon={<ReloadOutlined />} onClick={run} loading={loading}>عرض</Button>
       </Space>
 
-      {data ? (
+      {data && grouped ? (
+        <>
+          {BOOKS.map(({ nature, label }) => {
+            const book = shownRows.filter((r) => r.nature === nature);
+            const debit = book.reduce((t, r) => t + Number(r.period_debit || 0), 0);
+            const credit = book.reduce((t, r) => t + Number(r.period_credit || 0), 0);
+            return (
+              <Table
+                key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={columns}
+                loading={loading} pagination={false} size="small"
+                style={{ marginBottom: 18 }}
+                title={() => <strong>{label}</strong>}
+                // An empty book is shown, not hidden: «مفيش حسابات هنا» is a fact about the chart,
+                // and a section that vanishes reads as one that was never meant to be there.
+                locale={{ emptyText: 'لا توجد حسابات في هذا القسم' }}
+                summary={() => (book.length ? (
+                  <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
+                    <Table.Summary.Cell index={0} colSpan={3}>إجمالي {label}</Table.Summary.Cell>
+                    <Table.Summary.Cell index={3} align="left">{egp(debit)}</Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} align="left">{egp(credit)}</Table.Summary.Cell>
+                    <Table.Summary.Cell index={5} />
+                  </Table.Summary.Row>
+                ) : null)}
+              />
+            );
+          })}
+          {/* Accounts the chart has not classified would otherwise vanish from a grouped view
+              entirely — worse than a wrong section, because nobody goes looking for them. */}
+          {shownRows.some((r) => !r.nature) && (
+            <Table
+              rowKey="account_id" columns={columns} pagination={false} size="small"
+              dataSource={shownRows.filter((r) => !r.nature)}
+              title={() => <strong style={{ color: '#d46b08' }}>بدون تصنيف</strong>}
+            />
+          )}
+          <div style={{ marginTop: 12, color: '#888', fontSize: 13 }}>
+            الإجمالي العام: مدين {egp(data.grand_total_debit)} · دائن {egp(data.grand_total_credit)}
+            {' '}{data.balanced ? <Tag color="green">متوازن ✓</Tag> : <Tag color="red">غير متوازن</Tag>}
+          </div>
+        </>
+      ) : data ? (
         <>
           <Table rowKey="account_id" dataSource={shownRows} columns={columns} loading={loading}
             pagination={false} size="small"

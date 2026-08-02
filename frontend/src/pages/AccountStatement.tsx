@@ -169,6 +169,10 @@ export default function AccountStatement() {
               { title: 'النوع', dataIndex: 'entry_type',
                 render: (t: string) => <Tag>{t}</Tag> },
               { title: 'البيان', dataIndex: 'description' },
+              // Their statement has a cost-centre column. The journal line has always carried one
+              // and this screen dropped it, so «against which project?» meant opening the entry.
+              { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
+                render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
               { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
                 render: (v: string) => <span style={{ color: '#8a8a8a' }}>{money(v)}</span> },
               { title: 'مدين', dataIndex: 'debit', align: 'left',

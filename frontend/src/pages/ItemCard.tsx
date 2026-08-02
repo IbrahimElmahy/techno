@@ -57,6 +57,14 @@ interface CardRow {
   source_doc_type: string | null;
   source_doc_id: number | null;
   is_reversal: boolean;
+  // (031) Read off the source document rather than stored on the movement: the party it was with,
+  // its own number, what the line was priced and totalled at, and — for a perishable — the lot
+  // FEFO drew from.
+  party: string | null;
+  document_number: string | null;
+  unit_price: string | null;
+  line_total: string | null;
+  expiry_date: string | null;
 }
 
 interface CardOut {
@@ -67,6 +75,9 @@ interface CardOut {
 }
 
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
 
 export default function ItemCard() {
   const [items, setItems] = useState<any[]>([]);
@@ -235,13 +246,28 @@ export default function ItemCard() {
               { title: 'الرصيد بعد', dataIndex: 'balance_after', align: 'left',
                 render: (v: string) => <b>{qty(v)}</b> },
               { title: 'الموقع', dataIndex: 'location' },
+              // Their card carries the party, the price and the total on every row. None of it was
+              // missing data — a sale line has always known all three — so «منصرف ٥» used to mean
+              // opening the sales screen to find out who took them and for how much.
+              { title: 'جهه التعامل', dataIndex: 'party', ellipsis: true,
+                render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
+              { title: 'السعر', dataIndex: 'unit_price', align: 'left',
+                render: (v: string | null) => (v ? money(v) : '-') },
+              { title: 'الاجمالي', dataIndex: 'line_total', align: 'left',
+                render: (v: string | null) => (v ? <b>{money(v)}</b> : '-') },
+              // Which lot went out. FEFO chose it at the moment of sale; the card reads that back
+              // rather than leaving a recall to guess.
+              { title: 'انتهاء', dataIndex: 'expiry_date', width: 120,
+                render: (v: string | null) => (v
+                  ? <Tag color={dayjs(v).isBefore(dayjs()) ? 'red' : 'orange'}>{v}</Tag>
+                  : <span style={{ color: '#bbb' }}>-</span>) },
               { title: 'المستند', dataIndex: 'source_doc_id',
                 // Reading a card is asking «الحركة دي جات منين؟» — so the row opens its document
                 // when it has one, and stays a plain tag when there is no screen to open.
                 render: (id: number | null, r) => (id
                   ? (docKindOf(r.source_doc_type)
                       ? <DocumentLink kind={docKindOf(r.source_doc_type)!} id={id} size="small"
-                          label={`#${id}`}
+                          label={r.document_number || `#${id}`}
                           allowEdit={r.source_doc_type === 'sale'} />
                       : <Tag>{r.source_doc_type} #{id}</Tag>)
                   : '-') },

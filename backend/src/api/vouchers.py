@@ -146,6 +146,9 @@ class StatementLineOut(BaseModel):
     credit: Decimal
     balance_before: Decimal
     balance: Decimal
+    # Their كشف حساب carries a cost-centre column; the journal line always held it.
+    cost_center_id: int | None = None
+    cost_center_name: str | None = None
 
 
 class StatementOut(BaseModel):
@@ -190,7 +193,8 @@ def _statement_out(s, docs: dict | None = None) -> StatementOut:
             balance_before=ln.balance_before, balance=ln.balance,
             doc_kind=(docs.get(ln.entry_id) or {}).get("kind"),
             doc_id=(docs.get(ln.entry_id) or {}).get("id"),
-            doc_number=(docs.get(ln.entry_id) or {}).get("document_number"))
+            doc_number=(docs.get(ln.entry_id) or {}).get("document_number"),
+            cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name)
             for ln in s.lines],
     )
 

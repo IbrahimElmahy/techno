@@ -148,6 +148,8 @@ class TrialBalanceRowOut(BaseModel):
     period_debit: Decimal
     period_credit: Decimal
     closing: Decimal
+    # asset | liability | equity | income | expense — which of the four books the row belongs in.
+    nature: str | None = None
 
 
 class TrialBalanceOut(BaseModel):
@@ -423,7 +425,7 @@ def get_trial_balance(
             TrialBalanceRowOut(
                 account_id=r.account_id, code=r.code, name=r.name, is_postable=r.is_postable,
                 opening=r.opening, period_debit=r.period_debit, period_credit=r.period_credit,
-                closing=r.closing,
+                closing=r.closing, nature=r.nature,
             )
             for r in result.rows
         ],

@@ -21,10 +21,15 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.models.catalog import Item
+from src.models.catalog import Item, StockBatchMovement
+from src.models.customer import Customer
+from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
+from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.supplier import Supplier
 
 ZERO_QTY = Decimal("0.000")
+ZERO_MONEY = Decimal("0.00")
 
 
 class ItemCardError(Exception):
@@ -134,6 +139,8 @@ def card(
             "is_reversal": mv.reverses_movement_id is not None,
         })
 
+    _document_detail(db, item_id, rows)
+
     return {
         "item_id": item_id,
         "item_name": item.name,
@@ -150,6 +157,97 @@ def card(
         "total_out": str(total_out),
         "rows": rows,
     }
+
+
+def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
+    """Fill each row with the party, the document number and the money off its source document.
+
+    Their كارت الصنف carries twenty-six columns; ours carried eight. The missing ones were never
+    missing DATA — a sale line has always known its price, its customer and its invoice number.
+    They were one join away and the card did not make it, so a storekeeper reading «منصرف ٥» had to
+    open the sales screen to find out who took them and for how much.
+
+    Done in bulk per document type: a card can run to hundreds of rows and a query per row turns a
+    report into a wait.
+    """
+    by_type: dict[str, set[int]] = {}
+    for r in rows:
+        if r["source_doc_type"] and r["source_doc_id"]:
+            by_type.setdefault(r["source_doc_type"], set()).add(r["source_doc_id"])
+    if not by_type:
+        return
+
+    customers = {c.id: c.name for c in db.scalars(select(Customer)).all()}
+    suppliers = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
+
+    # (doc_type, doc_id) -> {party, document_number, unit_price, line_total}
+    detail: dict[tuple[str, int], dict] = {}
+
+    sale_ids = by_type.get("sale", set()) | by_type.get("sale_return", set())
+    if sale_ids:
+        invoices = {i.id: i for i in db.scalars(
+            select(SalesInvoice).where(SalesInvoice.id.in_(sale_ids))).all()}
+        lines = db.scalars(select(SalesInvoiceLine).where(
+            SalesInvoiceLine.item_id == item_id,
+            SalesInvoiceLine.invoice_id.in_(sale_ids))).all()
+        line_of = {ln.invoice_id: ln for ln in lines}
+        for doc_id, inv in invoices.items():
+            ln = line_of.get(doc_id)
+            detail[("sale", doc_id)] = {
+                "party": customers.get(inv.customer_id),
+                "document_number": inv.document_number,
+                "unit_price": str(ln.unit_price) if ln else None,
+                "line_total": str(ln.line_total) if ln else None,
+            }
+
+    # A return points at the invoice it came off, so its party and number are the sale's.
+    ret_ids = by_type.get("sale_return", set())
+    if ret_ids:
+        for ret in db.scalars(select(SalesReturn).where(SalesReturn.id.in_(ret_ids))).all():
+            inv = db.get(SalesInvoice, ret.sales_invoice_id) if ret.sales_invoice_id else None
+            detail[("sale_return", ret.id)] = {
+                "party": customers.get(inv.customer_id) if inv else None,
+                "document_number": ret.document_number,
+                "unit_price": None, "line_total": str(ret.value),
+            }
+
+    buy_ids = by_type.get("purchase", set())
+    if buy_ids:
+        purchases = {p.id: p for p in db.scalars(
+            select(PurchaseInvoice).where(PurchaseInvoice.id.in_(buy_ids))).all()}
+        lines = db.scalars(select(PurchaseInvoiceLine).where(
+            PurchaseInvoiceLine.item_id == item_id,
+            PurchaseInvoiceLine.invoice_id.in_(buy_ids))).all()
+        line_of = {ln.invoice_id: ln for ln in lines}
+        for doc_id, p in purchases.items():
+            ln = line_of.get(doc_id)
+            detail[("purchase", doc_id)] = {
+                "party": suppliers.get(p.supplier_id),
+                "document_number": p.document_number,
+                "unit_price": str(ln.unit_price) if ln else None,
+                "line_total": str(ln.line_total) if ln else None,
+            }
+
+    # Expiry: the lot a sale drew from is on the batch trail, keyed by the document that moved it.
+    expiry_of: dict[tuple[str, int], str] = {}
+    for m in db.scalars(select(StockBatchMovement).where(
+            StockBatchMovement.item_id == item_id)).all():
+        if m.document_type and m.document_id:
+            key = ("sale" if m.document_type == "sales_invoice" else m.document_type,
+                   m.document_id)
+            # Several lots on one document: the soonest is the one worth showing.
+            prev = expiry_of.get(key)
+            if prev is None or str(m.expiry_date) < prev:
+                expiry_of[key] = str(m.expiry_date)
+
+    for r in rows:
+        key = (r["source_doc_type"], r["source_doc_id"])
+        d = detail.get(key, {})
+        r["party"] = d.get("party")
+        r["document_number"] = d.get("document_number")
+        r["unit_price"] = d.get("unit_price")
+        r["line_total"] = d.get("line_total")
+        r["expiry_date"] = expiry_of.get(key)
 
 
 def _location_names(db: Session) -> dict[tuple[str, int], str]:

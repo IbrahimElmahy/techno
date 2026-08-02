@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
+from src.models.cost_center import CostCenter
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 
 
@@ -31,6 +32,10 @@ class StatementLine:
     credit: Decimal
     balance_before: Decimal  # the balance this movement started from
     balance: Decimal  # running, signed by the account's normal side
+    # (031) Their كشف حساب carries a cost-centre column. The journal line has always held it and
+    # the statement dropped it, so «which project was this against?» meant opening the entry.
+    cost_center_id: int | None = None
+    cost_center_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,9 @@ def account_statement(
         .options(selectinload(LedgerLine.entry))
         .where(LedgerLine.account_id == account_id)
     ).all()
+
+    # One query for the names rather than one per line: a statement can run to hundreds of rows.
+    cost_centers = {c.id: c.name for c in db.scalars(select(CostCenter)).all()}
 
     def signed(line: LedgerLine) -> Decimal:
         amount = to_money(line.amount)
@@ -99,6 +107,8 @@ def account_statement(
             entry_id=line.entry_id, entry_date=when, entry_type=line.entry.entry_type,
             description=line.statement or line.entry.description or "",
             debit=debit, credit=credit, balance_before=before, balance=balance,
+            cost_center_id=line.cost_center_id,
+            cost_center_name=cost_centers.get(line.cost_center_id),
         ))
 
     return Statement(
