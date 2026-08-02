@@ -7,6 +7,7 @@ original invoice's cash/credit split (research R9).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -572,6 +573,17 @@ def create_standalone_return(
     lines: list[ReturnLine],
     actor_role: RoleName,
     actor_user_id: int,
+    # (031) The same document fields the invoice carries. They were on the table since 030 and
+    # nothing could fill them: the payload dropped them, so every return was written with the
+    # rep, the posting account and the paper trail blank.
+    rep_id: int | None = None,
+    revenue_account_id: int | None = None,
+    external_document_number: str | None = None,
+    notes: str | None = None,
+    statement1: str | None = None,
+    statement2: str | None = None,
+    statement3: str | None = None,
+    return_date=None,
 ) -> SalesReturn:
     """A sales return built like a sale but reversed (028): pick a customer + items directly (no
     originating invoice), goods go back INTO stock, and the customer is credited (cash refund from a
@@ -634,6 +646,13 @@ def create_standalone_return(
         gross=gross, combined_pct=variable, value=net, tax_amount=tax,
         cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),
         cash_account_id=cash_acc.id if cash_acc else None,
+        rep_id=rep_id, revenue_account_id=revenue_account_id,
+        external_document_number=(external_document_number or None),
+        notes=(notes or None), statement1=(statement1 or None),
+        statement2=(statement2 or None), statement3=(statement3 or None),
+        # Defaulted here rather than in the column so a return always carries a real day — a NULL
+        # would push every report that groups by day into guessing.
+        return_date=return_date or date.today(),
         ledger_entry_id=None, actor_user_id=actor_user_id,
     )
     db.add(ret)

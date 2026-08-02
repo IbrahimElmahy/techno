@@ -8,15 +8,17 @@ import {
   FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
+import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import TotalsLadder from '../components/TotalsLadder';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
@@ -33,6 +35,10 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 interface ReturnRecord {
   sales_invoice_id?: number | null;
   invoice_document_number?: string | null;
+  return_date?: string | null;
+  rep_id?: number | null;
+  external_document_number?: string | null;
+  notes?: string | null;
   id: number;
   document_number: string;
   customer_id: number;
@@ -85,6 +91,10 @@ export default function Returns() {
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
+  // `DocumentLink` has always claimed it could open a return in its own screen; this screen never
+  // read the id, so «افتح المستند» landed on the list and left the reader to find the row again.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pendingDoc = useRef<number | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -92,6 +102,30 @@ export default function Returns() {
   const [loading, setLoading] = useState(false);
 
   const [createVisible, setCreateVisible] = useState(false);
+  // The sale opens as a run of doors — التاريخ, then العميل, then the page. The client asked for
+  // the return to be the same document worked the same way, and a screen that opens differently is
+  // the one place the habit breaks.
+  const [newStep, setNewStep] = useState<null | 'date' | 'party'>(null);
+  // Also opened from inside the document to change the party mid-return, exactly as the sale does.
+  const [partyPickerOpen, setPartyPickerOpen] = useState(false);
+  const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
+  // (031) The document fields. `sales_return` has carried these columns since 030 and the payload
+  // dropped every one of them, so no return ever written could have them filled.
+  const [repId, setRepId] = useState<number | null>(null);
+  const [externalDocNumber, setExternalDocNumber] = useState('');
+  const [docNotes, setDocNotes] = useState('');
+  const [statements, setStatements] = useState<[string, string, string]>(['', '', '']);
+  const [reps, setReps] = useState<any[]>([]);
+  // Needed to answer «which store does this rep work out of» — the link is on the employee.
+  const [employees, setEmployees] = useState<any[]>([]);
+  /** الكوبونات الراجعة. Unlike the sale, this is NOT a free set of boxes: a customer can only
+   *  bring back what he was handed, so the screen loads his books first and each row picks one.
+   *  Validating after the fact would mean telling him at the end of the document that half of it
+   *  cannot be saved, while he is still at the counter. */
+  const [issuedBooks, setIssuedBooks] = useState<any[]>([]);
+  const [couponRows, setCouponRows] = useState<
+    { key: string; invoice_id?: number; coupon_type_id?: number | null; count?: number;
+      serial_from?: string; serial_to?: string }[]>([]);
   const [createForm] = Form.useForm();
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [lines, setLines] = useState<ReturnLineItem[]>([]);
@@ -121,6 +155,7 @@ export default function Returns() {
   // much came back and what it cost us» — the rest are there when a question needs them.
   const returnCols = useHiddenColumns('returns-list', [
     'id', 'gross', 'discount_value', 'combined_pct', 'tax_amount',
+    'rep_id', 'external_document_number', 'notes',
   ]);
   // Purchase-history popup for a line's "آخر سعر شراء" tag.
   const [histModal, setHistModal] = useState<{ name: string; rows: HistRow[] } | null>(null);
@@ -141,15 +176,20 @@ export default function Returns() {
 
   const loadLookups = async () => {
     try {
-      const [custRes, prodRes, whRes, ptRes] = await Promise.all([
+      const [custRes, prodRes, whRes, ptRes, repRes, empRes] = await Promise.all([
         api.get('/api/v1/customers'),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
+        // Same source the sale uses: a rep IS a user with the sales_rep role.
+        api.get('/api/v1/users?role=sales_rep').catch(() => ({ data: [] })),
+        api.get('/api/v1/employees').catch(() => ({ data: [] })),
       ]);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
       setWarehouses(whRes.data);
+      setReps(repRes.data || []);
+      setEmployees(empRes.data || []);
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
       setPointValues(pts);
@@ -208,17 +248,60 @@ export default function Returns() {
     setCreateVisible(false);
     setLines([]); setActiveCategory(null); setCashRefund(0); setDiscountPct(0);
     setCustomerId(null); setLastInfo({}); setCustomerBalance(null); setDocWarehouseId(null);
+    // The document fields go back to blank with everything else — a paper number left over from
+    // the last return would be written onto the next one without anybody typing it.
+    setRepId(null); setExternalDocNumber(''); setDocNotes(''); setStatements(['', '', '']);
+    setCouponRows([]); setIssuedBooks([]);
+    setReturnDate(dayjs());
     createForm.resetFields();
+  };
+
+  /** الباب التاني: العميل. Mid-return this only swaps the party; during the opening run it is the
+   *  second door and hands over to the page — the same sequence, in the same order, as the sale. */
+  const handlePartyPicked = (picked: Party) => {
+    setPartyPickerOpen(false);
+    if (newStep === 'party') { setNewStep(null); setCreateVisible(true); }
+    createForm.setFieldsValue({ customer_id: picked.id });
+    // A customer created inside the picker is not in the loaded list yet, so the field would
+    // render a bare id until the next reload.
+    setCustomers((prev) => (prev.some((c: any) => c.id === picked.id)
+      ? prev : [...prev, { id: picked.id, name: picked.name } as any]));
+    onCustomerChange(picked.id);
+  };
+
+  /** Which store a rep works out of. A rep IS a user; the link lives on their employee record. */
+  const storeOfRep = (repId: number | null | undefined): number | null => {
+    if (!repId) return null;
+    return employees.find((e: any) => e.user_id === repId)?.warehouse_id ?? null;
   };
 
   const onCustomerChange = (cId: number) => {
     setCustomerId(cId);
+    const c = customers.find((x: any) => x.id === cId);
+    // Same chain as the sale: the customer fills in his rep, and the rep fills in his store.
+    // Both are DEFAULTS, not locks — a rep on leave and a van that ran out are ordinary days, and
+    // a field that refuses them is a field people work around by putting the document on the
+    // wrong customer. Filled only when empty, so re-picking never undoes a store chosen on purpose.
+    if ((c as any)?.rep_id) {
+      setRepId((c as any).rep_id);
+      const store = storeOfRep((c as any).rep_id);
+      if (store && !createForm.getFieldValue('warehouse_id')) {
+        createForm.setFieldsValue({ warehouse_id: store });
+        setDocWarehouseId(store);
+      }
+    }
     // A different customer means different purchase prices — start the lines fresh.
     setLines([]); setLastInfo({}); setActiveCategory(null);
     setCustomerBalance(null);
     api.get(`/api/v1/customers/${cId}/account`)
       .then((res) => setCustomerBalance(Number(res.data.balance || 0)))
       .catch((err) => console.error(err));
+    // What he was actually given. A different customer holds different books, so the rows go
+    // with him rather than surviving into somebody else's return.
+    setCouponRows([]);
+    api.get(`/api/v1/coupon-receipts/issued-to/${cId}`)
+      .then((res) => setIssuedBooks(res.data || []))
+      .catch(() => setIssuedBooks([]));
   };
 
   // Fetch what THIS customer last paid for the item, and its short purchase history.
@@ -312,20 +395,49 @@ export default function Returns() {
   const handleRemoveLine = (key: string) => setLines(lines.filter((l) => l.key !== key));
 
   /** شريط أدوات المستند on the return, the same row in the same order. */
+  /** The row beside the one open, in the order the list is currently showing — the same rule the
+   *  sale's arrows follow, so التالى means the same thing on both screens. */
+  const neighbour = (step: number) => {
+    if (!viewReturn) return null;
+    const at = returns.findIndex((r) => r.id === viewReturn.id);
+    if (at < 0) return null;
+    return returns[at + step] ?? null;
+  };
+
+  /** Stepping away from a half-typed return asks first — the sale does, and losing typed lines
+   *  to an arrow key is the same loss whichever document it happened on. */
+  const stepFromDraft = (step: number) => {
+    const target = neighbour(step);
+    if (!target) return;
+    const typed = lines.filter((l) => l.item_id !== null).length;
+    const go = () => { closeCreate(); openDetail(target); };
+    if (typed === 0) { go(); return; }
+    Modal.confirm({
+      title: 'سيبان المرتجع ده؟',
+      content: `المرتجع اللي بتكتبه فيه ${typed} صنف ولسه ماتحفظش. لو مشيت دلوقتي هيضيع.`,
+      okText: 'سيبه وامشي', cancelText: 'ارجع للمرتجع',
+      okButtonProps: { danger: true },
+      onOk: go,
+    });
+  };
+
   const returnToolbar = (): ToolbarAction[] => {
     const typed = lines.filter((l) => l.item_id !== null).length;
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => { createForm.resetFields(); setLines([]); } },
+        onClick: () => { createForm.resetFields(); setLines([]);
+          setReturnDate(dayjs()); setNewStep('date'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setLines([]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0, onClick: () => createForm.submit() },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: returns.length === 0, onClick: () => stepFromDraft(1) },
       { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
         onClick: () => setPickerOpen(true) },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: returns.length === 0, onClick: () => stepFromDraft(-1) },
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0, onClick: () => setLines([]) },
       { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
@@ -354,6 +466,18 @@ export default function Returns() {
             variable_discount_pct: discountPct,
             cash_refund: cash,
             credit_reduction: creditReduction,
+            rep_id: repId ?? undefined,
+            external_document_number: externalDocNumber || undefined,
+            notes: docNotes || undefined,
+            statement1: statements[0] || undefined,
+            statement2: statements[1] || undefined,
+            statement3: statements[2] || undefined,
+            return_date: returnDate.format('YYYY-MM-DD'),
+            // Only the rows that name a book and a count — an empty row is somebody who clicked
+            // «إضافة» and changed their mind, not a coupon.
+            returned_coupons: couponRows
+              .filter((r) => r.serial_from && r.count)
+              .map((r) => ({ serial_from: r.serial_from, serial_to: r.serial_to, count: r.count })),
             lines: valid.map((l) => ({
               item_id: l.item_id, quantity: Number(l.quantity || 0), unit_price: l.unit_price,
               discount_pct: l.discount || 0,
@@ -411,10 +535,62 @@ export default function Returns() {
     } catch (err) { console.error(err); }
   };
 
+  useEffect(() => {
+    const doc = searchParams.get('doc');
+    if (doc) {
+      pendingDoc.current = Number(doc);
+      // Cleared at once so a refresh, or coming back to this tab later, cannot replay it.
+      setSearchParams({}, { replace: true });
+    }
+    const wanted = pendingDoc.current;
+    if (!wanted || !returns.length) return;
+    // Consuming the ref is the once-only guard.
+    pendingDoc.current = null;
+    const target = returns.find((r) => r.id === wanted);
+    if (target) openDetail(target);
+    // Saying so beats a silent no-op, which reads as a broken link.
+    else message.warning(`المرتجع رقم ${wanted} مش في القائمة`);
+  }, [searchParams, returns]);
+
   // --- The full create page --------------------------------------------------------------------
+  /** الباب الأول: التاريخ. Declared once and rendered in BOTH branches — the create page is an
+   *  early return, so a door that lived only in the list branch unmounted the moment it opened
+   *  the page behind it, leaving a dialog on screen that no state could close. */
+  const doors = (
+    <>
+      <PartyPickerModal
+        open={partyPickerOpen || newStep === 'party'} kind="customer"
+        onPick={handlePartyPicked}
+        onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
+
+      <Modal
+        open={newStep === 'date'}
+        title="تاريخ المرتجع"
+        okText="التالي" cancelText="إلغاء"
+        onCancel={() => setNewStep(null)}
+        onOk={() => setNewStep('party')}
+        destroyOnHidden
+      >
+        <div onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); setNewStep('party'); }
+        }}>
+          <DatePicker
+            style={{ width: '100%' }} size="large" allowClear={false} autoFocus
+            value={returnDate} onChange={(v) => setReturnDate(v || dayjs())}
+            format="YYYY-MM-DD"
+          />
+        </div>
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          ده يوم رجوع البضاعة، مش يوم ما اتكتب السند — والقيد المحاسبي بياخد نفس اليوم.
+        </div>
+      </Modal>
+    </>
+  );
+
   if (createVisible) {
     return (
       <div>
+        {doors}
         <Card title="تسجيل مرتجع مبيعات جديد"
           extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
           {/* Same eleven verbs in the same eleven places as the sale — a return is the sale read
@@ -424,12 +600,14 @@ export default function Returns() {
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item label="العميل" required style={{ marginBottom: 8 }}>
-                  <Select placeholder="اختر العميل" showSearch optionFilterProp="children"
-                    value={customerId ?? undefined} onChange={onCustomerChange}>
-                    {customers.map((c) => (
-                      <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
-                    ))}
-                  </Select>
+                  {/* The same picker the second door opens — a searchable window with inline
+                      create, not a plain dropdown. Changing the party mid-return goes through
+                      the same place it was first chosen, so there is one way to answer «مين». */}
+                  <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
+                    placeholder="اضغط لاختيار العميل"
+                    value={customerId ?? undefined}
+                    onClick={() => setPartyPickerOpen(true)}
+                    options={customers.map((c: any) => ({ value: c.id, label: c.name }))} />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -443,6 +621,118 @@ export default function Returns() {
                   </Select>
                 </Form.Item>
               </Col>
+            </Row>
+
+            {/* (031) The document fields, the same set and the same order as the sale. They have
+                been columns on `sales_return` since 030 with nothing able to fill them. */}
+            <Row gutter={12}>
+              <Col span={6}>
+                <Form.Item label="مندوب" style={{ marginBottom: 12 }}>
+                  <Select allowClear showSearch optionFilterProp="label" placeholder="بدون مندوب"
+                    value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
+                    options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                <Form.Item label="مستند رقم" style={{ marginBottom: 12 }}
+                  help="ورقة العميل — بتتسجّل جنب رقمنا، مش بدله">
+                  <Input value={externalDocNumber}
+                    onChange={(e) => setExternalDocNumber(e.target.value)} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="ملاحظات" style={{ marginBottom: 12 }}>
+                  <Input value={docNotes} onChange={(e) => setDocNotes(e.target.value)} />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            {/* الكوبونات الراجعة — bound to what this customer was actually handed.
+                The sale offers free boxes because it is CREATING books; a return is receiving
+                them back, and a coupon nobody issued to him is not his to return. Each row picks
+                one of his books, and the count cannot exceed what is still out on it. */}
+            {customerId && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontWeight: 600 }}>الكوبونات الراجعة</span>
+                  <Button size="small" icon={<PlusOutlined />} disabled={!issuedBooks.length}
+                    onClick={() => setCouponRows((r) => [...r, { key: String(Date.now()) }])}>
+                    إضافة
+                  </Button>
+                  <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+                    {!issuedBooks.length
+                      ? 'العميل ده مااستلمش كوبونات، فمفيش حاجة ترجع.'
+                      : couponRows.length === 0
+                        ? `عنده ${issuedBooks.length} دفتر — سيبها فاضية لو مفيش كوبونات راجعة.`
+                        : `الإجمالي: ${couponRows.reduce((t, r) => t + Number(r.count || 0), 0)} كوبون`}
+                  </span>
+                </div>
+                {couponRows.map((row) => {
+                  const book = issuedBooks.find((b: any) => (
+                    b.invoice_id === row.invoice_id
+                    && (b.coupon_type_id ?? null) === (row.coupon_type_id ?? null)));
+                  return (
+                    <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
+                      <Col xs={24} md={12}>
+                        <Select showSearch style={{ width: '100%' }} optionFilterProp="label"
+                          placeholder="اختر الدفتر اللي اتصرف له"
+                          value={book ? `${row.invoice_id}:${row.coupon_type_id ?? ''}` : undefined}
+                          onChange={(v) => {
+                            const [inv, type] = String(v).split(':');
+                            const b = issuedBooks.find((x: any) => (
+                              x.invoice_id === Number(inv)
+                              && (x.coupon_type_id ?? null) === (type ? Number(type) : null)));
+                            setCouponRows((rs) => rs.map((x) => (x.key === row.key ? {
+                              ...x, invoice_id: Number(inv),
+                              coupon_type_id: type ? Number(type) : null,
+                              // The range comes from the book, not from typing — it is the thing
+                              // being returned, and retyping it is how a digit gets dropped.
+                              serial_from: b?.serial_from, serial_to: b?.serial_to,
+                              count: b?.remaining,
+                            } : x)));
+                          }}
+                          options={issuedBooks.map((b: any) => ({
+                            value: `${b.invoice_id}:${b.coupon_type_id ?? ''}`,
+                            label: `${b.document_number} — ${b.coupon_type_name || 'بدون نوع'}`
+                              + ` — باقي ${b.remaining} من ${b.count}`
+                              + (b.serial_from ? ` (${b.serial_from}–${b.serial_to})` : ''),
+                            disabled: !b.remaining,
+                          }))} />
+                      </Col>
+                      <Col xs={12} md={5}>
+                        <InputNumber style={{ width: '100%' }} min={1} placeholder="العدد الراجع"
+                          max={book?.remaining}
+                          value={row.count}
+                          onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                            ? { ...x, count: (v as number) ?? undefined } : x)))} />
+                      </Col>
+                      <Col xs={12} md={4}>
+                        <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+                          {book?.serial_from ? `${book.serial_from}–${book.serial_to}` : '—'}
+                        </span>
+                      </Col>
+                      <Col xs={24} md={3}>
+                        <Button type="text" danger icon={<DeleteOutlined />}
+                          onClick={() => setCouponRows((rs) => rs.filter((x) => x.key !== row.key))} />
+                      </Col>
+                    </Row>
+                  );
+                })}
+              </div>
+            )}
+
+            <Row gutter={12}>
+              {[0, 1, 2].map((i) => (
+                <Col span={8} key={i}>
+                  <Form.Item label={`بيان ${['أول', 'تاني', 'تالت'][i]}`} style={{ marginBottom: 12 }}>
+                    <Input value={statements[i]} onChange={(e) => {
+                      const next = [...statements] as [string, string, string];
+                      next[i] = e.target.value;
+                      setStatements(next);
+                    }} />
+                  </Form.Item>
+                </Col>
+              ))}
             </Row>
 
             <Divider orientation="right" style={{ fontWeight: 700 }}>الأصناف المرتجعة</Divider>
@@ -675,17 +965,25 @@ export default function Returns() {
   // Same treatment as the sales list: everything we can answer honestly, in their order and under
   // their wording, with the ones a returns list is not usually read for starting hidden.
   //
-  // Left out because a return does not carry them: مستند رقم · الحساب الفرعي · مندوب · مصروفات ·
-  // مصروفات تشغيل · ملاحظات · مراكز التكلفة. Their return document holds the same fields as their
-  // sale; ours is a leaner record, and inventing empty columns for it would say we had the data.
+  // (031) Four of the columns previously left out now have a source: the document fields were
+  // always columns on `sales_return` and the payload dropped them, so nothing could fill them.
+  // That is fixed, so مستند رقم · مندوب · ملاحظات are here — and التاريخ is the return's own day
+  // rather than the day the row was typed.
+  //
+  // Still left out because a return genuinely does not carry them: الحساب الفرعي (the posting
+  // account is stored but this list has no room for a fourth identifier) · مصروفات · مصروفات
+  // تشغيل · مراكز التكلفة.
   const columns = [
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 80,
       render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
     },
     {
-      title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', width: 105,
-      render: (v: string) => (v ? String(v).slice(0, 10) : '-'),
+      // The day the goods came back, falling back to when the row was written for returns
+      // recorded before the document carried its own date.
+      title: 'التاريخ', dataIndex: 'return_date', key: 'return_date', width: 105,
+      render: (v: string | null, r: ReturnRecord) => (v || String(r.created_at || '').slice(0, 10)
+        || '-'),
     },
     {
       title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', width: 125,
@@ -695,7 +993,10 @@ export default function Returns() {
       // Which sale this undoes. The link was always stored and never shown.
       title: 'الفاتورة رقم', dataIndex: 'invoice_document_number', key: 'invoice_document_number',
       width: 125,
-      render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag>
+      // Opens the sale it undoes. The column exists to answer «which one?», and a number you
+      // cannot follow leaves that answered only halfway.
+      render: (v: string | null, r: ReturnRecord) => (v
+        ? <DocRef kind="invoice" id={r.sales_invoice_id} label={v} />
         : <span style={{ color: '#bbb' }}>مستقل</span>),
     },
     {
@@ -729,6 +1030,22 @@ export default function Returns() {
       render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)} ج.م</strong>,
     },
     {
+      title: 'مندوب', dataIndex: 'rep_id', key: 'rep_id', width: 150, ellipsis: true,
+      render: (v: number | null) => {
+        const rep = reps.find((r) => r.id === v);
+        return rep ? (rep.full_name || rep.username) : <span style={{ color: '#bbb' }}>-</span>;
+      },
+    },
+    {
+      title: 'مستند رقم', dataIndex: 'external_document_number', key: 'external_document_number',
+      width: 130,
+      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span>,
+    },
+    {
+      title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true,
+      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span>,
+    },
+    {
       title: 'تم السداد', dataIndex: 'cash_refund', key: 'cash_refund', width: 110,
       align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
     },
@@ -757,7 +1074,9 @@ export default function Returns() {
             />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" danger icon={<PlusOutlined />}
-              onClick={() => setCreateVisible(true)}>
+              // Through the same doors as the toolbar's «جديد» and as the sale: التاريخ first.
+              // Two ways into one document that open differently is how a habit stops transferring.
+              onClick={() => { setReturnDate(dayjs()); setNewStep('date'); }}>
               تسجيل مرتجع بيع
             </Button>
           </Space>
@@ -806,11 +1125,39 @@ export default function Returns() {
         />
       </Card>
 
+      {doors}
+
       <Modal centered title={`تفاصيل المرتجع ${viewReturn?.document_number ?? ''}`} width={680}
         open={detailVisible} onCancel={() => setDetailVisible(false)} destroyOnHidden
         footer={invoiceFooter(returnDoc(viewReturn), () => setDetailVisible(false))}>
         {viewReturn && (
           <>
+            {/* The sale carries the toolbar into its detail view; the return did not, so التالى
+                and السابق — the whole point of which is walking a register you already have open —
+                were unreachable from the one place a person actually walks it. */}
+            <DocumentToolbar actions={[
+              { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+                onClick: () => { setDetailVisible(false); setReturnDate(dayjs());
+                  setNewStep('date'); } },
+              { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+              { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: true },
+              { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
+              { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+                disabled: !neighbour(1),
+                onClick: () => { const n = neighbour(1); if (n) openDetail(n); } },
+              { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+                onClick: () => setDetailVisible(false) },
+              { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+                disabled: !neighbour(-1),
+                onClick: () => { const p = neighbour(-1); if (p) openDetail(p); } },
+              { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />,
+                danger: true, disabled: true },
+              { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+                onClick: () => printInvoice(returnDoc(viewReturn)!, printOpts) },
+              { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+              { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
+                onClick: () => fetchReturns() },
+            ]} />
             <InvoiceDocument doc={returnDoc(viewReturn)!}
               onItemClick={(id) => { setDetailVisible(false); navigate(`/catalog/${id}`); }}
               onPartyClick={(id) => { setDetailVisible(false); navigate(`/customers/${id}`); }} />

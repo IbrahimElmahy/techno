@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Button, Card, Divider, Form, InputNumber, Modal, Select, Space, Table, Tag, message,
 } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -46,6 +48,10 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 
 export default function PurchaseReturns() {
   const [rows, setRows] = useState<ReturnRow[]>([]);
+  // A purchase return is now a document with a screen, so a link to one has somewhere to land.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [highlight, setHighlight] = useState<number | null>(null);
+  const pendingDoc = useRef<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -73,6 +79,22 @@ export default function PurchaseReturns() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    const doc = searchParams.get('doc');
+    if (doc) { pendingDoc.current = Number(doc); setSearchParams({}, { replace: true }); }
+    const wanted = pendingDoc.current;
+    if (!wanted || !rows.length) return;
+    pendingDoc.current = null;
+    if (rows.some((r) => r.id === wanted)) {
+      // The register has no per-return detail view — the document IS its row — so arriving marks
+      // the row instead of opening a modal that would only repeat what is already on screen.
+      setHighlight(wanted);
+      setTimeout(() => setHighlight(null), 4000);
+    } else {
+      message.warning(`مردود الشراء رقم ${wanted} مش في القائمة`);
+    }
+  }, [searchParams, rows]);
 
   // What each purchase has ALREADY had returned, so the screen can say what is still returnable
   // rather than letting somebody find out from a server error.
@@ -141,7 +163,12 @@ export default function PurchaseReturns() {
     },
     {
       title: 'الفاتورة رقم', dataIndex: 'purchase_document_number', key: 'purchase_document_number',
-      width: 130, render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : '-'),
+      width: 130,
+      // The purchase this came off, opened in the purchases screen — the register exists to answer
+      // «which invoice?», and stopping at the number would leave the trip half made.
+      render: (v: string | null, r: ReturnRow) => (
+        <DocRef kind="purchase" id={r.purchase_invoice_id} label={v} />
+      ),
     },
     {
       title: 'جهه التعامل', dataIndex: 'supplier_name', key: 'supplier_name', ellipsis: true,
@@ -199,6 +226,7 @@ export default function PurchaseReturns() {
         <Table
           dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
           size="middle" tableLayout="fixed"
+          rowClassName={(r) => (r.id === highlight ? 'row-arrived' : '')}
           pagination={{
             defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100'],

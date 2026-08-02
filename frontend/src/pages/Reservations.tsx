@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -40,6 +41,7 @@ interface Availability {
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function Reservations() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<Row[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
@@ -140,11 +142,21 @@ export default function Reservations() {
     },
     {
       title: 'العميل', dataIndex: 'customer_name', key: 'customer_name', ellipsis: true,
-      render: (v: string | null, r: Row) => v ?? `عميل #${r.customer_id}`,
+      // A hold is read alongside «what else does this customer owe» often enough that the name
+      // should carry you to their file rather than being a label.
+      render: (v: string | null, r: Row) => (
+        <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${r.customer_id}`); }}>
+          {v ?? `عميل #${r.customer_id}`}
+        </a>
+      ),
     },
     {
       title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ellipsis: true,
-      render: (v: string | null, r: Row) => v ?? `صنف #${r.item_id}`,
+      render: (v: string | null, r: Row) => (
+        <a onClick={(e) => { e.stopPropagation(); navigate(`/catalog/${r.item_id}`); }}>
+          {v ?? `صنف #${r.item_id}`}
+        </a>
+      ),
     },
     {
       title: 'المخزن', dataIndex: 'location_name', key: 'location_name', width: 160,

@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
-from src.models.sales import SalesInvoice
+from src.models.sales import SalesInvoice, SalesInvoiceCoupon
 from src.services import audit_service
 
 
@@ -38,7 +38,13 @@ def _as_int(value) -> int | None:
 
 
 def find_issuing_invoice(db: Session, serial: str) -> SalesInvoice | None:
-    """The invoice whose issued range covers this serial, or None if nothing issued it."""
+    """The invoice whose issued range covers this serial, or None if nothing issued it.
+
+    Two places to look. The invoice's own `coupon_serial_from/to` is where a single book was
+    recorded before 0049; `sales_invoice_coupon` is the row-per-kind table that replaced it. Both
+    are live — every invoice written before that migration has only the first — so a check that
+    reads one of them calls half the real coupons unknown.
+    """
     serial = str(serial).strip()
     if not serial:
         return None
@@ -52,6 +58,16 @@ def find_issuing_invoice(db: Session, serial: str) -> SalesInvoice | None:
     )
     if exact is not None:
         return exact
+
+    # The per-kind rows, exact endpoints first for the same reason.
+    exact_row = db.scalar(
+        select(SalesInvoiceCoupon).where(
+            (SalesInvoiceCoupon.serial_from == serial)
+            | (SalesInvoiceCoupon.serial_to == serial)
+        )
+    )
+    if exact_row is not None:
+        return db.get(SalesInvoice, exact_row.invoice_id)
 
     number = _as_int(serial)
     if number is None:
@@ -70,6 +86,16 @@ def find_issuing_invoice(db: Session, serial: str) -> SalesInvoice | None:
             continue
         if first <= number <= last:
             return invoice
+
+    for row in db.scalars(
+        select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.serial_from.isnot(None))
+    ).all():
+        first = _as_int(row.serial_from)
+        last = _as_int(row.serial_to)
+        if first is None or last is None:
+            continue
+        if first <= number <= last:
+            return db.get(SalesInvoice, row.invoice_id)
     return None
 
 
@@ -212,3 +238,65 @@ def get_receipt(db: Session, receipt_id: int) -> CouponReceipt:
     if receipt is None:
         raise CouponReceiptError("الاستلام غير موجود.")
     return receipt
+
+
+def issued_to_customer(db: Session, customer_id: int) -> list[dict]:
+    """Every coupon book this customer was handed, and how much of it has come back.
+
+    This is what a return screen needs before it will accept a coupon: a customer can only bring
+    back what he was given. Offering a free serial box and validating afterwards means the counter
+    finds out at the end of a document that half of it cannot be saved — and the customer is
+    standing there.
+
+    Reads both shapes: the invoice's own single range (pre-0049) and the row-per-kind table that
+    replaced it. An invoice that carries both is counted once from the per-kind rows, which are the
+    more precise record.
+    """
+    from src.models.customer import Customer
+    from src.models.loyalty import CouponType
+
+    invoices = db.scalars(
+        select(SalesInvoice).where(SalesInvoice.customer_id == customer_id)
+    ).all()
+    if not invoices:
+        return []
+    by_id = {inv.id: inv for inv in invoices}
+    type_names = {t.id: t.name for t in db.scalars(select(CouponType)).all()}
+
+    rows = db.scalars(
+        select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.invoice_id.in_(by_id))
+    ).all()
+    with_rows = {r.invoice_id for r in rows}
+
+    books: list[dict] = []
+    for r in rows:
+        inv = by_id[r.invoice_id]
+        books.append({
+            "invoice_id": inv.id, "document_number": inv.document_number,
+            "invoice_date": str(inv.invoice_date) if inv.invoice_date else None,
+            "coupon_type_id": r.coupon_type_id,
+            "coupon_type_name": type_names.get(r.coupon_type_id),
+            "count": r.count, "serial_from": r.serial_from, "serial_to": r.serial_to,
+        })
+    for inv in invoices:
+        # Only the invoices with no per-kind rows fall back to the old single range, so a book is
+        # never listed twice.
+        if inv.id in with_rows or not inv.coupon_count:
+            continue
+        books.append({
+            "invoice_id": inv.id, "document_number": inv.document_number,
+            "invoice_date": str(inv.invoice_date) if inv.invoice_date else None,
+            "coupon_type_id": None, "coupon_type_name": None,
+            "count": inv.coupon_count,
+            "serial_from": inv.coupon_serial_from, "serial_to": inv.coupon_serial_to,
+        })
+
+    # How many of each book have already been handed back, so the screen offers the remainder
+    # rather than the original count.
+    for book in books:
+        serials = expand_range(book["serial_from"], book["serial_to"]) if book["serial_from"] else []
+        taken = sum(1 for sr in serials if already_received(db, sr) is not None)
+        book["returned"] = taken
+        book["remaining"] = max((book["count"] or len(serials) or 0) - taken, 0)
+    books.sort(key=lambda b: (b["invoice_date"] or "", b["invoice_id"]), reverse=True)
+    return books

@@ -5,6 +5,7 @@ import {
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { DocRef } from '../components/DocumentLink';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -306,13 +307,17 @@ export default function StockAlerts() {
                     render: (v: string | null) => v ?? '-' },
                   { title: 'الكمية', dataIndex: 'quantity', width: 100, align: 'left' as const,
                     render: (v: string) => <b>{qty(v)}</b> },
-                  { title: 'المستند', key: 'doc', width: 175,
-                    render: (_: any, r: BatchMove) => (r.document_type
-                      ? <span>{MOVE_DOC[r.document_type] ?? r.document_type}
-                        {r.document_id
-                          ? <Tag style={{ marginInlineStart: 6 }}>#{r.document_id}</Tag> : null}
-                      </span>
-                      : '-') },
+                  { title: 'المستند', key: 'doc', width: 185,
+                    render: (_: any, r: BatchMove) => {
+                      if (!r.document_type) return '-';
+                      const label = `${MOVE_DOC[r.document_type] ?? r.document_type}`
+                        + (r.document_id ? ` #${r.document_id}` : '');
+                      // A recall follows the lot to the sale that took it; the transfer and the
+                      // receipt have no single-document screen, so they stay plain.
+                      return r.document_type === 'sales_invoice'
+                        ? <DocRef kind="invoice" id={r.document_id} label={label} />
+                        : <span>{label}</span>;
+                    } },
                 ]}
               />
             </Card>

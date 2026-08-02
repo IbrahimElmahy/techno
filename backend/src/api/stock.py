@@ -13,6 +13,8 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
 from src.models.catalog import Item, StockBatchMovement
+from src.models.customer import Customer
+from src.models.sales import SalesInvoice
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.warehouse import Custody, Warehouse
 from src.services import batch_service, stock_permit_service
@@ -122,12 +124,27 @@ def batch_movements(
     if location_id is not None:
         stmt = stmt.where(StockBatchMovement.location_id == location_id)
 
-    items = {i.id: i.name for i in db.scalars(select(Item)).all()}
+    all_items = {i.id: i for i in db.scalars(select(Item)).all()}
+    items = {i: it.name for i, it in all_items.items()}
     warehouses = {w.id: w.name for w in db.scalars(select(Warehouse)).all()}
     rows = db.scalars(stmt.order_by(StockBatchMovement.id.desc()).limit(1000)).all()
+    # Their حركات انتهاء الصلاحية carries the unit and the customer beside the lot.
+    invoice_ids = {m.document_id for m in rows
+                   if m.document_type == "sales_invoice" and m.document_id}
+    customer_of: dict[int, tuple[int | None, str | None]] = {}
+    if invoice_ids:
+        names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
+        for inv in db.scalars(
+            select(SalesInvoice).where(SalesInvoice.id.in_(invoice_ids))
+        ).all():
+            customer_of[inv.id] = (inv.customer_id, names.get(inv.customer_id))
     return [
         {
             "id": m.id, "item_id": m.item_id, "item_name": items.get(m.item_id),
+            "unit": (all_items[m.item_id].unit_of_measure
+                     if m.item_id in all_items else None),
+            "customer_id": customer_of.get(m.document_id or 0, (None, None))[0],
+            "customer_name": customer_of.get(m.document_id or 0, (None, None))[1],
             "expiry_date": str(m.expiry_date), "kind": m.kind.value,
             "location_kind": m.location_kind.value, "location_id": m.location_id,
             "location_name": (warehouses.get(m.location_id)

@@ -19,6 +19,8 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_STOCK_READ
 from src.core.db import get_db
 from src.models.catalog import Item, ItemSerial, ItemSerialMovement, SerialStatus
+from src.models.customer import Customer
+from src.models.sales import SalesInvoice
 from src.models.stock import LocationKind
 from src.models.warehouse import Warehouse
 
@@ -44,6 +46,10 @@ class MovementRow(BaseModel):
     item_name: str | None
     serial: str
     kind: str
+    # Who ended up with it. Their حركات سرايل shows the customer rather than the document, which
+    # answers «who has this unit» without a second lookup — so both are here.
+    customer_id: int | None
+    customer_name: str | None
     location_kind: str | None
     location_id: int | None
     location_name: str | None
@@ -56,6 +62,17 @@ def _names(db: Session) -> tuple[dict[int, str], dict[int, str]]:
     items = {i.id: i.name for i in db.scalars(select(Item)).all()}
     warehouses = {w.id: w.name for w in db.scalars(select(Warehouse)).all()}
     return items, warehouses
+
+
+def _invoice_customers(db: Session, invoice_ids: set[int]) -> dict[int, tuple[int, str | None]]:
+    """Invoice → (customer id, name), in two queries rather than one per row."""
+    if not invoice_ids:
+        return {}
+    invoices = db.scalars(
+        select(SalesInvoice).where(SalesInvoice.id.in_(invoice_ids))
+    ).all()
+    names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
+    return {inv.id: (inv.customer_id, names.get(inv.customer_id)) for inv in invoices}
 
 
 def _place(kind, loc_id, warehouses) -> str | None:
@@ -129,10 +146,17 @@ def list_movements(
 
     items, warehouses = _names(db)
     rows = db.scalars(stmt.order_by(ItemSerialMovement.id.desc()).limit(1000)).all()
+    # A unit only has a customer when it left on an invoice; every other movement is internal.
+    customers = _invoice_customers(db, {
+        m.document_id for m in rows
+        if m.document_type == "sales_invoice" and m.document_id
+    })
     return [
         MovementRow(
             id=m.id, serial_id=m.serial_id, item_id=m.item_id, item_name=items.get(m.item_id),
             serial=m.serial, kind=m.kind.value,
+            customer_id=customers.get(m.document_id or 0, (None, None))[0],
+            customer_name=customers.get(m.document_id or 0, (None, None))[1],
             location_kind=m.location_kind.value if m.location_kind else None,
             location_id=m.location_id,
             location_name=_place(m.location_kind, m.location_id, warehouses),

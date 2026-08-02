@@ -77,6 +77,21 @@ def check_serial(
     return coupon_receipt_service.check_serial(db, serial)
 
 
+@router.get("/issued-to/{customer_id}", response_model=list[dict])
+def coupons_issued_to(
+    customer_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """The books this customer was handed, and how much of each is still out.
+
+    A return screen asks this before it will take a coupon back: he can only return what he was
+    given. Offering a free box and checking afterwards means finding out at the end of a document
+    that half of it cannot be saved, with the customer still at the counter.
+    """
+    return coupon_receipt_service.issued_to_customer(db, customer_id)
+
+
 @router.post("", response_model=ReceiptOut, status_code=status.HTTP_201_CREATED)
 def create_receipt(
     body: ReceiptIn,

@@ -4,6 +4,7 @@ import {
 } from 'antd';
 import { ReloadOutlined, TeamOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
@@ -37,6 +38,7 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function RepReports() {
+  const navigate = useNavigate();
   const [tab, setTab] = useQueryTab('collections', 'view');
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
     [dayjs().startOf('month'), dayjs()]);
@@ -174,7 +176,9 @@ export default function RepReports() {
                     { title: 'العميل', dataIndex: 'customer_name',
                       // Money with no customer on it is still money the rep collected; dropping the
                       // row would make this screen's total disagree with the one beside it.
-                      render: (v: string | null) => v ?? <Tag>بدون عميل</Tag> },
+                      render: (v: string | null, r: ByCustomerRow) => (v && r.customer_id
+                        ? <a onClick={() => navigate(`/customers/${r.customer_id}`)}>{v}</a>
+                        : <Tag>بدون عميل</Tag>) },
                     { title: 'عدد السندات', dataIndex: 'receipts', width: 130 },
                     { title: 'المُحصّل', dataIndex: 'collected', width: 165,
                       align: 'left' as const,
@@ -207,7 +211,10 @@ export default function RepReports() {
                   columns={[
                     { title: 'المندوب', dataIndex: 'rep_name', width: 200,
                       render: (v: string) => <b>{v}</b> },
-                    { title: 'الصنف', dataIndex: 'item_name' },
+                    { title: 'الصنف', dataIndex: 'item_name',
+                      render: (v: string, r: RepItemRow) => (
+                        <a onClick={() => navigate(`/catalog/${r.item_id}`)}>{v}</a>
+                      ) },
                     { title: 'الكمية', dataIndex: 'quantity', width: 120,
                       render: (v: string) => qty(v) },
                     // Net of the document's discount, so these add up to the invoices rather than

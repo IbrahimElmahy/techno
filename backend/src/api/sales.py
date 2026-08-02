@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import date
 
 from sqlalchemy import select
@@ -25,7 +25,8 @@ from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind
 from src.models.warehouse import Custody
-from src.services import sales_service
+from src.services import coupon_receipt_service, sales_service
+from src.services.coupon_receipt_service import CouponReceiptError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
 from src.services.stock_service import StockError
 
@@ -120,6 +121,12 @@ class StandaloneReturnLineIn(BaseModel):
     warehouse_id: int | None = None        # (030) this line returns into its own warehouse
 
 
+class ReturnedCouponIn(BaseModel):
+    serial_from: str
+    serial_to: str | None = None
+    count: int | None = None
+
+
 class StandaloneReturnCreate(BaseModel):
     customer_id: int
     origin: LocationIn
@@ -127,6 +134,20 @@ class StandaloneReturnCreate(BaseModel):
     cash_refund: Decimal = Decimal("0")
     credit_reduction: Decimal = Decimal("0")
     lines: list[StandaloneReturnLineIn]
+    # (031) The same document fields the invoice takes. `SalesReturn` has carried the columns
+    # since 030 and this payload dropped them, so nothing could ever fill them.
+    rep_id: int | None = None
+    revenue_account_id: int | None = None
+    external_document_number: str | None = Field(default=None, max_length=40)
+    notes: str | None = Field(default=None, max_length=500)
+    statement1: str | None = Field(default=None, max_length=200)
+    statement2: str | None = Field(default=None, max_length=200)
+    statement3: str | None = Field(default=None, max_length=200)
+    return_date: date | None = None
+    # (031) Coupons coming back with the goods. Each entry names a book the customer was issued;
+    # the serials are expanded and taken in through the same receipt path the استلام الكوبونات
+    # screen uses, so the same three refusals apply — unknown, already received, wrong customer.
+    returned_coupons: list[ReturnedCouponIn] = []
 
 
 class SalesInvoiceOut(BaseModel):
@@ -218,7 +239,8 @@ def create_sale(
             lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials,
                             l.discount_pct, l.warehouse_id)
                    for l in body.lines],
-            actor_role=current.role, actor_user_id=current.id, can_sell_below=can_sell_below,
+            actor_role=current.role, actor_user_id=current.id,
+            can_sell_below=can_sell_below,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
             coupon_serial_from=body.coupon_serial_from,
@@ -342,6 +364,13 @@ def _standalone_return_out(r: SalesReturn, db: Session | None = None) -> dict:
         "credit_reduction": str(r.credit_reduction), "ledger_entry_id": r.ledger_entry_id,
         "created_at": str(r.created_at) if r.created_at else None,
         "sales_invoice_id": r.sales_invoice_id, "invoice_document_number": invoice_no,
+        # (031) The document fields, so the list can show the columns their مردود مبيعات has —
+        # مندوب · الحساب الفرعي · مستند رقم · ملاحظات — instead of leaving them out for want of
+        # a source.
+        "return_date": str(r.return_date) if r.return_date else None,
+        "rep_id": r.rep_id, "revenue_account_id": r.revenue_account_id,
+        "external_document_number": r.external_document_number, "notes": r.notes,
+        "statement1": r.statement1, "statement2": r.statement2, "statement3": r.statement3,
     }
 
 
@@ -402,7 +431,30 @@ def create_standalone_return(
                               l.warehouse_id)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
+            rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
+            external_document_number=body.external_document_number, notes=body.notes,
+            statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
+            return_date=body.return_date,
         )
+        # The coupons are a second document, deliberately: a coupon receipt is what the mobile app
+        # and the counter both already write, and giving the return its own private path would be
+        # a second place that decides whether a coupon is real.
+        if body.returned_coupons:
+            serials: list[str] = []
+            for c in body.returned_coupons:
+                serials.extend(coupon_receipt_service.expand_range(c.serial_from, c.serial_to))
+            coupon_receipt_service.create_receipt(
+                db, serials=serials, actor_user_id=current.id,
+                customer_id=body.customer_id,
+                notes=f"مع مردود المبيعات {ret.document_number}",
+            )
+    except CouponReceiptError as exc:
+        # Refused as a whole — the goods and the coupons are one act at the counter, and taking
+        # the goods back while rejecting the coupons leaves the customer holding paper nobody will
+        # now accept.
+        db.rollback()
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "coupon_invalid", "message": str(exc)}) from exc
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "return_invalid", "message": str(exc)})

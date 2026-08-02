@@ -163,6 +163,10 @@ class SalesReturn(Base):
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # (031) The day the goods came back, which is not always the day it was typed — the same field
+    # the invoice has as `invoice_date` and for the same reason: a document dated one day and
+    # posted on another makes every statement disagree with the paper.
+    return_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
