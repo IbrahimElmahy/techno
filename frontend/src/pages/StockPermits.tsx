@@ -310,10 +310,10 @@ export default function StockPermits() {
                   ? { ...l, unit_cost: c as number } : l)))}
               />
             ) }] : []),
+          // The last line may go now: a permit starts with NO lines and gets them from the
+          // window, so «one must remain» would be protecting a row nothing put there.
           { title: '', width: 50,
             render: (_: any, r: DraftLine) => (
-              {/* The last line may go now: a permit starts with NO lines and gets them from the
-                  window, so «one must remain» would be protecting a row nothing put there. */}
               <Button type="text" danger icon={<DeleteOutlined />}
                 onClick={() => setLines((prev) => prev.filter((l) => l.key !== r.key))} />
             ) },
