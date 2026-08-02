@@ -90,7 +90,6 @@ interface ItemRecord {
   active: boolean;
   default_warehouse_id: number | null;
   category: string | null;
-  barcode: string | null;
   consumer_price: string | null;
   piece_name: string | null;
   pieces_per_unit: string | null;
@@ -399,33 +398,6 @@ export default function Catalog() {
       if (itemId && tiers.length) {
         await api.put(`/api/v1/items/${itemId}/prices`, { tiers });
       }
-      // Barcodes are set as a whole list, not appended one by one — the endpoint owns the set, so
-      // sending them together is the only way both survive.
-      //
-      // A barcode may only name a unit the item actually has: the base unit, or an alternate one
-      // defined in «الوحدات». The piece from «عدد القطع» is not one of those — it is smaller than
-      // the base, and the alternate-unit table counts in base units per unit, so the piece has
-      // nowhere to be defined yet. The server refuses the request when it sees that unit, and
-      // because the endpoint replaces the whole set, refusing it used to drop the plain باركود as
-      // well — while the screen still said «اتسجّل الصنف». So: try both, and if the piece is not
-      // a unit this item has, save the one that is and say plainly that the other was not saved.
-      const baseBarcode = values.barcode ? [{ barcode: values.barcode }] : [];
-      const pieceBarcode = values.piece_barcode
-        ? [{ barcode: values.piece_barcode, unit: values.piece_name || null }] : [];
-      if (itemId && (baseBarcode.length || pieceBarcode.length)) {
-        try {
-          await api.put(`/api/v1/items/${itemId}/barcodes`,
-            { barcodes: [...baseBarcode, ...pieceBarcode] });
-        } catch {
-          if (baseBarcode.length) {
-            await api.put(`/api/v1/items/${itemId}/barcodes`, { barcodes: baseBarcode });
-          }
-          message.warning(
-            'اتسجّل الصنف، لكن «باركود القطعة» مااتسجّلش: لازم الأول تعرّف «'
-            + `${values.piece_name || 'القطعة'}» كوحدة للصنف من «الوحدات».`,
-          );
-        }
-      }
       // «مخفي» is a state an item is put into, not one it is born in, so it is a separate edit.
       if (itemId && values.hidden) {
         await api.patch(`/api/v1/items/${itemId}`, { active: false });
@@ -507,7 +479,9 @@ export default function Catalog() {
     setDrawerVisible(true);
   };
 
-  // Their eight columns, in their order — `رقم · الفئه · الاسم · باركود · الوحدة · عدد القطع ·
+  // Their columns, in their order, less باركود — the client asked for barcodes out of the system,
+  // so its absence here is a decision rather than a column still to be added.
+  // `رقم · الفئه · الاسم · الوحدة · عدد القطع ·
   // القطعة · مستهلك` — and then ours after them. Somebody scanning this list for a price reads
   // along a row they already know the shape of; reordering it is the difference between reading
   // and searching. What we have and they don't keeps its place at the end rather than being
@@ -542,16 +516,6 @@ export default function Catalog() {
           {!record.active && <Tag color="red">مخفي</Tag>}
         </Space>
       ),
-    },
-    {
-      title: 'باركود',
-      dataIndex: 'barcode',
-      key: 'barcode',
-      width: 125,
-      // Monospaced so a digit that differs in the middle of a long code is visible without
-      // counting across from either end.
-      render: (v: string | null) =>
-        v ? <span style={{ fontFamily: 'monospace', direction: 'ltr' }}>{v}</span> : '-',
     },
     {
       title: 'الوحدة',
@@ -860,18 +824,8 @@ export default function Catalog() {
 
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="barcode" label="باركود" extra="سيبه فاضي والنظام يولّده">
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
               <Form.Item name="kind" label="تصنيف" rules={[{ required: true }]}>
                 <Select options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="piece_barcode" label="باركود القطعة">
-                <Input />
               </Form.Item>
             </Col>
           </Row>

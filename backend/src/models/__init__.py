@@ -1,7 +1,7 @@
 """Model package — import all models so metadata is fully populated."""
 from src.models.audit import AuditLogEntry
 from src.models.bom import Bom, BomComponent, BomResource  # noqa: E402
-from src.models.catalog import Item, ItemBarcode, ItemPrice, ItemSerial, ItemUnit
+from src.models.catalog import Item, ItemPrice, ItemSerial, ItemUnit
 from src.models.contact import ContactPhone  # noqa: E402
 
 # Cost Centers (006) — analytical dimension.
@@ -76,7 +76,7 @@ __all__ = [
     "ManufacturingOp", "ManufacturingOrder", "ManufacturingOrderConsumption",
     "ManufacturingOrderResource", "Bom", "BomComponent", "BomResource", "StockTransfer",
     "ProductPointValue", "PointRecord", "CouponType", "PointConversion", "Coupon",
-    "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial", "ItemBarcode",
+    "CouponRedemption", "CostCenter", "ItemPrice", "ItemUnit", "ItemSerial",
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
     "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord", "Employee", "JobTitle", "CouponReceipt", "CouponReceiptLine", "TradeOrder", "TradeOrderLine", "SalesInvoiceExpense",

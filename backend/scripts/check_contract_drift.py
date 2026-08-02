@@ -27,7 +27,9 @@ CONTRACTS = [
     _SPECS / "007-five-sale-price" / "contracts" / "openapi.yaml",
     _SPECS / "008-multiple-units-measure" / "contracts" / "openapi.yaml",
     _SPECS / "009-serial-numbers-per" / "contracts" / "openapi.yaml",
-    _SPECS / "010-barcodes-per-item" / "contracts" / "openapi.yaml",
+    # 010-barcodes-per-item is deliberately absent: the feature was removed in full at the
+    # client's request (see migration 0054). Its contract file stays in the repo as the record of
+    # what existed, but checking the API against it would now demand the endpoints back.
 ]
 _PARAM = re.compile(r"\{[^}]+\}")
 

@@ -19,7 +19,6 @@ from src.core.db import get_db
 from src.core.money import to_money, to_qty
 from src.models.catalog import (
     Item,
-    ItemBarcode,
     ItemKind,
     ItemPrice,
     ItemSerial,
@@ -29,13 +28,10 @@ from src.models.catalog import (
 )
 from src.models.stock import LocationKind
 from src.lib import item_card as item_card_lib
-from src.services import audit_service, barcode_service, item_profile_service, serial_service
-from src.services.barcode_service import BarcodeError, BarcodeInput
+from src.services import audit_service, item_profile_service, serial_service
 from src.services.serial_service import SerialError
 
 router = APIRouter(tags=["catalog"], prefix="/items")
-# Barcode lookup lives at /barcodes/{code} (outside the /items prefix).
-lookup_router = APIRouter(tags=["catalog"])
 
 
 class ItemCreate(BaseModel):
@@ -99,9 +95,8 @@ class ItemOut(BaseModel):
     description: str | None = None
     # Total on-hand across all locations — filled on the list endpoint (one grouped query).
     on_hand: Decimal | None = None
-    # Their list carries باركود and the مستهلك price as columns; both live in their own tables,
-    # so the list endpoint fills them in bulk rather than making the screen ask per row.
-    barcode: str | None = None
+    # Their list carries the مستهلك price as a column; it lives in its own table, so the list
+    # endpoint fills it in bulk rather than making the screen ask per row.
     consumer_price: Decimal | None = None
 
 
@@ -131,7 +126,7 @@ def list_items(
     q: str | None = None,
     active: bool | None = None,
     warehouse_id: int | None = None,
-    stock_filter: str | None = None,  # all | in_stock | out_of_stock | negative
+    stock_filter: str | None = None,  # all | in_stock | out_of_stock | negative | moved
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemOut]:
@@ -146,16 +141,16 @@ def list_items(
     )
     rows = list(db.scalars(stmt).all())
     on_hand = item_profile_service.bulk_on_hand(db, [i.id for i in rows])
-    rows = item_profile_service.filter_by_stock(rows, on_hand, stock_filter)
+    moved = (item_profile_service.bulk_has_movement(db, [i.id for i in rows])
+             if stock_filter == "moved" else None)
+    rows = item_profile_service.filter_by_stock(rows, on_hand, stock_filter, moved)
     # Looked up after the stock filter, so the extra two queries only cover rows that survive it.
     ids = [i.id for i in rows]
-    barcodes = item_profile_service.bulk_base_barcode(db, ids)
     consumer = item_profile_service.bulk_tier_price(db, ids, PriceTier.consumer)
     out = []
     for i in rows:
         o = _out(i)
         o.on_hand = on_hand.get(i.id, Decimal("0.000"))
-        o.barcode = barcodes.get(i.id)
         o.consumer_price = consumer.get(i.id)
         out.append(o)
     return out
@@ -398,69 +393,6 @@ def receive_serials(
     return [_serial_out(s) for s in rows]
 
 
-class BarcodeIn(BaseModel):
-    barcode: str
-    unit: str | None = None
-
-
-class BarcodesSet(BaseModel):
-    barcodes: list[BarcodeIn]
-
-
-class BarcodeLookupOut(BaseModel):
-    item_id: int
-    code: str
-    name: str
-    unit: str | None
-    factor: Decimal
-    base_sale_price: Decimal | None
-
-
-@router.get("/{item_id}/barcodes", response_model=list[BarcodeIn])
-def get_item_barcodes(
-    item_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
-    db: Session = Depends(get_db),
-) -> list[BarcodeIn]:
-    rows = db.scalars(select(ItemBarcode).where(ItemBarcode.item_id == item_id)).all()
-    return [BarcodeIn(barcode=r.barcode, unit=r.unit) for r in rows]
-
-
-@router.put("/{item_id}/barcodes", response_model=list[BarcodeIn])
-def set_item_barcodes(
-    item_id: int,
-    body: BarcodesSet,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
-    db: Session = Depends(get_db),
-) -> list[BarcodeIn]:
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
-    try:
-        rows = barcode_service.set_barcodes(
-            db, item=item, barcodes=[BarcodeInput(b.barcode, b.unit) for b in body.barcodes]
-        )
-    except BarcodeError as exc:
-        raise HTTPException(422, {"code": "barcode_invalid", "message": str(exc)})
-    db.commit()
-    return [BarcodeIn(barcode=r.barcode, unit=r.unit) for r in rows]
-
-
-@lookup_router.get("/barcodes/{code}", response_model=BarcodeLookupOut)
-def lookup_barcode(
-    code: str,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
-    db: Session = Depends(get_db),
-) -> BarcodeLookupOut:
-    res = barcode_service.lookup(db, code)
-    if res is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Unknown barcode"})
-    return BarcodeLookupOut(
-        item_id=res.item_id, code=res.code, name=res.name, unit=res.unit,
-        factor=res.factor, base_sale_price=res.base_sale_price,
-    )
-
-
 class ItemProfileOut(BaseModel):
     """ملف الصنف — stock, sales, purchases, movements and price history in one call."""
 
@@ -627,14 +559,14 @@ def _delete_item(db: Session, item: Item, actor_user_id: int) -> None:
             + ". يمكنك إلغاء تفعيله بدلاً من الحذف."
         )
 
-    from src.models.catalog import ItemBarcode, ItemPriceHistory, ItemSerial, ItemUnit
+    from src.models.catalog import ItemPriceHistory, ItemSerial, ItemUnit
     from src.models.loyalty import ProductPointValue
 
     audit_service.record(db, action="item.delete", actor_user_id=actor_user_id,
                          entity_type="item", entity_id=item.id,
                          before={"code": item.code, "name": item.name})
     # Owned rows carry no history of their own once the item is gone.
-    for model in (ItemPrice, ItemUnit, ItemBarcode, ItemSerial, ItemPriceHistory,
+    for model in (ItemPrice, ItemUnit, ItemSerial, ItemPriceHistory,
                   ProductPointValue):
         db.execute(delete(model).where(model.item_id == item.id))
     db.delete(item)

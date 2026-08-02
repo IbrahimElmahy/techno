@@ -13,7 +13,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from src.models.bom import Bom, BomComponent, BomResource
-from src.models.catalog import Item, ItemBarcode, ItemPrice, ItemSerial, ItemUnit
+from src.models.catalog import Item, ItemPrice, ItemSerial, ItemUnit
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 from src.models.loyalty import (
@@ -165,7 +165,7 @@ def purge_demo(db: Session) -> dict:
     db.execute(delete(StockLocator).where(StockLocator.item_id.in_(item_ids or [-1])))
 
     # --- Item children, then the items ---
-    for model in (ProductPointValue, ItemPrice, ItemUnit, ItemSerial, ItemBarcode):
+    for model in (ProductPointValue, ItemPrice, ItemUnit, ItemSerial):
         db.execute(delete(model).where(model.item_id.in_(item_ids or [-1])))
     removed["items"] = db.execute(delete(Item).where(Item.id.in_(item_ids or [-1]))).rowcount or 0
 

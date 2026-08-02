@@ -14,7 +14,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
-from src.models.catalog import Item, ItemBarcode, ItemKind, ItemPrice, ItemPriceHistory, PriceTier
+from src.models.catalog import Item, ItemKind, ItemPrice, ItemPriceHistory, PriceTier
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
 from src.models.sales import SalesInvoice, SalesInvoiceLine
 from src.models.stock import StockDirection, StockMovement
@@ -51,35 +51,24 @@ def bulk_on_hand(db: Session, item_ids: list[int] | None = None) -> dict[int, De
     return {iid: _qty(total) for iid, total in db.execute(stmt).all()}
 
 
-# ------------------------------------------------- list columns (barcode + shelf price)
+def bulk_has_movement(db: Session, item_ids: list[int] | None = None) -> set[int]:
+    """Which items have ever moved — their «له حركة» filter, in one grouped query.
 
-
-def bulk_base_barcode(db: Session, item_ids: list[int]) -> dict[int, str]:
-    """The one barcode to show per item in a list — ONE query for the whole page.
-
-    An item can carry several barcodes: one for the unit and one per alternate unit (010). The
-    list has room for one, and the one that belongs there is the **base-unit** barcode — that is
-    what the item *is*, and what a scanner at the counter reads by default. A piece barcode is
-    shown only when there is nothing else, so a row is never blank while a barcode exists.
+    Not the same question as «has stock». An item sold down to zero has moved and is worth looking
+    at; one that was created and never touched is catalogue noise on a stock screen. Their رصيد صنف
+    offers both filters side by side, which is the tell that they are different questions.
     """
-    if not item_ids:
-        return {}
-    rows = db.execute(
-        select(ItemBarcode.item_id, ItemBarcode.barcode, ItemBarcode.unit)
-        .where(ItemBarcode.item_id.in_(item_ids))
-        .order_by(ItemBarcode.item_id, ItemBarcode.id)
-    ).all()
-    out: dict[int, str] = {}
-    have_base: set[int] = set()
-    for item_id, barcode, unit in rows:
-        if unit is None:
-            # A base-unit barcode replaces an alternate already held; the first base one wins.
-            if item_id not in have_base:
-                out[item_id] = barcode
-                have_base.add(item_id)
-        elif item_id not in out:
-            out[item_id] = barcode
-    return out
+    stmt = select(StockMovement.item_id).group_by(StockMovement.item_id)
+    if item_ids is not None:
+        if not item_ids:
+            return set()
+        stmt = stmt.where(StockMovement.item_id.in_(item_ids))
+    return {iid for (iid,) in db.execute(stmt).all()}
+
+
+# ------------------------------------------------------------- list columns (shelf price)
+
+
 
 
 def bulk_tier_price(db: Session, item_ids: list[int], tier: PriceTier) -> dict[int, Decimal]:
@@ -129,9 +118,15 @@ def apply_filters(
 
 
 def filter_by_stock(
-    rows: list[Item], on_hand: dict[int, Decimal], stock_filter: str | None
+    rows: list[Item], on_hand: dict[int, Decimal], stock_filter: str | None,
+    moved: set[int] | None = None,
 ) -> list[Item]:
-    """`in_stock` = has quantity, `out_of_stock` = zero, `negative` = below zero (data problem)."""
+    """`in_stock` = has quantity, `out_of_stock` = zero, `negative` = below zero (data problem).
+
+    `moved` is their «له حركة» — a different question from «has stock». An item sold down to zero
+    has moved and is worth looking at; one created and never touched is catalogue noise on a stock
+    screen. Their رصيد صنف offers both side by side, which is the tell that they differ.
+    """
     if not stock_filter or stock_filter == "all":
         return rows
     def keep(i: Item) -> bool:
@@ -142,6 +137,8 @@ def filter_by_stock(
             return q == 0
         if stock_filter == "negative":
             return q < 0
+        if stock_filter == "moved":
+            return i.id in (moved or set())
         return True
     return [i for i in rows if keep(i)]
 

@@ -24,6 +24,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     orders,  # طلبات البيع والشراء (B9)
     org,
     points,
+    price_display,  # شاشة معلومات المنتج (031)
     product_points,
     purchases,
     reports,
@@ -91,7 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(rep_reports.router, prefix=prefix)
     app.include_router(reservations.router, prefix=prefix)
     app.include_router(stock_counts.router, prefix=prefix)
-    app.include_router(catalog.lookup_router, prefix=prefix)  # /barcodes/{code} (010)
+    app.include_router(price_display.router, prefix=prefix)
     app.include_router(stock.router, prefix=prefix)
     app.include_router(suppliers.router, prefix=prefix)
     app.include_router(purchases.router, prefix=prefix)
@@ -163,6 +164,10 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # (031) The day the goods came back. `created_at` is when the row was typed, which is often
+    # days later — a Saturday return entered on Monday would land in the wrong week on every
+    # report that groups by day.
+    ("sales_return", "return_date", "DATE"),
     # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:
     # NULL is «nothing agreed», 0 is «agreed, and it is zero».
     ("customer", "branch_id", "BIGINT"),

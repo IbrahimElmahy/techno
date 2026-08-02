@@ -3,6 +3,7 @@ import { Button, Card, Empty, Space, Table, Tabs, Tag, Tooltip, message } from '
 import { BarcodeOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
@@ -20,14 +21,17 @@ import { useQueryTab } from '../components/useQueryTab';
  */
 
 interface SerialRow {
-  id: number; item_id: number; item_name: string | null; serial: string;
+  id: number; item_id: number; item_name: string | null;
+  serial: string;
   status: 'in_stock' | 'sold';
   location_kind: string | null; location_id: number | null; location_name: string | null;
   sold_invoice_id: number | null;
 }
 
 interface MovementRow {
-  id: number; serial_id: number; item_id: number; item_name: string | null; serial: string;
+  id: number; serial_id: number; item_id: number; item_name: string | null;
+  customer_id: number | null; customer_name: string | null;
+  serial: string;
   kind: 'received' | 'relocated' | 'sold' | 'returned';
   location_kind: string | null; location_id: number | null; location_name: string | null;
   document_type: string | null; document_id: number | null; created_at: string;
@@ -114,8 +118,10 @@ export default function Serials() {
     },
     {
       title: 'الفاتورة', dataIndex: 'sold_invoice_id', key: 'sold_invoice_id', width: 120,
+      // Was a link to the invoice LIST, which is the same as no link: the reader still had to find
+      // the row. It opens the actual sale now.
       render: (v: number | null) => (v
-        ? <a onClick={() => navigate('/invoices')}>#{v}</a>
+        ? <DocRef kind="invoice" id={v} label={`#${v}`} />
         : <span style={{ color: '#bbb' }}>-</span>),
     },
   ];
@@ -151,17 +157,30 @@ export default function Serials() {
       ),
     },
     {
+      // Their column, and the better one for the question actually asked: «who has this unit?»
+      // Only a sale gives a unit a customer; every other movement is internal.
+      title: 'العميل', dataIndex: 'customer_name', key: 'customer_name', width: 175,
+      render: (v: string | null, r: MovementRow) => (v && r.customer_id
+        ? <a onClick={() => navigate(`/customers/${r.customer_id}`)}>{v}</a>
+        : <span style={{ color: '#bbb' }}>-</span>),
+    },
+    {
       title: 'المكان بعدها', dataIndex: 'location_name', key: 'location_name', width: 175,
       render: (v: string | null, r: MovementRow) => (v ?? (r.kind === 'sold'
         ? <span style={{ color: '#bbb' }}>خرج</span> : '-')),
     },
     {
-      title: 'المستند', key: 'document', width: 170,
-      render: (_: any, r: MovementRow) => (r.document_type
-        ? <span>{DOC_LABEL[r.document_type] ?? r.document_type}
-          {r.document_id ? <Tag style={{ marginInlineStart: 6 }}>#{r.document_id}</Tag> : null}
-        </span>
-        : '-'),
+      title: 'المستند', key: 'document', width: 180,
+      render: (_: any, r: MovementRow) => {
+        if (!r.document_type) return '-';
+        const label = `${DOC_LABEL[r.document_type] ?? r.document_type}`
+          + (r.document_id ? ` #${r.document_id}` : '');
+        // Only the sale has a screen that opens one document; a transfer and a serial receipt
+        // stay plain rather than becoming links that land on a list.
+        return r.document_type === 'sales_invoice'
+          ? <DocRef kind="invoice" id={r.document_id} label={label} />
+          : <span>{label}</span>;
+      },
     },
   ];
 

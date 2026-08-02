@@ -1,3 +1,12 @@
+# ⛔ REMOVED — this contract is history, not a live specification.
+#
+# The barcode feature was taken out of techno in full on 2026-08-01 at the client's request
+# («i don't want barcode in my system»): the table, the service, these endpoints, the screens and
+# the tests. Migration 0054 drops `item_barcode`.
+#
+# The file stays so the record of what once existed survives, and so a reader who finds `باركود`
+# on an a5 screen and not on ours can see it was a decision. It is deliberately NOT in the
+# contract-drift checker's list — checking against it would demand the endpoints back.
 openapi: 3.1.0
 info:
   title: UBMS Barcodes API (extends Sales & Inventory 002 + Multiple Units 008)

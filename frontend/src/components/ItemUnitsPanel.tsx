@@ -4,7 +4,7 @@ import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 
 /**
- * Units / barcodes / serials for one item, as inline panels for the item file.
+ * Units / serials for one item, as inline panels for the item file.
  *
  * These used to be three popups launched from three buttons in the catalog grid. Same
  * endpoints, same rules — they just live where the rest of the item's data lives now.
