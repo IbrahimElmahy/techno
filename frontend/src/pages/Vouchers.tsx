@@ -29,6 +29,7 @@ import {
   PrinterOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
+import PartyField from '../components/PartyField';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
@@ -557,11 +558,10 @@ const Vouchers: React.FC = () => {
                   }
                 >
                   <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      style={{ width: 240 }}
-                      placeholder="اختر العميل"
+                    {/* The same window the documents use — one way to answer «مين», and the
+                        only one that can create a party who is not on the list yet. */}
+                    <PartyField
+                      kind="customer"
                       options={customers.map((c) => ({ value: c.id, label: c.name }))}
                     />
                   </Form.Item>
@@ -614,11 +614,8 @@ const Vouchers: React.FC = () => {
                   }
                 >
                   <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      style={{ width: 240 }}
-                      placeholder="اختر المورد"
+                    <PartyField
+                      kind="supplier"
                       options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
                     />
                   </Form.Item>
@@ -921,19 +918,15 @@ const Vouchers: React.FC = () => {
                     {({ getFieldValue }) =>
                       getFieldValue('direction') === 'outgoing' ? (
                         <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
-                          <Select
-                            showSearch
-                            optionFilterProp="label"
-                            style={{ width: 200 }}
+                          <PartyField
+                            kind="supplier" style={{ width: 200 }}
                             options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
                           />
                         </Form.Item>
                       ) : (
                         <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
-                          <Select
-                            showSearch
-                            optionFilterProp="label"
-                            style={{ width: 200 }}
+                          <PartyField
+                            kind="customer" style={{ width: 200 }}
                             options={customers.map((c) => ({ value: c.id, label: c.name }))}
                           />
                         </Form.Item>
