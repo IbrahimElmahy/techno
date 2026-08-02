@@ -54,3 +54,17 @@ body,
 .ant-notification {
   font-family: 'Cairo', sans-serif !important;
 }
+
+/*
+ * The row a link just arrived at.
+ *
+ * A register with no per-document detail view answers «open this one» by showing you where it is
+ * on the page — landing on a list of forty rows and leaving the reader to find the number they
+ * clicked is the half-link this exists to avoid. It fades after a few seconds because a permanent
+ * highlight stops meaning «this one» by the second time.
+ */
+.row-arrived > td {
+  background: #f6ffed !important;
+  box-shadow: inset 2px 0 0 #6AB42D;
+  transition: background 0.4s ease;
+}

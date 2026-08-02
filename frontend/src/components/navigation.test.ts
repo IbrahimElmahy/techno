@@ -25,6 +25,7 @@ import { allScreens } from './navigation';
 const SRC = join(__dirname, '..');
 const routesSrc = readFileSync(join(SRC, 'components/PageRoutes.tsx'), 'utf8');
 const pendingSrc = readFileSync(join(SRC, 'pages/PendingScreen.tsx'), 'utf8');
+const docLinkSrc = readFileSync(join(SRC, 'components/DocumentLink.tsx'), 'utf8');
 
 const declaredPaths = new Set(
   [...routesSrc.matchAll(/path="(\/[^"/:]+)"/g)].map((m) => m[1]),
@@ -88,13 +89,54 @@ describe('every menu entry lands on what it names', () => {
   );
 });
 
-describe('unbuilt screens say what is missing', () => {
+describe('unbuilt screens', () => {
+  /**
+   * Every one of their fifty-seven screens now has a route. That makes the useful assertion the
+   * inverse of what it was: not «the unbuilt ones explain themselves» but «there are none» — a new
+   * menu entry added without a screen behind it should fail here rather than reach somebody as a
+   * page that says it is still being built.
+   */
+  it('there are none left — every menu entry has a screen', () => {
+    expect(unbuilt.map((s) => `${s.label} → ${s.key}`)).toEqual([]);
+  });
+
+  // Kept for when a future entry lands ahead of its screen: PendingScreen is still the honest
+  // landing place, and an entry that goes there has to say what is missing and what to use instead.
   it.each(unbuilt.map((s) => [s.label, s.key]))(
     '«%s» → %s has a written explanation',
     (_label, key) => {
       expect(explained.has(key),
         'add an entry to PENDING in PendingScreen.tsx: what it will do, and the nearest thing '
         + 'that exists today').toBe(true);
+    },
+  );
+});
+
+/**
+ * A document link is the same promise as a menu entry, one level down: «this number opens that
+ * document». It was broken the same way — `DocumentLink` listed `return` and `voucher` among the
+ * kinds it could open while neither screen read the id, so «افتح المستند» landed on a list and
+ * left the reader to find the row they had just clicked. One of those screens learned to open it;
+ * the other had no per-document view at all and was removed from the map rather than left lying.
+ */
+describe('every document kind opens the document, not its list', () => {
+  const SCREEN = Object.fromEntries(
+    // The map literal, read straight out of the source it is declared in.
+    [...docLinkSrc.matchAll(/^ {2}(\w+): '(\/[\w-]+)',/gm)].map((m) => [m[1], m[2]]),
+  );
+
+  it('the map is not empty (the regex still matches the source)', () => {
+    expect(Object.keys(SCREEN).length).toBeGreaterThan(0);
+  });
+
+  it.each(Object.entries(SCREEN))(
+    'kind «%s» → %s reads ?doc=',
+    (_kind, path) => {
+      const source = sourceFor(path);
+      expect(source, `${path} has no component in the route table`).toBeTruthy();
+      expect(source!.includes("searchParams.get('doc')"),
+        `${path} is offered as a place to open a document but never reads ?doc=, so the link `
+        + 'lands on a list').toBe(true);
     },
   );
 });

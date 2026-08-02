@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Space, Tooltip } from 'antd';
+import { Button, Space, Tag, Tooltip } from 'antd';
 import { EditOutlined, ExportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
@@ -17,14 +17,21 @@ import { useNavigate } from 'react-router-dom';
  * invoice is a second place that can get reversal wrong.
  */
 
-export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return' | 'voucher';
+/**
+ * (031) `voucher` is gone. It was in this map and no caller ever used it — and the vouchers screen
+ * is a set of creation forms with no per-document view, so the link would have landed on a form.
+ * A kind listed here is a promise that a screen can open one of these; keeping an unkept one
+ * around is how the next person adds a link that quietly goes nowhere.
+ */
+export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return';
 
 const SCREEN: Record<DocKind, string> = {
   invoice: '/invoices',
   return: '/returns',
   purchase: '/purchases',
-  purchase_return: '/purchases',
-  voucher: '/vouchers',
+  // (031) Purchase returns have a register of their own now; they used to land on the purchase
+  // list, which is a different document from the one the link was named after.
+  purchase_return: '/purchase-returns',
 };
 
 /**
@@ -53,6 +60,31 @@ interface Props {
   size?: 'small' | 'middle';
   /** Called after navigating, so a modal the link sits inside can close itself. */
   onNavigate?: () => void;
+}
+
+/**
+ * The same link, inline — for a table cell where a button would crowd the row.
+ *
+ * Same `?doc=` contract as the button, so a screen that learns to honour one honours both. Written
+ * because the new registers show document numbers by the dozen and «افتح المستند» beside each of
+ * them would be a column of buttons nobody reads.
+ */
+export function DocRef({ kind, id, label, onNavigate }: {
+  kind: DocKind; id: number | null | undefined; label: string | null | undefined;
+  onNavigate?: () => void;
+}) {
+  const navigate = useNavigate();
+  if (!label) return <span style={{ color: '#bbb' }}>-</span>;
+  // Without an id there is nothing to open, so it stays plain text rather than a link that lands
+  // on a list and leaves the reader to search for what they just clicked.
+  if (!id) return <Tag>{label}</Tag>;
+  return (
+    <Tooltip title="افتح المستند في شاشته">
+      <a onClick={(e) => { e.stopPropagation(); navigate(`${SCREEN[kind]}?doc=${id}`); onNavigate?.(); }}>
+        <Tag color="blue" style={{ cursor: 'pointer' }}>{label}</Tag>
+      </a>
+    </Tooltip>
+  );
 }
 
 export default function DocumentLink({
