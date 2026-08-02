@@ -639,6 +639,7 @@ function RecipesTab({
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
                       <InputNumber min={0.001} placeholder="الكمية" />
+                        data-grid-col="qty" keyboard={false}
                     </Form.Item>
                     {/* «الوحدة» — the recipe is written in whatever unit the workshop speaks
                         («٢ كرتونة»)، and the conversion to base units happens when the order
@@ -688,10 +689,12 @@ function RecipesTab({
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
                       <InputNumber min={0} placeholder="ساعات/كمية" style={{ width: 110 }} />
+                        data-grid-col="hours" keyboard={false}
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'rate']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'السعر' }]}>
                       <InputNumber min={0} placeholder="سعر الوحدة" style={{ width: 110 }} />
+                        data-grid-col="rate" keyboard={false}
                     </Form.Item>
                     <DeleteOutlined onClick={() => remove(field.name)} style={{ color: '#ff4d4f' }} />
                   </Space>

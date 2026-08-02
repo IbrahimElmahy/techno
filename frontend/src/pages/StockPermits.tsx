@@ -8,6 +8,8 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import ProductPickerModal from '../components/ProductPickerModal';
+import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
  * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
@@ -66,7 +68,16 @@ export default function StockPermits() {
   const [permitDate, setPermitDate] = useState<Dayjs>(dayjs());
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<DraftLine[]>([{ key: 1 }]);
+  const [lines, setLines] = useState<DraftLine[]>([]);
+  // The doors. «إيه نوع الإذن» is already answered by the tab that opened this, so the one thing
+  // left to ask before the lines is which store — and an issue cannot even list its items until
+  // that is known.
+  const [newStep, setNewStep] = useState<null | 'warehouse'>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [available, setAvailable] = useState<Record<number, number>>({});
   const [saving, setSaving] = useState(false);
 
@@ -109,9 +120,38 @@ export default function StockPermits() {
   });
 
   const resetDraft = () => {
-    setLines([{ key: 1 }]); setReason(''); setNotes('');
+    setLines([]); setReason(''); setNotes('');
     setPermitDate(dayjs()); setWarehouseId(undefined);
   };
+
+  /** One way in, from the list button or from F2 — the store first, then the lines. */
+  const startNew = () => { resetDraft(); setCreating(false); setNewStep('warehouse'); };
+
+  /** An item picked in the window becomes a line, and the caret goes to its quantity. */
+  const addItem = (itemId: number) => {
+    setPickerOpen(false);
+    const key = (lines[lines.length - 1]?.key ?? 0) + 1;
+    setLines((prev) => [...prev, { key, item_id: itemId }]);
+    setFocusLineKey(key);
+  };
+
+  // Keep asking until the caret lands, and CHECK — one attempt lands in whatever the browser is
+  // doing that frame. Same loop as the sale, the return, the purchase and the transfer.
+  useEffect(() => {
+    if (focusLineKey === null || pickerOpen) return undefined;
+    let frames = 0;
+    let raf = 0;
+    const tryFocus = () => {
+      const el = document.querySelector<HTMLInputElement>(
+        `input[data-qty-key="${focusLineKey}"]`);
+      if (el && document.activeElement === el) { setFocusLineKey(null); return; }
+      el?.focus(); el?.select();
+      if (++frames < 40) raf = requestAnimationFrame(tryFocus);
+      else setFocusLineKey(null);
+    };
+    raf = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(raf);
+  }, [focusLineKey, pickerOpen, lines]);
 
   const submit = async () => {
     if (!warehouseId) { message.warning('اختر المخزن'); return; }
@@ -151,6 +191,50 @@ export default function StockPermits() {
   const draftTotal = lines.reduce(
     (sum, l) => sum + Number(l.quantity || 0) * Number(l.unit_cost || 0), 0);
 
+  /** Items this permit may name. An issue can only send out what is actually in the store, so its
+   *  window shows that store's stock; a receipt is bringing goods in and may name anything. */
+  const pickable = (kind === 'issue' && warehouseId
+    ? items.filter((i) => available[i.id] > 0) : items)
+    .filter((i) => !lines.some((l) => l.item_id === i.id));
+
+  const categories = [...new Set(pickable.map((i) => i.category).filter(Boolean))] as string[];
+
+  const doors = (
+    <>
+      <ProductPickerModal
+        open={pickerOpen}
+        title={kind === 'issue' ? 'اختر الصنف المصروف' : 'اختر الصنف المضاف'}
+        categories={categories}
+        categoryLabels={categoryLabels}
+        products={pickable}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+        availableFor={(id: number) => (kind === 'issue' ? available[id] ?? null : null)}
+        onCancel={() => setPickerOpen(false)}
+        onPick={addItem} />
+
+      <Modal
+        open={newStep === 'warehouse'}
+        title={kind === 'issue' ? 'الصرف من أي مخزن؟' : 'الإضافة لأي مخزن؟'}
+        okText="التالي" cancelText="إلغاء"
+        onCancel={() => setNewStep(null)}
+        onOk={() => { if (warehouseId) { setNewStep(null); setCreating(true); } }}
+        okButtonProps={{ disabled: !warehouseId }}
+        destroyOnHidden
+      >
+        <Select showSearch size="large" style={{ width: '100%' }} autoFocus
+          optionFilterProp="label" placeholder="اختر المخزن"
+          value={warehouseId} onChange={setWarehouseId}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+          {kind === 'issue'
+            ? 'الأصناف اللي هتظهر بعد كده هي المتاح في المخزن ده بس.'
+            : 'البضاعة هتدخل على المخزن ده.'}
+        </div>
+      </Modal>
+    </>
+  );
+
   const createForm = (
     <Modal
       open={creating} onCancel={() => setCreating(false)} onOk={submit}
@@ -160,7 +244,7 @@ export default function StockPermits() {
       okText="ترحيل الإذن" cancelText="إلغاء"
     >
       <Segmented
-        block value={kind} onChange={(v) => { setKind(v as Kind); setLines([{ key: 1 }]); }}
+        block value={kind} onChange={(v) => { setKind(v as Kind); setLines([]); }}
         style={{ marginBottom: 12 }}
         options={[
           { value: 'receipt', label: 'إذن إضافة (دخول للمخزن)' },
@@ -191,26 +275,26 @@ export default function StockPermits() {
         size="small" rowKey="key" dataSource={lines} pagination={false}
         style={{ marginBottom: 12 }}
         columns={[
+          // Picked in the window, not hunted in a dropdown — the line already knows its item by
+          // the time it exists, so there is no half-written row to read past.
           { title: 'الصنف', dataIndex: 'item_id', width: '40%',
-            render: (v, r) => (
-              <Select
-                showSearch optionFilterProp="label" style={{ width: '100%' }}
-                placeholder="اختر الصنف" value={v}
-                onChange={(id) => setLines((prev) => prev.map((l) => (l.key === r.key
-                  ? { ...l, item_id: id } : l)))}
-                options={(kind === 'issue' && warehouseId
-                  ? items.filter((i) => available[i.id] > 0) : items)
-                  .map((i) => ({
-                    value: i.id,
-                    label: kind === 'issue' && available[i.id] !== undefined
-                      ? `${i.name} — متاح ${qty(available[i.id])}` : i.name,
-                  }))}
-              />
-            ) },
+            render: (v: any) => {
+              const it = items.find((i) => i.id === v);
+              return (
+                <span>
+                  {it?.name ?? `صنف #${v}`}
+                  {kind === 'issue' && available[v] !== undefined && (
+                    <span style={{ color: '#8a8a8a' }}>{` — متاح ${qty(available[v])}`}</span>
+                  )}
+                </span>
+              );
+            } },
           { title: 'الكمية', dataIndex: 'quantity', width: 140,
             render: (v, r) => (
               <InputNumber
                 min={0} style={{ width: '100%' }} value={v}
+                data-qty-key={r.key} data-grid-col="qty" keyboard={false}
+                onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
                 max={kind === 'issue' && r.item_id ? available[r.item_id] : undefined}
                 onChange={(q) => setLines((prev) => prev.map((l) => (l.key === r.key
                   ? { ...l, quantity: q as number } : l)))}
@@ -221,23 +305,23 @@ export default function StockPermits() {
             render: (v: any, r: DraftLine) => (
               <InputNumber
                 min={0} style={{ width: '100%' }} value={v} placeholder="من التكلفة الحالية"
+                data-grid-col="cost" keyboard={false}
                 onChange={(c) => setLines((prev) => prev.map((l) => (l.key === r.key
                   ? { ...l, unit_cost: c as number } : l)))}
               />
             ) }] : []),
           { title: '', width: 50,
             render: (_: any, r: DraftLine) => (
+              {/* The last line may go now: a permit starts with NO lines and gets them from the
+                  window, so «one must remain» would be protecting a row nothing put there. */}
               <Button type="text" danger icon={<DeleteOutlined />}
-                disabled={lines.length === 1}
                 onClick={() => setLines((prev) => prev.filter((l) => l.key !== r.key))} />
             ) },
         ]}
         footer={() => (
           <Space>
-            <Button icon={<PlusOutlined />} size="small"
-              onClick={() => setLines((prev) => [
-                ...prev, { key: Math.max(...prev.map((l) => l.key)) + 1 }])}>
-              سطر جديد
+            <Button icon={<PlusOutlined />} size="small" onClick={() => setPickerOpen(true)}>
+              إضافة صنف
             </Button>
             {kind !== 'issue' && (
               <span>إجمالي التكلفة: <b>{money(draftTotal)}</b></span>
@@ -264,15 +348,16 @@ export default function StockPermits() {
       extra={(
         <Space>
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={() => { setKind('receipt'); setCreating(true); }}>إذن إضافة</Button>
+            onClick={() => { setKind('receipt'); startNew(); }}>إذن إضافة</Button>
           <Button icon={<PlusOutlined />}
-            onClick={() => { setKind('issue'); setCreating(true); }}>إذن صرف</Button>
+            onClick={() => { setKind('issue'); startNew(); }}>إذن صرف</Button>
           <Button icon={<PlusOutlined />}
             onClick={() => { setKind('opening'); setCreating(true); }}>بضاعة أول المدة</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
       )}
     >
+      {doors}
       {createForm}
 
       <ListToolbar

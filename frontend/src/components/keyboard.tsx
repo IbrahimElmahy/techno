@@ -207,7 +207,13 @@ function arrowsMoveLines(e: KeyboardEvent): boolean {
   const select = cell.closest('.ant-select');
   if (select && select.classList.contains('ant-select-open')) return false;
 
-  const table = cell.closest('table') || cell.closest('.ant-table');
+  // Usually a table. But a lines editor built from `Form.List` is rows of `Col`, not `<tr>`, and
+  // looking only for a table left the arrows dead on exactly the screens that needed them most.
+  // Widening the boundary is safe because movement is confined to ONE column name: a wider
+  // container can only ever reach more cells asking the same question.
+  const table = cell.closest('table') || cell.closest('.ant-table')
+    || cell.closest('.ant-modal-body') || cell.closest('form')
+    || cell.closest('.ant-card-body');
   if (!table) return false;
   const col = cell.getAttribute('data-grid-col');
   const cells = [...table.querySelectorAll<HTMLElement>(`[data-grid-col="${col}"]`)]

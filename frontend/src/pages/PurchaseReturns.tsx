@@ -282,6 +282,7 @@ export default function PurchaseReturns() {
                   title: 'الكمية الراجعة', width: 150,
                   render: (_: any, ln: PurchaseLine) => (
                     <InputNumber
+                      data-grid-col="qty" keyboard={false}
                       style={{ width: '100%' }} min={0} max={Number(ln.quantity)}
                       value={qty[ln.item_id] ?? null}
                       placeholder="—"

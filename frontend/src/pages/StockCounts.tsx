@@ -305,6 +305,7 @@ export default function StockCounts() {
                   title: 'المعدود', width: 140,
                   render: (_: any, ln: Line) => (isDraft ? (
                     <InputNumber
+                      data-grid-col="qty" keyboard={false}
                       style={{ width: '100%' }} min={0} placeholder="—"
                       value={entered[ln.id] ?? null}
                       onChange={(v) => setEntered((p) => ({ ...p, [ln.id]: v as number | null }))}

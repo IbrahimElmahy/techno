@@ -279,12 +279,14 @@ export default function Orders() {
             { title: 'الكمية', dataIndex: 'quantity', width: 130,
               render: (v, r) => (
                 <InputNumber min={0} style={{ width: '100%' }} value={v}
+                  data-grid-col="qty" keyboard={false}
                   onChange={(q) => setLines((prev) => prev.map((l) => (l.key === r.key
                     ? { ...l, quantity: q as number } : l)))} />
               ) },
             { title: 'السعر', dataIndex: 'unit_price', width: 140,
               render: (v, r) => (
                 <InputNumber min={0} style={{ width: '100%' }} value={v}
+                  data-grid-col="price" keyboard={false}
                   onChange={(p) => setLines((prev) => prev.map((l) => (l.key === r.key
                     ? { ...l, unit_price: p as number } : l)))} />
               ) },

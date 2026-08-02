@@ -226,6 +226,7 @@ export default function FreeProduction() {
           <Col xs={12} md={4}>
             <Form.Item label="الكمية المنتجة" required style={{ marginBottom: 0 }}>
               <InputNumber
+                data-grid-col="qty" keyboard={false}
                 style={{ width: '100%' }} min={0} value={quantity} placeholder="—"
                 onChange={(v) => setQuantity(v as number | null)}
               />
@@ -276,6 +277,7 @@ export default function FreeProduction() {
               title: 'الكمية', width: 150,
               render: (_: any, l: DraftLine) => (
                 <InputNumber
+                  data-grid-col="qty2" keyboard={false}
                   style={{ width: '100%' }} min={0} value={l.quantity ?? null} placeholder="—"
                   onChange={(v) => setLines((p) => p.map((x) => (
                     x.key === l.key ? { ...x, quantity: v as number | null } : x)))}
