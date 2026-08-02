@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { BuildOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -33,7 +34,8 @@ interface Item {
 
 interface Order {
   id: number; document_number: string; product_id: number; bom_id: number | null;
-  quantity: string; unit_cost: string; total_cost: string; material_cost?: string;
+  quantity: string; unit_cost: string; total_cost: string;
+  material_cost?: string; resource_cost?: string;
   production_date?: string | null; work_order_ref?: string | null; notes?: string | null;
   reversed: boolean; is_reversal: boolean;
   consumptions: { item_id: number; quantity: string; line_cost: string }[];
@@ -46,6 +48,7 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 });
 
 export default function FreeProduction() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<Item[]>([]);
   const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -153,27 +156,44 @@ export default function FreeProduction() {
     },
     {
       title: 'المنتج', dataIndex: 'product_id', key: 'product_id', ellipsis: true,
-      render: (id: number) => itemName(id),
+      render: (id: number) => (
+        <a onClick={(e) => { e.stopPropagation(); navigate(`/catalog/${id}`); }}>{itemName(id)}</a>
+      ),
     },
     {
       title: 'الكمية', dataIndex: 'quantity', key: 'quantity', width: 95,
       render: (q: string) => Number(q),
     },
     {
-      title: 'أمر التشغيل', dataIndex: 'work_order_ref', key: 'work_order_ref', width: 130,
+      // Their column here reads «رقم الانتاج», not «امر تشغيل» as elsewhere; this is their screen.
+      title: 'رقم الانتاج', dataIndex: 'work_order_ref', key: 'work_order_ref', width: 130,
       render: (v: string | null) => v || '-',
+    },
+    {
+      title: 'اجمالي خامات', dataIndex: 'material_cost', key: 'material_cost', width: 125,
+      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+    },
+    {
+      // Labour and machine time. On a free order there is no recipe standard to read, so this is
+      // zero unless the order stated resources of its own — and showing it says which it was.
+      title: 'مصروفات', dataIndex: 'resource_cost', key: 'resource_cost', width: 115,
+      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+    },
+    {
+      title: 'اجمالي منتجات', dataIndex: 'total_cost', key: 'total_cost', width: 130,
+      align: 'left' as const, render: (v: string) => <strong>{money(v)} ج.م</strong>,
     },
     {
       title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit_cost', width: 120,
       align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
     },
     {
-      title: 'التكلفة', dataIndex: 'total_cost', key: 'total_cost', width: 125,
-      align: 'left' as const, render: (v: string) => <strong>{money(v)} ج.م</strong>,
+      title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true,
+      render: (v: string | null) => v || '-',
     },
   ];
 
-  const cols = useHiddenColumns('free-production-list', ['id', 'work_order_ref']);
+  const cols = useHiddenColumns('free-production-list', ['id', 'unit_cost', 'notes']);
 
   const filter = useListFilter<Order>(orders, {
     search: (o) => [o.document_number, o.work_order_ref, itemName(o.product_id)],
@@ -325,7 +345,10 @@ export default function FreeProduction() {
               <Table
                 size="small" pagination={false} rowKey="item_id" dataSource={r.consumptions}
                 columns={[
-                  { title: 'الخامة', dataIndex: 'item_id', render: (id: number) => itemName(id) },
+                  { title: 'الخامة', dataIndex: 'item_id',
+                    render: (id: number) => (
+                      <a onClick={() => navigate(`/catalog/${id}`)}>{itemName(id)}</a>
+                    ) },
                   { title: 'المصروف', dataIndex: 'quantity', render: (q: string) => Number(q) },
                   {
                     title: 'التكلفة', dataIndex: 'line_cost', align: 'left' as const,

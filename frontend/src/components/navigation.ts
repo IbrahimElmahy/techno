@@ -179,8 +179,13 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-count',
         label: 'جرد',
         children: [
-          { key: '/stock-counts?mode=single', label: 'جرد المخازن', roles: STOCK, a5: '/inventorycount' },
-          { key: '/stock-counts?mode=general', label: 'جرد عام المخازن', roles: STOCK, a5: '/generalinventorycount' },
+          // Their «جرد المخازن» and «جرد عام» are filtered stock listings, not counting sheets — read off
+          // their screens on 2026-08-01. Both land on رصيد صنف, which already answers exactly that.
+          { key: '/stock-balance?view=count', label: 'جرد المخازن', roles: R(STOCK), a5: '/inventorycount' },
+          { key: '/stock-balance?view=general', label: 'جرد عام المخازن', roles: R(STOCK), a5: '/generalinventorycount' },
+          // Ours, with no counterpart in theirs: the sheet → counted → difference → adjustment
+          // cycle. Kept because it is the half of a stocktake their screens do not do.
+          { key: '/stock-counts', label: 'دورة الجرد (عدّ وتسوية)', roles: STOCK },
           { key: '/stocktake', label: 'جرد حتى تاريخ', roles: R(STOCK), a5: '/inventory/period-inventory' },
         ],
       },

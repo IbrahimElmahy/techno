@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Col, Empty, Input, Radio, Row, Spin, Table, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useQueryTab } from '../components/useQueryTab';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { normalizeAr } from '../components/ListToolbar';
 
@@ -55,6 +56,17 @@ const money = (v: any) =>
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function StockBalance() {
+  // Three of their menu entries land here: «رصيد صنف» (/storelog), «جرد المخازن» (/inventorycount)
+  // and «جرد عام المخازن» (/generalinventorycount). Reading their screens showed the last two are
+  // filtered stock listings, not counting sheets — the same question this screen already answers,
+  // asked over one store or over all of them. Building two more screens for it would have been two
+  // more of everything to keep in step.
+  const [view] = useQueryTab('balance', 'view');
+  const TITLES: Record<string, string> = {
+    balance: 'رصيد صنف',
+    count: 'جرد المخازن',
+    general: 'جرد عام المخازن',
+  };
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
 
@@ -68,7 +80,22 @@ export default function StockBalance() {
   const [balance, setBalance] = useState<Balance | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
   // "رصيد فقط" hides items that are not physically there; "الكل" shows the whole catalogue.
-  const [stockScope, setStockScope] = useState<'all' | 'in_stock'>('all');
+  // A stocktake entry opens on «رصيد فقط», which is what their own screen defaults to — a count
+  // is about what is there, and a page of zero rows is a page nobody reads.
+  // «له حركة» is their third option and a different question from «رصيد فقط»: an item sold down
+  // to zero has moved and is worth looking at; one created and never touched is catalogue noise.
+  const [stockScope, setStockScope] = useState<'all' | 'in_stock' | 'moved'>(
+    view === 'balance' ? 'all' : 'in_stock');
+  const [moved, setMoved] = useState<Set<number>>(new Set());
+
+  // Fetched once and only when asked for: it is a grouped query over every movement, and the
+  // answer does not change while somebody types in a search box.
+  useEffect(() => {
+    if (stockScope !== 'moved' || moved.size) return;
+    api.get('/api/v1/items?kind=product&stock_filter=moved')
+      .then((r) => setMoved(new Set((r.data || []).map((i: any) => i.id))))
+      .catch(console.error);
+  }, [stockScope]);
 
   useEffect(() => {
     setLoading(true);
@@ -93,11 +120,12 @@ export default function StockBalance() {
     return products.filter((p) => {
       if (category !== ALL && p.category !== category) return false;
       if (stockScope === 'in_stock' && !(Number(p.on_hand || 0) > 0)) return false;
+      if (stockScope === 'moved' && !moved.has(p.id)) return false;
       if (byName && !normalizeAr(p.name).includes(byName)) return false;
       if (byCode && !normalizeAr(p.code).includes(byCode)) return false;
       return true;
     });
-  }, [products, category, stockScope, nameQuery, codeQuery]);
+  }, [products, category, stockScope, nameQuery, codeQuery, moved]);
 
   const selectItem = async (id: number) => {
     setSelectedId(id);
@@ -122,11 +150,12 @@ export default function StockBalance() {
   );
 
   return (
-    <Card title="رصيد صنف" styles={{ body: { paddingTop: 12 } }}
+    <Card title={TITLES[view] ?? TITLES.balance} styles={{ body: { paddingTop: 12 } }}
       extra={
         <Radio.Group size="small" value={stockScope} onChange={(e) => setStockScope(e.target.value)}>
           <Radio.Button value="all">كل الأصناف</Radio.Button>
           <Radio.Button value="in_stock">رصيد فقط</Radio.Button>
+          <Radio.Button value="moved">له حركة</Radio.Button>
         </Radio.Group>
       }>
       <Row gutter={12}>

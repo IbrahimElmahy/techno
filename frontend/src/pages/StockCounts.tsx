@@ -5,9 +5,9 @@ import {
 } from 'antd';
 import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import { useQueryTab } from '../components/useQueryTab';
 
 /**
  * جرد المخازن و جرد عام — the counting cycle.
@@ -38,8 +38,11 @@ interface Sheet {
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function StockCounts() {
-  // «جرد المخازن» and «جرد عام المخازن» are two entries; the second just opens with no warehouse.
-  const [mode] = useQueryTab('single', 'mode');
+  const navigate = useNavigate();
+  // Their «جرد المخازن» and «جرد عام» turned out to be filtered stock listings, not counting
+  // sheets, so those two entries open رصيد صنف instead. This screen is the counting cycle itself,
+  // which theirs has no counterpart for — and one sheet or all warehouses is a choice made in the
+  // dialog rather than by arriving through a different menu entry.
 
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -75,11 +78,11 @@ export default function StockCounts() {
   useEffect(() => { load(); }, []);
 
   const openSheet = async () => {
-    if (mode !== 'general' && !warehouseId) { message.warning('اختر المخزن'); return; }
     setOpening(true);
     try {
       const res = await api.post('/api/v1/stock-counts', {
-        warehouse_id: mode === 'general' ? null : warehouseId,
+        // Empty means every active warehouse — the general count, chosen here rather than by route.
+        warehouse_id: warehouseId ?? null,
         count_date: countDate.format('YYYY-MM-DD'),
         notes: notes || null,
       });
@@ -174,7 +177,7 @@ export default function StockCounts() {
   return (
     <div>
       <Card
-        title={mode === 'general' ? 'جرد عام المخازن' : 'جرد المخازن'}
+        title="دورة الجرد — عدّ وتسوية"
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
@@ -231,16 +234,13 @@ export default function StockCounts() {
         destroyOnHidden
       >
         <Form layout="vertical">
-          {mode === 'general' ? (
-            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-              message="جرد عام: الكشف هيفتح على كل المخازن النشطة" />
-          ) : (
-            <Form.Item label="المخزن" required>
-              <Select showSearch optionFilterProp="label" placeholder="اختر المخزن"
-                value={warehouseId} onChange={setWarehouseId}
-                options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-            </Form.Item>
-          )}
+          <Form.Item label="المخزن"
+            help="سيبه فاضي والكشف هيفتح على كل المخازن النشطة (جرد عام)">
+            <Select allowClear showSearch optionFilterProp="label"
+              placeholder="كل المخازن النشطة"
+              value={warehouseId} onChange={setWarehouseId}
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          </Form.Item>
           <Form.Item label="تاريخ الجرد">
             <DatePicker style={{ width: '100%' }} value={countDate} allowClear={false}
               onChange={(d) => setCountDate(d || dayjs())} />
@@ -290,7 +290,12 @@ export default function StockCounts() {
               size="small" rowKey="id" dataSource={draftLines} pagination={{ pageSize: 12 }}
               columns={[
                 { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
-                  render: (v: string | null, r: Line) => v ?? `صنف #${r.item_id}` },
+                  // A difference on a line is the moment somebody wants the item's history.
+                  render: (v: string | null, r: Line) => (
+                    <a onClick={() => navigate(`/catalog/${r.item_id}`)}>
+                      {v ?? `صنف #${r.item_id}`}
+                    </a>
+                  ) },
                 ...(sheet.warehouse_id === null ? [{
                   title: 'المخزن', dataIndex: 'warehouse_name', width: 150,
                 }] : []),

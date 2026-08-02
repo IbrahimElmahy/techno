@@ -23,10 +23,6 @@ interface Pending {
 }
 
 const PENDING: Record<string, Pending> = {
-  '/price-display': {
-    what: 'شاشة سعر للعميل — يتقرا الباركود فيظهر اسم الصنف وسعره على شاشة تانية.',
-    note: 'محتاجة شاشة تانية عند الكاشير، مش بس كود.',
-  },
 };
 
 /**
