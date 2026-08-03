@@ -42,6 +42,9 @@ export default function Login() {
         role: profile.role as RoleName,
         branch_id: profile.branch_id,
         name: profile.full_name,
+        // What the server says this user may do. Screens ask `can(...)` rather than listing role
+        // names, so a screen and the endpoint behind it always quote the same rule.
+        capabilities: profile.capabilities ?? [],
       };
 
       // 3. Confirm login in auth context

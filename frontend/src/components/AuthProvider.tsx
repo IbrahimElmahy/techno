@@ -14,6 +14,19 @@ export interface User {
   role: RoleName;
   branch_id?: number | null;
   name: string;
+  /**
+   * What this user may DO, as the server computes it.
+   *
+   * Screens used to decide what to show by listing role names — the server's capability map,
+   * copied into the client by hand. Copies drift, and one already had: the catalogue let
+   * system_admin and purchasing_manager create and edit items, while the endpoints ask for
+   * `catalog.write`, which branch_manager also holds. He saw no «إضافة صنف» button on a screen
+   * that would have accepted him.
+   *
+   * Optional because a session stored before this existed has none; `can()` then answers false
+   * and the screen hides an action rather than offering one that would be refused.
+   */
+  capabilities?: string[];
 }
 
 interface AuthContextType {
@@ -23,6 +36,15 @@ interface AuthContextType {
   token: string | null;
   login: (token: string, user: User) => void;
   logout: () => void;
+  /**
+   * May this user do `capability`?
+   *
+   * This hides and shows things. It is NEVER the security boundary — every endpoint checks the
+   * same capability for itself, and a client that lied about this would simply be refused by the
+   * server. What it buys is that the screen and the endpoint quote the SAME string, so they
+   * cannot come to disagree about who is allowed what.
+   */
+  can: (capability: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -105,7 +127,10 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   }
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isAuthenticating, user, token, login, logout }}>
+    <AuthContext.Provider value={{
+      isAuthenticated, isAuthenticating, user, token, login, logout,
+      can: (capability: string) => !!user?.capabilities?.includes(capability),
+    }}>
       {children}
     </AuthContext.Provider>
   );

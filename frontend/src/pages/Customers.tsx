@@ -596,8 +596,12 @@ export default function Customers() {
               with 0 would silently turn every customer into one who negotiated a zero rate. */}
           <Row gutter={12}>
             <Col span={4}>
-              <Form.Item name="discount_pct" label="خصم"
-                extra="سيبه فاضي = مفيش اتفاق">
+              {/* His rate REPLACES the item's rather than adding to it: a dealer on 20% against
+                  an item that gives 10% is on twenty, not twenty-eight. Empty is what makes that
+                  readable — «مفيش اتفاق» and «اتفقنا على صفر» are different instructions. */}
+              <Form.Item name="discount_pct" label="خصم %"
+                tooltip="لو محدد، بيحل محل خصم الصنف — مش بيتزود عليه. سيبه فاضي والصنف ياخد خصمه."
+                extra="فاضي = مفيش اتفاق">
                 <InputNumber min={0} max={100} step={0.01} style={{ width: '100%' }} />
               </Form.Item>
             </Col>

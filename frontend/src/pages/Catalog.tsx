@@ -93,6 +93,13 @@ interface ItemRecord {
   consumer_price: string | null;
   piece_name: string | null;
   pieces_per_unit: string | null;
+  // On the API since 011/027 and never read by this screen, which is why they could be typed on
+  // creation and then never corrected.
+  default_discount_pct: string | null;
+  min_stock: string | null;
+  max_stock: string | null;
+  is_perishable: boolean;
+  description: string | null;
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -306,17 +313,27 @@ export default function Catalog() {
   const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  // The same modal writes and edits. `editingItem` is the ONLY difference between the two, which
+  // is what makes «نسخة طبق الأصل» true by construction rather than by somebody remembering to
+  // add each new field twice.
+  const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
+  // Two things an item carries that do not live on its own row — its point value and its
+  // alternate units. They were reachable only AFTER the item existed, so creating one meant
+  // going back for them.
+  const [unitRows, setUnitRows] = useState<{ name: string; factor: number | null }[]>([]);
   const [view, setView] = useState<'grouped' | 'table'>('grouped');
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
-  const { user } = useAuth();
+  const { can } = useAuth();
 
-  // Point editing is permitted for system_admin and after_sales_staff roles only
-  const canEditPoints = ['system_admin', 'after_sales_staff'].includes(user?.role || '');
-  // Tier-price editing requires catalog.write (system_admin, branch_manager, purchasing_manager).
-  const canEditPrices = ['system_admin', 'branch_manager', 'purchasing_manager'].includes(user?.role || '');
-  // Item-core edit/deactivate gated to the same roles allowed to create items.
-  const canManageItems = ['system_admin', 'purchasing_manager'].includes(user?.role || '');
+  // Asked of the server's own capability map rather than by listing role names. The three lists
+  // that used to be here were a hand copy of `rbac.py`, and one of them was already wrong:
+  // `canManageItems` was system_admin + purchasing_manager, while creating and editing items asks
+  // for `catalog.write` — which branch_manager also holds. He saw no «إضافة صنف» button and no
+  // edit icon on a screen whose endpoints would have accepted him.
+  const canEditPoints = can('product_points.write');
+  const canEditPrices = can('catalog.write');
+  const canManageItems = can('catalog.write');
 
   // Filtering happens on the server so it covers ALL items, not just the loaded page.
   const fetchItems = async (override?: Record<string, any>) => {
@@ -364,7 +381,15 @@ export default function Catalog() {
       .catch((err) => console.error(err));
   }, []);
 
-  const onCreateItem = async (values: any) => {
+  /**
+   * Save — whichever of the two the modal is doing.
+   *
+   * One handler for both, because a field added to a create form and forgotten on the edit form
+   * is exactly how the two drifted apart in the first place. Everything an item can hold goes
+   * through here: its own row, its price tiers, its alternate units and — for a product — its
+   * point value.
+   */
+  const onSaveItem = async (values: any) => {
     try {
       const tiers = Object.entries(values.prices || {})
         .map(([tier, row]: [string, any]) => ({
@@ -377,33 +402,69 @@ export default function Catalog() {
         // it as zero would let it be sold for nothing.
         .filter((t) => Number(t.price) > 0);
 
-      const payload = {
+      const core = {
         name: values.name,
-        kind: values.kind,
-        unit_of_measure: values.unit_of_measure,
         category: values.category ?? null,
         default_warehouse_id: values.default_warehouse_id ?? null,
         piece_name: values.piece_name || null,
         pieces_per_unit: values.pieces_per_unit ?? 1,
         description: values.description || null,
         min_stock: values.min_stock ?? null,
+        max_stock: values.max_stock ?? null,
         is_serialized: !!values.is_serialized,
         is_perishable: !!values.is_perishable,
+        // Always a number: the item's rate is 0 when it gives no discount. «Nothing agreed» is a
+        // state of the CUSTOMER's card, whose column is the nullable one, and his rate replaces
+        // this rather than stacking on it.
+        default_discount_pct: values.default_discount_pct ?? 0,
+        // A raw material is bought, so it has a purchase price; a product is made, and the API
+        // refuses one on it. Sending it regardless is how a valid form gets rejected.
+        purchase_price: values.kind === 'raw_material' ? (values.purchase_price ?? null) : null,
         // The consumer price doubles as the reference sale price the rest of the system reads.
         sale_price: values.prices?.consumer?.price ?? null,
       };
 
-      const created = await api.post('/api/v1/items', payload);
-      const itemId = created.data?.id;
-      if (itemId && tiers.length) {
-        await api.put(`/api/v1/items/${itemId}/prices`, { tiers });
+      // PUT replaces the whole alternate set, so sending it on every save is what makes removing
+      // a unit possible at all.
+      const units = unitRows.filter((r) => r.name && r.factor && r.factor > 0)
+        .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(3) }));
+      // Points belong to a product, and only to somebody allowed to price loyalty.
+      const points = values.kind === 'product' && canEditPoints
+        && values.point_value !== undefined && values.point_value !== null
+        ? values.point_value : undefined;
+
+      if (editingItem) {
+        // An existing item is edited in place. Each call is idempotent and the item already
+        // exists, so a failure cannot leave a half-made record — only a half-applied edit, which
+        // the reload below then shows truthfully.
+        await api.patch(`/api/v1/items/${editingItem.id}`, { ...core, active: !values.hidden });
+        if (tiers.length) await api.put(`/api/v1/items/${editingItem.id}/prices`, { tiers });
+        await api.put(`/api/v1/items/${editingItem.id}/units`, { units });
+        if (points !== undefined) {
+          await api.put(`/api/v1/products/${editingItem.id}/point-value`,
+            { point_value: points });
+        }
+      } else {
+        // ONE call. The item, its tiers, its units and its points are written in a single
+        // transaction, so a rejected tier leaves no item behind — as four calls it left a created
+        // item, a failed second call, and a success message on screen.
+        const created = await api.post('/api/v1/items', {
+          ...core,
+          kind: values.kind,
+          unit_of_measure: values.unit_of_measure,
+          tiers: tiers.length ? tiers : undefined,
+          units: units.length ? units : undefined,
+          point_value: points,
+        });
+        // «مخفي» is a state an item is put into, not one it is born in, so it is a separate edit.
+        if (created.data?.id && values.hidden) {
+          await api.patch(`/api/v1/items/${created.data.id}`, { active: false });
+        }
       }
-      // «مخفي» is a state an item is put into, not one it is born in, so it is a separate edit.
-      if (itemId && values.hidden) {
-        await api.patch(`/api/v1/items/${itemId}`, { active: false });
-      }
-      message.success('اتسجّل الصنف');
+
+      message.success(editingItem ? 'اتعدّل الصنف' : 'اتسجّل الصنف');
       setDrawerVisible(false);
+      setEditingItem(null);
       form.resetFields();
       fetchItems();
     } catch (err) {
@@ -475,8 +536,73 @@ export default function Catalog() {
   // «إضافة صنف» from inside a category pre-fills that category.
   const openCreateForCategory = (category?: string) => {
     form.resetFields();
+    setEditingItem(null);
+    setUnitRows([]);
     if (category && category !== '__none__') form.setFieldsValue({ category });
     setDrawerVisible(true);
+  };
+
+  /**
+   * «تعديل بيانات الصنف» — the same form, filled in.
+   *
+   * An item's own data could be CREATED and never changed: prices, units, points and «مخفي» had
+   * editors and everything else — the purchase price, the discount, the packing, the reorder
+   * levels, the description — had none. A typo in a name was permanent.
+   */
+  const openEditItem = async (record: ItemRecord) => {
+    form.resetFields();
+    setEditingItem(record);
+    setUnitRows([]);
+    setDrawerVisible(true);
+
+    form.setFieldsValue({
+      category: record.category ?? undefined,
+      name: record.name,
+      unit_of_measure: record.unit_of_measure,
+      pieces_per_unit: record.pieces_per_unit ? Number(record.pieces_per_unit) : 1,
+      piece_name: record.piece_name ?? undefined,
+      kind: record.kind,
+      hidden: !record.active,
+      is_perishable: !!record.is_perishable,
+      is_serialized: !!record.is_serialized,
+      purchase_price: record.purchase_price ? Number(record.purchase_price) : undefined,
+      default_discount_pct: record.default_discount_pct !== null
+        && record.default_discount_pct !== undefined
+        ? Number(record.default_discount_pct) : undefined,
+      min_stock: record.min_stock ? Number(record.min_stock) : undefined,
+      max_stock: record.max_stock ? Number(record.max_stock) : undefined,
+      default_warehouse_id: record.default_warehouse_id ?? undefined,
+      description: record.description ?? undefined,
+    });
+
+    // The three that live elsewhere. Fetched rather than assumed, and each failure left as the
+    // empty it already was — a form that refuses to open because one optional section is
+    // unavailable is worse than one that opens with that section blank.
+    try {
+      const prices = await api.get(`/api/v1/items/${record.id}/prices`);
+      const byTier: any = {};
+      (prices.data?.tiers || []).forEach((t: any) => {
+        byTier[t.tier] = {
+          price: t.price !== null ? Number(t.price) : undefined,
+          discount_pct: t.discount_pct !== null ? Number(t.discount_pct) : undefined,
+          vat_pct: t.vat_pct !== null ? Number(t.vat_pct) : undefined,
+        };
+      });
+      form.setFieldsValue({ prices: byTier });
+    } catch (err) { console.error(err); }
+
+    try {
+      const units = await api.get(`/api/v1/items/${record.id}/units`);
+      setUnitRows((units.data?.units || []).filter((u: any) => !u.is_base)
+        .map((u: any) => ({ name: u.name, factor: parseFloat(u.factor) })));
+    } catch (err) { console.error(err); }
+
+    if (record.kind === 'product') {
+      try {
+        const pts = await api.get(`/api/v1/products/${record.id}/point-value`);
+        form.setFieldsValue({ point_value: parseFloat(pts.data.point_value) || 0 });
+      } catch (err) { console.error(err); }
+    }
   };
 
   // Their columns, in their order, less باركود — the client asked for barcodes out of the system,
@@ -570,9 +696,12 @@ export default function Catalog() {
     ...(canManageItems ? [{
       title: '',
       key: 'actions',
-      width: 80,
+      width: 110,
       render: (_: any, record: ItemRecord) => (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="تعديل بيانات الصنف">
+            <Button type="text" icon={<EditOutlined />} onClick={() => openEditItem(record)} />
+          </Tooltip>
           {record.active && (
             <Tooltip title="إخفاء">
               <Button type="text" icon={<StopOutlined />}
@@ -618,7 +747,7 @@ export default function Catalog() {
       <Card
         title="الأصناف"
         extra={
-          user?.role === 'system_admin' || user?.role === 'purchasing_manager' ? (
+          canManageItems ? (
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
               إضافة صنف للكتالوج
             </Button>
@@ -776,13 +905,13 @@ export default function Catalog() {
           same order, because someone entering a hundred items a week does it by muscle memory, and
           a reordered form makes every one of them slower. */}
       <Modal footer={null} centered
-        title="صنف جديد"
+        title={editingItem ? `تعديل بيانات الصنف — ${editingItem.name}` : 'صنف جديد'}
         width={860}
         onCancel={() => setDrawerVisible(false)}
         open={drawerVisible}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" onFinish={onCreateItem} requiredMark={false}
+        <Form form={form} layout="vertical" onFinish={onSaveItem} requiredMark={false}
           initialValues={{ pieces_per_unit: 1, kind: 'product' }}>
           <Row gutter={12}>
             <Col span={8}>
@@ -803,9 +932,14 @@ export default function Catalog() {
           {/* اسم الوحدة · عدد القطع · اسم القطعة — the packing, their triple, in their order. */}
           <Row gutter={12}>
             <Col span={8}>
+              {/* Locked once the item exists, and NOT sent on edit. Every quantity ever recorded
+                  for this item is counted in its base unit; renaming «قطعة» to «كرتونة» would
+                  silently reinterpret its whole stock history rather than convert it. `ItemUpdate`
+                  does not accept the field either, so sending it would have been a change the
+                  screen appeared to make and the server quietly dropped. */}
               <Form.Item name="unit_of_measure" label="اسم الوحدة"
                 rules={[{ required: true, message: 'اختر الوحدة' }]}>
-                <Select showSearch placeholder="وحده"
+                <Select showSearch placeholder="وحده" disabled={!!editingItem}
                   options={uomOptions.map((o) => ({ value: o.value, label: o.label }))}
                   filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
               </Form.Item>
@@ -824,8 +958,42 @@ export default function Catalog() {
 
           <Row gutter={12}>
             <Col span={8}>
+              {/* Locked once the item exists: `kind` decides whether it is bought or made, which
+                  side of the books it posts to and whether it has a purchase price at all.
+                  Changing it under a stock history would leave the movements behind it
+                  describing something the item no longer is. */}
               <Form.Item name="kind" label="تصنيف" rules={[{ required: true }]}>
-                <Select options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
+                <Select disabled={!!editingItem}
+                  options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
+              </Form.Item>
+            </Col>
+            {/* Restored. It was on this form before the rebuild against their screen and was
+                dropped with it — leaving a raw material that could be created with no idea what
+                it costs, which every margin and valuation then reads as zero. */}
+            <Form.Item noStyle shouldUpdate={(a, b) => a.kind !== b.kind}>
+              {({ getFieldValue }) => (getFieldValue('kind') === 'raw_material' ? (
+                <Col span={8}>
+                  <Form.Item name="purchase_price" label="سعر الشراء المرجعي">
+                    <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0.00" />
+                  </Form.Item>
+                </Col>
+              ) : canEditPoints ? (
+                <Col span={8}>
+                  <Form.Item name="point_value" label="نقاط المنتج"
+                    tooltip="النقاط اللي العميل بياخدها على القطعة الواحدة — ممكن تبقى كسر (٦ قطع = نقطة ← 0.167)">
+                    <InputNumber min={0} step={0.001} style={{ width: '100%' }} placeholder="0" />
+                  </Form.Item>
+                </Col>
+              ) : null)}
+            </Form.Item>
+            <Col span={8}>
+              {/* The item's own rate. It is always a number — 0 is «no discount», a complete
+                  answer — and the CUSTOMER's rate replaces it when he has one. «Nothing agreed»
+                  is a state that belongs to the customer's card, not here. */}
+              <Form.Item name="default_discount_pct" label="خصم الصنف %"
+                tooltip="الخصم الثابت على الصنف. لو العميل ليه خصم متحدد في كارت العميل، خصمه بيحل محل ده — مش بيتجمعوا.">
+                <InputNumber min={0} max={99.99} step={0.01} style={{ width: '100%' }}
+                  placeholder="0" />
               </Form.Item>
             </Col>
           </Row>
@@ -888,13 +1056,52 @@ export default function Catalog() {
             </Row>
           ))}
 
+          {/* وحدات القياس البديلة — reachable only after the item existed, so an item sold by
+              the carton had to be created, saved, found again and reopened before it could be
+              told what a carton is. */}
+          <Divider orientation="right" style={{ margin: '12px 0 8px' }}>
+            وحدات القياس البديلة
+          </Divider>
+          <div style={{ color: '#888', marginBottom: 8, fontSize: 13 }}>
+            الوحدة الأساسية هي اللي فوق. ضيف الوحدات الأكبر بمعاملها (مثلاً: كرتونة = ١٢).
+          </div>
+          {unitRows.map((r, i) => (
+            <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+              <Col span={10}>
+                <Input placeholder="اسم الوحدة (كرتونة)" value={r.name}
+                  onChange={(e) => setUnitRows(unitRows.map((x, j) => (
+                    j === i ? { ...x, name: e.target.value } : x)))} />
+              </Col>
+              <Col span={10}>
+                <InputNumber min={0.001} step={1} style={{ width: '100%' }}
+                  addonBefore="= عدد الأساس" value={r.factor ?? undefined}
+                  onChange={(v) => setUnitRows(unitRows.map((x, j) => (
+                    j === i ? { ...x, factor: v as number } : x)))} />
+              </Col>
+              <Col span={4}>
+                <Button type="text" danger icon={<DeleteOutlined />}
+                  onClick={() => setUnitRows(unitRows.filter((_, j) => j !== i))} />
+              </Col>
+            </Row>
+          ))}
+          <Button type="dashed" block icon={<PlusOutlined />} style={{ marginBottom: 8 }}
+            onClick={() => setUnitRows([...unitRows, { name: '', factor: null }])}>
+            إضافة وحدة
+          </Button>
+
           <Row gutter={12} style={{ marginTop: 16 }}>
-            <Col span={8}>
+            <Col span={6}>
               <Form.Item name="min_stock" label="حد اعادة الطلب">
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={16}>
+            <Col span={6}>
+              {/* 011 added both thresholds; only the lower one ever reached this form. */}
+              <Form.Item name="max_stock" label="الحد الأقصى">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
               <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
                 <Select allowClear placeholder="اختياري"
                   options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />

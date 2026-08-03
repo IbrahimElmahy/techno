@@ -264,8 +264,23 @@ def create_sale(
                 f"Selling below the '{tier.value}' tier price ({list_price}) requires the "
                 f"sell.below_price capability."
             )
-        # (027) per-line discount: an explicit value wins, else the item's fixed default.
+        # (031) Which discount the line takes, most specific first:
+        #
+        #   1. what was typed on THIS line — a one-off agreed at the counter;
+        #   2. the CUSTOMER's own rate, when he has one;
+        #   3. the ITEM's default;
+        #   4. none.
+        #
+        # The customer's rate REPLACES the item's rather than stacking on it. A dealer on 20%
+        # against an item that gives 10% is on twenty, not twenty-eight — «خصمه» is the rate
+        # agreed with him, not a bonus added to whatever the item already gave.
+        #
+        # Empty is what makes this readable: NULL on the customer means «nothing agreed with him»
+        # and the item's rate applies, while 0 means «agreed, and it is nothing» and the item's
+        # rate is deliberately cancelled. A column defaulted to zero could not tell those apart,
+        # which is why the customer's discount is nullable.
         line_disc = (Decimal(ln.discount_pct) if ln.discount_pct is not None
+                     else Decimal(customer.discount_pct) if customer.discount_pct is not None
                      else Decimal(item.default_discount_pct or 0))
         if line_disc < ZERO or line_disc >= Decimal("100"):
             raise SalesError("Line discount must be between 0 and under 100%.")

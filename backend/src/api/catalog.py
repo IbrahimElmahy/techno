@@ -12,8 +12,10 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import (
     CAP_CATALOG_READ,
     CAP_CATALOG_WRITE,
+    CAP_PRODUCT_POINTS_WRITE,
     CAP_PURCHASE_WRITE,
     CAP_STOCK_READ,
+    role_has_capability,
 )
 from src.core.db import get_db
 from src.core.money import to_money, to_qty
@@ -52,6 +54,17 @@ class ItemCreate(BaseModel):
     piece_name: str | None = None
     pieces_per_unit: Decimal | None = None
     description: str | None = None
+    # (031) The three things an item carries that do not live on its own row. They used to be
+    # three more HTTP calls the screen made AFTER the item existed, which meant a failure on any
+    # of them left an item created and half-configured while the screen said «اتسجّل الصنف».
+    # Taken here, they are written inside the SAME transaction: the item and everything about it
+    # either exist together or not at all.
+    #
+    # Typed as `list[dict] | None` at this point in the file because `TierPrice` and `UnitIn` are
+    # declared below; `_apply_*` validates them through those models before anything is written.
+    tiers: list[dict] | None = None
+    units: list[dict] | None = None
+    point_value: Decimal | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -156,10 +169,69 @@ def list_items(
     return out
 
 
+def _apply_tiers(db: Session, item: Item, tiers: list["TierPrice"], *, actor_user_id: int) -> None:
+    """Write the sale-price tiers. Shared by `POST /items` and `PUT /items/{id}/prices` so the
+    validation and the price-change log cannot come to differ between creating and editing."""
+    if item.kind != ItemKind.product:
+        raise HTTPException(422, {"code": "validation", "message": "only products have sale prices"})
+    for tp in tiers:
+        if tp.price < 0:
+            raise HTTPException(422, {"code": "validation", "message": "price must be ≥ 0"})
+    for tp in tiers:
+        row = db.scalar(
+            select(ItemPrice).where(ItemPrice.item_id == item.id, ItemPrice.tier == tp.tier)
+        )
+        # Log the move BEFORE writing it, so the history keeps the previous price (027).
+        item_profile_service.record_price_change(
+            db, item_id=item.id, field_name=tp.tier.value,
+            old_value=row.price if row is not None else None,
+            new_value=to_money(tp.price), actor_user_id=actor_user_id)
+        if row is None:
+            db.add(ItemPrice(item_id=item.id, tier=tp.tier, price=to_money(tp.price),
+                             discount_pct=tp.discount_pct or 0, vat_pct=tp.vat_pct or 0))
+        else:
+            row.price = to_money(tp.price)
+    db.flush()
+
+
+def _apply_units(db: Session, item: Item, units: list["UnitIn"]) -> None:
+    """Replace the whole alternate-unit set — which is what makes removing one possible."""
+    seen = {item.unit_of_measure}
+    for u in units:
+        if u.factor <= 0:
+            raise HTTPException(422, {"code": "validation", "message": "factor must be > 0"})
+        if u.name in seen:
+            raise HTTPException(422, {"code": "validation",
+                                      "message": f"duplicate unit name '{u.name}'"})
+        seen.add(u.name)
+    db.execute(delete(ItemUnit).where(ItemUnit.item_id == item.id))
+    for u in units:
+        db.add(ItemUnit(item_id=item.id, name=u.name, factor=to_qty(u.factor)))
+    db.flush()
+
+
+def _apply_point_value(db: Session, item: Item, value, *, actor_user_id: int) -> None:
+    """Loyalty points per piece. Products only — a raw material has none to give."""
+    from src.models.loyalty import ProductPointValue
+
+    if item.kind != ItemKind.product:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "Point values apply to products only"})
+    if value < 0:
+        raise HTTPException(422, {"code": "validation", "message": "point_value must be ≥ 0"})
+    ppv = db.scalar(select(ProductPointValue).where(ProductPointValue.item_id == item.id))
+    if ppv is None:
+        db.add(ProductPointValue(item_id=item.id, point_value=value, updated_by=actor_user_id))
+    else:
+        ppv.point_value = value
+        ppv.updated_by = actor_user_id
+    db.flush()
+
+
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
 def create_item(
     body: ItemCreate,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
     db: Session = Depends(get_db),
 ) -> ItemOut:
     if body.kind == ItemKind.raw_material and body.sale_price is not None:
@@ -183,6 +255,23 @@ def create_item(
     )
     db.add(item)
     db.flush()
+
+    # Everything else the form sends, in this transaction. Each helper raises on bad input, and
+    # because nothing has been committed yet the item goes with it.
+    if body.tiers:
+        _apply_tiers(db, item, [TierPrice(**t) for t in body.tiers], actor_user_id=current.id)
+    if body.units:
+        _apply_units(db, item, [UnitIn(**u) for u in body.units])
+    if body.point_value is not None:
+        # Checked here rather than trusted: point values are a different capability from the
+        # catalogue, and a purchasing manager may create items without being allowed to price
+        # loyalty. Refusing BEFORE the commit is what keeps «اتسجّل الصنف» honest — the older
+        # shape created the item, got a 403 on a second call, and reported success anyway.
+        if not role_has_capability(current.role, CAP_PRODUCT_POINTS_WRITE):
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "لا تملك صلاحية تحديد نقاط المنتج"})
+        _apply_point_value(db, item, body.point_value, actor_user_id=current.id)
+
     db.commit()
     return _out(item)
 
@@ -237,27 +326,9 @@ def set_item_prices(
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
-    if item.kind != ItemKind.product:
-        raise HTTPException(422, {"code": "validation", "message": "only products have sale prices"})
-    for tp in body.tiers:
-        if tp.price < 0:
-            raise HTTPException(422, {"code": "validation", "message": "price must be ≥ 0"})
-    # Upsert each provided tier (omitted tiers are left unchanged).
-    for tp in body.tiers:
-        row = db.scalar(
-            select(ItemPrice).where(ItemPrice.item_id == item.id, ItemPrice.tier == tp.tier)
-        )
-        # Log the move BEFORE writing it, so the history keeps the previous price (027).
-        item_profile_service.record_price_change(
-            db, item_id=item.id, field_name=tp.tier.value,
-            old_value=row.price if row is not None else None,
-            new_value=to_money(tp.price), actor_user_id=current.id)
-        if row is None:
-            db.add(ItemPrice(item_id=item.id, tier=tp.tier, price=to_money(tp.price),
-                             discount_pct=tp.discount_pct or 0, vat_pct=tp.vat_pct or 0))
-        else:
-            row.price = to_money(tp.price)
-    db.flush()
+    # Upsert each provided tier (omitted tiers are left unchanged) — the same writer the create
+    # endpoint uses, so the two cannot validate or log differently.
+    _apply_tiers(db, item, body.tiers, actor_user_id=current.id)
     db.commit()
     return _prices_out(db, item)
 
@@ -312,19 +383,7 @@ def set_item_units(
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
-    seen = {item.unit_of_measure}
-    for u in body.units:
-        if u.factor <= 0:
-            raise HTTPException(422, {"code": "validation", "message": "factor must be > 0"})
-        if u.name in seen:
-            raise HTTPException(422, {"code": "validation",
-                                      "message": f"duplicate unit name '{u.name}'"})
-        seen.add(u.name)
-    # Replace the full alternate set.
-    db.execute(delete(ItemUnit).where(ItemUnit.item_id == item.id))
-    for u in body.units:
-        db.add(ItemUnit(item_id=item.id, name=u.name, factor=to_qty(u.factor)))
-    db.flush()
+    _apply_units(db, item, body.units)
     db.commit()
     return _units_out(db, item)
 
@@ -506,13 +565,34 @@ def update_item(
     # Editing reference prices never rewrites prices already snapshotted on posted documents.
     # Price moves are logged (027) so «why did this get cheaper?» has an answer.
     PRICE_FIELDS = {"purchase_price", "sale_price", "default_discount_pct"}
+    # (031) «مش مبعوت» و«مبعوت فاضي» حاجتين مختلفتين.
+    #
+    # This loop used to skip every None, which made a nullable field one-way: a discount, a
+    # reorder level or a default warehouse could be set and then never removed. That is not a
+    # small gap for `default_discount_pct` in particular — NULL means «no fixed discount on this
+    # item» and 0 means «its discount is nothing», and the sale reads the two differently, so a
+    # rate typed once could be changed but never withdrawn.
+    #
+    # Pydantic already knows which keys the caller actually sent. A field left out is untouched;
+    # a field sent as null is CLEARED, but only where the column allows it — `name` and `active`
+    # are not nullable, and a null there is a malformed request, not an instruction.
+    # Exactly the columns that are nullable. `default_discount_pct` is deliberately NOT among
+    # them: an item ALWAYS has a rate and 0 is «no discount», which is a complete answer. The
+    # NULL-versus-zero distinction lives on the CUSTOMER, whose column is nullable — there, NULL
+    # means «nothing agreed with him» and the sale falls back to the item's rate.
+    CLEARABLE = {"purchase_price", "sale_price", "default_warehouse_id", "category",
+                 "min_stock", "max_stock",
+                 "piece_name", "pieces_per_unit", "description"}
+    sent = body.model_fields_set
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
                   "default_warehouse_id", "category",
                   "default_discount_pct",
                   "min_stock", "max_stock", "is_perishable",   # (011)
                   "piece_name", "pieces_per_unit", "description"):
+        if field not in sent:
+            continue
         val = getattr(body, field)
-        if val is None:
+        if val is None and field not in CLEARABLE:
             continue
         if field in PRICE_FIELDS:
             item_profile_service.record_price_change(

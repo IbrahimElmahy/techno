@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, get_current_user
+from src.auth.rbac import ROLE_CAPABILITIES
 from src.core.db import get_db
 from src.core.security import create_access_token, verify_password
 from src.models.role import Role
@@ -36,6 +37,19 @@ class UserOut(BaseModel):
     branch_id: int | None
     territory_id: int | None
     active: bool
+    # (031) What this user may DO, not just what they are called.
+    #
+    # Every screen was deciding what to show by hard-coding a list of role names, which is the
+    # server's capability map copied into the client by hand — and copies drift. The catalogue was
+    # already wrong that way: it let system_admin and purchasing_manager create and edit items,
+    # while the endpoints ask for `catalog.write`, which branch_manager also holds. He saw no
+    # «إضافة صنف» button on a screen that would have accepted him.
+    #
+    # Sent, not derived: the map lives in `rbac.py` and this is a reading of it. A screen that
+    # asks `can('product_points.write')` cannot fall out of step with the endpoint that enforces
+    # the same string. This is disclosure of the user's OWN permissions, never a substitute for
+    # the server-side gate — every endpoint still checks for itself.
+    capabilities: list[str] = []
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -117,4 +131,5 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         branch_id=user.branch_id,
         territory_id=user.territory_id,
         active=user.active,
+        capabilities=sorted(ROLE_CAPABILITIES.get(current.role, set())),
     )
