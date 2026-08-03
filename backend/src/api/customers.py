@@ -109,6 +109,21 @@ class CustomerAccountOut(BaseModel):
     account_id: int
     balance: Decimal
     balance_derived: bool = True
+    # (031) Which product line this account is for. NULL on a customer who has only ever had one.
+    family: str | None = None
+    commission_pct: Decimal | None = None
+
+
+class CustomerAccountsOut(BaseModel):
+    """كل حسابات العميل والإجمالي.
+
+    The client sells two lines at two commissions, and until now that meant opening the customer
+    twice. One customer, one account per line, and the sum — which is the number that could not be
+    asked for at all while the two halves were two different people.
+    """
+    customer_id: int
+    accounts: list[CustomerAccountOut]
+    total_balance: Decimal
 
 
 def _out(c: Customer, db: Session | None = None) -> CustomerOut:
@@ -457,16 +472,52 @@ def customer_record_detail(
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
 
 
+@router.get("/{customer_id}/accounts", response_model=CustomerAccountsOut)
+def customer_accounts(
+    customer_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
+    db: Session = Depends(get_db),
+) -> CustomerAccountsOut:
+    """حسابات العميل — فرع لكل عيلة منتجات، وبعدهم الإجمالي."""
+    rows = db.scalars(select(CustomerAccount).where(
+        CustomerAccount.customer_id == customer_id)).all()
+    if not rows:
+        raise HTTPException(404, {"code": "not_found", "message": "Account not found"})
+    out = [CustomerAccountOut(
+        id=a.id, customer_id=a.customer_id, account_id=a.account_id,
+        balance=ledger_service.balance_of(db, a.account_id),
+        family=a.family, commission_pct=a.commission_pct) for a in rows]
+    # Sorted so the screen reads the same way every time: named families first, alphabetically,
+    # and the family-less legacy account last.
+    out.sort(key=lambda a: (a.family is None, a.family or ""))
+    return CustomerAccountsOut(
+        customer_id=customer_id, accounts=out,
+        total_balance=sum((a.balance for a in out), Decimal("0")))
+
+
 @router.get("/{customer_id}/account", response_model=CustomerAccountOut)
 def customer_account(
     customer_id: int,
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomerAccountOut:
-    acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
+    # The customer's original, family-less account. Scoped rather than «whichever comes first»:
+    # once a customer holds two, an unscoped query answers with an arbitrary one of them.
+    acc = db.scalar(select(CustomerAccount).where(
+        CustomerAccount.customer_id == customer_id,
+        CustomerAccount.family.is_(None)))
     if acc is None:
+        # A merged customer has no family-less account any more. Sending him back the first of his
+        # family accounts would be answering a different question than the one asked, so this says
+        # where the answer moved to instead.
+        if db.scalar(select(CustomerAccount).where(
+                CustomerAccount.customer_id == customer_id)) is not None:
+            raise HTTPException(409, {
+                "code": "multiple_accounts",
+                "message": "العميل ده عنده حساب لكل عيلة — استخدم /accounts"})
         raise HTTPException(404, {"code": "not_found", "message": "Account not found"})
     return CustomerAccountOut(
         id=acc.id, customer_id=acc.customer_id, account_id=acc.account_id,
         balance=ledger_service.balance_of(db, acc.account_id),
+        family=acc.family, commission_pct=acc.commission_pct,
     )

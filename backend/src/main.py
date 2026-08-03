@@ -148,6 +148,7 @@ def create_app() -> FastAPI:
         Base.metadata.create_all(engine)
         _ensure_columns(engine)
         _widen_columns(engine)
+        _ensure_customer_account_family(engine)
         _relax_configurable_enum_columns(engine)
         _relax_not_null(engine)
         _backfill_branch(engine)
@@ -170,6 +171,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("sales_return", "return_date", "DATE"),
     ("purchase_invoice", "purchase_date", "DATE"),
     ("purchase_return", "return_date", "DATE"),
+    # (031) One receivable account per product family. NULL = the customer's original account.
+    ("customer_account", "family", "VARCHAR(40)"),
+    ("customer_account", "commission_pct", "DECIMAL(9,4)"),
     ("purchase_return", "notes", "VARCHAR(500)"),
     # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:
     # NULL is «nothing agreed», 0 is «agreed, and it is zero».
@@ -497,6 +501,56 @@ def _ensure_columns(engine) -> None:
             logging.getLogger("uvicorn.error").info(
                 "ensure column %s.%s skipped: %s", table, column, exc
             )
+
+
+def _ensure_customer_account_family(engine) -> None:
+    """Let a customer hold one receivable account PER PRODUCT FAMILY. Idempotent.
+
+    `create_all` never alters an existing table and this database is synced at startup rather than
+    by alembic, so a constraint change has to be made here or it simply never happens on a running
+    server. And this one is not cosmetic: the old `UNIQUE (customer_id)` is precisely what forced
+    the client to open a customer twice to give him two accounts, so leaving it in place would let
+    the merge pass its tests and fail on the server with a duplicate-key error.
+
+    Both steps are guarded by inspection rather than by name: the old constraint was created by
+    different tools on different installs and does not have one predictable name.
+    """
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    log = logging.getLogger("uvicorn.error")
+    inspector = sa_inspect(engine)
+    if "customer_account" not in set(inspector.get_table_names()):
+        return
+    try:
+        constraints = inspector.get_unique_constraints("customer_account")
+    except Exception as exc:  # pragma: no cover — best-effort
+        log.info("customer_account constraints unreadable: %s", exc)
+        return
+
+    names = {c["name"] for c in constraints}
+    for uc in constraints:
+        # Only the one that pins a customer to a single account. A UNIQUE that already spans
+        # (customer_id, family) is the goal state and must survive.
+        if uc.get("column_names") == ["customer_id"]:
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE customer_account DROP INDEX {uc['name']}"))
+                log.info("dropped single-account constraint %s", uc["name"])
+            except Exception as exc:  # pragma: no cover
+                log.info("drop %s skipped: %s", uc["name"], exc)
+
+    if "uq_customer_account_family" not in names:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE customer_account "
+                    "ADD CONSTRAINT uq_customer_account_family UNIQUE (customer_id, family)"))
+        except Exception as exc:  # pragma: no cover
+            log.info("add uq_customer_account_family skipped: %s", exc)
 
 
 def _relax_configurable_enum_columns(engine) -> None:

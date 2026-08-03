@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -63,22 +63,70 @@ class Customer(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    account: Mapped[CustomerAccount] = relationship(back_populates="customer", uselist=False)
+    # The customer's ORIGINAL, family-less account. Deliberately scoped to `family IS NULL` rather
+    # than «whichever row comes first»: every existing caller means «this customer's account», and
+    # once a customer holds two, an unscoped `uselist=False` would answer with an arbitrary one of
+    # them — silently, and differently between runs.
+    account: Mapped[CustomerAccount] = relationship(
+        back_populates="customer", uselist=False,
+        primaryjoin="and_(Customer.id == CustomerAccount.customer_id, "
+                    "CustomerAccount.family.is_(None))",
+        viewonly=True,
+    )
+    # Every account this customer holds, family ones included. New code asks for this.
+    accounts: Mapped[list[CustomerAccount]] = relationship(
+        back_populates="customer",
+        primaryjoin="Customer.id == CustomerAccount.customer_id",
+        viewonly=True,
+    )
 
 
 class CustomerAccount(Base):
-    """Receivables / ذمم. Balance is derived from the linked ledger account (FR-021/026)."""
+    """Receivables / ذمم. Balance is derived from the linked ledger account (FR-021/026).
+
+    (031) A customer may hold MORE THAN ONE of these — one per product family.
+
+    The client sells two lines, «أبيض» and «بولي», at different commissions, and their old system
+    modelled that by opening the same person twice: «محمد عامر» and «تكنو محمد عامر». Two customers
+    for one man means his address is entered twice, his phone is entered twice, and «هو مديون
+    بكام؟» has two answers and no way to add them up.
+
+    So the person is ONE customer and the split moves down here, where it belongs: a receivable
+    account per family, each with its own commission, and the customer's balance is their sum.
+
+    `family` is NULL on an account that predates the split, and NULL is a real value here — it
+    means «this customer's one account», which is what every customer had until now. That is what
+    keeps `primary_account()` and every existing query answering exactly as before.
+    """
 
     __tablename__ = "customer_account"
+    __table_args__ = (
+        # One account per family per customer. Replaces the old UNIQUE on `customer_id` alone —
+        # that constraint WAS the reason the client had to open a second customer to get a second
+        # account. NULL is not compared by UNIQUE in SQL, so legacy rows are unaffected.
+        UniqueConstraint("customer_id", "family", name="uq_customer_account_family"),
+    )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     customer_id: Mapped[int] = mapped_column(
-        ForeignKey("customer.id"), unique=True, nullable=False
+        ForeignKey("customer.id"), nullable=False, index=True
     )
     account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
+    # Which product line this account is for — a value from the `customer_account_family` lookup,
+    # NOT an enum: the client may open a third line, and that should be an admin adding a row
+    # rather than a migration.
+    family: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # (031) The commission earned on this family. Nullable and left empty on purpose: NULL is
+    # «no rate agreed for this line» and 0 is «agreed, and it is nothing» — the same distinction
+    # the customer's discount makes, and for the same reason.
+    commission_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
 
-    customer: Mapped[Customer] = relationship(back_populates="account")
+    customer: Mapped[Customer] = relationship(
+        back_populates="accounts",
+        primaryjoin="Customer.id == CustomerAccount.customer_id",
+        viewonly=True,
+    )
     account: Mapped[object] = relationship("Account")

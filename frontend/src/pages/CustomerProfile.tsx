@@ -23,6 +23,15 @@ import DocumentLink from '../components/DocumentLink';
 const money = (v: any) =>
   Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** One receivable account — a customer holds one per product family. */
+interface AccountRow {
+  id: number;
+  account_id: number;
+  balance: string;
+  family: string | null;
+  commission_pct: string | null;
+}
+
 interface DocRow {
   id: number;
   document_number: string;
@@ -128,6 +137,12 @@ export default function CustomerProfile() {
     try {
       const res = await api.get(`/api/v1/customers/${customerId}/profile`);
       setData(res.data);
+      // Fetched beside the profile rather than folded into it: the breakdown is one small query
+      // and a customer with a single account should not pay for a join he has no use for.
+      try {
+        const accs = await api.get(`/api/v1/customers/${customerId}/accounts`);
+        setAccounts(accs.data?.accounts || []);
+      } catch { setAccounts([]); }
     } catch (err) {
       console.error(err);
     } finally {
@@ -161,6 +176,10 @@ export default function CustomerProfile() {
 
   const c = data?.customer;
   const balance = Number(data?.balance || 0);
+  // The customer's accounts, one per product line. A customer who has only ever had one gets a
+  // single family-less row, and the section below stays hidden — there is nothing to break down.
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const families = accounts.filter((a) => a.family);
 
   // Any row in any tab opens the same popup; the server returns a render-ready shape
   // (fields + optional line table) so one component covers every document kind.
@@ -218,6 +237,47 @@ export default function CustomerProfile() {
           <Empty description="لا توجد بيانات" />
         ) : (
           <>
+            {/* فروع الحساب — one line per product family, then the total.
+                Only shown when there IS a split: on a customer with one account this would be a
+                table with a single row restating the figure above it. */}
+            {families.length > 1 && (
+              <Card size="small" style={{ marginBottom: 16 }} title="فروع الحساب">
+                <Table
+                  size="small" pagination={false} rowKey="id" dataSource={families}
+                  columns={[
+                    { title: 'الحساب', dataIndex: 'family',
+                      render: (v: string) => <Tag color="blue">{v}</Tag> },
+                    { title: 'العمولة', dataIndex: 'commission_pct', width: 120,
+                      // Empty, not zero: «مفيش نسبة متفق عليها للخط ده» is a different fact from
+                      // «اتفقنا على صفر», and the column has to be able to say either.
+                      render: (v: string | null) => (v === null || v === undefined
+                        ? <span style={{ color: '#bbb' }}>—</span> : `${Number(v)}%`) },
+                    { title: 'الرصيد', dataIndex: 'balance', align: 'left' as const,
+                      render: (v: string) => {
+                        const n = Number(v || 0);
+                        return (
+                          <b style={{ color: n > 0 ? '#cf1322' : n < 0 ? '#1677ff' : '#3f8600' }}>
+                            {money(v)} ج.م
+                          </b>
+                        );
+                      } },
+                  ]}
+                  summary={() => (
+                    <Table.Summary.Row>
+                      <Table.Summary.Cell index={0} colSpan={2}>
+                        <strong>الإجمالي</strong>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={1}>
+                        <strong>
+                          {money(families.reduce((t, a) => t + Number(a.balance || 0), 0))} ج.م
+                        </strong>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  )}
+                />
+              </Card>
+            )}
+
             <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
               <Col xs={12} md={6}>
                 <Card size="small">
