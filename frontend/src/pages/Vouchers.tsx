@@ -30,6 +30,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons';
 import PartyField from '../components/PartyField';
+import { ENTRY_TYPE_LABEL } from '../components/labels';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
@@ -97,19 +98,6 @@ const KIND_COLOR: Record<string, string> = {
 const money = (v: string | number) =>
   Number(v).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const ENTRY_TYPE_LABEL: Record<string, string> = {
-  opening_balance: 'رصيد افتتاحي',
-  sale: 'فاتورة بيع',
-  sale_return: 'مرتجع بيع',
-  purchase: 'فاتورة شراء',
-  purchase_return: 'مرتجع شراء',
-  receipt: 'سند قبض',
-  payment: 'سند صرف',
-  rep_handover: 'توريد مندوب',
-  journal: 'قيد يومية',
-  reversal: 'عكس قيد',
-  coupon_redeem: 'استبدال كوبون',
-};
 
 /**
  * حركة الخزينة — every movement of one treasury with the balance before and after it.

@@ -7,6 +7,7 @@ import { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import DocumentLink, { DocKind } from '../components/DocumentLink';
+import { entryTypeLabel } from '../components/labels';
 
 /**
  * كشف حساب — any account in the chart, not only customers and suppliers.
@@ -154,7 +155,7 @@ export default function AccountStatement() {
     const heads = ['التاريخ', 'النوع', 'البيان', 'الرصيد قبل', 'مدين', 'دائن', 'الرصيد بعد'];
     const lines = [heads.join(',')];
     statement.lines.forEach((l) => lines.push([
-      String(l.entry_date).slice(0, 10), l.entry_type, l.description,
+      String(l.entry_date).slice(0, 10), entryTypeLabel(l.entry_type), l.description,
       l.balance_before, l.debit, l.credit, l.balance,
     ].map((v) => `"${v ?? ''}"`).join(',')));
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -242,7 +243,7 @@ export default function AccountStatement() {
               { title: 'التاريخ', dataIndex: 'entry_date',
                 render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
               { title: 'النوع', dataIndex: 'entry_type',
-                render: (t: string) => <Tag>{t}</Tag> },
+                render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
               { title: 'البيان', dataIndex: 'description' },
               // Their statement has a cost-centre column. The journal line has always carried one
               // and this screen dropped it, so «against which project?» meant opening the entry.

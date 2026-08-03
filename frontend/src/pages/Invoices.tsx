@@ -792,6 +792,17 @@ export default function Invoices() {
    * The customer sees "edit"; the books see a return and a new sale, which is the only version of
    * editing that cannot rewrite a month that has already been reported on.
    */
+  /**
+   * فتح فاتورة مرحّلة للتعديل.
+   *
+   * A posted invoice cannot be altered in place — the ledger is append-only — so «تعديل» REVERSES
+   * it with a full return and reopens the form on what it held. That is a real posting, and since
+   * opening an invoice now goes straight here, it is one click away.
+   *
+   * So it asks first. It did not before, when «تعديل» was a second button somebody had to aim at;
+   * with the row itself leading here, an unconfirmed reversal would be a mis-click that posts a
+   * return against a customer.
+   */
   const handleEditInvoice = async (record: InvoiceRecord) => {
     let det: any;
     try {
@@ -800,6 +811,17 @@ export default function Invoices() {
       message.error('تعذر قراءة الفاتورة');
       return;
     }
+    const ok = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: `تعديل ${record.document_number}؟`,
+        content: 'الفاتورة المرحّلة ماتتعدلش في مكانها: هيتعمل لها مرتجع كامل وتتفتح من جديد '
+          + 'للتعديل، وترحّل تاني لما تحفظ. الرصيد والمخزون بيرجعوا زي ما كانوا قبلها.',
+        okText: 'اعكسها وافتحها', cancelText: 'سيبها زي ما هي',
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true), onCancel: () => resolve(false),
+      });
+    });
+    if (!ok) return;
     if (!(await reverseInvoice(record))) return;
 
     message.success('اتعكست الفاتورة — عدّل وارحّل من جديد');

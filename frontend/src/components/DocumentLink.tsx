@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Space, Tag, Tooltip } from 'antd';
+import { Button, Tag, Tooltip } from 'antd';
 import { EditOutlined, ExportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
@@ -55,7 +55,8 @@ interface Props {
   /** The document's own number, shown instead of the generic label when known. */
   label?: string;
   id: number;
-  /** Show the edit button. Only the sales invoice screen implements editing today. */
+  /** Whether this document's screen can EDIT it. Only the sales invoice does today; everything
+   *  else can only be opened, so for those the link opens rather than pretending otherwise. */
   allowEdit?: boolean;
   size?: 'small' | 'middle';
   /** Called after navigating, so a modal the link sits inside can close itself. */
@@ -78,14 +79,27 @@ export function DocRef({ kind, id, label, onNavigate }: {
   // Without an id there is nothing to open, so it stays plain text rather than a link that lands
   // on a list and leaves the reader to search for what they just clicked.
   if (!id) return <Tag>{label}</Tag>;
+  // Straight to editing where the screen can edit. Clicking a document number means «وريني
+  // الفاتورة دي عشان أشتغل عليها», and the read-only stop in between was a step everybody passed
+  // through on the way somewhere else. The sale asks for confirmation when it gets there, because
+  // reopening a posted invoice reverses it.
+  const intent = EDITABLE.has(kind) ? 'edit' : 'doc';
   return (
-    <Tooltip title="افتح المستند في شاشته">
-      <a onClick={(e) => { e.stopPropagation(); navigate(`${SCREEN[kind]}?doc=${id}`); onNavigate?.(); }}>
+    <Tooltip title={intent === 'edit' ? 'افتح الفاتورة للتعديل' : 'افتح المستند في شاشته'}>
+      <a onClick={(e) => {
+        e.stopPropagation();
+        navigate(`${SCREEN[kind]}?${intent}=${id}`);
+        onNavigate?.();
+      }}>
         <Tag color="blue" style={{ cursor: 'pointer' }}>{label}</Tag>
       </a>
     </Tooltip>
   );
 }
+
+/** Kinds whose screen can reopen the document for editing. The rest can only be looked at, and
+ *  sending a reader to a non-existent edit screen would be worse than the view they wanted. */
+const EDITABLE = new Set<DocKind>(['invoice']);
 
 export default function DocumentLink({
   kind, id, label, allowEdit = false, size = 'middle', onNavigate,
@@ -99,20 +113,18 @@ export default function DocumentLink({
     onNavigate?.();
   };
 
+  // ONE action, not two. «عرض المستند» beside «تعديل» made every reader choose between a screen
+  // they wanted and a screen they had to pass through; the read-only view was almost always the
+  // wrong one of the two and there was no way to tell them apart at a glance.
+  const canEdit = allowEdit && EDITABLE.has(kind);
   return (
-    <Space size={4}>
-      <Tooltip title="افتح المستند في شاشته">
-        <Button size={size} icon={<ExportOutlined />} onClick={() => go('doc')}>
-          {label || 'فتح المستند'}
-        </Button>
-      </Tooltip>
-      {allowEdit && kind === 'invoice' && (
-        <Tooltip title="هيتعمل مرتجع كامل وتتفتح الفاتورة من جديد للتعديل">
-          <Button size={size} icon={<EditOutlined />} onClick={() => go('edit')}>
-            تعديل
-          </Button>
-        </Tooltip>
-      )}
-    </Space>
+    <Tooltip title={canEdit
+      ? 'افتح الفاتورة للتعديل — هيتم تأكيد العكس قبل ما تتفتح'
+      : 'افتح المستند في شاشته'}>
+      <Button size={size} icon={canEdit ? <EditOutlined /> : <ExportOutlined />}
+        onClick={() => go(canEdit ? 'edit' : 'doc')}>
+        {label || (canEdit ? 'فتح للتعديل' : 'فتح المستند')}
+      </Button>
+    </Tooltip>
   );
 }
