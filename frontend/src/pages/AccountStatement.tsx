@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Empty, Row, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -48,6 +48,10 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 export default function AccountStatement() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [accountId, setAccountId] = useState<number | undefined>();
+  // Their screen asks الحساب الرئيسي first, then الحساب الفرعي under it. A flat list of every
+  // account in the chart is a list nobody scrolls: the person already knows which book they are
+  // in, and narrowing by it turns hundreds of options into a handful.
+  const [mainKey, setMainKey] = useState<string | undefined>();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [statement, setStatement] = useState<StatementOut | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,6 +86,69 @@ export default function AccountStatement() {
 
   useEffect(() => { load(); }, [accountId, range]);
 
+  /** What a row reads as. Party accounts carry no `name` at all — the customer's name lives in
+   *  `owner_name` — so a picker that only read `name` showed «حساب #16» for every customer and
+   *  supplier in the chart, which are precisely the accounts people open statements for. */
+  const labelOf = (a: any) => {
+    const named = a.name || a.owner_name || `حساب #${a.id}`;
+    return a.code ? `${a.code} — ${named}` : named;
+  };
+
+  /**
+   * «الحساب الرئيسي» is two different things in this chart, and the box offers both.
+   *
+   * The coded roots — الأصول · الالتزامات · حقوق الملكية · الإيرادات · المصروفات — are real
+   * accounts with a subtree under them. The party accounts are NOT under any of them: every
+   * customer and supplier account is parentless and carries an `owner_group` instead. Offering
+   * only the roots would leave «العملاء» — the most-asked-for book on this screen — unreachable
+   * from the first box.
+   */
+  const mainOptions = useMemo(() => {
+    const roots = accounts.filter((a: any) => !a.parent_id && a.code)
+      .map((a: any) => ({ value: `acc:${a.id}`, label: labelOf(a) }));
+    const groups = [...new Set(accounts
+      .filter((a: any) => !a.parent_id && !a.code && a.owner_group)
+      .map((a: any) => a.owner_group))]
+      .map((g) => ({ value: `grp:${g}`, label: String(g) }));
+    return [...roots, ...groups];
+  }, [accounts]);
+
+  /** What the second box offers. With a book chosen it is that book's accounts; with none it is
+   *  the whole chart, so somebody who knows the name can still find it without the first box. */
+  const visibleAccounts = useMemo(() => {
+    if (!mainKey) return accounts;
+    if (mainKey.startsWith('grp:')) {
+      const group = mainKey.slice(4);
+      return accounts.filter((a: any) => a.owner_group === group);
+    }
+    const rootId = Number(mainKey.slice(4));
+    // The whole subtree, not just the children: the chart goes three deep (`1 → 1.01 →
+    // 1.01.001`), and stopping at one level would hide «الخزينة» under «الأصول».
+    const byId = new Map<number, any>(accounts.map((a: any) => [a.id, a]));
+    const inTree = (a: any) => {
+      let cur: any = a;
+      for (let hops = 0; cur && hops < 12; hops += 1) {
+        if (cur.id === rootId) return true;
+        cur = cur.parent_id ? byId.get(cur.parent_id) : null;
+      }
+      return false;
+    };
+    return accounts.filter(inTree);
+  }, [accounts, mainKey]);
+
+  // A statement opened by deep link (`?account=`) arrives with no book chosen, so the first box
+  // is filled in from the account rather than left blank beside a filled second box.
+  useEffect(() => {
+    if (!accountId || mainKey || !accounts.length) return;
+    const chosen = accounts.find((a: any) => a.id === accountId);
+    if (!chosen) return;
+    if (chosen.owner_group && !chosen.code) { setMainKey(`grp:${chosen.owner_group}`); return; }
+    const byId = new Map<number, any>(accounts.map((a: any) => [a.id, a]));
+    let cur: any = chosen;
+    for (let hops = 0; cur?.parent_id && hops < 12; hops += 1) cur = byId.get(cur.parent_id);
+    if (cur && cur.id !== chosen.id) setMainKey(`acc:${cur.id}`);
+  }, [accountId, accounts, mainKey]);
+
   const exportCsv = () => {
     if (!statement?.lines.length) { message.info('لا توجد حركات للتصدير'); return; }
     const heads = ['التاريخ', 'النوع', 'البيان', 'الرصيد قبل', 'مدين', 'دائن', 'الرصيد بعد'];
@@ -110,14 +177,22 @@ export default function AccountStatement() {
       )}
     >
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={10}>
+        <Col xs={24} md={5}>
+          <Select
+            showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+            placeholder="الحساب الرئيسي" value={mainKey}
+            // Changing the book clears the account under it: keeping a sub-account from the
+            // previous book would leave the two fields disagreeing about what is on screen.
+            onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
+            options={mainOptions}
+          />
+        </Col>
+        <Col xs={24} md={7}>
           <Select
             showSearch optionFilterProp="label" style={{ width: '100%' }}
-            placeholder="اختر الحساب" value={accountId} onChange={setAccountId}
-            options={accounts.map((a) => ({
-              value: a.id,
-              label: a.code ? `${a.code} — ${a.name}` : (a.name || `حساب #${a.id}`),
-            }))}
+            placeholder={mainKey ? 'الحساب الفرعي' : 'اختر الحساب'}
+            value={accountId} onChange={setAccountId}
+            options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))}
           />
         </Col>
         <Col xs={24} md={8}>
@@ -171,6 +246,10 @@ export default function AccountStatement() {
               { title: 'البيان', dataIndex: 'description' },
               // Their statement has a cost-centre column. The journal line has always carried one
               // and this screen dropped it, so «against which project?» meant opening the entry.
+              // The line never held a rep; the document that posted it did. A manual journal
+              // entry has none and says so rather than borrowing one.
+              { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
+                render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
               { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
                 render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
               { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',

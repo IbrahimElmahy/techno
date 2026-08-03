@@ -36,6 +36,20 @@ class ItemCardError(Exception):
     """The item does not exist, or the location asked for is not a real kind."""
 
 
+ZERO_D = Decimal("0")
+
+
+def _share(total: Decimal, part: Decimal, whole: Decimal) -> Decimal:
+    """`total` split in the proportion `part` bears to `whole`, rounded to money.
+
+    Guarded rather than trusted: a document whose gross is zero (fully discounted, or a
+    correction) would divide by nothing, and a report is not the place to raise.
+    """
+    if not whole:
+        return ZERO_D
+    return (total * part / whole).quantize(Decimal("0.01"))
+
+
 def _qty(v) -> Decimal:
     return Decimal(str(v or 0)).quantize(Decimal("0.001"))
 
@@ -169,6 +183,20 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
 
     Done in bulk per document type: a card can run to hundreds of rows and a query per row turns a
     report into a wait.
+
+    Four more of theirs, added after a second reading:
+
+    **الوحده / القطعه.** The card counts in base units — pieces — because that is what stock is
+    kept in. The line was SOLD in whatever unit the customer buys by, and «منصرف ٤٨» against a
+    document that says «٤ كراتين» is the same fact told two ways with nothing on screen to connect
+    them. Both are shown, with the unit named.
+
+    **خصم.** The line discount, which the line has always carried.
+
+    **ض.م.** The document's VAT is charged on the net, and the net moves with the gross, so a
+    line's share of the tax is its share of the gross. That is not an estimate — it is the same
+    proportional rule `create_return` already uses to decide how much tax to refund, which is a
+    money decision the system has been making for some time.
     """
     by_type: dict[str, set[int]] = {}
     for r in rows:
@@ -193,11 +221,20 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
         line_of = {ln.invoice_id: ln for ln in lines}
         for doc_id, inv in invoices.items():
             ln = line_of.get(doc_id)
+            gross = Decimal(str(inv.gross or 0))
+            doc_tax = Decimal(str(getattr(inv, "tax_amount", 0) or 0))
+            line_total = Decimal(str(ln.line_total)) if ln else ZERO_D
             detail[("sale", doc_id)] = {
                 "party": customers.get(inv.customer_id),
                 "document_number": inv.document_number,
                 "unit_price": str(ln.unit_price) if ln else None,
                 "line_total": str(ln.line_total) if ln else None,
+                "unit": ln.unit if ln else None,
+                "unit_factor": str(ln.unit_factor) if ln else None,
+                "discount_pct": str(ln.discount_pct) if ln else None,
+                # The line's share of the gross is its share of the tax, because the net the tax
+                # is charged on moves with the gross. A document with no VAT gives every line zero.
+                "tax_amount": str(_share(doc_tax, line_total, gross)) if ln else None,
             }
 
     # A return points at the invoice it came off, so its party and number are the sale's.
@@ -226,6 +263,11 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
                 "document_number": p.document_number,
                 "unit_price": str(ln.unit_price) if ln else None,
                 "line_total": str(ln.line_total) if ln else None,
+                "unit": ln.unit if ln else None,
+                "unit_factor": str(ln.unit_factor) if ln else None,
+                # A purchase line carries neither a discount nor its own tax. Empty says so;
+                # zero would claim a discount of nothing was agreed.
+                "discount_pct": None, "tax_amount": None,
             }
 
     # Expiry: the lot a sale drew from is on the batch trail, keyed by the document that moved it.
@@ -248,6 +290,21 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
         r["unit_price"] = d.get("unit_price")
         r["line_total"] = d.get("line_total")
         r["expiry_date"] = expiry_of.get(key)
+        r["discount_pct"] = d.get("discount_pct")
+        r["tax_amount"] = d.get("tax_amount")
+        # The quantity in the unit it was traded in, beside the pieces the card counts in. Only
+        # when the two differ — repeating «٥ قطعة / ٥» on every loose-sold line is noise.
+        r["unit"] = d.get("unit")
+        factor = d.get("unit_factor")
+        r["quantity_in_unit"] = None
+        if factor:
+            f = Decimal(str(factor))
+            if f and f != Decimal("1"):
+                # The row's own movement, whichever side it is on. There is no `quantity` key —
+                # a card row is `quantity_in` OR `quantity_out`, and reading a key that does not
+                # exist would have raised on the first line ever sold by the carton.
+                moved = _qty(r["quantity_in"]) + _qty(r["quantity_out"])
+                r["quantity_in_unit"] = str(moved / f)
 
 
 def _location_names(db: Session) -> dict[tuple[str, int], str]:

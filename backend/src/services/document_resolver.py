@@ -30,6 +30,16 @@ def _model(path: str):
     return getattr(__import__(module, fromlist=[name]), name)
 
 
+def _rep_of(doc) -> int | None:
+    """Who the document was written by or for, whichever it records.
+
+    The sale calls it `rep_id`, the voucher `rep_user_id` — the same fact under two names because
+    the two modules were written months apart. Reading both here keeps that history out of every
+    caller, and a document with neither answers None rather than borrowing.
+    """
+    return getattr(doc, "rep_id", None) or getattr(doc, "rep_user_id", None)
+
+
 def resolve_entry(db: Session, entry_id: int) -> dict | None:
     """The document that posted this entry, or None for a hand-written journal entry.
 
@@ -48,6 +58,7 @@ def resolve_entry(db: Session, entry_id: int) -> dict | None:
                 "id": doc.id,
                 "document_number": getattr(doc, "document_number", None),
                 "screen": screen,
+                "rep_user_id": _rep_of(doc),
             }
     return None
 
@@ -76,5 +87,8 @@ def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
                 "id": doc.id,
                 "document_number": getattr(doc, "document_number", None),
                 "screen": screen,
+                # (031) Their كشف حساب carries a مندوب column. The line never held one, but the
+                # document that posted it always did — one join away, same as the item card.
+                "rep_user_id": _rep_of(doc),
             }
     return found

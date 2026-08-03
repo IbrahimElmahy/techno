@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -149,11 +150,18 @@ class StatementLineOut(BaseModel):
     # Their كشف حساب carries a cost-centre column; the journal line always held it.
     cost_center_id: int | None = None
     cost_center_name: str | None = None
+    # And a مندوب column. The LINE never held one — the document that posted it did.
+    rep_user_id: int | None = None
+    rep_name: str | None = None
 
 
 class StatementOut(BaseModel):
     account_id: int
     account_name: str = ""
+    # الحساب الرئيسي beside الحساب الفرعي, as their screen names them. Empty for a top-level
+    # account, which is its own book.
+    main_account_id: int | None = None
+    main_account_name: str | None = None
     opening_balance: Decimal
     closing_balance: Decimal
     total_debit: Decimal
@@ -180,10 +188,13 @@ def _treasury_out(db: Session, t) -> TreasuryOut:
     )
 
 
-def _statement_out(s, docs: dict | None = None) -> StatementOut:
+def _statement_out(s, docs: dict | None = None, reps: dict | None = None) -> StatementOut:
     docs = docs or {}
+    reps = reps or {}
     return StatementOut(
         account_id=s.account_id, account_name=s.account_name,
+        main_account_id=getattr(s, "main_account_id", None),
+        main_account_name=getattr(s, "main_account_name", None),
         opening_balance=s.opening_balance,
         closing_balance=s.closing_balance, total_debit=s.total_debit,
         total_credit=s.total_credit,
@@ -194,9 +205,28 @@ def _statement_out(s, docs: dict | None = None) -> StatementOut:
             doc_kind=(docs.get(ln.entry_id) or {}).get("kind"),
             doc_id=(docs.get(ln.entry_id) or {}).get("id"),
             doc_number=(docs.get(ln.entry_id) or {}).get("document_number"),
-            cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name)
+            cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name,
+            rep_user_id=(docs.get(ln.entry_id) or {}).get("rep_user_id"),
+            rep_name=reps.get((docs.get(ln.entry_id) or {}).get("rep_user_id")))
             for ln in s.lines],
     )
+
+
+def _with_docs(db: Session, s) -> StatementOut:
+    """The statement, its documents, and the names of the reps on them.
+
+    One pass for the documents and one for the names. A statement runs to hundreds of lines and a
+    handful of reps, so looking each name up per line would be the same query answered over and
+    over.
+    """
+    docs = document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines])
+    rep_ids = {d.get("rep_user_id") for d in docs.values() if d.get("rep_user_id")}
+    reps: dict[int, str] = {}
+    if rep_ids:
+        from src.models.user import User
+        reps = {u.id: (u.full_name or u.username)
+                for u in db.scalars(select(User).where(User.id.in_(rep_ids))).all()}
+    return _statement_out(s, docs, reps)
 
 
 def _conflict(exc: Exception) -> HTTPException:
@@ -456,8 +486,7 @@ def customer_statement(
     except (VoucherError, StatementError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)})
-    return _statement_out(
-        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))
+    return _with_docs(db, s)
 
 
 @router.get("/accounts/{account_id}/statement", response_model=StatementOut)
@@ -479,8 +508,7 @@ def any_account_statement(
     except StatementError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)}) from exc
-    return _statement_out(
-        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))
+    return _with_docs(db, s)
 
 
 @router.get("/suppliers/{supplier_id}/statement", response_model=StatementOut)
@@ -499,8 +527,7 @@ def supplier_statement(
     except (VoucherError, StatementError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)})
-    return _statement_out(
-        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))
+    return _with_docs(db, s)
 
 
 @router.get("/reps/{rep_user_id}/cash-statement", response_model=StatementOut)
@@ -525,5 +552,4 @@ def rep_cash_statement(
                             {"code": "not_found", "message": "المندوب ليس له عهدة بحساب نقدي."})
     s = statement_service.account_statement(
         db, account_id=custody.account_id, date_from=date_from, date_to=date_to)
-    return _statement_out(
-        s, document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines]))
+    return _with_docs(db, s)

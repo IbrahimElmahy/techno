@@ -47,6 +47,11 @@ class Statement:
     total_debit: Decimal
     total_credit: Decimal
     lines: list[StatementLine]
+    # (031) Their كشف حساب names الحساب الرئيسي beside الحساب الفرعي. Ours showed one name and
+    # left the reader to know which book a sub-account sits under — «إيراد المبيعات» is not
+    # self-locating, and two charts can hold a name that reads the same at different levels.
+    main_account_id: int | None = None
+    main_account_name: str | None = None
 
 
 def _effective_date(entry: LedgerEntry) -> date:
@@ -111,8 +116,18 @@ def account_statement(
             cost_center_name=cost_centers.get(line.cost_center_id),
         ))
 
+    parent = db.get(Account, account.parent_id) if account.parent_id else None
+    # A customer's or supplier's account carries no `name` — the party's name lives on the party,
+    # and the chart resolves it as `owner_name`. Reading only `name` made every party statement
+    # open with «#29» as its title, which is precisely the statement people ask for by name.
+    from src.services import chart_service
+    owner = chart_service.bulk_owner_names(db, [account]).get(account_id)
     return Statement(
-        account_id=account_id, account_name=account.name or f"#{account_id}",
+        account_id=account_id, account_name=account.name or owner or f"#{account_id}",
+        # A top-level account IS its own book, and saying so by leaving the field empty is more
+        # honest than repeating its own name back as its parent.
+        main_account_id=parent.id if parent else None,
+        main_account_name=(parent.name or f"#{parent.id}") if parent else None,
         opening_balance=to_money(opening), closing_balance=balance,
         total_debit=to_money(total_debit), total_credit=to_money(total_credit), lines=lines,
     )

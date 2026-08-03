@@ -65,6 +65,11 @@ interface CardRow {
   unit_price: string | null;
   line_total: string | null;
   expiry_date: string | null;
+  // The unit the line was traded in and the quantity in it, beside the pieces the card counts in.
+  unit: string | null;
+  quantity_in_unit: string | null;
+  discount_pct: string | null;
+  tax_amount: string | null;
 }
 
 interface CardOut {
@@ -246,6 +251,15 @@ export default function ItemCard() {
               { title: 'الرصيد بعد', dataIndex: 'balance_after', align: 'left',
                 render: (v: string) => <b>{qty(v)}</b> },
               { title: 'الموقع', dataIndex: 'location' },
+              // الوحده / القطعه. The card counts in pieces because that is how stock is kept; the
+              // line was TRADED in whatever unit the customer buys by. «منصرف ٤٨» against a
+              // document saying «٤ كراتين» is one fact told two ways with nothing connecting them.
+              { title: 'بالوحدة', dataIndex: 'quantity_in_unit', align: 'left', width: 120,
+                render: (v: string | null, r: CardRow) => (v
+                  ? <span>{qty(v)} <span style={{ color: '#8a8a8a' }}>{r.unit}</span></span>
+                  // Empty when the trading unit IS the piece — repeating «٥ قطعة / ٥» on every
+                  // loose-sold row is noise, not information.
+                  : <span style={{ color: '#bbb' }}>-</span>) },
               // Their card carries the party, the price and the total on every row. None of it was
               // missing data — a sale line has always known all three — so «منصرف ٥» used to mean
               // opening the sales screen to find out who took them and for how much.
@@ -255,6 +269,15 @@ export default function ItemCard() {
                 render: (v: string | null) => (v ? money(v) : '-') },
               { title: 'الاجمالي', dataIndex: 'line_total', align: 'left',
                 render: (v: string | null) => (v ? <b>{money(v)}</b> : '-') },
+              { title: 'خصم', dataIndex: 'discount_pct', align: 'left', width: 90,
+                render: (v: string | null) => (Number(v)
+                  ? <Tag color="gold">{`${Number(v)}%`}</Tag>
+                  : <span style={{ color: '#bbb' }}>-</span>) },
+              // The line's share of the document VAT — its share of the gross, which is the same
+              // proportional rule the return already uses to decide how much tax to refund.
+              { title: 'ض.م', dataIndex: 'tax_amount', align: 'left', width: 110,
+                render: (v: string | null) => (Number(v)
+                  ? money(v) : <span style={{ color: '#bbb' }}>-</span>) },
               // Which lot went out. FEFO chose it at the moment of sale; the card reads that back
               // rather than leaving a recall to guess.
               { title: 'انتهاء', dataIndex: 'expiry_date', width: 120,
