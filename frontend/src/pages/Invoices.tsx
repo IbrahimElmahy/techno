@@ -117,6 +117,35 @@ interface InvoiceFilters {
   payment?: string;   // cash | credit | partial
 }
 
+/**
+ * كام كوبون بين رقمين — محسوبة، مش متكتوبة.
+ *
+ * The count was a field somebody typed beside «من ٥٠» and «إلى ١٠٠». Two ways to say one thing,
+ * and they disagree the first time anybody edits the range and forgets the number — after which
+ * the invoice claims a book size the serials do not support, and the receipt screen refuses
+ * coupons the customer is holding.
+ *
+ * Inclusive: 50→100 is fifty-one coupons, because the customer is handed both of them.
+ *
+ * Serial numbers here are digits, sometimes with a prefix («A-1050»). Only the trailing digits are
+ * compared, and when the two ends do not share a prefix — or either is not a number — the answer
+ * is null rather than a guess. A wrong count is worse than no count: it posts.
+ */
+export function couponCount(from?: string | null, to?: string | null): number | null {
+  const f = String(from ?? '').trim();
+  const t = String(to ?? '').trim();
+  if (!f || !t) return null;
+  const split = (v: string) => {
+    const m = v.match(/^(.*?)(\d+)$/);
+    return m ? { prefix: m[1], n: Number(m[2]) } : null;
+  };
+  const a = split(f);
+  const b = split(t);
+  if (!a || !b || a.prefix !== b.prefix) return null;
+  if (b.n < a.n) return null;      // «من ١٠٠ إلى ٥٠» is a typo, not a range of -49
+  return b.n - a.n + 1;
+}
+
 export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
@@ -188,6 +217,19 @@ export default function Invoices() {
   /** الكوبونات المصروفة مع الفاتورة — a row per KIND, because a counter handing out a hundred
    *  gold and fifty silver was previously given one range to put both in and had to choose which
    *  of the two to record. */
+  /**
+   * اعدادات الأعمدة لسطور الفاتورة.
+   *
+   * The grid has to serve a salesman who only wants «الصنف · الكمية · السعر» and a manager who
+   * wants the discounts and the points. Rather than argue about which columns are the right ones,
+   * each person turns off the ones they never read — the same per-browser preference the registers
+   * already use.
+   *
+   * الصنف · الكمية · الإجمالي are locked: a line without them is not a line you can check.
+   */
+  const lineCols = useHiddenColumns('invoice-lines');
+  const showCol = (key: string) => !lineCols.hidden.includes(key);
+
   const [couponRows, setCouponRows] = useState<
     { key: string; coupon_type_id?: number; count?: number; serial_from?: string;
       serial_to?: string }[]
@@ -720,10 +762,12 @@ export default function Invoices() {
         // Coupons handed over with this invoice, as the serial range off the book. Kept on the
         // invoice because that is what proves which coupons were his when they come back in.
         coupons: couponRows
-          .filter((r) => r.coupon_type_id || r.count || r.serial_from || r.serial_to)
+          .filter((r) => r.coupon_type_id || r.serial_from || r.serial_to)
           .map((r) => ({
             coupon_type_id: r.coupon_type_id ?? null,
-            count: r.count ?? null,
+            // Sent as the range implies it. Sending a separately-typed number was how an invoice
+            // came to claim a book size its serials do not support.
+            count: couponCount(r.serial_from, r.serial_to),
             serial_from: r.serial_from || null,
             serial_to: r.serial_to || null,
           })),
@@ -1471,7 +1515,8 @@ export default function Invoices() {
               <span style={{ fontSize: 12, color: '#8a8a8a' }}>
                 {couponRows.length === 0
                   ? 'سيبها فاضية لو الفاتورة من غير كوبونات.'
-                  : `الإجمالي: ${couponRows.reduce((t, r) => t + Number(r.count || 0), 0)} كوبون`}
+                  : `الإجمالي: ${couponRows.reduce(
+                    (t, r) => t + (couponCount(r.serial_from, r.serial_to) ?? 0), 0)} كوبون`}
               </span>
             </div>
             {couponRows.map((row) => (
@@ -1485,10 +1530,10 @@ export default function Invoices() {
                     options={couponTypes.map((t) => ({ value: t.id, label: t.name }))} />
                 </Col>
                 <Col xs={8} md={4}>
-                  <InputNumber style={{ width: '100%' }} min={1} placeholder="العدد"
-                    value={row.count}
-                    onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
-                      ? { ...x, count: (v as number) ?? undefined } : x)))} />
+                  {/* Derived from the range, never typed. Read-only rather than hidden: the
+                      number is what the person is checking against the book in their hand. */}
+                  <InputNumber style={{ width: '100%' }} placeholder="العدد" disabled
+                    value={couponCount(row.serial_from, row.serial_to) ?? undefined} />
                 </Col>
                 <Col xs={8} md={5}>
                   <Input placeholder="من رقم" value={row.serial_from || ''}
@@ -1535,7 +1580,29 @@ export default function Invoices() {
             </Row>
           )}
 
-          <Divider orientation="right" style={{ fontWeight: 700 }}>المنتجات المباعة</Divider>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Divider orientation="right" style={{ fontWeight: 700, flex: 1 }}>
+              المنتجات المباعة
+            </Divider>
+            {/* Each person turns off the columns they never read. الصنف · الكمية · الإجمالي are
+                locked — a line without them is not a line anybody can check. */}
+            <ColumnSettings
+              choices={[
+                { key: 'product', title: 'المنتج', locked: true },
+                { key: 'warehouse', title: 'المخزن' },
+                { key: 'category', title: 'الفئة' },
+                { key: 'tier', title: 'فئة السعر' },
+                { key: 'quantity', title: 'الكمية', locked: true },
+                { key: 'unit_price', title: 'سعر الوحدة' },
+                { key: 'fixed_discount', title: 'خصم ثابت %' },
+                { key: 'variable_discount', title: 'خصم متغير %' },
+                { key: 'total', title: 'الإجمالي', locked: true },
+                { key: 'points', title: 'النقاط' },
+              ]}
+              hidden={lineCols.hidden}
+              onChange={lineCols.setHidden}
+            />
+          </div>
 
           {/* Products on the right, the stock panel pinned beside them: picking a category or a
               product answers "do we have it, and where" without leaving the half-typed invoice. */}
@@ -1609,15 +1676,15 @@ export default function Invoices() {
                 {/* Column headers. */}
                 <Row gutter={8} style={{ padding: '6px 12px 0', color: '#8a8a8a', fontSize: 12 }}>
                   <Col md={4}>المنتج</Col>
-                  <Col md={3}>المخزن</Col>
-                  <Col md={2}>الفئة</Col>
-                  <Col md={2}>فئة السعر</Col>
+                  {showCol('warehouse') && <Col md={3}>المخزن</Col>}
+                  {showCol('category') && <Col md={2}>الفئة</Col>}
+                  {showCol('tier') && <Col md={2}>فئة السعر</Col>}
                   <Col md={2}>الكمية</Col>
-                  <Col md={2}>سعر الوحدة</Col>
-                  <Col md={2}>خصم ثابت %</Col>
-                  <Col md={2}>خصم متغير %</Col>
+                  {showCol('unit_price') && <Col md={2}>سعر الوحدة</Col>}
+                  {showCol('fixed_discount') && <Col md={2}>خصم ثابت %</Col>}
+                  {showCol('variable_discount') && <Col md={2}>خصم متغير %</Col>}
                   <Col md={2} style={{ textAlign: 'center' }}>الإجمالي</Col>
-                  <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
+                  {showCol('points') && <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>}
                   <Col md={1} />
                 </Row>
 
@@ -1645,6 +1712,7 @@ export default function Invoices() {
                               .toLocaleString('ar-EG', { maximumFractionDigits: 3 })})
                           </span>
                         </Col>
+                        {showCol('warehouse') && (
                         <Col md={3} xs={12}>
                           {/* (030) Each line may be served from a different warehouse. */}
                           <Select size="small" style={{ width: '100%' }}
@@ -1653,6 +1721,8 @@ export default function Invoices() {
                             onChange={(val) => handleLineChange(line.key, 'warehouse_id', val)}
                             options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
                         </Col>
+                        )}
+                        {showCol('category') && (
                         <Col md={2} xs={12}>
                           {/* The category the item is sold out of — read from the item itself, so
                               it always matches the catalogue rather than being typed per line. */}
@@ -1661,6 +1731,8 @@ export default function Invoices() {
                             {lineCategory(line) || '—'}
                           </Tag>
                         </Col>
+                        )}
+                        {showCol('tier') && (
                         <Col md={2} xs={12}>
                           <Select size="small" style={{ width: '100%' }} value={line.tier ?? undefined}
                             onChange={(val) => handleLineChange(line.key, 'tier', val)}>
@@ -1669,6 +1741,7 @@ export default function Invoices() {
                             ))}
                           </Select>
                         </Col>
+                        )}
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={1} style={{ width: '100%' }}
                             ref={(el) => { qtyRefs.current[line.key] = el; }}
@@ -1693,11 +1766,14 @@ export default function Invoices() {
                             // opened onto a cursor that had already wandered.
                             onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }} />
                         </Col>
+                        {showCol('unit_price') && (
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
                             value={line.unit_price}
                             onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
                         </Col>
+                        )}
+                        {showCol('fixed_discount') && (
                         <Col md={2} xs={8}>
                           {/* Prefilled from the item's own discount, but editable — the
                               salesman on the counter is the one who knows when it does not
@@ -1708,20 +1784,25 @@ export default function Invoices() {
                             onChange={(val) => handleLineChange(
                               line.key, 'fixed_discount', val || 0)} />
                         </Col>
+                        )}
+                        {showCol('variable_discount') && (
                         <Col md={2} xs={8}>
                           <InputNumber size="small" min={0} max={100} step={0.5} style={{ width: '100%' }}
                             placeholder="0"
                             value={line.variable_discount ?? undefined}
                             onChange={(val) => handleLineChange(line.key, 'variable_discount', val ?? null)} />
                         </Col>
+                        )}
                         <Col md={2} xs={12} style={{ textAlign: 'center' }}>
                           <b style={{ color: '#6AB42D' }}>{lineTotal(line).toFixed(2)}</b>
                         </Col>
+                        {showCol('points') && (
                         <Col md={2} xs={12} style={{ textAlign: 'center' }}>
                           <span style={{ color: '#F5A11D', fontWeight: 600 }}>
                             {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
                           </span>
                         </Col>
+                        )}
                         <Col md={1} xs={4} style={{ textAlign: 'center' }}>
                           <Button type="text" size="small" danger icon={<DeleteOutlined />}
                             onClick={() => handleRemoveLine(line.key)} />
