@@ -20,7 +20,6 @@ import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
-import InvoiceExpensesModal, { InvoiceExpense } from '../components/InvoiceExpensesModal';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
@@ -186,7 +185,7 @@ export default function Invoices() {
     // second identifier for the same row.
     'id',
     'external_document_number', 'revenue_account_id', 'gross', 'discount_value',
-    'combined_pct', 'expenses_billed', 'expenses_operating', 'notes',
+    'combined_pct', 'notes',
   ]);
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
@@ -262,10 +261,6 @@ export default function Invoices() {
   // every single line, which is most of what makes entering a twenty-line invoice slow.
   const qtyRefs = useRef<Record<string, any>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
-  // مصروفات الفاتورة — kept out of the line table on purpose: they are not goods, and mixing them
-  // in would put them into the quantities and the profit per item.
-  const [expenses, setExpenses] = useState<InvoiceExpense[]>([]);
-  const [expensesOpen, setExpensesOpen] = useState(false);
   // A document arriving from somewhere else — a customer's file, an item's history, a report.
   // The link carries only the intent; the acting lives here, where it already is and where it is
   // already guarded, so no second screen learns how to reverse an invoice.
@@ -433,7 +428,6 @@ export default function Invoices() {
     setInvoiceFamily(null);
     setCustomerCoupons([]);
     setCouponRows([]);
-    setExpenses([]);
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
@@ -784,12 +778,6 @@ export default function Invoices() {
         // (030) document fields
         external_document_number: values.external_document_number || undefined,
         invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
-        expenses: expenses
-          .filter((e) => e.account_id && Number(e.amount) > 0)
-          .map((e) => ({
-            account_id: e.account_id, kind: e.kind,
-            amount: String(e.amount), description: e.description || null,
-          })),
         // Coupons handed over with this invoice, as the serial range off the book. Kept on the
         // invoice because that is what proves which coupons were his when they come back in.
         coupons: couponRows
@@ -1069,12 +1057,6 @@ export default function Invoices() {
   /** How many coupons this invoice hands over — derived only when both serials are plain
    *  numbers, since a lettered book cannot be subtracted into a count anyone could check. */
   // Only the billed ones move money the customer owes; the operating ones are ours to bear.
-  const billedExpenses = expenses
-    .filter((e) => e.kind === 'billed')
-    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  const operatingExpenses = expenses
-    .filter((e) => e.kind === 'operating')
-    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
 
   /** First and last serial of the customer's outstanding coupons, sorted so the range is real. */
@@ -1187,8 +1169,10 @@ export default function Invoices() {
 
   // Their invoice list, in their order:
   //   `رقم · التاريخ · نوع · مستند رقم · الفاتورة رقم · الحساب الفرعي · جهه التعامل · مندوب ·
-  //    اجمالي قبل · خصم · خصم% · ض.م · ض.م % · الاجمالي · مصروفات · الصافى · تم السداد · الباقى ·
-  //    مصروفات تشغيل · ملاحظات · مراكز التكلفة`
+  //    اجمالي قبل · خصم · خصم% · ض.م · ض.م % · الاجمالي · الصافى · تم السداد · الباقى ·
+  //    ملاحظات · مراكز التكلفة`
+  //    Their «مصروفات» and «مصروفات تشغيل» are deliberately absent: the section that fed them was
+  //    removed at the client's request, so those columns could only ever read 0.00.
   //
   // Twenty-one columns is more than any screen shows at once, and theirs does not show them all
   // either — it has «حدد الأعمدة» for exactly this. So all of them exist here, in their order and
@@ -1295,14 +1279,6 @@ export default function Invoices() {
       render: (val: string) => `${parseFloat(val).toFixed(0)}%`,
     },
     {
-      title: 'مصروفات',
-      dataIndex: 'expenses_billed',
-      key: 'expenses_billed',
-      width: 110,
-      align: 'left' as const,
-      render: (v: string | null) => `${parseFloat(String(v || 0)).toFixed(2)} ج.م`,
-    },
-    {
       title: 'الصافى',
       dataIndex: 'net',
       key: 'net',
@@ -1328,14 +1304,6 @@ export default function Invoices() {
         const n = parseFloat(val);
         return <span style={{ color: n > 0 ? '#cf1322' : undefined }}>{n.toFixed(2)} ج.م</span>;
       },
-    },
-    {
-      title: 'مصروفات تشغيل',
-      dataIndex: 'expenses_operating',
-      key: 'expenses_operating',
-      width: 130,
-      align: 'left' as const,
-      render: (v: string | null) => `${parseFloat(String(v || 0)).toFixed(2)} ج.م`,
     },
     {
       title: 'ملاحظات',
@@ -1693,21 +1661,6 @@ export default function Invoices() {
             إضافة صنف للفاتورة
           </Button>
 
-          <Button
-            size="large" block style={{ marginBottom: 14 }}
-            onClick={() => setExpensesOpen(true)}
-          >
-            مصروفات الفاتورة
-            {expenses.length ? ` (${expenses.length})` : ''}
-          </Button>
-
-          <InvoiceExpensesModal
-            open={expensesOpen}
-            expenses={expenses}
-            onChange={setExpenses}
-            onClose={() => setExpensesOpen(false)}
-          />
-
           <ProductPickerModal
             open={pickerOpen}
             categories={productCategories}
@@ -1911,7 +1864,7 @@ export default function Invoices() {
             const invoiceDiscount = grossTotal - netTotal;
             const hasParty = !!selectedCustomerId && customerBalance !== null;
             const balance = customerBalance ?? 0;
-            const due = balance + netTotal + billedExpenses - cashAmount;
+            const due = balance + netTotal - cashAmount;
             return (
               <TotalsLadder
                 tone="sale"
@@ -1933,9 +1886,7 @@ export default function Invoices() {
                   { label: `خصم الفاتورة (${discountPct}%)`,
                     value: `− ${invoiceDiscount.toFixed(2)}`, color: '#cf1322',
                     show: invoiceDiscount > 0.001 },
-                  { label: 'مصروفات على العميل', value: money(billedExpenses),
-                    color: '#cf1322', show: billedExpenses > 0.001 },
-                  { label: 'صافي الفاتورة', value: (netTotal + billedExpenses).toFixed(2),
+                  { label: 'صافي الفاتورة', value: netTotal.toFixed(2),
                     strong: true, color: '#6AB42D', rule: true },
                   // One line per product family, the chosen one tinted, then the whole debt.
                   // Three similar numbers in a column with nothing marking which one this invoice
@@ -1961,10 +1912,6 @@ export default function Invoices() {
                     color: due > 0.001 ? '#cf1322' : '#6AB42D', show: hasParty },
                 ]}
                 notes={[
-                  operatingExpenses > 0.001 ? (
-                    <>مصروفات على الشركة:{' '}
-                      <b style={{ color: '#F5A11D' }}>{money(operatingExpenses)} ج.م</b></>
-                  ) : null,
                   <>النقاط: <b style={{ color: '#F5A11D' }}>
                     {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b></>,
                   creditAmount < -0.001 ? (
