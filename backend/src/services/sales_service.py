@@ -17,6 +17,8 @@ from src.core import hooks
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
+from src.services import customer_merge_service
+from src.services.customer_merge_service import MergeError
 from src.models.ledger import Account, Direction
 from src.models.role import RoleName
 from src.models.sales import (
@@ -200,6 +202,9 @@ def create_sale(
     lines: list[SaleLine],
     actor_role: RoleName,
     actor_user_id: int,
+    # (031) أبيض ولا بولي — which of the customer's accounts this document belongs to. None on a
+    # customer who has only ever had one, which is every customer who was never split.
+    family: str | None = None,
     can_sell_below: bool = False,
     # (030) document fields — all optional so every pre-030 caller keeps working unchanged.
     rep_id: int | None = None,
@@ -302,7 +307,12 @@ def create_sale(
             else f"cash + credit must equal the total including VAT and expenses ({payable})."
         )
 
-    cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
+    # (031) Which of his accounts this invoice belongs to. A customer may hold one per product
+    # line now, and an unscoped lookup would post to an arbitrary one of them.
+    try:
+        cust_acc = customer_merge_service.receivable_account(db, customer_id, family)
+    except MergeError as exc:
+        raise SalesError(str(exc)) from exc
     if cust_acc is None:
         raise SalesError("Customer has no account.")
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
@@ -311,6 +321,7 @@ def create_sale(
         document_number=_doc_number(db, SalesInvoice, "SINV"),
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,
+        family=family,
         variable_discount_pct=variable, combined_pct=combined, net=net, tax_amount=tax,
         cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         cash_account_id=cash_acc.id, ledger_entry_id=None, actor_user_id=actor_user_id,
@@ -544,7 +555,11 @@ def return_sale(
             except SerialError as exc:
                 raise SalesError(str(exc)) from exc
 
-    cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == inv.customer_id))
+    # The return goes back to the SAME account the invoice posted to — read off the invoice rather
+    # than resolved again, so a customer whose lines were split later still gets his money back
+    # where it came from.
+    cust_acc = customer_merge_service.receivable_account(
+        db, inv.customer_id, getattr(inv, "family", None))
     entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, value)]
     if tax_refund > ZERO:
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id, Direction.debit,
@@ -588,6 +603,9 @@ def create_standalone_return(
     lines: list[ReturnLine],
     actor_role: RoleName,
     actor_user_id: int,
+    # (031) أبيض ولا بولي — which of the customer's accounts this document belongs to. None on a
+    # customer who has only ever had one, which is every customer who was never split.
+    family: str | None = None,
     # (031) The same document fields the invoice carries. They were on the table since 030 and
     # nothing could fill them: the payload dropped them, so every return was written with the
     # rep, the posting account and the paper trail blank.
@@ -613,7 +631,10 @@ def create_standalone_return(
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise SalesError("Customer not found.")
-    cust_acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
+    try:
+        cust_acc = customer_merge_service.receivable_account(db, customer_id, family)
+    except MergeError as exc:
+        raise SalesError(str(exc)) from exc
     if cust_acc is None:
         raise SalesError("Customer has no account.")
 

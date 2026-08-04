@@ -174,6 +174,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # (031) One receivable account per product family. NULL = the customer's original account.
     ("customer_account", "family", "VARCHAR(40)"),
     ("customer_account", "commission_pct", "DECIMAL(9,4)"),
+    ("sales_invoice", "family", "VARCHAR(40)"),
     ("purchase_return", "notes", "VARCHAR(500)"),
     # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:
     # NULL is «nothing agreed», 0 is «agreed, and it is zero».

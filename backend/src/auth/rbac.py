@@ -100,6 +100,14 @@ CAP_PURCHASE_WRITE = "purchase.write"
 CAP_MANUFACTURE_WRITE = "manufacture.write"
 CAP_MANUFACTURE_READ = "manufacture.read"
 CAP_SALE_WRITE = "sale.write"
+# (031) Reopening or voiding a POSTED invoice is not the same permission as writing a new one.
+# Asked for as three separate rights — «إنشاء فاتورة · تعديل فاتورة · حذف فاتورة» — because they
+# are three different amounts of trust: a salesman writes invoices all day and should not be able
+# to make yesterday's disappear.
+#
+# Both go through a reversal, so both are gated where the reversal happens, not on the screen.
+CAP_SALE_EDIT = "sale.edit"
+CAP_SALE_DELETE = "sale.delete"
 CAP_SELL_BELOW_PRICE = "sell.below_price"  # (007) charge below the resolved tier price
 CAP_TRANSFER_INITIATE = "transfer.initiate"
 CAP_TRANSFER_APPROVE = "transfer.approve"
@@ -139,6 +147,14 @@ _SI_BY_ROLE: dict[RoleName, set[str]] = {
 for _role, _caps in _SI_BY_ROLE.items():
     ROLE_CAPABILITIES.setdefault(_role, set()).update(_caps)
 ALL_CAPABILITIES |= _SI_ALL
+
+# (031) Reopening and voiding a posted invoice go to the people who answer for the day's figures.
+# Deliberately NOT the sales rep: he writes invoices all day, and the whole point of splitting
+# these out is that writing one and unmaking one are different amounts of trust.
+_SALE_EDIT_ALL = {CAP_SALE_EDIT, CAP_SALE_DELETE}
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager):
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(_SALE_EDIT_ALL)
+ALL_CAPABILITIES |= _SALE_EDIT_ALL
 
 # Five price tiers (007): selling below the resolved tier price is a manager authority — granted to
 # System Admin, Branch Manager, Sales Manager; NOT Sales Rep (reps cannot undercut tiers).

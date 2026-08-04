@@ -62,6 +62,10 @@ class SalesInvoice(Base):
     net: Mapped[object] = mapped_column(MONEY, nullable=False)
     # Output VAT charged on `net` (021); 0 when the tax rate is off. Payable = net + tax.
     tax_amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
+    # (031) أبيض ولا بولي. Stored on the document because the return has to go back to the SAME
+    # account the sale posted to — resolving it again later would send a refund to whichever line
+    # the customer happens to be split into by then.
+    family: Mapped[str | None] = mapped_column(String(40), nullable=True)
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)

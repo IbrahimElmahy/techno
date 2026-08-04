@@ -31,6 +31,15 @@ export interface LadderRow {
   color?: string;
   /** Set false to drop the row entirely. Zero rows are noise, not information. */
   show?: boolean;
+  /**
+   * The row the document is ABOUT — tinted, so the eye lands on it among its siblings.
+   *
+   * An invoice on «بولي» shows both lines' debts and the total; without a mark, three similar
+   * numbers sit in a column and the reader has to remember which one the invoice they are typing
+   * will move. The other rows stay plain rather than being greyed: they are true, they are simply
+   * not the one in play.
+   */
+  highlight?: boolean;
 }
 
 interface Props {
@@ -71,8 +80,21 @@ export default function TotalsLadder({
                 padding: r.big ? '7px 0' : '5px 0',
                 borderTop: r.rule ? `1px solid ${t.rule}` : undefined,
                 marginTop: r.rule ? 4 : undefined,
+                // The row in play. A tint and a rule on the leading edge rather than a heavy box:
+                // it has to be findable at a glance without turning the ladder into a poster.
+                ...(r.highlight ? {
+                  background: '#f2fbee',
+                  borderInlineStart: '3px solid #6AB42D',
+                  paddingInlineStart: 8,
+                  marginInlineStart: -11,
+                  borderRadius: 4,
+                } : null),
               }}>
-                <span style={{ fontSize: r.big ? 14 : 13, color: '#7a7a7a' }}>{r.label}</span>
+                <span style={{
+                  fontSize: r.big ? 14 : 13,
+                  color: r.highlight ? '#3f6b26' : '#7a7a7a',
+                  fontWeight: r.highlight ? 700 : undefined,
+                }}>{r.label}</span>
                 <span style={{
                   fontSize: r.big ? 24 : 15,
                   fontWeight: r.big || r.strong ? 800 : 600,

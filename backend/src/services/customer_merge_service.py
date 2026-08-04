@@ -174,3 +174,39 @@ def apply(db: Session, *, dry_run: bool = True) -> dict:
     result = p.as_dict()
     result["applied"] = True
     return result
+
+
+def receivable_account(db: Session, customer_id: int, family: str | None = None):
+    """حساب المدينين اللي الحركة دي بتترحّل عليه.
+
+    A customer used to have exactly one, so every caller wrote
+    `db.scalar(select(CustomerAccount).where(customer_id == X))` and was right. Once he can hold
+    one per product line, that same query returns **an arbitrary one of them** — silently, and
+    possibly a different one between two runs. Money would land on the wrong line's balance and
+    nothing anywhere would say so.
+
+    So the rule is written once, here:
+
+    * a family given → that family's account;
+    * no family, and he holds exactly one account → that one (every customer who was never split);
+    * no family, and he holds several → **refuse**. There is no honest answer, and guessing puts a
+      sale on «أبيض» that belonged to «بولي» with no trace of the decision.
+    """
+    rows = db.scalars(select(CustomerAccount).where(
+        CustomerAccount.customer_id == customer_id)).all()
+    if not rows:
+        return None
+    if family is not None:
+        for a in rows:
+            if a.family == family:
+                return a
+        raise MergeError(f"العميل مالوش حساب لـ«{family}»")
+    if len(rows) == 1:
+        return rows[0]
+    # The family-less account still exists on a customer who was never merged but somehow gained a
+    # family account — take it, since it is unambiguously «his one account».
+    for a in rows:
+        if a.family is None:
+            return a
+    names = " / ".join(a.family or "-" for a in rows)
+    raise MergeError(f"العميل عنده أكتر من حساب ({names}) — لازم تحدد النوع")

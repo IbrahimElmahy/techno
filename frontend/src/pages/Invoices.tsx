@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Result, Row, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
+  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Result, Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, FileTextOutlined, PrinterOutlined, DeleteOutlined,
@@ -22,6 +22,7 @@ import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
 import InvoiceExpensesModal, { InvoiceExpense } from '../components/InvoiceExpensesModal';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
@@ -207,6 +208,16 @@ export default function Invoices() {
   const [customerTier, setCustomerTier] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
+  /**
+   * حسابات العميل — واحد لكل خط منتجات.
+   *
+   * A customer the client sells both lines to holds two receivable accounts at two commissions.
+   * The invoice has to say which one it is on, because that is the balance it moves.
+   */
+  const [familyAccounts, setFamilyAccounts] = useState<
+    { family: string | null; balance: string }[]>([]);
+  const [invoiceFamily, setInvoiceFamily] = useState<string | null>(null);
+  const families = familyAccounts.filter((a) => a.family);
   // Coupons already issued to this customer and not yet redeemed — the counter reads out their
   // serial range when handing them over.
   const [customerCoupons, setCustomerCoupons] = useState<any[]>([]);
@@ -227,6 +238,13 @@ export default function Invoices() {
    *
    * الصنف · الكمية · الإجمالي are locked: a line without them is not a line you can check.
    */
+  // Asked of the server's capability list, not of a role name copied into this file. Reopening
+  // and voiding a posted invoice are separate rights from writing one, and the endpoint enforces
+  // exactly these two strings — so the button and the gate cannot come to disagree.
+  const { can } = useAuth();
+  const canEditInvoice = can('sale.edit');
+  const canDeleteInvoice = can('sale.delete');
+
   const lineCols = useHiddenColumns('invoice-lines');
   const showCol = (key: string) => !lineCols.hidden.includes(key);
 
@@ -411,6 +429,8 @@ export default function Invoices() {
     setDiscountPct(0);
     setSelectedCustomerId(null);
     setCustomerBalance(null);
+    setFamilyAccounts([]);
+    setInvoiceFamily(null);
     setCustomerCoupons([]);
     setCouponRows([]);
     setExpenses([]);
@@ -652,9 +672,20 @@ export default function Invoices() {
     setSelectedCustomerId(customerId);
     setCustomerBalance(null);
     setCustomerCoupons([]);
-    api.get(`/api/v1/customers/${customerId}/account`)
-      .then((res) => setCustomerBalance(Number(res.data.balance || 0)))
-      .catch((err) => console.error(err));
+    // `/accounts` answers for both kinds of customer: one row for somebody who was never split,
+    // one per line for somebody who was. `/account` refuses outright for the second, which is
+    // correct of it and useless here.
+    api.get(`/api/v1/customers/${customerId}/accounts`)
+      .then((res) => {
+        const rows = res.data?.accounts || [];
+        setFamilyAccounts(rows);
+        setCustomerBalance(Number(res.data?.total_balance || 0));
+        // Pre-picked only when there is nothing to pick: one line means no question to ask. With
+        // two, it stays empty on purpose — choosing for him is choosing which balance moves.
+        const named = rows.filter((a: any) => a.family);
+        setInvoiceFamily(named.length === 1 ? named[0].family : null);
+      })
+      .catch((err) => { console.error(err); setFamilyAccounts([]); setCustomerBalance(null); });
     api.get('/api/v1/coupons', { params: { customer_id: customerId, status_filter: 'issued' } })
       .then((res) => setCustomerCoupons(res.data || []))
       .catch(() => setCustomerCoupons([]));
@@ -772,6 +803,8 @@ export default function Invoices() {
             serial_to: r.serial_to || null,
           })),
         notes: values.notes || undefined,
+        // Which of his accounts this invoice posts to. Null for a customer who has only one.
+        family: invoiceFamily,
       });
 
       message.success('تم تسجيل فاتورة البيع بنجاح');
@@ -807,14 +840,21 @@ export default function Invoices() {
    * leave all three behind with nothing to explain them. A full return undoes exactly what the
    * invoice did, and both documents stay visible, which is what makes the books answerable.
    */
-  const reverseInvoice = async (record: InvoiceRecord): Promise<boolean> => {
+  /**
+   * عكس الفاتورة بالكامل — للتعديل أو للإلغاء.
+   *
+   * Through `/reverse`, not `/returns`. A customer return is a real business event that belongs in
+   * مردودات المبيعات; the shop reopening its own invoice is a correction that merely happens to be
+   * implemented the same way. Sending both through one door counted our mistakes as his returns —
+   * and let anyone who could take a return void any invoice ever posted.
+   *
+   * The reason travels with the request because the SERVER decides the right, not this screen.
+   */
+  const reverseInvoice = async (
+    record: InvoiceRecord, reason: 'edit' | 'delete',
+  ): Promise<boolean> => {
     try {
-      const det = await api.get(`/api/v1/sales/${record.id}`);
-      const lines = (det.data.lines || []).map((l: any) => ({
-        item_id: l.item_id, quantity: String(Number(l.quantity || 0)),
-      }));
-      if (!lines.length) { message.error('الفاتورة من غير سطور'); return false; }
-      await api.post(`/api/v1/sales/${record.id}/returns`, { lines });
+      await api.post(`/api/v1/sales/${record.id}/reverse`, { reason });
       return true;
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message
@@ -824,7 +864,7 @@ export default function Invoices() {
   };
 
   const handleDeleteInvoice = async (record: InvoiceRecord) => {
-    if (await reverseInvoice(record)) {
+    if (await reverseInvoice(record, 'delete')) {
       message.success('اتعكست الفاتورة بالكامل');
       fetchInvoices();
     }
@@ -866,7 +906,7 @@ export default function Invoices() {
       });
     });
     if (!ok) return;
-    if (!(await reverseInvoice(record))) return;
+    if (!(await reverseInvoice(record, 'edit'))) return;
 
     message.success('اتعكست الفاتورة — عدّل وارحّل من جديد');
     fetchInvoices();
@@ -939,6 +979,7 @@ export default function Invoices() {
     { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
       onClick: () => { setDetailVisible(false); setInvoiceDate(dayjs()); setNewStep('date'); } },
     { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+      disabled: !canEditInvoice,
       onClick: () => { if (viewInvoice) { setDetailVisible(false); handleEditInvoice(viewInvoice); } } },
     { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: true },
     { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
@@ -951,6 +992,7 @@ export default function Invoices() {
       disabled: !neighbour(-1),
       onClick: () => { const n = neighbour(-1); if (n) openDetail(n); } },
     { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+      disabled: !canDeleteInvoice,
       onClick: () => { if (viewInvoice) { setDetailVisible(false); handleDeleteInvoice(viewInvoice); } } },
     { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
       // The document, on the letterhead, through مفاتيح الطباعة — not the browser printing the
@@ -1319,26 +1361,27 @@ export default function Invoices() {
             <Button type="text" icon={<RollbackOutlined />}
               onClick={() => openReturnWizard(record)} />
           </Tooltip>
-          <Popconfirm
-            title="تعديل الفاتورة؟"
-            description="هيتعمل مرتجع كامل للفاتورة، وتتفتح بنفس أصنافها عشان تعدّل وترحّل من جديد."
-            okText="تعديل" cancelText="إلغاء"
-            onConfirm={() => handleEditInvoice(record)}
-          >
+          {/* No Popconfirm here: `handleEditInvoice` asks for itself, so the question is put once
+              wherever editing is reached from — this button, the toolbar, or a document link on
+              another screen. Two confirmations for one action teach people to click through both. */}
+          {canEditInvoice && (
             <Tooltip title="تعديل">
-              <Button type="text" icon={<EditOutlined />} />
+              <Button type="text" icon={<EditOutlined />}
+                onClick={() => handleEditInvoice(record)} />
             </Tooltip>
-          </Popconfirm>
-          <Popconfirm
-            title="حذف الفاتورة؟"
-            description="الفاتورة المرحّلة بتتعكس مش بتتمسح — المخزون والقيد والمديونية بيرجعوا زي ما كانوا، والمستندين بيفضلوا ظاهرين."
-            okText="عكس الفاتورة" cancelText="إلغاء"
-            onConfirm={() => handleDeleteInvoice(record)}
-          >
-            <Tooltip title="حذف">
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
+          )}
+          {canDeleteInvoice && (
+            <Popconfirm
+              title="حذف الفاتورة؟"
+              description="الفاتورة المرحّلة بتتعكس مش بتتمسح — المخزون والقيد والمديونية بيرجعوا زي ما كانوا، والمستندين بيفضلوا ظاهرين."
+              okText="عكس الفاتورة" cancelText="إلغاء"
+              onConfirm={() => handleDeleteInvoice(record)}
+            >
+              <Tooltip title="حذف">
+                <Button type="text" danger icon={<DeleteOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -1577,6 +1620,37 @@ export default function Invoices() {
                 <div style={{ fontSize: 12, color: '#8a8a8a' }}>العنوان</div>
                 <b>{party.address || '-'}</b>
               </Col>
+
+              {/* نوع الفاتورة. Shown only when the customer HAS more than one line, because for
+                  everybody else it is a question with a single possible answer. Left empty rather
+                  than pre-picked: choosing for him is choosing which balance the invoice moves. */}
+              {families.length > 1 && (
+                <Col xs={24} style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 4 }}>
+                    نوع الفاتورة — بتترحّل على أنهي حساب؟
+                  </div>
+                  <Segmented
+                    value={invoiceFamily ?? ''}
+                    onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
+                    options={families.map((a) => ({
+                      value: a.family as string,
+                      label: (
+                        <span>
+                          {a.family}
+                          <span style={{ color: '#8a8a8a', marginInlineStart: 6, fontSize: 12 }}>
+                            ({money(Number(a.balance || 0))})
+                          </span>
+                        </span>
+                      ),
+                    }))}
+                  />
+                  {!invoiceFamily && (
+                    <div style={{ color: '#cf4b1a', fontSize: 12, marginTop: 4 }}>
+                      اختار النوع الأول — الفاتورة هتترحّل على الحساب ده.
+                    </div>
+                  )}
+                </Col>
+              )}
             </Row>
           )}
 
@@ -1863,9 +1937,24 @@ export default function Invoices() {
                     color: '#cf1322', show: billedExpenses > 0.001 },
                   { label: 'صافي الفاتورة', value: (netTotal + billedExpenses).toFixed(2),
                     strong: true, color: '#6AB42D', rule: true },
+                  // One line per product family, the chosen one tinted, then the whole debt.
+                  // Three similar numbers in a column with nothing marking which one this invoice
+                  // moves is three numbers nobody reads.
+                  ...families.map((a) => ({
+                    label: `مديونية ${a.family}`,
+                    value: money(Number(a.balance || 0)),
+                    color: Number(a.balance || 0) > 0 ? '#cf1322' : '#6AB42D',
+                    highlight: a.family === invoiceFamily,
+                    show: hasParty,
+                  })),
+                  { label: 'إجمالي المديونية', value: money(balance), strong: true,
+                    color: balance > 0 ? '#cf1322' : '#6AB42D',
+                    rule: families.length > 1,
+                    show: hasParty && families.length > 1 },
                   { label: 'حساب سابق على العميل', value: money(balance),
                     color: balance > 0 ? '#cf1322' : '#6AB42D',
-                    show: hasParty && Math.abs(balance) > 0.001 },
+                    // Only for a customer with no split — otherwise it restates the total above.
+                    show: hasParty && families.length <= 1 && Math.abs(balance) > 0.001 },
                   { label: 'المدفوع نقداً', value: `− ${money(cashAmount)}`, color: '#6AB42D',
                     show: hasParty && cashAmount > 0.001 },
                   { label: 'الباقي على العميل', value: money(due), big: true, rule: true,

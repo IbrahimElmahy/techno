@@ -6,13 +6,16 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from datetime import date
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.auth.dependencies import CurrentUser, require_capability
+from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
     CAP_RETURN_WRITE,
+    CAP_SALE_DELETE,
+    CAP_SALE_EDIT,
     CAP_SALE_WRITE,
     CAP_SELL_BELOW_PRICE,
     role_has_capability,
@@ -97,6 +100,8 @@ class SaleCreate(BaseModel):
     invoice_date: date | None = None
     # مصروفات الفاتورة — billed (على العميل، بتزيد الصافي) أو operating (على الشركة).
     expenses: list[InvoiceExpenseIn] = []
+    # (031) أبيض ولا بولي — which of the customer's accounts this invoice posts to.
+    family: str | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -239,7 +244,7 @@ def create_sale(
             lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials,
                             l.discount_pct, l.warehouse_id)
                    for l in body.lines],
-            actor_role=current.role, actor_user_id=current.id,
+            actor_role=current.role, actor_user_id=current.id, family=body.family,
             can_sell_below=can_sell_below,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
@@ -548,6 +553,55 @@ def list_sale_returns(
         }
         for r in rows
     ]
+
+
+class ReverseIn(BaseModel):
+    """ليه بنعكس الفاتورة."""
+    # Which right is being exercised. Not cosmetic: «بعدّلها» and «بلغيها» are different
+    # permissions, and the server cannot tell them apart from the movements alone — both post the
+    # same full return.
+    reason: Literal["edit", "delete"]
+
+
+@router.post("/{sale_id}/reverse", response_model=dict, status_code=status.HTTP_201_CREATED)
+def reverse_sale(
+    sale_id: int,
+    body: ReverseIn,
+    current: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """عكس فاتورة مرحّلة بالكامل — للتعديل أو للإلغاء.
+
+    A posted invoice cannot be altered in place; the ledger is append-only. So «تعديل» and «حذف»
+    both mean the same movement — a full return — and differ only in what the user does next.
+
+    They are separate endpoints from `/returns` on purpose. A customer return is a real business
+    event that belongs in مردودات المبيعات; an edit is a correction that happens to be implemented
+    as one. Sending both through the same door meant the returns register counted the shop's own
+    mistakes as customer returns, and it meant a salesman with `return.write` could quietly unmake
+    any invoice ever posted.
+    """
+    needed = CAP_SALE_EDIT if body.reason == "edit" else CAP_SALE_DELETE
+    if not role_has_capability(current.role, needed):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {
+            "code": "forbidden",
+            "message": "مالكش صلاحية تعديل الفاتورة" if body.reason == "edit"
+                       else "مالكش صلاحية إلغاء الفاتورة"})
+
+    inv = db.get(SalesInvoice, sale_id)
+    if inv is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
+    lines = [(l.item_id, l.quantity) for l in inv.lines]
+    if not lines:
+        raise HTTPException(422, {"code": "validation", "message": "الفاتورة من غير سطور"})
+    try:
+        ret = sales_service.return_sale(
+            db, sales_invoice_id=sale_id, lines=lines, actor_user_id=current.id)
+    except (SalesError, StockError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "return_invalid", "message": str(exc)})
+    db.commit()
+    return {"id": ret.id, "document_number": ret.document_number, "reason": body.reason}
 
 
 @router.post("/{sale_id}/returns", response_model=dict, status_code=status.HTTP_201_CREATED)
