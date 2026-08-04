@@ -90,6 +90,8 @@ class CustomerOut(BaseModel):
     discount_pct: Decimal | None = None
     vat_pct: Decimal | None = None
     is_cash: bool = False
+    # (031) المخزن اللي مرتجعاته بترجع فيه — متعلّم من أول مرتجع، عشان الشاشة تفتح عليه.
+    default_return_warehouse_id: int | None = None
     # Receivable balance — filled on the list endpoint (one grouped query, not per row).
     balance: Decimal | None = None
 
@@ -136,6 +138,7 @@ def _out(c: Customer, db: Session | None = None) -> CustomerOut:
         branch_id=c.branch_id, email=c.email, tax_number=c.tax_number,
         commercial_register=c.commercial_register, discount_pct=c.discount_pct,
         vat_pct=c.vat_pct, is_cash=c.is_cash,
+        default_return_warehouse_id=getattr(c, "default_return_warehouse_id", None),
     )
 
 

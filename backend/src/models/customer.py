@@ -56,6 +56,16 @@ class Customer(Base):
     # customer who negotiated 0% is a different fact from one nobody has negotiated with.
     discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     vat_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    # (031) المخزن اللي مرتجعات العميل ده بترجع فيه.
+    #
+    # Learned, not configured: the first return written for him remembers the store it went into,
+    # and every later one opens on it. A customer's goods come back to the same place — the branch
+    # that serves him — and making somebody pick it every time is asking a question whose answer
+    # has not changed since the last return.
+    #
+    # NULL means «he has never had one», which is a different thing from «he has no preference».
+    default_return_warehouse_id: Mapped[int | None] = mapped_column(
+        ForeignKey("warehouse.id"), nullable=True)
     # نقدي — a walk-in who pays on the spot rather than running an account.
     is_cash: Mapped[bool] = mapped_column(default=False, nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)

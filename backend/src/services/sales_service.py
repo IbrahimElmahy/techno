@@ -639,6 +639,16 @@ def create_standalone_return(
     if cust_acc is None:
         raise SalesError("Customer has no account.")
 
+    # (031) Remember where this customer's returns come back to, the FIRST time it is answered.
+    # His goods come back to the branch that serves him, and asking again on every return is
+    # asking a question whose answer has not changed.
+    #
+    # First time only, never overwritten: a one-off return taken at another store would otherwise
+    # silently become his default, and the next person would find a store nobody chose.
+    if (origin_location_kind == LocationKind.warehouse
+            and getattr(customer, "default_return_warehouse_id", None) is None):
+        customer.default_return_warehouse_id = origin_location_id
+
     gross = ZERO
     built: list[tuple[ReturnLine, Decimal, Decimal, Decimal]] = []  # (line, unit_price, line_total, factor)
     for ln in lines:

@@ -282,13 +282,16 @@ export default function Returns() {
     // Both are DEFAULTS, not locks — a rep on leave and a van that ran out are ordinary days, and
     // a field that refuses them is a field people work around by putting the document on the
     // wrong customer. Filled only when empty, so re-picking never undoes a store chosen on purpose.
-    if ((c as any)?.rep_id) {
-      setRepId((c as any).rep_id);
-      const store = storeOfRep((c as any).rep_id);
-      if (store && !createForm.getFieldValue('warehouse_id')) {
-        createForm.setFieldsValue({ warehouse_id: store });
-        setDocWarehouseId(store);
-      }
+    if ((c as any)?.rep_id) setRepId((c as any).rep_id);
+    // Where this customer's returns actually came back to last time beats where his rep's van is:
+    // it is a fact about him, learned from a return somebody already wrote, rather than a guess
+    // from the round he happens to be on. His rep's store is the fallback for a customer who has
+    // never had one.
+    const remembered = (c as any)?.default_return_warehouse_id ?? null;
+    const store = remembered ?? storeOfRep((c as any)?.rep_id);
+    if (store && !createForm.getFieldValue('warehouse_id')) {
+      createForm.setFieldsValue({ warehouse_id: store });
+      setDocWarehouseId(store);
     }
     // A different customer means different purchase prices — start the lines fresh.
     setLines([]); setLastInfo({}); setActiveCategory(null);
