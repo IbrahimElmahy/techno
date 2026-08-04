@@ -169,3 +169,24 @@ def test_a_receipt_on_the_total_reports_no_single_family(client, owing):
     res = _receipt(client, owing, on_total=True)
     assert res.status_code in (200, 201), res.text
     assert res.json()["family"] is None
+
+
+def test_paying_more_than_that_line_owes_leaves_an_advance_on_it(client, db, owing):
+    """أبيض owes 300. Collect 500 against أبيض and the line clears, leaving 200 as credit ON THAT
+    LINE — it does not spill onto بولي, which nobody asked the payment to touch.
+
+    Pinned because spilling is the plausible-looking alternative: it «uses up» the money and looks
+    tidier on the total. It also moves a customer's advance onto a debt he did not name, and the
+    next statement cannot show where his money went.
+    """
+    from src.services import chart_service
+
+    res = client.post("/api/v1/vouchers/receipts", headers=owing["h"], json={
+        "customer_id": owing["customer"].id, "amount": "500",
+        "family": merge.FAMILY_WHITE})
+    assert res.status_code in (200, 201), res.text
+
+    assert chart_service.account_balance(
+        db, owing["accounts"][merge.FAMILY_WHITE]) == Decimal("-200.00")
+    assert chart_service.account_balance(
+        db, owing["accounts"][merge.FAMILY_POLY]) == Decimal("700.00"), "untouched"
