@@ -28,6 +28,13 @@ export interface VoucherDoc {
   paymentMethod?: string | null;
   reference?: string | null;
   description?: string | null;
+  /**
+   * (031) أنهي مديونية السند ده سدّدها — «أبيض» / «بولي» / فاضية = على الإجمالي.
+   *
+   * On the printed sheet because the customer signs it: a receipt that does not say which debt it
+   * cleared settles an argument in nobody's favour when one comes up.
+   */
+  family?: string | null;
   entryId?: number | null;
   isReversal?: boolean;
 }
@@ -66,6 +73,11 @@ function rows(d: VoucherDoc): [string, string][] {
   out.push(['التاريخ', d.date ? String(d.date).slice(0, 10) : '-']);
   if (d.treasury) out.push([d.kind === 'cash_transfer' ? 'من خزينة' : 'الخزينة', d.treasury]);
   if (d.toTreasury) out.push(['إلى خزينة', d.toTreasury]);
+  if (d.kind === 'receipt') {
+    // Printed even when it is «على الإجمالي», because that is a real answer and its absence would
+    // read as a field somebody forgot rather than a decision somebody made.
+    out.push(['على مديونية', d.family || 'الإجمالي (موزّع بالنسبة)']);
+  }
   if (d.paymentMethod) out.push(['طريقة الدفع', d.paymentMethod]);
   if (d.reference) out.push(['المرجع', d.reference]);
   if (d.description) out.push(['البيان', d.description]);

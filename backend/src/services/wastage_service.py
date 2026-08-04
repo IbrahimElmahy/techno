@@ -8,6 +8,8 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services import numbering
+
 from src.core.money import ZERO, to_money, to_qty
 from src.lib import production
 from src.models.catalog import Item
@@ -21,8 +23,7 @@ class WastageError(Exception):
 
 
 def _doc_number(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(WastageDocument)) or 0
-    return f"WASTE-{n + 1:06d}"
+    return numbering.next_document_number(db, WastageDocument, "WASTE")
 
 
 def create_wastage(

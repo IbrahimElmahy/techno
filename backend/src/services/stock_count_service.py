@@ -5,7 +5,11 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
+
+from sqlalchemy.orm import selectinload
+
+from src.services import numbering
 
 from src.core.money import to_qty
 from src.models.catalog import Item
@@ -22,8 +26,7 @@ class StockCountError(Exception):
 
 
 def _doc_number(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(StockCount)) or 0
-    return f"CNT-{n + 1:06d}"
+    return numbering.next_document_number(db, StockCount, "CNT")
 
 
 def open_sheet(

@@ -11,6 +11,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services import numbering
+
 from src.core.money import to_qty
 from src.models.role import RoleName
 from src.models.stock import LocationKind, StockDirection
@@ -38,8 +40,7 @@ class TransferDenied(Exception):
 
 
 def _doc_number(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(StockTransfer)) or 0
-    return f"TRF-{n + 1:06d}"
+    return numbering.next_document_number(db, StockTransfer, "TRF")
 
 
 def _location_branch(db: Session, kind: LocationKind, location_id: int) -> int | None:

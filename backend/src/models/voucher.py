@@ -40,6 +40,9 @@ class Voucher(Base):
     # The party this voucher settles with — exactly one is set per kind.
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True,
                                                     index=True)
+    # (031) أنهي مديونية السند ده بيسدّدها — «أبيض» / «بولي» / فاضية = على الإجمالي (اتوزّع
+    # بالنسبة على كل خط). Stored so a statement can say what the collection was for.
+    family: Mapped[str | None] = mapped_column(String(40), nullable=True)
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("supplier.id"), nullable=True,
                                                     index=True)
     rep_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True,

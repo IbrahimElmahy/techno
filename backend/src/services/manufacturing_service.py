@@ -11,6 +11,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services import numbering
+
 from src.core.money import ZERO, to_money, to_qty
 from src.lib import production
 from src.models.bom import Bom, BomComponent, BomResource, ResourceKind
@@ -31,13 +33,11 @@ class ManufacturingError(Exception):
 
 
 def _doc_number(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(ManufacturingOp)) or 0
-    return f"MFG-{n + 1:06d}"
+    return numbering.next_document_number(db, ManufacturingOp, "MFG")
 
 
 def _order_doc_number(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(ManufacturingOrder)) or 0
-    return f"MO-{n + 1:06d}"
+    return numbering.next_document_number(db, ManufacturingOrder, "MO")
 
 
 def _op(db, *, op_type, item_id, location_kind, location_id, quantity, movement_type, direction,

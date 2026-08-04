@@ -12,6 +12,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services import numbering
+
 from src.core.money import to_qty
 from src.models.customer import Customer
 from src.models.catalog import Item
@@ -27,8 +29,7 @@ class ReservationError(Exception):
 
 
 def _doc_number(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(Reservation)) or 0
-    return f"RES-{n + 1:06d}"
+    return numbering.next_document_number(db, Reservation, "RES")
 
 
 def _holding(as_of: date | None = None):

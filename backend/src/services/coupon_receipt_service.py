@@ -18,7 +18,11 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
+
+from sqlalchemy.orm import selectinload
+
+from src.services import numbering
 
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon
@@ -142,8 +146,7 @@ def expand_range(serial_from: str, serial_to: str | None) -> list[str]:
 
 
 def _doc_number(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(CouponReceipt)) or 0
-    return f"CR-{n + 1:06d}"
+    return numbering.next_document_number(db, CouponReceipt, "CR")
 
 
 def create_receipt(

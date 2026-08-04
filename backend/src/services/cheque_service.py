@@ -12,6 +12,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services import numbering
+
 from src.core.money import ZERO, to_money
 from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
 from src.models.ledger import Account, AccountNature, AccountType, Direction
@@ -52,10 +54,8 @@ def cheques_payable_account(db: Session) -> Account:
 
 def _doc_number(db: Session, direction: ChequeDirection) -> str:
     prefix = "CHQI" if direction == ChequeDirection.incoming else "CHQO"
-    n = db.scalar(
-        select(func.count()).select_from(Cheque).where(Cheque.direction == direction)
-    ) or 0
-    return f"{prefix}-{n + 1:06d}"
+    return numbering.next_document_number(
+        db, Cheque, prefix, where=Cheque.direction == direction)
 
 
 def _positive(amount) -> Decimal:

@@ -13,6 +13,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services import numbering
+
 from src.core import hooks
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item, ItemKind, PriceTier
@@ -177,8 +179,7 @@ def _assert_lines_available(
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
-    n = db.scalar(select(func.count()).select_from(model)) or 0
-    return f"{prefix}-{n + 1:06d}"
+    return numbering.next_document_number(db, model, prefix)
 
 
 def fixed_discount_pct(db: Session) -> Decimal:

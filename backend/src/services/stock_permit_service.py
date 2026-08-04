@@ -15,7 +15,11 @@ from __future__ import annotations
 from datetime import date
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
+
+from sqlalchemy.orm import selectinload
+
+from src.services import numbering
 
 from src.core import clock
 from src.core.money import ZERO, to_money, to_qty
@@ -41,9 +45,8 @@ class StockPermitError(Exception):
 
 
 def _doc_number(db: Session, kind: PermitKind) -> str:
-    n = db.scalar(
-        select(func.count()).select_from(StockPermit).where(StockPermit.kind == kind)) or 0
-    return f"{_PREFIX[kind]}-{n + 1:06d}"
+    return numbering.next_document_number(
+        db, StockPermit, _PREFIX[kind], where=StockPermit.kind == kind)
 
 
 def create_permit(

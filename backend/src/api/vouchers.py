@@ -28,6 +28,9 @@ router = APIRouter(tags=["vouchers"])
 
 
 class ReceiptIn(BaseModel):
+    # (031) أنهي مديونية بيسدّد. اسم عيلة، أو `on_total` عشان يتوزّع على الكل بالنسبة.
+    family: str | None = None
+    on_total: bool = False
     customer_id: int
     amount: Decimal
     treasury_id: int | None = None
@@ -129,6 +132,9 @@ class VoucherOut(BaseModel):
     payment_method: str | None
     reference: str | None
     description: str | None
+    # (031) أنهي مديونية سدّدها. Returned as well as stored — the screen prints it on the sheet
+    # the customer signs, and a field that goes in and never comes back is a field nobody can use.
+    family: str | None = None
     ledger_entry_id: int | None
     is_reversal: bool
 
@@ -176,6 +182,7 @@ def _out(v) -> VoucherOut:
         treasury_id=v.treasury_id, to_treasury_id=v.to_treasury_id,
         voucher_date=v.voucher_date, payment_method=v.payment_method, reference=v.reference,
         description=v.description, ledger_entry_id=v.ledger_entry_id,
+        family=getattr(v, "family", None),
         is_reversal=v.reverses_id is not None,
     )
 
@@ -247,7 +254,8 @@ def create_receipt(
             db, customer_id=body.customer_id, amount=body.amount, actor_user_id=current.id,
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference, payment_method=body.payment_method)
+            reference=body.reference, payment_method=body.payment_method,
+            family=body.family, on_total=body.on_total)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()

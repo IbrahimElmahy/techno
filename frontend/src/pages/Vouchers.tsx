@@ -4,6 +4,7 @@ import {
   Tabs,
   Table,
   Form,
+  Segmented,
   Select,
   InputNumber,
   DatePicker,
@@ -51,6 +52,7 @@ interface VoucherRecord {
   payment_method: string | null;
   reference: string | null;
   description: string | null;
+  family?: string | null;
   is_reversal: boolean;
 }
 
@@ -210,6 +212,16 @@ const Vouchers: React.FC = () => {
   const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
 
   const [receiptForm] = Form.useForm();
+  /**
+   * حسابات كل عميل — واحد لكل خط منتجات.
+   *
+   * A receipt has to say which debt it settles, and the answer only exists for a customer who owes
+   * on more than one line. Fetched per customer as he is chosen rather than for the whole list:
+   * most customers have one account and would be paying for a question nobody asks about them.
+   */
+  const [receiptFamilies, setReceiptFamilies] = useState<Record<number, any[]>>({});
+  /** «أبيض» / «بولي» / `__total__`. Empty until the customer is known to owe on two. */
+  const [receiptTarget, setReceiptTarget] = useState<string>('');
   const [paymentForm] = Form.useForm();
   const [handoverForm] = Form.useForm();
   const [expenseForm] = Form.useForm();
@@ -330,6 +342,8 @@ const Vouchers: React.FC = () => {
       paymentMethod: v.payment_method,
       reference: v.reference,
       description: v.description,
+      // Which debt this receipt settled — printed on the sheet the customer signs.
+      family: (v as any).family ?? null,
       entryId: (v as any).ledger_entry_id ?? null,
       isReversal: v.is_reversal,
     };
@@ -542,7 +556,13 @@ const Vouchers: React.FC = () => {
                   form={receiptForm}
                   layout="inline"
                   onFinish={(v) =>
-                    submit('/api/v1/vouchers/receipts', v, receiptForm, 'تم تسجيل سند القبض ✔')
+                    submit('/api/v1/vouchers/receipts', {
+                      ...v,
+                      // Empty for a customer with one debt — the server needs no choice then.
+                      family: receiptTarget && receiptTarget !== '__total__'
+                        ? receiptTarget : undefined,
+                      on_total: receiptTarget === '__total__',
+                    }, receiptForm, 'تم تسجيل سند القبض ✔')
                   }
                 >
                   <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
@@ -551,7 +571,45 @@ const Vouchers: React.FC = () => {
                     <PartyField
                       kind="customer"
                       options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                      onChange={(id: number) => {
+                        receiptForm.setFieldValue('customer_id', id);
+                        setReceiptTarget('');
+                        if (receiptFamilies[id]) return;
+                        api.get(`/api/v1/customers/${id}/accounts`)
+                          .then((r) => setReceiptFamilies((prev) => ({
+                            ...prev,
+                            [id]: (r.data?.accounts || []).filter((a: any) => a.family),
+                          })))
+                          .catch(() => setReceiptFamilies((prev) => ({ ...prev, [id]: [] })));
+                      }}
                     />
+                  </Form.Item>
+                  {/* (031) أنهي مديونية بيسدّد.
+                      Shown only for a customer who owes on more than one line — for everybody else
+                      it is a question with a single possible answer. «على الإجمالي» splits the
+                      collection across his lines in proportion to what each one owes, because a
+                      ledger has no total to credit. */}
+                  <Form.Item noStyle shouldUpdate={(a, b) => a.customer_id !== b.customer_id}>
+                    {({ getFieldValue }) => {
+                      const lines = receiptFamilies[getFieldValue('customer_id')] || [];
+                      if (lines.length < 2) return null;
+                      return (
+                        <Form.Item label="على أنهي مديونية؟" required
+                          tooltip="الإجمالي بيتوزّع على الخطين بنسبة مديونية كل واحد">
+                          <Segmented
+                            value={receiptTarget}
+                            onChange={(v: string | number) => setReceiptTarget(String(v))}
+                            options={[
+                              ...lines.map((l: any) => ({
+                                value: l.family as string,
+                                label: `${l.family} (${money(Number(l.balance || 0))})`,
+                              })),
+                              { value: '__total__', label: 'على الإجمالي' },
+                            ]}
+                          />
+                        </Form.Item>
+                      );
+                    }}
                   </Form.Item>
                   <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
                     <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
