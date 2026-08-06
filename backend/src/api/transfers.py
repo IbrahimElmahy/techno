@@ -12,7 +12,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_TRANSFER_APPROVE, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
 from src.models.stock import LocationKind
-from src.models.transfer import StockTransfer, TransferRoute
+from src.models.transfer import StockTransfer, StockTransferLine, TransferRoute
 from src.services import transfer_service
 from src.services.stock_service import StockError
 from src.services.transfer_service import TransferDenied, TransferError
@@ -47,6 +47,29 @@ class TransferOut(BaseModel):
     dest_location_kind: str | None = None
     dest_location_id: int | None = None
     created_at: str | None = None
+    # (031) ليه اترفض، والأصناف اللي عليه.
+    reject_reason: str | None = None
+    lines: list["TransferLineOut"] = []
+
+
+class TransferLineOut(BaseModel):
+    id: int
+    item_id: int
+    quantity: Decimal
+
+
+class LineIn(BaseModel):
+    item_id: int
+    quantity: Decimal
+
+
+class LineQtyIn(BaseModel):
+    quantity: Decimal
+
+
+class RejectIn(BaseModel):
+    # Optional but asked for: «اترفض ليه» is the first question the person who requested it has.
+    reason: str | None = None
 
 
 def _out(t) -> TransferOut:
@@ -59,6 +82,11 @@ def _out(t) -> TransferOut:
         dest_location_kind=t.dest_location_kind.value,
         dest_location_id=t.dest_location_id,
         created_at=str(t.created_at) if t.created_at else None,
+        reject_reason=getattr(t, "reject_reason", None),
+        # The lines the approver acts on. An old document has none and keeps answering through
+        # its own item/quantity above, so nothing already posted has to be migrated.
+        lines=[TransferLineOut(id=ln.id, item_id=ln.item_id, quantity=ln.quantity)
+               for ln in getattr(t, "lines", [])],
     )
 
 
@@ -130,3 +158,85 @@ def reverse_transfer(
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "transfer_conflict", "message": str(exc)})
     db.commit()
     return _out(t)
+
+
+@router.post("/{transfer_id}/reject", response_model=TransferOut)
+def reject_transfer(
+    transfer_id: int,
+    body: RejectIn,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    """رفض إذن التحويل — مافيش بضاعة بتتحرك.
+
+    `rejected` has been a status since the transfer was written and nothing ever set it, so a
+    request that was not going to happen had two ways out: approve it anyway, or leave it pending
+    for good.
+    """
+    try:
+        t = transfer_service.reject(
+            db, transfer_id=transfer_id, actor_user_id=current.id, reason=body.reason)
+    except TransferError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
+    db.commit()
+    return _out(t)
+
+
+@router.post("/{transfer_id}/lines", response_model=TransferOut,
+             status_code=status.HTTP_201_CREATED)
+def add_transfer_line(
+    transfer_id: int,
+    body: LineIn,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    try:
+        transfer_service.add_line(
+            db, transfer_id=transfer_id, item_id=body.item_id, quantity=body.quantity)
+    except TransferError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
+    db.commit()
+    return _out(db.get(StockTransfer, transfer_id))
+
+
+@router.patch("/lines/{line_id}", response_model=TransferOut)
+def set_transfer_line_quantity(
+    line_id: int,
+    body: LineQtyIn,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    """تعديل كمية صنف — والإذن لسه تحت الاعتماد."""
+    try:
+        line = transfer_service.set_line_quantity(db, line_id=line_id, quantity=body.quantity)
+        transfer_id = line.transfer_id
+    except TransferError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
+    db.commit()
+    return _out(db.get(StockTransfer, transfer_id))
+
+
+@router.delete("/lines/{line_id}", response_model=TransferOut)
+def remove_transfer_line(
+    line_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    """حذف صنف من الإذن — **مش** حذف الإذن.
+
+    There is deliberately no endpoint that deletes a transfer request. Somebody asked for it and
+    somebody may have to answer for it; a document that can vanish is a decision with no record.
+    Emptying it leaves a request that can only be rejected, which is how you say «مش هيتم».
+    """
+    line = db.get(StockTransferLine, line_id)
+    transfer_id = line.transfer_id if line else None
+    try:
+        transfer_service.remove_line(db, line_id=line_id)
+    except TransferError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
+    db.commit()
+    return _out(db.get(StockTransfer, transfer_id))

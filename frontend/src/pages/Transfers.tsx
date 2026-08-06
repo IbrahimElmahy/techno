@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Divider, Empty, Form, InputNumber, Modal, Row, Select, Space, Statistic,
+  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal,
+  Popconfirm, Row, Select, Space, Statistic,
   Table, Tag, message,
 } from 'antd';
 import {
@@ -30,6 +31,10 @@ interface TransferRecord {
   id: number;
   document_number: string;
   status: 'pending' | 'approved' | 'rejected' | 'reversed';
+  // (031) الأصناف اللي على الإذن. A document written before lines existed has none and still shows
+  // its own item/quantity, which is why this is optional rather than assumed.
+  lines?: { id: number; item_id: number; quantity: string }[];
+  reject_reason?: string | null;
   route: string;
   approved_by: number | null;
   item_id: number | null;
@@ -322,12 +327,87 @@ export default function Transfers() {
     fetchTransfers();
   };
 
+  /**
+   * إذن التحويل المفتوح للمراجعة — ودي الشاشة اللي «اعتماد» بيوصّل لها.
+   *
+   * Approving used to be a button on a row: one click, stock moved, and the approver never saw
+   * what he was approving. A transfer is a request from somebody to somebody, and the person who
+   * answers it has to be able to read it first — and to change it, because «اعتمد أو سيبه» is not
+   * how a request that is nearly right gets handled.
+   */
+  const [reviewing, setReviewing] = useState<TransferRecord | null>(null);
+  /**
+   * أسماء الأصناف.
+   *
+   * This screen has never shown one — its list prints «صنف #35», which is a number nobody in the
+   * warehouse knows. The review sheet cannot ask somebody to approve moving «صنف #35», so the
+   * catalogue is loaded once here and both the sheet and the list read it.
+   */
+  const [itemNames, setItemNames] = useState<Record<number, string>>({});
+  useEffect(() => {
+    api.get('/api/v1/items')
+      .then((r) => setItemNames(Object.fromEntries(
+        (r.data || []).map((i: any) => [i.id, i.name]))))
+      .catch(() => setItemNames({}));
+  }, []);
+  const nameOfItem = (id: number | null | undefined) =>
+    (id ? itemNames[id] || `صنف #${id}` : '-');
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  /** Re-read the document after every decision, so the sheet always shows the server's answer
+   *  rather than what this screen believes it did. */
+  const refreshReviewed = async (id: number) => {
+    try {
+      const res = await api.get('/api/v1/transfers');
+      const rows = res.data || [];
+      setTransfers(rows);
+      setReviewing(rows.find((t: TransferRecord) => t.id === id) ?? null);
+    } catch (err) { console.error(err); }
+  };
+
+  const setReviewLineQty = async (lineId: number, quantity: number | null) => {
+    if (!quantity || quantity <= 0) return;
+    try {
+      await api.patch(`/api/v1/transfers/lines/${lineId}`, { quantity: String(quantity) });
+      if (reviewing) await refreshReviewed(reviewing.id);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر تعديل الكمية');
+    }
+  };
+
+  const removeReviewLine = async (lineId: number) => {
+    try {
+      await api.delete(`/api/v1/transfers/lines/${lineId}`);
+      if (reviewing) await refreshReviewed(reviewing.id);
+      message.success('اتشال الصنف من الإذن');
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حذف الصنف');
+    }
+  };
+
+  const rejectTransfer = async () => {
+    if (!reviewing) return;
+    try {
+      await api.post(`/api/v1/transfers/${reviewing.id}/reject`,
+        { reason: rejectReason || null });
+      message.success('اترفض الإذن — مافيش بضاعة اتحركت');
+      setRejectOpen(false); setRejectReason(''); setReviewing(null);
+      fetchTransfers();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر رفض الإذن');
+    }
+  };
+
   const handleApprove = async (id: number) => {
     try {
       await api.post(`/api/v1/transfers/${id}/approve`);
       message.success('تمت الموافقة واعتماد التحويل بنجاح');
+      setReviewing(null);
       fetchTransfers();
-    } catch (err) { console.error(err); }
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر اعتماد الإذن');
+    }
   };
 
   const handleReverse = (record: TransferRecord) => {
@@ -579,7 +659,7 @@ export default function Transfers() {
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number',
       render: (doc: string) => <Tag color="blue">{doc}</Tag> },
     { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
-      render: (id: number | null) => (id ? `صنف #${id}` : '-') },
+      render: (id: number | null) => nameOfItem(id) },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity',
       render: (q: string | null) => <b>{qty(q)}</b> },
     { title: 'من', key: 'src',
@@ -601,7 +681,7 @@ export default function Transfers() {
         <Space size="middle">
           {record.status === 'pending' && canApprove && (
             <Button type="primary" size="small" icon={<CheckCircleOutlined />}
-              onClick={() => handleApprove(record.id)}>
+              onClick={() => setReviewing(record)}>
               اعتماد
             </Button>
           )}
@@ -616,8 +696,117 @@ export default function Transfers() {
     },
   ];
 
+  /**
+   * ورقة المراجعة — الإذن نفسه، وكل قرار عليه.
+   *
+   * Deliberately NOT a confirm dialog. «هل أنت متأكد؟» over a document nobody has read is a
+   * question with no information in it; this shows what is being moved, from where to where, and
+   * lets the approver fix a quantity or drop an item before he answers.
+   *
+   * There is no delete button. The request is somebody's ask and somebody may have to answer for
+   * it — the way to say «مش هيتم» is to reject it, which leaves the reason on the document.
+   */
+  const reviewSheet = (
+    <Modal
+      open={!!reviewing}
+      onCancel={() => setReviewing(null)}
+      width={760}
+      destroyOnHidden
+      title={reviewing ? `إذن تحويل ${reviewing.document_number}` : ''}
+      footer={reviewing && reviewing.status === 'pending' ? [
+        <Button key="close" onClick={() => setReviewing(null)}>إغلاق</Button>,
+        <Button key="reject" danger onClick={() => setRejectOpen(true)}>رفض</Button>,
+        <Button key="ok" type="primary" icon={<CheckCircleOutlined />}
+          disabled={(reviewing.lines?.length ?? 0) === 0 && !reviewing.item_id}
+          onClick={() => handleApprove(reviewing.id)}>اعتماد</Button>,
+      ] : [<Button key="close" onClick={() => setReviewing(null)}>إغلاق</Button>]}
+    >
+      {reviewing && (
+        <>
+          <Descriptions bordered size="small" column={2} style={{ marginBottom: 12 }}>
+            <Descriptions.Item label="من">
+              {locationName(reviewing.source_location_kind, reviewing.source_location_id)}
+            </Descriptions.Item>
+            <Descriptions.Item label="إلى">
+              {locationName(reviewing.dest_location_kind, reviewing.dest_location_id)}
+            </Descriptions.Item>
+            <Descriptions.Item label="نوع المناقلة">
+              {ROUTE_LABELS[reviewing.route] || reviewing.route}
+            </Descriptions.Item>
+            <Descriptions.Item label="الحالة">
+              <Tag color={(STATUS_TAGS[reviewing.status] || {}).color}>
+                {(STATUS_TAGS[reviewing.status] || {}).text || reviewing.status}
+              </Tag>
+            </Descriptions.Item>
+            {reviewing.reject_reason && (
+              <Descriptions.Item label="سبب الرفض" span={2}>
+                {reviewing.reject_reason}
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+
+          {reviewing.status !== 'pending' && (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message="الإذن ده اتقفل خلاص"
+              description="الإذن اللي اتعمد أو اترفض مايتعدلش — الاعتماد رحّل حركات على مخزنين، وتعديل الكمية بعدها بيسيب الأرصدة بتوصف مستند مابقاش بيقول اللي حصل." />
+          )}
+
+          <Table
+            size="small" rowKey="id" pagination={false}
+            dataSource={reviewing.lines ?? []}
+            locale={{ emptyText: reviewing.item_id
+              ? 'إذن قديم — الصنف مكتوب على المستند نفسه'
+              : 'مفيش أصناف على الإذن — ارفضه بدل ما تعتمده' }}
+            columns={[
+              { title: 'الصنف', dataIndex: 'item_id',
+                // The item's own name, from the catalogue the picker already loaded.
+                render: (id: number) => nameOfItem(id) },
+              { title: 'الكمية', dataIndex: 'quantity', width: 150,
+                render: (q: string, r: any) => (reviewing.status === 'pending' ? (
+                  <InputNumber size="small" min={0.001} step={1} defaultValue={Number(q)}
+                    style={{ width: 120 }} data-grid-col="qty" keyboard={false}
+                    onBlur={(e) => setReviewLineQty(r.id, Number((e.target as any).value))} />
+                ) : <b>{qty(q)}</b>) },
+              ...(reviewing.status === 'pending' ? [{
+                title: '', width: 60,
+                render: (_: any, r: any) => (
+                  <Popconfirm title="تشيل الصنف ده من الإذن؟"
+                    okText="شيله" cancelText="سيبه"
+                    onConfirm={() => removeReviewLine(r.id)}>
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                ),
+              }] : []),
+            ]}
+          />
+        </>
+      )}
+    </Modal>
+  );
+
+  const rejectDialog = (
+    <Modal
+      open={rejectOpen}
+      title="رفض إذن التحويل"
+      okText="ارفض" cancelText="تراجع"
+      okButtonProps={{ danger: true }}
+      onCancel={() => { setRejectOpen(false); setRejectReason(''); }}
+      onOk={rejectTransfer}
+      destroyOnHidden
+    >
+      <Alert type="info" showIcon style={{ marginBottom: 12 }}
+        message="مافيش بضاعة هتتحرك"
+        description="الرفض مش زي «اعتمد وبعدين اعكس» — مافيش حاجة نزلت من الرف عشان ترجع تاني." />
+      <Input.TextArea rows={3} value={rejectReason} autoFocus
+        placeholder="سبب الرفض — أول سؤال هيسأله اللي طلب التحويل"
+        onChange={(e: any) => setRejectReason(e.target.value)} />
+    </Modal>
+  );
+
   return (
     <div>
+      {reviewSheet}
+      {rejectDialog}
       {/* The doors belong to BOTH branches. The create page is an early return, so a door declared
           only there unmounts at the instant it opens the page behind it — which is how the return
           ended up with a dialog on screen that no state could close. */}
