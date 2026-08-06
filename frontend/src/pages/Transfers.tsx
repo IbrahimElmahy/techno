@@ -16,6 +16,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
+import DocumentAuditModal from '../components/DocumentAuditModal';
 
 /**
  * تحويلات المخزون — move stock between locations.
@@ -353,6 +354,33 @@ export default function Transfers() {
   const nameOfItem = (id: number | null | undefined) =>
     (id ? itemNames[id] || `صنف #${id}` : '-');
   const [rejectOpen, setRejectOpen] = useState(false);
+  /** سجل عمليات الإذن — مين عمل إيه وإمتى. */
+  const [auditFor, setAuditFor] = useState<number | null>(null);
+  const [userNames, setUserNames] = useState<Record<number, string>>({});
+  useEffect(() => {
+    api.get('/api/v1/users')
+      .then((r) => setUserNames(Object.fromEntries(
+        (r.data || []).map((u: any) => [u.id, u.full_name || u.username]))))
+      .catch(() => setUserNames({}));
+  }, []);
+  /**
+   * المتاح في مخزن المصدر للإذن اللي بيتراجع.
+   *
+   * The approver is being asked «هل أوافق على نقل ده» — and cannot answer without knowing whether
+   * the stock is still there. It often is not: the request was raised on Sunday and a sale took
+   * the goods on Monday, and approving anyway is what the negative-stock guard then refuses at the
+   * worst possible moment, after the decision felt made.
+   */
+  const [reviewStock, setReviewStock] = useState<Record<number, number>>({});
+  useEffect(() => {
+    if (!reviewing) { setReviewStock({}); return; }
+    api.get('/api/v1/stock/by-location', { params: {
+      location_kind: reviewing.source_location_kind,
+      location_id: reviewing.source_location_id, only_available: true } })
+      .then((r) => setReviewStock(Object.fromEntries(
+        (r.data || []).map((x: any) => [x.item_id, Number(x.on_hand)]))))
+      .catch(() => setReviewStock({}));
+  }, [reviewing]);
   const [rejectReason, setRejectReason] = useState('');
 
   /** Re-read the document after every decision, so the sheet always shows the server's answer
@@ -714,12 +742,16 @@ export default function Transfers() {
       destroyOnHidden
       title={reviewing ? `إذن تحويل ${reviewing.document_number}` : ''}
       footer={reviewing && reviewing.status === 'pending' ? [
+        <Button key="log" onClick={() => setAuditFor(reviewing.id)}>سجل العمليات</Button>,
         <Button key="close" onClick={() => setReviewing(null)}>إغلاق</Button>,
         <Button key="reject" danger onClick={() => setRejectOpen(true)}>رفض</Button>,
         <Button key="ok" type="primary" icon={<CheckCircleOutlined />}
           disabled={(reviewing.lines?.length ?? 0) === 0 && !reviewing.item_id}
           onClick={() => handleApprove(reviewing.id)}>اعتماد</Button>,
-      ] : [<Button key="close" onClick={() => setReviewing(null)}>إغلاق</Button>]}
+      ] : [
+        <Button key="log" onClick={() => reviewing && setAuditFor(reviewing.id)}>سجل العمليات</Button>,
+        <Button key="close" onClick={() => setReviewing(null)}>إغلاق</Button>,
+      ]}
     >
       {reviewing && (
         <>
@@ -745,6 +777,12 @@ export default function Transfers() {
             )}
           </Descriptions>
 
+          {reviewing.status === 'pending' && (reviewing.lines ?? []).some(
+            (l: any) => Number(l.quantity || 0) > (reviewStock[l.item_id] ?? 0)) && (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+              message="فيه سطور أكتر من المتاح في المخزن"
+              description="عدّل الكميات للمتاح قبل الاعتماد — الاعتماد هيترفض، والرصيد ماينفعش ينزل تحت الصفر." />
+          )}
           {reviewing.status !== 'pending' && (
             <Alert type="info" showIcon style={{ marginBottom: 12 }}
               message="الإذن ده اتقفل خلاص"
@@ -761,10 +799,22 @@ export default function Transfers() {
               { title: 'الصنف', dataIndex: 'item_id',
                 // The item's own name, from the catalogue the picker already loaded.
                 render: (id: number) => nameOfItem(id) },
+              // What is actually on the shelf right now, beside what is being asked for. The
+              // approver cannot answer «أوافق؟» without it, and finding out at approval — when the
+              // guard refuses — is finding out after the decision felt made.
+              { title: 'المتاح دلوقتي', key: 'avail', width: 120,
+                render: (_: any, r: any) => {
+                  const have = reviewStock[r.item_id] ?? 0;
+                  const want = Number(r.quantity || 0);
+                  return (
+                    <b style={{ color: have >= want ? '#6AB42D' : '#cf1322' }}>{qty(have)}</b>
+                  );
+                } },
               { title: 'الكمية', dataIndex: 'quantity', width: 150,
                 render: (q: string, r: any) => (reviewing.status === 'pending' ? (
                   <InputNumber size="small" min={0.001} step={1} defaultValue={Number(q)}
                     style={{ width: 120 }} data-grid-col="qty" keyboard={false}
+                    max={reviewStock[r.item_id] ?? undefined}
                     onBlur={(e) => setReviewLineQty(r.id, Number((e.target as any).value))} />
                 ) : <b>{qty(q)}</b>) },
               ...(reviewing.status === 'pending' ? [{
@@ -782,6 +832,13 @@ export default function Transfers() {
         </>
       )}
     </Modal>
+  );
+
+  const auditDialog = (
+    <DocumentAuditModal
+      entityType="stock_transfer" entityId={auditFor}
+      title="سجل عمليات إذن التحويل" userNames={userNames}
+      onClose={() => setAuditFor(null)} />
   );
 
   const rejectDialog = (
@@ -807,6 +864,7 @@ export default function Transfers() {
     <div>
       {reviewSheet}
       {rejectDialog}
+      {auditDialog}
       {/* The doors belong to BOTH branches. The create page is an early return, so a door declared
           only there unmounts at the instant it opens the page behind it — which is how the return
           ended up with a dialog on screen that no state could close. */}

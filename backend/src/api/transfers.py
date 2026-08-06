@@ -193,7 +193,8 @@ def add_transfer_line(
 ) -> TransferOut:
     try:
         transfer_service.add_line(
-            db, transfer_id=transfer_id, item_id=body.item_id, quantity=body.quantity)
+            db, transfer_id=transfer_id, item_id=body.item_id, quantity=body.quantity,
+            actor_user_id=current.id)
     except TransferError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "transfer_conflict", "message": str(exc)})
@@ -210,7 +211,8 @@ def set_transfer_line_quantity(
 ) -> TransferOut:
     """تعديل كمية صنف — والإذن لسه تحت الاعتماد."""
     try:
-        line = transfer_service.set_line_quantity(db, line_id=line_id, quantity=body.quantity)
+        line = transfer_service.set_line_quantity(
+            db, line_id=line_id, quantity=body.quantity, actor_user_id=current.id)
         transfer_id = line.transfer_id
     except TransferError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
@@ -234,7 +236,7 @@ def remove_transfer_line(
     line = db.get(StockTransferLine, line_id)
     transfer_id = line.transfer_id if line else None
     try:
-        transfer_service.remove_line(db, line_id=line_id)
+        transfer_service.remove_line(db, line_id=line_id, actor_user_id=current.id)
     except TransferError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "transfer_conflict", "message": str(exc)})

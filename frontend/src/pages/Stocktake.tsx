@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, InputNumber, Row, Select, Statistic, Table, Tag,
+  message,
 } from 'antd';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import { numberColumn, textColumn } from '../components/gridColumns';
+import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
+import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -33,7 +35,28 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 export default function Stocktake() {
+  /**
+   * جرد من تاريخ إلى تاريخ.
+   *
+   * The quantity is the balance **at the «إلى» date** — a balance is a running total to a moment,
+   * and summing only the movements inside a window would give net movement over it, which is a
+   * different number and not a stocktake.
+   *
+   * The «من» date is what the movement log opens on: «إيه اللي حصل في الفترة دي» is the question a
+   * difference raises, and reciting the item's whole life instead is not an answer to it.
+   */
+  const [dateFrom, setDateFrom] = useState<Dayjs>(dayjs().startOf('month'));
   const [asOf, setAsOf] = useState<Dayjs>(dayjs());
+  /**
+   * العدد الفعلي — اللي على أرض الواقع، بيتكتب هنا.
+   *
+   * Held on screen and NOT saved: settling a difference belongs to جرد المخازن, which has the
+   * document, the frozen book quantity and the posting behind it. One way to change stock beats
+   * two with different rules — and the screen says so, so nobody types a hundred counts expecting
+   * them to be kept.
+   */
+  const [actual, setActual] = useState<Record<string, number | null>>({});
+  const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -48,7 +71,7 @@ export default function Stocktake() {
   const load = async () => {
     setLoading(true);
     try {
-      const params: any = { as_of: asOf.format('YYYY-MM-DD') };
+      const params: any = { date_to: asOf.format('YYYY-MM-DD') };
       if (warehouseId) params.warehouse_id = warehouseId;
       const res = await api.get('/api/v1/reports/stock-as-of', { params });
       setRows(res.data.rows || []);
@@ -59,18 +82,37 @@ export default function Stocktake() {
     } finally { setLoading(false); }
   };
 
+  // Only the «إلى» date changes the balances. «من» scopes the history a row drills into, so
+  // changing it must not cost a reload of the whole report.
   useEffect(() => { load(); }, [asOf, warehouseId]);
+
+  const rowKey = (r: Row) => `${r.item_id}-${r.location}`;
+  /** الفرق = اللي في النظام − اللي اتعدّ. Null until somebody counts, which is not zero. */
+  const diffOf = (r: Row) => {
+    const a = actual[rowKey(r)];
+    if (a === null || a === undefined) return null;
+    return Number(r.quantity || 0) - a;
+  };
 
   const filter = useListFilter(rows, { search: (r) => [r.code, r.name, r.location] });
 
   const exportCsv = () => {
     if (!rows.length) { message.info('لا توجد أرصدة للتصدير'); return; }
-    const heads = ['الكود', 'الصنف', 'الوحدة', 'الموقع', 'الكمية', 'تكلفة الوحدة', 'القيمة'];
+    // The export follows the columns. A file whose headings say «تكلفة الوحدة» over a column of
+    // counted quantities is worse than no export — it is read once, believed, and filed.
+    const heads = ['الكود', 'الصنف', 'الوحدة', 'الموقع', 'الكمية في النظام',
+      'العدد الفعلي', 'الفرق'];
     const lines = [heads.join(',')];
-    filter.filtered.forEach((r) => lines.push([
-      r.code ?? '', r.name, r.unit_of_measure ?? '', r.location,
-      r.quantity, r.unit_cost, r.value,
-    ].map((v) => `"${v}"`).join(',')));
+    filter.filtered.forEach((r) => {
+      const a = actual[rowKey(r)];
+      const d = diffOf(r);
+      lines.push([
+        r.code ?? '', r.name, r.unit_of_measure ?? '', r.location,
+        r.quantity,
+        a === null || a === undefined ? '' : a,
+        d === null ? '' : d,
+      ].map((v) => `"${v}"`).join(','));
+    });
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -91,10 +133,18 @@ export default function Stocktake() {
       )}
     >
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={8}>
-          <DatePicker
-            style={{ width: '100%' }} value={asOf} allowClear={false}
-            onChange={(v) => v && setAsOf(v)} placeholder="الرصيد حتى تاريخ"
+        <Col xs={24} md={10}>
+          {/* «إلى» is the day the balance is read at; «من» opens the movement log on the period.
+              Two dates because a difference is a question about a stretch of time, not a day. */}
+          <DatePicker.RangePicker
+            style={{ width: '100%' }} allowClear={false}
+            value={[dateFrom, asOf] as any}
+            onChange={(v: any) => {
+              if (!v || !v[0] || !v[1]) return;
+              setDateFrom(v[0]);
+              setAsOf(v[1]);
+            }}
+            placeholder={['من تاريخ', 'الرصيد حتى']}
           />
         </Col>
         <Col xs={24} md={8}>
@@ -105,6 +155,10 @@ export default function Stocktake() {
           />
         </Col>
       </Row>
+
+      <Alert type="info" showIcon style={{ marginBottom: 12 }}
+        message="الشاشة دي للمراجعة — العدد الفعلي اللي بتكتبه هنا مابيتحفظش"
+        description="بتحسب الفرق وبتوريك الحركات وراه. تسوية الفرق في المخزون بتتعمل من «جرد المخازن»، اللي عنده المستند والرصيد المجمّد والترحيل." />
 
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
@@ -159,12 +213,50 @@ export default function Stocktake() {
           { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
             ...numberColumn((r: Row) => r.quantity),
             render: (v: string) => <b>{qty(v)}</b> },
-          { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', align: 'left' as const,
-            ...numberColumn((r: Row) => r.unit_cost),
-            render: (v: string) => money(v) },
-          { title: 'القيمة', dataIndex: 'value', align: 'left' as const,
-            ...numberColumn((r: Row) => r.value),
-            render: (v: string) => <b style={{ color: '#0B5CA8' }}>{money(v)}</b> },
+          // العدد الفعلي — typed here, held on screen, never posted. The line under the table
+          // says so, because a hundred counts typed into a screen that keeps none of them is a
+          // morning lost.
+          { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
+            render: (_: any, r: Row) => (
+              <InputNumber
+                size="small" min={0} placeholder="—" style={{ width: '100%' }}
+                data-grid-col="actual" keyboard={false}
+                value={actual[rowKey(r)] ?? null}
+                onChange={(v: any) => setActual((p) => ({ ...p, [rowKey(r)]: v as number | null }))}
+              />
+            ) },
+          { title: 'الفرق', key: 'diff', align: 'left' as const, width: 130,
+            ...choiceColumn<Row>(
+              [{ text: 'عجز', value: 'short' },
+               { text: 'زيادة', value: 'over' },
+               { text: 'مطابق', value: 'match' },
+               { text: 'لسه ماتعدش', value: 'none' }],
+              (r: Row, v: string) => {
+                const d = diffOf(r);
+                if (v === 'none') return d === null;
+                if (d === null) return false;
+                if (v === 'match') return d === 0;
+                // «عجز» = النظام بيقول أكتر من اللي لقيناه.
+                return v === 'short' ? d > 0 : d < 0;
+              }),
+            render: (_: any, r: Row) => {
+              const d = diffOf(r);
+              if (d === null) return <span style={{ color: '#bbb' }}>—</span>;
+              if (d === 0) return <Tag color="green">مطابق</Tag>;
+              // Only a real difference is a link. One that opens an empty log teaches people the
+              // link is broken, and then they stop using the one that works.
+              return (
+                <a onClick={() => setHistory({
+                  itemId: r.item_id, itemName: r.name,
+                  dateFrom: dateFrom.format('YYYY-MM-DD'),
+                  dateTo: asOf.format('YYYY-MM-DD'),
+                })}>
+                  <b style={{ color: d > 0 ? '#cf1322' : '#6AB42D' }}>
+                    {d > 0 ? `عجز ${qty(d)}` : `زيادة ${qty(Math.abs(d))}`}
+                  </b>
+                </a>
+              );
+            } },
         ]}
         // The bottom line follows the filters: a total that ignores them answers a question nobody
         // asked, and reads as if the filter had not applied.
@@ -184,6 +276,7 @@ export default function Stocktake() {
           );
         }}
       />
+      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
     </Card>
   );
 }

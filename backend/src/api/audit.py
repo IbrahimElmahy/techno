@@ -32,6 +32,10 @@ def list_audit(
     actor_user_id: int | None = None,
     action: str | None = None,
     entity_type: str | None = None,
+    # (031) «سجل عمليات المستند ده» — the question the trail exists to answer, and the one filter
+    # it did not have. Without it a screen can ask for every transfer edit ever made and then throw
+    # away all but one document's worth, which is a list nobody should be sending over the wire.
+    entity_id: int | None = None,
     _: CurrentUser = Depends(require_capability(CAP_AUDIT_READ)),
     db: Session = Depends(get_db),
 ) -> list[AuditOut]:
@@ -42,6 +46,8 @@ def list_audit(
         stmt = stmt.where(AuditLogEntry.action == action)
     if entity_type is not None:
         stmt = stmt.where(AuditLogEntry.entity_type == entity_type)
+    if entity_id is not None:
+        stmt = stmt.where(AuditLogEntry.entity_id == entity_id)
     return [
         AuditOut(
             id=a.id, actor_user_id=a.actor_user_id, action=a.action,

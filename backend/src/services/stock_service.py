@@ -62,6 +62,47 @@ def on_hand(db: Session, item_id: int, location_kind: LocationKind, location_id:
     return to_qty(total)
 
 
+def _label(db, location_kind: LocationKind, location_id: int) -> str:
+    """اسم المكان زي ما الناس بتناديه — «مخزن الفرع»، مش «warehouse 3»."""
+    from src.models.warehouse import Custody, Warehouse
+
+    if location_kind == LocationKind.warehouse:
+        wh = db.get(Warehouse, location_id)
+        return wh.name if wh and wh.name else f"مخزن #{location_id}"
+    cust = db.get(Custody, location_id)
+    if cust is not None:
+        from src.models.user import User
+        user = db.get(User, cust.user_id)
+        who = (user.full_name or user.username) if user else f"#{cust.user_id}"
+        return f"عهدة {who}"
+    return f"عهدة #{location_id}"
+
+
+def _not_enough(db, item_id: int, location_kind: LocationKind, location_id: int,
+                available, wanted) -> str:
+    """رسالة «الرصيد مايكفيش» — واحدة للنظام كله.
+
+    Every writer that takes stock out — the sale, the transfer, the issue permit, manufacturing,
+    the count adjustment — comes through `post_movement`, so this ONE sentence is what all of them
+    say. Five services each wording the same refusal is how a system stops sounding like itself,
+    and how one of them ends up saying something subtly different from the truth.
+
+    It names the item and the place the way the people using it do. The message it replaces read
+    «No-negative-stock: on-hand 5 < requested out 8 (item 12, warehouse 3)» — every fact a
+    developer needs and not one a storekeeper can act on.
+    """
+    from src.models.catalog import Item
+
+    item = db.get(Item, item_id)
+    name = item.name if item and item.name else f"صنف #{item_id}"
+    where = _label(db, location_kind, location_id)
+    short = to_qty(wanted) - to_qty(available)
+    return (
+        f"الرصيد مايكفيش: «{name}» في {where} المتاح منه {to_qty(available)} "
+        f"والمطلوب صرفه {to_qty(wanted)} — ناقص {short}."
+    )
+
+
 def post_movement(
     db: Session,
     *,
@@ -84,10 +125,7 @@ def post_movement(
     if direction == StockDirection.out:
         current = on_hand(db, item_id, location_kind, location_id)
         if current - q < ZERO_QTY:
-            raise StockError(
-                f"No-negative-stock: on-hand {current} < requested out {q} "
-                f"(item {item_id}, {location_kind.value} {location_id})."
-            )
+            raise StockError(_not_enough(db, item_id, location_kind, location_id, current, q))
     mv = StockMovement(
         item_id=item_id,
         location_kind=location_kind,

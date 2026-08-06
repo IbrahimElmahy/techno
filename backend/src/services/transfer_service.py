@@ -212,7 +212,8 @@ def _pending(db, transfer_id: int) -> StockTransfer:
     return transfer
 
 
-def add_line(db, *, transfer_id: int, item_id: int, quantity) -> StockTransferLine:
+def add_line(db, *, transfer_id: int, item_id: int, quantity,
+             actor_user_id: int | None = None) -> StockTransferLine:
     transfer = _pending(db, transfer_id)
     qty = to_qty(quantity)
     if qty <= 0:
@@ -220,10 +221,18 @@ def add_line(db, *, transfer_id: int, item_id: int, quantity) -> StockTransferLi
     line = StockTransferLine(transfer_id=transfer.id, item_id=item_id, quantity=qty)
     db.add(line)
     db.flush()
+    # (031) Every change to a pending request is recorded. The person who raised it reads the
+    # history to find out why what arrived is not what he asked for, and «الكمية اتغيّرت» with no
+    # name and no minute on it is not an answer.
+    audit_service.record(
+        db, action="transfer.line_add", actor_user_id=actor_user_id,
+        entity_type="stock_transfer", entity_id=transfer.id,
+        after={"item_id": item_id, "quantity": str(qty)})
     return line
 
 
-def set_line_quantity(db, *, line_id: int, quantity) -> StockTransferLine:
+def set_line_quantity(db, *, line_id: int, quantity,
+                      actor_user_id: int | None = None) -> StockTransferLine:
     line = db.get(StockTransferLine, line_id)
     if line is None:
         raise TransferError("السطر غير موجود.")
@@ -233,12 +242,18 @@ def set_line_quantity(db, *, line_id: int, quantity) -> StockTransferLine:
         # Zero is not a way to remove a line: a line that moves nothing still says the item was
         # considered, and «امسح السطر» is its own decision with its own button.
         raise TransferError("الكمية لازم تكون أكبر من صفر — لو مش عايزه، امسح السطر.")
+    was = str(line.quantity)
     line.quantity = qty
     db.flush()
+    audit_service.record(
+        db, action="transfer.line_qty", actor_user_id=actor_user_id,
+        entity_type="stock_transfer", entity_id=line.transfer_id,
+        before={"item_id": line.item_id, "quantity": was},
+        after={"item_id": line.item_id, "quantity": str(qty)})
     return line
 
 
-def remove_line(db, *, line_id: int) -> None:
+def remove_line(db, *, line_id: int, actor_user_id: int | None = None) -> None:
     """حذف صنف من الإذن — مش حذف الإذن.
 
     The request itself is never deleted: somebody asked for it, somebody may have to answer for it,
@@ -249,6 +264,10 @@ def remove_line(db, *, line_id: int) -> None:
     if line is None:
         raise TransferError("السطر غير موجود.")
     _pending(db, line.transfer_id)
+    audit_service.record(
+        db, action="transfer.line_remove", actor_user_id=actor_user_id,
+        entity_type="stock_transfer", entity_id=line.transfer_id,
+        before={"item_id": line.item_id, "quantity": str(line.quantity)})
     db.delete(line)
     db.flush()
 

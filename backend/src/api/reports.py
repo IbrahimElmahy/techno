@@ -92,13 +92,22 @@ def trade_report(
 @router.get("/stock-as-of")
 def stock_as_of_report(
     as_of: str | None = Query(None, description="ISO date; the stock as it stood that day"),
+    # (031) جرد من تاريخ إلى تاريخ. `date_to` is the day the balance is read at — an alias for
+    # `as_of`, kept so callers that already use `as_of` are untouched.
+    #
+    # There is deliberately NO `date_from` here. A balance is a running total to a moment; summing
+    # only the movements INSIDE a window gives net movement over it, which is a different number
+    # and not a stocktake. The «من» date scopes the movement history a row drills into, and lives
+    # on the screen that asks for it.
+    date_to: str | None = Query(None, description="Alias for as_of — the day the balance is read"),
     warehouse_id: int | None = Query(None),
     item_id: int | None = Query(None),
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
     """جرد حق تاريخ — every movement up to that day, nothing after it, valued at cost."""
-    return stocktake.stock_as_of(db, as_of=as_of, warehouse_id=warehouse_id, item_id=item_id)
+    return stocktake.stock_as_of(db, as_of=date_to or as_of,
+                                 warehouse_id=warehouse_id, item_id=item_id)
 
 
 @router.get("/reorder")
