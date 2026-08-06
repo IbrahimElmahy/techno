@@ -141,6 +141,33 @@ function formOf(el: HTMLElement): HTMLElement | null {
 }
 
 /**
+ * The same box, one row down. Shared by Enter-in-a-grid and by the arrows.
+ *
+ * Movement is confined to ONE column name inside ONE container, so a screen with a lines table
+ * above a totals table never jumps between them. At the ends it does nothing rather than wrapping:
+ * wrapping means a held key cycles forever and the row you land on is whichever one you stopped
+ * on, silently, twenty rows away.
+ */
+function nextInGridColumn(el: HTMLElement, dir: 1 | -1 = 1): boolean {
+  const cell = el.closest<HTMLElement>('[data-grid-col]');
+  if (!cell) return false;
+  const table = cell.closest('table') || cell.closest('.ant-table')
+    || cell.closest('.ant-modal-body') || cell.closest('form')
+    || cell.closest('.ant-card-body');
+  if (!table) return false;
+  const col = cell.getAttribute('data-grid-col');
+  const cells = [...table.querySelectorAll<HTMLElement>(`[data-grid-col="${col}"]`)]
+    .filter((c) => c.offsetParent !== null);
+  const i = cells.indexOf(cell);
+  if (i === -1) return false;
+  const next = cells[i + dir];
+  if (!next) return true;   // handled: at the end, stay put rather than wrap
+  next.focus();
+  if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
+  return true;
+}
+
+/**
  * Enter moves to the next field — the habit the old system built and fingers keep.
  *
  * Someone entering documents all day never reaches for the mouse: they type, press Enter, type,
@@ -170,7 +197,18 @@ function enterMovesOn(e: KeyboardEvent): boolean {
   if (select && select.classList.contains('ant-select-open')) return false;
 
   const form = formOf(el);
-  if (!form) return false;
+  if (!form) {
+    // A grid standing on its own — a count sheet, a stocktake — has no form around it, so there
+    // is no field order to walk. There is still an obvious next thing: the same box one row down.
+    // That is the whole rhythm of counting a shelf, and without it Enter did nothing on exactly
+    // the screens where a hand never leaves the keypad.
+    //
+    // Only when there is no form: inside one, Enter already means «الخانة اللي بعدها» and the
+    // document screens are built on that.
+    if (!el.closest('[data-grid-col]')) return false;
+    e.preventDefault();
+    return nextInGridColumn(el);
+  }
   const fields = fieldsIn(form);
   // Focus can sit on the Select's wrapper rather than its input when a click put it there.
   const current = (el.classList.contains('ant-select-selector')
@@ -227,27 +265,9 @@ function arrowsMoveLines(e: KeyboardEvent): boolean {
   const select = cell.closest('.ant-select');
   if (select && select.classList.contains('ant-select-open')) return false;
 
-  // Usually a table. But a lines editor built from `Form.List` is rows of `Col`, not `<tr>`, and
-  // looking only for a table left the arrows dead on exactly the screens that needed them most.
-  // Widening the boundary is safe because movement is confined to ONE column name: a wider
-  // container can only ever reach more cells asking the same question.
-  const table = cell.closest('table') || cell.closest('.ant-table')
-    || cell.closest('.ant-modal-body') || cell.closest('form')
-    || cell.closest('.ant-card-body');
-  if (!table) return false;
-  const col = cell.getAttribute('data-grid-col');
-  const cells = [...table.querySelectorAll<HTMLElement>(`[data-grid-col="${col}"]`)]
-    .filter((c) => c.offsetParent !== null);
-  const i = cells.indexOf(cell);
-  if (i === -1) return false;
-  const next = cells[e.key === 'ArrowDown' ? i + 1 : i - 1];
-  // At the top or the bottom, do nothing rather than wrap. Wrapping means a held arrow key cycles
-  // forever and the line you land on is whichever one you stopped on — silently, twenty rows away.
-  if (!next) { e.preventDefault(); return true; }
-  e.preventDefault();
-  next.focus();
-  if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
-  return true;
+  const moved = nextInGridColumn(el, e.key === 'ArrowDown' ? 1 : -1);
+  if (moved) e.preventDefault();
+  return moved;
 }
 
 /**

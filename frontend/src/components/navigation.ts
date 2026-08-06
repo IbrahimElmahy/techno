@@ -92,7 +92,7 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/trade-reports?view=item-profits', label: 'ارباح اصناف', roles: OFFICE, a5: '/sales/itemprofits' },
         ],
       },
-      { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردرد مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
+      { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردود مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
       { key: '/reservations', label: 'الحجوزات', roles: SALES, a5: '/reservations/create' },
       { key: '/orders?kind=sale', label: 'طلبات بيع', roles: R(SALES), a5: '/saleorders/create' },
       {
@@ -133,7 +133,7 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/trade-reports?view=purchase-items-grouped', label: 'مشتريات اصناف مجمعة', roles: R(BUYING), a5: '/purchases/item-grouped' },
         ],
       },
-      { key: '/trade-reports?view=purchase-return-items', label: 'تقارير مردرد مشتريات', roles: R(BUYING), a5: '/purchasesreturns/itemsearch' },
+      { key: '/trade-reports?view=purchase-return-items', label: 'تقارير مردود مشتريات', roles: R(BUYING), a5: '/purchasesreturns/itemsearch' },
       { key: '/orders?kind=purchase', label: 'طلبات شراء', roles: R(BUYING), a5: '/purchaseorders/create' },
     ],
   },
@@ -197,6 +197,25 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/finance-reports?tab=aging&side=customers', label: 'مديونيه عملاء', roles: R(BOOKS), a5: '/client-receivables' },
           { key: '/finance-reports?tab=aging&side=suppliers', label: 'ارصده موردين', roles: R(BOOKS), a5: '/supplier-payables' },
           { key: '/general-ledger?tab=chart', label: 'أرصدة الحسابات', roles: R(BOOKS), a5: '/account-balances' },
+        ],
+      },
+      {
+        /**
+         * السندات — كانت مبنية ومفيش حاجة في القايمة بتوصّلها.
+         *
+         * The vouchers screen has six tabs. The menu reached exactly one of them (الشيكات), so
+         * سند قبض and سند صرف — the two documents a cashier uses every day — could only be got to
+         * by opening the cheques screen and clicking sideways along the tab bar. A screen you can
+         * only reach by knowing it is there is a screen most people never find.
+         */
+        key: 'grp-vouchers',
+        label: 'سندات',
+        children: [
+          { key: '/vouchers?tab=receipt', label: 'سند قبض', roles: R(BOOKS) },
+          { key: '/vouchers?tab=payment', label: 'سند صرف', roles: R(BOOKS) },
+          { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
+          { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
+          { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
         ],
       },
       {

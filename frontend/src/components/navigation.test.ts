@@ -174,3 +174,55 @@ describe('the shape of the menu', () => {
     expect(withChildren([...NAVIGATION, ...EXTRA_SECTIONS])).toBeGreaterThan(3);
   });
 });
+
+describe('مفيش مدخلين بيروحوا نفس المكان', () => {
+  it('never lists the same screen twice under two names', () => {
+    // Two names for one screen is the most expensive kind of menu bug, because it is invisible:
+    // somebody uses «جرد المخازن», somebody else uses «جرد عام», both are looking at the identical
+    // page, and they spend an afternoon disagreeing about what the screen is for.
+    //
+    // Same PATH under two names is fine and common — «إذن إضافة» and «إذن صرف» are one screen with
+    // different arguments. It is the full key, arguments and all, that must be unique.
+    const seen = new Map<string, string[]>();
+    allScreens().forEach((s) => {
+      seen.set(s.key, [...(seen.get(s.key) ?? []), s.label]);
+    });
+    const duplicated = [...seen.entries()]
+      .filter(([, labels]) => labels.length > 1)
+      .map(([key, labels]) => `${key} ← ${labels.join(' / ')}`);
+    expect(duplicated, 'نفس الشاشة بنفس الباراميترز تحت أكتر من اسم').toEqual([]);
+  });
+
+  it('never gives one screen two different names in the tab bar', () => {
+    // The other direction: two labels for one key would also make the open tab's title depend on
+    // which menu entry was clicked, so the same page reads differently on two people's screens.
+    const byLabel = new Map<string, Set<string>>();
+    allScreens().forEach((s) => {
+      const set = byLabel.get(s.label) ?? new Set<string>();
+      set.add(s.key);
+      byLabel.set(s.label, set);
+    });
+    const ambiguous = [...byLabel.entries()]
+      .filter(([, keys]) => keys.size > 1)
+      .map(([label, keys]) => `«${label}» → ${[...keys].join(' , ')}`);
+    expect(ambiguous, 'اسم واحد بيودّي لأكتر من شاشة').toEqual([]);
+  });
+});
+
+describe('لوحة F4 بتوصل لكل حاجة القايمة بتوصّلها', () => {
+  it('offers every menu entry by name', () => {
+    // F4 is the keyboard's route to a screen, and it searches `allScreens()` by label. An entry
+    // with no label, or one the search cannot match, is reachable by mouse and not by keyboard —
+    // which quietly makes the keyboard the second-class way to work the system.
+    const unreachable = allScreens().filter((s) => !s.label || !s.label.trim());
+    expect(unreachable.map((s) => s.key), 'مدخل من غير اسم — مش هيبان في F4').toEqual([]);
+  });
+
+  it('reaches the new stocktake sheets, which is what the palette is for', () => {
+    // A concrete case rather than only a shape check: these two moved screens this session, and a
+    // rename that dropped them from the tree would otherwise pass every test above.
+    const labels = allScreens().map((s) => s.label);
+    expect(labels).toContain('جرد المخازن');
+    expect(labels).toContain('جرد عام المخازن');
+  });
+});
