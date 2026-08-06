@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { allScreens } from './navigation';
+import { EXTRA_SECTIONS, NAVIGATION, allScreens } from './navigation';
 
 /**
  * The menu must not lie.
@@ -139,4 +139,38 @@ describe('every document kind opens the document, not its list', () => {
         + 'lands on a list').toBe(true);
     },
   );
+});
+
+
+describe('the shape of the menu', () => {
+  /**
+   * قسم جواه مدخل واحد مش قسم.
+   *
+   * Eight of them existed: «اذن تحويل مخزن» opened to reveal «اذون التحويل» and nothing else, so
+   * reaching one screen took two clicks and a guess about what was inside. A group is a promise
+   * that there is a choice to make; with one child there is no choice, only a lid.
+   *
+   * The child keeps the GROUP's name when flattened — that is the wording people scan for.
+   */
+  const groupsWithOneChild = (nodes: any[], path: string[] = []): string[] => {
+    const bad: string[] = [];
+    nodes.forEach((n) => {
+      if (!n.children) return;
+      if (n.children.length === 1) bad.push([...path, n.label].join(' › '));
+      bad.push(...groupsWithOneChild(n.children, [...path, n.label]));
+    });
+    return bad;
+  };
+
+  it('has no section wrapping a single entry', () => {
+    // The MENU TREE, not `allScreens()` — that flattens groups away, which is exactly the shape
+    // this rule is about. Walking the tree is the only way to see a group at all.
+    expect(groupsWithOneChild([...NAVIGATION, ...EXTRA_SECTIONS]), 'قسم جواه مدخل واحد').toEqual([]);
+  });
+
+  it('still has real sections, so the rule did not flatten everything', () => {
+    const withChildren = (nodes: any[]): number =>
+      nodes.reduce((n, x) => n + (x.children ? 1 + withChildren(x.children) : 0), 0);
+    expect(withChildren([...NAVIGATION, ...EXTRA_SECTIONS])).toBeGreaterThan(3);
+  });
 });

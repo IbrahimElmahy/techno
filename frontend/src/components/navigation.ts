@@ -92,27 +92,9 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/trade-reports?view=item-profits', label: 'ارباح اصناف', roles: OFFICE, a5: '/sales/itemprofits' },
         ],
       },
-      {
-        key: 'grp-sales-return-reports',
-        label: 'تقارير مردرد مبيعات',
-        children: [
-          { key: '/trade-reports?view=sales-return-items', label: 'مرتجعات أصناف المبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
-        ],
-      },
-      {
-        key: 'grp-reservations',
-        label: 'الحجوزات',
-        children: [
-          { key: '/reservations', label: 'حجز عملاء', roles: SALES, a5: '/reservations/create' },
-        ],
-      },
-      {
-        key: 'grp-sale-orders',
-        label: 'طلبات بيع',
-        children: [
-          { key: '/orders?kind=sale', label: 'طلب بيع', roles: R(SALES), a5: '/saleorders/create' },
-        ],
-      },
+      { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردرد مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
+      { key: '/reservations', label: 'الحجوزات', roles: SALES, a5: '/reservations/create' },
+      { key: '/orders?kind=sale', label: 'طلبات بيع', roles: R(SALES), a5: '/saleorders/create' },
       {
         key: 'grp-rep-reports',
         label: 'تقارير مندوبين',
@@ -151,20 +133,8 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/trade-reports?view=purchase-items-grouped', label: 'مشتريات اصناف مجمعة', roles: R(BUYING), a5: '/purchases/item-grouped' },
         ],
       },
-      {
-        key: 'grp-purchase-return-reports',
-        label: 'تقارير مردرد مشتريات',
-        children: [
-          { key: '/trade-reports?view=purchase-return-items', label: 'مرتجعات أصناف المشتريات', roles: R(BUYING), a5: '/purchasesreturns/itemsearch' },
-        ],
-      },
-      {
-        key: 'grp-purchase-orders',
-        label: 'طلبات شراء',
-        children: [
-          { key: '/orders?kind=purchase', label: 'طلب شراء', roles: R(BUYING), a5: '/purchaseorders/create' },
-        ],
-      },
+      { key: '/trade-reports?view=purchase-return-items', label: 'تقارير مردرد مشتريات', roles: R(BUYING), a5: '/purchasesreturns/itemsearch' },
+      { key: '/orders?kind=purchase', label: 'طلبات شراء', roles: R(BUYING), a5: '/purchaseorders/create' },
     ],
   },
 
@@ -189,27 +159,9 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/stocktake', label: 'جرد حتى تاريخ', roles: R(STOCK), a5: '/inventory/period-inventory' },
         ],
       },
-      {
-        key: 'grp-permit-in',
-        label: 'إذن إضافة',
-        children: [
-          { key: '/stock-permits?kind=receipt', label: 'إذن إضافة', roles: STOCK, a5: '/storeins/create' },
-        ],
-      },
-      {
-        key: 'grp-permit-out',
-        label: 'إذن صرف',
-        children: [
-          { key: '/stock-permits?kind=issue', label: 'إذن صرف', roles: STOCK, a5: '/storeouts/create' },
-        ],
-      },
-      {
-        key: 'grp-transfer',
-        label: 'اذن تحويل مخازن',
-        children: [
-          { key: '/transfers', label: 'اذون التحويل', roles: R(STOCK), a5: '/storetransfers' },
-        ],
-      },
+      { key: '/stock-permits?kind=receipt', label: 'إذن إضافة', roles: STOCK, a5: '/storeins/create' },
+      { key: '/stock-permits?kind=issue', label: 'إذن صرف', roles: STOCK, a5: '/storeouts/create' },
+      { key: '/transfers', label: 'اذن تحويل مخازن', roles: R(STOCK), a5: '/storetransfers' },
       {
         key: 'grp-stock-reports',
         label: 'تقارير المخازن',

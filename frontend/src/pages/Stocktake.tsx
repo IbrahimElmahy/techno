@@ -6,6 +6,7 @@ import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { numberColumn, textColumn } from '../components/gridColumns';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -142,18 +143,46 @@ export default function Stocktake() {
         locale={{ emptyText: 'لا توجد أرصدة في هذا التاريخ' }}
         pagination={{ defaultPageSize: 25, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
+        // Every column filters and sorts on its own, and the narrowings combine — «خامات مخزن
+        // الفرع اللي قيمتها فوق الألف» is three columns at once, and a single search box above the
+        // table cannot express it however good the search is.
         columns={[
-          { title: 'الكود', dataIndex: 'code', render: (c: string) => (c ? <Tag>{c}</Tag> : '-') },
-          { title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
-          { title: 'الوحدة', dataIndex: 'unit_of_measure', render: (u: string) => u || '-' },
-          { title: 'الموقع', dataIndex: 'location' },
-          { title: 'الكمية', dataIndex: 'quantity', align: 'left',
+          { title: 'الكود', dataIndex: 'code', ...textColumn(rows, (r: Row) => r.code),
+            render: (c: string) => (c ? <Tag>{c}</Tag> : '-') },
+          { title: 'الصنف', dataIndex: 'name', ...textColumn(rows, (r: Row) => r.name),
+            render: (n: string) => <b>{n}</b> },
+          { title: 'الوحدة', dataIndex: 'unit_of_measure',
+            ...textColumn(rows, (r: Row) => r.unit_of_measure),
+            render: (u: string) => u || '-' },
+          { title: 'الموقع', dataIndex: 'location',
+            ...textColumn(rows, (r: Row) => r.location) },
+          { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
+            ...numberColumn((r: Row) => r.quantity),
             render: (v: string) => <b>{qty(v)}</b> },
-          { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', align: 'left',
+          { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', align: 'left' as const,
+            ...numberColumn((r: Row) => r.unit_cost),
             render: (v: string) => money(v) },
-          { title: 'القيمة', dataIndex: 'value', align: 'left',
+          { title: 'القيمة', dataIndex: 'value', align: 'left' as const,
+            ...numberColumn((r: Row) => r.value),
             render: (v: string) => <b style={{ color: '#0B5CA8' }}>{money(v)}</b> },
         ]}
+        // The bottom line follows the filters: a total that ignores them answers a question nobody
+        // asked, and reads as if the filter had not applied.
+        summary={(shown) => {
+          const total = shown.reduce((t, r: any) => t + Number(r.value || 0), 0);
+          const count = shown.length;
+          return (
+            <Table.Summary.Row>
+              <Table.Summary.Cell index={0} colSpan={4}>
+                <strong>{`المعروض: ${count} صنف`}</strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={1} colSpan={2} />
+              <Table.Summary.Cell index={2}>
+                <strong style={{ color: '#0B5CA8' }}>{money(total)} ج.م</strong>
+              </Table.Summary.Cell>
+            </Table.Summary.Row>
+          );
+        }}
       />
     </Card>
   );

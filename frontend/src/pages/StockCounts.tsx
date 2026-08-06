@@ -9,6 +9,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 
 /**
  * جرد المخازن و جرد عام — the counting cycle.
@@ -297,7 +298,10 @@ export default function StockCounts() {
           pagination={{ defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}` }}
           columns={[
-            { title: 'التاريخ', dataIndex: 'count_date', width: 110 },
+            // The register filters per column too — «جرد دوري على مخزن الفرع لسه ماخلصش» is
+            // three columns, and the strip above can only hold so many boxes before it is a form.
+            { title: 'التاريخ', dataIndex: 'count_date', width: 110,
+              ...numberColumn((r: Sheet) => Date.parse(r.count_date) || 0) },
             { title: 'رقم الكشف', dataIndex: 'document_number', width: 130,
               render: (v: string) => <Tag color="cyan">{v}</Tag> },
             // On the list because a cycle count that looks like a failed full count is how people
@@ -313,8 +317,10 @@ export default function StockCounts() {
                 return <Tag color={v.c}>{v.n}</Tag>;
               } },
             { title: 'المخزن', dataIndex: 'warehouse_name', ellipsis: true,
+              ...textColumn(sheets, (r: Sheet) => r.warehouse_name),
               render: (v: string | null) => v ?? <Tag>كل المخازن</Tag> },
             { title: 'السطور', key: 'lines', width: 150,
+              ...numberColumn((r: Sheet) => r.line_count),
               render: (_: any, r: Sheet) => `${r.counted_count} / ${r.line_count} متعدود` },
             { title: 'الحالة', dataIndex: 'status', width: 120,
               render: (v: Sheet['status']) => (v === 'posted' ? <Tag color="green">مترحّل</Tag>
@@ -452,7 +458,10 @@ export default function StockCounts() {
             <Table
               size="small" rowKey="id" dataSource={draftLines} pagination={{ pageSize: 12 }}
               columns={[
+                // Each column narrows on its own and the narrowings combine — «فئة الخامات، مخزن
+                // الفرع، اللي فيه فرق» is three at once, which the strip above cannot express.
                 { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
+                  ...textColumn(allLines, (l: Line) => l.item_name),
                   // A difference on a line is the moment somebody wants the item's history.
                   render: (v: string | null, r: Line) => (
                     <a onClick={() => navigate(`/catalog/${r.item_id}`)}>
@@ -461,8 +470,17 @@ export default function StockCounts() {
                   ) },
                 ...(sheet.warehouse_id === null ? [{
                   title: 'المخزن', dataIndex: 'warehouse_name', width: 150,
+                  ...textColumn(allLines, (l: Line) => l.warehouse_name),
+                }] : []),
+                // The category was not on the line at all before this work, so filtering a count
+                // by it was not possible from the client.
+                ...(categories.length > 1 ? [{
+                  title: 'الفئة', dataIndex: 'category', width: 130,
+                  ...textColumn(allLines, (l: Line) => l.category),
+                  render: (c: string | null) => (c ? <Tag>{c}</Tag> : '-'),
                 }] : []),
                 { title: 'رصيد الدفاتر', dataIndex: 'book_quantity', width: 120,
+                  ...numberColumn((l: Line) => l.book_quantity),
                   render: (v: string) => qty(v) },
                 {
                   title: 'المعدود', width: 140,
@@ -507,6 +525,19 @@ export default function StockCounts() {
                 },
                 {
                   title: 'الفرق', width: 110, align: 'left' as const,
+                  ...choiceColumn<Line>(
+                    [{ text: 'مطابق', value: 'match' },
+                     { text: 'عجز', value: 'short' },
+                     { text: 'زيادة', value: 'over' },
+                     { text: 'لسه ماتعدش', value: 'none' }],
+                    (ln, v) => {
+                      const d = isDraft ? diffOf(ln)
+                        : (ln.difference === null ? null : Number(ln.difference));
+                      if (v === 'none') return d === null;
+                      if (d === null) return false;
+                      if (v === 'match') return d === 0;
+                      return v === 'short' ? d < 0 : d > 0;
+                    }),
                   render: (_: any, ln: Line) => {
                     const d = isDraft ? diffOf(ln)
                       : (ln.difference === null ? null : Number(ln.difference));
