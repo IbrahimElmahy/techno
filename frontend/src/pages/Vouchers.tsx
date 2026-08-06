@@ -44,7 +44,10 @@ import { useLookup } from '../hooks/useLookup';
 interface VoucherRecord {
   id: number;
   document_number: string;
-  kind: 'receipt' | 'payment' | 'rep_handover';
+  // The backend writes five kinds (`VoucherKind`), not three. The narrow type meant the expense
+  // and cash-transfer registers could not even be asked for — and every one of those vouchers was
+  // arriving in this list untyped and unfilterable.
+  kind: 'receipt' | 'payment' | 'rep_handover' | 'expense' | 'cash_transfer';
   amount: string;
   customer_id: number | null;
   supplier_id: number | null;
@@ -239,6 +242,19 @@ const Vouchers: React.FC = () => {
    * FOR. Same separation as every other document in the system.
    */
   const [chequeOpen, setChequeOpen] = useState(false);
+  /**
+   * الإنشاء في بوباب هنا كمان — والتبويب بقى سجل النوع بتاعه.
+   *
+   * A tab whose whole body is a creation form answers «اعمل سند» and nothing else; «السندات اللي
+   * اتعملت» — which is what somebody opens this screen for most days — had to be looked for
+   * somewhere else on the page. Now the tab is the register and creating is a decision that opens
+   * and closes over it.
+   */
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [handoverOpen, setHandoverOpen] = useState(false);
+  const [expenseOpen, setExpenseOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
 
   const loadVouchers = useCallback(async () => {
     setLoading(true);
@@ -368,6 +384,13 @@ const Vouchers: React.FC = () => {
       await api.post(path, payload);
       message.success(okMsg);
       form.resetFields();
+      // The dialog closes only on success. A failed post leaves it open with what was typed still
+      // in it, so the person fixes one field instead of entering the whole voucher again.
+      setReceiptOpen(false);
+      setPaymentOpen(false);
+      setHandoverOpen(false);
+      setExpenseOpen(false);
+      setTransferOpen(false);
       loadVouchers();
       loadTreasuries();
       if (statement) loadStatement();
@@ -562,99 +585,22 @@ const Vouchers: React.FC = () => {
             key: 'receipt',
             label: 'سند قبض',
             children: (
-              <Card title="تحصيل من عميل">
-                <Form
-                  form={receiptForm}
-                  layout="inline"
-                  onFinish={(v) =>
-                    submit('/api/v1/vouchers/receipts', {
-                      ...v,
-                      // Empty for a customer with one debt — the server needs no choice then.
-                      family: receiptTarget && receiptTarget !== '__total__'
-                        ? receiptTarget : undefined,
-                      on_total: receiptTarget === '__total__',
-                    }, receiptForm, 'تم تسجيل سند القبض ✔')
-                  }
-                >
-                  <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
-                    {/* The same window the documents use — one way to answer «مين», and the
-                        only one that can create a party who is not on the list yet. */}
-                    <PartyField
-                      kind="customer"
-                      options={customers.map((c) => ({ value: c.id, label: c.name }))}
-                      onChange={(id: number) => {
-                        receiptForm.setFieldValue('customer_id', id);
-                        setReceiptTarget('');
-                        if (receiptFamilies[id]) return;
-                        api.get(`/api/v1/customers/${id}/accounts`)
-                          .then((r) => setReceiptFamilies((prev) => ({
-                            ...prev,
-                            [id]: (r.data?.accounts || []).filter((a: any) => a.family),
-                          })))
-                          .catch(() => setReceiptFamilies((prev) => ({ ...prev, [id]: [] })));
-                      }}
-                    />
-                  </Form.Item>
-                  {/* (031) أنهي مديونية بيسدّد.
-                      Shown only for a customer who owes on more than one line — for everybody else
-                      it is a question with a single possible answer. «على الإجمالي» splits the
-                      collection across his lines in proportion to what each one owes, because a
-                      ledger has no total to credit. */}
-                  <Form.Item noStyle shouldUpdate={(a, b) => a.customer_id !== b.customer_id}>
-                    {({ getFieldValue }) => {
-                      const lines = receiptFamilies[getFieldValue('customer_id')] || [];
-                      if (lines.length < 2) return null;
-                      return (
-                        <Form.Item label="على أنهي مديونية؟" required
-                          tooltip="الإجمالي بيتوزّع على الخطين بنسبة مديونية كل واحد">
-                          <Segmented
-                            value={receiptTarget}
-                            onChange={(v: string | number) => setReceiptTarget(String(v))}
-                            options={[
-                              ...lines.map((l: any) => ({
-                                value: l.family as string,
-                                label: `${l.family} (${money(Number(l.balance || 0))})`,
-                              })),
-                              { value: '__total__', label: 'على الإجمالي' },
-                            ]}
-                          />
-                        </Form.Item>
-                      );
-                    }}
-                  </Form.Item>
-                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
-                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
-                  </Form.Item>
-                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
-                    <DatePicker />
-                  </Form.Item>
-                  <Form.Item name="treasury_id" label="الخزينة">
-                    <Select
-                      allowClear
-                      style={{ width: 170 }}
-                      placeholder="الافتراضية"
-                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="payment_method" label="طريقة الدفع">
-                    <Select
-                      allowClear
-                      style={{ width: 130 }}
-                      options={methodOptions.map((o) => ({ value: o.value, label: o.label }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="reference" label="المرجع">
-                    <Input placeholder="رقم الإيصال" style={{ width: 140 }} />
-                  </Form.Item>
-                  <Form.Item name="description" label="البيان">
-                    <Input placeholder="اختياري" style={{ width: 180 }} />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={posting}>
-                      تسجيل السند
-                    </Button>
-                  </Form.Item>
-                </Form>
+              <Card title="تحصيل من عميل"
+                extra={(
+                  <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+                    onClick={() => { receiptForm.resetFields(); setReceiptTarget(''); setReceiptOpen(true); }}>
+                    سند قبض جديد
+                  </Button>
+                )}>
+                {/* السندات اللي اتعملت — the thing this screen is opened for most days. A tab whose
+                    whole body was a creation form answered «اعمل سند» and nothing else. */}
+                <Table<VoucherRecord>
+                  rowKey="id" size="small" loading={loading}
+                  dataSource={shownVouchers.filter((v) => v.kind === 'receipt')}
+                  columns={voucherColumns}
+                  locale={{ emptyText: 'مفيش سندات قبض' }}
+                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                />
               </Card>
             ),
           },
@@ -662,53 +608,20 @@ const Vouchers: React.FC = () => {
             key: 'payment',
             label: 'سند صرف',
             children: (
-              <Card title="دفع لمورد">
-                <Form
-                  form={paymentForm}
-                  layout="inline"
-                  onFinish={(v) =>
-                    submit('/api/v1/vouchers/payments', v, paymentForm, 'تم تسجيل سند الصرف ✔')
-                  }
-                >
-                  <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
-                    <PartyField
-                      kind="supplier"
-                      options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
-                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
-                  </Form.Item>
-                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
-                    <DatePicker />
-                  </Form.Item>
-                  <Form.Item name="treasury_id" label="الخزينة">
-                    <Select
-                      allowClear
-                      style={{ width: 170 }}
-                      placeholder="الافتراضية"
-                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="payment_method" label="طريقة الدفع">
-                    <Select
-                      allowClear
-                      style={{ width: 130 }}
-                      options={methodOptions.map((o) => ({ value: o.value, label: o.label }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="reference" label="المرجع">
-                    <Input placeholder="رقم الشيك/الإيصال" style={{ width: 150 }} />
-                  </Form.Item>
-                  <Form.Item name="description" label="البيان">
-                    <Input placeholder="اختياري" style={{ width: 180 }} />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={posting}>
-                      تسجيل السند
-                    </Button>
-                  </Form.Item>
-                </Form>
+              <Card title="دفع لمورد"
+                extra={(
+                  <Button type="primary" icon={<PlusOutlined />}
+                    onClick={() => { paymentForm.resetFields(); setPaymentOpen(true); }}>
+                    سند صرف جديد
+                  </Button>
+                )}>
+                <Table<VoucherRecord>
+                  rowKey="id" size="small" loading={loading}
+                  dataSource={shownVouchers.filter((v) => v.kind === 'payment')}
+                  columns={voucherColumns}
+                  locale={{ emptyText: 'مفيش سندات صرف' }}
+                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                />
               </Card>
             ),
           },
@@ -716,41 +629,20 @@ const Vouchers: React.FC = () => {
             key: 'handover',
             label: 'توريد مندوب',
             children: (
-              <Card title="استلام نقدية من عهدة مندوب">
-                <Form
-                  form={handoverForm}
-                  layout="inline"
-                  onFinish={(v) =>
-                    submit('/api/v1/vouchers/handovers', v, handoverForm, 'تم تسجيل التوريد ✔')
-                  }
-                >
-                  <Form.Item name="rep_user_id" label="المندوب" rules={[{ required: true, message: 'اختر المندوب' }]}>
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      style={{ width: 240 }}
-                      placeholder="اختر المندوب"
-                      options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
-                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
-                  </Form.Item>
-                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
-                    <DatePicker />
-                  </Form.Item>
-                  <Form.Item name="reference" label="المرجع">
-                    <Input placeholder="رقم الإيصال" style={{ width: 140 }} />
-                  </Form.Item>
-                  <Form.Item name="description" label="البيان">
-                    <Input placeholder="اختياري" style={{ width: 180 }} />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={posting}>
-                      تسجيل التوريد
-                    </Button>
-                  </Form.Item>
-                </Form>
+              <Card title="استلام نقدية من عهدة مندوب"
+                extra={(
+                  <Button type="primary" icon={<PlusOutlined />}
+                    onClick={() => { handoverForm.resetFields(); setHandoverOpen(true); }}>
+                    توريد جديد
+                  </Button>
+                )}>
+                <Table<VoucherRecord>
+                  rowKey="id" size="small" loading={loading}
+                  dataSource={shownVouchers.filter((v) => v.kind === 'rep_handover')}
+                  columns={voucherColumns}
+                  locale={{ emptyText: 'مفيش سندات توريد' }}
+                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                />
               </Card>
             ),
           },
@@ -758,50 +650,20 @@ const Vouchers: React.FC = () => {
             key: 'expense',
             label: 'سند مصروف',
             children: (
-              <Card title="صرف مصروف من الخزينة">
-                <Form
-                  form={expenseForm}
-                  layout="inline"
-                  onFinish={(v) =>
-                    submit('/api/v1/vouchers/expenses', v, expenseForm, 'تم تسجيل سند المصروف ✔')
-                  }
-                >
-                  <Form.Item
-                    name="expense_account_id"
-                    label="حساب المصروف"
-                    rules={[{ required: true, message: 'اختر حساب المصروف' }]}
-                  >
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      style={{ width: 240 }}
-                      placeholder="إيجار / مرتبات / بنزين…"
-                      options={expenseAccounts.map((a) => ({ value: a.id, label: a.name || a.code }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
-                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
-                  </Form.Item>
-                  <Form.Item name="treasury_id" label="الخزينة">
-                    <Select
-                      allowClear
-                      style={{ width: 170 }}
-                      placeholder="الافتراضية"
-                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
-                    <DatePicker />
-                  </Form.Item>
-                  <Form.Item name="description" label="البيان">
-                    <Input placeholder="اختياري" style={{ width: 180 }} />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={posting}>
-                      تسجيل المصروف
-                    </Button>
-                  </Form.Item>
-                </Form>
+              <Card title="صرف مصروف من الخزينة"
+                extra={(
+                  <Button type="primary" icon={<PlusOutlined />}
+                    onClick={() => { expenseForm.resetFields(); setExpenseOpen(true); }}>
+                    مصروف جديد
+                  </Button>
+                )}>
+                <Table<VoucherRecord>
+                  rowKey="id" size="small" loading={loading}
+                  dataSource={shownVouchers.filter((v) => v.kind === 'expense')}
+                  columns={voucherColumns}
+                  locale={{ emptyText: 'مفيش مصروفات' }}
+                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                />
                 {expenseAccounts.length === 0 && (
                   <Alert
                     type="info"
@@ -818,40 +680,20 @@ const Vouchers: React.FC = () => {
             key: 'transfer',
             label: 'تحويل بين الخزائن',
             children: (
-              <Card title="تحويل نقدية بين خزينتين">
-                <Form
-                  form={transferForm}
-                  layout="inline"
-                  onFinish={(v) =>
-                    submit('/api/v1/vouchers/transfers', v, transferForm, 'تم تسجيل التحويل ✔')
-                  }
-                >
-                  <Form.Item name="from_treasury_id" label="من" rules={[{ required: true, message: 'اختر الخزينة' }]}>
-                    <Select
-                      style={{ width: 200 }}
-                      options={treasuries
-                        .filter((t) => t.active)
-                        .map((t) => ({ value: t.id, label: `${t.name} (${money(t.balance)})` }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="to_treasury_id" label="إلى" rules={[{ required: true, message: 'اختر الخزينة' }]}>
-                    <Select
-                      style={{ width: 200 }}
-                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                  </Form.Item>
-                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
-                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
-                  </Form.Item>
-                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
-                    <DatePicker />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={posting}>
-                      تحويل
-                    </Button>
-                  </Form.Item>
-                </Form>
+              <Card title="تحويل نقدية بين خزينتين"
+                extra={(
+                  <Button type="primary" icon={<PlusOutlined />}
+                    onClick={() => { transferForm.resetFields(); setTransferOpen(true); }}>
+                    تحويل جديد
+                  </Button>
+                )}>
+                <Table<VoucherRecord>
+                  rowKey="id" size="small" loading={loading}
+                  dataSource={shownVouchers.filter((v) => v.kind === 'cash_transfer')}
+                  columns={voucherColumns}
+                  locale={{ emptyText: 'مفيش تحويلات' }}
+                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                />
 
                 <Table
                   rowKey="id"
@@ -1210,6 +1052,10 @@ const Vouchers: React.FC = () => {
                 { value: 'receipt', label: 'سند قبض' },
                 { value: 'payment', label: 'سند صرف' },
                 { value: 'rep_handover', label: 'توريد مندوب' },
+                // The register writes these two and could not filter for them: the dropdown listed
+                // three of the five kinds, so «وريني المصروفات» had no answer on this screen.
+                { value: 'expense', label: 'مصروف' },
+                { value: 'cash_transfer', label: 'تحويل نقدي' },
               ]}
             />
             <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} />
@@ -1240,6 +1086,311 @@ const Vouchers: React.FC = () => {
         {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
       </Modal>
 
+
+      {/* سند قبض جديد. Vertical in a dialog rather than inline across a page: a row of eight
+          fields is a form nobody reads the labels of. */}
+      <Modal
+        open={receiptOpen}
+        title="سند قبض — تحصيل من عميل"
+        okText="تسجيل السند" cancelText="إلغاء"
+        confirmLoading={posting}
+        onCancel={() => setReceiptOpen(false)}
+        onOk={() => receiptForm.submit()}
+        destroyOnHidden width={560}
+      >
+<Form
+                  form={receiptForm}
+                  layout="vertical"
+                  onFinish={(v) =>
+                    submit('/api/v1/vouchers/receipts', {
+                      ...v,
+                      // Empty for a customer with one debt — the server needs no choice then.
+                      family: receiptTarget && receiptTarget !== '__total__'
+                        ? receiptTarget : undefined,
+                      on_total: receiptTarget === '__total__',
+                    }, receiptForm, 'تم تسجيل سند القبض ✔')
+                  }
+                >
+                  <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
+                    {/* The same window the documents use — one way to answer «مين», and the
+                        only one that can create a party who is not on the list yet. */}
+                    <PartyField
+                      kind="customer"
+                      options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                      onChange={(id: number) => {
+                        receiptForm.setFieldValue('customer_id', id);
+                        setReceiptTarget('');
+                        if (receiptFamilies[id]) return;
+                        api.get(`/api/v1/customers/${id}/accounts`)
+                          .then((r) => setReceiptFamilies((prev) => ({
+                            ...prev,
+                            [id]: (r.data?.accounts || []).filter((a: any) => a.family),
+                          })))
+                          .catch(() => setReceiptFamilies((prev) => ({ ...prev, [id]: [] })));
+                      }}
+                    />
+                  </Form.Item>
+                  {/* (031) أنهي مديونية بيسدّد.
+                      Shown only for a customer who owes on more than one line — for everybody else
+                      it is a question with a single possible answer. «على الإجمالي» splits the
+                      collection across his lines in proportion to what each one owes, because a
+                      ledger has no total to credit. */}
+                  <Form.Item noStyle shouldUpdate={(a, b) => a.customer_id !== b.customer_id}>
+                    {({ getFieldValue }) => {
+                      const lines = receiptFamilies[getFieldValue('customer_id')] || [];
+                      if (lines.length < 2) return null;
+                      return (
+                        <Form.Item label="على أنهي مديونية؟" required
+                          tooltip="الإجمالي بيتوزّع على الخطين بنسبة مديونية كل واحد">
+                          <Segmented
+                            value={receiptTarget}
+                            onChange={(v: string | number) => setReceiptTarget(String(v))}
+                            options={[
+                              ...lines.map((l: any) => ({
+                                value: l.family as string,
+                                label: `${l.family} (${money(Number(l.balance || 0))})`,
+                              })),
+                              { value: '__total__', label: 'على الإجمالي' },
+                            ]}
+                          />
+                        </Form.Item>
+                      );
+                    }}
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="treasury_id" label="الخزينة">
+                    <Select
+                      allowClear
+                      style={{ width: 170 }}
+                      placeholder="الافتراضية"
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="payment_method" label="طريقة الدفع">
+                    <Select
+                      allowClear
+                      style={{ width: 130 }}
+                      options={methodOptions.map((o) => ({ value: o.value, label: o.label }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="reference" label="المرجع">
+                    <Input placeholder="رقم الإيصال" style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="description" label="البيان">
+                    <Input placeholder="اختياري" style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تسجيل السند
+                    </Button>
+                  </Form.Item>
+                </Form>
+      </Modal>
+
+      <Modal
+        open={paymentOpen}
+        title="سند صرف — دفع لمورد"
+        okText="تسجيل السند" cancelText="إلغاء"
+        confirmLoading={posting}
+        onCancel={() => setPaymentOpen(false)}
+        onOk={() => paymentForm.submit()}
+        destroyOnHidden width={560}
+      >
+<Form
+                  form={paymentForm}
+                  layout="vertical"
+                  onFinish={(v) =>
+                    submit('/api/v1/vouchers/payments', v, paymentForm, 'تم تسجيل سند الصرف ✔')
+                  }
+                >
+                  <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
+                    <PartyField
+                      kind="supplier"
+                      options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="treasury_id" label="الخزينة">
+                    <Select
+                      allowClear
+                      style={{ width: 170 }}
+                      placeholder="الافتراضية"
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="payment_method" label="طريقة الدفع">
+                    <Select
+                      allowClear
+                      style={{ width: 130 }}
+                      options={methodOptions.map((o) => ({ value: o.value, label: o.label }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="reference" label="المرجع">
+                    <Input placeholder="رقم الشيك/الإيصال" style={{ width: 150 }} />
+                  </Form.Item>
+                  <Form.Item name="description" label="البيان">
+                    <Input placeholder="اختياري" style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تسجيل السند
+                    </Button>
+                  </Form.Item>
+                </Form>
+      </Modal>
+
+      <Modal
+        open={handoverOpen}
+        title="سند توريد مندوب"
+        okText="تسجيل السند" cancelText="إلغاء"
+        confirmLoading={posting}
+        onCancel={() => setHandoverOpen(false)}
+        onOk={() => handoverForm.submit()}
+        destroyOnHidden width={560}
+      >
+<Form
+                  form={handoverForm}
+                  layout="vertical"
+                  onFinish={(v) =>
+                    submit('/api/v1/vouchers/handovers', v, handoverForm, 'تم تسجيل التوريد ✔')
+                  }
+                >
+                  <Form.Item name="rep_user_id" label="المندوب" rules={[{ required: true, message: 'اختر المندوب' }]}>
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      style={{ width: 240 }}
+                      placeholder="اختر المندوب"
+                      options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="reference" label="المرجع">
+                    <Input placeholder="رقم الإيصال" style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="description" label="البيان">
+                    <Input placeholder="اختياري" style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تسجيل التوريد
+                    </Button>
+                  </Form.Item>
+                </Form>
+      </Modal>
+
+      <Modal
+        open={expenseOpen}
+        title="سند مصروف"
+        okText="تسجيل السند" cancelText="إلغاء"
+        confirmLoading={posting}
+        onCancel={() => setExpenseOpen(false)}
+        onOk={() => expenseForm.submit()}
+        destroyOnHidden width={560}
+      >
+<Form
+                  form={expenseForm}
+                  layout="vertical"
+                  onFinish={(v) =>
+                    submit('/api/v1/vouchers/expenses', v, expenseForm, 'تم تسجيل سند المصروف ✔')
+                  }
+                >
+                  <Form.Item
+                    name="expense_account_id"
+                    label="حساب المصروف"
+                    rules={[{ required: true, message: 'اختر حساب المصروف' }]}
+                  >
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      style={{ width: 240 }}
+                      placeholder="إيجار / مرتبات / بنزين…"
+                      options={expenseAccounts.map((a) => ({ value: a.id, label: a.name || a.code }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="treasury_id" label="الخزينة">
+                    <Select
+                      allowClear
+                      style={{ width: 170 }}
+                      placeholder="الافتراضية"
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="description" label="البيان">
+                    <Input placeholder="اختياري" style={{ width: 180 }} />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تسجيل المصروف
+                    </Button>
+                  </Form.Item>
+                </Form>
+      </Modal>
+
+      <Modal
+        open={transferOpen}
+        title="تحويل نقدي بين خزينتين"
+        okText="تسجيل السند" cancelText="إلغاء"
+        confirmLoading={posting}
+        onCancel={() => setTransferOpen(false)}
+        onOk={() => transferForm.submit()}
+        destroyOnHidden width={560}
+      >
+<Form
+                  form={transferForm}
+                  layout="vertical"
+                  onFinish={(v) =>
+                    submit('/api/v1/vouchers/transfers', v, transferForm, 'تم تسجيل التحويل ✔')
+                  }
+                >
+                  <Form.Item name="from_treasury_id" label="من" rules={[{ required: true, message: 'اختر الخزينة' }]}>
+                    <Select
+                      style={{ width: 200 }}
+                      options={treasuries
+                        .filter((t) => t.active)
+                        .map((t) => ({ value: t.id, label: `${t.name} (${money(t.balance)})` }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="to_treasury_id" label="إلى" rules={[{ required: true, message: 'اختر الخزينة' }]}>
+                    <Select
+                      style={{ width: 200 }}
+                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
+                    />
+                  </Form.Item>
+                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                    <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
+                  </Form.Item>
+                  <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
+                    <DatePicker />
+                  </Form.Item>
+                  <Form.Item>
+                    <Button type="primary" htmlType="submit" loading={posting}>
+                      تحويل
+                    </Button>
+                  </Form.Item>
+                </Form>
+      </Modal>
       {/* ورقة قبض/دفع جديدة. Vertical, not the inline row it was: eight fields shoulder to
           shoulder is a form nobody reads the labels of. */}
       <Modal
