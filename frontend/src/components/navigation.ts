@@ -149,10 +149,14 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-count',
         label: 'جرد',
         children: [
-          // Their «جرد المخازن» and «جرد عام» are filtered stock listings, not counting sheets — read off
-          // their screens on 2026-08-01. Both land on رصيد صنف, which already answers exactly that.
-          { key: '/stock-balance?view=count', label: 'جرد المخازن', roles: R(STOCK), a5: '/inventorycount' },
-          { key: '/stock-balance?view=general', label: 'جرد عام المخازن', roles: R(STOCK), a5: '/generalinventorycount' },
+          // صفوف وأعمدة. These used to land on رصيد صنف, which is a three-pane picker — you choose
+          // a category, then one item, then read that item's balances. That answers «الصنف ده عندي
+          // منه كام» and is a good screen for it, but a جرد is a SHEET: every line you hold, one
+          // row each, filtered and printed and counted against. You cannot count a warehouse by
+          // clicking items one at a time. The two differ only in whether the store is a column or
+          // is summed away.
+          { key: '/stock-sheet?view=count', label: 'جرد المخازن', roles: R(STOCK), a5: '/inventorycount' },
+          { key: '/stock-sheet?view=general', label: 'جرد عام المخازن', roles: R(STOCK), a5: '/generalinventorycount' },
           // Ours, with no counterpart in theirs: the sheet → counted → difference → adjustment
           // cycle. Kept because it is the half of a stocktake their screens do not do.
           { key: '/stock-counts', label: 'دورة الجرد (عدّ وتسوية)', roles: STOCK },

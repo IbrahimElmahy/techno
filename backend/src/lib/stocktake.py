@@ -99,6 +99,9 @@ def stock_as_of(
             "item_id": item_ref,
             "code": item.code if item else None,
             "name": item.name if item else f"#{item_ref}",
+            # (031) الفئة. A count sheet is read one category at a time — «الأدوات الصحية عندنا
+            # منها كام» — and without it the only way to that was a name search per item.
+            "category": item.category if item else None,
             "unit_of_measure": item.unit_of_measure if item else None,
             "location_kind": loc_kind,
             "location_id": loc_id,

@@ -12,7 +12,9 @@ import { useAuth } from '../components/AuthProvider';
 import ItemEditModal from '../components/ItemEditModal';
 import { SerialsPanel, UnitsPanel } from '../components/ItemUnitsPanel';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import DocumentLink from '../components/DocumentLink';
+import DocumentLink, { useOpenDocument } from '../components/DocumentLink';
+import { useTableKeyboard } from '../components/keyboard';
+import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
 
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
@@ -113,6 +115,34 @@ export default function ItemProfile() {
 
   const it = data?.item;
   const onHand = Number(data?.on_hand || 0);
+
+  const openDoc = useOpenDocument();
+  const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
+  // رصيد في مخزن بيفتح حركات الصنف في المخزن ده — نفس النافذة اللي أرصدة المخازن بتفتحها.
+  const stockKb = useTableKeyboard<any>({
+    rows: data?.stock_by_location ?? [], rowKey: (r) => `${r.location_kind}-${r.location_id}`,
+    onOpen: (r) => data && setHistory({
+      itemId: data.item.id, itemName: data.item.name,
+      locationKind: r.location_kind, locationId: r.location_id,
+    }),
+  });
+  // وسطور البيع والشرا بتفتح فواتيرها — الزرار في آخر السطر، والسطر كله بقى يوصّل لنفس المكان.
+  const salesKb = useTableKeyboard<any>({
+    rows: salesFilter.filtered,
+    rowKey: (r) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`,
+    onOpen: (r) => openDoc('invoice', r.invoice_id),
+  });
+  const purchKb = useTableKeyboard<any>({
+    rows: purchasesFilter.filtered,
+    rowKey: (r) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`,
+    onOpen: (r) => openDoc('purchase', r.invoice_id),
+  });
+  // الحركة نفسها مالهاش رقم مستند مربوط في الرد، فبتفتح كارت الصنف على تاريخها — أقرب حاجة أخص
+  // من غير ما نخترع لينك بيودّي على قايمة.
+  const movesKb = useTableKeyboard<any>({
+    rows: movementsFilter.filtered, rowKey: (r) => r.id,
+    onOpen: () => navigate(`/item-card?item=${itemId}`),
+  });
 
   return (
     <div>
@@ -216,6 +246,7 @@ export default function ItemProfile() {
                         الرصيد حسب المخزن
                       </Typography.Title>
                       <Table
+                        {...stockKb.tableProps}
                         size="small" rowKey={(r: any) => `${r.location_kind}-${r.location_id}`}
                         dataSource={data.stock_by_location} pagination={false}
                         locale={{ emptyText: 'لا يوجد رصيد لهذا الصنف' }}
@@ -275,6 +306,7 @@ export default function ItemProfile() {
                         ]}
                       />
                       <Table
+                        {...movesKb.tableProps}
                         size="small" rowKey="id" dataSource={movementsFilter.filtered} scroll={{ x: true }}
                         pagination={{ defaultPageSize: 20, showSizeChanger: true,
                           pageSizeOptions: ['10', '20', '50', '100', '200'] }}
@@ -318,6 +350,7 @@ export default function ItemProfile() {
                       <Table
                         // Keyed by the row's own identity, not its position: these rows are
                         // filtered, so an index key would re-map content across rows.
+                        {...salesKb.tableProps}
                         size="small" dataSource={salesFilter.filtered}
                         rowKey={(r: any) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`}
                         scroll={{ x: true }}
@@ -360,6 +393,7 @@ export default function ItemProfile() {
                         total={data.purchases.length} shown={purchasesFilter.filtered.length}
                       />
                       <Table
+                        {...purchKb.tableProps}
                         size="small" dataSource={purchasesFilter.filtered}
                         rowKey={(r: any) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`}
                         scroll={{ x: true }}
@@ -459,6 +493,7 @@ export default function ItemProfile() {
         canEditPrices={canEditPrices}
         canEditPoints={canEditPoints}
       />
+      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
     </div>
   );
 }

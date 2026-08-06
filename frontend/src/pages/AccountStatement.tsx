@@ -6,7 +6,8 @@ import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import DocumentLink, { DocKind } from '../components/DocumentLink';
+import { useTableKeyboard } from '../components/keyboard';
+import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 
 /**
@@ -166,6 +167,16 @@ export default function AccountStatement() {
     URL.revokeObjectURL(a.href);
   };
 
+  // «إيه السطر ده؟» — السطر كله يفتح مستنده، مش عمود المستند لوحده. اللي بيقرا كشف حساب
+  // بيمشي بعينه على الأرقام على الشمال، والزرار في آخر السطر بعيد عن اللي بيبصّ عليه.
+  const openDoc = useOpenDocument();
+  const kb = useTableKeyboard<StatementLine>({
+    rows: statement?.lines ?? [],
+    rowKey: (l) => `${l.entry_id}-${l.entry_date}-${l.balance}`,
+    // A manual journal entry has no document behind it; leaving those inert is the honest answer.
+    onOpen: (l) => { if (l.doc_kind && l.doc_id) openDoc(l.doc_kind, l.doc_id); },
+  });
+
   return (
     <Card
       title="كشف حساب"
@@ -234,6 +245,7 @@ export default function AccountStatement() {
           </Row>
 
           <Table<StatementLine>
+            {...kb.tableProps}
             rowKey={(l) => `${l.entry_id}-${l.entry_date}-${l.balance}`}
             size="small" loading={loading} dataSource={statement.lines}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}

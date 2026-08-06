@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
   Card,
   Tabs,
@@ -17,10 +17,12 @@ import {
 } from 'antd';
 import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { printDocument } from '../print/brand';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
 
 interface ReportLine {
   account_id: number;
@@ -77,6 +79,7 @@ const money = (v: string | number) =>
 const BUCKETS = ['0-30', '31-60', '61-90', '90+'];
 
 const FinanceReports: React.FC = () => {
+  const navigate = useNavigate();
   // «مديونيه عملاء» and «ارصده موردين» are separate entries in their menu; both live in أعمار
   // الديون here, so the entry has to land on it rather than on قائمة الدخل.
   const [tab, setTab] = useQueryTab('income');
@@ -169,6 +172,25 @@ const FinanceReports: React.FC = () => {
     render: (_: any, r: ReportLine) => r.name || r.code || `#${r.account_id}`,
   };
 
+  // الرقم في قائمة الدخل أو الميزانية بيفتح كشف حساب الحساب اللي عمله — دي النزلة اللي أي حد
+  // بيقرا تقرير مالي بيعملها بعد ما يشوف رقم مش متوقع.
+  // The account lines of whichever of the two statements is on screen. Ids are unique across the
+  // sections, so one cursor can walk all of them — and only one statement renders at a time.
+  const acctRows = useMemo(() => [
+    ...(income?.income ?? []), ...(income?.expenses ?? []),
+    ...(sheet?.assets ?? []), ...(sheet?.liabilities ?? []), ...(sheet?.equity ?? []),
+  ], [income, sheet]);
+  const acctKb = useTableKeyboard<any>({
+    rows: acctRows, rowKey: (r) => r.account_id,
+    onOpen: (r) => navigate(`/account-statement?account=${r.account_id}`),
+  });
+  // وسطر الأعمار بيفتح ملف الطرف نفسه — «العميل ده متأخر عليه كام» بيتبعها «وريني ملفه».
+  const agingKb = useTableKeyboard<AgingRow>({
+    rows: agingFilter.filtered, rowKey: (r) => r.party_id,
+    onOpen: (r) => navigate(agingParty === 'customers'
+      ? `/customers/${r.party_id}` : `/suppliers/${r.party_id}`),
+  });
+
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
@@ -233,8 +255,9 @@ const FinanceReports: React.FC = () => {
                         </Card>
                       </Col>
                     </Row>
-                    <Table rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol]} />
                     <Table
+                      {...acctKb.tableProps}
                       rowKey="account_id"
                       size="small"
                       pagination={false}
@@ -269,9 +292,9 @@ const FinanceReports: React.FC = () => {
                       <Descriptions.Item label="حقوق الملكية">{money(sheet.total_equity)}</Descriptions.Item>
                       <Descriptions.Item label="أرباح الفترة">{money(sheet.net_profit)}</Descriptions.Item>
                     </Descriptions>
-                    <Table rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol]} />
-                    <Table rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol]} />
-                    <Table rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol]} />
                   </>
                 )}
               </Card>
@@ -303,6 +326,7 @@ const FinanceReports: React.FC = () => {
                   searchSpan={10}
                 />
                 <Table<AgingRow>
+                  {...agingKb.tableProps}
                   rowKey="party_id"
                   size="small"
                   loading={loading}

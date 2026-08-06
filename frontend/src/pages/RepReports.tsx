@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
+import { useTableKeyboard } from '../components/keyboard';
 
 /**
  * تقارير مندوبين — three of their four report screens; the fourth (عمولة تحصيلات مندوبين) already
@@ -109,6 +110,21 @@ export default function RepReports() {
     </Space>
   );
 
+  // كل سطر هنا بيتكلم عن حد أو حاجة ليها ملف: المندوب، العميل، الصنف. فالسطر بيروح للملف ده،
+  // بدل ما الاسم بس يكون لينك واللي بيقرا الأرقام على الشمال ما يوصلش لحاجة.
+  const collectionKb = useTableKeyboard<CollectionRow>({
+    rows: collectionFilter.filtered, rowKey: (r) => r.rep_user_id,
+    onOpen: (r) => navigate(`/employees?rep=${r.rep_user_id}`),
+  });
+  const customerKb = useTableKeyboard<ByCustomerRow>({
+    rows: customerFilter.filtered, rowKey: (r) => `${r.rep_user_id}-${r.customer_id ?? 0}`,
+    onOpen: (r) => { if (r.customer_id) navigate(`/customers/${r.customer_id}`); },
+  });
+  const itemKb = useTableKeyboard<RepItemRow>({
+    rows: itemFilter.filtered, rowKey: (r) => `${r.rep_user_id}-${r.item_id}`,
+    onOpen: (r) => navigate(`/catalog/${r.item_id}`),
+  });
+
   return (
     <Card title={<span><TeamOutlined /> تقارير المندوبين</span>} extra={header}>
       <Space size="large" style={{ marginBottom: 12 }}>
@@ -133,6 +149,7 @@ export default function RepReports() {
                   searchSpan={10}
                 />
                 <Table
+                  {...collectionKb.tableProps}
                   rowKey="rep_user_id" size="middle" loading={loading}
                   dataSource={collectionFilter.filtered}
                   locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
@@ -165,6 +182,7 @@ export default function RepReports() {
                     options: repOptions }]}
                 />
                 <Table
+                  {...customerKb.tableProps}
                   rowKey={(r) => `${r.rep_user_id}-${r.customer_id ?? 0}`}
                   size="middle" loading={loading} dataSource={customerFilter.filtered}
                   locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
@@ -203,6 +221,7 @@ export default function RepReports() {
                     options: repOptions }]}
                 />
                 <Table
+                  {...itemKb.tableProps}
                   rowKey={(r) => `${r.rep_user_id}-${r.item_id}`}
                   size="middle" loading={loading} dataSource={itemFilter.filtered}
                   locale={{ emptyText: 'مفيش مبيعات في الفترة دي' }}

@@ -4,7 +4,7 @@ import {
   Select, Space,
   Statistic, Table, Tag, message,
 } from 'antd';
-import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
+import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined , ArrowRightOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -256,6 +256,10 @@ export default function StockCounts() {
     <div>
       {/* Mounted at the root so it survives the sheet dialog closing under it. */}
       <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
+      {/* صفحة واحدة في المرة: يا القايمة يا الكشف. الكشف كان بيتفتح في نافذة عرضها ٨٨٠ بكسل
+          و١٢ سطر في الصفحة — وجرد كلي بيبقى مئات السطور، فاللي بيعدّ كان بيعدّ من خرم إبرة.
+          دلوقتي بياخد الصفحة كلها. */}
+      {!(detailVisible && sheet) && (
       <Card
         title="دورة الجرد — عدّ وتسوية"
         extra={
@@ -333,6 +337,7 @@ export default function StockCounts() {
           ]}
         />
       </Card>
+      )}
 
       <Modal
         centered title="فتح كشف جرد" open={openVisible} onCancel={() => setOpenVisible(false)}
@@ -393,17 +398,27 @@ export default function StockCounts() {
         </Form>
       </Modal>
 
-      <Modal
-        centered width={880} destroyOnHidden
-        title={`كشف الجرد ${sheet?.document_number ?? ''}`}
-        open={detailVisible} onCancel={() => setDetailVisible(false)}
-        footer={isDraft ? (
+      {detailVisible && sheet && (
+      <Card
+        title={(
+          <Space>
+            <Button type="text" icon={<ArrowRightOutlined />}
+              onClick={() => setDetailVisible(false)}>رجوع للكشوف</Button>
+            <span>كشف الجرد {sheet.document_number}</span>
+            <Tag color={sheet.status === 'posted' ? 'green'
+              : sheet.status === 'cancelled' ? 'default' : 'blue'}>
+              {sheet.status === 'posted' ? 'مترحّل'
+                : sheet.status === 'cancelled' ? 'ملغي' : 'مفتوح'}
+            </Tag>
+          </Space>
+        )}
+        extra={isDraft ? (
           <Space>
             <Popconfirm title="إلغاء الكشف؟" okText="إلغاء الكشف" cancelText="رجوع"
-              onConfirm={() => sheet && cancelSheet(sheet.id)}>
+              onConfirm={() => cancelSheet(sheet.id)}>
               <Button danger icon={<StopOutlined />}>إلغاء الكشف</Button>
             </Popconfirm>
-            <Button onClick={saveCounts} loading={busy}>حفظ العدّ</Button>
+            <Button data-shortcut="F9" onClick={saveCounts} loading={busy}>حفظ العدّ</Button>
             <Popconfirm
               title="ترحيل الجرد؟"
               description="الفروق هتتسوّى في المخزن. السطور اللي مفيهاش رقم مش هتتغيّر."
@@ -411,11 +426,8 @@ export default function StockCounts() {
               <Button type="primary" icon={<CheckOutlined />} loading={busy}>ترحيل الجرد</Button>
             </Popconfirm>
           </Space>
-        ) : (
-          <Button onClick={() => setDetailVisible(false)}>إغلاق</Button>
-        )}
+        ) : null}
       >
-        {sheet && (
           <>
             <Space size="large" style={{ marginBottom: 12 }}>
               <Statistic title="متعدود" value={`${countedNow} / ${allLines.length}`} />
@@ -426,11 +438,6 @@ export default function StockCounts() {
                 valueStyle={{ color: totalShort < -0.005 ? '#cf1322' : undefined }} />
               <Statistic title="قيمة الزيادة" value={`${money(totalOver)} ج.م`}
                 valueStyle={{ color: totalOver > 0.005 ? '#6AB42D' : undefined }} />
-              {sheet.status !== 'draft' && (
-                <Tag color={sheet.status === 'posted' ? 'green' : 'default'}>
-                  {sheet.status === 'posted' ? 'مترحّل' : 'ملغي'}
-                </Tag>
-              )}
             </Space>
 
             {/* فلاتر جوه الورقة. A full count is hundreds of lines, and «وريني اللي فيه فرق بس»
@@ -461,7 +468,11 @@ export default function StockCounts() {
             </Space>
 
             <Table
-              size="small" rowKey="id" dataSource={draftLines} pagination={{ pageSize: 12 }}
+              size="small" rowKey="id" dataSource={draftLines}
+              tableLayout="fixed" scroll={{ x: 'max-content' }}
+              pagination={{ defaultPageSize: 50, showSizeChanger: true,
+                pageSizeOptions: ['25', '50', '100', '200', '500'],
+                showTotal: (t) => `الإجمالي: ${t} سطر` }}
               columns={[
                 // Each column narrows on its own and the narrowings combine — «فئة الخامات، مخزن
                 // الفرع، اللي فيه فرق» is three at once, which the strip above cannot express.
@@ -565,8 +576,8 @@ export default function StockCounts() {
               ]}
             />
           </>
-        )}
-      </Modal>
+      </Card>
+      )}
     </div>
   );
 }

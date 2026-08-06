@@ -6,7 +6,8 @@ import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import DocumentLink, { docKindOf } from '../components/DocumentLink';
+import { useTableKeyboard } from '../components/keyboard';
+import DocumentLink, { docKindOf, useOpenDocument } from '../components/DocumentLink';
 
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
@@ -142,6 +143,17 @@ export default function ItemCard() {
     URL.revokeObjectURL(a.href);
   };
 
+  // قراية الكارت هي سؤال «الحركة دي جات منين؟»، فالسطر يفتح مستندها. الحركات اللي مالهاش شاشة
+  // مستند (تحويل، تصنيع، جرد) بتفضل ساكتة بدل ما تودّي على قايمة.
+  const openDoc = useOpenDocument();
+  const kb = useTableKeyboard<CardRow>({
+    rows: card?.rows ?? [], rowKey: (r) => r.movement_id,
+    onOpen: (r) => {
+      const kind = docKindOf(r.source_doc_type);
+      if (kind && r.source_doc_id) openDoc(kind, r.source_doc_id);
+    },
+  });
+
   return (
     <Card
       title="كارت الصنف"
@@ -224,6 +236,7 @@ export default function ItemCard() {
           )}
 
           <Table<CardRow>
+            {...kb.tableProps}
             rowKey="movement_id" size="small" loading={loading} dataSource={card.rows}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
             pagination={{ defaultPageSize: 25, showSizeChanger: true }}

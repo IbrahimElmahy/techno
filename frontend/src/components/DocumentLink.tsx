@@ -50,6 +50,33 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
   }
 }
 
+/** Kinds whose screen can reopen the document for editing. The rest can only be looked at, and
+ *  sending a reader to a non-existent edit screen would be worse than the view they wanted. */
+const EDITABLE = new Set<DocKind>(['invoice']);
+
+/**
+ * «افتح المستند ده» — the single answer to where a document opens.
+ *
+ * The URL was built in two places in this file and was about to be built in six more: the reports
+ * where a whole ROW now opens the document its numbers came from. Six copies of
+ * `${SCREEN[kind]}?edit=${id}` are six chances for one of them to keep sending invoices to the
+ * read-only view after the rest moved on.
+ *
+ * Navigate rather than openTab: openTab deliberately restores a section where the user left it,
+ * which would drop the intent. The tab reconciler picks this URL up and focuses the tab.
+ */
+export function useOpenDocument() {
+  const navigate = useNavigate();
+  return (kind: DocKind, id: number | null | undefined, opts?: { readOnly?: boolean }) => {
+    if (!id) return;
+    // Straight to editing where the screen can edit. Clicking a document number means «وريني
+    // الفاتورة دي عشان أشتغل عليها»; the sale asks for confirmation when it gets there, because
+    // reopening a posted invoice reverses it.
+    const intent = !opts?.readOnly && EDITABLE.has(kind) ? 'edit' : 'doc';
+    navigate(`${SCREEN[kind]}?${intent}=${id}`);
+  };
+}
+
 interface Props {
   kind: DocKind;
   /** The document's own number, shown instead of the generic label when known. */
@@ -74,21 +101,16 @@ export function DocRef({ kind, id, label, onNavigate }: {
   kind: DocKind; id: number | null | undefined; label: string | null | undefined;
   onNavigate?: () => void;
 }) {
-  const navigate = useNavigate();
+  const open = useOpenDocument();
   if (!label) return <span style={{ color: '#bbb' }}>-</span>;
   // Without an id there is nothing to open, so it stays plain text rather than a link that lands
   // on a list and leaves the reader to search for what they just clicked.
   if (!id) return <Tag>{label}</Tag>;
-  // Straight to editing where the screen can edit. Clicking a document number means «وريني
-  // الفاتورة دي عشان أشتغل عليها», and the read-only stop in between was a step everybody passed
-  // through on the way somewhere else. The sale asks for confirmation when it gets there, because
-  // reopening a posted invoice reverses it.
-  const intent = EDITABLE.has(kind) ? 'edit' : 'doc';
   return (
-    <Tooltip title={intent === 'edit' ? 'افتح الفاتورة للتعديل' : 'افتح المستند في شاشته'}>
+    <Tooltip title={EDITABLE.has(kind) ? 'افتح الفاتورة للتعديل' : 'افتح المستند في شاشته'}>
       <a onClick={(e) => {
         e.stopPropagation();
-        navigate(`${SCREEN[kind]}?${intent}=${id}`);
+        open(kind, id);
         onNavigate?.();
       }}>
         <Tag color="blue" style={{ cursor: 'pointer' }}>{label}</Tag>
@@ -97,19 +119,13 @@ export function DocRef({ kind, id, label, onNavigate }: {
   );
 }
 
-/** Kinds whose screen can reopen the document for editing. The rest can only be looked at, and
- *  sending a reader to a non-existent edit screen would be worse than the view they wanted. */
-const EDITABLE = new Set<DocKind>(['invoice']);
-
 export default function DocumentLink({
   kind, id, label, allowEdit = false, size = 'middle', onNavigate,
 }: Props) {
-  const navigate = useNavigate();
+  const open = useOpenDocument();
 
   const go = (intent: 'doc' | 'edit') => {
-    // Navigate rather than openTab: openTab deliberately restores a section where the user left
-    // it, which would drop the intent. The tab reconciler picks this URL up and focuses the tab.
-    navigate(`${SCREEN[kind]}?${intent}=${id}`);
+    open(kind, id, { readOnly: intent === 'doc' });
     onNavigate?.();
   };
 

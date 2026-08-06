@@ -654,7 +654,15 @@ export function useTableKeyboard<T>({
   }, [rows, activeKey, keyOf]);
 
   const onRow = useCallback((row: T) => ({
-    onClick: () => {
+    onClick: (e: React.MouseEvent) => {
+      // A click on something inside the row that already means something — a quantity box, a
+      // «إلغاء» button, a link to the customer — is that thing's click, not the row's. Without
+      // this, typing into the count box on the stocktake opens the movement log every time, and
+      // the row swallows the one control the screen exists for.
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === 'function' && t.closest(
+        'input, textarea, select, button, a, .ant-select, .ant-switch, .ant-picker, .ant-checkbox',
+      )) return;
       // The click puts the cursor where the mouse is, so a following ↓ carries on from the row
       // just clicked rather than from wherever the keyboard was left.
       setActiveKey(keyOf(row));

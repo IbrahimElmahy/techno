@@ -7,6 +7,7 @@ import {
   ReloadOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import {
@@ -14,6 +15,7 @@ import {
 } from '../utils/accounts';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
 
 // --- Types --------------------------------------------------------------------------------
 interface Account {
@@ -100,6 +102,7 @@ export default function GeneralLedger() {
 
 // --- Tab 1: Chart of Accounts -------------------------------------------------------------
 function ChartTab() {
+  const navigate = useNavigate();
   const [tree, setTree] = useState<Account[]>([]);
   const [groups, setGroups] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
@@ -164,6 +167,13 @@ function ChartTab() {
       render: (b: string) => <strong>{egp(b)}</strong> },
   ];
 
+  // الحساب في الشجرة بيفتح كشف حسابه. اللي بيبص على شجرة الحسابات بيدوّر على حساب عشان يشوف
+  // حركته — والشجرة كانت بتوقف عند الاسم.
+  const chartKb = useTableKeyboard<any>({
+    rows: filter.filtered, rowKey: (a) => a.id,
+    onOpen: (a) => navigate(`/account-statement?account=${a.id}`),
+  });
+
   return (
     <Card
       title="الهيكل الشجري لدليل الحسابات"
@@ -192,6 +202,7 @@ function ChartTab() {
         ]}
       />
       <Table
+        {...chartKb.tableProps}
         rowKey="id"
         loading={loading}
         dataSource={filter.filtered}
@@ -247,6 +258,7 @@ function ChartTab() {
 
 // --- Tab 2: Journal Entries ---------------------------------------------------------------
 function JournalTab() {
+  const navigate = useNavigate();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [leaves, setLeaves] = useState<Account[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -404,6 +416,14 @@ function JournalTab() {
         ) : <Tag color="red">معكوس</Tag> },
   ];
 
+  // القيد بيفتح كشف حساب أول سطر فيه — القيد بسطوره ظاهر في الجدول نفسه، واللي بعده هو
+  // «الحساب ده رصيده بقى كام».
+  const entryKb = useTableKeyboard<any>({
+    rows: filter.filtered, rowKey: (e) => e.id,
+    onOpen: (e) => { const a = e.lines?.[0]?.account_id;
+      if (a) navigate(`/account-statement?account=${a}`); },
+  });
+
   return (
     <Card
       title="قيود اليومية (دفتر الأستاذ الموحد)"
@@ -428,7 +448,7 @@ function JournalTab() {
             options: [{ value: 0, label: 'عام' }, ...branches.map((b) => ({ value: b.id, label: b.name }))] },
         ]}
       />
-      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+      <Table {...entryKb.tableProps} rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
 
       {/* New journal drawer */}
       <Modal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
@@ -571,6 +591,7 @@ const BOOKS: { nature: TrialRow['nature']; label: string }[] = [
 ];
 
 function TrialBalanceTab() {
+  const navigate = useNavigate();
   const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('year'), dayjs().endOf('year')]);
   const [branchId, setBranchId] = useState<number | undefined>();
   const [costCenterId, setCostCenterId] = useState<number | undefined>();
@@ -621,6 +642,14 @@ function TrialBalanceTab() {
     { title: 'ختامي', dataIndex: 'closing', key: 'closing', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
+  // ميزان المراجعة → كشف الحساب: النزول من الرقم المجمّع للحركات اللي عملته. الجداول التلاتة
+  // (مقسّم بالطبيعة، وبدون تصنيف، والمسطّح) بتتشارك المؤشر لأن `account_id` مايتكررش بينهم،
+  // وواحد بس منهم بيتعرض في المرة.
+  const trialKb = useTableKeyboard<any>({
+    rows: shownRows, rowKey: (r) => r.account_id,
+    onOpen: (r) => navigate(`/account-statement?account=${r.account_id}`),
+  });
+
   return (
     <Card title="ميزان المراجعة">
       <Space wrap style={{ marginBottom: 16 }}>
@@ -648,6 +677,7 @@ function TrialBalanceTab() {
             const credit = book.reduce((t, r) => t + Number(r.period_credit || 0), 0);
             return (
               <Table
+                {...trialKb.tableProps}
                 key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={columns}
                 loading={loading} pagination={false} size="small"
                 style={{ marginBottom: 18 }}
@@ -670,6 +700,7 @@ function TrialBalanceTab() {
               entirely — worse than a wrong section, because nobody goes looking for them. */}
           {shownRows.some((r) => !r.nature) && (
             <Table
+              {...trialKb.tableProps}
               rowKey="account_id" columns={columns} pagination={false} size="small"
               dataSource={shownRows.filter((r) => !r.nature)}
               title={() => <strong style={{ color: '#d46b08' }}>بدون تصنيف</strong>}
@@ -682,7 +713,7 @@ function TrialBalanceTab() {
         </>
       ) : data ? (
         <>
-          <Table rowKey="account_id" dataSource={shownRows} columns={columns} loading={loading}
+          <Table {...trialKb.tableProps} rowKey="account_id" dataSource={shownRows} columns={columns} loading={loading}
             pagination={false} size="small"
             summary={() => (
               <Table.Summary fixed>

@@ -6,6 +6,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { normalizeAr } from '../components/ListToolbar';
 import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import { useTableKeyboard } from '../components/keyboard';
 
 /**
  * رصيد صنف — the storekeeper's enquiry screen: pick a category, pick an item, and every price and
@@ -152,6 +153,16 @@ export default function StockBalance() {
     </div>
   );
 
+  // السطر كله يفتح حركات المخزن ده — مش اسم المخزن لوحده. اللي بيقرا رقم في عمود الكمية
+  // بيدوس على الرقم، وكان مايحصلش حاجة.
+  const locKb = useTableKeyboard<any>({
+    rows: balance?.locations ?? [], rowKey: (r) => `${r.kind}-${r.id}`,
+    onOpen: (r) => balance && setHistory({
+      itemId: balance.item.id, itemName: balance.item.name,
+      locationKind: r.kind, locationId: r.id,
+    }),
+  });
+
   return (
     <>
       <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
@@ -259,6 +270,7 @@ export default function StockBalance() {
               </Row>
 
               <Table
+                {...locKb.tableProps}
                 style={{ marginTop: 12 }}
                 size="small"
                 rowKey={(r) => `${r.kind}-${r.id}`}

@@ -18,6 +18,7 @@ import Purchases from '../pages/Purchases';
 import Manufacturing from '../pages/Manufacturing';
 import Transfers from '../pages/Transfers';
 import StockBalance from '../pages/StockBalance';
+import StockSheet from '../pages/StockSheet';
 import StockAlerts from '../pages/StockAlerts';
 import Categories from '../pages/Categories';
 import PendingScreen from '../pages/PendingScreen';
@@ -87,6 +88,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/returns" element={<Returns />} />
       <Route path="/transfers" element={<Transfers />} />
       <Route path="/stock-balance" element={<StockBalance />} />
+      <Route path="/stock-sheet" element={<StockSheet />} />
       <Route path="/stock-alerts" element={<StockAlerts />} />
       <Route path="/item-card" element={<ItemCard />} />
       <Route path="/stock-permits" element={<StockPermits />} />

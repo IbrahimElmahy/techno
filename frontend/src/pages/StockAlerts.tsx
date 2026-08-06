@@ -5,9 +5,11 @@ import {
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
-import { DocRef } from '../components/DocumentLink';
+import { DocRef, useOpenDocument } from '../components/DocumentLink';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
@@ -69,6 +71,7 @@ export default function StockAlerts() {
   const [tab, setTab] = useQueryTab('reorder');
   // «حركات انتهاء الصلاحية» — where each lot went, beside «كميات انتهاء الصلاحية» which is what
   // is left of it. Two of their screens, and the second only answers half the question.
+  const navigate = useNavigate();
   const [moves, setMoves] = useState<BatchMove[]>([]);
   const [movesLoading, setMovesLoading] = useState(false);
   const [tracedLot, setTracedLot] = useState<{ item_id: number; expiry: string } | null>(null);
@@ -129,6 +132,23 @@ export default function StockAlerts() {
   const warehouseName = (id: number) =>
     warehouses.find((w) => w.id === id)?.name ?? `#${id}`;
 
+  const openDoc = useOpenDocument();
+  // «الصنف ده تحت الأدنى» — الخطوة اللي بعدها دايماً هي فتح ملف الصنف عشان تشوف حركته وتقرّر
+  // تشتري كام، فالسطر بيوصّلك هناك على طول.
+  const reorderKb = useTableKeyboard<ReorderRow>({
+    rows: reorderFilter.filtered, rowKey: (r) => r.item_id,
+    onOpen: (r) => navigate(`/catalog/${r.item_id}`),
+  });
+  // والتشغيلة اللي هتنتهي: السطر يفتح أثرها — «دي راحت فين» هو سؤال الاسترجاع نفسه.
+  const batchKb = useTableKeyboard<BatchRow>({
+    rows: batchFilter.filtered, rowKey: (r) => r.batch_id,
+    onOpen: (r) => setTracedLot({ item_id: r.item_id, expiry: r.expiry_date }),
+  });
+  const movesKb = useTableKeyboard<BatchMove>({
+    rows: moves, rowKey: (r) => r.id,
+    onOpen: (r) => { if (r.document_type === 'sales_invoice') openDoc('invoice', r.document_id); },
+  });
+
   return (
     <Tabs
       activeKey={tab} onChange={setTab}
@@ -171,6 +191,7 @@ export default function StockAlerts() {
               />
 
               <Table
+                {...reorderKb.tableProps}
                 rowKey="item_id" size="small" loading={loading}
                 dataSource={reorderFilter.filtered}
                 locale={{ emptyText: 'كل الأصناف داخل حدودها' }}
@@ -231,6 +252,7 @@ export default function StockAlerts() {
               />
 
               <Table
+                {...batchKb.tableProps}
                 rowKey="batch_id" size="small" loading={loading}
                 dataSource={batchFilter.filtered}
                 locale={{ emptyText: 'لا توجد تشغيلات تنتهي قبل هذا التاريخ' }}
@@ -277,6 +299,7 @@ export default function StockAlerts() {
               )}
             >
               <Table
+                {...movesKb.tableProps}
                 rowKey="id" size="small" loading={movesLoading} dataSource={moves}
                 tableLayout="fixed"
                 locale={{

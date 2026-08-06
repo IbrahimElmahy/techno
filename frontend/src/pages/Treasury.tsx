@@ -3,9 +3,11 @@ import {
   Button, Card, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { PlusOutlined, RollbackOutlined, WalletOutlined, FileSearchOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
 
 interface LedgerLine {
   id: number;
@@ -39,6 +41,7 @@ interface JournalLineInput {
 }
 
 export default function Treasury() {
+  const navigate = useNavigate();
   const [balance, setBalance] = useState<string>('...');
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -274,6 +277,14 @@ export default function Treasury() {
     },
   ];
 
+  // القيد بسطوره ظاهر في الجدول؛ اللي بعده هو «الحساب ده رصيده بقى كام»، فالسطر بيودّي لكشف
+  // حساب أول حساب في القيد.
+  const kb = useTableKeyboard<LedgerEntry>({
+    rows: filter.filtered, rowKey: (e) => e.id,
+    onOpen: (e) => { const a = e.lines?.[0]?.account_id;
+      if (a) navigate(`/account-statement?account=${a}`); },
+  });
+
   return (
     <div>
       <Row gutter={24} style={{ marginBottom: 24 }}>
@@ -329,6 +340,7 @@ export default function Treasury() {
           ]}
         />
         <Table
+          {...kb.tableProps}
           dataSource={filter.filtered}
           columns={columns}
           rowKey="id"

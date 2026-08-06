@@ -3,6 +3,8 @@ import { Table, Card, Tag, Button, Descriptions } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
+import DocumentAuditModal from '../components/DocumentAuditModal';
 
 interface AuditLog {
   id: number;
@@ -113,6 +115,15 @@ export default function Audit() {
     },
   ];
 
+  // «إيه اللي حصل على المستند ده كله؟» — قراية سطر واحد في السجل بتفتح السؤال ده دايماً، وكان
+  // لازم تفلتر بإيدك بنوع الكيان ورقمه. السطر بيفتح السجل المشترك مقصور على كيانه.
+  const [trail, setTrail] = useState<{ type: string; id: number } | null>(null);
+  const kb = useTableKeyboard<AuditLog>({
+    rows: filter.filtered, rowKey: (r) => r.id,
+    onOpen: (r) => { if (r.entity_type && r.entity_id)
+      setTrail({ type: r.entity_type, id: r.entity_id }); },
+  });
+
   return (
     <div>
       <Card
@@ -141,6 +152,7 @@ export default function Audit() {
         />
 
         <Table
+          {...kb.tableProps}
           dataSource={filter.filtered}
           columns={columns}
           rowKey="id"
@@ -166,6 +178,15 @@ export default function Audit() {
           }}
         />
       </Card>
+
+      {/* السجل المشترك، مقصور على الكيان اللي في السطر — نفس النافذة اللي إذن التحويل بيفتحها،
+          عشان «سجل المستند» يبقى شكل واحد في النظام كله مش شكل لكل شاشة. */}
+      <DocumentAuditModal
+        entityType={trail?.type || ''} entityId={trail?.id ?? null}
+        title={trail ? `سجل العمليات — ${trail.type} #${trail.id}` : undefined}
+        userNames={Object.fromEntries(users.map((u: any) => [u.id, u.full_name || u.username]))}
+        onClose={() => setTrail(null)}
+      />
     </div>
   );
 }

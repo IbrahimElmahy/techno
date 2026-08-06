@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import { useTableKeyboard } from '../components/keyboard';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -121,6 +122,15 @@ export default function Stocktake() {
     URL.revokeObjectURL(a.href);
   };
 
+  // أي سطر في الجرد يفتح سجل حركاته — «الفرق ده جه منين» مالهاش إجابة غير دي.
+  const kb = useTableKeyboard<Row>({
+    rows: filter.filtered, rowKey: (r) => `${r.item_id}-${r.location}`,
+    onOpen: (r) => setHistory({
+      itemId: r.item_id, itemName: r.name,
+      dateFrom: dateFrom.format('YYYY-MM-DD'), dateTo: asOf.format('YYYY-MM-DD'),
+    }),
+  });
+
   return (
     <Card
       title="جرد حق تاريخ"
@@ -192,6 +202,7 @@ export default function Stocktake() {
       />
 
       <Table<Row>
+        {...kb.tableProps}
         rowKey={(r) => `${r.item_id}-${r.location}`} size="small" loading={loading}
         dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد أرصدة في هذا التاريخ' }}

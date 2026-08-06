@@ -6,7 +6,8 @@ import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
-import DocumentLink, { DocKind } from '../components/DocumentLink';
+import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
+import { useTableKeyboard } from '../components/keyboard';
 
 // Only the kinds that have a screen able to show them; a purchase return has no screen of its
 // own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
@@ -234,6 +235,14 @@ export default function TradeReports() {
     URL.revokeObjectURL(a.href);
   };
 
+  // رقم في تقرير مالوش قيمة من غير ما توصل للمستند اللي وراه. الزرار موجود في آخر السطر؛ ده
+  // بيخلّي السطر كله يوصل لنفس المكان.
+  const openDoc = useOpenDocument();
+  const kb = useTableKeyboard<any>({
+    rows, rowKey: (r) => r.key ?? `${r.document_number}-${r.item_id ?? ''}-${r.warehouse ?? ''}`,
+    onOpen: (r) => { if (r.doc_id && DOC_SCREEN[docType]) openDoc(DOC_SCREEN[docType], r.doc_id); },
+  });
+
   return (
     <Card
       title={(
@@ -363,6 +372,7 @@ export default function TradeReports() {
       )}
 
       <Table
+        {...kb.tableProps}
         rowKey={(r: any) => r.key ?? `${r.document_number}-${r.item_id ?? ''}-${r.warehouse ?? ''}`}
         size="small" loading={loading} dataSource={rows} columns={columns}
         locale={{ emptyText: 'لا توجد بيانات في هذه الفترة' }}

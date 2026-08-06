@@ -3,9 +3,11 @@ import {
   Button, Card, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
 import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
 
 interface CouponType {
   id: number;
@@ -43,6 +45,7 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
 };
 
 export default function Loyalty() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('settings');
   const [couponTypes, setCouponTypes] = useState<CouponType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -279,6 +282,16 @@ export default function Loyalty() {
   };
 
   // Columns definitions
+  // نوع الكوبون بيانات أساسية: السطر يفتح تعديله. والكوبون المصروف بيخص عميل، فالسطر يفتح ملفه —
+  // «الكوبون ده بتاع مين» بيتسأل أكتر من «الكوبون ده قيمته كام».
+  const typeKb = useTableKeyboard<CouponType>({
+    rows: typeFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEditType(r),
+  });
+  const couponKb = useTableKeyboard<any>({
+    rows: couponFilter.filtered, rowKey: (r) => r.id,
+    onOpen: (r) => navigate(`/customers/${r.customer_id}`),
+  });
+
   const typeColumns = [
     { title: 'اسم الكوبون الترويجي', dataIndex: 'name', key: 'name' },
     {
@@ -419,7 +432,8 @@ export default function Loyalty() {
                 options: [{ value: 'active', label: 'متاح للتحويل' }, { value: 'inactive', label: 'موقف' }] },
             ]}
           />
-          <Table dataSource={typeFilter.filtered} columns={typeColumns} rowKey="id" loading={loading} pagination={false} />
+          <Table {...typeKb.tableProps} dataSource={typeFilter.filtered} columns={typeColumns}
+            rowKey="id" loading={loading} pagination={false} />
         </div>
       ),
     },
@@ -446,7 +460,8 @@ export default function Loyalty() {
                 options: customers.map((c) => ({ value: c.id, label: c.name })) },
             ]}
           />
-          <Table dataSource={couponFilter.filtered} columns={couponColumns} rowKey="id" loading={loading} />
+          <Table {...couponKb.tableProps} dataSource={couponFilter.filtered} columns={couponColumns}
+            rowKey="id" loading={loading} />
         </div>
       ),
     },
