@@ -6,10 +6,12 @@ import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
   BuildOutlined,
 } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
 
 interface Warehouse { id: number; name: string; }
 interface Item {
@@ -210,6 +212,15 @@ function OrdersTab({
     },
   });
 
+  // السطر يفتح تفاصيل الأمر — الخامات والتكاليف اللي جوّاه. نفس السهم اللي على الشمال بالظبط،
+  // بس من غير ما حد يصطاده بالماوس.
+  const [expanded, setExpanded] = useState<number[]>([]);
+  const ordersKb = useTableKeyboard<Order>({
+    rows: filter.filtered, rowKey: (o) => o.id,
+    onOpen: (o) => setExpanded((prev) => (prev.includes(o.id)
+      ? prev.filter((k) => k !== o.id) : [...prev, o.id])),
+  });
+
   const submit = async (values: any) => {
     try {
       const wasteMap = values.waste_qty || {};
@@ -320,8 +331,11 @@ function OrdersTab({
       />
 
       <Table
+        {...ordersKb.tableProps}
         rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         expandable={{
+          expandedRowKeys: expanded,
+          onExpandedRowsChange: (keys) => setExpanded(keys as number[]),
           expandedRowRender: (r: Order) => (
             <div>
               <Row gutter={16} style={{ marginBottom: 12 }}>
@@ -485,6 +499,11 @@ function RecipesTab({
     form.setFieldsValue({ output_quantity: 1, components: [{}], resources: [] });
     setOpen(true);
   };
+  // A recipe is master data: the row opens it for editing, because there is nothing to «view» in a
+  // recipe that its own form does not already show better.
+  const bomsKb = useTableKeyboard<Bom>({
+    rows: filter.filtered, rowKey: (b) => b.id, onOpen: (b) => openEdit(b),
+  });
   const openEdit = (bom: Bom) => {
     setEditing(bom);
     bom.components.forEach((c) => loadUnits(c.item_id));
@@ -591,7 +610,8 @@ function RecipesTab({
         ]}
       />
 
-      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
+      <Table {...bomsKb.tableProps}
+        rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
 
       <Modal centered
@@ -721,6 +741,7 @@ function WastageTab({
   itemName: (id: number) => string; whName: (id: number | null | undefined) => string;
   loading: boolean; reload: () => void;
 }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [form] = Form.useForm();
 
@@ -734,6 +755,13 @@ function WastageTab({
       warehouse_id: (w, v) => w.warehouse_id === v,
       status: (w, v) => (v === 'reversal' ? w.is_reversal : !w.is_reversal),
     },
+  });
+
+  // مستند الهالك مافيهوش سطور — السطر نفسه هو المستند. فالسطر يودّي لكارت الصنف اللي اتهلك،
+  // اللي هو المكان الوحيد اللي بيفسّر الحركة دي جنب باقي حركات الصنف.
+  const wastageKb = useTableKeyboard<Wastage>({
+    rows: filter.filtered, rowKey: (w) => w.id,
+    onOpen: (w) => navigate(`/catalog/${w.item_id}`),
   });
 
   const openCreate = () => {
@@ -815,7 +843,8 @@ function WastageTab({
         ]}
       />
 
-      <Table rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
+      <Table {...wastageKb.tableProps}
+        rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         locale={{ emptyText: 'لا يوجد مستندات هالك بعد' }} />
 
       <Modal centered

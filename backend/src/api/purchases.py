@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
 from src.core.db import get_db
+from src.models.catalog import Item
 from src.models.purchasing import PurchaseInvoice, PurchaseReturn
 from src.models.stock import LocationKind
 from src.models.supplier import Supplier
@@ -188,6 +189,55 @@ def list_purchase_returns(
             value=r.value, created_at=str(r.created_at),
         ))
     return out
+
+
+class PurchaseReturnLineOut(BaseModel):
+    item_id: int
+    item_name: str | None
+    quantity: Decimal
+
+
+class PurchaseReturnDetailOut(PurchaseReturnListOut):
+    lines: list[PurchaseReturnLineOut]
+
+
+# Also before `/{purchase_id}`, and two segments deep so it cannot collide with it.
+@router.get("/returns/{return_id}", response_model=PurchaseReturnDetailOut)
+def get_purchase_return(
+    return_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> PurchaseReturnDetailOut:
+    """المردود بسطوره — «رجّعنا إيه بالظبط».
+
+    `purchase_return_line` has stored what went back since returns were built, and nothing has ever
+    read it: the register could show the value of a return and never the items in it, so «رجعنا
+    عشرة ولا اتنين» was answerable only from paper. The lines were there the whole time.
+    """
+    r = db.get(PurchaseReturn, return_id)
+    if r is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Purchase return not found"})
+    inv = db.get(PurchaseInvoice, r.purchase_invoice_id)
+    supplier = db.get(Supplier, inv.supplier_id) if inv else None
+    names = {
+        i.id: i.name for i in db.scalars(
+            select(Item).where(Item.id.in_({ln.item_id for ln in r.lines}))
+        ).all()
+    } if r.lines else {}
+    return PurchaseReturnDetailOut(
+        id=r.id, document_number=r.document_number,
+        purchase_invoice_id=r.purchase_invoice_id,
+        purchase_document_number=inv.document_number if inv else None,
+        return_date=r.return_date, notes=r.notes,
+        supplier_id=supplier.id if supplier else None,
+        supplier_name=supplier.name if supplier else None,
+        value=r.value, created_at=str(r.created_at),
+        lines=[
+            PurchaseReturnLineOut(
+                item_id=ln.item_id, item_name=names.get(ln.item_id), quantity=ln.quantity)
+            for ln in r.lines
+        ],
+    )
 
 
 @router.get("/{purchase_id}", response_model=PurchaseDetailOut)

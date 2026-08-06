@@ -51,11 +51,31 @@ export const KEY_MAP: { action: ShortcutAction; keys: string; label: string }[] 
   { action: 'close', keys: 'Esc', label: 'إغلاق النافذة المفتوحة' },
 ];
 
-interface KeyboardContextValue {
-  register: (handlers: ScreenShortcuts) => () => void;
+/**
+ * A table that has told the keyboard how to walk it. Registered by `useTableKeyboard`.
+ *
+ * `isLive` is what settles which table gets the arrows when several are mounted at once — a list
+ * with a modal over it, or five open tabs. Rather than tracking visibility in React state, each
+ * registration is asked whether its rows are on screen right now, which is the only version of that
+ * question that cannot go stale.
+ */
+interface TableNav {
+  isLive: () => boolean;
+  move: (to: 'up' | 'down' | 'first' | 'last') => boolean;
+  open: () => boolean;
 }
 
-const KeyboardContext = createContext<KeyboardContextValue>({ register: () => () => {} });
+interface KeyboardContextValue {
+  register: (handlers: ScreenShortcuts) => () => void;
+  registerTable: (nav: TableNav) => () => void;
+  promoteTable: (nav: TableNav) => void;
+}
+
+const KeyboardContext = createContext<KeyboardContextValue>({
+  register: () => () => {},
+  registerTable: () => () => {},
+  promoteTable: () => {},
+});
 
 /**
  * Whether the screen reading this is the one on screen.
@@ -261,6 +281,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
   // A stack, not a single slot: a modal open over a list registers its own handlers and must take
   // the keys until it closes, then hand them back to the list underneath.
   const stack = useRef<ScreenShortcuts[]>([]);
+  const tables = useRef<TableNav[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -271,6 +292,56 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
       stack.current = stack.current.filter((h) => h !== handlers);
     };
   }, []);
+
+  const registerTable = useCallback((nav: TableNav) => {
+    tables.current.push(nav);
+    return () => { tables.current = tables.current.filter((t) => t !== nav); };
+  }, []);
+
+  /** Clicking a row makes that table the one the arrows belong to, so mouse and keyboard agree
+   *  about which of two tables on a screen is being worked in. */
+  const promoteTable = useCallback((nav: TableNav) => {
+    tables.current = [...tables.current.filter((t) => t !== nav), nav];
+  }, []);
+
+  /**
+   * ↑ ↓ Home End Enter over a list — the same movement the document lines already have, given to
+   * the registers and reports where a row is a thing you open rather than a thing you type in.
+   *
+   * Runs after `arrowsMoveLines` so a document's line grid always keeps its own arrows, and the
+   * topmost LIVE table wins so a modal over a list takes them and hands them back on close.
+   */
+  const tableMoves = (e: KeyboardEvent): boolean => {
+    const keys = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter'];
+    if (!keys.includes(e.key)) return false;
+    if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return false;
+    const el = e.target as HTMLElement | null;
+    if (el && typeof el.closest === 'function') {
+      // A document's line cell, an open dropdown and a textarea all own these keys already.
+      if (el.closest('[data-grid-col]')) return false;
+      if (el.closest('.ant-select')) return false;
+      if (el.tagName === 'TEXTAREA') return false;
+      const inField = el.tagName === 'INPUT' || el.isContentEditable;
+      // From a search box the arrows mean «خلصت فلترة، ودّيني للنتايج» — a habit worth honouring,
+      // because filtering then picking is most of what a register is used for. Enter and the jump
+      // keys stay with the field: there, Enter is «الخانة اللي بعدها».
+      if (inField && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return false;
+    }
+    for (let i = tables.current.length - 1; i >= 0; i -= 1) {
+      const t = tables.current[i];
+      if (!t.isLive()) continue;
+      const handled = e.key === 'Enter'
+        ? t.open()
+        : t.move(e.key === 'ArrowUp' ? 'up'
+          : e.key === 'ArrowDown' ? 'down'
+            : e.key === 'Home' ? 'first' : 'last');
+      if (handled) { e.preventDefault(); return true; }
+      // A live table that refuses the key (already at the last row) has still answered it. Falling
+      // through to the table underneath would move a list nobody is looking at.
+      return false;
+    }
+    return false;
+  };
 
   /**
    * The nearest screen that implements this action, searching from the top of the stack down.
@@ -295,6 +366,8 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
       // one case that guard exists to skip.
       if (enterMovesOn(e)) return;
       if (arrowsMoveLines(e)) return;
+      // Before the typing guard, so ↓ out of a search box reaches the results it just filtered.
+      if (tableMoves(e)) return;
       if (isTyping(e)) return;
 
       // --- global -------------------------------------------------------------------------
@@ -333,7 +406,10 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
     return screens.filter((s) => s.label.includes(q)).slice(0, 20);
   }, [query, screens]);
 
-  const value = useMemo(() => ({ register }), [register]);
+  const value = useMemo(
+    () => ({ register, registerTable, promoteTable }),
+    [register, registerTable, promoteTable],
+  );
 
   return (
     <KeyboardContext.Provider value={value}>
@@ -384,6 +460,11 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
             // except by pressing them and noticing — which is the definition of undiscoverable.
             { keys: 'Enter', label: 'الخانة اللي بعدها — وفي سطور المستند: يفتح نافذة الصنف' },
             { keys: '↑ ↓', label: 'سطر فوق / سطر تحت في جدول المستند، في نفس العمود' },
+            // The list keys. Same two arrows, different table: in a register they walk the rows
+            // rather than the cells, because there a row is a thing you open.
+            { keys: '↑ ↓ في القوايم', label: 'يتنقّل بين سطور القايمة — ومن خانة البحث ينزّلك للنتايج' },
+            { keys: 'Enter على سطر', label: 'يفتح السطر — تفاصيله أو شاشة تعديله حسب الشاشة' },
+            { keys: 'Home / End', label: 'أول سطر / آخر سطر في القايمة' },
           ]}
           renderItem={(row) => (
             <List.Item>
@@ -429,4 +510,158 @@ export function useScreenShortcuts(handlers: ScreenShortcuts, enabled = true) {
     return register(proxy);
   }, [enabled, onScreen, register,
     Object.keys(handlers).filter((k) => (handlers as any)[k]).join(',')]);
+}
+
+/**
+ * القايمة تتمشى بالكيبورد، والسطر يفتح.
+ *
+ * **Why one hook does both.** Two thirds of the tables in this system were dead to the mouse: forty
+ * rows of numbers and nothing happens when you click one. Making Enter open a row forces each
+ * screen to answer what «open» even means for it — and once that is answered there is no reason the
+ * mouse should not get the same answer. So the hook takes ONE `onOpen` and hands back both the
+ * click binding and the key binding. They cannot drift apart, because there is only one of them.
+ *
+ * **The cursor appears only after an arrow key.** A highlighted row shown to somebody who has
+ * touched nothing reads as «this one is selected», and the next thing they press is aimed at a row
+ * they did not choose.
+ *
+ * **Focus moves to the row itself.** The row is given `tabIndex=-1` and focused as the cursor
+ * moves, which is what makes Enter arrive without the screen having to own a global key handler —
+ * and what lets ↓ carry somebody out of a search box and into the results they just filtered.
+ *
+ * Usage is one line at the call site:
+ *
+ * ```tsx
+ * const kb = useTableKeyboard({ rows, rowKey: (r) => r.id, onOpen: openDoc });
+ * <Table {...kb.tableProps} dataSource={rows} />
+ * ```
+ */
+let tableSeq = 0;
+
+export function useTableKeyboard<T>({
+  rows, onOpen, rowKey, enabled = true,
+}: {
+  rows: readonly T[];
+  onOpen?: (row: T) => void;
+  /** Must match the Table's own `rowKey`, since the row is found in the DOM by it. */
+  rowKey?: (row: T) => string | number;
+  enabled?: boolean;
+}) {
+  const { registerTable, promoteTable } = useContext(KeyboardContext);
+  const onScreen = useContext(TabActiveContext);
+  const [activeKey, setActiveKey] = useState<string | number | null>(null);
+
+  const keyOf = useCallback(
+    (r: T): string | number => (rowKey ? rowKey(r) : ((r as any)?.id ?? '')),
+    [rowKey],
+  );
+
+  // Read through refs so the registration survives every render — `rows` is a fresh array each
+  // time, and re-registering on that would put this table back on top of the stack constantly,
+  // stealing the arrows from a modal open over it.
+  const latest = useRef({ rows, onOpen, keyOf, activeKey });
+  latest.current = { rows, onOpen, keyOf, activeKey };
+  const navRef = useRef<TableNav | null>(null);
+
+  // Stamped on every row so this table can find its OWN rows. Without it a screen showing two
+  // lists would match the first `tr[data-row-key="3"]` in the document, and the cursor would appear
+  // to move in one table while Enter opened a row from the other.
+  const tableId = useRef<string>();
+  if (!tableId.current) { tableSeq += 1; tableId.current = `kbt${tableSeq}`; }
+
+  /** The rendered `<tr>` for a key. antd stamps `data-row-key`, so no ref plumbing is needed. */
+  const trFor = (k: string | number): HTMLElement | null => {
+    const esc = String(k).replace(/["\\]/g, '\\$&');
+    const el = document.querySelector<HTMLElement>(
+      `tr[data-kbt="${tableId.current}"][data-row-key="${esc}"]`);
+    return el && el.offsetParent !== null ? el : null;
+  };
+
+  useEffect(() => {
+    if (!enabled || !onScreen) return undefined;
+    const nav: TableNav = {
+      // Live means «my rows are on screen right now». A hidden tab stays mounted, so asking React
+      // would answer yes; asking the DOM answers what the person is actually looking at.
+      isLive: () => {
+        const { rows: rs, keyOf: k } = latest.current;
+        if (!rs.length) return false;
+        const tr = trFor(k(rs[0]));
+        if (!tr) return false;
+        // An open dialog owns the keys. The list behind it is still on screen and still passes the
+        // visibility test — «مفتوح» and «مرئي» are not the same thing — so without this, ↓ walks a
+        // register the reader cannot see while they are reading the document they opened from it.
+        const dialogs = [...document.querySelectorAll<HTMLElement>(
+          '.ant-modal-wrap, .ant-drawer-content-wrapper')].filter((d) => d.offsetParent !== null);
+        return !dialogs.some((d) => !d.contains(tr));
+      },
+      move: (to) => {
+        const { rows: rs, keyOf: k, activeKey: cur } = latest.current;
+        if (!rs.length) return false;
+        const keys = rs.map(k);
+        const i = cur === null ? -1 : keys.indexOf(cur);
+        let next: number;
+        if (to === 'first') next = 0;
+        else if (to === 'last') next = keys.length - 1;
+        // From nowhere, ↓ starts at the top and ↑ starts at the bottom — the direction you pressed
+        // is the end you meant to come in from.
+        else if (i === -1) next = to === 'down' ? 0 : keys.length - 1;
+        else next = to === 'down' ? i + 1 : i - 1;
+        if (next < 0 || next >= keys.length) return false;
+        const key = keys[next];
+        setActiveKey(key);
+        // After the row re-renders with the cursor class, not before it.
+        requestAnimationFrame(() => {
+          const tr = trFor(key);
+          tr?.focus({ preventScroll: true });
+          tr?.scrollIntoView({ block: 'nearest' });
+        });
+        return true;
+      },
+      open: () => {
+        const { rows: rs, keyOf: k, activeKey: cur, onOpen: fn } = latest.current;
+        if (!fn || cur === null) return false;
+        const row = rs.find((r) => k(r) === cur);
+        if (!row) return false;
+        fn(row);
+        return true;
+      },
+    };
+    navRef.current = nav;
+    const unregister = registerTable(nav);
+    return () => { navRef.current = null; unregister(); };
+  }, [enabled, onScreen, registerTable]);
+
+  // Kept in range as the list is filtered underneath the cursor — a cursor pointing at a row that
+  // was filtered away makes Enter open nothing with no visible reason why.
+  useEffect(() => {
+    if (activeKey === null) return;
+    if (!rows.some((r) => keyOf(r) === activeKey)) setActiveKey(null);
+  }, [rows, activeKey, keyOf]);
+
+  const onRow = useCallback((row: T) => ({
+    onClick: () => {
+      // The click puts the cursor where the mouse is, so a following ↓ carries on from the row
+      // just clicked rather than from wherever the keyboard was left.
+      setActiveKey(keyOf(row));
+      if (navRef.current) promoteTable(navRef.current);
+      onOpen?.(row);
+    },
+    tabIndex: -1,
+    'data-kbt': tableId.current,
+    style: onOpen ? { cursor: 'pointer' as const } : undefined,
+  }), [onOpen, keyOf, promoteTable]);
+
+  const rowClassName = useCallback(
+    (row: T) => (keyOf(row) === activeKey ? 'row-cursor' : ''),
+    [activeKey, keyOf],
+  );
+
+  return {
+    activeKey,
+    setActiveKey,
+    onRow,
+    rowClassName,
+    /** Spread onto the Table: `<Table {...kb.tableProps} />`. */
+    tableProps: { onRow, rowClassName },
+  };
 }

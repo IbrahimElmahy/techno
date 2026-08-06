@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, DatePicker, Divider, Form, Input, InputNumber, Modal, Select, Space,
-  Table, Tag, message,
+  Alert, Button, Card, DatePicker, Descriptions, Divider, Form, Input, InputNumber, Modal,
+  Select, Space, Table, Tag, message,
 } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
 
 /**
@@ -68,6 +69,9 @@ export default function PurchaseReturns() {
   const [notes, setNotes] = useState('');
   const [purchaseId, setPurchaseId] = useState<number | undefined>();
   const [detail, setDetail] = useState<any>(null);
+  // المردود اللي مفتوح للعرض — غير `detail` اللي هو فاتورة الشراء بتاعة الإنشاء.
+  const [viewing, setViewing] = useState<any>(null);
+  const [viewLoading, setViewLoading] = useState(false);
   // Keyed by item, and empty until typed — a box that opens at 1 turns «5» into «15» for anybody
   // who types over it without clearing first. Same rule as every other document.
   const [qty, setQty] = useState<Record<number, number | null>>({});
@@ -95,11 +99,12 @@ export default function PurchaseReturns() {
     const wanted = pendingDoc.current;
     if (!wanted || !rows.length) return;
     pendingDoc.current = null;
-    if (rows.some((r) => r.id === wanted)) {
-      // The register has no per-return detail view — the document IS its row — so arriving marks
-      // the row instead of opening a modal that would only repeat what is already on screen.
+    const target = rows.find((r) => r.id === wanted);
+    if (target) {
+      // Marked AND opened. The mark says where on the page it is; the document says what is in it.
       setHighlight(wanted);
       setTimeout(() => setHighlight(null), 4000);
+      openReturn(target);
     } else {
       message.warning(`مردود الشراء رقم ${wanted} مش في القائمة`);
     }
@@ -116,6 +121,25 @@ export default function PurchaseReturns() {
   }, [rows]);
 
   const itemName = (id: number) => items.find((i) => i.id === id)?.name ?? `صنف #${id}`;
+
+  /**
+   * السطر يفتح المردود بسطوره.
+   *
+   * The row carries the value; only the lines carry «رجعنا إيه». `purchase_return_line` has held
+   * them since returns were built and no screen ever asked for them, so the register could say a
+   * return was worth 4,300 and never which items made it up.
+   */
+  const openReturn = async (row: ReturnRow) => {
+    setViewing({ ...row, lines: null });
+    setViewLoading(true);
+    try {
+      const res = await api.get(`/api/v1/purchases/returns/${row.id}`);
+      setViewing(res.data);
+    } catch {
+      message.error('تعذر فتح المردود');
+      setViewing(null);
+    } finally { setViewLoading(false); }
+  };
 
   const openCreate = () => {
     setPurchaseId(undefined); setDetail(null); setQty({});
@@ -214,6 +238,10 @@ export default function PurchaseReturns() {
     return [...seen].map(([value, label]) => ({ value, label }));
   }, [rows]);
 
+  const kb = useTableKeyboard<ReturnRow>({
+    rows: filter.filtered, rowKey: (r) => r.id, onOpen: openReturn,
+  });
+
   return (
     <div>
       <Card
@@ -244,9 +272,13 @@ export default function PurchaseReturns() {
         />
 
         <Table
+          {...kb.tableProps}
           dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
           size="middle" tableLayout="fixed"
-          rowClassName={(r) => (r.id === highlight ? 'row-arrived' : '')}
+          // Two marks that mean different things: «وصلت من لينك» يبهت، و«الكيبورد واقف هنا» يفضل.
+          rowClassName={(r) => [
+            r.id === highlight ? 'row-arrived' : '', kb.rowClassName(r),
+          ].filter(Boolean).join(' ')}
           pagination={{
             defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100'],
@@ -355,6 +387,44 @@ export default function PurchaseReturns() {
                 تفريغ الكميات
               </Button>
             )}
+          </>
+        )}
+      </Modal>
+
+      {/* المردود مفتوح — رقمه وتاريخه وسطوره، ومنه للفاتورة اللي جه منها. */}
+      <Modal
+        open={!!viewing} onCancel={() => setViewing(null)} footer={null} width={700} destroyOnHidden
+        title={viewing ? `مردود شراء ${viewing.document_number}` : 'مردود شراء'}
+      >
+        {viewing && (
+          <>
+            <Descriptions size="small" column={2} bordered style={{ marginBottom: 12 }}>
+              <Descriptions.Item label="التاريخ">
+                {viewing.return_date || String(viewing.created_at || '').slice(0, 10) || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="جهة التعامل">{viewing.supplier_name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="فاتورة الشراء">
+                <DocRef kind="purchase" id={viewing.purchase_invoice_id}
+                  label={viewing.purchase_document_number} />
+              </Descriptions.Item>
+              <Descriptions.Item label="القيمة">
+                <strong style={{ color: '#cf4b1a' }}>{money(viewing.value)} ج.م</strong>
+              </Descriptions.Item>
+              {viewing.notes && (
+                <Descriptions.Item label="ملاحظات" span={2}>{viewing.notes}</Descriptions.Item>
+              )}
+            </Descriptions>
+            <Table
+              size="small" pagination={false} rowKey="item_id" loading={viewLoading}
+              dataSource={viewing.lines || []}
+              locale={{ emptyText: 'مفيش سطور متسجّلة على المردود ده' }}
+              columns={[
+                { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
+                  render: (v: string | null, r: any) => v || itemName(r.item_id) },
+                { title: 'الكمية', dataIndex: 'quantity', width: 120,
+                  render: (v: string) => <b>{Number(v)}</b> },
+              ]}
+            />
           </>
         )}
       </Modal>

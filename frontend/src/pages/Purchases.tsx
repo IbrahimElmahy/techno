@@ -19,6 +19,7 @@ import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import ProductPickerModal from '../components/ProductPickerModal';
+import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
 interface Supplier {
@@ -204,6 +205,11 @@ export default function Purchases() {
       setDetailLoading(false);
     }
   };
+
+  // السطر يفتح الفاتورة — بالماوس وبالكيبورد، ونفس الدالة للاتنين.
+  const listKb = useTableKeyboard<PurchaseRecord>({
+    rows: purchasesFilter.filtered, rowKey: (r) => r.id, onOpen: openDetail,
+  });
 
   // Same document shape as the sales invoice — one look, one print path for both sides.
   const purchaseDoc = (p: PurchaseDetail | null): InvoiceDoc | null => {
@@ -780,6 +786,7 @@ export default function Purchases() {
         ]}
       />
       <Table
+        {...listKb.tableProps}
         dataSource={purchasesFilter.filtered}
         columns={listColumns}
         rowKey="id"

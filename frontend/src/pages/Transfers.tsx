@@ -17,6 +17,7 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
+import { useTableKeyboard } from '../components/keyboard';
 
 /**
  * تحويلات المخزون — move stock between locations.
@@ -337,6 +338,10 @@ export default function Transfers() {
    * how a request that is nearly right gets handled.
    */
   const [reviewing, setReviewing] = useState<TransferRecord | null>(null);
+  // السطر يفتح ورقة المراجعة — نفس اللي زرار «مراجعة» بيعمله، بالكيبورد وبالماوس.
+  const listKb = useTableKeyboard<TransferRecord>({
+    rows: filter.filtered, rowKey: (t) => t.id, onOpen: setReviewing,
+  });
   /**
    * أسماء الأصناف.
    *
@@ -911,6 +916,7 @@ export default function Transfers() {
         </Row>
 
         <Table
+          {...listKb.tableProps}
           dataSource={filter.filtered} columns={columns} rowKey="id" loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}

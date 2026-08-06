@@ -7,6 +7,7 @@ import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
+import { useTableKeyboard } from '../components/keyboard';
 
 /**
  * السرايل و حركات سرايل — two of their screens, one component.
@@ -135,6 +136,12 @@ export default function Serials() {
     },
   });
 
+  // السطر يفتح أثر السيريال — نفس اللي الضغط على رقم السيريال بيعمله.
+  const serialKb = useTableKeyboard<SerialRow>({
+    rows: serialFilter.filtered, rowKey: (r) => r.id,
+    onOpen: (r) => { setTab('movements'); setTraced(r.serial); },
+  });
+
   // --- حركات سرايل -----------------------------------------------------------------------------
 
   const movementColumns = [
@@ -195,6 +202,11 @@ export default function Serials() {
     dateOf: (m) => m.created_at,
   });
 
+  // وفي سجل الحركات، السطر يقصر السجل على السيريال بتاعه — «اللي حصل للوحدة دي بالذات».
+  const movementKb = useTableKeyboard<MovementRow>({
+    rows: movementFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => setTraced(r.serial),
+  });
+
   const refresh = (
     <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
   );
@@ -236,6 +248,7 @@ export default function Serials() {
                 ]}
               />
               <Table
+                {...serialKb.tableProps}
                 dataSource={serialFilter.filtered} columns={serialCols.apply(serialColumns)}
                 rowKey="id" loading={loading} size="middle" tableLayout="fixed"
                 locale={{ emptyText: <Empty description="مفيش سرايل مسجّلة" /> }}
@@ -287,6 +300,7 @@ export default function Serials() {
                 ]}
               />
               <Table
+                {...movementKb.tableProps}
                 dataSource={movementFilter.filtered}
                 columns={movementCols.apply(movementColumns)}
                 rowKey="id" loading={loading} size="middle" tableLayout="fixed"

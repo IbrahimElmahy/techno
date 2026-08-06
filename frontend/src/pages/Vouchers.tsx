@@ -38,7 +38,7 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import { printDocument } from '../print/brand';
-import { useScreenShortcuts } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
 import { useLookup } from '../hooks/useLookup';
 
@@ -496,6 +496,24 @@ const Vouchers: React.FC = () => {
     );
   };
 
+  /**
+   * كل تبويب سندات له مؤشر كيبورد بتاعه.
+   *
+   * The five tabs stay mounted and merely hidden, so which one owns ↑↓ cannot be decided from
+   * React state — `useTableKeyboard` asks the DOM whether its rows are actually on screen, and only
+   * the open tab's are. `setVoucherView` is the same thing «عرض / طباعة» does, so Enter and the
+   * button land in the same place.
+   */
+  const byKind = (k: string) => shownVouchers.filter((v) => v.kind === k);
+  const kbArgs = { rowKey: (v: VoucherRecord) => v.id, onOpen: setVoucherView };
+  // Written out rather than looped: five hook calls in a fixed order is what the rules of hooks
+  // require, and a helper that calls one reads like it might not be.
+  const receiptKb = useTableKeyboard<VoucherRecord>({ rows: byKind('receipt'), ...kbArgs });
+  const paymentKb = useTableKeyboard<VoucherRecord>({ rows: byKind('payment'), ...kbArgs });
+  const handoverKb = useTableKeyboard<VoucherRecord>({ rows: byKind('rep_handover'), ...kbArgs });
+  const expenseKb = useTableKeyboard<VoucherRecord>({ rows: byKind('expense'), ...kbArgs });
+  const transferKb = useTableKeyboard<VoucherRecord>({ rows: byKind('cash_transfer'), ...kbArgs });
+
   const voucherColumns = [
     { title: 'رقم السند', dataIndex: 'document_number', width: 120 },
     {
@@ -618,8 +636,9 @@ const Vouchers: React.FC = () => {
                 {/* السندات اللي اتعملت — the thing this screen is opened for most days. A tab whose
                     whole body was a creation form answered «اعمل سند» and nothing else. */}
                 <Table<VoucherRecord>
+                  {...receiptKb.tableProps}
                   rowKey="id" size="small" loading={loading}
-                  dataSource={shownVouchers.filter((v) => v.kind === 'receipt')}
+                  dataSource={byKind('receipt')}
                   columns={voucherColumns}
                   locale={{ emptyText: 'مفيش سندات قبض' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
@@ -639,8 +658,9 @@ const Vouchers: React.FC = () => {
                   </Button>
                 )}>
                 <Table<VoucherRecord>
+                  {...paymentKb.tableProps}
                   rowKey="id" size="small" loading={loading}
-                  dataSource={shownVouchers.filter((v) => v.kind === 'payment')}
+                  dataSource={byKind('payment')}
                   columns={voucherColumns}
                   locale={{ emptyText: 'مفيش سندات صرف' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
@@ -660,8 +680,9 @@ const Vouchers: React.FC = () => {
                   </Button>
                 )}>
                 <Table<VoucherRecord>
+                  {...handoverKb.tableProps}
                   rowKey="id" size="small" loading={loading}
-                  dataSource={shownVouchers.filter((v) => v.kind === 'rep_handover')}
+                  dataSource={byKind('rep_handover')}
                   columns={voucherColumns}
                   locale={{ emptyText: 'مفيش سندات توريد' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
@@ -681,8 +702,9 @@ const Vouchers: React.FC = () => {
                   </Button>
                 )}>
                 <Table<VoucherRecord>
+                  {...expenseKb.tableProps}
                   rowKey="id" size="small" loading={loading}
-                  dataSource={shownVouchers.filter((v) => v.kind === 'expense')}
+                  dataSource={byKind('expense')}
                   columns={voucherColumns}
                   locale={{ emptyText: 'مفيش مصروفات' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
@@ -711,8 +733,9 @@ const Vouchers: React.FC = () => {
                   </Button>
                 )}>
                 <Table<VoucherRecord>
+                  {...transferKb.tableProps}
                   rowKey="id" size="small" loading={loading}
-                  dataSource={shownVouchers.filter((v) => v.kind === 'cash_transfer')}
+                  dataSource={byKind('cash_transfer')}
                   columns={voucherColumns}
                   locale={{ emptyText: 'مفيش تحويلات' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}

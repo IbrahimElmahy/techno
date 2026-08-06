@@ -10,6 +10,7 @@ import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
+import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
@@ -244,6 +245,14 @@ export default function FreeProduction() {
     dateOf: (o) => o.production_date,
   });
 
+  // السطر يفتح تفاصيل الأمر — الخامات اللي اتصرفت وتكلفتها، اللي هي أصلاً في السطر المفرود.
+  const [expanded, setExpanded] = useState<number[]>([]);
+  const kb = useTableKeyboard<Order>({
+    rows: filter.filtered, rowKey: (o) => o.id,
+    onOpen: (o) => setExpanded((prev) => (prev.includes(o.id)
+      ? prev.filter((k) => k !== o.id) : [...prev, o.id])),
+  });
+
   return (
     <div>
       {productWindow}
@@ -381,9 +390,12 @@ export default function FreeProduction() {
           onReset={filter.reset} total={orders.length} shown={filter.filtered.length}
         />
         <Table
+          {...kb.tableProps}
           dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
           size="middle" tableLayout="fixed"
           expandable={{
+            expandedRowKeys: expanded,
+            onExpandedRowsChange: (keys) => setExpanded(keys as number[]),
             expandedRowRender: (r: Order) => (
               <Table
                 size="small" pagination={false} rowKey="item_id" dataSource={r.consumptions}

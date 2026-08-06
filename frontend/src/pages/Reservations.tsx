@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row,
-  Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, InputNumber, Modal,
+  Popconfirm, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
 import { PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { DocRef } from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import PartyPickerModal from '../components/PartyPickerModal';
+import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
@@ -136,6 +138,16 @@ export default function Reservations() {
     }
   };
 
+  /**
+   * الحجز مفتوح.
+   *
+   * Two things the API has always returned and no column showed: `notes` — the reason the hold was
+   * put on, which is the whole context when somebody asks why stock is not sellable — and
+   * `sales_invoice_id`, the invoice it turned into. «اتحوّل لفاتورة» with no way to reach the
+   * invoice is a dead end at exactly the point somebody wants to check the price it went out at.
+   */
+  const [viewing, setViewing] = useState<Row | null>(null);
+
   const holdingCount = rows.filter((r) => r.holding).length;
   const holdingQty = rows.filter((r) => r.holding)
     .reduce((s, r) => s + Number(r.quantity || 0), 0);
@@ -226,6 +238,9 @@ export default function Reservations() {
     },
     dateOf: (r) => r.created_at,
   });
+  const kb = useTableKeyboard<Row>({
+    rows: filter.filtered, rowKey: (r) => r.id, onOpen: setViewing,
+  });
 
   const customerOptions = useMemo(
     () => customers.map((c) => ({ value: c.id, label: c.name })), [customers],
@@ -274,6 +289,7 @@ export default function Reservations() {
         />
 
         <Table
+          {...kb.tableProps}
           dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
           size="middle" tableLayout="fixed"
           locale={{ emptyText: 'مفيش حجوزات' }}
@@ -366,6 +382,58 @@ export default function Reservations() {
             <Input.TextArea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* الحجز مفتوح — بكل اللي عليه، مش بس الأعمدة اللي في القايمة. */}
+      <Modal
+        open={!!viewing} onCancel={() => setViewing(null)} width={640} destroyOnHidden
+        title={viewing ? `حجز ${viewing.document_number}` : 'حجز'}
+        footer={viewing?.status === 'active' ? [
+          <Popconfirm key="cancel" title="إلغاء الحجز؟"
+            description="الرصيد هيرجع متاح للبيع فوراً."
+            okText="إلغاء الحجز" cancelText="رجوع"
+            onConfirm={() => { cancel(viewing.id); setViewing(null); }}>
+            <Button danger icon={<StopOutlined />}>إلغاء الحجز</Button>
+          </Popconfirm>,
+          <Button key="close" onClick={() => setViewing(null)}>إغلاق</Button>,
+        ] : [<Button key="close" onClick={() => setViewing(null)}>إغلاق</Button>]}
+      >
+        {viewing && (
+          <Descriptions size="small" column={2} bordered>
+            <Descriptions.Item label="التاريخ">
+              {String(viewing.created_at || '').slice(0, 10)}
+            </Descriptions.Item>
+            <Descriptions.Item label="ينتهي في">{viewing.expires_on}</Descriptions.Item>
+            <Descriptions.Item label="العميل">
+              <a onClick={() => navigate(`/customers/${viewing.customer_id}`)}>
+                {viewing.customer_name ?? `عميل #${viewing.customer_id}`}
+              </a>
+            </Descriptions.Item>
+            <Descriptions.Item label="الصنف">
+              <a onClick={() => navigate(`/catalog/${viewing.item_id}`)}>
+                {viewing.item_name ?? `صنف #${viewing.item_id}`}
+              </a>
+            </Descriptions.Item>
+            <Descriptions.Item label="المخزن">{viewing.location_name ?? '-'}</Descriptions.Item>
+            <Descriptions.Item label="الكمية"><b>{qty(viewing.quantity)}</b></Descriptions.Item>
+            <Descriptions.Item label="الحالة">
+              {viewing.status === 'converted' ? <Tag color="green">اتحوّل لفاتورة</Tag>
+                : viewing.status === 'cancelled' ? <Tag>ملغي</Tag>
+                  : viewing.holding ? <Tag color="purple">حاجز</Tag>
+                    : <Tag>منتهي</Tag>}
+            </Descriptions.Item>
+            {/* The invoice it became. Returned by the API since holds were built and shown by
+                nothing — «اتحوّل لفاتورة» was a label with no way to reach the فاتورة. */}
+            <Descriptions.Item label="الفاتورة">
+              {viewing.sales_invoice_id
+                ? <DocRef kind="invoice" id={viewing.sales_invoice_id} label={null} />
+                : <span style={{ color: '#bbb' }}>-</span>}
+            </Descriptions.Item>
+            <Descriptions.Item label="ملاحظات" span={2}>
+              {viewing.notes || <span style={{ color: '#bbb' }}>-</span>}
+            </Descriptions.Item>
+          </Descriptions>
+        )}
       </Modal>
     </div>
   );

@@ -68,3 +68,24 @@ body,
   box-shadow: inset 2px 0 0 #6AB42D;
   transition: background 0.4s ease;
 }
+
+/*
+ * السطر اللي الكيبورد واقف عليه.
+ *
+ * Distinct from `.row-arrived`, which says «هي دي اللي فتحتها» and fades. This one says «دي اللي
+ * هتفتح لو دوست Enter» and stays until the cursor moves, because a cursor that disappears is a
+ * cursor you have to find again before every keypress.
+ *
+ * It only ever appears after somebody presses an arrow key. Showing a mouse user a cursor they
+ * never asked for makes them think they have selected something.
+ */
+.row-cursor > td {
+  background: #e6f4ff !important;
+  box-shadow: inset 2px 0 0 #1677ff;
+}
+/* The row takes focus so Enter reaches it, but a browser focus ring on a whole table row reads as
+   a rendering fault rather than a cursor — the background above is the cursor. */
+.ant-table-tbody > tr[tabindex]:focus,
+.ant-table-tbody > tr[tabindex]:focus-visible {
+  outline: none;
+}
