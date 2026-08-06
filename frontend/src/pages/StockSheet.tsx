@@ -252,18 +252,37 @@ export default function StockSheet() {
         summary={() => (
           <Table.Summary fixed>
             <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-              {/* The totals follow the FILTER, not the whole sheet. A total that ignores the
-                  narrowing you just applied answers a question you stopped asking. */}
-              <Table.Summary.Cell index={0} colSpan={general ? 4 : 5}>
-                إجمالي المعروض
-              </Table.Summary.Cell>
-              <Table.Summary.Cell index={1} align="left">
-                <b style={{ color: '#6AB42D' }}>{qty(sumQty)}</b>
-              </Table.Summary.Cell>
-              <Table.Summary.Cell index={2} />
-              <Table.Summary.Cell index={3} align="left">
-                <b style={{ color: '#0B5CA8' }}>{money(sumValue)} ج.م</b>
-              </Table.Summary.Cell>
+              {/*
+                * One cell per VISIBLE column, filled by key rather than by counting.
+                *
+                * A summary written as «span the first five, then three cells» is right until
+                * somebody hides a column from الأعمدة, and then the totals sit under the wrong
+                * headings — which is worse than no totals, because they are still read.
+                *
+                * And the totals follow the FILTER, not the whole sheet: a total that ignores the
+                * narrowing you just applied answers a question you stopped asking.
+                */}
+              {cols.apply(columns).map((c: any, i: number) => {
+                if (c.key === 'quantity') {
+                  return (
+                    <Table.Summary.Cell key={c.key} index={i} align="left">
+                      <b style={{ color: '#6AB42D' }}>{qty(sumQty)}</b>
+                    </Table.Summary.Cell>
+                  );
+                }
+                if (c.key === 'value') {
+                  return (
+                    <Table.Summary.Cell key={c.key} index={i} align="left">
+                      <b style={{ color: '#0B5CA8' }}>{money(sumValue)} ج.م</b>
+                    </Table.Summary.Cell>
+                  );
+                }
+                return (
+                  <Table.Summary.Cell key={c.key} index={i}>
+                    {i === 0 ? 'إجمالي المعروض' : null}
+                  </Table.Summary.Cell>
+                );
+              })}
             </Table.Summary.Row>
           </Table.Summary>
         )}
