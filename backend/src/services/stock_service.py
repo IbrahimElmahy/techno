@@ -70,11 +70,21 @@ def _label(db, location_kind: LocationKind, location_id: int) -> str:
         wh = db.get(Warehouse, location_id)
         return wh.name if wh and wh.name else f"مخزن #{location_id}"
     cust = db.get(Custody, location_id)
-    if cust is not None:
+    if cust is None:
+        return f"عهدة #{location_id}"
+    # A custody is held EITHER by a rep or by a warehouse — `holder_type` says which, and the two
+    # ids are nullable accordingly. This read `cust.user_id`, which the model has never had, so
+    # every refusal on a custody raised AttributeError from inside the error message instead of
+    # the refusal itself: the storekeeper got a 500 at the exact moment the system had something
+    # useful to tell them. It went unseen because nothing had ever asked for a custody's label.
+    if cust.rep_id is not None:
         from src.models.user import User
-        user = db.get(User, cust.user_id)
-        who = (user.full_name or user.username) if user else f"#{cust.user_id}"
+        user = db.get(User, cust.rep_id)
+        who = (user.full_name or user.username) if user else f"#{cust.rep_id}"
         return f"عهدة {who}"
+    if cust.warehouse_id is not None:
+        wh = db.get(Warehouse, cust.warehouse_id)
+        return f"عهدة {wh.name}" if wh and wh.name else f"عهدة مخزن #{cust.warehouse_id}"
     return f"عهدة #{location_id}"
 
 

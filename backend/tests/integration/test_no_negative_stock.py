@@ -105,6 +105,31 @@ def test_approving_a_transfer_beyond_stock_is_refused_and_moves_nothing(client, 
     assert _on_hand(db, shelf) == before
 
 
+def test_the_message_can_name_a_custody_too(db, shelf):
+    """The other kind of place stock sits in.
+
+    `_label` read `cust.user_id`, which the Custody model has never had — it holds `rep_id` or
+    `warehouse_id` depending on `holder_type`. So every refusal on a custody raised AttributeError
+    from inside the error message rather than raising the refusal: the storekeeper got a 500 at the
+    exact moment the system had something useful to tell them.
+
+    It survived because nothing had ever asked a custody for its label. The warehouse branch was
+    covered from the first day and the custody branch by nothing.
+    """
+    from src.models.stock import LocationKind, StockDirection
+    from src.services import stock_service
+
+    with pytest.raises(StockError) as exc:
+        stock_service.post_movement(
+            db, item_id=shelf["item"]["id"], location_kind=LocationKind.custody,
+            location_id=shelf["inv"]["custody_a"], movement_type="manual_out",
+            direction=StockDirection.out, quantity=Decimal("1"),
+            actor_user_id=shelf["inv"]["admin"])
+    text = str(exc.value)
+    assert "عهدة" in text, "the place has to be named as a custody, not as a number"
+    assert "الرصيد مايكفيش" in text
+
+
 def test_the_guard_allows_taking_exactly_what_is_there(client, db, shelf):
     """The boundary. Refusing the last piece would be as wrong as allowing one too many."""
     res = client.post("/api/v1/stock/permits", headers=shelf["h"], json={
