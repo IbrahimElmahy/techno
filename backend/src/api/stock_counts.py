@@ -57,6 +57,12 @@ class LineOut(BaseModel):
     counted_quantity: Decimal | None
     difference: Decimal | None
     stock_movement_id: int | None
+    # (031) الصنف بيتجرد في فئة، والفرق ليه قيمة بالفلوس.
+    #
+    # «ناقص ٣ قطع» and «ناقص ٤٥٠ ج.م» are not the same information, and the second is the one a
+    # manager acts on: three missing screws and three missing pumps read identically without it.
+    category: str | None = None
+    unit_cost: Decimal | None = None
 
 
 class CountOut(BaseModel):
@@ -78,13 +84,26 @@ class CountOut(BaseModel):
 
 
 def _names(db: Session):
+    """Names, categories and costs for every item, in one pass.
+
+    Costs come from `costing_service` — the same average the sale freezes onto a line — so a
+    difference is valued the way the rest of the system values stock. Read once for the whole
+    sheet: a count runs to hundreds of lines, and a cost query per line turns opening it into a
+    wait.
+    """
+    from src.services import costing_service
+
+    all_items = db.scalars(select(Item)).all()
     return (
-        {i.id: i.name for i in db.scalars(select(Item)).all()},
+        {i.id: i.name for i in all_items},
         {w.id: w.name for w in db.scalars(select(Warehouse)).all()},
+        {i.id: i.category for i in all_items},
+        {i.id: costing_service.average_cost(db, i.id) for i in all_items},
     )
 
 
-def _out(sheet: StockCount, items, warehouses, *, with_lines: bool) -> CountOut:
+def _out(sheet: StockCount, items, warehouses, categories=None, costs=None,
+         *, with_lines: bool) -> CountOut:
     lines = None
     if with_lines:
         lines = [
@@ -98,6 +117,8 @@ def _out(sheet: StockCount, items, warehouses, *, with_lines: bool) -> CountOut:
                             else Decimal(str(ln.counted_quantity))
                             - Decimal(str(ln.book_quantity))),
                 stock_movement_id=ln.stock_movement_id,
+                category=(categories or {}).get(ln.item_id),
+                unit_cost=(costs or {}).get(ln.item_id),
             )
             for ln in sheet.lines
         ]
@@ -120,8 +141,8 @@ def list_counts(
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[CountOut]:
-    items, warehouses = _names(db)
-    return [_out(s, items, warehouses, with_lines=False)
+    items, warehouses, categories, costs = _names(db)
+    return [_out(s, items, warehouses, categories, costs, with_lines=False)
             for s in stock_count_service.listing(db, status=status_filter)]
 
 
@@ -134,8 +155,8 @@ def get_count(
     sheet = stock_count_service.get(db, count_id)
     if sheet is None:
         raise HTTPException(404, {"code": "not_found", "message": "الجرد غير موجود"})
-    items, warehouses = _names(db)
-    return _out(sheet, items, warehouses, with_lines=True)
+    items, warehouses, categories, costs = _names(db)
+    return _out(sheet, items, warehouses, categories, costs, with_lines=True)
 
 
 @router.post("", response_model=CountOut, status_code=status.HTTP_201_CREATED)
@@ -152,8 +173,8 @@ def open_count(
     except StockCountError as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
     db.commit()
-    items, warehouses = _names(db)
-    return _out(sheet, items, warehouses, with_lines=True)
+    items, warehouses, categories, costs = _names(db)
+    return _out(sheet, items, warehouses, categories, costs, with_lines=True)
 
 
 @router.put("/{count_id}/counts", response_model=CountOut)
@@ -171,8 +192,8 @@ def enter_counts(
     except StockCountError as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
     db.commit()
-    items, warehouses = _names(db)
-    return _out(sheet, items, warehouses, with_lines=True)
+    items, warehouses, categories, costs = _names(db)
+    return _out(sheet, items, warehouses, categories, costs, with_lines=True)
 
 
 @router.post("/{count_id}/post", response_model=CountOut)
@@ -186,8 +207,8 @@ def post_count(
     except (StockCountError, StockError) as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
     db.commit()
-    items, warehouses = _names(db)
-    return _out(sheet, items, warehouses, with_lines=True)
+    items, warehouses, categories, costs = _names(db)
+    return _out(sheet, items, warehouses, categories, costs, with_lines=True)
 
 
 @router.post("/{count_id}/cancel", response_model=CountOut)
@@ -201,5 +222,5 @@ def cancel_count(
     except StockCountError as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
     db.commit()
-    items, warehouses = _names(db)
-    return _out(sheet, items, warehouses, with_lines=False)
+    items, warehouses, categories, costs = _names(db)
+    return _out(sheet, items, warehouses, categories, costs, with_lines=False)

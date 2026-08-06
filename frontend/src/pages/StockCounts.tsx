@@ -26,6 +26,9 @@ interface Line {
   warehouse_id: number; warehouse_name: string | null;
   book_quantity: string; counted_quantity: string | null; difference: string | null;
   stock_movement_id: number | null;
+  // (031) الفئة للفلتر، والتكلفة عشان الفرق يبان بالفلوس مش بالكمية بس.
+  category?: string | null;
+  unit_cost?: string | null;
 }
 
 interface Sheet {
@@ -37,6 +40,8 @@ interface Sheet {
 }
 
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+const money = (v: any) => Number(v || 0).toLocaleString('ar-EG',
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function StockCounts() {
   const navigate = useNavigate();
@@ -185,7 +190,17 @@ export default function StockCounts() {
     dateOf: (s) => s.count_date,
   });
 
-  const draftLines = sheet?.lines ?? [];
+  /**
+   * فلاتر جوه الورقة.
+   *
+   * A full count of a real warehouse is hundreds of lines. «وريني اللي فيه فرق بس» and «وريني اللي
+   * لسه ماتعدش» are the two questions somebody asks every few minutes while counting, and paging
+   * through everything to answer them is how lines get missed.
+   */
+  const [lineView, setLineView] = useState<'all' | 'differing' | 'uncounted'>('all');
+  const [lineCategory, setLineCategory] = useState<string | null>(null);
+
+  const allLines = sheet?.lines ?? [];
   const isDraft = sheet?.status === 'draft';
   // Computed live from what is typed rather than from the saved line, so the person sees the
   // difference as they enter it instead of after a round trip.
@@ -194,9 +209,41 @@ export default function StockCounts() {
     if (v === null || v === undefined) return null;
     return v - Number(ln.book_quantity);
   };
-  const countedNow = draftLines.filter(
+  /** What the sheet shows right now. The counts and totals below stay on ALL lines — a filter is
+   *  a way of looking, not a way of changing what the document says. */
+  const draftLines = allLines.filter((ln) => {
+    if (lineCategory && (ln.category ?? null) !== lineCategory) return false;
+    if (lineView === 'all') return true;
+    const v = entered[ln.id];
+    const counted = v !== null && v !== undefined;
+    if (lineView === 'uncounted') return !counted;
+    const d = counted ? v - Number(ln.book_quantity)
+      : (ln.difference === null ? null : Number(ln.difference));
+    return d !== null && d !== 0;
+  });
+
+  /** قيمة الفرق بالفلوس. «ناقص ٣ قطع» و«ناقص ٤٥٠ ج.م» مش نفس المعلومة، والتانية هي اللي المدير
+   *  بياخد عليها قرار — تلات مسامير وتلات طلمبات بيتقروا زي بعض من غيرها. */
+  const diffValue = (ln: Line) => {
+    const d = isDraft ? diffOf(ln)
+      : (ln.difference === null ? null : Number(ln.difference));
+    if (d === null) return null;
+    return d * Number(ln.unit_cost || 0);
+  };
+  const totalShort = allLines.reduce((t, ln) => {
+    const v = diffValue(ln);
+    return t + (v !== null && v < 0 ? v : 0);
+  }, 0);
+  const totalOver = allLines.reduce((t, ln) => {
+    const v = diffValue(ln);
+    return t + (v !== null && v > 0 ? v : 0);
+  }, 0);
+
+  const categories = [...new Set(allLines.map((l) => l.category).filter(Boolean))] as string[];
+
+  const countedNow = allLines.filter(
     (ln) => entered[ln.id] !== null && entered[ln.id] !== undefined).length;
-  const differing = draftLines.filter((ln) => {
+  const differing = allLines.filter((ln) => {
     const d = diffOf(ln);
     return d !== null && d !== 0;
   }).length;
@@ -360,13 +407,45 @@ export default function StockCounts() {
         {sheet && (
           <>
             <Space size="large" style={{ marginBottom: 12 }}>
-              <Statistic title="متعدود" value={`${countedNow} / ${draftLines.length}`} />
+              <Statistic title="متعدود" value={`${countedNow} / ${allLines.length}`} />
               <Statistic title="سطور بفرق" value={differing}
                 valueStyle={{ color: differing ? '#cf1322' : undefined }} />
+              {/* العجز والزيادة بالفلوس — الرقم اللي بيتاخد عليه قرار. */}
+              <Statistic title="قيمة العجز" value={`${money(Math.abs(totalShort))} ج.م`}
+                valueStyle={{ color: totalShort < -0.005 ? '#cf1322' : undefined }} />
+              <Statistic title="قيمة الزيادة" value={`${money(totalOver)} ج.م`}
+                valueStyle={{ color: totalOver > 0.005 ? '#6AB42D' : undefined }} />
               {sheet.status !== 'draft' && (
                 <Tag color={sheet.status === 'posted' ? 'green' : 'default'}>
                   {sheet.status === 'posted' ? 'مترحّل' : 'ملغي'}
                 </Tag>
+              )}
+            </Space>
+
+            {/* فلاتر جوه الورقة. A full count is hundreds of lines, and «وريني اللي فيه فرق بس»
+                is asked every few minutes while counting. The counts above stay on ALL lines —
+                a filter is a way of looking, not a way of changing what the document says. */}
+            <Space wrap style={{ marginBottom: 10 }}>
+              <Segmented
+                value={lineView}
+                onChange={(v: string | number) =>
+                  setLineView(String(v) as 'all' | 'differing' | 'uncounted')}
+                options={[
+                  { value: 'all', label: `الكل (${allLines.length})` },
+                  { value: 'differing', label: `فيه فرق (${differing})` },
+                  { value: 'uncounted', label: `لسه ماتعدش (${allLines.length - countedNow})` },
+                ]}
+              />
+              {categories.length > 1 && (
+                <Select allowClear showSearch style={{ minWidth: 180 }}
+                  placeholder="الفئة" value={lineCategory ?? undefined}
+                  onChange={(v) => setLineCategory(v ?? null)}
+                  options={categories.map((c) => ({ value: c, label: c }))} />
+              )}
+              {draftLines.length !== allLines.length && (
+                <span style={{ color: '#8a8a8a', fontSize: 12 }}>
+                  معروض {draftLines.length} من {allLines.length}
+                </span>
               )}
             </Space>
 
@@ -390,13 +469,41 @@ export default function StockCounts() {
                   render: (_: any, ln: Line) => (isDraft ? (
                     <InputNumber
                       data-grid-col="qty" keyboard={false}
+                      data-count-line={ln.id}
                       style={{ width: '100%' }} min={0} placeholder="—"
                       value={entered[ln.id] ?? null}
+                      // Enter is «done, next» — the whole rhythm of counting a shelf. The arrows
+                      // already walk the column; this is the hand that never leaves the keypad.
+                      onPressEnter={(e) => {
+                        e.preventDefault();
+                        const idx = draftLines.findIndex((x) => x.id === ln.id);
+                        const next = draftLines[idx + 1];
+                        if (!next) return;
+                        const el = document.querySelector<HTMLInputElement>(
+                          `input[data-count-line="${next.id}"]`);
+                        el?.focus(); el?.select();
+                      }}
                       onChange={(v) => setEntered((p) => ({ ...p, [ln.id]: v as number | null }))}
                     />
                   ) : (ln.counted_quantity === null
                     ? <span style={{ color: '#bbb' }}>مش متعدود</span>
                     : qty(ln.counted_quantity))),
+                },
+                {
+                  // The number a manager acts on. Three missing screws and three missing pumps
+                  // read identically in the quantity column beside this one.
+                  title: 'قيمة الفرق', width: 130, align: 'left' as const,
+                  render: (_: any, ln: Line) => {
+                    const v = diffValue(ln);
+                    if (v === null || Math.abs(v) < 0.005) {
+                      return <span style={{ color: '#bbb' }}>-</span>;
+                    }
+                    return (
+                      <b style={{ color: v < 0 ? '#cf1322' : '#6AB42D' }}>
+                        {v > 0 ? '+' : ''}{money(v)} ج.م
+                      </b>
+                    );
+                  },
                 },
                 {
                   title: 'الفرق', width: 110, align: 'left' as const,
