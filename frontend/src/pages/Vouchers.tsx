@@ -29,6 +29,7 @@ import {
   UndoOutlined,
   PrinterOutlined,
   SearchOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import PartyField from '../components/PartyField';
 import { ENTRY_TYPE_LABEL } from '../components/labels';
@@ -228,6 +229,16 @@ const Vouchers: React.FC = () => {
   const [transferForm] = Form.useForm();
   const [treasuryForm] = Form.useForm();
   const [chequeForm] = Form.useForm();
+  /**
+   * إنشاء ورقة القبض/الدفع في بوباب.
+   *
+   * It was an inline row of fields sitting above the register — eight controls across the top of a
+   * screen whose job is reading a list. That shape is why the list started below the fold, and why
+   * a half-typed note stayed on screen while somebody scrolled the register looking for something
+   * else. Creating is a decision with a beginning and an end; the register is what the screen is
+   * FOR. Same separation as every other document in the system.
+   */
+  const [chequeOpen, setChequeOpen] = useState(false);
 
   const loadVouchers = useCallback(async () => {
     setLoading(true);
@@ -927,78 +938,16 @@ const Vouchers: React.FC = () => {
             key: 'cheques',
             label: 'الشيكات',
             children: (
-              <Card title="الشيكات">
-                <Form
-                  form={chequeForm}
-                  layout="inline"
-                  onFinish={async (v) => {
-                    setPosting(true);
-                    try {
-                      await api.post('/api/v1/cheques', {
-                        ...v,
-                        amount: String(v.amount),
-                        due_date: v.due_date.format('YYYY-MM-DD'),
-                      });
-                      message.success('تم تسجيل الشيك ✔');
-                      chequeForm.resetFields();
-                      loadCheques();
-                    } catch {
-                      /* interceptor */
-                    } finally {
-                      setPosting(false);
-                    }
-                  }}
-                >
-                  {/* On أوراق دفع the form has to open on «صادر» too. Landing the list on outgoing while the
-                      form still says وارد is how somebody records a payment note as a receipt. */}
-                  <Form.Item name="direction" label="النوع" initialValue={chequeDir || 'incoming'} rules={[{ required: true }]}>
-                    <Select
-                      style={{ width: 130 }}
-                      options={[
-                        { value: 'incoming', label: 'وارد من عميل' },
-                        { value: 'outgoing', label: 'صادر لمورد' },
-                      ]}
-                    />
-                  </Form.Item>
-                  <Form.Item noStyle shouldUpdate>
-                    {({ getFieldValue }) =>
-                      getFieldValue('direction') === 'outgoing' ? (
-                        <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
-                          <PartyField
-                            kind="supplier" style={{ width: 200 }}
-                            options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-                          />
-                        </Form.Item>
-                      ) : (
-                        <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
-                          <PartyField
-                            kind="customer" style={{ width: 200 }}
-                            options={customers.map((c) => ({ value: c.id, label: c.name }))}
-                          />
-                        </Form.Item>
-                      )
-                    }
-                  </Form.Item>
-                  <Form.Item name="cheque_number" label="رقم الشيك" rules={[{ required: true, message: 'أدخل الرقم' }]}>
-                    <Input style={{ width: 120 }} />
-                  </Form.Item>
-                  <Form.Item name="bank_name" label="البنك">
-                    <Input style={{ width: 130 }} />
-                  </Form.Item>
-                  <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
-                    <InputNumber min={0.01} step={0.01} style={{ width: 130 }} />
-                  </Form.Item>
-                  <Form.Item name="due_date" label="الاستحقاق" rules={[{ required: true, message: 'أدخل التاريخ' }]}>
-                    <DatePicker />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button type="primary" htmlType="submit" loading={posting}>
-                      تسجيل الشيك
-                    </Button>
-                  </Form.Item>
-                </Form>
-
-                <div style={{ marginTop: 20 }}>
+              <Card title="الشيكات"
+                extra={(
+                  <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+                    onClick={() => { chequeForm.resetFields(); setChequeOpen(true); }}>
+                    ورقة جديدة
+                  </Button>
+                )}>
+                {/* The register starts at the top now. It was pushed down to clear the inline
+                    creation form, which is why the list used to begin below the fold. */}
+                <div>
                   <ListToolbar
                     searchPlaceholder="بحث برقم الشيك أو المستند أو البنك أو الطرف"
                     query={chequeFilter.query} onQueryChange={chequeFilter.setQuery}
@@ -1289,6 +1238,99 @@ const Vouchers: React.FC = () => {
         destroyOnHidden
       >
         {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
+      </Modal>
+
+      {/* ورقة قبض/دفع جديدة. Vertical, not the inline row it was: eight fields shoulder to
+          shoulder is a form nobody reads the labels of. */}
+      <Modal
+        open={chequeOpen}
+        title="ورقة قبض / دفع جديدة"
+        okText="تسجيل الشيك" cancelText="إلغاء"
+        confirmLoading={posting}
+        onCancel={() => setChequeOpen(false)}
+        onOk={() => chequeForm.submit()}
+        destroyOnHidden
+        width={560}
+      >
+        <Form
+          form={chequeForm}
+          layout="vertical"
+          onFinish={async (v) => {
+            setPosting(true);
+            try {
+              await api.post('/api/v1/cheques', {
+                ...v,
+                amount: String(v.amount),
+                due_date: v.due_date.format('YYYY-MM-DD'),
+              });
+              message.success('تم تسجيل الشيك ✔');
+              chequeForm.resetFields();
+              setChequeOpen(false);
+              loadCheques();
+            } catch {
+              /* interceptor */
+            } finally {
+              setPosting(false);
+            }
+          }}
+        >
+          {/* On أوراق دفع the form has to open on «صادر» too. Landing the list on outgoing while
+              the form still says وارد is how somebody records a payment note as a receipt. */}
+          <Form.Item name="direction" label="النوع"
+            initialValue={chequeDir || 'incoming'} rules={[{ required: true }]}>
+            <Segmented
+              block
+              options={[
+                { value: 'incoming', label: 'وارد من عميل' },
+                { value: 'outgoing', label: 'صادر لمورد' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(a, b) => a.direction !== b.direction}>
+            {({ getFieldValue }) =>
+              getFieldValue('direction') === 'outgoing' ? (
+                <Form.Item name="supplier_id" label="المورد"
+                  rules={[{ required: true, message: 'اختر المورد' }]}>
+                  <PartyField kind="supplier" style={{ width: '100%' }}
+                    options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
+                </Form.Item>
+              ) : (
+                <Form.Item name="customer_id" label="العميل"
+                  rules={[{ required: true, message: 'اختر العميل' }]}>
+                  <PartyField kind="customer" style={{ width: '100%' }}
+                    options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="cheque_number" label="رقم الشيك"
+                rules={[{ required: true, message: 'أدخل الرقم' }]}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="bank_name" label="البنك">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
+              <Form.Item name="amount" label="المبلغ"
+                rules={[{ required: true, message: 'أدخل المبلغ' }]}>
+                <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} addonAfter="ج.م" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="due_date" label="الاستحقاق"
+                rules={[{ required: true, message: 'أدخل التاريخ' }]}>
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
       </Modal>
     </div>
   );
