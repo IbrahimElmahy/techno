@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Space, Table, Tag, message } from 'antd';
+import {
+  Alert, Button, Card, Col, InputNumber, Row, Space, Statistic, Table, Tag, message,
+} from 'antd';
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
-import { textColumn, numberColumn } from '../components/gridColumns';
+import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
 import { useTableKeyboard } from '../components/keyboard';
 
@@ -18,9 +20,10 @@ import { useTableKeyboard } from '../components/keyboard';
  * each, that you scan down and filter and print and count against. You cannot count a warehouse by
  * clicking items one at a time.
  *
- * So this is a table and nothing else. Every column filters — by category, by warehouse, by a
- * quantity or value range — and the filters combine, because the question a count sheet is read
- * for is usually three conditions at once: «خامات مخزن الفرع اللي قيمتها فوق الألف».
+ * So this is a table and nothing else, carrying the same columns as جرد حتى تاريخ so the three
+ * stocktake screens read as one family. Every column filters and sorts, and the filters combine,
+ * because the question a count sheet is read for is usually two or three conditions at once:
+ * «خامات مخزن الفرع اللي فيها عجز».
  *
  * **The two views differ in one thing only: whether a warehouse is a column or is summed away.**
  *
@@ -58,7 +61,6 @@ interface TotalRow {
   category: string | null;
   unit_of_measure: string | null;
   quantity: number;
-  unit_cost: number;
   value: number;
   /** How many stores it sits in — «متفرّق في كام مخزن» is the first thing asked of a total. */
   locations: number;
@@ -68,6 +70,12 @@ const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFraction
 const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
+
+/** Same labels as جرد حتى تاريخ, because it is the same setting being reported. */
+const METHOD_LABELS: Record<string, string> = {
+  average: 'المتوسط المرجح',
+  last_purchase: 'آخر سعر شراء',
+};
 
 const TITLES: Record<string, string> = {
   count: 'جرد المخازن',
@@ -102,11 +110,9 @@ export default function StockSheet() {
   /**
    * The stores added together, for the «عام» view.
    *
-   * The cost is the item's, not an average of the rows: every row of one item already carries the
-   * same `unit_cost` — costing is per item, not per store — so averaging them would introduce a
-   * rounding difference between the two views for no reason. The value is summed rather than
-   * recomputed for the same reason: the total has to equal what the detailed sheet adds up to, or
-   * the two screens disagree and nobody can say which is right.
+   * The value is summed rather than recomputed from a quantity and a cost: the total has to equal
+   * what the detailed sheet adds up to, or the two screens disagree about what the stock is worth
+   * and nobody can say which is right.
    */
   const totals = useMemo<TotalRow[]>(() => {
     const byItem = new Map<number, TotalRow>();
@@ -121,8 +127,7 @@ export default function StockSheet() {
       byItem.set(r.item_id, {
         item_id: r.item_id, code: r.code, name: r.name, category: r.category,
         unit_of_measure: r.unit_of_measure,
-        quantity: Number(r.quantity || 0), unit_cost: Number(r.unit_cost || 0),
-        value: Number(r.value || 0), locations: 1,
+        quantity: Number(r.quantity || 0), value: Number(r.value || 0), locations: 1,
       });
     });
     return [...byItem.values()].sort((a, b) => a.name.localeCompare(b.name, 'ar'));
@@ -138,8 +143,53 @@ export default function StockSheet() {
   const sumQty = shown.reduce((t, r) => t + Number(r.quantity || 0), 0);
   const sumValue = shown.reduce((t, r) => t + Number(r.value || 0), 0);
 
-  // Every column filters and sorts. This is the part the screen exists for: a sheet you cannot
-  // narrow is a sheet you print whole and read with a ruler.
+  const rowKey = (r: any) => (general
+    ? `i${r.item_id}` : `${r.item_id}-${r.location_kind}-${r.location_id}`);
+
+  /**
+   * العدد الفعلي — بيتكتب هنا، وبيفضل على الشاشة، ومابيترحّلش.
+   *
+   * The same as جرد حتى تاريخ, and for the same reason: this is a sheet you read and count
+   * against, not a document. Posting the difference has an owner — دورة الجرد — which has a
+   * document number, a frozen book balance and a posting step, and two screens that both adjust
+   * stock is two screens that can adjust it twice.
+   *
+   * The notice under the toolbar says so in as many words, because a hundred counts typed into a
+   * screen that keeps none of them is a morning lost.
+   */
+  const [actual, setActual] = useState<Record<string, number | null>>({});
+
+  /** موجب = العجز. النظام بيقول أكتر من اللي اتعدّ. */
+  const diffOf = (r: any): number | null => {
+    const a = actual[rowKey(r)];
+    if (a === null || a === undefined) return null;
+    return Number(Number(r.quantity || 0) - a);
+  };
+
+  const openHistory = (r: any) => setHistory({
+    itemId: r.item_id, itemName: r.name,
+    // Scoped to the store when the sheet is showing stores, and to the item as a whole when it is
+    // summing them — the log has to answer the question the row was asking.
+    locationKind: general ? null : r.location_kind,
+    locationId: general ? null : r.location_id,
+  });
+
+  /**
+   * نفس أعمدة «جرد حتى تاريخ»، بالظبط.
+   *
+   * The three stocktake screens are read side by side and their numbers get compared, so they are
+   * laid out the same way: الكود · الصنف · الوحدة · الموقع · الكمية · العدد الفعلي · الفرق. A
+   * column that appears on one and not another makes the reader check whether they are looking at
+   * the same thing.
+   *
+   * **No cost column.** A count sheet is about how many, not how much — the person holding it is
+   * counting boxes on a shelf, and a unit cost beside every line is a number they cannot check and
+   * did not ask for. The stock's value is still on the summary line and the cards above, which is
+   * where a manager reads it.
+   *
+   * الفئة is defined but hidden by default: filtering a count by category is worth having in
+   * الأعمدة, and having it on screen would make these sheets look different from جرد حتى تاريخ.
+   */
   const columns = [
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 120,
       ...textColumn(source, (r: any) => r.code),
@@ -151,52 +201,89 @@ export default function StockSheet() {
     { title: 'الفئة', dataIndex: 'category', key: 'category', width: 160,
       ...textColumn(source, (r: any) => r.category),
       render: (v: string | null) => v || <span style={{ color: '#bbb' }}>بدون فئة</span> },
-    // The one column that differs. In the general view it is replaced by how many stores the item
-    // is spread across, which is the question a summed quantity immediately raises.
+    { title: 'الوحدة', dataIndex: 'unit_of_measure', key: 'unit', width: 100,
+      ...textColumn(source, (r: any) => r.unit_of_measure),
+      render: (v: string | null) => v || '-' },
+    // The one column the two views differ on. Summing the stores away leaves «الموقع» with nothing
+    // to say, so it becomes how many stores the item is spread across — the question a summed
+    // quantity immediately raises.
     ...(general ? [{
       title: 'موجود في', dataIndex: 'locations', key: 'locations', width: 120,
       ...numberColumn((r: any) => r.locations),
       render: (v: number) => <span>{v} مخزن</span>,
     }] : [{
-      title: 'المخزن', dataIndex: 'location', key: 'location', width: 190,
+      title: 'الموقع', dataIndex: 'location', key: 'location', width: 190,
       ...textColumn(source, (r: any) => r.location),
     }]),
-    { title: 'الوحدة', dataIndex: 'unit_of_measure', key: 'unit', width: 100,
-      ...textColumn(source, (r: any) => r.unit_of_measure),
-      render: (v: string | null) => v || '-' },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', width: 130, align: 'left' as const,
       ...numberColumn((r: any) => r.quantity),
-      render: (v: any) => <b style={{ color: '#6AB42D' }}>{qty(v)}</b> },
-    { title: 'التكلفة', dataIndex: 'unit_cost', key: 'unit_cost', width: 130, align: 'left' as const,
-      ...numberColumn((r: any) => r.unit_cost),
-      render: (v: any) => money(v) },
-    { title: 'القيمة', dataIndex: 'value', key: 'value', width: 150, align: 'left' as const,
-      ...numberColumn((r: any) => r.value),
-      render: (v: any) => <b style={{ color: '#0B5CA8' }}>{money(v)} ج.م</b> },
+      render: (v: any) => <b>{qty(v)}</b> },
+    { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
+      render: (_: any, r: any) => (
+        // `data-grid-col` is what gives the column its keyboard: ↑↓ walk it and Enter drops to the
+        // box below, which is the rhythm of counting a shelf without looking up.
+        <InputNumber
+          size="small" min={0} placeholder="—" style={{ width: '100%' }}
+          data-grid-col="actual" keyboard={false}
+          value={actual[rowKey(r)] ?? null}
+          onChange={(v: any) => setActual((p) => ({ ...p, [rowKey(r)]: v as number | null }))}
+        />
+      ) },
+    { title: 'الفرق', key: 'diff', align: 'left' as const, width: 130,
+      ...choiceColumn<any>(
+        [{ text: 'عجز', value: 'short' },
+         { text: 'زيادة', value: 'over' },
+         { text: 'مطابق', value: 'match' },
+         { text: 'لسه ماتعدش', value: 'none' }],
+        (r: any, v: string) => {
+          const d = diffOf(r);
+          if (v === 'none') return d === null;
+          if (d === null) return false;
+          if (v === 'match') return d === 0;
+          // «عجز» = النظام بيقول أكتر من اللي لقيناه.
+          return v === 'short' ? d > 0 : d < 0;
+        }),
+      render: (_: any, r: any) => {
+        const d = diffOf(r);
+        if (d === null) return <span style={{ color: '#bbb' }}>—</span>;
+        if (d === 0) return <Tag color="green">مطابق</Tag>;
+        // Only a real difference is a link, the same rule جرد حتى تاريخ uses: a link that opens an
+        // empty log teaches people the link is broken, and then they stop using the one that works.
+        return (
+          <a onClick={(e) => { e.stopPropagation(); openHistory(r); }}>
+            <b style={{ color: d > 0 ? '#cf1322' : '#6AB42D' }}>
+              {d > 0 ? `عجز ${qty(d)}` : `زيادة ${qty(Math.abs(d))}`}
+            </b>
+          </a>
+        );
+      } },
   ];
 
-  const cols = useHiddenColumns(`stock-sheet-${view}`, []);
-
-  const rowKey = (r: any) => (general ? `i${r.item_id}` : `${r.item_id}-${r.location_kind}-${r.location_id}`);
+  const cols = useHiddenColumns(`stock-sheet-${view}`, ['category']);
 
   const kb = useTableKeyboard<any>({
     rows: shown, rowKey,
-    // «الرقم ده جه منين» — the movements behind the quantity, scoped to the store when the sheet
-    // is showing stores and to the item as a whole when it is not.
-    onOpen: (r) => setHistory({
-      itemId: r.item_id, itemName: r.name,
-      locationKind: general ? null : r.location_kind,
-      locationId: general ? null : r.location_id,
-    }),
+    // «الرقم ده جه منين» — the movements behind the quantity.
+    onOpen: openHistory,
   });
 
   /** Exported straight from what is on screen — filters, order and all. */
   const exportCsv = () => {
     if (!shown.length) { message.info('مفيش صفوف للتصدير'); return; }
-    const heads = cols.apply(columns).map((c: any) => c.title);
-    const keys = cols.apply(columns).map((c: any) => c.dataIndex);
+    const visible = cols.apply(columns) as any[];
+    // العدد الفعلي والفرق محسوبين، مالهمش `dataIndex` يتقرا منه — ولولا ده كانوا هيتصدّروا
+    // عمودين فاضيين بعناوين، وهي أسوأ من إنهم مايتصدّروش.
+    const cell = (c: any, r: any) => {
+      if (c.key === 'actual') return actual[rowKey(r)] ?? '';
+      if (c.key === 'diff') {
+        const d = diffOf(r);
+        return d === null ? '' : d === 0 ? 'مطابق' : d > 0 ? `عجز ${d}` : `زيادة ${Math.abs(d)}`;
+      }
+      return r[c.dataIndex] ?? '';
+    };
+    const heads = visible.map((c) => c.title);
     const lines = [heads.join(','), ...shown.map((r: any) =>
-      keys.map((k: string) => `"${String(r[k] ?? '').replace(/"/g, '""')}"`).join(','))];
+      visible.map((c) => `"${String(cell(c, r)).replace(/"/g, '""')}"`).join(','))];
     const blob = new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -206,12 +293,7 @@ export default function StockSheet() {
 
   return (
     <Card
-      title={(
-        <Space>
-          <span>{TITLES[view]}</span>
-          {costingMethod && <Tag color="blue">التكلفة: {costingMethod}</Tag>}
-        </Space>
-      )}
+      title={TITLES[view]}
       extra={(
         <Space>
           <ColumnSettings
@@ -226,8 +308,33 @@ export default function StockSheet() {
         </Space>
       )}
     >
+      <Alert type="info" showIcon style={{ marginBottom: 12 }}
+        message="الورقة دي للعدّ والمراجعة — العدد الفعلي اللي بتكتبه هنا مابيتحفظش"
+        description={'بتحسب الفرق وبتوريك الحركات وراه. تسوية الفرق في المخزون بتتعمل من «دورة الجرد»، '
+          + 'اللي عندها المستند والرصيد المجمّد والترحيل.'
+          // The method belongs beside «قيمة المخزون», which is the only figure it explains. It is
+          // not a cost column and does not read as one.
+          + (costingMethod
+            ? ` قيمة المخزون بطريقة «${METHOD_LABELS[costingMethod] || costingMethod}».` : '')} />
+
+      {/* نفس الكروت اللي فوق «جرد حتى تاريخ»، عشان التلات شاشات تتقرا بنفس العين. */}
+      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={8}>
+          <Card size="small"><Statistic title="عدد السطور" value={shown.length} /></Card>
+        </Col>
+        <Col xs={8}>
+          <Card size="small"><Statistic title="إجمالي الكمية" value={qty(sumQty)} /></Card>
+        </Col>
+        <Col xs={8}>
+          <Card size="small">
+            <Statistic title="قيمة المخزون" value={money(sumValue)}
+              valueStyle={{ color: '#0B5CA8' }} />
+          </Card>
+        </Col>
+      </Row>
+
       <ListToolbar
-        searchPlaceholder="بحث بالكود أو الاسم أو الفئة أو المخزن"
+        searchPlaceholder="بحث بالكود أو الاسم أو الفئة أو الموقع"
         query={filter.query} onQueryChange={filter.setQuery}
         values={filter.values} onValueChange={filter.setValue}
         onReset={filter.reset}
@@ -249,43 +356,51 @@ export default function StockSheet() {
           pageSizeOptions: ['20', '50', '100', '200', '500'],
           showTotal: (t) => `الإجمالي: ${t} سطر`,
         }}
-        summary={() => (
-          <Table.Summary fixed>
-            <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-              {/*
-                * One cell per VISIBLE column, filled by key rather than by counting.
-                *
-                * A summary written as «span the first five, then three cells» is right until
-                * somebody hides a column from الأعمدة, and then the totals sit under the wrong
-                * headings — which is worse than no totals, because they are still read.
-                *
-                * And the totals follow the FILTER, not the whole sheet: a total that ignores the
-                * narrowing you just applied answers a question you stopped asking.
-                */}
-              {cols.apply(columns).map((c: any, i: number) => {
-                if (c.key === 'quantity') {
+        summary={(pageRows) => {
+          /*
+           * One cell per VISIBLE column, filled by key rather than by counting.
+           *
+           * A summary written as «span the first five, then three cells» is right until somebody
+           * hides a column from الأعمدة, and then the totals sit under the wrong headings — which
+           * is worse than no totals, because they are still read.
+           *
+           * The counted total is of what is ON SCREEN, the same as the quantity beside it: a
+           * «counted» figure that included rows the filter took away would say the count is
+           * further along than it is.
+           */
+          const list = [...pageRows] as any[];
+          const countedQty = list.reduce((t, r) => {
+            const a = actual[rowKey(r)];
+            return t + (a === null || a === undefined ? 0 : Number(a));
+          }, 0);
+          return (
+            <Table.Summary fixed>
+              <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
+                {cols.apply(columns).map((c: any, i: number) => {
+                  if (c.key === 'quantity') {
+                    return (
+                      <Table.Summary.Cell key={c.key} index={i} align="left">
+                        <b>{qty(sumQty)}</b>
+                      </Table.Summary.Cell>
+                    );
+                  }
+                  if (c.key === 'actual') {
+                    return (
+                      <Table.Summary.Cell key={c.key} index={i} align="left">
+                        <b style={{ color: '#0B5CA8' }}>{qty(countedQty)}</b>
+                      </Table.Summary.Cell>
+                    );
+                  }
                   return (
-                    <Table.Summary.Cell key={c.key} index={i} align="left">
-                      <b style={{ color: '#6AB42D' }}>{qty(sumQty)}</b>
+                    <Table.Summary.Cell key={c.key} index={i}>
+                      {i === 0 ? `المعروض: ${shown.length} سطر` : null}
                     </Table.Summary.Cell>
                   );
-                }
-                if (c.key === 'value') {
-                  return (
-                    <Table.Summary.Cell key={c.key} index={i} align="left">
-                      <b style={{ color: '#0B5CA8' }}>{money(sumValue)} ج.م</b>
-                    </Table.Summary.Cell>
-                  );
-                }
-                return (
-                  <Table.Summary.Cell key={c.key} index={i}>
-                    {i === 0 ? 'إجمالي المعروض' : null}
-                  </Table.Summary.Cell>
-                );
-              })}
-            </Table.Summary.Row>
-          </Table.Summary>
-        )}
+                })}
+              </Table.Summary.Row>
+            </Table.Summary>
+          );
+        }}
       />
 
       <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
