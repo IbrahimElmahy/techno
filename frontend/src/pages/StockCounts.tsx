@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
+import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
 
 /**
  * جرد المخازن و جرد عام — the counting cycle.
@@ -199,6 +200,8 @@ export default function StockCounts() {
    * through everything to answer them is how lines get missed.
    */
   const [lineView, setLineView] = useState<'all' | 'differing' | 'uncounted'>('all');
+  /** سجل عمليات الصنف — نفس السطح اللي جرد حتى تاريخ بيستعمله. */
+  const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
   const [lineCategory, setLineCategory] = useState<string | null>(null);
 
   const allLines = sheet?.lines ?? [];
@@ -251,6 +254,8 @@ export default function StockCounts() {
 
   return (
     <div>
+      {/* Mounted at the root so it survives the sheet dialog closing under it. */}
+      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
       <Card
         title="دورة الجرد — عدّ وتسوية"
         extra={
@@ -463,8 +468,15 @@ export default function StockCounts() {
                 { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
                   ...textColumn(allLines, (l: Line) => l.item_name),
                   // A difference on a line is the moment somebody wants the item's history.
+                  // Opens the movement log rather than the item's catalogue page. On a counting
+                  // sheet the question behind a name is «الفرق ده جه منين», and the answer is the
+                  // movements — not the item's price and unit.
                   render: (v: string | null, r: Line) => (
-                    <a onClick={() => navigate(`/catalog/${r.item_id}`)}>
+                    <a onClick={() => setHistory({
+                      itemId: r.item_id, itemName: v,
+                      locationKind: 'warehouse', locationId: r.warehouse_id,
+                      dateTo: sheet?.count_date ?? null,
+                    })}>
                       {v ?? `صنف #${r.item_id}`}
                     </a>
                   ) },

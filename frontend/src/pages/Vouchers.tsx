@@ -38,6 +38,7 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import { printDocument } from '../print/brand';
+import { useScreenShortcuts } from '../components/keyboard';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
 import { useLookup } from '../hooks/useLookup';
 
@@ -255,6 +256,28 @@ const Vouchers: React.FC = () => {
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+
+  /**
+   * F2 = «جديد» في التبويب المفتوح.
+   *
+   * This screen holds six creation dialogs behind tabs, so a `data-shortcut` marker on each button
+   * would leave several claiming the key at once — and the winner would be whichever the DOM
+   * ordered first, not the one on screen. Registering ONE handler that dispatches on the open tab
+   * is the only way F2 can mean «جديد هنا».
+   */
+  useScreenShortcuts({
+    onNew: () => {
+      const open: Record<string, () => void> = {
+        receipt: () => { receiptForm.resetFields(); setReceiptTarget(''); setReceiptOpen(true); },
+        payment: () => { paymentForm.resetFields(); setPaymentOpen(true); },
+        handover: () => { handoverForm.resetFields(); setHandoverOpen(true); },
+        expense: () => { expenseForm.resetFields(); setExpenseOpen(true); },
+        transfer: () => { transferForm.resetFields(); setTransferOpen(true); },
+        cheques: () => { chequeForm.resetFields(); setChequeOpen(true); },
+      };
+      open[tab]?.();
+    },
+  });
 
   const loadVouchers = useCallback(async () => {
     setLoading(true);
@@ -587,7 +610,7 @@ const Vouchers: React.FC = () => {
             children: (
               <Card title="تحصيل من عميل"
                 extra={(
-                  <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+                  <Button type="primary" icon={<PlusOutlined />}
                     onClick={() => { receiptForm.resetFields(); setReceiptTarget(''); setReceiptOpen(true); }}>
                     سند قبض جديد
                   </Button>
@@ -782,7 +805,7 @@ const Vouchers: React.FC = () => {
             children: (
               <Card title="الشيكات"
                 extra={(
-                  <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+                  <Button type="primary" icon={<PlusOutlined />}
                     onClick={() => { chequeForm.resetFields(); setChequeOpen(true); }}>
                     ورقة جديدة
                   </Button>

@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { normalizeAr } from '../components/ListToolbar';
+import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
 
 /**
  * رصيد صنف — the storekeeper's enquiry screen: pick a category, pick an item, and every price and
@@ -56,6 +57,8 @@ const money = (v: any) =>
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function StockBalance() {
+  /** سجل عمليات الصنف في المخزن ده — نفس السطح اللي الجرد بيستعمله. */
+  const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
   // Three of their menu entries land here: «رصيد صنف» (/storelog), «جرد المخازن» (/inventorycount)
   // and «جرد عام المخازن» (/generalinventorycount). Reading their screens showed the last two are
   // filtered stock listings, not counting sheets — the same question this screen already answers,
@@ -150,6 +153,8 @@ export default function StockBalance() {
   );
 
   return (
+    <>
+      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
     <Card title={TITLES[view] ?? TITLES.balance} styles={{ body: { paddingTop: 12 } }}
       extra={
         <Radio.Group size="small" value={stockScope} onChange={(e) => setStockScope(e.target.value)}>
@@ -260,7 +265,15 @@ export default function StockBalance() {
                 pagination={false}
                 dataSource={balance.locations}
                 columns={[
-                  { title: 'المخزن', dataIndex: 'name' },
+                  // The store's name opens what happened in it. A balance is the end of a story,
+                  // and «ليه الرقم ده؟» is answered by the movements, not by the number.
+                  { title: 'المخزن', dataIndex: 'name',
+                    render: (n: string, r: any) => (
+                      <a onClick={() => setHistory({
+                        itemId: balance.item.id, itemName: balance.item.name,
+                        locationKind: r.kind, locationId: r.id,
+                      })}>{n}</a>
+                    ) },
                   {
                     title: `الوحدة${balance.item.unit_of_measure ? ` (${balance.item.unit_of_measure})` : ''}`,
                     dataIndex: 'quantity', align: 'center' as const, width: 120,
@@ -286,5 +299,6 @@ export default function StockBalance() {
         </Col>
       </Row>
     </Card>
+    </>
   );
 }
