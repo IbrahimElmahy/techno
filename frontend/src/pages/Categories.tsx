@@ -8,6 +8,7 @@ import {
   EyeOutlined, DownOutlined, CloseCircleOutlined, CheckCircleOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useScreenShortcuts } from '../components/keyboard';
 
@@ -162,6 +163,11 @@ export default function Categories() {
     onClose: open ? () => setOpen(false) : undefined,
   });
 
+  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
+  const kb = useTableKeyboard<Category>({
+    rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  });
+
   return (
     <Card
       // Their page is titled «الفئات» while the menu entry reads «فئات الاصناف». Both are kept as
@@ -191,6 +197,7 @@ export default function Categories() {
       />
 
       <Table<Category>
+          {...kb.tableProps}
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد فئات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}

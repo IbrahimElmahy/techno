@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Tabs, Table, Button, Space, Modal, Form, Input, Select, Checkbox, Tag, message } from 'antd';
 import { PlusOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useTableKeyboard } from '../components/keyboard';
 import { useQueryTab } from '../components/useQueryTab';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
@@ -53,6 +55,7 @@ export default function Org() {
       ? reps.find((r: any) => r.id === record.rep_id)?.full_name
       : warehouses.find((w: any) => w.id === record.warehouse_id)?.name;
 
+  const navigate = useNavigate();
   const govFilter = useListFilter(governorates, {
     search: (g: any) => [g.id, g.name],
   });
@@ -81,6 +84,25 @@ export default function Org() {
       holder_type: (c: any, v) => c.holder_type === v,
       active: (c: any, v) => !!c.active === (v === 'active'),
     },
+  });
+
+
+  // كل تبويب هنا قايمة بيانات أساسية: السطر يفتح التعديل بتاعها.
+  const govKb = useTableKeyboard<any>({
+    rows: govFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  });
+  const branchKb = useTableKeyboard<any>({
+    rows: branchFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  });
+  const warehouseKb = useTableKeyboard<any>({
+    rows: warehouseFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  });
+  // العهدة مالهاش تعديل: اللي بيتعدّل فيها هو التفعيل بس، وده زرار في السطر أصلاً. فالسطر يودّي
+  // للحائز نفسه — المندوب أو المستودع — اللي هو الحاجة الوحيدة الأخص وراه.
+  const custodyKb = useTableKeyboard<any>({
+    rows: custodyFilter.filtered, rowKey: (r) => r.id,
+    onOpen: (r) => navigate(r.holder_type === 'rep' && r.rep_id
+      ? `/employees?rep=${r.rep_id}` : `/org?tab=warehouses`),
   });
 
   const fetchData = async () => {
@@ -377,7 +399,8 @@ export default function Org() {
             onReset={govFilter.reset}
             total={governorates.length} shown={govFilter.filtered.length}
           />
-          <Table dataSource={govFilter.filtered} columns={governorateColumns} rowKey="id" loading={loading} />
+          <Table {...govKb.tableProps} dataSource={govFilter.filtered} columns={governorateColumns}
+            rowKey="id" loading={loading} />
         </>
       ),
     },
@@ -401,7 +424,8 @@ export default function Org() {
                 options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
             ]}
           />
-          <Table dataSource={branchFilter.filtered} columns={branchColumns} rowKey="id" loading={loading} />
+          <Table {...branchKb.tableProps} dataSource={branchFilter.filtered} columns={branchColumns}
+            rowKey="id" loading={loading} />
         </>
       ),
     },
@@ -425,7 +449,8 @@ export default function Org() {
                 options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
             ]}
           />
-          <Table dataSource={warehouseFilter.filtered} columns={warehouseColumns} rowKey="id" loading={loading} />
+          <Table {...warehouseKb.tableProps} dataSource={warehouseFilter.filtered} columns={warehouseColumns}
+            rowKey="id" loading={loading} />
         </>
       ),
     },
@@ -448,7 +473,8 @@ export default function Org() {
                 options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
             ]}
           />
-          <Table dataSource={custodyFilter.filtered} columns={custodyColumns} rowKey="id" loading={loading} />
+          <Table {...custodyKb.tableProps} dataSource={custodyFilter.filtered} columns={custodyColumns}
+            rowKey="id" loading={loading} />
         </>
       ),
     },

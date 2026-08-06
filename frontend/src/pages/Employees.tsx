@@ -6,6 +6,7 @@ import {
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
+import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 /**
@@ -69,6 +70,11 @@ export default function Employees() {
       active: (e, v) => e.active === (v === 'active'),
       job_title_id: (e, v) => e.job_title_id === v,
     },
+  });
+
+  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
+  const kb = useTableKeyboard<Employee>({
+    rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => startEdit(r),
   });
 
   const startCreate = () => {
@@ -154,6 +160,7 @@ export default function Employees() {
       />
 
       <Table<Employee>
+          {...kb.tableProps}
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         locale={{ emptyText: 'لا يوجد موظفون' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}

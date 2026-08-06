@@ -15,6 +15,7 @@ import {
 } from 'antd';
 import { PlusOutlined, EditOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
 interface ItemType {
@@ -128,6 +129,11 @@ const InspectionItems: React.FC = () => {
     },
   });
 
+  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
+  const kb = useTableKeyboard<ItemType>({
+    rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  });
+
   return (
     <div>
       <Card
@@ -165,6 +171,7 @@ const InspectionItems: React.FC = () => {
           ]}
         />
         <Table<ItemType>
+          {...kb.tableProps}
           rowKey="id"
           loading={loading}
           dataSource={filter.filtered}

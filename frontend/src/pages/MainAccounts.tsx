@@ -6,6 +6,7 @@ import {
   PlusOutlined, EditOutlined, SearchOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import {
@@ -232,6 +233,11 @@ export default function MainAccounts() {
     </>
   );
 
+  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
+  const kb = useTableKeyboard<ChartAccount>({
+    rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  });
+
   return (
     <div>
       <Card
@@ -256,6 +262,7 @@ export default function MainAccounts() {
         </Row>
 
         <Table
+          {...kb.tableProps}
           dataSource={filtered}
           columns={columns}
           rowKey="id"

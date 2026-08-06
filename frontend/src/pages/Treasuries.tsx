@@ -7,6 +7,7 @@ import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
@@ -282,6 +283,11 @@ export default function Treasuries() {
     </>
   );
 
+  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
+  const kb = useTableKeyboard<TreasuryRecord>({
+    rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  });
+
   return (
     <div>
       <Card
@@ -306,6 +312,7 @@ export default function Treasuries() {
         </Row>
 
         <Table
+          {...kb.tableProps}
           dataSource={filtered}
           columns={columns}
           rowKey="id"

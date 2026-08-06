@@ -536,6 +536,28 @@ export function useScreenShortcuts(handlers: ScreenShortcuts, enabled = true) {
  * <Table {...kb.tableProps} dataSource={rows} />
  * ```
  */
+/**
+ * Where the cursor lands. Pulled out of the hook so it can be checked directly.
+ *
+ * The boundaries are the whole of it, and they are the part that is wrong when this kind of thing
+ * is wrong: what ↓ does from nowhere, what ↑ does from nowhere, and what either does at the end of
+ * the list. Returns -1 for «don't move», so a held arrow key stops at the last row instead of
+ * wrapping round — wrapping means the row you land on is whichever one you happened to stop on,
+ * silently, twenty rows away.
+ */
+export function nextRowIndex(
+  current: number, count: number, to: 'up' | 'down' | 'first' | 'last',
+): number {
+  if (count <= 0) return -1;
+  if (to === 'first') return 0;
+  if (to === 'last') return count - 1;
+  // From nowhere, the direction pressed is the end it comes in from: ↓ starts at the top, ↑ at the
+  // bottom. Starting both at the top would make ↑ on a fresh list move DOWN.
+  if (current < 0) return to === 'down' ? 0 : count - 1;
+  const next = to === 'down' ? current + 1 : current - 1;
+  return next < 0 || next >= count ? -1 : next;
+}
+
 let tableSeq = 0;
 
 export function useTableKeyboard<T>({
@@ -598,15 +620,8 @@ export function useTableKeyboard<T>({
         const { rows: rs, keyOf: k, activeKey: cur } = latest.current;
         if (!rs.length) return false;
         const keys = rs.map(k);
-        const i = cur === null ? -1 : keys.indexOf(cur);
-        let next: number;
-        if (to === 'first') next = 0;
-        else if (to === 'last') next = keys.length - 1;
-        // From nowhere, ↓ starts at the top and ↑ starts at the bottom — the direction you pressed
-        // is the end you meant to come in from.
-        else if (i === -1) next = to === 'down' ? 0 : keys.length - 1;
-        else next = to === 'down' ? i + 1 : i - 1;
-        if (next < 0 || next >= keys.length) return false;
+        const next = nextRowIndex(cur === null ? -1 : keys.indexOf(cur), keys.length, to);
+        if (next < 0) return false;
         const key = keys[next];
         setActiveKey(key);
         // After the row re-renders with the cursor class, not before it.

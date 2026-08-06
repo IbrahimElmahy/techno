@@ -3,10 +3,10 @@ import {
   Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import {
-  PlusOutlined, StopOutlined, SearchOutlined, ReloadOutlined,
+  PlusOutlined, StopOutlined, SearchOutlined, ReloadOutlined, EditOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
-import { useScreenShortcuts } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { CostCenter } from '../utils/accounts';
@@ -51,7 +51,7 @@ export default function CostCenters() {
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
     onSearch: () => searchRef.current?.focus(),
-    onClose: () => { setCreateOpen(false); },
+    onClose: () => { setCreateOpen(false); setEditing(null); },
   });
 
 
@@ -81,6 +81,39 @@ export default function CostCenters() {
     }
   };
 
+  /**
+   * تعديل مركز التكلفة.
+   *
+   * The screen could create a centre and disable one, and never rename one — so a typo in a name
+   * was permanent, and the only way round it was to disable the row and type it again, which
+   * leaves every historical entry tagged to the disabled one. `PATCH /cost-centers/{id}` has
+   * accepted a name the whole time; nothing called it.
+   *
+   * **The code and the parent are not editable, deliberately.** The code is what entries are
+   * posted against and the parent is what the levels are derived from: renaming either in place
+   * changes the meaning of history rather than correcting it. Only the label people read is
+   * something you can be wrong about in a way that is safe to fix.
+   */
+  const [editing, setEditing] = useState<CostCenter | null>(null);
+  const [editForm] = Form.useForm();
+
+  const openEdit = (r: CostCenter) => {
+    setEditing(r);
+    editForm.setFieldsValue({ name: r.name });
+  };
+
+  const onEdit = async (v: any) => {
+    if (!editing) return;
+    try {
+      await api.patch(`/api/v1/cost-centers/${editing.id}`, { name: v.name });
+      message.success('اتعدّل مركز التكلفة');
+      setEditing(null);
+      load();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر تعديل مركز التكلفة');
+    }
+  };
+
   const onDeactivate = (r: CostCenter) => {
     showReversalConfirm({
       title: 'تعطيل مركز التكلفة',
@@ -97,6 +130,12 @@ export default function CostCenters() {
       },
     });
   };
+
+  // السطر يفتح التعديل — وبيتحطّ بعد `onEdit` عشان الدالة تكون موجودة قبل ما تتربط.
+  const kb = useTableKeyboard<CostCenter>({
+    rows: filtered, rowKey: (r) => r.id,
+    onOpen: canWrite ? (r) => openEdit(r) : undefined,
+  });
 
   // Their four columns, in their order: `رقم · الاسم · مستوي مركز التكلفة · المركز التابع له`.
   const columns = [
@@ -136,12 +175,21 @@ export default function CostCenters() {
     ...(canWrite ? [{
       title: '',
       key: 'actions',
-      width: 60,
-      render: (_: any, r: CostCenter) => (r.active ? (
-        <Tooltip title="تعطيل">
-          <Button type="text" danger icon={<StopOutlined />} onClick={() => onDeactivate(r)} />
-        </Tooltip>
-      ) : null),
+      width: 92,
+      render: (_: any, r: CostCenter) => (
+        <Space size={0}>
+          <Tooltip title="تعديل الاسم">
+            <Button type="text" icon={<EditOutlined />}
+              onClick={(e) => { e.stopPropagation(); openEdit(r); }} />
+          </Tooltip>
+          {r.active && (
+            <Tooltip title="تعطيل">
+              <Button type="text" danger icon={<StopOutlined />}
+                onClick={(e) => { e.stopPropagation(); onDeactivate(r); }} />
+            </Tooltip>
+          )}
+        </Space>
+      ),
     }] : []),
   ];
 
@@ -169,6 +217,7 @@ export default function CostCenters() {
         </Row>
 
         <Table
+          {...kb.tableProps}
           dataSource={filtered}
           columns={columns}
           rowKey="id"
@@ -217,6 +266,39 @@ export default function CostCenters() {
             <Button onClick={() => setCreateOpen(false)}>تراجع</Button>
           </Space>
         </Form>
+      </Modal>
+
+      {/* التعديل: الاسم بس. الكود والمركز الأب مقفولين وبيتعرضوا عشان اللي بيعدّل يشوف إنه واقف
+          على المركز الصح، مش عشان يغيّرهم. */}
+      <Modal footer={null} centered width={520} destroyOnHidden
+        title={editing ? `تعديل «${editing.name}»` : 'تعديل مركز تكلفة'}
+        open={!!editing} onCancel={() => setEditing(null)}>
+        {editing && (
+          <Form form={editForm} layout="vertical" onFinish={onEdit} requiredMark={false}>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item label="الكود"
+                  extra="الكود مايتغيّرش — القيود اتسجّلت عليه.">
+                  <Input value={editing.code} disabled />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="المركز التابع له"
+                  extra="المستوى بيتحسب منه، فمابيتغيّرش بعد الإنشاء.">
+                  <Input value={parentName(editing.parent_id)} disabled />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Form.Item name="name" label="الاسم"
+              rules={[{ required: true, message: 'اكتب اسم المركز' }]}>
+              <Input placeholder="مثال: خط الإنتاج أ" />
+            </Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">حفظ</Button>
+              <Button onClick={() => setEditing(null)}>تراجع</Button>
+            </Space>
+          </Form>
+        )}
       </Modal>
     </div>
   );

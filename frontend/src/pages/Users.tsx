@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { UserAddOutlined, LockOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableKeyboard } from '../components/keyboard';
 import { useAuth, RoleName } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -50,6 +51,11 @@ export default function Users() {
       branch_id: (u, v) => u.branch_id === v,
       active: (u, v) => u.active === (v === 'active'),
     },
+  });
+
+  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
+  const kb = useTableKeyboard<UserRecord>({
+    rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
 
   // Territories carry a branch_id — narrow the list once a branch is chosen.
@@ -249,6 +255,7 @@ export default function Users() {
           ]}
         />
         <Table
+          {...kb.tableProps}
           dataSource={filter.filtered}
           columns={columns}
           rowKey="id"
