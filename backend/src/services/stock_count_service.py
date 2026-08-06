@@ -14,7 +14,8 @@ from src.services import numbering
 from src.core.money import to_qty
 from src.models.catalog import Item
 from src.models.stock import LocationKind, StockDirection
-from src.models.stock_count import StockCount, StockCountLine, StockCountStatus
+from src.models.stock_count import (
+    StockCount, StockCountKind, StockCountLine, StockCountStatus)
 from src.models.warehouse import Warehouse
 from src.services import audit_service, stock_service
 
@@ -29,17 +30,50 @@ def _doc_number(db: Session) -> str:
     return numbering.next_document_number(db, StockCount, "CNT")
 
 
+def _last_counted(db: Session) -> dict[tuple[int, int], date]:
+    """آخر مرة اتعدّ فيها كل (صنف، مخزن) — من الأوراق المرحّلة بس.
+
+    A draft sheet is a count in progress, not a count that happened; letting it count would push an
+    item to the back of the rotation because somebody opened a sheet and walked away.
+    """
+    rows = db.execute(
+        select(StockCountLine.item_id, StockCountLine.warehouse_id,
+               func.max(StockCount.count_date))
+        .join(StockCount, StockCount.id == StockCountLine.count_id)
+        .where(StockCount.status == StockCountStatus.posted)
+        .group_by(StockCountLine.item_id, StockCountLine.warehouse_id)
+    ).all()
+    return {(r[0], r[1]): r[2] for r in rows}
+
+
 def open_sheet(
     db: Session, *, warehouse_id: int | None, count_date: date | None,
     actor_user_id: int, item_ids: list[int] | None = None, notes: str | None = None,
+    kind: StockCountKind = StockCountKind.full, batch_size: int | None = None,
 ) -> StockCount:
-    """Open a sheet with a line per item that the warehouse holds.
+    """Open a sheet with a line per item to be counted.
 
-    Items with **no** stock are included when named explicitly but not otherwise: a general sheet
-    listing every item in the catalogue is a sheet nobody finishes, and an item that is not there
-    and not expected is not something the count is about. Naming items covers the other case —
-    checking whether something believed to be gone is actually gone.
+    **The three kinds differ in exactly one thing: which items land on the sheet.** After that they
+    are the same document — count, difference, post — which is why they are one code path and not
+    three screens that would each drift.
+
+    * `full` — everything the warehouse holds. The shelves are closed and the whole store is done.
+    * `cycle` — a batch, oldest-counted first, so the rotation covers everything over time without
+      ever stopping the shop. An item never counted sorts first: it has waited longest by
+      definition.
+    * `spot` — exactly the items named, whether or not they are believed to be there. That is the
+      whole point of a spot check: «هو ده فعلاً خلص؟» is a question about an item the books say is
+      gone.
+
+    Items with **no** stock are skipped except on a spot check, for the same reason a general sheet
+    listing the whole catalogue is a sheet nobody finishes.
     """
+    if kind == StockCountKind.spot and not item_ids:
+        raise StockCountError("جرد العينة لازم تحدد فيه الأصناف.")
+    if kind == StockCountKind.cycle and not batch_size:
+        # Defaulted rather than refused: «دفعة» without a size is a reasonable thing to ask for,
+        # and twenty lines is a batch one person finishes in a morning.
+        batch_size = 20
     warehouses = (
         [db.get(Warehouse, warehouse_id)] if warehouse_id is not None
         else list(db.scalars(select(Warehouse).where(Warehouse.active.is_(True))).all())
@@ -59,19 +93,35 @@ def open_sheet(
     sheet = StockCount(
         document_number=_doc_number(db), warehouse_id=warehouse_id,
         count_date=count_date or date.today(), status=StockCountStatus.draft,
-        notes=(notes or None), actor_user_id=actor_user_id,
+        notes=(notes or None), actor_user_id=actor_user_id, kind=kind,
     )
     db.add(sheet)
     db.flush()
 
+    # Every (item, warehouse) this sheet could cover, with the book quantity frozen NOW. Frozen at
+    # opening rather than read at posting: a sale during the count is not a counting error, and
+    # comparing the counter against a number that moved under him is how a good count produces a
+    # false difference.
+    candidates: list[tuple[Item, int, object]] = []
     for wh in warehouses:
         for item in items:
-            on_hand = stock_service.on_hand(db, item.id, LocationKind.warehouse, wh.id)
-            if to_qty(on_hand) <= ZERO and not item_ids:
+            on_hand = to_qty(stock_service.on_hand(db, item.id, LocationKind.warehouse, wh.id))
+            if on_hand <= ZERO and kind != StockCountKind.spot:
                 continue
-            sheet.lines.append(StockCountLine(
-                item_id=item.id, warehouse_id=wh.id, book_quantity=to_qty(on_hand),
-            ))
+            candidates.append((item, wh.id, on_hand))
+
+    if kind == StockCountKind.cycle:
+        # Oldest first, never-counted before that. `date.min` is not a real date on any line — it
+        # is «has waited since before records», which is exactly the rotation's answer for an item
+        # nobody has ever reached.
+        seen = _last_counted(db)
+        candidates.sort(key=lambda c: (seen.get((c[0].id, c[1]), date.min), c[0].id))
+        candidates = candidates[:batch_size]
+
+    for item, wh_id, on_hand in candidates:
+        sheet.lines.append(StockCountLine(
+            item_id=item.id, warehouse_id=wh_id, book_quantity=on_hand,
+        ))
 
     if not sheet.lines:
         raise StockCountError("مفيش أرصدة في المخزن ده — مفيش حاجة تتجرد.")

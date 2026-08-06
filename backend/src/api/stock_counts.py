@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +16,7 @@ from src.core.db import get_db
 from src.models.catalog import Item
 from src.models.stock_count import StockCount
 from src.models.warehouse import Warehouse
+from src.models.stock_count import StockCountKind
 from src.services import stock_count_service
 from src.services.stock_count_service import StockCountError
 from src.services.stock_service import StockError
@@ -28,6 +30,11 @@ class OpenIn(BaseModel):
     count_date: date | None = None
     item_ids: list[int] | None = None
     notes: str | None = Field(default=None, max_length=500)
+    # (031) نوع الجرد. The three differ in one thing only — which items land on the sheet — so this
+    # is the whole difference between them at the API.
+    kind: Literal["full", "cycle", "spot"] = "full"
+    # For a cycle count: how many lines this batch carries. Defaulted in the service.
+    batch_size: int | None = Field(default=None, ge=1, le=500)
 
 
 class CountIn(BaseModel):
@@ -59,6 +66,9 @@ class CountOut(BaseModel):
     warehouse_name: str | None
     count_date: str
     status: str
+    # Returned as well as stored: «ليه الصنف ده مش في الجردة؟» is answerable from the kind, and a
+    # cycle count mistaken for a failed full count is how people stop trusting the numbers.
+    kind: str = "full"
     notes: str | None
     created_at: str
     posted_at: str | None
@@ -95,6 +105,7 @@ def _out(sheet: StockCount, items, warehouses, *, with_lines: bool) -> CountOut:
         id=sheet.id, document_number=sheet.document_number, warehouse_id=sheet.warehouse_id,
         warehouse_name=(warehouses.get(sheet.warehouse_id) if sheet.warehouse_id else None),
         count_date=str(sheet.count_date), status=sheet.status.value, notes=sheet.notes,
+        kind=(sheet.kind.value if getattr(sheet, "kind", None) else "full"),
         created_at=str(sheet.created_at),
         posted_at=str(sheet.posted_at) if sheet.posted_at else None,
         line_count=len(sheet.lines),
@@ -136,7 +147,8 @@ def open_count(
     try:
         sheet = stock_count_service.open_sheet(
             db, warehouse_id=body.warehouse_id, count_date=body.count_date,
-            actor_user_id=current.id, item_ids=body.item_ids, notes=body.notes)
+            actor_user_id=current.id, item_ids=body.item_ids, notes=body.notes,
+            kind=StockCountKind(body.kind), batch_size=body.batch_size)
     except StockCountError as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
     db.commit()

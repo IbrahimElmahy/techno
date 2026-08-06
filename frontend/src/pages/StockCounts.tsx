@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space,
+  Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Segmented,
+  Select, Space,
   Statistic, Table, Tag, message,
 } from 'antd';
 import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
@@ -53,6 +54,19 @@ export default function StockCounts() {
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [countDate, setCountDate] = useState<Dayjs>(dayjs());
   const [notes, setNotes] = useState('');
+  /**
+   * نوع الجرد — والفرق بينهم حاجة واحدة: مين اللي بيدخل ورقة العد.
+   *
+   * One document, three ways of filling it. After the sheet exists they behave identically, which
+   * is why this is a choice on the open dialog rather than three screens that would drift.
+   */
+  const [kind, setKind] = useState<'full' | 'cycle' | 'spot'>('full');
+  const [batchSize, setBatchSize] = useState<number>(20);
+  const [spotItems, setSpotItems] = useState<number[]>([]);
+  const [items, setItems] = useState<any[]>([]);
+  useEffect(() => {
+    api.get('/api/v1/items').then((r) => setItems(r.data || [])).catch(() => setItems([]));
+  }, []);
 
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
@@ -85,6 +99,11 @@ export default function StockCounts() {
         warehouse_id: warehouseId ?? null,
         count_date: countDate.format('YYYY-MM-DD'),
         notes: notes || null,
+        kind,
+        // Sent only where they mean something: a batch size on a spot check, or a list of items on
+        // a full count, would be a value the server has to decide to ignore.
+        batch_size: kind === 'cycle' ? batchSize : undefined,
+        item_ids: kind === 'spot' ? spotItems : undefined,
       });
       message.success(`اتفتح كشف الجرد ${res.data.document_number}`);
       setOpenVisible(false);
@@ -154,7 +173,15 @@ export default function StockCounts() {
 
   const filter = useListFilter<Sheet>(sheets, {
     search: (s) => [s.document_number, s.warehouse_name, s.notes],
-    filters: { status: (s, v) => s.status === v },
+    filters: {
+      status: (s, v) => s.status === v,
+      kind: (s, v) => (s as any).kind === v,
+      // «اللي فيه فرق بس» and «اللي لسه ماتعدش», asked for by name. Both read the counts the list
+      // already carries, so neither costs a request.
+      progress: (s, v) => (v === 'incomplete'
+        ? s.counted_count < s.line_count
+        : v === 'complete' ? s.counted_count >= s.line_count : true),
+    },
     dateOf: (s) => s.count_date,
   });
 
@@ -200,10 +227,19 @@ export default function StockCounts() {
           values={filter.values} onValueChange={filter.setValue}
           showDateRange range={filter.range} onRangeChange={filter.setRange}
           onReset={filter.reset} total={sheets.length} shown={filter.filtered.length}
-          filters={[{ key: 'status', placeholder: 'الحالة', span: 6, options: [
-            { value: 'draft', label: 'مفتوح' },
-            { value: 'posted', label: 'مترحّل' },
-            { value: 'cancelled', label: 'ملغي' }] }]}
+          filters={[
+            { key: 'status', placeholder: 'الحالة', span: 5, options: [
+              { value: 'draft', label: 'مفتوح' },
+              { value: 'posted', label: 'مترحّل' },
+              { value: 'cancelled', label: 'ملغي' }] },
+            { key: 'kind', placeholder: 'نوع الجرد', span: 5, options: [
+              { value: 'full', label: 'كلي' },
+              { value: 'cycle', label: 'دوري' },
+              { value: 'spot', label: 'عينة' }] },
+            { key: 'progress', placeholder: 'حالة العد', span: 5, options: [
+              { value: 'incomplete', label: 'لسه ماخلصش عد' },
+              { value: 'complete', label: 'العد خلص' }] },
+          ]}
         />
 
         <Table
@@ -217,6 +253,18 @@ export default function StockCounts() {
             { title: 'التاريخ', dataIndex: 'count_date', width: 110 },
             { title: 'رقم الكشف', dataIndex: 'document_number', width: 130,
               render: (v: string) => <Tag color="cyan">{v}</Tag> },
+            // On the list because a cycle count that looks like a failed full count is how people
+            // stop trusting the numbers: «ليه ٢٠ صنف بس؟» has an answer, and it belongs here.
+            { title: 'النوع', dataIndex: 'kind', width: 90,
+              render: (k: string) => {
+                const t: Record<string, { c: string; n: string }> = {
+                  full: { c: 'blue', n: 'كلي' },
+                  cycle: { c: 'green', n: 'دوري' },
+                  spot: { c: 'gold', n: 'عينة' },
+                };
+                const v = t[k] || { c: 'default', n: k || 'كلي' };
+                return <Tag color={v.c}>{v.n}</Tag>;
+              } },
             { title: 'المخزن', dataIndex: 'warehouse_name', ellipsis: true,
               render: (v: string | null) => v ?? <Tag>كل المخازن</Tag> },
             { title: 'السطور', key: 'lines', width: 150,
@@ -234,6 +282,42 @@ export default function StockCounts() {
         destroyOnHidden
       >
         <Form layout="vertical">
+          {/* النوع الأول — لأنه بيحدد باقي الأسئلة. */}
+          <Form.Item label="نوع الجرد">
+            <Segmented
+              block value={kind}
+              onChange={(v: string | number) => setKind(String(v) as 'full' | 'cycle' | 'spot')}
+              options={[
+                { value: 'full', label: 'كلي' },
+                { value: 'cycle', label: 'دوري' },
+                { value: 'spot', label: 'عينة' },
+              ]}
+            />
+            <div style={{ color: '#8a8a8a', fontSize: 12, marginTop: 6 }}>
+              {kind === 'full' && 'كل صنف ليه رصيد في المخزن — الجردة اللي بتتقفل عندها الأرفف.'}
+              {kind === 'cycle' && 'دفعة بالتناوب، الأقدم عدّاً الأول — بتغطي المخزن مع الوقت من غير ما الشغل يقف.'}
+              {kind === 'spot' && 'الأصناف اللي تحددها بس — حتى لو الدفاتر بتقول إنها خلصت.'}
+            </div>
+          </Form.Item>
+
+          {/* Each kind is asked only for what it needs. A batch size on a spot check is a field
+              the server would have to decide to ignore. */}
+          {kind === 'cycle' && (
+            <Form.Item label="عدد الأصناف في الدفعة">
+              <InputNumber min={1} max={500} style={{ width: '100%' }}
+                value={batchSize} onChange={(v) => setBatchSize(Number(v) || 20)} />
+            </Form.Item>
+          )}
+          {kind === 'spot' && (
+            <Form.Item label="الأصناف" required
+              extra="جرد العينة لازم تحدد فيه الأصناف — «عينة» من غير أصناف مش جردة.">
+              <Select mode="multiple" allowClear showSearch optionFilterProp="label"
+                style={{ width: '100%' }} placeholder="اختر الأصناف"
+                value={spotItems} onChange={setSpotItems}
+                options={items.map((i: any) => ({ value: i.id, label: i.name }))} />
+            </Form.Item>
+          )}
+
           <Form.Item label="المخزن"
             help="سيبه فاضي والكشف هيفتح على كل المخازن النشطة (جرد عام)">
             <Select allowClear showSearch optionFilterProp="label"

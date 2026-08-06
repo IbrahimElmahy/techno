@@ -29,6 +29,24 @@ class StockCountStatus(str, enum.Enum):
     cancelled = "cancelled"
 
 
+class StockCountKind(str, enum.Enum):
+    """نوع الجرد — واللي بيفرق بينهم حاجة واحدة: مين اللي بيدخل ورقة العد.
+
+    Three kinds, one document. After the sheet is generated they behave identically — count,
+    difference, post — which is the point: three near-identical screens would each drift, and an
+    improvement to one would have to be made three times.
+
+    * `full` — كل صنف ليه رصيد في المخزن. The annual count, where the shelves are closed.
+    * `cycle` — دفعة بالتناوب, oldest-counted first. The one most businesses actually live on,
+      because it never stops the shop.
+    * `spot` — أصناف بعينها, named by whoever is suspicious of them.
+    """
+
+    full = "full"
+    cycle = "cycle"
+    spot = "spot"
+
+
 class StockCount(Base):
     """One counting session over one warehouse, or over all of them (جرد عام)."""
 
@@ -40,6 +58,11 @@ class StockCount(Base):
     # document with a wider net rather than a second kind of count.
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
     count_date: Mapped[date] = mapped_column(Date, nullable=False)
+    # (031) Which of the three generated this sheet. Recorded rather than inferred: «ليه الصنف ده
+    # مش في الجردة؟» is answerable from the kind, and a cycle count that looks like a failed full
+    # count is how people stop trusting the numbers.
+    kind: Mapped[StockCountKind] = mapped_column(
+        Enum(StockCountKind), default=StockCountKind.full, nullable=False)
     status: Mapped[StockCountStatus] = mapped_column(
         Enum(StockCountStatus), default=StockCountStatus.draft, nullable=False
     )
