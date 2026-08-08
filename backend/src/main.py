@@ -135,7 +135,29 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok"}
+        """«شغّال» — ومن أنهي نسخة.
+
+        `{"status": "ok"}` answers whether the process is up, which was never the question anybody
+        actually had. A whole day went into «is this deployed?» while the API answered ok from a
+        build four commits old: the site was healthy and stale at the same time, and there was no
+        way to tell the two apart from outside.
+
+        The commit is read from the platform's own environment rather than from anything committed
+        to the repository, so it cannot go stale the way a hand-maintained version string does —
+        the thing reporting the build is the thing that made it.
+
+        `routes` is the cheap second opinion. A number that has not moved after a deploy says the
+        backend did not rebuild, without needing the whole schema fetched and diffed.
+        """
+        import os
+
+        sha = (os.getenv("VERCEL_GIT_COMMIT_SHA") or os.getenv("RENDER_GIT_COMMIT")
+               or os.getenv("GIT_COMMIT") or "")
+        return {
+            "status": "ok",
+            "commit": sha[:7] if sha else "unknown",
+            "routes": len(app.openapi().get("paths", {})),
+        }
 
     # Ensure the schema exists on every environment. Render runs scripts.bootstrap, but Vercel
     # serverless has no start command — without this, newly-added tables (BOM, lookups, …) never get
