@@ -1770,7 +1770,12 @@ export default function Invoices() {
                         </Col>
                         )}
                         <Col md={2} xs={8}>
-                          <InputNumber size="small" min={1} style={{ width: '100%' }}
+                          {/* 0.001, not 1. Quantities are stored to three decimals and the item
+                              catalogue has units with factors — نص متر, ٢٫٥ كيلو. The return
+                              screen and the transfer already allow those, so a floor of 1 here
+                              meant a thing could be given back and moved between stores in a
+                              fraction and never sold in one. */}
+                          <InputNumber size="small" min={0.001} style={{ width: '100%' }}
                             ref={(el) => { qtyRefs.current[line.key] = el; }}
                             data-qty-key={line.key}
                             data-grid-col="qty" keyboard={false}
