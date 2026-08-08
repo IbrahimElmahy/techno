@@ -70,6 +70,48 @@ body,
 }
 
 /*
+ * ارتفاع الصف — زي الإكسل، وفي الجداول كلها.
+ *
+ * Driven by one attribute on <html> (see `RowDensity.tsx`), so all 173 tables in the system obey
+ * it — including the ones inside modals and the ones nobody has written yet. Threading a prop
+ * through each of them would have been 173 edits and 173 chances to miss one.
+ *
+ * `!important` is deliberate here, and this is the case it exists for: antd writes the cell padding
+ * from each table's own `size`, so without it a screen saying `size="small"` would ignore what the
+ * person using it just asked for. A screen's author had an opinion; the reader's opinion outranks
+ * it, and a row height that changes depending on which screen you are on is not a preference.
+ *
+ * Only padding and line-height move. Font size is left alone: shrinking the text to fit more rows
+ * is how a dense screen becomes an unreadable one, and somebody counting stock is reading numbers
+ * they cannot afford to misread.
+ */
+html[data-density='compact'] .ant-table-tbody > tr > td,
+html[data-density='compact'] .ant-table-thead > tr > th {
+  padding: 2px 8px !important;
+  line-height: 1.35;
+}
+/* Controls inside a cell set the row's real height, so they shrink with it — otherwise a grid of
+   quantity boxes stays tall however tight the padding gets. */
+html[data-density='compact'] .ant-table-tbody .ant-input,
+html[data-density='compact'] .ant-table-tbody .ant-input-number-input,
+html[data-density='compact'] .ant-table-tbody .ant-select-selector,
+html[data-density='compact'] .ant-table-tbody .ant-btn {
+  height: 24px !important;
+  min-height: 24px !important;
+}
+
+html[data-density='normal'] .ant-table-tbody > tr > td,
+html[data-density='normal'] .ant-table-thead > tr > th {
+  padding: 8px 8px !important;
+}
+
+html[data-density='comfortable'] .ant-table-tbody > tr > td,
+html[data-density='comfortable'] .ant-table-thead > tr > th {
+  padding: 14px 10px !important;
+  line-height: 1.7;
+}
+
+/*
  * السطر اللي الكيبورد واقف عليه.
  *
  * Distinct from `.row-arrived`, which says «هي دي اللي فتحتها» and fades. This one says «دي اللي

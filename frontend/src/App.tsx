@@ -7,6 +7,7 @@ import RouteGuard from './components/RouteGuard';
 import AppLayout from './components/AppLayout';
 import { TabsProvider } from './components/TabsContext';
 import { KeyboardProvider } from './components/keyboard';
+import { DensityProvider } from './components/RowDensity';
 import Login from './pages/Login';
 import { setApiBaseURL } from './api/client';
 
@@ -63,7 +64,7 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             {/* Everything else is the authenticated shell, which hosts the work tabs. Each tab
                 keeps its own page mounted, so leaving unfinished work and coming back is easy. */}
-            <Route path="*" element={<RouteGuard><TabsProvider><KeyboardProvider><AppLayout /></KeyboardProvider></TabsProvider></RouteGuard>} />
+            <Route path="*" element={<RouteGuard><TabsProvider><KeyboardProvider><DensityProvider><AppLayout /></DensityProvider></KeyboardProvider></TabsProvider></RouteGuard>} />
           </Routes>
         </Router>
       </AuthProvider>

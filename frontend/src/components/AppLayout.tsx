@@ -22,6 +22,7 @@ import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
 } from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
+import RowDensityControl from './RowDensity';
 import Logo from './Logo';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
@@ -292,7 +293,9 @@ export default function AppLayout() {
               height: 64,
             }}
           />
-          <div style={{ paddingLeft: 24, display: 'flex', alignItems: 'center' }}>
+          <div style={{ paddingLeft: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
+            {/* ارتفاع الصف — في الهيدر عشان يبان إنه على النظام كله، مش إعداد شاشة واحدة. */}
+            <RowDensityControl />
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
               <Space style={{ cursor: 'pointer' }}>
                 <Avatar style={{ backgroundColor: '#6AB42D' }} icon={<UserOutlined />} />
