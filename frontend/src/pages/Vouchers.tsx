@@ -41,6 +41,7 @@ import { printDocument } from '../print/brand';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
 import { useLookup } from '../hooks/useLookup';
+import { TreasuryField, ExpenseAccountField, defaultTreasuryId } from '../components/VoucherFields';
 
 interface VoucherRecord {
   id: number;
@@ -269,10 +270,10 @@ const Vouchers: React.FC = () => {
   useScreenShortcuts({
     onNew: () => {
       const open: Record<string, () => void> = {
-        receipt: () => { receiptForm.resetFields(); setReceiptTarget(''); setReceiptOpen(true); },
-        payment: () => { paymentForm.resetFields(); setPaymentOpen(true); },
+        receipt: () => { setReceiptTarget(''); openVoucher(receiptForm, setReceiptOpen); },
+        payment: () => openVoucher(paymentForm, setPaymentOpen),
         handover: () => { handoverForm.resetFields(); setHandoverOpen(true); },
-        expense: () => { expenseForm.resetFields(); setExpenseOpen(true); },
+        expense: () => openVoucher(expenseForm, setExpenseOpen),
         transfer: () => { transferForm.resetFields(); setTransferOpen(true); },
         cheques: () => { chequeForm.resetFields(); setChequeOpen(true); },
       };
@@ -300,6 +301,28 @@ const Vouchers: React.FC = () => {
     loadVouchers();
   }, [loadVouchers]);
 
+  /**
+   * فتح نموذج سند — والخزنة مختارة من الأول.
+   *
+   * `resetFields` leaves the treasury blank, and blank used to mean «the server will pick». Seating
+   * the default here makes the answer visible before the voucher is written rather than discoverable
+   * from the ledger afterwards.
+   */
+  const openVoucher = useCallback((form: any, show: (v: boolean) => void) => {
+    form.resetFields();
+    const id = defaultTreasuryId(treasuries);
+    if (id) form.setFieldsValue({ treasury_id: id });
+    show(true);
+  }, [treasuries]);
+
+  /** حسابات المصروفات — بتتقرا تاني بعد ما حد يضيف واحد من جوّه السند. */
+  const loadExpenseAccounts = useCallback(() => {
+    api.get<any[]>('/api/v1/accounts')
+      .then((r) => setExpenseAccounts(
+        r.data.filter((a) => a.nature === 'expense' && a.is_postable && a.active !== false)))
+      .catch(() => {});
+  }, []);
+
   const loadTreasuries = useCallback(async () => {
     try {
       const { data } = await api.get<any[]>('/api/v1/treasuries');
@@ -321,10 +344,7 @@ const Vouchers: React.FC = () => {
   useEffect(() => {
     loadTreasuries();
     loadCheques();
-    api
-      .get<any[]>('/api/v1/accounts')
-      .then((r) => setExpenseAccounts(r.data.filter((a) => a.nature === 'expense' && a.is_postable)))
-      .catch(() => {});
+    loadExpenseAccounts();
     api
       .get<{ locked_through: string | null }>('/api/v1/period-lock')
       .then((r) => setPeriodLock(r.data.locked_through))
@@ -630,7 +650,7 @@ const Vouchers: React.FC = () => {
               <Card title="تحصيل من عميل"
                 extra={(
                   <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => { receiptForm.resetFields(); setReceiptTarget(''); setReceiptOpen(true); }}>
+                    onClick={() => { setReceiptTarget(''); openVoucher(receiptForm, setReceiptOpen); }}>
                     سند قبض جديد
                   </Button>
                 )}>
@@ -654,7 +674,7 @@ const Vouchers: React.FC = () => {
               <Card title="دفع لمورد"
                 extra={(
                   <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => { paymentForm.resetFields(); setPaymentOpen(true); }}>
+                    onClick={() => openVoucher(paymentForm, setPaymentOpen)}>
                     سند صرف جديد
                   </Button>
                 )}>
@@ -698,7 +718,7 @@ const Vouchers: React.FC = () => {
               <Card title="صرف مصروف من الخزينة"
                 extra={(
                   <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => { expenseForm.resetFields(); setExpenseOpen(true); }}>
+                    onClick={() => openVoucher(expenseForm, setExpenseOpen)}>
                     مصروف جديد
                   </Button>
                 )}>
@@ -1210,14 +1230,7 @@ const Vouchers: React.FC = () => {
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
-                  <Form.Item name="treasury_id" label="الخزينة">
-                    <Select
-                      allowClear
-                      style={{ width: 170 }}
-                      placeholder="الافتراضية"
-                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                  </Form.Item>
+                  <TreasuryField treasuries={treasuries} />
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select
                       allowClear
@@ -1267,14 +1280,7 @@ const Vouchers: React.FC = () => {
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
-                  <Form.Item name="treasury_id" label="الخزينة">
-                    <Select
-                      allowClear
-                      style={{ width: 170 }}
-                      placeholder="الافتراضية"
-                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                  </Form.Item>
+                  <TreasuryField treasuries={treasuries} />
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select
                       allowClear
@@ -1357,30 +1363,11 @@ const Vouchers: React.FC = () => {
                     submit('/api/v1/vouchers/expenses', v, expenseForm, 'تم تسجيل سند المصروف ✔')
                   }
                 >
-                  <Form.Item
-                    name="expense_account_id"
-                    label="حساب المصروف"
-                    rules={[{ required: true, message: 'اختر حساب المصروف' }]}
-                  >
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      style={{ width: 240 }}
-                      placeholder="إيجار / مرتبات / بنزين…"
-                      options={expenseAccounts.map((a) => ({ value: a.id, label: a.name || a.code }))}
-                    />
-                  </Form.Item>
+                  <ExpenseAccountField accounts={expenseAccounts} onCreated={loadExpenseAccounts} />
                   <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
                     <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
                   </Form.Item>
-                  <Form.Item name="treasury_id" label="الخزينة">
-                    <Select
-                      allowClear
-                      style={{ width: 170 }}
-                      placeholder="الافتراضية"
-                      options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
-                    />
-                  </Form.Item>
+                  <TreasuryField treasuries={treasuries} />
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
