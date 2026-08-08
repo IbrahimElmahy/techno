@@ -131,3 +131,28 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .ant-table-tbody > tr[tabindex]:focus-visible {
   outline: none;
 }
+
+/*
+ * الحد اللي بتسحب منه لتغيير عرض العمود.
+ *
+ * A drag target nobody can see is a feature nobody finds. The cursor already changes over the
+ * edge; this draws the line under it so the affordance is visible before the pointer gets there,
+ * which is the whole reason a spreadsheet shows one.
+ *
+ * On the inline-END edge — the LEFT side in this RTL app. Putting it on the other border would
+ * point at the neighbouring column, and the one that moved would not be the one you aimed at.
+ */
+.ant-table-thead > tr > th {
+  position: relative;
+}
+.ant-table-thead > tr > th:hover::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 2px;
+  background: #6AB42D;
+  opacity: 0.55;
+  cursor: col-resize;
+}

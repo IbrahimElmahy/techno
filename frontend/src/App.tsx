@@ -8,6 +8,7 @@ import AppLayout from './components/AppLayout';
 import { TabsProvider } from './components/TabsContext';
 import { KeyboardProvider } from './components/keyboard';
 import { DensityProvider } from './components/RowDensity';
+import ColumnResizeProvider from './components/ColumnResize';
 import Login from './pages/Login';
 import { setApiBaseURL } from './api/client';
 
@@ -58,16 +59,24 @@ export default function App() {
         },
       }}
     >
+      {/* Both sit ABOVE the router: they are document-level preferences about how tables look,
+          with nothing to do with who is logged in or which tab is open. Mounted inside the
+          authenticated shell they would also reset on every logout, which is not what a saved
+          preference means. */}
+      <DensityProvider>
+      <ColumnResizeProvider>
       <AuthProvider apiUrl={apiUrl}>
         <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<Login />} />
             {/* Everything else is the authenticated shell, which hosts the work tabs. Each tab
                 keeps its own page mounted, so leaving unfinished work and coming back is easy. */}
-            <Route path="*" element={<RouteGuard><TabsProvider><KeyboardProvider><DensityProvider><AppLayout /></DensityProvider></KeyboardProvider></TabsProvider></RouteGuard>} />
+            <Route path="*" element={<RouteGuard><TabsProvider><KeyboardProvider><AppLayout /></KeyboardProvider></TabsProvider></RouteGuard>} />
           </Routes>
         </Router>
       </AuthProvider>
+      </ColumnResizeProvider>
+      </DensityProvider>
     </ConfigProvider>
   );
 }
