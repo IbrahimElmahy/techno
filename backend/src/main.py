@@ -530,6 +530,19 @@ def _ensure_columns(engine) -> None:
             )
 
 
+def _drop_unique_sql(dialect: str, table: str, name: str) -> str:
+    """The statement that removes a UNIQUE constraint, in the dialect's own spelling.
+
+    Pulled out so it can be checked directly, because getting it wrong is silent. This said
+    `DROP INDEX` unconditionally — MySQL's spelling — and the Postgres server rejected it, the
+    failure was swallowed, and the old «one account per customer» constraint stayed in place for
+    months. Everything passed locally against MySQL; the merge died on the server every time.
+    """
+    if dialect.startswith("postgres"):
+        return f"ALTER TABLE {table} DROP CONSTRAINT {name}"
+    return f"ALTER TABLE {table} DROP INDEX {name}"
+
+
 def _ensure_customer_account_family(engine) -> None:
     """Let a customer hold one receivable account PER PRODUCT FAMILY. Idempotent.
 
@@ -558,17 +571,29 @@ def _ensure_customer_account_family(engine) -> None:
         return
 
     names = {c["name"] for c in constraints}
+    # `DROP INDEX` is MySQL's spelling and `DROP CONSTRAINT` is the standard one Postgres takes.
+    # This said INDEX unconditionally, and the failure was swallowed at info level — so on the
+    # Postgres server the old constraint was never dropped, silently, and the merge died with a
+    # duplicate key on every attempt while passing every test against MySQL here. The docstring
+    # above predicted exactly this failure; the statement underneath it did not match.
+    drop_sql = _drop_unique_sql(engine.dialect.name, "customer_account", "{name}")
+
     for uc in constraints:
         # Only the one that pins a customer to a single account. A UNIQUE that already spans
         # (customer_id, family) is the goal state and must survive.
         if uc.get("column_names") == ["customer_id"]:
             try:
                 with engine.begin() as conn:
-                    conn.execute(text(
-                        f"ALTER TABLE customer_account DROP INDEX {uc['name']}"))
+                    conn.execute(text(drop_sql.format(name=uc["name"])))
                 log.info("dropped single-account constraint %s", uc["name"])
-            except Exception as exc:  # pragma: no cover
-                log.info("drop %s skipped: %s", uc["name"], exc)
+            except Exception as exc:
+                # WARNING, not info. This one is load-bearing: with it in place a customer cannot
+                # hold two accounts, which is the whole point of the merge — and a note nobody
+                # reads is how it stayed broken.
+                log.warning(
+                    "could not drop single-account constraint %s (%s): a customer cannot hold "
+                    "two receivable accounts until it is gone, so the merge will fail",
+                    uc["name"], exc)
 
     if "uq_customer_account_family" not in names:
         try:
