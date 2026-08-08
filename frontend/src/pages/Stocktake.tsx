@@ -21,6 +21,9 @@ import { useTableKeyboard } from '../components/keyboard';
 
 interface Row {
   item_id: number; code: string | null; name: string;
+  // الفئة. `stock_as_of` returns it and this screen was dropping it on the floor — a count is read
+  // one category at a time, and without the column the only way there was a name search per item.
+  category: string | null;
   unit_of_measure: string | null; location: string;
   quantity: string; unit_cost: string; value: string;
 }
@@ -95,20 +98,20 @@ export default function Stocktake() {
     return Number(r.quantity || 0) - a;
   };
 
-  const filter = useListFilter(rows, { search: (r) => [r.code, r.name, r.location] });
+  const filter = useListFilter(rows, { search: (r) => [r.code, r.name, r.category, r.location] });
 
   const exportCsv = () => {
     if (!rows.length) { message.info('لا توجد أرصدة للتصدير'); return; }
     // The export follows the columns. A file whose headings say «تكلفة الوحدة» over a column of
     // counted quantities is worse than no export — it is read once, believed, and filed.
-    const heads = ['الكود', 'الصنف', 'الوحدة', 'الموقع', 'الكمية في النظام',
+    const heads = ['الكود', 'الصنف', 'الفئة', 'الوحدة', 'الموقع', 'الكمية في النظام',
       'العدد الفعلي', 'الفرق'];
     const lines = [heads.join(',')];
     filter.filtered.forEach((r) => {
       const a = actual[rowKey(r)];
       const d = diffOf(r);
       lines.push([
-        r.code ?? '', r.name, r.unit_of_measure ?? '', r.location,
+        r.code ?? '', r.name, r.category ?? '', r.unit_of_measure ?? '', r.location,
         r.quantity,
         a === null || a === undefined ? '' : a,
         d === null ? '' : d,
@@ -216,6 +219,9 @@ export default function Stocktake() {
             render: (c: string) => (c ? <Tag>{c}</Tag> : '-') },
           { title: 'الصنف', dataIndex: 'name', ...textColumn(rows, (r: Row) => r.name),
             render: (n: string) => <b>{n}</b> },
+          { title: 'الفئة', dataIndex: 'category', width: 150,
+            ...textColumn(rows, (r: Row) => r.category),
+            render: (c: string | null) => c || <span style={{ color: '#bbb' }}>بدون فئة</span> },
           { title: 'الوحدة', dataIndex: 'unit_of_measure',
             ...textColumn(rows, (r: Row) => r.unit_of_measure),
             render: (u: string) => u || '-' },

@@ -70,6 +70,45 @@ describe('كل عمود بيانات في التقارير بيتفلتر', () =
   });
 });
 
+/**
+ * The three stocktake screens are read side by side and their numbers get compared. A column on one
+ * and not another makes the reader stop and check whether they are even looking at the same thing —
+ * so they carry the same ones, and that is worth holding still rather than remembering.
+ */
+describe('شاشات الجرد التلاتة بنفس الأعمدة', () => {
+  const SHEETS = ['StockSheet.tsx', 'Stocktake.tsx'];
+  /** الفئة is the one that was missing from جرد حتى تاريخ entirely, and hidden on the other two. */
+  const SHARED = ['الكود', 'الصنف', 'الفئة', 'الوحدة', 'الكمية', 'العدد الفعلي', 'الفرق'];
+
+  it.each(SHEETS)('%s carries every shared column', (file) => {
+    const src = read(file);
+    const missing = SHARED.filter((t) => !src.includes(`title: '${t}'`));
+    expect(missing, `أعمدة ناقصة في «${file}»`).toEqual([]);
+  });
+
+  it('shows الفئة rather than hiding it behind الأعمدة', () => {
+    // It was defined-but-hidden, which reads as absent to everyone who never opens the column
+    // picker — the same as not having it.
+    const src = read('StockSheet.tsx');
+    expect(src).not.toMatch(/useHiddenColumns\([^)]*\[[^\]]*'category'/);
+  });
+
+  it('exports الفئة too, since the export claims to follow the columns', () => {
+    // A file whose headings do not match the screen is read once, believed, and filed.
+    const src = read('Stocktake.tsx');
+    const heads = src.slice(src.indexOf('const heads ='), src.indexOf('const heads =') + 260);
+    expect(heads).toContain('الفئة');
+  });
+
+  it('always shows الفئة on the counting sheet, not only when it varies', () => {
+    // A column that appears and disappears with the data cannot be learned: somebody who filtered
+    // by فئة yesterday looks for it today and it is not there.
+    const src = read('StockCounts.tsx');
+    expect(src).not.toMatch(/categories\.length > 1 \? \[\{\s*\n\s*title: 'الفئة'/);
+    expect(src).toContain("title: 'الفئة'");
+  });
+});
+
 describe('مفيش فلتر متكرر على نفس العمود', () => {
   it('never spreads two helpers onto one column', () => {
     // Two spreads on one column is not a syntax error and not a visible fault — the second simply

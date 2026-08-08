@@ -178,17 +178,16 @@ export default function StockSheet() {
    * نفس أعمدة «جرد حتى تاريخ»، بالظبط.
    *
    * The three stocktake screens are read side by side and their numbers get compared, so they are
-   * laid out the same way: الكود · الصنف · الوحدة · الموقع · الكمية · العدد الفعلي · الفرق. A
-   * column that appears on one and not another makes the reader check whether they are looking at
-   * the same thing.
+   * laid out the same way: الكود · الصنف · الفئة · الوحدة · الموقع · الكمية · العدد الفعلي ·
+   * الفرق. A column that appears on one and not another makes the reader check whether they are
+   * looking at the same thing.
    *
    * **No cost column.** A count sheet is about how many, not how much — the person holding it is
    * counting boxes on a shelf, and a unit cost beside every line is a number they cannot check and
    * did not ask for. The stock's value is still on the summary line and the cards above, which is
    * where a manager reads it.
    *
-   * الفئة is defined but hidden by default: filtering a count by category is worth having in
-   * الأعمدة, and having it on screen would make these sheets look different from جرد حتى تاريخ.
+   * الفئة is shown, and جرد حتى تاريخ grew the same column so the three still match.
    */
   const columns = [
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 120,
@@ -262,7 +261,7 @@ export default function StockSheet() {
       } },
   ];
 
-  const cols = useHiddenColumns(`stock-sheet-${view}`, ['category']);
+  const cols = useHiddenColumns(`stock-sheet-${view}`, []);
 
   const kb = useTableKeyboard<any>({
     rows: shown, rowKey,

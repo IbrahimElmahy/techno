@@ -509,11 +509,14 @@ export default function StockCounts() {
                 }] : []),
                 // The category was not on the line at all before this work, so filtering a count
                 // by it was not possible from the client.
-                ...(categories.length > 1 ? [{
+                // Shown always, not only when the sheet spans more than one category. A column
+                // that appears and disappears depending on the data is one people cannot learn:
+                // the reader who filtered by فئة yesterday looks for it today and it is gone.
+                {
                   title: 'الفئة', dataIndex: 'category', width: 130,
                   ...textColumn(allLines, (l: Line) => l.category),
                   render: (c: string | null) => (c ? <Tag>{c}</Tag> : '-'),
-                }] : []),
+                },
                 { title: 'رصيد الدفاتر', dataIndex: 'book_quantity', width: 120,
                   ...numberColumn((l: Line) => l.book_quantity),
                   render: (v: string) => qty(v) },
