@@ -137,21 +137,37 @@ def apply(db: Session, *, dry_run: bool = True) -> dict:
     if dry_run:
         return result
 
+    # Every customer account, once, grouped in memory.
+    #
+    # This used to run two `SELECT ... WHERE customer_id = ?` per pair — 86 pairs plus 19 renames
+    # is over 190 round trips to a database that is not on the same machine. Against a serverless
+    # function with a hard time limit that is not slow, it is a failure: the merge answered 503
+    # having done nothing. The mutations below are unchanged; only the fetching is.
+    accounts_by_customer: dict[int, list[CustomerAccount]] = {}
+    for acc in db.scalars(select(CustomerAccount)).all():
+        accounts_by_customer.setdefault(acc.customer_id, []).append(acc)
+
+    # The customers too, in one query rather than a `get` per side per pair. `get` hits the identity
+    # map when the row is already loaded and the database when it is not, and «not» is the case that
+    # decides whether this finishes inside the time limit.
+    wanted = {pid for pair in p.pairs for pid in (pair.keep_customer_id, pair.merge_customer_id)}
+    wanted.update(cid for cid, _ in p.techno_only)
+    customers = {c.id: c for c in db.scalars(
+        select(Customer).where(Customer.id.in_(wanted)))} if wanted else {}
+
     for pair in p.pairs:
-        keep = db.get(Customer, pair.keep_customer_id)
-        dupe = db.get(Customer, pair.merge_customer_id)
+        keep = customers.get(pair.keep_customer_id)
+        dupe = customers.get(pair.merge_customer_id)
         if keep is None or dupe is None:      # planned then vanished — say so, do not guess
             p.skipped.append((pair.merge_name, "العميل اختفى بين التخطيط والتنفيذ"))
             continue
 
         # The surviving customer's own account becomes the أبيض one; the duplicate's account moves
         # across as بولي, carrying its whole ledger history with it untouched.
-        for acc in db.scalars(select(CustomerAccount).where(
-                CustomerAccount.customer_id == keep.id)).all():
+        for acc in accounts_by_customer.get(keep.id, []):
             if acc.family is None:
                 acc.family = FAMILY_WHITE
-        for acc in db.scalars(select(CustomerAccount).where(
-                CustomerAccount.customer_id == dupe.id)).all():
+        for acc in accounts_by_customer.get(dupe.id, []):
             acc.customer_id = keep.id
             acc.family = FAMILY_POLY
 
@@ -161,12 +177,11 @@ def apply(db: Session, *, dry_run: bool = True) -> dict:
         dupe.name = f"{dupe.name} (مدموج في #{keep.id})"
 
     for cid, name in p.techno_only:
-        c = db.get(Customer, cid)
+        c = customers.get(cid)
         if c is None:
             continue
         c.name = _normalise(name[len(TECHNO_PREFIX):])
-        for acc in db.scalars(select(CustomerAccount).where(
-                CustomerAccount.customer_id == c.id)).all():
+        for acc in accounts_by_customer.get(c.id, []):
             if acc.family is None:
                 acc.family = FAMILY_POLY
 

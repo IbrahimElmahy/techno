@@ -168,3 +168,41 @@ def test_the_fast_total_of_nothing_is_zero(db):
 
     from src.services import ledger_service
     assert ledger_service.total_balance_of(db, []) == Decimal("0")
+
+
+def test_the_merge_does_not_scale_its_queries_with_the_pairs(client, inv_world, login, db):
+    """عدد الاستعلامات ثابت مهما كان عدد العملاء.
+
+    The merge ran two `SELECT ... WHERE customer_id = ?` per pair plus a `get` per side — over 190
+    round trips for the client's 86 duplicates, to a database that is not on the same machine. On a
+    serverless function with a hard time limit that is not «slow», it is a failure: the request
+    answered 503 having merged nothing, twice.
+
+    So the count is pinned rather than the duration. A timing assertion would be flaky on a laptop
+    and meaningless in CI; the query count is the thing that actually changed and it is exact.
+    """
+    from sqlalchemy import event, select
+
+    from src.core.db import engine
+    from src.models.customer import Customer
+
+    h = login("admin")
+    rep, terr = inv_world["rep_a"], inv_world["terr_a"]
+    for i in range(12):
+        _customer(client, h, f"عميل مكرر {i}", rep_id=rep, territory_id=terr)
+        _customer(client, h, f"تكنو عميل مكرر {i}", rep_id=rep, territory_id=terr)
+    db.commit()
+
+    seen = []
+    def count(conn, cur, stmt, params, ctx, many):
+        seen.append(stmt)
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        from src.services import customer_merge_service
+        result = customer_merge_service.apply(db, dry_run=False)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+
+    assert len(result["pairs"]) >= 12, "لازم يكون فعلاً دمج عدد كبير"
+    # Well under one per pair. The old shape would have been north of 25 for twelve.
+    assert len(seen) <= 8, f"عدد الاستعلامات بيزيد مع الأزواج: {len(seen)} لـ {len(result['pairs'])} زوج"
