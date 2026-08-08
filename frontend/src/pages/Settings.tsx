@@ -116,6 +116,8 @@ export default function Settings() {
 
       <div id="section-integrity"><IntegrityCard /></div>
 
+      <CustomerMergeCard />
+
       <DocumentPolicyCard />
 
       <AccountRoutingCard />
@@ -529,6 +531,112 @@ interface IntegrityFinding {
  * — can drift, and if they have, the cause is a code path that wrote one side without the other.
  * Quietly correcting the numbers would hide that defect and guarantee it happens again unnoticed.
  */
+/**
+ * دمج العملاء المكرّرين — الخطة الأول، والتنفيذ قرار تاني.
+ *
+ * The old system could give a customer only one receivable account, so selling him two product
+ * lines meant opening him twice: «محمد عامر» for أبيض and «تكنو محمد عامر» for بولي. The merge puts
+ * them back together — one customer, two family accounts, and a total.
+ *
+ * It lives here rather than in a script because a script can only ever run against the database on
+ * somebody's own machine. That is how production came to keep its duplicates while every local copy
+ * had them joined: a deploy carries code and does not touch data, which from outside is
+ * indistinguishable from the work never having been done.
+ *
+ * **Nothing is deleted and no money moves.** The duplicate's LEDGER account carries his whole
+ * history and simply becomes the بولي account of the surviving customer; the duplicate row is
+ * deactivated, not removed. The server totals every customer balance before and after and refuses
+ * the whole thing if the two disagree by a piastre.
+ */
+function CustomerMergeCard() {
+  const [plan, setPlan] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (apply: boolean) => {
+    setBusy(true);
+    try {
+      const res = await api.post(`/api/v1/admin/merge-customers?apply=${apply}`);
+      setPlan(res.data);
+      if (!apply) {
+        const n = res.data?.pairs?.length ?? 0;
+        if (n) message.info(`${n} عميل متكرّر — راجع الخطة قبل التنفيذ`);
+        else message.success('مفيش عملاء مكرّرين — مافيش حاجة تتدمج');
+      } else {
+        message.success('اتنفّذ الدمج والأرصدة زي ما هي');
+      }
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر تشغيل الدمج');
+    } finally { setBusy(false); }
+  };
+
+  const pairs = plan?.pairs ?? [];
+  const balancesMatch = plan && plan.balance_before === plan.balance_after;
+
+  return (
+    <Card title="دمج العملاء المكرّرين (أبيض / بولي)" size="small"
+      extra={<Button loading={busy} onClick={() => run(false)}>وريني الخطة</Button>}>
+      <p style={{ color: '#888', marginTop: 0 }}>
+        العميل اللي اتفتح مرتين — «فلان» و«تكنو فلان» — بيرجع عميل واحد بحسابين: أبيض وبولي،
+        وإجمالي. <b>مافيش حاجة بتتحذف ومافيش فلوس بتتحرك:</b> حساب الأستاذ بتاع المكرّر بيفضل
+        بكل حركاته وبيبقى حساب البولي. السيرفر بيجمع أرصدة العملاء قبل وبعد، ولو اختلفت بمليم
+        بيرفض الدمج كله.
+      </p>
+
+      {plan && (
+        <>
+          <Space wrap style={{ marginBottom: 8 }}>
+            <Tag color={pairs.length ? 'blue' : 'green'}>{pairs.length} عميل متكرّر</Tag>
+            <Tag>{plan.techno_only?.length ?? 0} «تكنو» من غير أصل</Tag>
+            {plan.skipped?.length ? <Tag color="orange">{plan.skipped.length} اتخطّى</Tag> : null}
+            {/* الرقم اللي بيقول إن الدمج أمان. لو اتغيّر، السيرفر أصلاً رفض. */}
+            <Tag color={balancesMatch ? 'green' : 'red'}>
+              الأرصدة: {plan.balance_before} {balancesMatch ? '— زي ما هي' : `← ${plan.balance_after}`}
+            </Tag>
+            {plan.applied && <Tag color="green">اتنفّذ</Tag>}
+          </Space>
+
+          {pairs.length > 0 && (
+            <Table
+              size="small" rowKey={(r: any) => r.merge_customer_id} dataSource={pairs}
+              pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+              columns={[
+                { title: 'الاسم', dataIndex: 'base_name' },
+                { title: 'الحساب اللي هيفضل', dataIndex: 'keep_name' },
+                { title: 'اللي هيندمج فيه', dataIndex: 'merge_name' },
+                { title: 'المندوب', dataIndex: 'same_rep', width: 130,
+                  render: (v: boolean) => (v
+                    ? <Tag color="green">نفس المندوب</Tag>
+                    : <Tag color="orange">مندوب مختلف</Tag>) },
+              ]}
+            />
+          )}
+
+          {plan.skipped?.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {plan.skipped.map(([name, why]: [string, string]) => (
+                <div key={name} style={{ color: '#d46b08', fontSize: 12 }}>{name}: {why}</div>
+              ))}
+            </div>
+          )}
+
+          {!plan.applied && pairs.length > 0 && (
+            <Popconfirm
+              title="تنفيذ الدمج؟"
+              description="العملاء المكرّرين هيتدمجوا. الأرصدة هتتراجع قبل وبعد، ولو اختلفت هيترفض كله."
+              okText="نفّذ" cancelText="رجوع" okButtonProps={{ danger: true }}
+              onConfirm={() => run(true)}
+            >
+              <Button danger type="primary" loading={busy} style={{ marginTop: 10 }}>
+                نفّذ الدمج
+              </Button>
+            </Popconfirm>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
 function IntegrityCard() {
   const [result, setResult] = useState<
     { clean: boolean; checked: Record<string, number>; findings: IntegrityFinding[] } | null

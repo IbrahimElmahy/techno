@@ -116,3 +116,66 @@ def integrity_check(
             for f in report.findings
         ],
     }
+
+
+@router.post("/merge-customers")
+def merge_customers(
+    apply: bool = False,
+    _: CurrentUser = Depends(_require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """دمج «تكنو فلان» مع «فلان» — على القاعدة اللي السيرفر ده شغال عليها.
+
+    The merge has existed as a service for a while and could only ever be run against a developer's
+    own database. A push deploys code and does nothing to data, so production kept its duplicated
+    customers while every local copy had them joined — a difference that is invisible from outside
+    and reads as «the work was never deployed».
+
+    This runs it where the data actually is. No credential has to leave the host to do it, which is
+    the point: the server already holds the connection.
+
+    **`apply` defaults to false.** The dangerous call is the one you have to ask for. Without it
+    this reports exactly what a merge would do and writes nothing.
+
+    **And it will not leave the books different from how it found them.** A merge moves a POINTER —
+    the duplicate's ledger account becomes the بولي account of the surviving customer, carrying its
+    history untouched — so the sum over every customer's ledger account has to come out identical.
+    It is totalled before and after and the whole thing is rolled back if they disagree, inside the
+    transaction, where a wrong answer is still a refusal rather than a mess.
+    """
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from src.models.customer import CustomerAccount
+    from src.services import customer_merge_service, ledger_service
+
+    def total_receivable() -> Decimal:
+        # Read from the LEDGER side: a customer account has no balance of its own, it points at a
+        # ledger account, and the pointer is the thing being moved.
+        out = Decimal("0")
+        for acc in db.scalars(select(CustomerAccount)).all():
+            out += ledger_service.balance_of(db, acc.account_id)
+        return out
+
+    before = total_receivable()
+    result = customer_merge_service.apply(db, dry_run=not apply)
+    result["balance_before"] = str(before)
+
+    if not apply:
+        db.rollback()
+        result["balance_after"] = str(before)
+        return result
+
+    after = total_receivable()
+    result["balance_after"] = str(after)
+    if after != before:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, {
+            "code": "merge_changed_balances",
+            "message": (f"الدمج اترفض: أرصدة العملاء اتغيّرت من {before} لـ {after}. "
+                        "مفيش حاجة اتحفظت."),
+        })
+
+    db.commit()
+    return result
