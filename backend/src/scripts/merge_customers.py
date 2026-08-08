@@ -57,19 +57,22 @@ def _print_plan(result: dict) -> None:
     print(f"\n  عملاء اتلاقوا باسمين:  {len(pairs)}")
     for p in pairs[:200]:
         flag = "" if p.get("same_rep", True) else "   ← مندوب مختلف"
-        print(f"    • {p.get('base_name')}: #{p.get('keep_customer_id')} "
-              f"+ #{p.get('merge_customer_id')}{flag}")
+        # `keep` and `merge` are nested {id, name}. Read flat, every line printed «#None + #None»
+        # — a plan that names nobody, which is the same as no plan.
+        keep, merge = p.get("keep") or {}, p.get("merge") or {}
+        print(f"    • {p.get('base_name')}: يفضل {keep.get('name')} #{keep.get('id')} "
+              f"← يندمج فيه {merge.get('name')} #{merge.get('id')}{flag}")
     if len(pairs) > 200:
         print(f"    … و{len(pairs) - 200} كمان")
 
     print(f"\n  «تكنو» من غير أصل — هيتشال الاسم بس:  {len(techno_only)}")
-    for cid, name in techno_only[:50]:
-        print(f"    • #{cid} {name}")
+    for t in techno_only[:50]:
+        print(f"    • #{t.get('id')} {t.get('name')}")
 
     # A skip must always be spoken. A silent one is indistinguishable from a merge that did nothing.
     print(f"\n  اتخطّوا:  {len(skipped)}")
-    for name, why in skipped:
-        print(f"    • {name}: {why}")
+    for sk in skipped:
+        print(f"    • {sk.get('name')}: {sk.get('reason')}")
 
 
 def main() -> int:

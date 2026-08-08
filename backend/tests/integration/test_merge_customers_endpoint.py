@@ -58,6 +58,17 @@ def test_asking_for_the_plan_changes_nothing(client, inv_world, login, db):
     # It has to actually SEE the pair, or the test proves only that nothing happened.
     assert len(body["pairs"]) >= 1
 
+    # And it has to NAME both sides. The screen showed «86 عميل متكرّر» over two blank columns for
+    # a while, because it read `keep_name`/`merge_name` while the plan returns `keep`/`merge` as
+    # nested objects. A plan that says how many will merge and not WHICH account survives is not a
+    # plan anybody can approve — and it is the only thing standing before an irreversible merge.
+    pair = body["pairs"][0]
+    for side in ("keep", "merge"):
+        assert isinstance(pair[side], dict), f"«{side}» لازم يبقى كائن فيه id و name"
+        assert pair[side]["id"], f"«{side}» من غير رقم"
+        assert pair[side]["name"], f"«{side}» من غير اسم"
+    assert pair["base_name"]
+
     db.expire_all()
     after_names = sorted(c.name for c in db.scalars(select(__import__(
         "src.models.customer", fromlist=["Customer"]).Customer)).all())

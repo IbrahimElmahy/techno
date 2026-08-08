@@ -597,12 +597,22 @@ function CustomerMergeCard() {
 
           {pairs.length > 0 && (
             <Table
-              size="small" rowKey={(r: any) => r.merge_customer_id} dataSource={pairs}
+              size="small" rowKey={(r: any) => r.merge?.id} dataSource={pairs}
               pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
               columns={[
                 { title: 'الاسم', dataIndex: 'base_name' },
-                { title: 'الحساب اللي هيفضل', dataIndex: 'keep_name' },
-                { title: 'اللي هيندمج فيه', dataIndex: 'merge_name' },
+                // `keep` and `merge` come back NESTED — {id, name} — and these read them flat, so
+                // both columns were blank: the plan showed how many would merge and never which
+                // account survives. That is the one thing it exists to show before an irreversible
+                // merge, so the id goes beside the name; two customers can share one.
+                { title: 'الحساب اللي هيفضل', key: 'keep',
+                  render: (_: any, r: any) => (r.keep
+                    ? <span>{r.keep.name} <span style={{ color: '#8a8a8a' }}>#{r.keep.id}</span></span>
+                    : '-') },
+                { title: 'اللي هيندمج فيه', key: 'merge',
+                  render: (_: any, r: any) => (r.merge
+                    ? <span>{r.merge.name} <span style={{ color: '#8a8a8a' }}>#{r.merge.id}</span></span>
+                    : '-') },
                 { title: 'المندوب', dataIndex: 'same_rep', width: 130,
                   render: (v: boolean) => (v
                     ? <Tag color="green">نفس المندوب</Tag>
