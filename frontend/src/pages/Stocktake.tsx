@@ -228,6 +228,7 @@ export default function Stocktake() {
           // says so, because a hundred counts typed into a screen that keeps none of them is a
           // morning lost.
           { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
+            ...numberColumn<Row>((r) => actual[rowKey(r)]),
             render: (_: any, r: Row) => (
               <InputNumber
                 size="small" min={0} placeholder="—" style={{ width: '100%' }}

@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 
 // Only the kinds that have a screen able to show them; a purchase return has no screen of its
 // own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
@@ -172,8 +173,10 @@ export default function TradeReports() {
 
   const profitColumns = wantsProfit ? [
     { title: 'التكلفة', dataIndex: 'cost', align: 'left' as const,
+      ...numberColumn<any>((r) => r.cost),
       render: (v: string) => money(v) },
     { title: 'الربح', dataIndex: 'profit', align: 'left' as const,
+      ...numberColumn<any>((r) => r.profit),
       render: (v: string, r: any) => (
         <b style={{ color: Number(v) < 0 ? '#cf1322' : '#6AB42D' }}>
           {money(v)}{r.cost_complete === false
@@ -181,6 +184,7 @@ export default function TradeReports() {
         </b>
       ) },
     { title: 'هامش %', dataIndex: 'margin_pct', align: 'left' as const,
+      ...numberColumn<any>((r) => r.margin_pct),
       render: (v: string) => `${money(v)}%` },
   ] : [];
 
@@ -188,26 +192,37 @@ export default function TradeReports() {
     ? [
       { title: groupBy === 'party' ? (isSale ? 'العميل' : 'المورد')
         : groupBy === 'item' ? 'الصنف' : 'المخزن',
-      dataIndex: 'label', render: (v: string) => <b>{v}</b> },
-      { title: 'عدد المستندات', dataIndex: 'document_count', align: 'left' as const },
+      dataIndex: 'label', ...textColumn(rows, (r: any) => r.label),
+      render: (v: string) => <b>{v}</b> },
+      { title: 'عدد المستندات', dataIndex: 'document_count', align: 'left' as const,
+        ...numberColumn<any>((r) => r.document_count) },
       { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
+        ...numberColumn<any>((r) => r.quantity),
         render: (v: string) => qty(v) },
       { title: 'الصافي', dataIndex: 'net', align: 'left' as const,
+        ...numberColumn<any>((r) => r.net),
         render: (v: string) => <b>{money(v)}</b> },
       ...profitColumns,
     ]
     : [
-      { title: 'المستند', dataIndex: 'document_number', render: (v: string) => <Tag>{v}</Tag> },
-      { title: 'التاريخ', dataIndex: 'date',
+      { title: 'المستند', dataIndex: 'document_number',
+        ...textColumn(rows, (r: any) => r.document_number),
+        render: (v: string) => <Tag>{v}</Tag> },
+      { title: 'التاريخ', dataIndex: 'date', ...dateColumn<any>((r) => r.date),
         render: (v: string) => (v ? String(v).slice(0, 10) : '-') },
-      { title: isSale ? 'العميل' : 'المورد', dataIndex: 'party' },
+      { title: isSale ? 'العميل' : 'المورد', dataIndex: 'party',
+        ...textColumn(rows, (r: any) => r.party) },
       ...(level === 'line' ? [
-        { title: 'الصنف', dataIndex: 'item', render: (v: string) => <b>{v}</b> },
-        { title: 'المخزن', dataIndex: 'warehouse' },
+        { title: 'الصنف', dataIndex: 'item', ...textColumn(rows, (r: any) => r.item),
+          render: (v: string) => <b>{v}</b> },
+        { title: 'المخزن', dataIndex: 'warehouse',
+          ...textColumn(rows, (r: any) => r.warehouse) },
       ] : []),
       { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
+        ...numberColumn<any>((r) => r.quantity),
         render: (v: string) => qty(v) },
       { title: 'الصافي', dataIndex: 'net', align: 'left' as const,
+        ...numberColumn<any>((r) => r.net),
         render: (v: string) => <b>{money(v)}</b> },
       ...profitColumns,
       // A figure in a report is only useful if you can get to the document behind it.

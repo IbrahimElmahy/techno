@@ -16,6 +16,7 @@ import {
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 
 // --- Types --------------------------------------------------------------------------------
 interface Account {
@@ -112,6 +113,10 @@ function ChartTab() {
   // «الحسابات الرئيسيه» and «الحسابات الفرعيه» are two menu entries there and one chart here. The
   // distinction is real in the data — a group node versus a postable leaf — so the entry narrows to
   // what it names instead of dropping the reader into the whole tree and leaving them to squint.
+  // The chart is a TREE and the columns filter individual accounts, so the distinct lists are
+  // built from the flattened accounts — otherwise a child's nature would never appear as a choice.
+  const flatAccounts = useMemo(() => tree.flatMap(flatten), [tree]);
+
   const filter = useListFilter(tree, {
     search: (a) => flatten(a).flatMap((n) => [n.code, n.name]),
     filters: {
@@ -148,22 +153,32 @@ function ChartTab() {
 
   const columns = [
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 160,
+      ...textColumn(flatAccounts, (a: Account) => a.code),
       render: (c: string) => <Tag color="blue">{c}</Tag> },
-    { title: 'اسم الحساب', dataIndex: 'name', key: 'name' },
+    { title: 'اسم الحساب', dataIndex: 'name', key: 'name',
+      ...textColumn(flatAccounts, (a: Account) => a.name) },
     { title: 'النوع', dataIndex: 'nature', key: 'nature', width: 120,
+      ...textColumn(flatAccounts, (a: Account) => (a.nature ? NATURE_LABEL[a.nature] : '')),
       render: (n: string) => n ? <Tag color={NATURE_COLOR[n]}>{NATURE_LABEL[n]}</Tag> : '-' },
     { title: 'التصنيف', dataIndex: 'is_postable', key: 'is_postable', width: 120,
+      ...choiceColumn<Account>([{ text: 'يقبل الترحيل', value: 'yes' }, { text: 'تجميعي', value: 'no' }],
+        (a, v) => (v === 'yes' ? !!a.is_postable : !a.is_postable)),
       render: (p: boolean, r: Account) =>
         p ? <Tag color="green">قابل للترحيل</Tag> : <Tag>مجموعة</Tag> },
     { title: 'المستوى الرئيسي', dataIndex: 'main_level', key: 'main_level', width: 170,
+      ...textColumn(flatAccounts, (a: any) => a.main_level),
       render: (m: string | null) => m || '-' },
     { title: 'يظهر في', dataIndex: 'appears_in', key: 'appears_in', width: 140,
+      ...textColumn(flatAccounts, (a: any) => (a.appears_in ? APPEARS_IN_LABEL[a.appears_in] : '')),
       render: (a: string | null) => (a && APPEARS_IN_LABEL[a]
         ? <Tag color="geekblue">{APPEARS_IN_LABEL[a]}</Tag>
         : <span style={{ color: '#bbb' }}>حسب الطبيعة</span>) },
     { title: 'النظام', dataIndex: 'is_system', key: 'is_system', width: 90,
+      ...choiceColumn<Account>([{ text: 'نظام', value: 'yes' }, { text: 'مضاف', value: 'no' }],
+        (a: any, v) => (v === 'yes' ? !!a.is_system : !a.is_system)),
       render: (s: boolean) => s ? <Tag color="purple">نظام</Tag> : '-' },
     { title: 'الرصيد (ج.م)', dataIndex: 'balance', key: 'balance', align: 'left' as const,
+      ...numberColumn<Account>((a: any) => a.balance),
       render: (b: string) => <strong>{egp(b)}</strong> },
   ];
 
@@ -389,12 +404,19 @@ function JournalTab() {
   });
 
   const columns = [
-    { title: 'رقم', dataIndex: 'id', key: 'id', width: 70, render: (id: number) => <Tag color="blue">#{id}</Tag> },
-    { title: 'التاريخ', dataIndex: 'date', key: 'date', width: 120, render: (d: string) => d || '-' },
+    { title: 'رقم', dataIndex: 'id', key: 'id', width: 70, ...numberColumn<JournalEntry>((e) => e.id),
+      render: (id: number) => <Tag color="blue">#{id}</Tag> },
+    { title: 'التاريخ', dataIndex: 'date', key: 'date', width: 120,
+      ...dateColumn<JournalEntry>((e: any) => e.date), render: (d: string) => d || '-' },
     { title: 'النوع', dataIndex: 'entry_type', key: 'entry_type', width: 120,
+      ...textColumn(entries, (e: JournalEntry) => (TYPE_LABEL[e.entry_type]?.t ?? e.entry_type)),
       render: (t: string) => { const m = TYPE_LABEL[t] || { t, c: 'default' }; return <Tag color={m.c}>{m.t}</Tag>; } },
-    { title: 'البيان', dataIndex: 'description', key: 'description' },
+    { title: 'البيان', dataIndex: 'description', key: 'description',
+      ...textColumn(entries, (e: JournalEntry) => e.description) },
     { title: 'الحركات', dataIndex: 'lines', key: 'lines',
+      // Filtered by how many movements the entry has — «القيود المركّبة» is a real thing to look
+      // for, and it is not visible from any other column.
+      ...numberColumn<JournalEntry>((e) => (e.lines || []).length),
       render: (ls: JournalLine[]) => (
         <div>
           {ls.map((l, i) => (
@@ -408,7 +430,9 @@ function JournalTab() {
           ))}
         </div>
       ) },
-    { title: 'الإجمالي', dataIndex: 'total', key: 'total', width: 120, render: (t: string) => <strong>{egp(t)}</strong> },
+    { title: 'الإجمالي', dataIndex: 'total', key: 'total', width: 120,
+      ...numberColumn<JournalEntry>((e: any) => e.total),
+      render: (t: string) => <strong>{egp(t)}</strong> },
     { title: '', key: 'actions', width: 130,
       render: (_: any, r: JournalEntry) =>
         (!r.reverses_entry_id && !entries.some((e) => e.reverses_entry_id === r.id)) ? (
@@ -605,6 +629,7 @@ function TrialBalanceTab() {
   const [grouped, setGrouped] = useState(true);
 
   const rows: TrialRow[] = data?.rows ?? [];
+  const trialRows: TrialRow[] = data?.rows ?? [];
   const shownRows = rowQuery
     ? rows.filter((r) => [r.code, r.name].some((f) => normalizeAr(f).includes(normalizeAr(rowQuery))))
     : rows;
@@ -631,15 +656,23 @@ function TrialBalanceTab() {
   useEffect(() => { run(); }, []);
 
   const columns = [
-    { title: 'الكود', dataIndex: 'code', key: 'code', width: 130, render: (c: string) => c ? <Tag color="blue">{c}</Tag> : '-' },
+    { title: 'الكود', dataIndex: 'code', key: 'code', width: 130,
+      ...textColumn(trialRows, (r: TrialRow) => r.code),
+      render: (c: string) => c ? <Tag color="blue">{c}</Tag> : '-' },
     { title: 'الحساب', dataIndex: 'name', key: 'name',
+      ...textColumn(trialRows, (r: TrialRow) => r.name),
       render: (n: string, r: TrialRow) => r.is_postable ? n : <strong>{n}</strong> },
-    { title: 'افتتاحي', dataIndex: 'opening', key: 'opening', align: 'left' as const, render: egp },
+    { title: 'افتتاحي', dataIndex: 'opening', key: 'opening', align: 'left' as const,
+      ...numberColumn<TrialRow>((r: any) => r.opening), render: egp },
     { title: 'مدين', dataIndex: 'period_debit', key: 'period_debit', align: 'left' as const,
+      ...numberColumn<TrialRow>((r: any) => r.period_debit),
       render: (v: string) => <span style={{ color: '#6AB42D' }}>{egp(v)}</span> },
     { title: 'دائن', dataIndex: 'period_credit', key: 'period_credit', align: 'left' as const,
+      ...numberColumn<TrialRow>((r: any) => r.period_credit),
       render: (v: string) => <span style={{ color: '#F5A11D' }}>{egp(v)}</span> },
-    { title: 'ختامي', dataIndex: 'closing', key: 'closing', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'ختامي', dataIndex: 'closing', key: 'closing', align: 'left' as const,
+      ...numberColumn<TrialRow>((r: any) => r.closing),
+      render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
   // ميزان المراجعة → كشف الحساب: النزول من الرقم المجمّع للحركات اللي عملته. الجداول التلاتة

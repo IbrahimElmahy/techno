@@ -23,6 +23,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { printDocument } from '../print/brand';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 
 interface ReportLine {
   account_id: number;
@@ -160,26 +161,31 @@ const FinanceReports: React.FC = () => {
       '<tr><td colspan="2">لا توجد حركة</td></tr>'
     }</tbody></table>`;
 
-  const amountCol = {
-    title: 'القيمة',
-    dataIndex: 'amount',
-    width: 160,
-    align: 'left' as const,
-    render: (v: string) => money(v),
-  };
-  const nameCol = {
-    title: 'الحساب',
-    render: (_: any, r: ReportLine) => r.name || r.code || `#${r.account_id}`,
-  };
-
-  // الرقم في قائمة الدخل أو الميزانية بيفتح كشف حساب الحساب اللي عمله — دي النزلة اللي أي حد
-  // بيقرا تقرير مالي بيعملها بعد ما يشوف رقم مش متوقع.
   // The account lines of whichever of the two statements is on screen. Ids are unique across the
   // sections, so one cursor can walk all of them — and only one statement renders at a time.
   const acctRows = useMemo(() => [
     ...(income?.income ?? []), ...(income?.expenses ?? []),
     ...(sheet?.assets ?? []), ...(sheet?.liabilities ?? []), ...(sheet?.equity ?? []),
   ], [income, sheet]);
+
+  const amountCol = {
+    title: 'القيمة',
+    dataIndex: 'amount',
+    width: 160,
+    align: 'left' as const,
+    ...numberColumn<ReportLine>((r) => r.amount),
+    render: (v: string) => money(v),
+  };
+  // The distinct list is built from every account line on screen, so «وريني حساب كذا» works the
+  // same in the income statement and the balance sheet rather than per section.
+  const nameCol = {
+    title: 'الحساب',
+    ...textColumn(acctRows, (r: ReportLine) => r.name || r.code || `#${r.account_id}`),
+    render: (_: any, r: ReportLine) => r.name || r.code || `#${r.account_id}`,
+  };
+
+  // الرقم في قائمة الدخل أو الميزانية بيفتح كشف حساب الحساب اللي عمله — دي النزلة اللي أي حد
+  // بيقرا تقرير مالي بيعملها بعد ما يشوف رقم مش متوقع.
   const acctKb = useTableKeyboard<any>({
     rows: acctRows, rowKey: (r) => r.account_id,
     onOpen: (r) => navigate(`/account-statement?account=${r.account_id}`),
@@ -333,12 +339,14 @@ const FinanceReports: React.FC = () => {
                   dataSource={agingFilter.filtered}
                   pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
                   columns={[
-                    { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name' },
+                    { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name',
+                      ...textColumn(aging, (r: AgingRow) => r.party_name) },
                     ...BUCKETS.map((b) => ({
                       title: b === '90+' ? 'أكثر من 90 يوم' : `${b} يوم`,
                       dataIndex: ['buckets', b],
                       width: 130,
                       align: 'left' as const,
+                      ...numberColumn<AgingRow>((r) => r.buckets?.[b]),
                       render: (v: string) => (Number(v) ? money(v) : ''),
                     })),
                     {
@@ -346,6 +354,7 @@ const FinanceReports: React.FC = () => {
                       dataIndex: 'total',
                       width: 140,
                       align: 'left' as const,
+                      ...numberColumn<AgingRow>((r) => r.total),
                       render: (v: string) => <b>{money(v)}</b>,
                     },
                   ]}
@@ -431,23 +440,31 @@ const FinanceReports: React.FC = () => {
                   dataSource={commissionFilter.filtered}
                   pagination={false}
                   columns={[
-                    { title: 'المندوب', dataIndex: 'rep_name' },
+                    { title: 'المندوب', dataIndex: 'rep_name',
+                      ...textColumn(commissions, (r: CommissionRow) => r.rep_name) },
                     {
                       title: 'الأساس',
                       dataIndex: 'basis',
                       width: 130,
+                      ...choiceColumn<CommissionRow>(
+                        [{ text: 'على التحصيل', value: 'collection' },
+                         { text: 'على المبيعات', value: 'sales' }],
+                        (r, v) => r.basis === v),
                       render: (v: string) => (
                         <Tag color={v === 'collection' ? 'green' : 'blue'}>
                           {v === 'collection' ? 'على التحصيل' : 'على المبيعات'}
                         </Tag>
                       ),
                     },
-                    { title: 'النسبة', dataIndex: 'rate_pct', width: 90, render: (v: string) => `${Number(v)}%` },
+                    { title: 'النسبة', dataIndex: 'rate_pct', width: 90,
+                      ...numberColumn<CommissionRow>((r) => r.rate_pct),
+                      render: (v: string) => `${Number(v)}%` },
                     {
                       title: 'الأساس المحتسب',
                       dataIndex: 'base_amount',
                       width: 160,
                       align: 'left' as const,
+                      ...numberColumn<CommissionRow>((r) => r.base_amount),
                       render: (v: string) => money(v),
                     },
                     {
@@ -455,6 +472,7 @@ const FinanceReports: React.FC = () => {
                       dataIndex: 'commission',
                       width: 150,
                       align: 'left' as const,
+                      ...numberColumn<CommissionRow>((r) => r.commission),
                       render: (v: string) => <b>{money(v)}</b>,
                     },
                   ]}

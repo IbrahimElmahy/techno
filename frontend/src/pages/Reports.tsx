@@ -11,6 +11,7 @@ import { api, getApiBaseURL } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
+import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 
 const { RangePicker } = DatePicker;
 
@@ -157,21 +158,21 @@ function ProductionTab({ period, range, items }: TabProps) {
   useEffect(() => { load(); }, []);
 
   const periodCols = [
-    { title: 'الفترة', dataIndex: 'period', key: 'period' },
-    { title: 'المنتَج', dataIndex: 'produced_quantity', key: 'produced_quantity', align: 'left' as const, render: qty },
-    { title: 'المستهلَك', dataIndex: 'consumed_quantity', key: 'consumed_quantity', align: 'left' as const, render: qty },
-    { title: 'إجمالي التكلفة', dataIndex: 'total_cost', key: 'total_cost', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'الفترة', dataIndex: 'period', key: 'period', ...textColumn(byPeriod, (r: any) => r.period) },
+    { title: 'المنتَج', dataIndex: 'produced_quantity', key: 'produced_quantity', ...numberColumn<any>((r) => r.produced_quantity), align: 'left' as const, render: qty },
+    { title: 'المستهلَك', dataIndex: 'consumed_quantity', key: 'consumed_quantity', ...numberColumn<any>((r) => r.consumed_quantity), align: 'left' as const, render: qty },
+    { title: 'إجمالي التكلفة', dataIndex: 'total_cost', key: 'total_cost', ...numberColumn<any>((r) => r.total_cost), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
   const detailCols = [
-    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', render: (c: string) => <Tag color="blue">{c}</Tag> },
-    { title: 'المنتج', dataIndex: 'product_name', key: 'product_name' },
-    { title: 'المنتَج', dataIndex: 'produced_quantity', key: 'produced_quantity', align: 'left' as const, render: qty },
-    { title: 'المستهلَك', dataIndex: 'consumed_quantity', key: 'consumed_quantity', align: 'left' as const, render: qty },
-    { title: 'تكلفة الخامات', dataIndex: 'material_cost', key: 'material_cost', align: 'left' as const, render: egp },
-    { title: 'تكلفة الموارد', dataIndex: 'resource_cost', key: 'resource_cost', align: 'left' as const, render: egp },
-    { title: 'إجمالي التكلفة', dataIndex: 'total_cost', key: 'total_cost', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
-    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
+    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', ...textColumn(rows, (r: any) => r.document_number), render: (c: string) => <Tag color="blue">{c}</Tag> },
+    { title: 'المنتج', dataIndex: 'product_name', key: 'product_name', ...textColumn(rows, (r: any) => r.product_name) },
+    { title: 'المنتَج', dataIndex: 'produced_quantity', key: 'produced_quantity', ...numberColumn<any>((r) => r.produced_quantity), align: 'left' as const, render: qty },
+    { title: 'المستهلَك', dataIndex: 'consumed_quantity', key: 'consumed_quantity', ...numberColumn<any>((r) => r.consumed_quantity), align: 'left' as const, render: qty },
+    { title: 'تكلفة الخامات', dataIndex: 'material_cost', key: 'material_cost', ...numberColumn<any>((r) => r.material_cost), align: 'left' as const, render: egp },
+    { title: 'تكلفة الموارد', dataIndex: 'resource_cost', key: 'resource_cost', ...numberColumn<any>((r) => r.resource_cost), align: 'left' as const, render: egp },
+    { title: 'إجمالي التكلفة', dataIndex: 'total_cost', key: 'total_cost', ...numberColumn<any>((r) => r.total_cost), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', ...dateColumn<any>((r) => r.created_at), render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
   ];
 
   return (
@@ -229,11 +230,11 @@ function InventoryTab({ warehouses, items }: TabProps) {
   useEffect(() => { load(); }, []);
 
   const columns = [
-    { title: 'الصنف', dataIndex: 'item_name', key: 'item_name' },
-    { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
-    { title: 'الرصيد', dataIndex: 'on_hand', key: 'on_hand', align: 'left' as const, render: qty },
-    { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit_cost', align: 'left' as const, render: egp },
-    { title: 'القيمة', dataIndex: 'value', key: 'value', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
+    { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', ...textColumn(rows, (r: any) => whName(r.warehouse_id)), render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
+    { title: 'الرصيد', dataIndex: 'on_hand', key: 'on_hand', ...numberColumn<any>((r) => r.on_hand), align: 'left' as const, render: qty },
+    { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit_cost', ...numberColumn<any>((r) => r.unit_cost), align: 'left' as const, render: egp },
+    { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
   return (
@@ -304,16 +305,16 @@ function WastageTab({ range, warehouses, items }: TabProps) {
   useEffect(() => { load(); }, []);
 
   const columns = [
-    { title: 'المصدر', dataIndex: 'source', key: 'source', width: 110,
+    { title: 'المصدر', dataIndex: 'source', key: 'source', ...textColumn(rows, (r: any) => r.source), width: 110,
       render: (s: string) => s === 'manufacturing'
         ? <Tag color="orange">تصنيع</Tag>
         : <Tag color="volcano">إذن هالك</Tag> },
-    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', render: (c: string) => <Tag color="blue">{c}</Tag> },
-    { title: 'الصنف', dataIndex: 'item_name', key: 'item_name' },
-    { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
-    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', align: 'left' as const, render: qty },
-    { title: 'التكلفة', dataIndex: 'cost', key: 'cost', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
-    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
+    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', ...textColumn(rows, (r: any) => r.document_number), render: (c: string) => <Tag color="blue">{c}</Tag> },
+    { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
+    { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', ...textColumn(rows, (r: any) => whName(r.warehouse_id)), render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
+    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', ...numberColumn<any>((r) => r.quantity), align: 'left' as const, render: qty },
+    { title: 'التكلفة', dataIndex: 'cost', key: 'cost', ...numberColumn<any>((r) => r.cost), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', ...dateColumn<any>((r) => r.created_at), render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
   ];
 
   return (
@@ -379,14 +380,14 @@ function StagnantTab({ warehouses }: TabProps) {
   useEffect(() => { load(); }, []);
 
   const columns = [
-    { title: 'الصنف', dataIndex: 'item_name', key: 'item_name' },
-    { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
-    { title: 'الرصيد', dataIndex: 'on_hand', key: 'on_hand', align: 'left' as const, render: qty },
-    { title: 'آخر صرف', dataIndex: 'last_out_date', key: 'last_out_date',
+    { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
+    { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', ...textColumn(rows, (r: any) => whName(r.warehouse_id)), render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
+    { title: 'الرصيد', dataIndex: 'on_hand', key: 'on_hand', ...numberColumn<any>((r) => r.on_hand), align: 'left' as const, render: qty },
+    { title: 'آخر صرف', dataIndex: 'last_out_date', key: 'last_out_date', ...dateColumn<any>((r) => r.last_out_date),
       render: (d: string | null) => d
         ? dayjs(d).format('YYYY-MM-DD')
         : <Tag color="red">لم يتحرك مطلقاً</Tag> },
-    { title: 'القيمة', dataIndex: 'value', key: 'value', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
   return (
@@ -456,17 +457,17 @@ function SalesTab({ period, range }: TabProps) {
   useEffect(() => { load(); }, []);
 
   const periodCols = [
-    { title: 'الفترة', dataIndex: 'period', key: 'period' },
-    { title: 'الإجمالي', dataIndex: 'gross', key: 'gross', align: 'left' as const, render: egp },
-    { title: 'الصافي', dataIndex: 'net', key: 'net', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'الفترة', dataIndex: 'period', key: 'period', ...textColumn(byPeriod, (r: any) => r.period) },
+    { title: 'الإجمالي', dataIndex: 'gross', key: 'gross', ...numberColumn<any>((r) => r.gross), align: 'left' as const, render: egp },
+    { title: 'الصافي', dataIndex: 'net', key: 'net', ...numberColumn<any>((r) => r.net), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
   const detailCols = [
-    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', render: (c: string) => <Tag color="blue">{c}</Tag> },
-    { title: 'العميل', dataIndex: 'customer_id', key: 'customer_id', render: (id: number | null) => id ? `#${id}` : '-' },
-    { title: 'الإجمالي', dataIndex: 'gross', key: 'gross', align: 'left' as const, render: egp },
-    { title: 'الصافي', dataIndex: 'net', key: 'net', align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
-    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
+    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', ...textColumn(rows, (r: any) => r.document_number), render: (c: string) => <Tag color="blue">{c}</Tag> },
+    { title: 'العميل', dataIndex: 'customer_id', key: 'customer_id', ...numberColumn<any>((r) => r.customer_id), render: (id: number | null) => id ? `#${id}` : '-' },
+    { title: 'الإجمالي', dataIndex: 'gross', key: 'gross', ...numberColumn<any>((r) => r.gross), align: 'left' as const, render: egp },
+    { title: 'الصافي', dataIndex: 'net', key: 'net', ...numberColumn<any>((r) => r.net), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', ...dateColumn<any>((r) => r.created_at), render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
   ];
 
   return (

@@ -219,6 +219,9 @@ export default function StockSheet() {
       ...numberColumn((r: any) => r.quantity),
       render: (v: any) => <b>{qty(v)}</b> },
     { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
+      // فلتر على اللي اتعدّ نفسه، مش على الفرق: «وريني اللي عدّيته فوق المية» سؤال
+      // بيتسأل وانت واقف بتعدّ، ومالهوش عمود تاني يجاوبه.
+      ...numberColumn<any>((r) => actual[rowKey(r)]),
       render: (_: any, r: any) => (
         // `data-grid-col` is what gives the column its keyboard: ↑↓ walk it and Enter drops to the
         // box below, which is the rhythm of counting a shelf without looking up.

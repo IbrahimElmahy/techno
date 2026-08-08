@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 
 interface CouponType {
   id: number;
@@ -293,29 +294,39 @@ export default function Loyalty() {
   });
 
   const typeColumns = [
-    { title: 'اسم الكوبون الترويجي', dataIndex: 'name', key: 'name' },
+    { title: 'اسم الكوبون الترويجي', dataIndex: 'name', key: 'name',
+      ...textColumn(couponTypes, (r: CouponType) => r.name) },
     {
       title: 'نوع الكوبون',
       dataIndex: 'kind',
       key: 'kind',
+      ...choiceColumn<CouponType>(
+        [{ text: 'رصيد مالي للعميل', value: 'money' },
+         { text: 'خصم إضافي للفواتير', value: 'discount' }],
+        (r, v) => (v === 'money' ? r.kind === 'money' : r.kind !== 'money')),
       render: (kind: string) => (kind === 'money' ? 'رصيد مالي للعميل' : 'خصم إضافي للفواتير'),
     },
     {
       title: 'تكلفة النقاط المطلوبة',
       dataIndex: 'point_cost',
       key: 'point_cost',
+      ...numberColumn<CouponType>((r) => r.point_cost),
       render: (cost: number) => <strong style={{ color: '#F5A11D' }}>{cost} نقطة</strong>,
     },
     {
       title: 'القيمة المالية المستفادة',
       dataIndex: 'value',
       key: 'value',
+      ...numberColumn<CouponType>((r) => r.value),
       render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
     },
     {
       title: 'حالة العرض',
       dataIndex: 'active',
       key: 'active',
+      ...choiceColumn<CouponType>(
+        [{ text: 'متاح للتحويل', value: 'yes' }, { text: 'موقف', value: 'no' }],
+        (r, v) => (v === 'yes' ? !!r.active : !r.active)),
       render: (active: boolean) => (
         <Tag color={active ? 'green' : 'red'}>{active ? 'متاح للتحويل' : 'موقف'}</Tag>
       ),
@@ -343,11 +354,15 @@ export default function Loyalty() {
   ];
 
   const couponColumns = [
-    { title: 'الرقم التسلسلي الكوبون', dataIndex: 'serial', key: 'serial', render: (s: string) => <Tag color="purple">{s}</Tag> },
+    { title: 'الرقم التسلسلي الكوبون', dataIndex: 'serial', key: 'serial',
+      ...textColumn(coupons, (r: any) => r.serial),
+      render: (s: string) => <Tag color="purple">{s}</Tag> },
     {
       title: 'العميل المستفيد',
       dataIndex: 'customer_id',
       key: 'customer_id',
+      ...textColumn(coupons, (r: any) => (customers.find((c) => c.id === r.customer_id)?.name
+        ?? `عميل #${r.customer_id}`)),
       render: (cId: number) => {
         const c = customers.find((cust) => cust.id === cId);
         return c ? c.name : `عميل #${cId}`;
@@ -357,17 +372,20 @@ export default function Loyalty() {
       title: 'القيمة',
       dataIndex: 'value',
       key: 'value',
+      ...numberColumn<any>((r) => r.value),
       render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
     },
     {
       title: 'النقاط المستهلكة',
       dataIndex: 'points_consumed',
       key: 'points_consumed',
+      ...numberColumn<any>((r) => r.points_consumed),
     },
     {
       title: 'حالة الكوبون',
       dataIndex: 'status',
       key: 'status',
+      ...textColumn(coupons, (r: any) => (STATUS_TAGS[r.status]?.text ?? r.status)),
       render: (status: string) => {
         const tag = STATUS_TAGS[status] || { color: 'default', text: status };
         return <Tag color={tag.color}>{tag.text}</Tag>;

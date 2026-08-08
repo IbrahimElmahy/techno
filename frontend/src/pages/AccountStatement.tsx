@@ -7,6 +7,7 @@ import { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 
@@ -31,6 +32,10 @@ interface StatementLine {
   credit: string;
   balance_before: string;
   balance: string;
+  // Both are returned by the API and were rendered through `dataIndex` without ever being
+  // declared, so nothing typed could reach them — which is why the filters could not either.
+  rep_name?: string | null;
+  cost_center_name?: string | null;
 }
 
 interface StatementOut {
@@ -169,9 +174,11 @@ export default function AccountStatement() {
 
   // «إيه السطر ده؟» — السطر كله يفتح مستنده، مش عمود المستند لوحده. اللي بيقرا كشف حساب
   // بيمشي بعينه على الأرقام على الشمال، والزرار في آخر السطر بعيد عن اللي بيبصّ عليه.
+  // Distinct values come from the whole statement, not the visible page.
+  const lines: StatementLine[] = statement?.lines ?? [];
   const openDoc = useOpenDocument();
   const kb = useTableKeyboard<StatementLine>({
-    rows: statement?.lines ?? [],
+    rows: lines,
     rowKey: (l) => `${l.entry_id}-${l.entry_date}-${l.balance}`,
     // A manual journal entry has no document behind it; leaving those inert is the honest answer.
     onOpen: (l) => { if (l.doc_kind && l.doc_id) openDoc(l.doc_kind, l.doc_id); },
@@ -253,29 +260,39 @@ export default function AccountStatement() {
             scroll={{ x: 'max-content' }}
             columns={[
               { title: 'التاريخ', dataIndex: 'entry_date',
+                ...dateColumn<StatementLine>((l) => l.entry_date),
                 render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
               { title: 'النوع', dataIndex: 'entry_type',
+                ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
                 render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
-              { title: 'البيان', dataIndex: 'description' },
+              { title: 'البيان', dataIndex: 'description',
+                ...textColumn(lines, (l: StatementLine) => l.description) },
               // Their statement has a cost-centre column. The journal line has always carried one
               // and this screen dropped it, so «against which project?» meant opening the entry.
               // The line never held a rep; the document that posted it did. A manual journal
               // entry has none and says so rather than borrowing one.
               { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
+                ...textColumn(lines, (l: StatementLine) => l.rep_name),
                 render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
               { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
+                ...textColumn(lines, (l: StatementLine) => l.cost_center_name),
                 render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
               { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
+                ...numberColumn<StatementLine>((l) => l.balance_before),
                 render: (v: string) => <span style={{ color: '#8a8a8a' }}>{money(v)}</span> },
               { title: 'مدين', dataIndex: 'debit', align: 'left',
+                ...numberColumn<StatementLine>((l) => l.debit),
                 render: (v: string) => (Number(v) ? money(v) : '-') },
               { title: 'دائن', dataIndex: 'credit', align: 'left',
+                ...numberColumn<StatementLine>((l) => l.credit),
                 render: (v: string) => (Number(v) ? money(v) : '-') },
               { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left',
+                ...numberColumn<StatementLine>((l) => l.balance),
                 render: (v: string) => <b>{money(v)}</b> },
               // The whole point of a statement is to answer «إيه السطر ده؟» — so the answer is
               // one click away rather than a number to memorise and search for elsewhere.
               { title: 'المستند', key: 'doc', align: 'center',
+                ...textColumn(lines, (l: StatementLine) => l.doc_number),
                 render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
                   <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
                     label={l.doc_number || undefined}

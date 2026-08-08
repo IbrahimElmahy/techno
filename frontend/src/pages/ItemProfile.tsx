@@ -15,6 +15,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink, { useOpenDocument } from '../components/DocumentLink';
 import { useTableKeyboard } from '../components/keyboard';
 import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
@@ -251,10 +252,10 @@ export default function ItemProfile() {
                         dataSource={data.stock_by_location} pagination={false}
                         locale={{ emptyText: 'لا يوجد رصيد لهذا الصنف' }}
                         columns={[
-                          { title: 'الموقع', dataIndex: 'location', key: 'l' },
-                          { title: 'النوع', dataIndex: 'location_kind', key: 'k',
+                          { title: 'الموقع', dataIndex: 'location', key: 'l', ...textColumn(data?.stock_by_location ?? [], (r: any) => r.location) },
+                          { title: 'النوع', dataIndex: 'location_kind', key: 'k', ...textColumn(data?.stock_by_location ?? [], (r: any) => r.location_kind),
                             render: (v: string) => (v === 'warehouse' ? 'مخزن' : 'عهدة') },
-                          { title: 'الكمية', dataIndex: 'quantity', key: 'q',
+                          { title: 'الكمية', dataIndex: 'quantity', key: 'q', ...numberColumn<any>((r) => r.quantity),
                             render: (v: string) => (
                               <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>
                                 {qty(v)} {it.unit_of_measure}
@@ -272,9 +273,9 @@ export default function ItemProfile() {
                             size="small" rowKey="tier" dataSource={data.tier_prices}
                             pagination={false}
                             columns={[
-                              { title: 'الفئة', dataIndex: 'tier', key: 't',
+                              { title: 'الفئة', dataIndex: 'tier', key: 't', ...textColumn(data?.tier_prices ?? [], (r: any) => r.tier),
                                 render: (v: string) => TIER_LABELS[v] || v },
-                              { title: 'السعر', dataIndex: 'price', key: 'p',
+                              { title: 'السعر', dataIndex: 'price', key: 'p', ...numberColumn<any>((r) => r.price),
                                 render: (v: string) => <b>{money(v)} ج.م</b> },
                             ]}
                           />
@@ -311,17 +312,18 @@ export default function ItemProfile() {
                         pagination={{ defaultPageSize: 20, showSizeChanger: true,
                           pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                         columns={[
-                        { title: 'التاريخ', dataIndex: 'date', key: 'd' },
-                        { title: 'النوع', dataIndex: 'movement_type', key: 't',
+                        { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
+                        { title: 'النوع', dataIndex: 'movement_type', key: 't', ...textColumn(data?.movements ?? [], (r: any) => MOVEMENT_LABELS[r.movement_type] || r.movement_type),
                           render: (v: string) => MOVEMENT_LABELS[v] || v },
-                        { title: 'الاتجاه', dataIndex: 'direction', key: 'dir',
+                        { title: 'الاتجاه', dataIndex: 'direction', key: 'dir', ...choiceColumn<any>([{ text: 'وارد', value: 'in' }, { text: 'صادر', value: 'out' }], (r, v) => r.direction === v),
                           render: (v: string) => (v === 'in'
                             ? <Tag color="green" icon={<RiseOutlined />}>وارد</Tag>
                             : <Tag color="red" icon={<FallOutlined />}>صادر</Tag>) },
                         { title: 'الكمية', dataIndex: 'quantity', key: 'q',
+                            ...numberColumn<any>((r) => r.quantity),
                           render: (v: string) => <b>{qty(v)}</b> },
-                        { title: 'الموقع', dataIndex: 'location', key: 'l' },
-                        { title: 'المستند', dataIndex: 'source', key: 's' },
+                        { title: 'الموقع', dataIndex: 'location', key: 'l', ...textColumn(data?.movements ?? [], (r: any) => r.location) },
+                        { title: 'المستند', dataIndex: 'source', key: 's', ...textColumn(data?.movements ?? [], (r: any) => r.source) },
                         { title: '', dataIndex: 'is_reversal', key: 'r',
                           render: (v: boolean) => (v ? <Tag>عكسي</Tag> : null) },
                         ]}
@@ -357,16 +359,18 @@ export default function ItemProfile() {
                         pagination={{ defaultPageSize: 20, showSizeChanger: true,
                           pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                         columns={[
-                          { title: 'الفاتورة', dataIndex: 'document_number', key: 'n' },
-                          { title: 'التاريخ', dataIndex: 'date', key: 'd' },
-                          { title: 'العميل', dataIndex: 'party', key: 'p' },
+                          { title: 'الفاتورة', dataIndex: 'document_number', key: 'n', ...textColumn(data?.sales ?? [], (r: any) => r.document_number) },
+                          { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
+                          { title: 'العميل', dataIndex: 'party', key: 'p', ...textColumn(data?.sales ?? [], (r: any) => r.party) },
                           { title: 'الكمية', dataIndex: 'quantity', key: 'q',
+                            ...numberColumn<any>((r) => r.quantity),
                             render: (v: string) => qty(v) },
-                          { title: 'سعر البيع', dataIndex: 'unit_price', key: 'u',
+                          { title: 'سعر البيع', dataIndex: 'unit_price', key: 'u', ...numberColumn<any>((r) => r.unit_price),
                             render: (v: string) => <b>{money(v)} ج.م</b> },
                           { title: 'الفئة', dataIndex: 'tier', key: 't',
+                            ...textColumn(data?.sales ?? [], (r: any) => r.tier),
                             render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
-                          { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
+                          { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot', ...numberColumn<any>((r) => r.line_total),
                             render: (v: string) => `${money(v)} ج.م` },
                           // The item's history used to be read-only rows; now each one leads
                           // back to the invoice it came from.
@@ -400,14 +404,16 @@ export default function ItemProfile() {
                         pagination={{ defaultPageSize: 20, showSizeChanger: true,
                           pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                         columns={[
-                          { title: 'الفاتورة', dataIndex: 'document_number', key: 'n' },
-                          { title: 'التاريخ', dataIndex: 'date', key: 'd' },
-                          { title: 'المورد', dataIndex: 'party', key: 'p' },
+                          { title: 'الفاتورة', dataIndex: 'document_number', key: 'n', ...textColumn(data?.purchases ?? [], (r: any) => r.document_number) },
+                          { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
+                          { title: 'المورد', dataIndex: 'party', key: 'p', ...textColumn(data?.purchases ?? [], (r: any) => r.party) },
                           { title: 'الكمية', dataIndex: 'quantity', key: 'q',
+                            ...numberColumn<any>((r) => r.quantity),
                             render: (v: string) => qty(v) },
-                          { title: 'سعر الشراء', dataIndex: 'unit_price', key: 'u',
+                          { title: 'سعر الشراء', dataIndex: 'unit_price', key: 'u', ...numberColumn<any>((r) => r.unit_price),
                             render: (v: string) => <b>{money(v)} ج.م</b> },
                           { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
+                            ...numberColumn<any>((r) => r.line_total),
                             render: (v: string) => `${money(v)} ج.م` },
                           { title: '', key: 'link', width: 140,
                             render: (_: any, r: any) => (r.invoice_id
@@ -452,15 +458,20 @@ export default function ItemProfile() {
                         pagination={{ defaultPageSize: 20, showSizeChanger: true,
                           pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                         columns={[
-                        { title: 'التاريخ', dataIndex: 'changed_at', key: 'd' },
-                        { title: 'السعر', dataIndex: 'field', key: 'f',
+                        { title: 'التاريخ', dataIndex: 'changed_at', key: 'd', ...dateColumn<any>((r) => r.changed_at) },
+                        { title: 'السعر', dataIndex: 'field', key: 'f', ...textColumn(data?.price_history ?? [], (r: any) => r.field),
                           render: (v: string) => PRICE_FIELD_LABELS[v] || v },
-                        { title: 'من', dataIndex: 'old_value', key: 'o',
+                        { title: 'من', dataIndex: 'old_value', key: 'o', ...numberColumn<any>((r) => r.old_value),
                           render: (v: string | null) => (v === null ? '—' : `${money(v)} ج.م`) },
-                        { title: 'إلى', dataIndex: 'new_value', key: 'n',
+                        { title: 'إلى', dataIndex: 'new_value', key: 'n', ...numberColumn<any>((r) => r.new_value),
                           render: (v: string | null) => (v === null ? '—' : <b>{money(v)} ج.م</b>) },
                         {
                           title: 'التغيير', key: 'delta',
+                          // فلتر على نسبة التغيير نفسها: «إيه اللي غلي أكتر من ١٠٪» مالهاش
+                          // إجابة من عمودي «من» و«إلى» كل واحد لوحده.
+                          ...numberColumn<any>((r) => (r.old_value && r.new_value !== null
+                            ? ((Number(r.new_value) - Number(r.old_value)) / Number(r.old_value)) * 100
+                            : 0)),
                           render: (_: any, r: any) => {
                             if (r.old_value === null || r.new_value === null) return '—';
                             const diff = Number(r.new_value) - Number(r.old_value);

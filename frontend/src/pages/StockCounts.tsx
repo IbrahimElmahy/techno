@@ -37,6 +37,9 @@ interface Sheet {
   id: number; document_number: string;
   warehouse_id: number | null; warehouse_name: string | null;
   count_date: string; status: 'draft' | 'posted' | 'cancelled';
+  // (031) نوع الجرد. Rendered through `dataIndex` since the three types were added and never
+  // declared, so nothing typed could read it — including a column filter.
+  kind?: 'full' | 'cycle' | 'spot' | null;
   notes: string | null; created_at: string; posted_at: string | null;
   line_count: number; counted_count: number; lines?: Line[];
 }
@@ -312,10 +315,15 @@ export default function StockCounts() {
             { title: 'التاريخ', dataIndex: 'count_date', width: 110,
               ...numberColumn((r: Sheet) => Date.parse(r.count_date) || 0) },
             { title: 'رقم الكشف', dataIndex: 'document_number', width: 130,
+              ...textColumn(sheets, (r: Sheet) => r.document_number),
               render: (v: string) => <Tag color="cyan">{v}</Tag> },
             // On the list because a cycle count that looks like a failed full count is how people
             // stop trusting the numbers: «ليه ٢٠ صنف بس؟» has an answer, and it belongs here.
             { title: 'النوع', dataIndex: 'kind', width: 90,
+              ...choiceColumn<Sheet>(
+                [{ text: 'كلي', value: 'full' }, { text: 'دوري', value: 'cycle' },
+                 { text: 'عينة', value: 'spot' }],
+                (r, v) => (r.kind || 'full') === v),
               render: (k: string) => {
                 const t: Record<string, { c: string; n: string }> = {
                   full: { c: 'blue', n: 'كلي' },
@@ -332,6 +340,10 @@ export default function StockCounts() {
               ...numberColumn((r: Sheet) => r.line_count),
               render: (_: any, r: Sheet) => `${r.counted_count} / ${r.line_count} متعدود` },
             { title: 'الحالة', dataIndex: 'status', width: 120,
+              ...choiceColumn<Sheet>(
+                [{ text: 'مفتوح', value: 'draft' }, { text: 'مترحّل', value: 'posted' },
+                 { text: 'ملغي', value: 'cancelled' }],
+                (r, v) => r.status === v),
               render: (v: Sheet['status']) => (v === 'posted' ? <Tag color="green">مترحّل</Tag>
                 : v === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="blue">مفتوح</Tag>) },
           ]}
@@ -507,6 +519,7 @@ export default function StockCounts() {
                   render: (v: string) => qty(v) },
                 {
                   title: 'المعدود', width: 140,
+                  ...numberColumn<Line>((ln) => (isDraft ? entered[ln.id] : ln.counted_quantity)),
                   render: (_: any, ln: Line) => (isDraft ? (
                     <InputNumber
                       data-grid-col="qty" keyboard={false}
@@ -534,6 +547,7 @@ export default function StockCounts() {
                   // The number a manager acts on. Three missing screws and three missing pumps
                   // read identically in the quantity column beside this one.
                   title: 'قيمة الفرق', width: 130, align: 'left' as const,
+                  ...numberColumn<Line>((ln) => diffValue(ln)),
                   render: (_: any, ln: Line) => {
                     const v = diffValue(ln);
                     if (v === null || Math.abs(v) < 0.005) {

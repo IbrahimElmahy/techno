@@ -9,6 +9,7 @@ import { DocRef, useOpenDocument } from '../components/DocumentLink';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 import { useNavigate } from 'react-router-dom';
 
 /**
@@ -197,24 +198,37 @@ export default function StockAlerts() {
                 locale={{ emptyText: 'كل الأصناف داخل حدودها' }}
                 pagination={{ defaultPageSize: 20, showSizeChanger: true }}
                 columns={[
-                  { title: 'الكود', dataIndex: 'code', render: (c: string) => <Tag>{c}</Tag> },
-                  { title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
+                  { title: 'الكود', dataIndex: 'code', ...textColumn(reorder, (r: ReorderRow) => r.code),
+                    render: (c: string) => <Tag>{c}</Tag> },
+                  { title: 'الصنف', dataIndex: 'name', ...textColumn(reorder, (r: ReorderRow) => r.name),
+                    render: (n: string) => <b>{n}</b> },
                   { title: 'الرصيد الحالي', dataIndex: 'on_hand',
+                    ...numberColumn<ReorderRow>((r) => r.on_hand),
                     render: (v: string, r: ReorderRow) => (
                       <span style={{ fontWeight: 600,
                         color: r.flag === 'below_min' ? '#cf1322' : '#F5A11D' }}>
                         {qty(v)} {r.unit_of_measure || ''}
                       </span>
                     ) },
-                  { title: 'الحد الأدنى', dataIndex: 'min_stock', render: (v: string) => (v ? qty(v) : '-') },
-                  { title: 'الحد الأقصى', dataIndex: 'max_stock', render: (v: string) => (v ? qty(v) : '-') },
+                  { title: 'الحد الأدنى', dataIndex: 'min_stock',
+                    ...numberColumn<ReorderRow>((r) => r.min_stock),
+                    render: (v: string) => (v ? qty(v) : '-') },
+                  { title: 'الحد الأقصى', dataIndex: 'max_stock',
+                    ...numberColumn<ReorderRow>((r) => r.max_stock),
+                    render: (v: string) => (v ? qty(v) : '-') },
                   { title: 'المطلوب شراؤه', dataIndex: 'shortfall',
+                    ...numberColumn<ReorderRow>((r) => r.shortfall),
                     render: (v: string | null) => (v
                       ? <b style={{ color: '#cf1322' }}>{qty(v)}</b> : '-') },
                   { title: 'الزائد', dataIndex: 'excess',
+                    ...numberColumn<ReorderRow>((r) => r.excess),
                     render: (v: string | null) => (v
                       ? <b style={{ color: '#F5A11D' }}>{qty(v)}</b> : '-') },
                   { title: 'الحالة', dataIndex: 'flag',
+                    ...choiceColumn<ReorderRow>(
+                      [{ text: 'تحت الأدنى', value: 'below_min' },
+                       { text: 'فوق الأقصى', value: 'above_max' }],
+                      (r, v) => r.flag === v),
                     render: (f: string) => (f === 'below_min'
                       ? <Tag color="red">تحت الأدنى</Tag>
                       : <Tag color="orange">فوق الأقصى</Tag>) },
@@ -258,12 +272,17 @@ export default function StockAlerts() {
                 locale={{ emptyText: 'لا توجد تشغيلات تنتهي قبل هذا التاريخ' }}
                 pagination={{ defaultPageSize: 20, showSizeChanger: true }}
                 columns={[
-                  { title: 'الكود', dataIndex: 'code', render: (c: string) => <Tag>{c}</Tag> },
-                  { title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
+                  { title: 'الكود', dataIndex: 'code', ...textColumn(batches, (r: BatchRow) => r.code),
+                    render: (c: string) => <Tag>{c}</Tag> },
+                  { title: 'الصنف', dataIndex: 'name', ...textColumn(batches, (r: BatchRow) => r.name),
+                    render: (n: string) => <b>{n}</b> },
                   { title: 'المخزن', dataIndex: 'location_id',
+                    ...textColumn(batches, (r: BatchRow) => (r.location_kind === 'warehouse'
+                      ? warehouseName(r.location_id) : `عهدة #${r.location_id}`)),
                     render: (id: number, r: BatchRow) => (r.location_kind === 'warehouse'
                       ? warehouseName(id) : `عهدة #${id}`) },
                   { title: 'تاريخ الانتهاء', dataIndex: 'expiry_date',
+                    ...dateColumn<BatchRow>((r) => r.expiry_date),
                     render: (d: string) => {
                       const days = dayjs(d).diff(dayjs(), 'day');
                       const colour = days < 0 ? 'red' : days <= 7 ? 'volcano' : 'orange';
@@ -277,6 +296,7 @@ export default function StockAlerts() {
                       );
                     } },
                   { title: 'الكمية المتبقية', dataIndex: 'quantity',
+                    ...numberColumn<BatchRow>((r) => r.quantity),
                     render: (v: string) => <b style={{ color: '#6AB42D' }}>{qty(v)}</b> },
                 ]}
               />
@@ -313,24 +333,32 @@ export default function StockAlerts() {
                   showTotal: (t) => `الإجمالي: ${t}` }}
                 columns={[
                   { title: 'التاريخ', dataIndex: 'created_at', width: 150,
+                    ...dateColumn<BatchMove>((r) => r.created_at),
                     render: (v: string) => String(v).slice(0, 16) },
                   { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
+                    ...textColumn(moves, (r: BatchMove) => r.item_name),
                     render: (n: string | null, r: BatchMove) => n ?? `صنف #${r.item_id}` },
                   { title: 'تاريخ الانتهاء', dataIndex: 'expiry_date', width: 150,
+                    ...dateColumn<BatchMove>((r) => r.expiry_date),
                     render: (d: string, r: BatchMove) => (
                       <a onClick={() => setTracedLot({ item_id: r.item_id, expiry: d })}>
                         <Tag color={dayjs(d).isBefore(dayjs()) ? 'red' : 'orange'}>{d}</Tag>
                       </a>
                     ) },
                   { title: 'الحركة', dataIndex: 'kind', width: 130,
+                    ...textColumn(moves, (r: BatchMove) => (MOVE_KIND[r.kind]?.text ?? r.kind)),
                     render: (k: BatchMove['kind']) => (
                       <Tag color={MOVE_KIND[k].color}>{MOVE_KIND[k].text}</Tag>
                     ) },
                   { title: 'المخزن', dataIndex: 'location_name', width: 170,
+                    ...textColumn(moves, (r: BatchMove) => r.location_name),
                     render: (v: string | null) => v ?? '-' },
                   { title: 'الكمية', dataIndex: 'quantity', width: 100, align: 'left' as const,
+                    ...numberColumn<BatchMove>((r) => r.quantity),
                     render: (v: string) => <b>{qty(v)}</b> },
                   { title: 'المستند', key: 'doc', width: 185,
+                    ...textColumn(moves, (r: BatchMove) => (r.document_type
+                      ? (MOVE_DOC[r.document_type] ?? r.document_type) : '')),
                     render: (_: any, r: BatchMove) => {
                       if (!r.document_type) return '-';
                       const label = `${MOVE_DOC[r.document_type] ?? r.document_type}`

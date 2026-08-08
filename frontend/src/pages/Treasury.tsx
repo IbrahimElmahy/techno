@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 
 interface LedgerLine {
   id: number;
@@ -206,22 +207,26 @@ export default function Treasury() {
       title: 'كود القيد',
       dataIndex: 'id',
       key: 'id',
+      ...numberColumn<LedgerEntry>((e) => e.id),
       render: (id: number) => <Tag color="blue">#{id}</Tag>,
     },
     {
       title: 'نوع القيد',
       dataIndex: 'entry_type',
       key: 'entry_type',
+      ...textColumn(entries, (e: LedgerEntry) => e.entry_type),
     },
     {
       title: 'البيان (الوصف)',
       dataIndex: 'description',
       key: 'description',
+      ...textColumn(entries, (e: LedgerEntry) => e.description),
     },
     {
       title: 'الفرع المسؤول',
       dataIndex: 'branch_id',
       key: 'branch_id',
+      ...textColumn(entries, (e: LedgerEntry) => branchName(e.branch_id)),
       render: (branchId: number | null) => {
         if (!branchId) return 'عام (إداري)';
         const branch = branches.find((b) => b.id === branchId);
@@ -232,6 +237,10 @@ export default function Treasury() {
       title: 'الحركات المالية والتسويات المزدوجة',
       dataIndex: 'lines',
       key: 'lines',
+      // Filtered by the TOTAL the entry moved. «القيود اللي فوق العشرة آلاف» is the question asked
+      // of a treasury log, and the lines cell is where that number lives.
+      ...numberColumn<LedgerEntry>(
+        (e) => (e.lines || []).reduce((t, l) => t + Number(l.amount || 0), 0)),
       render: (lines: LedgerLine[]) => (
         <div style={{ padding: '4px 0' }}>
           {lines.map((line) => {
@@ -254,6 +263,10 @@ export default function Treasury() {
       title: 'معكوس للقيد',
       dataIndex: 'reverses_entry_id',
       key: 'reverses_entry_id',
+      // «وريني القيود العكسية بس» — الفلتر ده هو الطريقة الوحيدة توصل لها من غير ما تقرا السطور.
+      ...choiceColumn<LedgerEntry>(
+        [{ text: 'قيد عكسي', value: 'yes' }, { text: 'قيد أصلي', value: 'no' }],
+        (e, v) => (v === 'yes' ? e.reverses_entry_id !== null : e.reverses_entry_id === null)),
       render: (rev: number | null) => (rev ? <Tag color="red">عكس لقيد #{rev}</Tag> : '-'),
     },
     {

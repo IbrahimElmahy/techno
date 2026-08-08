@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn } from '../components/gridColumns';
 
 /**
  * تقارير مندوبين — three of their four report screens; the fourth (عمولة تحصيلات مندوبين) already
@@ -155,10 +156,14 @@ export default function RepReports() {
                   locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
                   pagination={false}
                   columns={[
-                    { title: 'المندوب', dataIndex: 'rep_name', render: (v: string) => <b>{v}</b> },
-                    { title: 'عدد السندات', dataIndex: 'receipts', width: 140 },
+                    { title: 'المندوب', dataIndex: 'rep_name',
+                      ...textColumn(collections, (r: CollectionRow) => r.rep_name),
+                      render: (v: string) => <b>{v}</b> },
+                    { title: 'عدد السندات', dataIndex: 'receipts', width: 140,
+                      ...numberColumn<CollectionRow>((r) => r.receipts) },
                     { title: 'المُحصّل', dataIndex: 'collected', width: 180,
                       align: 'left' as const,
+                      ...numberColumn<CollectionRow>((r) => r.collected),
                       render: (v: string) => (
                         <b style={{ color: '#6AB42D' }}>{money(v)} ج.م</b>
                       ) },
@@ -190,16 +195,20 @@ export default function RepReports() {
                     showTotal: (t) => `الإجمالي: ${t}` }}
                   columns={[
                     { title: 'المندوب', dataIndex: 'rep_name', width: 200,
+                      ...textColumn(byCustomer, (r: ByCustomerRow) => r.rep_name),
                       render: (v: string) => <b>{v}</b> },
                     { title: 'العميل', dataIndex: 'customer_name',
+                      ...textColumn(byCustomer, (r: ByCustomerRow) => r.customer_name),
                       // Money with no customer on it is still money the rep collected; dropping the
                       // row would make this screen's total disagree with the one beside it.
                       render: (v: string | null, r: ByCustomerRow) => (v && r.customer_id
                         ? <a onClick={() => navigate(`/customers/${r.customer_id}`)}>{v}</a>
                         : <Tag>بدون عميل</Tag>) },
-                    { title: 'عدد السندات', dataIndex: 'receipts', width: 130 },
+                    { title: 'عدد السندات', dataIndex: 'receipts', width: 130,
+                      ...numberColumn<ByCustomerRow>((r) => r.receipts) },
                     { title: 'المُحصّل', dataIndex: 'collected', width: 165,
                       align: 'left' as const,
+                      ...numberColumn<ByCustomerRow>((r) => r.collected),
                       render: (v: string) => <b>{money(v)} ج.م</b> },
                   ]}
                 />
@@ -229,16 +238,20 @@ export default function RepReports() {
                     showTotal: (t) => `الإجمالي: ${t}` }}
                   columns={[
                     { title: 'المندوب', dataIndex: 'rep_name', width: 200,
+                      ...textColumn(items, (r: RepItemRow) => r.rep_name),
                       render: (v: string) => <b>{v}</b> },
                     { title: 'الصنف', dataIndex: 'item_name',
+                      ...textColumn(items, (r: RepItemRow) => r.item_name),
                       render: (v: string, r: RepItemRow) => (
                         <a onClick={() => navigate(`/catalog/${r.item_id}`)}>{v}</a>
                       ) },
                     { title: 'الكمية', dataIndex: 'quantity', width: 120,
+                      ...numberColumn<RepItemRow>((r) => r.quantity),
                       render: (v: string) => qty(v) },
                     // Net of the document's discount, so these add up to the invoices rather than
                     // showing a rep selling more than the customer was billed.
                     { title: 'الصافي', dataIndex: 'net', width: 165, align: 'left' as const,
+                      ...numberColumn<RepItemRow>((r) => r.net),
                       render: (v: string) => <b>{money(v)} ج.م</b> },
                   ]}
                 />

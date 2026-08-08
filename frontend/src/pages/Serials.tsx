@@ -8,6 +8,7 @@ import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 
 /**
  * السرايل و حركات سرايل — two of their screens, one component.
@@ -91,6 +92,7 @@ export default function Serials() {
   const serialColumns = [
     {
       title: 'السيريال', dataIndex: 'serial', key: 'serial', width: 190,
+      ...textColumn(serials, (r: SerialRow) => r.serial),
       render: (v: string) => (
         <Tooltip title="عرض حركة السيريال ده">
           <a onClick={() => { setTab('movements'); setTraced(v); }}>
@@ -101,17 +103,22 @@ export default function Serials() {
     },
     {
       title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ellipsis: true,
+      ...textColumn(serials, (r: SerialRow) => r.item_name),
       render: (v: string | null, r: SerialRow) => (
         <a onClick={() => navigate(`/catalog/${r.item_id}`)}>{v ?? `صنف #${r.item_id}`}</a>
       ),
     },
     {
       title: 'الحالة', dataIndex: 'status', key: 'status', width: 110,
+      ...choiceColumn<SerialRow>(
+        [{ text: 'في المخزن', value: 'in_stock' }, { text: 'مباع', value: 'sold' }],
+        (r, v) => r.status === v),
       render: (v: SerialRow['status']) => (v === 'in_stock'
         ? <Tag color="green">في المخزن</Tag> : <Tag color="volcano">مباع</Tag>),
     },
     {
       title: 'المكان', dataIndex: 'location_name', key: 'location_name', width: 180,
+      ...textColumn(serials, (r: SerialRow) => r.location_name),
       // A sold unit is not anywhere. Showing its last store would put units a customer has
       // walked out with back into that store's list.
       render: (v: string | null, r: SerialRow) => (v ?? (r.status === 'sold'
@@ -119,6 +126,7 @@ export default function Serials() {
     },
     {
       title: 'الفاتورة', dataIndex: 'sold_invoice_id', key: 'sold_invoice_id', width: 120,
+      ...numberColumn<SerialRow>((r) => r.sold_invoice_id),
       // Was a link to the invoice LIST, which is the same as no link: the reader still had to find
       // the row. It opens the actual sale now.
       render: (v: number | null) => (v
@@ -147,18 +155,22 @@ export default function Serials() {
   const movementColumns = [
     {
       title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', width: 155,
+      ...dateColumn<MovementRow>((r) => r.created_at),
       render: (v: string) => String(v).slice(0, 16),
     },
     {
       title: 'السيريال', dataIndex: 'serial', key: 'serial', width: 175,
+      ...textColumn(movements, (r: MovementRow) => r.serial),
       render: (v: string) => <a onClick={() => setTraced(v)}>{v}</a>,
     },
     {
       title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ellipsis: true,
+      ...textColumn(movements, (r: MovementRow) => r.item_name),
       render: (v: string | null, r: MovementRow) => v ?? `صنف #${r.item_id}`,
     },
     {
       title: 'الحركة', dataIndex: 'kind', key: 'kind', width: 105,
+      ...textColumn(movements, (r: MovementRow) => KIND_LABEL[r.kind]?.text ?? r.kind),
       render: (v: MovementRow['kind']) => (
         <Tag color={KIND_LABEL[v].color}>{KIND_LABEL[v].text}</Tag>
       ),
@@ -167,17 +179,21 @@ export default function Serials() {
       // Their column, and the better one for the question actually asked: «who has this unit?»
       // Only a sale gives a unit a customer; every other movement is internal.
       title: 'العميل', dataIndex: 'customer_name', key: 'customer_name', width: 175,
+      ...textColumn(movements, (r: MovementRow) => r.customer_name),
       render: (v: string | null, r: MovementRow) => (v && r.customer_id
         ? <a onClick={() => navigate(`/customers/${r.customer_id}`)}>{v}</a>
         : <span style={{ color: '#bbb' }}>-</span>),
     },
     {
       title: 'المكان بعدها', dataIndex: 'location_name', key: 'location_name', width: 175,
+      ...textColumn(movements, (r: MovementRow) => r.location_name),
       render: (v: string | null, r: MovementRow) => (v ?? (r.kind === 'sold'
         ? <span style={{ color: '#bbb' }}>خرج</span> : '-')),
     },
     {
       title: 'المستند', key: 'document', width: 180,
+      ...textColumn(movements, (r: MovementRow) => (r.document_type
+        ? (DOC_LABEL[r.document_type] ?? r.document_type) : '')),
       render: (_: any, r: MovementRow) => {
         if (!r.document_type) return '-';
         const label = `${DOC_LABEL[r.document_type] ?? r.document_type}`

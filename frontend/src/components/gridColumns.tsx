@@ -1,5 +1,6 @@
 import React from 'react';
-import { Button, InputNumber, Space } from 'antd';
+import { Button, DatePicker, InputNumber, Space } from 'antd';
+import dayjs from 'dayjs';
 import { normalizeAr } from './ListToolbar';
 
 /**
@@ -82,6 +83,58 @@ export function numberColumn<T>(get: (row: T) => any) {
       // A bound left empty is «no bound», not zero — «إلى ١٠٠» must not silently become «من ٠».
       if (min !== null && min !== undefined && n < min) return false;
       if (max !== null && max !== undefined && n > max) return false;
+      return true;
+    },
+  };
+}
+
+/**
+ * A date column: sorted, and filterable by a period.
+ *
+ * A date is not a number and not a name. Offering its distinct values as a checklist gives one
+ * entry per day — useless past a week of data — and a min/max number box asks somebody to type a
+ * timestamp. What is actually wanted is «من ١ لـ ١٥», so that is what it asks for.
+ *
+ * Values are compared as `YYYY-MM-DD` strings rather than as parsed dates. Every date on these
+ * screens arrives as ISO text, string comparison on that format sorts and ranges correctly, and it
+ * cannot drift by a timezone the way `new Date(...)` does on a bare date.
+ */
+export function dateColumn<T>(get: (row: T) => any) {
+  const day = (row: T): string => String(get(row) ?? '').slice(0, 10);
+  return {
+    sorter: (a: T, b: T) => day(a).localeCompare(day(b)),
+    filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }: any) => {
+      const [from, to] = (selectedKeys[0] as (string | null)[] | undefined) ?? [null, null];
+      const set = (next: (string | null)[]) =>
+        setSelectedKeys(!next[0] && !next[1] ? [] : [next]);
+      return (
+        <div style={{ padding: 10 }} onKeyDown={(e) => e.stopPropagation()}>
+          <Space direction="vertical" size={8}>
+            <DatePicker.RangePicker
+              allowEmpty={[true, true]} style={{ width: 250 }}
+              placeholder={['من', 'إلى']}
+              value={[from ? dayjs(from) : null, to ? dayjs(to) : null] as any}
+              onChange={(v: any) => set([
+                v?.[0] ? v[0].format('YYYY-MM-DD') : null,
+                v?.[1] ? v[1].format('YYYY-MM-DD') : null,
+              ])}
+            />
+            <Space>
+              <Button type="primary" size="small" onClick={() => confirm()}>تصفية</Button>
+              <Button size="small" onClick={() => { clearFilters?.(); confirm(); }}>مسح</Button>
+            </Space>
+          </Space>
+        </div>
+      );
+    },
+    onFilter: (value: any, row: T) => {
+      const [from, to] = (value as (string | null)[]) ?? [null, null];
+      const d = day(row);
+      // A row with no date is excluded once a period is asked for: «إيه اللي حصل في يناير» is not
+      // answered by a row that never said when it happened.
+      if (!d) return false;
+      if (from && d < from) return false;
+      if (to && d > to) return false;
       return true;
     },
   };

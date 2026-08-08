@@ -4,6 +4,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
+import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentAuditModal from '../components/DocumentAuditModal';
 
 interface AuditLog {
@@ -74,6 +75,7 @@ export default function Audit() {
       title: 'التاريخ والوقت',
       dataIndex: 'created_at',
       key: 'created_at',
+      ...dateColumn<AuditLog>((r) => r.created_at),
       render: (dateStr: string) => new Date(dateStr).toLocaleString('ar-EG'),
       width: '20%',
     },
@@ -81,6 +83,7 @@ export default function Audit() {
       title: 'العملية المسجلة',
       dataIndex: 'action',
       key: 'action',
+      ...textColumn(logs, (r: AuditLog) => r.action),
       render: (action: string) => {
         let color = 'blue';
         if (action.includes('fail') || action.includes('delete') || action.includes('deactivate')) {
@@ -96,6 +99,7 @@ export default function Audit() {
       title: 'المنفذ',
       dataIndex: 'actor_user_id',
       key: 'actor_user_id',
+      ...textColumn(logs, (r: AuditLog) => getActorName(r.actor_user_id)),
       render: (userId: number | null) => getActorName(userId),
       width: '25%',
     },
@@ -103,6 +107,7 @@ export default function Audit() {
       title: 'نوع الكيان',
       dataIndex: 'entity_type',
       key: 'entity_type',
+      ...textColumn(logs, (r: AuditLog) => r.entity_type),
       render: (type: string | null) => type || '-',
       width: '20%',
     },
@@ -110,6 +115,7 @@ export default function Audit() {
       title: 'رقم الكيان',
       dataIndex: 'entity_id',
       key: 'entity_id',
+      ...numberColumn<AuditLog>((r) => r.entity_id),
       render: (id: number | null) => (id ? <Tag>#{id}</Tag> : '-'),
       width: '15%',
     },
