@@ -14,6 +14,7 @@ import CustomerEditModal from '../components/CustomerEditModal';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
+import { useOpenDocument } from '../components/DocumentLink';
 
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
@@ -184,6 +185,8 @@ export default function CustomerProfile() {
 
   // Any row in any tab opens the same popup; the server returns a render-ready shape
   // (fields + optional line table) so one component covers every document kind.
+  const openDoc = useOpenDocument();
+
   const openRecord = async (kind: string, id: number) => {
     setRecordRef({ kind, id });
     setRecordLoading(true);
@@ -198,9 +201,26 @@ export default function CustomerProfile() {
     }
   };
 
-  // Clicking a row anywhere in the file opens that record.
+  /**
+   * الضغط على سطر في كشف الحساب يفتح المستند نفسه للتعديل.
+   *
+   * It used to open a read-only sheet built from `/records/{kind}/{id}`. Somebody clicking an
+   * invoice on a customer's statement is not asking to look at it — they are asking to work on
+   * it, and the view was a stop everybody passed through on the way somewhere else. The same
+   * complaint retired «عرض المستند» on the invoices register; this is the other place it lived.
+   *
+   * The statement has carried `doc_kind` and `doc_id` all along — the endpoint attaches them —
+   * and this screen was throwing them away.
+   *
+   * A line with no document behind it (a manual journal entry, an opening balance) still opens
+   * the sheet: there is nowhere else for it to go, and that is a real answer rather than a dead
+   * click.
+   */
   const rowProps = (kind: string) => (r: any) => ({
-    onClick: () => openRecord(kind, kind === 'entry' ? r.entry_id : r.id),
+    onClick: () => {
+      if (kind === 'entry' && r.doc_kind && r.doc_id) { openDoc(r.doc_kind, r.doc_id); return; }
+      openRecord(kind, kind === 'entry' ? r.entry_id : r.id);
+    },
     style: { cursor: 'pointer' },
   });
 

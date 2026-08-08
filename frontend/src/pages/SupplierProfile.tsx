@@ -13,6 +13,7 @@ import SupplierEditModal from '../components/SupplierEditModal';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
+import { useOpenDocument } from '../components/DocumentLink';
 
 /**
  * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
@@ -162,8 +163,22 @@ export default function SupplierProfile() {
     }
   };
 
+  /**
+   * الضغط على سطر في كشف الحساب يفتح المستند نفسه.
+   *
+   * Same change as the customer's file, for the same reason: the row opened a read-only sheet, and
+   * somebody clicking a purchase on a supplier's statement is asking to work on it. The statement
+   * has carried `doc_kind` and `doc_id` all along and this screen threw them away.
+   *
+   * A line with no document behind it still opens the sheet — there is nowhere else for it to go.
+   */
+  const openDoc = useOpenDocument();
+
   const rowProps = (kind: string) => (r: any) => ({
-    onClick: () => openRecord(kind, kind === 'entry' ? r.entry_id : r.id),
+    onClick: () => {
+      if (kind === 'entry' && r.doc_kind && r.doc_id) { openDoc(r.doc_kind, r.doc_id); return; }
+      openRecord(kind, kind === 'entry' ? r.entry_id : r.id);
+    },
     style: { cursor: 'pointer' },
   });
 

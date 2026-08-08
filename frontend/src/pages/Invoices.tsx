@@ -2061,9 +2061,21 @@ export default function Invoices() {
           rowKey="id"
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-          // The whole row opens the invoice details.
+          /**
+           * السطر يفتح الفاتورة للتعديل على طول.
+           *
+           * It opened the read-only sheet, which was the last place «عرض المستند» still lived
+           * after the button of that name was retired: clicking an invoice means «وريني الفاتورة
+           * دي عشان أشتغل عليها», and the view was a stop everybody passed through on the way.
+           *
+           * Editing a posted invoice reverses it, so the edit path asks for confirmation when it
+           * gets there — the guard is at the act, not in front of the click.
+           *
+           * Somebody without the edit permission still gets the sheet. It is what they are allowed
+           * to have, and a row that does nothing for them would read as broken.
+           */
           onRow={(record) => ({
-            onClick: () => openDetail(record),
+            onClick: () => (canEditInvoice ? handleEditInvoice(record) : openDetail(record)),
             style: { cursor: 'pointer' },
           })}
         />
