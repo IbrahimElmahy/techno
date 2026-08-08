@@ -204,5 +204,9 @@ def test_the_merge_does_not_scale_its_queries_with_the_pairs(client, inv_world, 
         event.remove(engine, "before_cursor_execute", count)
 
     assert len(result["pairs"]) >= 12, "لازم يكون فعلاً دمج عدد كبير"
-    # Well under one per pair. The old shape would have been north of 25 for twelve.
+    # Well under one per pair, reads AND writes. Setting the fields one at a time left the flush
+    # with about three UPDATEs per pair — 260 for the client's 86 — which is what was still timing
+    # out after the reads were fixed.
     assert len(seen) <= 8, f"عدد الاستعلامات بيزيد مع الأزواج: {len(seen)} لـ {len(result['pairs'])} زوج"
+    writes = [q for q in seen if q.strip().upper().startswith("UPDATE")]
+    assert len(writes) <= 3, f"الكتابة لسه بتتقسّم لأوامر كتير: {len(writes)}"

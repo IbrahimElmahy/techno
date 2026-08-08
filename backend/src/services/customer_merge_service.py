@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from src.models.customer import Customer, CustomerAccount
@@ -155,6 +155,18 @@ def apply(db: Session, *, dry_run: bool = True) -> dict:
     customers = {c.id: c for c in db.scalars(
         select(Customer).where(Customer.id.in_(wanted)))} if wanted else {}
 
+    # The changes are COLLECTED, then written in three statements.
+    #
+    # Setting them one attribute at a time leaves the flush with roughly three UPDATEs per pair —
+    # 260 for the client's 86 duplicates — and each is a round trip. That is what was still timing
+    # out after the reads were fixed: the plan came back in a moment and the apply died at 503.
+    #
+    # `execute(update(Model), [rows])` sends one statement with many parameter sets, so the count
+    # stops depending on how many customers are being merged. The decisions below are exactly the
+    # ones the loop made; only the moment of writing moved.
+    account_changes: list[dict] = []
+    customer_changes: list[dict] = []
+
     for pair in p.pairs:
         keep = customers.get(pair.keep_customer_id)
         dupe = customers.get(pair.merge_customer_id)
@@ -166,26 +178,36 @@ def apply(db: Session, *, dry_run: bool = True) -> dict:
         # across as بولي, carrying its whole ledger history with it untouched.
         for acc in accounts_by_customer.get(keep.id, []):
             if acc.family is None:
-                acc.family = FAMILY_WHITE
+                account_changes.append({"id": acc.id, "customer_id": keep.id,
+                                        "family": FAMILY_WHITE})
         for acc in accounts_by_customer.get(dupe.id, []):
-            acc.customer_id = keep.id
-            acc.family = FAMILY_POLY
+            account_changes.append({"id": acc.id, "customer_id": keep.id,
+                                    "family": FAMILY_POLY})
 
         # Deactivated, never deleted: documents already name this row, and a deleted customer turns
         # every one of them into an id nobody can resolve.
-        dupe.active = False
-        dupe.name = f"{dupe.name} (مدموج في #{keep.id})"
+        customer_changes.append({"id": dupe.id, "active": False,
+                                 "name": f"{dupe.name} (مدموج في #{keep.id})"})
 
     for cid, name in p.techno_only:
         c = customers.get(cid)
         if c is None:
             continue
-        c.name = _normalise(name[len(TECHNO_PREFIX):])
+        customer_changes.append({"id": c.id, "active": c.active,
+                                 "name": _normalise(name[len(TECHNO_PREFIX):])})
         for acc in accounts_by_customer.get(c.id, []):
             if acc.family is None:
-                acc.family = FAMILY_POLY
+                account_changes.append({"id": acc.id, "customer_id": c.id,
+                                        "family": FAMILY_POLY})
 
-    db.flush()
+    if account_changes:
+        db.execute(update(CustomerAccount), account_changes)
+    if customer_changes:
+        db.execute(update(Customer), customer_changes)
+
+    # The session still holds the pre-update rows; a caller reading a balance straight afterwards
+    # must see what the database now has, not what it had when this started.
+    db.expire_all()
     result = p.as_dict()
     result["applied"] = True
     return result
