@@ -32,7 +32,7 @@ import {
   PlusOutlined,
 } from '@ant-design/icons';
 import PartyField from '../components/PartyField';
-import { ENTRY_TYPE_LABEL } from '../components/labels';
+import { entryTypeLabel } from '../components/labels';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
@@ -167,7 +167,8 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
             columns={[
               { title: 'التاريخ', dataIndex: 'entry_date',
                 render: (d: string) => String(d).slice(0, 10) },
-              { title: 'النوع', dataIndex: 'entry_type', render: (t: string) => <Tag>{t}</Tag> },
+              { title: 'النوع', dataIndex: 'entry_type',
+                render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
               { title: 'البيان', dataIndex: 'description' },
               { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left' as const,
                 render: (v: string) => <span style={{ color: '#8a8a8a' }}>{fmt(v)}</span> },
@@ -475,7 +476,7 @@ const Vouchers: React.FC = () => {
     const rows = statement.lines
       .map(
         (l) =>
-          `<tr><td>${l.entry_date}</td><td>${ENTRY_TYPE_LABEL[l.entry_type] || l.entry_type}</td><td>${l.description || ''}</td><td>${money(l.debit)}</td><td>${money(l.credit)}</td><td>${money(l.balance)}</td></tr>`
+          `<tr><td>${l.entry_date}</td><td>${entryTypeLabel(l.entry_type)}</td><td>${l.description || ''}</td><td>${money(l.debit)}</td><td>${money(l.credit)}</td><td>${money(l.balance)}</td></tr>`
       )
       .join('');
     printDocument(
@@ -1041,7 +1042,7 @@ const Vouchers: React.FC = () => {
                           title: 'النوع',
                           dataIndex: 'entry_type',
                           width: 120,
-                          render: (v: string) => ENTRY_TYPE_LABEL[v] || v,
+                          render: (v: string) => entryTypeLabel(v),
                         },
                         { title: 'البيان', dataIndex: 'description' },
                         {

@@ -62,10 +62,41 @@ describe('أسماء أنواع القيود', () => {
   it('has no screen keeping a private copy of the map', () => {
     // The duplication was the cause, not the symptom: two maps meant one movement read as «سند
     // قبض» on one screen and `receipt` on the other.
+    //
+    // Deliberately narrow. Widening it to «any map with an entry-type key» was tried and produced
+    // only false alarms: a colour map in دفتر الأستاذ, a routing map and a REPORT-name map in
+    // تقارير المبيعات («فواتير البيع» plural is the name of a report, not of one entry), and a
+    // field in an interface. A check that cries wolf about four honest maps is a check people
+    // start deleting. The rendering check below is the one that catches the real fault.
     const pages = join(__dirname, '..', 'pages');
     const offenders = readdirSync(pages)
       .filter((f) => f.endsWith('.tsx'))
-      .filter((f) => /ENTRY_TYPE_LABEL\s*:\s*Record/.test(readFileSync(join(pages, f), 'utf8')));
+      .filter((f) => /(?:ENTRY_)?TYPE_LABEL\s*(?::\s*Record<string,\s*string>)?\s*=\s*\{[^}]*'[؀-ۿ]/
+        .test(readFileSync(join(pages, f), 'utf8')));
     expect(offenders, 'شاشة عاملة نسخة خاصة من خريطة الأسماء').toEqual([]);
+  });
+
+  it('every screen that shows a type routes it through the map', () => {
+    /*
+     * The one this suite missed, and the reason it is here.
+     *
+     * The map was complete and no screen had a copy of it — and كشف حساب العميل still printed
+     * `opening_balance` in front of the customer, because its column simply rendered the raw
+     * `dataIndex` and never called the map at all. A translation nothing invokes is not a
+     * translation.
+     *
+     * There were four: the customer's file, the supplier's file, حركة الخزينة, and دفتر الأستاذ.
+     */
+    const pages = join(__dirname, '..', 'pages');
+    const raw: string[] = [];
+    readdirSync(pages).filter((f) => f.endsWith('.tsx')).forEach((f) => {
+      const src = readFileSync(join(pages, f), 'utf8');
+      // Keyed on `entry_type` itself, not on a heading that says «النوع». Half the screens have a
+      // «النوع» filter about something else entirely — an order is بيع or شراء, a cheque is وارد
+      // or صادر — and both were already Arabic. Flagging those would have buried the real four.
+      const shows = /dataIndex: 'entry_type'|key: 'entry_type'/.test(src);
+      if (shows && !src.includes('entryTypeLabel')) raw.push(f);
+    });
+    expect(raw, 'شاشة بتعرض نوع القيد خام من غير ما تترجمه').toEqual([]);
   });
 });

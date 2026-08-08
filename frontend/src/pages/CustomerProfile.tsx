@@ -13,6 +13,7 @@ import VoucherDocument, { voucherFooter } from '../components/VoucherDocument';
 import CustomerEditModal from '../components/CustomerEditModal';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink from '../components/DocumentLink';
+import { entryTypeLabel } from '../components/labels';
 
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
@@ -396,9 +397,11 @@ export default function CustomerProfile() {
                             total={statement.lines.length} shown={stmtFilter.filtered.length}
                             filters={[
                               { key: 'entry_type', placeholder: 'النوع',
+                                // The choices are named too. A column that reads «فاتورة بيع»
+                                // over a filter offering `sale` is the same bug half-fixed.
                                 options: Array.from(new Set(
                                   (statement.lines || []).map((l: any) => l.entry_type).filter(Boolean),
-                                )).map((v: any) => ({ value: v, label: String(v) })) },
+                                )).map((v: any) => ({ value: v, label: entryTypeLabel(String(v)) })) },
                             ]}
                           />
                           <Table
@@ -410,7 +413,8 @@ export default function CustomerProfile() {
                             columns={[
                               { title: 'التاريخ', dataIndex: 'entry_date', key: 'd',
                                 render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
-                              { title: 'النوع', dataIndex: 'entry_type', key: 't' },
+                              { title: 'النوع', dataIndex: 'entry_type', key: 't',
+                                render: (t: string) => entryTypeLabel(t) },
                               { title: 'البيان', dataIndex: 'description', key: 'desc' },
                               { title: 'الرصيد قبل', dataIndex: 'balance_before', key: 'bb',
                                 render: (v: string) => (

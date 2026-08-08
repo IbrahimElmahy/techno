@@ -17,6 +17,7 @@ import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
+import { entryTypeLabel } from '../components/labels';
 
 // --- Types --------------------------------------------------------------------------------
 interface Account {
@@ -381,18 +382,24 @@ function JournalTab() {
     });
   };
 
-  const TYPE_LABEL: Record<string, { t: string; c: string }> = {
-    journal: { t: 'قيد يومية', c: 'blue' },
-    opening_balance: { t: 'رصيد افتتاحي', c: 'gold' },
-    reversal: { t: 'عكس', c: 'red' },
+  /**
+   * اللون بس اللي محلي. الاسم بييجي من الخريطة المشتركة.
+   *
+   * This used to carry its own three names, which meant the same entry read one way here and
+   * another on كشف الحساب, and the sixteen types it did not list showed through in English. A
+   * colour is a decision about this screen; a name is a fact about the system.
+   */
+  const TYPE_COLOR: Record<string, string> = {
+    journal: 'blue', opening_balance: 'gold', reversal: 'red',
   };
+  const TYPE_LABEL = (t: string) => ({ t: entryTypeLabel(t), c: TYPE_COLOR[t] || 'default' });
 
   const branchName = (id: number | null) =>
     id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام';
 
   const filter = useListFilter(entries, {
     search: (e) => [
-      e.id, e.description, TYPE_LABEL[e.entry_type]?.t ?? e.entry_type, e.entry_type,
+      e.id, e.description, entryTypeLabel(e.entry_type), e.entry_type,
       branchName(e.branch_id), ...e.lines.map((l) => acctLabel(l.account_id)),
       ...e.lines.map((l) => l.statement),
     ],
@@ -409,8 +416,8 @@ function JournalTab() {
     { title: 'التاريخ', dataIndex: 'date', key: 'date', width: 120,
       ...dateColumn<JournalEntry>((e: any) => e.date), render: (d: string) => d || '-' },
     { title: 'النوع', dataIndex: 'entry_type', key: 'entry_type', width: 120,
-      ...textColumn(entries, (e: JournalEntry) => (TYPE_LABEL[e.entry_type]?.t ?? e.entry_type)),
-      render: (t: string) => { const m = TYPE_LABEL[t] || { t, c: 'default' }; return <Tag color={m.c}>{m.t}</Tag>; } },
+      ...textColumn(entries, (e: JournalEntry) => (entryTypeLabel(e.entry_type))),
+      render: (t: string) => { const m = TYPE_LABEL(t); return <Tag color={m.c}>{m.t}</Tag>; } },
     { title: 'البيان', dataIndex: 'description', key: 'description',
       ...textColumn(entries, (e: JournalEntry) => e.description) },
     { title: 'الحركات', dataIndex: 'lines', key: 'lines',

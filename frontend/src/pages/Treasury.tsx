@@ -9,6 +9,7 @@ import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
+import { entryTypeLabel } from '../components/labels';
 
 interface LedgerLine {
   id: number;
@@ -54,7 +55,8 @@ export default function Treasury() {
     id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام (إداري)';
 
   const filter = useListFilter(entries, {
-    search: (e) => [e.id, e.entry_type, e.description, branchName(e.branch_id)],
+    search: (e) => [e.id, entryTypeLabel(e.entry_type), e.description,
+      branchName(e.branch_id)],
     filters: {
       entry_type: (e, v) => e.entry_type === v,
       branch_id: (e, v) => (v === 0 ? e.branch_id === null : e.branch_id === v),
@@ -214,7 +216,8 @@ export default function Treasury() {
       title: 'نوع القيد',
       dataIndex: 'entry_type',
       key: 'entry_type',
-      ...textColumn(entries, (e: LedgerEntry) => e.entry_type),
+      ...textColumn(entries, (e: LedgerEntry) => entryTypeLabel(e.entry_type)),
+      render: (t: string) => entryTypeLabel(t),
     },
     {
       title: 'البيان (الوصف)',
