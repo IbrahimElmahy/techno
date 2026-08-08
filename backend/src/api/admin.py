@@ -121,6 +121,7 @@ def integrity_check(
 @router.post("/merge-customers")
 def merge_customers(
     apply: bool = False,
+    limit: int | None = None,
     _: CurrentUser = Depends(_require_admin),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -136,6 +137,11 @@ def merge_customers(
 
     **`apply` defaults to false.** The dangerous call is the one you have to ask for. Without it
     this reports exactly what a merge would do and writes nothing.
+
+    **`limit` merges that many at a time and reports `remaining`.** Doing all 86 in one request kept
+    returning 503 from a platform that caps request duration; in batches the cap stops mattering.
+    A merge is per-customer and independent, so a batch that stops early leaves the rest exactly
+    where they were rather than half-done.
 
     **And it will not leave the books different from how it found them.** A merge moves a POINTER —
     the duplicate's ledger account becomes the بولي account of the surviving customer, carrying its
@@ -161,7 +167,7 @@ def merge_customers(
             db, db.scalars(select(CustomerAccount.account_id)).all())
 
     before = total_receivable()
-    result = customer_merge_service.apply(db, dry_run=not apply)
+    result = customer_merge_service.apply(db, dry_run=not apply, limit=limit)
     result["balance_before"] = str(before)
 
     if not apply:

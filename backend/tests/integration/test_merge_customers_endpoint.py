@@ -210,3 +210,44 @@ def test_the_merge_does_not_scale_its_queries_with_the_pairs(client, inv_world, 
     assert len(seen) <= 8, f"عدد الاستعلامات بيزيد مع الأزواج: {len(seen)} لـ {len(result['pairs'])} زوج"
     writes = [q for q in seen if q.strip().upper().startswith("UPDATE")]
     assert len(writes) <= 3, f"الكتابة لسه بتتقسّم لأوامر كتير: {len(writes)}"
+
+
+def test_it_can_merge_in_batches_until_nothing_is_left(client, inv_world, login, db):
+    """الدمج على دفعات — عشان الطلب ما يموتش في النص.
+
+    Doing all of them in one request kept returning 503: the platform caps how long a request may
+    run, and that cap is not something this code can see or should have to guess at. In batches it
+    stops mattering.
+
+    Batching is only safe because a merge is per-customer and independent — «twenty done, sixty
+    left» is not a half-finished state, it is sixty people not yet merged. This walks the whole set
+    the way the screen does and checks the two things that make that true: every batch reports what
+    is left, and the money is the same at the end as at the start.
+    """
+    h = login("admin")
+    rep, terr = inv_world["rep_a"], inv_world["terr_a"]
+    for i in range(9):
+        _customer(client, h, f"عميل دفعات {i}", rep_id=rep, territory_id=terr)
+        _customer(client, h, f"تكنو عميل دفعات {i}", rep_id=rep, territory_id=terr)
+    db.commit()
+    before = _receivable_total(db)
+
+    plan = client.post("/api/v1/admin/merge-customers", headers=h).json()
+    total = plan["remaining"]
+    assert total >= 9
+
+    done, rounds = 0, 0
+    while rounds < 20:
+        rounds += 1
+        body = client.post("/api/v1/admin/merge-customers?apply=true&limit=4", headers=h).json()
+        done += body["merged_now"]
+        if not body["merged_now"] or not body["remaining"]:
+            break
+
+    assert rounds > 1, "لو خلصت في دفعة واحدة يبقى الاختبار مابيختبرش الدفعات"
+    assert done >= 9
+    # Nothing left to find, which is the only definition of «finished» that matters.
+    assert client.post("/api/v1/admin/merge-customers", headers=h).json()["remaining"] == 0
+
+    db.expire_all()
+    assert _receivable_total(db) == before, "الفلوس اتحركت أثناء الدفعات"

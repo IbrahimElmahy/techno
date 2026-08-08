@@ -126,16 +126,32 @@ def plan(db: Session) -> MergePlan:
     return out
 
 
-def apply(db: Session, *, dry_run: bool = True) -> dict:
+def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dict:
     """Perform the merge. `dry_run=True` (the default) reports and changes nothing.
 
     Defaulted to a dry run on purpose: the dangerous call should be the one you have to ask for.
+
+    **`limit` merges only that many pairs and says how many are left.** The whole set is 86 people
+    on the client's data, and doing them in one request kept coming back 503 from a platform that
+    caps how long a request may run — a cap this cannot see and should not have to guess at. Run in
+    batches it does not matter what the cap is: each call is short, and the caller repeats until
+    `remaining` reaches zero.
+
+    Batching is safe here because a merge is per-customer and independent. Twenty done and sixty
+    left is not a half-finished state — it is sixty people who have not been merged yet, which is
+    exactly where they started.
     """
     p = plan(db)
     result = p.as_dict()
     result["applied"] = False
+    result["remaining"] = len(p.pairs) + len(p.techno_only)
     if dry_run:
         return result
+
+    # Take a slice of the work; the rest stays exactly as it was for the next call.
+    if limit is not None:
+        p.pairs = p.pairs[:limit]
+        p.techno_only = p.techno_only[:max(0, limit - len(p.pairs))]
 
     # Every customer account, once, grouped in memory.
     #
@@ -208,9 +224,12 @@ def apply(db: Session, *, dry_run: bool = True) -> dict:
     # The session still holds the pre-update rows; a caller reading a balance straight afterwards
     # must see what the database now has, not what it had when this started.
     db.expire_all()
-    result = p.as_dict()
-    result["applied"] = True
-    return result
+    done = p.as_dict()
+    done["applied"] = True
+    # What is LEFT after this batch — the caller repeats until it is zero.
+    done["remaining"] = max(0, result["remaining"] - len(p.pairs) - len(p.techno_only))
+    done["merged_now"] = len(p.pairs) + len(p.techno_only)
+    return done
 
 
 def receivable_account(db: Session, customer_id: int, family: str | None = None):

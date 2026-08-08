@@ -552,19 +552,50 @@ function CustomerMergeCard() {
   const [plan, setPlan] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
+  const [progress, setProgress] = useState<string | null>(null);
+
+  /**
+   * التنفيذ بيمشي على دفعات.
+   *
+   * Merging all 86 in one request kept returning 503: the platform caps how long a request may
+   * run, and that cap is not something this code can see or should have to guess. In batches it
+   * stops mattering — each call is short, and this repeats until nothing is left.
+   *
+   * Safe to interrupt at any point. A merge is per-customer and independent, so «twenty done,
+   * sixty left» is not a half-finished state; it is sixty people who have not been merged yet.
+   */
+  const BATCH = 15;
+
   const run = async (apply: boolean) => {
     setBusy(true);
+    setProgress(null);
     try {
-      const res = await api.post(`/api/v1/admin/merge-customers?apply=${apply}`);
-      setPlan(res.data);
       if (!apply) {
+        const res = await api.post('/api/v1/admin/merge-customers?apply=false');
+        setPlan(res.data);
         const n = res.data?.pairs?.length ?? 0;
         if (n) message.info(`${n} عميل متكرّر — راجع الخطة قبل التنفيذ`);
         else message.success('مفيش عملاء مكرّرين — مافيش حاجة تتدمج');
-      } else {
-        message.success('اتنفّذ الدمج والأرصدة زي ما هي');
+        return;
       }
+
+      let done = 0;
+      let last: any = null;
+      // Bounded rather than `while (true)`: a server that always reports work left would otherwise
+      // spin forever, and a loop that cannot end is worse than one that stops and says so.
+      for (let round = 0; round < 40; round += 1) {
+        const res = await api.post(
+          `/api/v1/admin/merge-customers?apply=true&limit=${BATCH}`);
+        last = res.data;
+        done += res.data?.merged_now ?? 0;
+        setProgress(`اتدمج ${done} — فاضل ${res.data?.remaining ?? 0}`);
+        if (!res.data?.merged_now || !res.data?.remaining) break;
+      }
+      setPlan({ ...last, pairs: [], applied: true });
+      setProgress(null);
+      message.success(`اتنفّذ الدمج — ${done} عميل، والأرصدة زي ما هي`);
     } catch (err: any) {
+      setProgress(null);
       message.error(err?.response?.data?.detail?.message || 'تعذر تشغيل الدمج');
     } finally { setBusy(false); }
   };
@@ -593,6 +624,7 @@ function CustomerMergeCard() {
               الأرصدة: {plan.balance_before} {balancesMatch ? '— زي ما هي' : `← ${plan.balance_after}`}
             </Tag>
             {plan.applied && <Tag color="green">اتنفّذ</Tag>}
+            {progress && <Tag color="processing">{progress}</Tag>}
           </Space>
 
           {pairs.length > 0 && (
