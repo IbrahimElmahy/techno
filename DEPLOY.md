@@ -57,3 +57,30 @@ The frontend reads `VITE_API_URL` at build time (see `frontend/src/App.tsx`) and
 - Everything here is free forever: Render free web service (sleeps when idle) + Neon free Postgres.
 - To change which frontend origins may call the API, edit `FRONTEND_ORIGINS` (comma-separated) on the
   Render service.
+
+## Cache headers — and why they are not explained inside `vercel.json`
+
+`index.html` is the one file that decides which bundle a browser loads, and it was being served
+from the edge cache with an `Age` of several hours. A deploy could land and the people using the
+system would keep opening the *previous* build: the work sitting on the server, invisible, which
+from outside is indistinguishable from the work never having been deployed.
+
+So the page revalidates on every request, and the assets go the other way — Vite puts a content
+hash in every filename, so a given URL's contents can never change and caching those for a year is
+both safe and what makes the app load fast. A new build produces new filenames, and the
+freshly-revalidated page points at them.
+
+**The explanation lives here because `vercel.json` will not take it.** It was first written as a
+`_comment_headers` key in that file, on the assumption that an unknown key would be ignored the way
+most tools ignore one. Vercel validates the schema strictly and rejects the whole file:
+
+```
+The `vercel.json` schema validation failed with the following message:
+should NOT have additional property `_comment_headers`
+```
+
+Every build after that failed, and Vercel kept serving the last good deployment — so the site stayed
+up, looked healthy, and silently stopped receiving new commits. The backend in particular sat four
+commits behind for hours while the frontend appeared to be fine.
+
+JSON has no comments. Anything that needs saying about this file gets said in this one.
