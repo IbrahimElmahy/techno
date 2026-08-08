@@ -153,10 +153,12 @@ def merge_customers(
     def total_receivable() -> Decimal:
         # Read from the LEDGER side: a customer account has no balance of its own, it points at a
         # ledger account, and the pointer is the thing being moved.
-        out = Decimal("0")
-        for acc in db.scalars(select(CustomerAccount)).all():
-            out += ledger_service.balance_of(db, acc.account_id)
-        return out
+        #
+        # One aggregate query, not one per account. Looping `balance_of` over 233 accounts twice —
+        # before and after — pulled every ledger line in the system across the wire and took the
+        # request past the serverless timeout: the merge answered 503 having done nothing.
+        return ledger_service.total_balance_of(
+            db, db.scalars(select(CustomerAccount.account_id)).all())
 
     before = total_receivable()
     result = customer_merge_service.apply(db, dry_run=not apply)

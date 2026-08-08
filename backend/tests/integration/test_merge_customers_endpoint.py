@@ -122,3 +122,49 @@ def test_running_it_twice_is_not_a_second_merge(client, inv_world, login, db):
     joined = [p["base_name"] for p in second["pairs"]]
     assert "هالة رشدي" not in joined, "اتدمج مرتين"
     assert second["balance_before"] == second["balance_after"]
+
+
+def test_the_fast_total_agrees_with_the_slow_one(client, inv_world, login, db):
+    """المجموع السريع لازم يطلع نفس الرقم بالظبط.
+
+    The merge proves it moved no money by totalling every customer balance before and after. That
+    total was a loop calling `balance_of` per account — 233 round trips pulling every ledger line
+    in the system across the wire, done twice, which took the request past the serverless timeout:
+    the merge answered 503 having done nothing at all.
+
+    It is one aggregate query now, and the guard is only worth anything if the new arithmetic is
+    the SAME arithmetic. A faster total that disagrees would not fail loudly — it would refuse
+    every merge, or wave a real discrepancy through.
+    """
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from src.models.customer import CustomerAccount
+    from src.models.treasury import Treasury
+    from src.services import ledger_service
+
+    h = login("admin")
+    rep, terr = inv_world["rep_a"], inv_world["terr_a"]
+    # A real balance on at least one account, or the two totals agree trivially at zero and the
+    # test proves only that 0 == 0.
+    cust = _customer(client, h, "منى فتحي", rep_id=rep, territory_id=terr)
+    treasury = db.scalars(select(Treasury)).first()
+    res = client.post("/api/v1/vouchers/receipts", headers=h, json={
+        "customer_id": cust["id"], "amount": "250.75", "payment_method": "cash",
+        "treasury_id": treasury.id if treasury else None})
+    assert res.status_code in (200, 201), res.text
+    db.commit()
+
+    ids = db.scalars(select(CustomerAccount.account_id)).all()
+    slow = sum((ledger_service.balance_of(db, i) for i in ids), Decimal("0"))
+    fast = ledger_service.total_balance_of(db, ids)
+    assert fast == slow, f"المجموع السريع {fast} مش مطابق للبطيء {slow}"
+
+
+def test_the_fast_total_of_nothing_is_zero(db):
+    """The empty case, because `IN ()` is where an aggregate quietly returns NULL."""
+    from decimal import Decimal
+
+    from src.services import ledger_service
+    assert ledger_service.total_balance_of(db, []) == Decimal("0")

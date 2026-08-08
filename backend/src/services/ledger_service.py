@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
@@ -179,6 +179,34 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
         # Reversal nets in the original's accounting period (005 analysis finding A/C).
         entry_date=original.entry_date,
     )
+
+
+def total_balance_of(db: Session, account_ids) -> Decimal:
+    """The balances of many accounts, added up — in one query.
+
+    `balance_of` loads every line of ONE account and sums them in Python, which is the right shape
+    for one account and the wrong shape for all of them: totalling 233 customer accounts meant 233
+    round trips and every ledger line in the system crossing the wire. Doing it twice inside the
+    customer merge — once before and once after, to prove no money moved — took the request past
+    the serverless timeout, and the merge came back 503 having done nothing.
+
+    Same arithmetic, computed by the database: a line counts positive when its direction matches
+    the account's normal side and negative when it does not.
+    """
+    ids = list(account_ids)
+    if not ids:
+        return ZERO
+    signed = case(
+        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        else_=-LedgerLine.amount,
+    )
+    total = db.scalar(
+        select(func.coalesce(func.sum(signed), 0))
+        .select_from(LedgerLine)
+        .join(Account, Account.id == LedgerLine.account_id)
+        .where(LedgerLine.account_id.in_(ids))
+    )
+    return to_money(total or 0)
 
 
 def balance_of(db: Session, account_id: int) -> Decimal:

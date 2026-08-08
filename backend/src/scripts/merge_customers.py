@@ -43,10 +43,8 @@ def _total_receivable(db) -> Decimal:
     merge repoints a customer account at a different owner, so the sum over the ledger accounts is
     exactly the thing that must come out identical.
     """
-    total = Decimal("0")
-    for acc in db.scalars(select(CustomerAccount)).all():
-        total += ledger_service.balance_of(db, acc.account_id)
-    return total
+    return ledger_service.total_balance_of(
+        db, db.scalars(select(CustomerAccount.account_id)).all())
 
 
 def _print_plan(result: dict) -> None:
