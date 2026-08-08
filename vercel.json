@@ -8,6 +8,39 @@
       "root": "backend"
     }
   },
+  "_comment_headers": [
+    "الصفحة نفسها ما تتخزّنش، والملفات اللي اسمها فيه بصمة تتخزّن للأبد.",
+    "",
+    "index.html is the one file that decides which bundle a browser loads. It was being served",
+    "from the edge cache with an Age of several hours, so a deploy could land and the people using",
+    "the system would keep opening the previous build — the work was on the server and invisible,",
+    "which is indistinguishable from the work never having been deployed.",
+    "",
+    "So the page revalidates on every request. The assets go the other way: Vite puts a content",
+    "hash in every filename, so a given URL's contents can never change and caching it for a year",
+    "is both safe and what makes the app load fast. A new build produces new filenames, and the",
+    "freshly-revalidated page points at them."
+  ],
+  "headers": [
+    {
+      "source": "/",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate, no-cache" }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate, no-cache" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/api(/.*)?",
