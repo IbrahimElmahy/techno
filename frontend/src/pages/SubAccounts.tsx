@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
+  Button, Card, Col, Collapse, Empty, Form, Input, Modal, Row, Select, Skeleton, Space, Table,
+  Tag, Tooltip, message,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, SearchOutlined, ReloadOutlined,
@@ -17,7 +18,52 @@ import { ChartAccount, NATURE_COLOR, NATURE_LABEL, egp } from '../utils/accounts
  * A sub-account is the postable leaf: the thing entries actually land on. Their list is three
  * columns — `رقم · الحساب الرئيسي · الاسم` — and their form asks two questions, because at this
  * level the only real decision is which group it belongs under.
+ *
+ * كل قسم قائمة منسدلة، لأن الليستة الواحدة كانت عشوائية.
+ *
+ * Every postable account in the system used to arrive as one flat paginated list: a customer, then
+ * a safe, then an expense, then four hundred more customers. Sorted by nothing anybody thinks in.
+ * Somebody looking for an expense account paged through customers to find it, and the shape of the
+ * chart — that customers outnumber everything else forty to one — was invisible.
+ *
+ * They are filed under their heading now, each heading collapsed until asked for, carrying its
+ * count and its total on the bar. Closed is the useful default: the answer to «فيه إيه» is the
+ * list of headings, not four hundred rows. Searching opens whatever matched, because a hit hidden
+ * inside a closed section is the same as no hit.
  */
+
+/**
+ * قسم واحد — جدول جوّه القائمة المنسدلة.
+ *
+ * Its own component because the keyboard hook is a hook: one table per section means one call per
+ * section, and hooks cannot be called in a loop. Each section keeps its own cursor, so ↑↓ walk the
+ * section you opened rather than the whole chart.
+ */
+function AccountGroup({ rows, columns, onOpen }: {
+  rows: ChartAccount[];
+  columns: any[];
+  onOpen: (r: ChartAccount) => void;
+}) {
+  const kb = useTableKeyboard<ChartAccount>({
+    rows, rowKey: (r) => r.id, onOpen,
+  });
+  return (
+    <Table
+      {...kb.tableProps}
+      dataSource={rows}
+      columns={columns}
+      rowKey="id"
+      size="small"
+      tableLayout="fixed"
+      // Paged inside the section: العملاء alone can be thousands of rows, and mounting them all
+      // to show a heading nobody has expanded yet is what makes the screen crawl.
+      pagination={rows.length > 25
+        ? { defaultPageSize: 25, showSizeChanger: true, size: 'small',
+            showTotal: (t: number) => `عدد: ${t}` }
+        : false}
+    />
+  );
+}
 
 export default function SubAccounts() {
   const { user } = useAuth();
@@ -227,10 +273,35 @@ export default function SubAccounts() {
     </Row>
   );
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
-  const kb = useTableKeyboard<ChartAccount>({
-    rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
-  });
+  // «الحساب الرئيسي» is the section heading, so repeating it on every row inside the section is
+  // the same word four hundred times.
+  const inSection = columns.filter((c: any) => c.key !== 'parent_id');
+
+  /** الأقسام — كل حساب رئيسي وتحته حساباته، ومعاه العدد والإجمالي. */
+  const sections = useMemo(() => {
+    const byName = new Map<string, ChartAccount[]>();
+    for (const r of filtered) {
+      const k = parentName(r);
+      const list = byName.get(k);
+      if (list) list.push(r); else byName.set(k, [r]);
+    }
+    return [...byName.entries()]
+      .map(([name, items]) => ({
+        name,
+        items,
+        total: items.reduce((s, a) => s + Number(a.balance || 0), 0),
+        hidden: items.filter((a) => !a.active).length,
+      }))
+      // Biggest first. The chart is dominated by customer accounts and pretending otherwise by
+      // sorting alphabetically buries the two headings anybody actually browses.
+      .sort((a, b) => b.items.length - a.items.length);
+  }, [filtered, groups]);
+
+  // A search hit inside a closed section is the same as no hit, so searching opens what matched.
+  // Otherwise nothing is open: the answer to «فيه إيه» is the list of headings.
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
+  const searching = search.trim().length > 0;
+  const activeKeys = searching ? sections.map((s) => s.name) : openKeys;
 
   return (
     <div>
@@ -255,16 +326,29 @@ export default function SubAccounts() {
           </Col>
         </Row>
 
-        <Table
-          {...kb.tableProps}
-          dataSource={filtered}
-          columns={columns}
-          rowKey="id"
-          loading={loading}
-          size="middle"
-          tableLayout="fixed"
-          pagination={{ defaultPageSize: 20, showSizeChanger: true,
-            showTotal: (t) => `عدد: ${t}` }}
+        {loading && <Skeleton active paragraph={{ rows: 4 }} />}
+        {!loading && !sections.length && <Empty description="مفيش حسابات مطابقة" />}
+
+        <Collapse
+          accordion={false}
+          activeKey={activeKeys}
+          onChange={(k) => setOpenKeys(Array.isArray(k) ? k : [k])}
+          items={sections.map((s) => ({
+            key: s.name,
+            label: (
+              <Space size={8} wrap>
+                <span style={{ fontWeight: 600 }}>{s.name}</span>
+                <Tag>{s.items.length}</Tag>
+                {/* The two numbers that decide whether this section is the one you want, on the
+                    bar — so the section does not have to be opened to find out. */}
+                <span style={{ color: '#8a8a8a', fontSize: 12 }}>الإجمالي {egp(s.total)}</span>
+                {s.hidden > 0 && <Tag color="red">{s.hidden} مخفي</Tag>}
+              </Space>
+            ),
+            children: (
+              <AccountGroup rows={s.items} columns={inSection} onOpen={openEdit} />
+            ),
+          }))}
         />
       </Card>
 
