@@ -18,7 +18,13 @@ from src.core.db import get_db
 from src.models.role import RoleName
 from src.models.treasury import TreasuryKind
 from src.models.voucher import VoucherKind
-from src.services import document_resolver, statement_service, treasury_service, voucher_service
+from src.services import (
+    document_resolver,
+    ledger_service,
+    statement_service,
+    treasury_service,
+    voucher_service,
+)
 from src.services.ledger_service import LedgerError
 from src.services.statement_service import StatementError
 from src.services.treasury_service import TreasuryError
@@ -161,6 +167,14 @@ class StatementLineOut(BaseModel):
     rep_name: str | None = None
 
 
+class FamilyBalanceOut(BaseModel):
+    """عيلة من عيال العميل ورصيدها. `family` is None for a customer who was never split."""
+
+    family: str | None = None
+    account_id: int
+    balance: Decimal
+
+
 class StatementOut(BaseModel):
     account_id: int
     account_name: str = ""
@@ -173,6 +187,10 @@ class StatementOut(BaseModel):
     total_debit: Decimal
     total_credit: Decimal
     lines: list[StatementLineOut]
+    # (031) Which line this statement is for, and what every line of his stands at. Empty on any
+    # statement that is not a customer's.
+    family: str | None = None
+    families: list[FamilyBalanceOut] = []
 
 
 def _out(v) -> VoucherOut:
@@ -483,18 +501,57 @@ def customer_statement(
     customer_id: int,
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    family: str | None = Query(default=None, description="أبيض / بولي — سيبها فاضية تجيب الكل"),
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
-    """كشف حساب عميل — رصيد أول المدة + الحركة + الرصيد الجاري."""
-    try:
-        account = voucher_service._customer_account(db, customer_id)
-        s = statement_service.account_statement(
-            db, account_id=account.account_id, date_from=date_from, date_to=date_to)
-    except (VoucherError, StatementError) as exc:
+    """كشف حساب عميل — رصيد أول المدة + الحركة + الرصيد الجاري.
+
+    A customer can hold one receivable account per product line (031), and this used to resolve
+    «his account» the same way a voucher does — which refuses when there is more than one, because
+    posting to the wrong line is untraceable. Reading is not posting, and the refusal made كشف
+    الحساب unopenable for precisely the customers the merge had just joined: «العميل عنده أكتر من
+    حساب (أبيض / بولي) — لازم تحدد النوع», 404, no way forward from the screen.
+
+    Now it answers. No `family` gives every line he has on one running balance — «هو عليه كام»
+    with nothing left out — and the response lists the families with their own balances so the
+    screen can offer the split. `family` narrows it to that line alone.
+    """
+    accounts = voucher_service._customer_accounts(db, customer_id)
+    if not accounts:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": str(exc)})
-    return _with_docs(db, s)
+                            {"code": "not_found", "message": "العميل ليس له حساب ذمم."})
+
+    if family:
+        chosen = [a for a in accounts if (a.family or "") == family]
+        if not chosen:
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                {"code": "not_found",
+                                 "message": f"العميل مالوش حساب لـ«{family}»"})
+    else:
+        chosen = accounts
+
+    try:
+        s = statement_service.account_statement(
+            db, account_id=chosen[0].account_id,
+            also_accounts=[a.account_id for a in chosen[1:]],
+            date_from=date_from, date_to=date_to)
+    except StatementError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": str(exc)}) from exc
+
+    out = _with_docs(db, s)
+    # Every line he has, each with its own closing balance — so the screen can show أبيض and بولي
+    # beside the total rather than making the reader open three statements to add them up.
+    out.families = [
+        FamilyBalanceOut(
+            family=a.family, account_id=a.account_id,
+            balance=ledger_service.balance_of(db, a.account_id),
+        )
+        for a in accounts
+    ]
+    out.family = family
+    return out
 
 
 @router.get("/accounts/{account_id}/statement", response_model=StatementOut)

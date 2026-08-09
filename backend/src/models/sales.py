@@ -167,6 +167,12 @@ class SalesReturn(Base):
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # (031) أبيض ولا بولي — which of the customer's receivable accounts this return credits.
+    # The invoice has carried it since the merge and the return did not, so a refund could be
+    # written against a customer holding two debts with nothing on the document saying which one
+    # went down. On an invoice-bound return it is copied off the invoice: goods go back where they
+    # came from, and so does the money.
+    family: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # (031) The day the goods came back, which is not always the day it was typed — the same field
     # the invoice has as `invoice_date` and for the same reason: a document dated one day and
     # posted on another makes every statement disagree with the paper.

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Tabs, Table, Descriptions, Statistic, Row, Col, Card, Tag, Spin,
-  DatePicker, Space, Button, Empty, Typography, Modal,
+  DatePicker, Space, Button, Empty, Typography, Modal, Segmented,
 } from 'antd';
 import { ReloadOutlined, ArrowRightOutlined, EditOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
@@ -152,13 +152,24 @@ export default function CustomerProfile() {
     }
   };
 
-  const loadStatement = async (reset = false) => {
+  /**
+   * أنهي مديونية الكشف بيعرضها — «الكل» أو عيلة بعينها.
+   *
+   * Empty means every account he has on one running balance. The screen used to send nothing and
+   * the server used to refuse: «العميل عنده أكتر من حساب (أبيض / بولي) — لازم تحدد النوع», from a
+   * screen that offered no way to specify it.
+   */
+  const [statementFamily, setStatementFamily] = useState<string>('');
+
+  const loadStatement = async (reset = false, family?: string) => {
     if (!customerId) return;
     const params: any = {};
     if (range && !reset) {
       params.date_from = range[0].format('YYYY-MM-DD');
       params.date_to = range[1].format('YYYY-MM-DD');
     }
+    const fam = family ?? statementFamily;
+    if (fam) params.family = fam;
     try {
       const res = await api.get(`/api/v1/customers/${customerId}/statement`, { params });
       // One entry can touch this account twice, so stamp a stable row key here.
@@ -369,6 +380,26 @@ export default function CustomerProfile() {
                   children: (
                     <>
                       <Space style={{ marginBottom: 12 }} wrap>
+                        {/* The choice the server used to demand without offering. «الكل» first,
+                            because «هو عليه كام» is the question people actually arrive with. */}
+                        {(statement?.families?.length ?? 0) > 1 && (
+                          <Segmented
+                            value={statementFamily}
+                            onChange={(v) => {
+                              setStatementFamily(String(v));
+                              loadStatement(!range, String(v));
+                            }}
+                            options={[
+                              { label: 'الكل', value: '' },
+                              ...statement.families
+                                .filter((f: any) => f.family)
+                                .map((f: any) => ({
+                                  label: `${f.family} — ${money(f.balance)}`,
+                                  value: f.family as string,
+                                })),
+                            ]}
+                          />
+                        )}
                         <DatePicker.RangePicker
                           value={range as any}
                           onChange={(v) => setRange(v as any)}

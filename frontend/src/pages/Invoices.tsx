@@ -791,6 +791,9 @@ export default function Invoices() {
             serial_to: r.serial_to || null,
           })),
         notes: values.notes || undefined,
+        statement1: values.statement1 || undefined,
+        statement2: values.statement2 || undefined,
+        statement3: values.statement3 || undefined,
         // Which of his accounts this invoice posts to. Null for a customer who has only one.
         family: invoiceFamily,
       });
@@ -1244,6 +1247,16 @@ export default function Invoices() {
       },
     },
     {
+      // (031) أبيض ولا بولي — which of the customer's debts this document moved. It was stored on
+      // the document and shown nowhere, so «ده اتسجّل على أنهي حساب؟» had to be answered from the
+      // ledger. Blank for a customer who was never split, which is most of them.
+      title: 'النوع',
+      dataIndex: 'family',
+      key: 'family',
+      width: 90,
+      render: (f: string | null) => f ? <Tag color="geekblue">{f}</Tag> : '-',
+    },
+    {
       title: 'مندوب',
       dataIndex: 'rep_id',
       key: 'rep_id',
@@ -1509,6 +1522,21 @@ export default function Invoices() {
                 <Input placeholder="اختياري" />
               </Form.Item>
             </Col>
+          </Row>
+
+          {/* البيانات الثلاثة — the same three the return has carried since 030. The columns and
+              the API have always been here and this form never filled them, so a سياسة أو شرط
+              typed on the paper invoice had nowhere to live: the drift ran the other way from
+              نوع الفاتورة, and each screen was missing something the other had. */}
+          <Row gutter={12}>
+            {[0, 1, 2].map((i) => (
+              <Col xs={24} md={8} key={i}>
+                <Form.Item name={`statement${i + 1}`}
+                  label={`بيان ${['أول', 'تاني', 'تالت'][i]}`} style={{ marginBottom: 8 }}>
+                  <Input placeholder="اختياري" />
+                </Form.Item>
+              </Col>
+            ))}
           </Row>
 
           {/* الكوبونات المصروفة — one row per kind, added and removed freely.

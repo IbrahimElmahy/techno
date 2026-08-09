@@ -517,6 +517,9 @@ def return_sale(
     ret = SalesReturn(
         document_number=_doc_number(db, SalesReturn, "SRET"),
         sales_invoice_id=sales_invoice_id, value=value, cash_refund=cash_refund,
+        # Copied off the invoice, not resolved again: the refund has to reduce the same debt the
+        # sale raised, even for a customer whose accounts were split afterwards.
+        family=getattr(inv, "family", None),
         credit_reduction=credit_reduction, ledger_entry_id=None, actor_user_id=actor_user_id,
     )
     db.add(ret)
@@ -688,7 +691,7 @@ def create_standalone_return(
 
     ret = SalesReturn(
         document_number=_doc_number(db, SalesReturn, "SRET"),
-        sales_invoice_id=None, customer_id=customer_id,
+        sales_invoice_id=None, customer_id=customer_id, family=family,
         origin_location_kind=origin_location_kind, origin_location_id=origin_location_id,
         gross=gross, combined_pct=variable, value=net, tax_amount=tax,
         cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),

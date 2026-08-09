@@ -6,6 +6,7 @@ Signed by the account's normal side, so a customer's «مدين» reads positive
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -60,16 +61,29 @@ def _effective_date(entry: LedgerEntry) -> date:
 
 def account_statement(
     db: Session, *, account_id: int, date_from: date | None = None,
-    date_to: date | None = None,
+    date_to: date | None = None, also_accounts: Sequence[int] = (),
 ) -> Statement:
-    account = db.get(Account, account_id)
+    """كشف حساب — لحساب واحد، أو لكذا حساب مع بعض.
+
+    `also_accounts` exists for one situation: a customer who holds a receivable account per
+    product line (031). Posting to him without naming the line is refused, and rightly — money on
+    «أبيض» that belonged to «بولي» is a silent error nobody could trace.
+
+    But READING is not posting, and كشف الحساب was inheriting that refusal: a merged customer's
+    statement answered 404 «لازم تحدد النوع», which made the screen unopenable for exactly the
+    customers the merge had just fixed. «كل المديونية» is not ambiguous — it is his lines from both
+    accounts on one running balance, which is the number anybody asking «هو عليه كام» means.
+    """
+    ids = [account_id, *[a for a in also_accounts if a != account_id]]
+    accounts = {a.id: a for a in db.scalars(select(Account).where(Account.id.in_(ids))).all()}
+    account = accounts.get(account_id)
     if account is None:
         raise StatementError("الحساب غير موجود.")
 
     rows = db.scalars(
         select(LedgerLine)
         .options(selectinload(LedgerLine.entry))
-        .where(LedgerLine.account_id == account_id)
+        .where(LedgerLine.account_id.in_(ids))
     ).all()
 
     # One query for the names rather than one per line: a statement can run to hundreds of rows.
@@ -77,7 +91,10 @@ def account_statement(
 
     def signed(line: LedgerLine) -> Decimal:
         amount = to_money(line.amount)
-        return amount if line.direction == account.normal_side else -amount
+        # Signed by the line's OWN account's normal side. Reading two accounts together is only
+        # correct if each one is read the way it is kept.
+        side = accounts[line.account_id].normal_side
+        return amount if line.direction == side else -amount
 
     dated = sorted(
         ((_effective_date(line.entry), line) for line in rows),

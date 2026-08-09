@@ -134,6 +134,10 @@ class ReturnedCouponIn(BaseModel):
 
 class StandaloneReturnCreate(BaseModel):
     customer_id: int
+    # (031) أبيض ولا بولي. The service has always accepted it and this payload dropped it, so a
+    # return for a customer holding two accounts was refused — «لازم تحدد النوع» — with no field
+    # anywhere to say which.
+    family: str | None = None
     origin: LocationIn
     variable_discount_pct: Decimal = Decimal("0")
     cash_refund: Decimal = Decimal("0")
@@ -376,6 +380,9 @@ def _standalone_return_out(r: SalesReturn, db: Session | None = None) -> dict:
         "rep_id": r.rep_id, "revenue_account_id": r.revenue_account_id,
         "external_document_number": r.external_document_number, "notes": r.notes,
         "statement1": r.statement1, "statement2": r.statement2, "statement3": r.statement3,
+        # Which debt the refund reduced. A field that goes in and never comes back is a field
+        # nobody can act on — the same reason the invoice returns it.
+        "family": getattr(r, "family", None),
     }
 
 
@@ -435,7 +442,7 @@ def create_standalone_return(
             lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
                               l.warehouse_id)
                    for l in body.lines],
-            actor_role=current.role, actor_user_id=current.id,
+            actor_role=current.role, actor_user_id=current.id, family=body.family,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
@@ -623,4 +630,7 @@ def return_sale(
     db.commit()
     return {"id": ret.id, "document_number": ret.document_number,
             "cash_refund": str(ret.cash_refund), "credit_reduction": str(ret.credit_reduction),
+            # Inherited off the invoice, and said out loud: the refund reduced THAT debt, and the
+            # screen printing the customer's copy has to be able to name it.
+            "family": getattr(ret, "family", None),
             "ledger_entry_id": ret.ledger_entry_id}

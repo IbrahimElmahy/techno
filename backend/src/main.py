@@ -197,6 +197,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer_account", "family", "VARCHAR(40)"),
     ("customer_account", "commission_pct", "DECIMAL(9,4)"),
     ("sales_invoice", "family", "VARCHAR(40)"),
+    ("sales_return", "family", "VARCHAR(40)"),
     ("voucher", "family", "VARCHAR(40)"),
     ("customer", "default_return_warehouse_id", "BIGINT"),
     ("stock_transfer", "reject_reason", "VARCHAR(240)"),

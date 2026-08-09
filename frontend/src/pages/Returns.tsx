@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row,
-  Select, Space, Statistic, Table, Tag, message,
+  Segmented, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
@@ -105,6 +105,19 @@ export default function Returns() {
   // The sale opens as a run of doors — التاريخ, then العميل, then the page. The client asked for
   // the return to be the same document worked the same way, and a screen that opens differently is
   // the one place the habit breaks.
+  /**
+   * (031) نوع المرتجع — بيرجّع على أنهي مديونية.
+   *
+   * The exact mirror of نوع الفاتورة on the sale. A customer can hold one receivable account per
+   * product line, and a refund has to reduce a named one: the standalone return was refused
+   * outright for those customers — «العميل عنده أكتر من حساب (أبيض / بولي) — لازم تحدد النوع» —
+   * because the screen had no field to answer with.
+   */
+  const [familyAccounts, setFamilyAccounts] = useState<
+    { family: string | null; balance: string }[]>([]);
+  const [returnFamily, setReturnFamily] = useState<string | null>(null);
+  const families = familyAccounts.filter((a) => a.family);
+
   const [newStep, setNewStep] = useState<null | 'date' | 'party'>(null);
   // Also opened from inside the document to change the party mid-return, exactly as the sale does.
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
@@ -296,9 +309,18 @@ export default function Returns() {
     // A different customer means different purchase prices — start the lines fresh.
     setLines([]); setLastInfo({}); setActiveCategory(null);
     setCustomerBalance(null);
-    api.get(`/api/v1/customers/${cId}/account`)
-      .then((res) => setCustomerBalance(Number(res.data.balance || 0)))
-      .catch((err) => console.error(err));
+    setFamilyAccounts([]); setReturnFamily(null);
+    api.get(`/api/v1/customers/${cId}/accounts`)
+      .then((res) => {
+        const rows = res.data?.accounts || [];
+        setFamilyAccounts(rows);
+        setCustomerBalance(Number(res.data?.total_balance || 0));
+        // Pre-picked only when there is nothing to pick. With two lines it stays empty on
+        // purpose — choosing for him is choosing which debt the refund comes off.
+        const named = rows.filter((a: any) => a.family);
+        setReturnFamily(named.length === 1 ? named[0].family : null);
+      })
+      .catch((err) => { console.error(err); setFamilyAccounts([]); setCustomerBalance(null); });
     // What he was actually given. A different customer holds different books, so the rows go
     // with him rather than surviving into somebody else's return.
     setCouponRows([]);
@@ -469,6 +491,7 @@ export default function Returns() {
             variable_discount_pct: discountPct,
             cash_refund: cash,
             credit_reduction: creditReduction,
+            family: returnFamily,
             rep_id: repId ?? undefined,
             external_document_number: externalDocNumber || undefined,
             notes: docNotes || undefined,
@@ -625,6 +648,40 @@ export default function Returns() {
                 </Form.Item>
               </Col>
             </Row>
+
+            {/* نوع المرتجع — the mirror of نوع الفاتورة, and shown under the same rule: only when
+                the customer HAS more than one line, because for everybody else it is a question
+                with a single possible answer. Left empty rather than pre-picked, because choosing
+                for him is choosing which debt the refund comes off. */}
+            {families.length > 1 && (
+              <Row style={{ marginBottom: 12 }}>
+                <Col xs={24}>
+                  <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 4 }}>
+                    نوع المرتجع — بيرجّع على أنهي حساب؟
+                  </div>
+                  <Segmented
+                    value={returnFamily ?? ''}
+                    onChange={(v: string | number) => setReturnFamily(String(v) || null)}
+                    options={families.map((a) => ({
+                      value: a.family as string,
+                      label: (
+                        <span>
+                          {a.family}
+                          <span style={{ color: '#8a8a8a', marginInlineStart: 6, fontSize: 12 }}>
+                            ({money(Number(a.balance || 0))})
+                          </span>
+                        </span>
+                      ),
+                    }))}
+                  />
+                  {!returnFamily && (
+                    <div style={{ color: '#cf4b1a', fontSize: 12, marginTop: 4 }}>
+                      اختار النوع الأول — المرتجع هيقلّل الحساب ده.
+                    </div>
+                  )}
+                </Col>
+              </Row>
+            )}
 
             {/* (031) The document fields, the same set and the same order as the sale. They have
                 been columns on `sales_return` since 030 with nothing able to fill them. */}
@@ -909,9 +966,23 @@ export default function Returns() {
                       show: returnDiscount > 0.001 },
                     { label: 'صافي المرتجع', value: netTotal.toFixed(2),
                       strong: true, color: '#cf4b1a', rule: true },
+                    // One line per product family, the chosen one tinted, then the whole debt —
+                    // the same column the sale shows, so the two documents read alike.
+                    ...families.map((a) => ({
+                      label: `مديونية ${a.family}`,
+                      value: money(Number(a.balance || 0)),
+                      color: Number(a.balance || 0) > 0 ? '#cf1322' : '#6AB42D',
+                      highlight: a.family === returnFamily,
+                      show: hasParty,
+                    })),
+                    { label: 'إجمالي المديونية', value: money(balance), strong: true,
+                      color: balance > 0 ? '#cf1322' : '#6AB42D',
+                      rule: families.length > 1,
+                      show: hasParty && families.length > 1 },
                     { label: 'حساب سابق على العميل', value: money(balance),
                       color: balance > 0 ? '#cf1322' : '#6AB42D',
-                      show: hasParty && Math.abs(balance) > 0.001 },
+                      // Only for a customer with no split — otherwise it restates the total above.
+                      show: hasParty && families.length <= 1 && Math.abs(balance) > 0.001 },
                     { label: 'يُخصم من حسابه (آجل)', value: `− ${money(creditReduction)}`,
                       color: '#6AB42D', show: hasParty && creditReduction > 0.001 },
                     { label: 'الباقي على العميل', value: money(after), big: true, rule: true,
@@ -1032,6 +1103,16 @@ export default function Returns() {
     {
       title: 'الصافى', dataIndex: 'net', key: 'net', width: 115, align: 'left' as const,
       render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)} ج.م</strong>,
+    },
+    {
+      // (031) أبيض ولا بولي — which of the customer's debts this document moved. It was stored on
+      // the document and shown nowhere, so «ده اتسجّل على أنهي حساب؟» had to be answered from the
+      // ledger. Blank for a customer who was never split, which is most of them.
+      title: 'النوع',
+      dataIndex: 'family',
+      key: 'family',
+      width: 90,
+      render: (f: string | null) => f ? <Tag color="geekblue">{f}</Tag> : '-',
     },
     {
       title: 'مندوب', dataIndex: 'rep_id', key: 'rep_id', width: 150, ellipsis: true,
