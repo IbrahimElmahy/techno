@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Descriptions, Divider, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message, DatePicker,
+  Alert, Button, Card, Col, Descriptions, Divider, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message, DatePicker,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
@@ -151,8 +151,6 @@ export default function Purchases() {
   const itemRefs = useRef<Record<string, any>>({});
   const [listLoading, setListLoading] = useState(false);
 
-  // Detail drawer
-  const [detailVisible, setDetailVisible] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
 
@@ -192,8 +190,14 @@ export default function Purchases() {
     openDetail(target);
   }, [searchParams, purchases]);
 
+  /**
+   * فتح فاتورة شراء — على نفس الصفحة اللي بتتكتب فيها.
+   *
+   * It used to open in a modal over the list: a second shape for the same document, so looking at
+   * yesterday's invoice landed somewhere that looked nothing like where it was typed.
+   */
   const openDetail = async (record: PurchaseRecord) => {
-    setDetailVisible(true);
+    setActiveTab('create');
     setDetail(null);
     setDetailLoading(true);
     try {
@@ -396,6 +400,60 @@ export default function Purchases() {
       { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
     ];
+  };
+
+  const detailReturnColumns = [
+    { title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
+    { title: 'القيمة', dataIndex: 'value', key: 'value', render: (v: string) => `${fmtMoney(v)} ج.م` },
+    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (v: string) => fmtDate(v) },
+  ];
+
+  /**
+   * تعديل فاتورة شراء مرحّلة — مرتجع كامل، وتفتح تاني بمحتواها.
+   *
+   * Same mechanism the sale uses, and for the same reason: the goods are on the shelf and the
+   * ledger is append-only, so there is nothing on the row to overwrite. Through `/reverse` rather
+   * than `/returns`, so the returns register does not count the company's own typing mistakes as
+   * goods sent back to a supplier.
+   */
+  const editPosted = async (det: PurchaseDetail) => {
+    const ok = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: `تعديل ${det.document_number}؟`,
+        content: 'الفاتورة المرحّلة ماتتعدلش في مكانها: هيتعمل لها مرتجع كامل وتتفتح من جديد '
+          + 'للتعديل، وترحّل تاني لما تحفظ. المخزون والحساب بيرجعوا زي ما كانوا قبلها.',
+        okText: 'اعكسها وافتحها', cancelText: 'سيبها زي ما هي',
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true), onCancel: () => resolve(false),
+      });
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/api/v1/purchases/${det.id}/reverse`, { reason: 'edit' });
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر عكس الفاتورة');
+      return;
+    }
+    message.success('اتعكست الفاتورة — عدّل ورحّل من جديد');
+
+    // Refill from what the invoice actually held, line by line.
+    form.setFieldsValue({
+      supplier_id: det.supplier_id,
+      warehouse_id: det.location_id ?? undefined,
+    });
+    setPurchaseDate((det as any).purchase_date
+      ? dayjs((det as any).purchase_date) : dayjs());
+    setPurchaseItems((det.lines || []).map((l: any, i: number) => ({
+      key: `${Date.now()}-${i}`,
+      item_id: l.item_id,
+      quantity: Number(l.quantity) || null,
+      unit_price: Number(l.unit_price) || 0,
+      unit: l.unit ?? null,
+    })));
+    setCashAmount(Number(det.cash_amount) || 0);
+    setCreditAmount(Number(det.credit_amount) || 0);
+    setDetail(null);
+    fetchPurchases();
   };
 
   const handleSubmit = async (values: any) => {
@@ -603,6 +661,47 @@ export default function Purchases() {
         />
       </Card>
     </div>
+  ) : detail ? (
+    /* فاتورة مرحّلة — نفس الصفحة، بس مقفولة، ومنها التعديل.
+       A posted purchase cannot be altered in place: the goods are on the shelf and the ledger is
+       append-only. «تعديل» reverses it in full and reopens the form on what it held. */
+    <Card
+      title={(
+        <Space>
+          <Button type="text" icon={<ArrowLeftOutlined />}
+            onClick={() => setDetail(null)}>رجوع</Button>
+          <span>{`فاتورة شراء ${detail.document_number}`}</span>
+        </Space>
+      )}
+      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}
+    >
+      <Alert
+        type="info" showIcon style={{ marginBottom: 12 }}
+        message="الفاتورة دي اتّرحّلت خلاص"
+        description="البضاعة دخلت المخزن والقيد اتكتب، فالفاتورة ماتتغيّرش في مكانها. «تعديل الفاتورة» بيعملها مرتجع كامل ويفتحها تاني بمحتواها عشان تصحّح وترحّل من جديد — والتلاتة بيفضلوا في السجل."
+      />
+      <InvoiceDocument doc={purchaseDoc(detail)!} />
+
+      <Divider orientation="right">المرتجعات</Divider>
+      <Table
+        dataSource={detail.returns} columns={detailReturnColumns} rowKey="id"
+        pagination={false} size="small"
+        locale={{ emptyText: 'لا توجد مرتجعات على هذه الفاتورة' }}
+      />
+
+      <div style={{
+        marginTop: 16, padding: 16, borderRadius: 10,
+        background: '#f6faf3', border: '1px solid #e6efe3',
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+        flexWrap: 'wrap',
+      }}>
+        <Button type="primary" size="large" icon={<EditOutlined />}
+          onClick={() => editPosted(detail)}>
+          تعديل الفاتورة
+        </Button>
+        <Button size="large" onClick={() => setDetail(null)}>إغلاق</Button>
+      </div>
+    </Card>
   ) : (
     <Card title="فاتورة شراء جديدة"
       extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
@@ -805,11 +904,6 @@ export default function Purchases() {
     { title: 'الإجمالي', dataIndex: 'line_total', key: 'line_total', render: (v: string) => `${fmtMoney(v)} ج.م` },
   ];
 
-  const detailReturnColumns = [
-    { title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
-    { title: 'القيمة', dataIndex: 'value', key: 'value', render: (v: string) => `${fmtMoney(v)} ج.م` },
-    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (v: string) => fmtDate(v) },
-  ];
 
   /** The opening run — التاريخ then المورد — and the product window. No coupons and no points:
    *  those are what a SALE hands out, and a purchase has neither to give. Everything else is the
@@ -879,31 +973,6 @@ export default function Purchases() {
         ]}
       />
 
-      <Modal centered
-        title={`تفاصيل فاتورة الشراء: ${detail?.document_number || ''}`}
-        width={820}
-        onCancel={() => setDetailVisible(false)}
-        open={detailVisible}
-        destroyOnHidden
-        footer={invoiceFooter(purchaseDoc(detail), () => setDetailVisible(false))}
-      >
-        {detail && (
-          <>
-            <InvoiceDocument doc={purchaseDoc(detail)!} />
-
-            <Divider orientation="right">المرتجعات</Divider>
-            <Table
-              dataSource={detail.returns}
-              columns={detailReturnColumns}
-              rowKey="id"
-              pagination={false}
-              size="small"
-              locale={{ emptyText: 'لا توجد مرتجعات على هذه الفاتورة' }}
-            />
-          </>
-        )}
-        {!detail && detailLoading && <p>جارٍ التحميل...</p>}
-      </Modal>
     </div>
   );
 }

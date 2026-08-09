@@ -313,9 +313,30 @@ export default function Transfers() {
    * matches what is on the shelf is the ordinary reason an approver hesitates, and «اعتمد أو
    * سيبه» is not how a request that is nearly right gets handled.
    */
-  const openTransfer = (t: TransferRecord) => {
+  const openTransfer = async (t: TransferRecord) => {
     setEditing(t);
     setDraftQty({});
+    // A permit written before the lines table carries its item on the DOCUMENT and has no line
+    // row, so there is nothing to PATCH and nothing to DELETE — and the page ended up inviting an
+    // edit it could not offer: «عدّل الكميات أو شيل صنف» printed above a quantity that was plain
+    // text.
+    //
+    // So give it the line it is missing, once, when it is opened while still pending. Nothing
+    // about the permit changes: approval moves the LINES when a document has any and falls back to
+    // the header only when it has none, so the same item and the same quantity move either way.
+    // After this it behaves like every other permit — the quantity is a box, the item can be
+    // dropped, another can be added.
+    if (t.status === 'pending' && !(t.lines?.length) && t.item_id) {
+      try {
+        await api.post(`/api/v1/transfers/${t.id}/lines`, {
+          item_id: t.item_id, quantity: String(t.quantity ?? 0),
+        });
+        await refreshEditing(t.id);
+      } catch (err) {
+        // Not fatal: the document still opens and still shows what it moves, read off the header.
+        console.error(err);
+      }
+    }
     // A legacy permit can carry a null location; leaving the box empty is honest, and the route
     // is locked in edit mode anyway so nothing can be typed over it.
     setSource(t.source_location_kind && t.source_location_id != null

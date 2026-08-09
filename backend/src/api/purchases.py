@@ -310,3 +310,49 @@ def return_purchase(
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "return_invalid", "message": str(exc)})
     db.commit()
     return DocOut(id=ret.id, document_number=ret.document_number, ledger_entry_id=ret.ledger_entry_id)
+
+class ReverseIn(BaseModel):
+    """«تعديل» ولا «حذف» — الحركة واحدة والنية مختلفة."""
+
+    reason: str = "edit"
+
+
+@router.post("/{purchase_id}/reverse", response_model=DocOut,
+             status_code=status.HTTP_201_CREATED)
+def reverse_purchase(
+    purchase_id: int,
+    body: ReverseIn,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> DocOut:
+    """عكس فاتورة شراء مرحّلة بالكامل — للتعديل أو للإلغاء.
+
+    A posted purchase cannot be altered in place; the ledger is append-only and the goods are
+    already on the shelf. So «تعديل» and «حذف» are the same movement — a full return of every line
+    — and differ only in what the user does next.
+
+    Separate from `/returns` for the same reason the sale's is: a supplier return is a real
+    business event that belongs in مرتجعات المشتريات, and an edit is a correction that happens to
+    be implemented as one. Sending both through that door made the returns register count the
+    company's own typing mistakes as goods sent back to a supplier.
+    """
+    inv = db.get(PurchaseInvoice, purchase_id)
+    if inv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "الفاتورة غير موجودة"})
+    lines = [(line.item_id, line.quantity) for line in inv.lines]
+    if not lines:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "validation", "message": "الفاتورة من غير سطور"})
+    try:
+        ret = purchase_service.return_purchase(
+            db, purchase_invoice_id=purchase_id, lines=lines,
+            actor_role=current.role, actor_user_id=current.id,
+            notes=f"عكس للفاتورة {inv.document_number} ({body.reason})",
+        )
+    except (PurchaseError, StockError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "reverse_invalid", "message": str(exc)}) from exc
+    db.commit()
+    return DocOut(id=ret.id, document_number=ret.document_number,
+                  ledger_entry_id=ret.ledger_entry_id)

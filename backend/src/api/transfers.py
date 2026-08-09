@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_TRANSFER_APPROVE, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
+from src.core.money import to_qty
 from src.models.stock import LocationKind
 from src.models.transfer import StockTransfer, StockTransferLine, TransferRoute
 from src.services import transfer_service
@@ -73,10 +74,17 @@ class RejectIn(BaseModel):
 
 
 def _out(t) -> TransferOut:
+    # `item_id`/`quantity` on the row are what the document was CREATED with, back when a transfer
+    # moved one thing. Once it carries lines, they are what actually moves — approval reads the
+    # lines and ignores the header — so the summary has to be read off them too. Reporting the
+    # stale header here is how a list ends up printing «٢» beside a document that says «١».
+    lines = list(getattr(t, "lines", []))
+    head_item = lines[0].item_id if len(lines) == 1 else (None if lines else t.item_id)
+    head_qty = (sum((ln.quantity for ln in lines), to_qty(0)) if lines else t.quantity)
     return TransferOut(
         id=t.id, document_number=t.document_number, status=t.status.value,
         route=t.route.value, approved_by=t.approved_by,
-        item_id=t.item_id, quantity=t.quantity,
+        item_id=head_item, quantity=head_qty,
         source_location_kind=t.source_location_kind.value,
         source_location_id=t.source_location_id,
         dest_location_kind=t.dest_location_kind.value,
