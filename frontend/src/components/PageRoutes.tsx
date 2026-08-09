@@ -4,6 +4,7 @@ import Users from '../pages/Users';
 import Org from '../pages/Org';
 import Warehouses from '../pages/Warehouses';
 import Branches from '../pages/Branches';
+import Dashboard from '../pages/Dashboard';
 import MainAccounts from '../pages/MainAccounts';
 import SubAccounts from '../pages/SubAccounts';
 import Treasuries from '../pages/Treasuries';
@@ -64,7 +65,7 @@ export default function PageRoutes({ location }: { location?: string }) {
   return (
     <Routes location={location}>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="/dashboard" element={<Placeholder name="الرئيسية" />} />
+      <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/users" element={<Users />} />
       <Route path="/org" element={<Org />} />
       {/* Split out of /org: their menu has each as its own screen, and a menu entry

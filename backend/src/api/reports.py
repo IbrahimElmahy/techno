@@ -12,7 +12,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
 from src.core import clock
 from src.core.db import get_db
-from src.lib import reporting, stocktake, trade_reports
+from src.lib import health, reporting, stocktake, trade_reports
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
 from src.models.sales import SalesInvoice
@@ -208,3 +208,20 @@ def export_report(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=report_{report_type}.csv"}
     )
+
+
+@router.get("/health")
+def system_health(
+    # `sales.read` rather than admin-only: the point of the screen is that the person who can act
+    # on a finding sees it without asking. The findings name documents and items they already have
+    # every right to open — the diagnosis is not more sensitive than the thing diagnosed.
+    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+):
+    """فحص النظام — كل حاجة فيها خلل في نداء واحد.
+
+    Read-only, and deliberately one call: the dashboard asking eleven endpoints would be eleven
+    round trips to render one page, and would leave the page half-answered whenever one of them
+    failed.
+    """
+    return health.run_all(db)
