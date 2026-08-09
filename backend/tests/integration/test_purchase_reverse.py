@@ -101,8 +101,9 @@ def test_reversing_twice_is_refused_rather_than_doubled(client, inv_world, login
     wh = inv_world["central_wh"]
     item, inv = _buy(client, h, wh)
 
-    first = client.post(f"/api/v1/purchases/{inv['id']}/reverse", headers=h, json={"reason": "edit"})
+    url = f"/api/v1/purchases/{inv['id']}/reverse"
+    first = client.post(url, headers=h, json={"reason": "edit"})
     assert first.status_code == 201, first.text
-    second = client.post(f"/api/v1/purchases/{inv['id']}/reverse", headers=h, json={"reason": "edit"})
+    second = client.post(url, headers=h, json={"reason": "edit"})
     assert second.status_code == 409, second.text
     assert _on_hand(client, h, item["id"], wh) == Decimal("0")

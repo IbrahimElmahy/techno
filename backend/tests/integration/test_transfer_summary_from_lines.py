@@ -90,8 +90,6 @@ def test_a_multi_line_permit_totals_its_lines(client, inv_world, login):
 def test_what_approval_moves_is_what_the_summary_said(client, inv_world, login):
     """The claim that makes the whole thing safe: after the edit, approval moves the corrected
     quantity — not the one the document was created with."""
-    from src.models.stock import LocationKind, StockDirection, StockMovement
-    from sqlalchemy import select
 
     h = login("admin")
     wh, dest = inv_world["central_wh"], inv_world["branch_wh"]
