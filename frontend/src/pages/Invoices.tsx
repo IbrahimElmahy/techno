@@ -1651,7 +1651,13 @@ export default function Invoices() {
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Divider orientation="right" style={{ fontWeight: 700, flex: 1 }}>
+            {/* `minWidth: 0` is load-bearing. antd's horizontal Divider carries `min-width: 100%`,
+                so inside a flex row it claims the full width no matter what `flex` says and
+                shoves whatever sits beside it off the edge — the الأعمدة button ended up at
+                `left: -29`, with only the gear peeking past the screen and its label clipped.
+                `flexShrink: 0` on the button then keeps it whole when the row gets tight. */}
+            <Divider orientation="right"
+              style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>
               المنتجات المباعة
             </Divider>
             {/* Each person turns off the columns they never read. الصنف · الكمية · الإجمالي are

@@ -95,7 +95,10 @@ export default function ColumnSettings({ choices, hidden, onChange }: Props) {
         </div>
       )}
     >
-      <Button icon={<SettingOutlined />}>الأعمدة</Button>
+      {/* Never shrink. It sits beside headings and toolbars that take `flex: 1`, and a squeezed
+          button loses its label first and then itself — which is how it ended up half off-screen
+          with only the gear showing. */}
+      <Button icon={<SettingOutlined />} style={{ flexShrink: 0 }}>الأعمدة</Button>
     </Dropdown>
   );
 }
