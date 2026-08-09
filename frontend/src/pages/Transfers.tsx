@@ -6,7 +6,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
-  ClearOutlined, ArrowLeftOutlined, CloseCircleOutlined, FileSearchOutlined,
+  ClearOutlined, ArrowLeftOutlined, CloseCircleOutlined, FileSearchOutlined, EditOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -504,6 +504,72 @@ export default function Transfers() {
     }
   };
 
+  /**
+   * تعديل إذن معتمد — يتعكس، ويتفتح تاني بمحتواه للتصحيح.
+   *
+   * An approved transfer posted movements out of one store and into another. Rewriting a quantity
+   * on it would leave two balances describing a document that no longer says what happened, so
+   * «تعديل» means what it means on a posted invoice: reverse it in full, and reopen the form on
+   * exactly what it moved. The original, its reversal and the corrected permit all stay.
+   *
+   * It asks first — the reversal is a real posting, and the row itself leads here.
+   */
+  const editApproved = async (t: TransferRecord) => {
+    const ok = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: `تعديل ${t.document_number}؟`,
+        content: 'الإذن المعتمد ماينفعش يتعدّل في مكانه: هيتعمل له إذن عكسي يرجّع البضاعة لمخزنها، '
+          + 'ويتفتح طلب جديد بمحتواه عشان تصحّح وتبعته للاعتماد من جديد. التلاتة بيفضلوا في السجل.',
+        okText: 'اعكسه وافتحه', cancelText: 'سيبه زي ما هو',
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true), onCancel: () => resolve(false),
+      });
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/api/v1/transfers/${t.id}/reverse`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر عكس الإذن');
+      return;
+    }
+    message.success('اتعكس الإذن — عدّل وابعته للاعتماد من جديد');
+
+    // Refill from what it actually moved — including a legacy permit whose item is on the
+    // document rather than in a lines row.
+    const src = t.source_location_kind && t.source_location_id != null
+      ? locValue(t.source_location_kind, t.source_location_id) : null;
+    const dst = t.dest_location_kind && t.dest_location_id != null
+      ? locValue(t.dest_location_kind, t.dest_location_id) : null;
+    setEditing(null); setDraftQty({});
+    setSource(src); setDest(dst);
+    // Read the source's stock BEFORE building the lines: the quantity box is capped at what is
+    // available, so a line built against a zero would refuse the very quantity being corrected —
+    // and the reversal has just put the goods back, so the number is right there to be read.
+    let stock: StockRow[] = [];
+    if (src) {
+      const { kind, id } = parseLoc(src);
+      try {
+        stock = (await api.get('/api/v1/stock/by-location', { params: {
+          location_kind: kind, location_id: id, only_available: true } })).data || [];
+      } catch { stock = []; }
+      setSourceStock(stock);
+    }
+    setLines(docLines(t).map((l: any, i: number) => {
+      const row = stock.find((x) => x.item_id === l.item_id);
+      return {
+        key: `${Date.now()}-${i}`,
+        item_id: l.item_id,
+        name: row?.name ?? nameOfItem(l.item_id),
+        category: row?.category ?? null,
+        unit: null,
+        available: Number(row?.on_hand ?? 0),
+        quantity: Number(l.quantity) || 0,
+      };
+    }));
+    setCreateVisible(true);
+    fetchTransfers();
+  };
+
   const handleReverse = (record: TransferRecord) => {
     showReversalConfirm({
       title: 'عكس عملية التحويل المخزني',
@@ -603,6 +669,13 @@ export default function Transfers() {
         { key: 'reject', label: 'رفض', danger: true, icon: <CloseCircleOutlined />,
           onClick: () => setRejectOpen(true) },
       ] as ToolbarAction[] : []),
+      // A permit that is already approved is corrected the only honest way: reversed and rewritten.
+      ...(editing && editing.status === 'approved' && canApprove ? [
+        { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+          onClick: () => editApproved(editing) },
+        { key: 'reverse', label: 'عكس', danger: true, icon: <RollbackOutlined />,
+          onClick: () => handleReverse(editing) },
+      ] as ToolbarAction[] : []),
       ...(editing ? [{
         key: 'log', label: 'سجل العمليات', icon: <FileSearchOutlined />,
         onClick: () => setAuditFor(editing.id),
@@ -649,8 +722,10 @@ export default function Transfers() {
           )}
           {editing && editing.status !== 'pending' && (
             <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-              message="الإذن ده اتقفل خلاص"
-              description="الإذن اللي اتعمد أو اترفض مايتعدلش — الاعتماد رحّل حركات على مخزنين، وتعديل الكمية بعدها بيسيب الأرصدة بتوصف مستند مابقاش بيقول اللي حصل."
+              message={editing.status === 'approved' ? 'الإذن ده اتعتمد واتشحن' : 'الإذن ده اترفض'}
+              description={editing.status === 'approved'
+                ? 'الاعتماد رحّل حركات على مخزنين، فالإذن مايتغيّرش في مكانه. «تعديل الإذن» بيعكسه ويفتح طلب جديد بمحتواه عشان تصحّح وتبعته للاعتماد من جديد — والتلاتة بيفضلوا في السجل.'
+                : 'الإذن المرفوض مافيهوش بضاعة اتحركت. لو لسه محتاجه، اعمل طلب جديد.'}
               action={editing.reject_reason
                 ? <span>سبب الرفض: <b>{editing.reject_reason}</b></span> : undefined} />
           )}
@@ -853,6 +928,16 @@ export default function Transfers() {
                         اعتماد الإذن
                       </Button>
                       <Button danger size="large" onClick={() => setRejectOpen(true)}>رفض</Button>
+                    </>
+                  )}
+                  {editing.status === 'approved' && canApprove && (
+                    <>
+                      <Button type="primary" size="large" icon={<EditOutlined />}
+                        onClick={() => editApproved(editing)}>
+                        تعديل الإذن
+                      </Button>
+                      <Button danger size="large" icon={<RollbackOutlined />}
+                        onClick={() => handleReverse(editing)}>عكس</Button>
                     </>
                   )}
                   <Button size="large" onClick={closeCreate}>إغلاق</Button>

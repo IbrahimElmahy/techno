@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowLeftOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
@@ -196,6 +197,54 @@ export default function StockPermits() {
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الإذن');
     } finally { setSaving(false); }
+  };
+
+  /**
+   * تعديل إذن مترحّل — يتعكس، ويتفتح تاني بمحتواه للتصحيح.
+   *
+   * A posted permit cannot be altered in place: it moved goods, and rewriting a quantity would
+   * leave the shelf describing a document that no longer says what happened. So «تعديل» means what
+   * it means on a posted invoice — reverse it in full, and reopen the form on exactly what it
+   * held. Both papers stay in the record: the original, its reversal, and the corrected one.
+   *
+   * It asks first, because the row itself leads here and the reversal is a real posting. An
+   * unconfirmed one would be a mis-click that moves stock.
+   */
+  const editPosted = async (p: Permit) => {
+    const ok = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: `تعديل ${p.document_number}؟`,
+        content: 'الإذن المترحّل ماينفعش يتعدّل في مكانه: هيتعمل له إذن عكسي يرجّع المخزون زي ما '
+          + 'كان، ويتفتح تاني بمحتواه عشان تصحّح وترحّل من جديد. التلاتة بيفضلوا في السجل.',
+        okText: 'اعكسه وافتحه', cancelText: 'سيبه زي ما هو',
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true), onCancel: () => resolve(false),
+      });
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/api/v1/stock/permits/${p.id}/reverse`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر عكس الإذن');
+      return;
+    }
+    message.success('اتعكس الإذن — عدّل ورحّل من جديد');
+    // Refill from what it actually held, so the correction starts from the document rather than
+    // from a blank form somebody has to retype.
+    setKind(p.kind);
+    setWarehouseId(p.warehouse_id);
+    setPermitDate(p.permit_date ? dayjs(p.permit_date) : dayjs());
+    setReason(p.reason || '');
+    setNotes(p.notes || '');
+    setLines(p.lines.map((l, i) => ({
+      key: i + 1,
+      item_id: l.item_id,
+      quantity: Number(l.quantity),
+      ...(p.kind !== 'issue' ? { unit_cost: Number(l.unit_cost) } : {}),
+    })));
+    setDetail(null);
+    setCreating(true);
+    load();
   };
 
   const reverse = async (p: Permit) => {
@@ -398,7 +447,7 @@ export default function StockPermits() {
         message={detail.reversed_by ? 'الإذن ده اتعكس' : 'الإذن ده اتّرحّل خلاص'}
         description={detail.reversed_by
           ? 'اتعمله إذن عكسي رجّع المخزون زي ما كان — الاتنين موجودين في القايمة.'
-          : 'البضاعة اتحركت على المخزن فعلاً، فالإذن مايتعدلش. لو فيه غلط، اعكسه — بيتكتب إذن عكسي ويفضل الاتنين في السجل.'}
+          : 'البضاعة اتحركت على المخزن فعلاً، فالإذن مايتغيّرش في مكانه. «تعديل الإذن» بيعكسه ويفتحه تاني بمحتواه عشان تصحّح وترحّل من جديد — والتلاتة بيفضلوا في السجل.'}
       />
       <Descriptions column={2} size="small" bordered style={{ marginBottom: 12 }}>
         <Descriptions.Item label="النوع">
@@ -444,10 +493,16 @@ export default function StockPermits() {
         </Space>
         <Space>
           {!detail.is_reversal && !detail.reversed_by && (
-            <Popconfirm title="عكس الإذن؟" description="هيترجّع المخزون زي ما كان."
-              onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
-              <Button danger size="large" icon={<RollbackOutlined />}>عكس الإذن</Button>
-            </Popconfirm>
+            <>
+              <Button type="primary" size="large" icon={<EditOutlined />}
+                onClick={() => editPosted(detail)}>
+                تعديل الإذن
+              </Button>
+              <Popconfirm title="عكس الإذن؟" description="هيترجّع المخزون زي ما كان."
+                onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
+                <Button danger size="large" icon={<RollbackOutlined />}>عكس الإذن</Button>
+              </Popconfirm>
+            </>
           )}
           <Button size="large" onClick={closeDoc}>إغلاق</Button>
         </Space>

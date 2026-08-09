@@ -75,7 +75,9 @@ describe('التعديل من جوّه نفس الصفحة', () => {
     // while the permit is still a question; after that it is plain text.
     expect(src).toMatch(/editing\.status === 'pending' && !r\._header \? \(/);
     expect(src).toMatch(/\) : <b>\{qty\(Number\(v\)\)\}<\/b>\)/);
-    expect(src).toMatch(/الإذن ده اتقفل خلاص/);
+    // …and the document says so, and says the way through: «تعديل» reverses and reopens.
+    expect(src).toMatch(/الإذن ده اتعتمد واتشحن/);
+    expect(src).toMatch(/فالإذن مايتغيّرش في مكانه/);
   });
 });
 
