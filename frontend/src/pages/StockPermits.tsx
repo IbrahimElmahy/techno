@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, InputNumber, Modal,
   Popconfirm, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
-import { DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowLeftOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
@@ -58,6 +60,18 @@ export default function StockPermits() {
   const [items, setItems] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  /**
+   * الإذن المفتوح — نفس صفحة الإنشاء بالظبط.
+   *
+   * A permit used to have two surfaces: a modal to write one and a drawer to look at one. So the
+   * screen that CREATED the document and the screen that SHOWED it were different shapes, and
+   * «افتحه وشوف» landed somewhere that looked nothing like where it was typed.
+   *
+   * One page now, filled or empty. A posted permit is read-only on it and says why — the
+   * movements are already on the shelf, and a permit is create-or-reverse by design (there is no
+   * edit endpoint, deliberately: editing one would leave stock describing a document that no
+   * longer says what happened).
+   */
   const [detail, setDetail] = useState<Permit | null>(null);
 
   const [creating, setCreating] = useState(false);
@@ -125,7 +139,13 @@ export default function StockPermits() {
   };
 
   /** One way in, from the list button or from F2 — the store first, then the lines. */
-  const startNew = () => { resetDraft(); setCreating(false); setNewStep('warehouse'); };
+  const startNew = () => { resetDraft(); setDetail(null); setCreating(false); setNewStep('warehouse'); };
+
+  /** Open a posted permit on the same page it would have been written on. */
+  const openPermit = (p: Permit) => { setCreating(false); setDetail(p); };
+
+  /** Leave the document, whichever kind it was. */
+  const closeDoc = () => { setCreating(false); setDetail(null); resetDraft(); };
 
   /** An item picked in the window becomes a line, and the caret goes to its quantity. */
   const addItem = (itemId: number) => {
@@ -182,7 +202,7 @@ export default function StockPermits() {
     try {
       await api.post(`/api/v1/stock/permits/${p.id}/reverse`);
       message.success('اتعكس الإذن');
-      setDetail(null); load();
+      closeDoc(); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر عكس الإذن');
     }
@@ -236,13 +256,7 @@ export default function StockPermits() {
   );
 
   const createForm = (
-    <Modal
-      open={creating} onCancel={() => setCreating(false)} onOk={submit}
-      confirmLoading={saving} width={860} destroyOnHidden
-      title={kind === 'issue' ? 'إذن صرف مخزني'
-        : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}
-      okText="ترحيل الإذن" cancelText="إلغاء"
-    >
+    <>
       <Segmented
         block value={kind} onChange={(v) => { setKind(v as Kind); setLines([]); }}
         style={{ marginBottom: 12 }}
@@ -339,8 +353,130 @@ export default function StockPermits() {
           ? 'الصرف من المتاح فقط — ممنوع أي رصيد سالب.'
           : 'لو سِبت التكلفة فاضية هتتاخد من تكلفة الصنف الحالية.'}
       />
-    </Modal>
+
+      <div style={{
+        marginTop: 16, padding: 16, borderRadius: 10,
+        background: '#f6faf3', border: '1px solid #e6efe3',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+        flexWrap: 'wrap',
+      }}>
+        <Space size={32} wrap>
+          <span>
+            <span style={{ color: '#8a8a8a', fontSize: 12 }}>عدد الأصناف: </span>
+            <b>{lines.length}</b>
+          </span>
+          {kind !== 'issue' && (
+            <span>
+              <span style={{ color: '#8a8a8a', fontSize: 12 }}>إجمالي التكلفة: </span>
+              <b style={{ color: '#6AB42D', fontSize: 18 }}>{money(draftTotal)}</b>
+            </span>
+          )}
+        </Space>
+        <Space>
+          <Button type="primary" size="large" loading={saving} onClick={submit}
+            disabled={!warehouseId || lines.length === 0}>
+            ترحيل الإذن
+          </Button>
+          <Button size="large" onClick={closeDoc}>إلغاء</Button>
+        </Space>
+      </div>
+    </>
   );
+
+  /**
+   * الإذن بعد الترحيل — نفس الصفحة، بس مقفولة.
+   *
+   * There is no edit endpoint for a permit and that is deliberate: posting it moved goods, and
+   * changing a quantity afterwards would leave the shelf describing a document that no longer
+   * says what happened. The way to undo one is to reverse it, which writes the opposite movements
+   * and leaves both papers behind.
+   */
+  const postedDoc = detail && (
+    <>
+      <Alert
+        type={detail.reversed_by ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
+        message={detail.reversed_by ? 'الإذن ده اتعكس' : 'الإذن ده اتّرحّل خلاص'}
+        description={detail.reversed_by
+          ? 'اتعمله إذن عكسي رجّع المخزون زي ما كان — الاتنين موجودين في القايمة.'
+          : 'البضاعة اتحركت على المخزن فعلاً، فالإذن مايتعدلش. لو فيه غلط، اعكسه — بيتكتب إذن عكسي ويفضل الاتنين في السجل.'}
+      />
+      <Descriptions column={2} size="small" bordered style={{ marginBottom: 12 }}>
+        <Descriptions.Item label="النوع">
+          <Tag color={KIND_COLOR[detail.kind]}>{KIND_LABEL[detail.kind] || detail.kind}</Tag>
+          {detail.is_reversal && <Tag color="orange">عكسي</Tag>}
+        </Descriptions.Item>
+        <Descriptions.Item label="المخزن">{detail.warehouse_name}</Descriptions.Item>
+        <Descriptions.Item label="التاريخ">
+          {(detail.permit_date || detail.created_at || '').slice(0, 10)}
+        </Descriptions.Item>
+        <Descriptions.Item label="إجمالي التكلفة">
+          <b>{money(detail.total_cost)}</b>
+        </Descriptions.Item>
+        <Descriptions.Item label="السبب" span={2}>{detail.reason || '-'}</Descriptions.Item>
+        <Descriptions.Item label="ملاحظات" span={2}>{detail.notes || '-'}</Descriptions.Item>
+      </Descriptions>
+      <Table<PermitLine>
+        rowKey="id" size="small" dataSource={detail.lines} pagination={false}
+        columns={[
+          { title: 'الصنف', dataIndex: 'item_name' },
+          { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => qty(v) },
+          { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', render: (v: string) => money(v) },
+          { title: 'الإجمالي', dataIndex: 'line_cost',
+            render: (v: string) => <b>{money(v)}</b> },
+        ]}
+      />
+
+      <div style={{
+        marginTop: 16, padding: 16, borderRadius: 10,
+        background: '#f6faf3', border: '1px solid #e6efe3',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+        flexWrap: 'wrap',
+      }}>
+        <Space size={32} wrap>
+          <span>
+            <span style={{ color: '#8a8a8a', fontSize: 12 }}>عدد الأصناف: </span>
+            <b>{detail.lines.length}</b>
+          </span>
+          <span>
+            <span style={{ color: '#8a8a8a', fontSize: 12 }}>إجمالي التكلفة: </span>
+            <b style={{ color: '#6AB42D', fontSize: 18 }}>{money(detail.total_cost)}</b>
+          </span>
+        </Space>
+        <Space>
+          {!detail.is_reversal && !detail.reversed_by && (
+            <Popconfirm title="عكس الإذن؟" description="هيترجّع المخزون زي ما كان."
+              onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
+              <Button danger size="large" icon={<RollbackOutlined />}>عكس الإذن</Button>
+            </Popconfirm>
+          )}
+          <Button size="large" onClick={closeDoc}>إغلاق</Button>
+        </Space>
+      </div>
+    </>
+  );
+
+  // The document page — the SAME page whether it is being written or being read. This is the
+  // whole point: «افتح الإذن» lands where «اعمل إذن» lands, so nothing has to be relearned to
+  // look at what you typed yesterday.
+  if (creating || detail) {
+    return (
+      <div>
+        {doors}
+        <Card title={(
+          <Space>
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={closeDoc}>رجوع</Button>
+            <span>{detail
+              ? `${KIND_LABEL[detail.kind] || detail.kind} — ${detail.document_number}`
+              : kind === 'issue' ? 'إذن صرف مخزني'
+                : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}</span>
+            {detail?.reversed_by && <Tag color="default">اتعكس</Tag>}
+          </Space>
+        )}>
+          {detail ? postedDoc : createForm}
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <Card
@@ -358,7 +494,6 @@ export default function StockPermits() {
       )}
     >
       {doors}
-      {createForm}
 
       <ListToolbar
         searchPlaceholder="بحث برقم الإذن أو السبب"
@@ -375,7 +510,7 @@ export default function StockPermits() {
 
       <Table<Permit>
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
-        onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
+        onRow={(r) => ({ onClick: () => openPermit(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد أذونات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         columns={[
@@ -400,46 +535,6 @@ export default function StockPermits() {
         ]}
       />
 
-      <Drawer
-        open={!!detail} onClose={() => setDetail(null)} width={640}
-        title={detail?.document_number}
-        extra={detail && !detail.is_reversal && !detail.reversed_by && (
-          <Popconfirm title="عكس الإذن؟" description="هيترجّع المخزون زي ما كان."
-            onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
-            <Button danger icon={<RollbackOutlined />}>عكس الإذن</Button>
-          </Popconfirm>
-        )}
-      >
-        {detail && (
-          <>
-            <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
-              <Descriptions.Item label="النوع">
-                {detail.kind === 'receipt' ? 'إذن إضافة' : 'إذن صرف'}
-              </Descriptions.Item>
-              <Descriptions.Item label="المخزن">{detail.warehouse_name}</Descriptions.Item>
-              <Descriptions.Item label="التاريخ">
-                {(detail.permit_date || detail.created_at || '').slice(0, 10)}
-              </Descriptions.Item>
-              <Descriptions.Item label="السبب">{detail.reason || '-'}</Descriptions.Item>
-              <Descriptions.Item label="ملاحظات">{detail.notes || '-'}</Descriptions.Item>
-              <Descriptions.Item label="إجمالي التكلفة">
-                <b>{money(detail.total_cost)}</b>
-              </Descriptions.Item>
-            </Descriptions>
-            <Table<PermitLine>
-              rowKey="id" size="small" dataSource={detail.lines} pagination={false}
-              columns={[
-                { title: 'الصنف', dataIndex: 'item_name' },
-                { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => qty(v) },
-                { title: 'تكلفة الوحدة', dataIndex: 'unit_cost',
-                  render: (v: string) => money(v) },
-                { title: 'الإجمالي', dataIndex: 'line_cost',
-                  render: (v: string) => <b>{money(v)}</b> },
-              ]}
-            />
-          </>
-        )}
-      </Drawer>
     </Card>
   );
 }
