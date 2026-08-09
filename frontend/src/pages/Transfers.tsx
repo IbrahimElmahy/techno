@@ -6,7 +6,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
-  ClearOutlined, ArrowLeftOutlined,
+  ClearOutlined, ArrowLeftOutlined, CloseCircleOutlined, FileSearchOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -129,6 +129,20 @@ export default function Transfers() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [lines, setLines] = useState<TransferLine[]>([]);
   const [submitting, setSubmitting] = useState(false);
+
+  /**
+   * الإذن المفتوح للتعديل والاعتماد — نفس صفحة الإنشاء بالظبط.
+   *
+   * Approving used to happen in a modal that opened over the list: a read-only sheet with an
+   * اعتماد button. So the screen that WRITES a permit and the screen that DECIDES on it were two
+   * different things, and the person who found a wrong quantity while approving was editing it
+   * through a popup that looked nothing like the form it was typed in.
+   *
+   * There is one document page now. It opens empty for a new permit and filled for an existing
+   * one, and اعتماد / رفض sit on it — because «هل أوافق» is answered by reading the document, and
+   * the place to read it is the place it was written.
+   */
+  const [editing, setEditing] = useState<TransferRecord | null>(null);
 
   const fetchTransfers = async () => {
     setLoading(true);
@@ -287,8 +301,42 @@ export default function Transfers() {
   };
 
   const closeCreate = () => {
-    setCreateVisible(false);
+    setCreateVisible(false); setEditing(null); setDraftQty({});
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
+  };
+
+  /**
+   * فتح إذن موجود في نفس الصفحة.
+   *
+   * Its route is fixed: the permit says goods leave HERE and arrive THERE, and changing that is a
+   * different permit, not an edit of this one. Its lines are not — a quantity that no longer
+   * matches what is on the shelf is the ordinary reason an approver hesitates, and «اعتمد أو
+   * سيبه» is not how a request that is nearly right gets handled.
+   */
+  const openTransfer = (t: TransferRecord) => {
+    setEditing(t);
+    setDraftQty({});
+    // A legacy permit can carry a null location; leaving the box empty is honest, and the route
+    // is locked in edit mode anyway so nothing can be typed over it.
+    setSource(t.source_location_kind && t.source_location_id != null
+      ? locValue(t.source_location_kind, t.source_location_id) : null);
+    setDest(t.dest_location_kind && t.dest_location_id != null
+      ? locValue(t.dest_location_kind, t.dest_location_id) : null);
+    setActiveCategory(null);
+    setCreateVisible(true);
+  };
+
+  /** Re-read the document after every change, so the page shows the server's answer rather than
+   *  what this screen believes it did. */
+  const refreshEditing = async (id: number) => {
+    try {
+      const res = await api.get('/api/v1/transfers');
+      const rows = res.data || [];
+      setTransfers(rows);
+      const found = rows.find((t: TransferRecord) => t.id === id) ?? null;
+      setEditing(found);
+      if (!found) closeCreate();
+    } catch (err) { console.error(err); }
   };
 
   const handleSubmit = async () => {
@@ -329,18 +377,9 @@ export default function Transfers() {
     fetchTransfers();
   };
 
-  /**
-   * إذن التحويل المفتوح للمراجعة — ودي الشاشة اللي «اعتماد» بيوصّل لها.
-   *
-   * Approving used to be a button on a row: one click, stock moved, and the approver never saw
-   * what he was approving. A transfer is a request from somebody to somebody, and the person who
-   * answers it has to be able to read it first — and to change it, because «اعتمد أو سيبه» is not
-   * how a request that is nearly right gets handled.
-   */
-  const [reviewing, setReviewing] = useState<TransferRecord | null>(null);
-  // السطر يفتح ورقة المراجعة — نفس اللي زرار «مراجعة» بيعمله، بالكيبورد وبالماوس.
+  // السطر يفتح المستند نفسه — نفس اللي زرار «اعتماد» بيعمله، بالكيبورد وبالماوس.
   const listKb = useTableKeyboard<TransferRecord>({
-    rows: filter.filtered, rowKey: (t) => t.id, onOpen: setReviewing,
+    rows: filter.filtered, rowKey: (t) => t.id, onOpen: (t) => openTransfer(t),
   });
   /**
    * أسماء الأصناف.
@@ -378,32 +417,32 @@ export default function Transfers() {
    */
   const [reviewStock, setReviewStock] = useState<Record<number, number>>({});
   useEffect(() => {
-    if (!reviewing) { setReviewStock({}); return; }
+    const doc = editing;
+    if (!doc) { setReviewStock({}); return; }
     api.get('/api/v1/stock/by-location', { params: {
-      location_kind: reviewing.source_location_kind,
-      location_id: reviewing.source_location_id, only_available: true } })
+      location_kind: doc.source_location_kind,
+      location_id: doc.source_location_id, only_available: true } })
       .then((r) => setReviewStock(Object.fromEntries(
         (r.data || []).map((x: any) => [x.item_id, Number(x.on_hand)]))))
       .catch(() => setReviewStock({}));
-  }, [reviewing]);
+  }, [editing]);
   const [rejectReason, setRejectReason] = useState('');
 
-  /** Re-read the document after every decision, so the sheet always shows the server's answer
-   *  rather than what this screen believes it did. */
-  const refreshReviewed = async (id: number) => {
-    try {
-      const res = await api.get('/api/v1/transfers');
-      const rows = res.data || [];
-      setTransfers(rows);
-      setReviewing(rows.find((t: TransferRecord) => t.id === id) ?? null);
-    } catch (err) { console.error(err); }
-  };
+  /**
+   * الكمية اللي بتتكتب دلوقتي، قبل ما تترسل.
+   *
+   * The quantity is committed on blur rather than on every keystroke — «12» typed one digit at a
+   * time would otherwise send 1 then 12, and the first of those is a real edit somebody else could
+   * read. Held in state rather than read back off the input at blur time: reading the DOM made the
+   * value depend on how the browser reports it, which is a thing that quietly stops being true.
+   */
+  const [draftQty, setDraftQty] = useState<Record<number, number>>({});
 
   const setReviewLineQty = async (lineId: number, quantity: number | null) => {
     if (!quantity || quantity <= 0) return;
     try {
       await api.patch(`/api/v1/transfers/lines/${lineId}`, { quantity: String(quantity) });
-      if (reviewing) await refreshReviewed(reviewing.id);
+      if (editing) await refreshEditing(editing.id);
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر تعديل الكمية');
     }
@@ -412,7 +451,7 @@ export default function Transfers() {
   const removeReviewLine = async (lineId: number) => {
     try {
       await api.delete(`/api/v1/transfers/lines/${lineId}`);
-      if (reviewing) await refreshReviewed(reviewing.id);
+      if (editing) await refreshEditing(editing.id);
       message.success('اتشال الصنف من الإذن');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حذف الصنف');
@@ -420,12 +459,13 @@ export default function Transfers() {
   };
 
   const rejectTransfer = async () => {
-    if (!reviewing) return;
+    if (!editing) return;
     try {
-      await api.post(`/api/v1/transfers/${reviewing.id}/reject`,
+      await api.post(`/api/v1/transfers/${editing.id}/reject`,
         { reason: rejectReason || null });
       message.success('اترفض الإذن — مافيش بضاعة اتحركت');
-      setRejectOpen(false); setRejectReason(''); setReviewing(null);
+      setRejectOpen(false); setRejectReason('');
+      closeCreate();
       fetchTransfers();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر رفض الإذن');
@@ -436,7 +476,7 @@ export default function Transfers() {
     try {
       await api.post(`/api/v1/transfers/${id}/approve`);
       message.success('تمت الموافقة واعتماد التحويل بنجاح');
-      setReviewing(null);
+      closeCreate();
       fetchTransfers();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر اعتماد الإذن');
@@ -517,16 +557,42 @@ export default function Transfers() {
 
   /** The same strip the sale, the return and the purchase carry — same verbs, same places, and
    *  the keys it advertises are bound by the toolbar itself. */
-  const transferToolbar = (): ToolbarAction[] => [
-    { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-      onClick: startNew },
-    { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
-      onClick: handleSubmit, disabled: !source || !dest || lines.length === 0 },
-    { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
-      onClick: () => setLines([]), disabled: lines.length === 0 },
-    { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowLeftOutlined />,
-      onClick: closeCreate },
-  ];
+  const transferToolbar = (): ToolbarAction[] => {
+    const pending = editing?.status === 'pending';
+    return [
+      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+        onClick: startNew },
+      // On a saved permit «حفظ» has nothing to save: the lines are written the moment they are
+      // changed, because editing them is what the approver does while deciding.
+      ...(editing ? [] : [{
+        key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
+        onClick: handleSubmit,
+        disabled: !source || !dest || lines.length === 0,
+      } as ToolbarAction]),
+      // اعتماد / رفض live HERE, on the document, and only while it is still a question. This is
+      // the whole point: the approver reads and fixes the permit on the page it was written on,
+      // instead of deciding from a read-only sheet that opened over the list.
+      ...(editing && pending && canApprove ? [
+        // No shortcut, deliberately. F4 is the system-wide screen search, and approving moves
+        // goods across two warehouses — a decision somebody makes once, not a keystroke worth
+        // racing to.
+        { key: 'approve', label: 'اعتماد', icon: <CheckCircleOutlined />,
+          onClick: () => handleApprove(editing.id),
+          disabled: (editing.lines?.length ?? 0) === 0 && !editing.item_id },
+        { key: 'reject', label: 'رفض', danger: true, icon: <CloseCircleOutlined />,
+          onClick: () => setRejectOpen(true) },
+      ] as ToolbarAction[] : []),
+      ...(editing ? [{
+        key: 'log', label: 'سجل العمليات', icon: <FileSearchOutlined />,
+        onClick: () => setAuditFor(editing.id),
+      } as ToolbarAction] : [{
+        key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        onClick: () => setLines([]), disabled: lines.length === 0,
+      } as ToolbarAction]),
+      { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowLeftOutlined />,
+        onClick: closeCreate },
+    ];
+  };
 
   if (createVisible) {
     const stockOfCategory = sourceStock.filter((s) => (
@@ -538,9 +604,36 @@ export default function Transfers() {
         <Card title={(
           <Space>
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={closeCreate}>رجوع</Button>
-            <span>طلب تحويل مخزني جديد</span>
+            <span>{editing
+              ? `إذن تحويل ${editing.document_number}`
+              : 'طلب تحويل مخزني جديد'}</span>
+            {editing && (
+              <Tag color={(STATUS_TAGS[editing.status] || {}).color}>
+                {(STATUS_TAGS[editing.status] || {}).text || editing.status}
+              </Tag>
+            )}
           </Space>
         )}>
+          {/* An open permit says what happens next, on the document, before anything else. The
+              approver arrives here to answer a question and should not have to infer it from
+              which buttons are lit. */}
+          {editing && editing.status === 'pending' && (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message={canApprove
+                ? 'الإذن ده لسه مستني الاعتماد'
+                : 'الإذن ده لسه مستني اعتماد مدير المخزن'}
+              description={canApprove
+                ? 'عدّل الكميات أو شيل صنف لو محتاج، وبعدين اعتمد أو ارفض من فوق. مافيش بضاعة اتحركت لحد دلوقتي.'
+                : 'تقدر تشوفه وتراجعه — الاعتماد نفسه من صلاحية مدير المخزن.'} />
+          )}
+          {editing && editing.status !== 'pending' && (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+              message="الإذن ده اتقفل خلاص"
+              description="الإذن اللي اتعمد أو اترفض مايتعدلش — الاعتماد رحّل حركات على مخزنين، وتعديل الكمية بعدها بيسيب الأرصدة بتوصف مستند مابقاش بيقول اللي حصل."
+              action={editing.reject_reason
+                ? <span>سبب الرفض: <b>{editing.reject_reason}</b></span> : undefined} />
+          )}
+
           {/* 1) من أين وإلى أين */}
           <Divider orientation="right" style={{ fontWeight: 700 }}>١) التحويل من أين إلى أين</Divider>
           <Row gutter={16}>
@@ -549,6 +642,9 @@ export default function Transfers() {
               <Select showSearch size="large" style={{ width: '100%' }}
                 placeholder="اختر المخزن أو العهدة المصدر"
                 optionFilterProp="label"
+                // Fixed once the permit exists: «from here to there» IS the permit, and changing
+                // it is a different one rather than an edit of this one.
+                disabled={!!editing}
                 value={source ?? undefined} onChange={onSourceChange}
                 options={locationOptions} />
             </Col>
@@ -557,6 +653,7 @@ export default function Transfers() {
               <Select showSearch size="large" style={{ width: '100%' }}
                 placeholder="اختر المخزن أو العهدة الوجهة"
                 optionFilterProp="label"
+                disabled={!!editing}
                 value={dest ?? undefined} onChange={(v) => setDest(v)}
                 options={locationOptions} />
             </Col>
@@ -577,8 +674,10 @@ export default function Transfers() {
           )}
 
           {/* 2) الفئة ثم 3) الأصناف */}
-          <Divider orientation="right" style={{ fontWeight: 700 }}>٢) الفئة والأصناف</Divider>
-          {!source ? (
+          <Divider orientation="right" style={{ fontWeight: 700 }}>
+            {editing ? 'أصناف الإذن' : '٢) الفئة والأصناف'}
+          </Divider>
+          {editing ? null : !source ? (
             <Empty description="اختر المصدر أولاً لعرض الأصناف المتاحة فيه" style={{ margin: '12px 0' }} />
           ) : stockLoading ? (
             <Empty description="جارٍ تحميل أرصدة المصدر..." style={{ margin: '12px 0' }} />
@@ -607,8 +706,56 @@ export default function Transfers() {
             </Row>
           )}
 
+          {/* السطور المحفوظة — بتتعدّل على السيرفر على طول.
+              A saved permit's lines are rows in the database, not a draft: changing a quantity or
+              dropping an item IS the edit, and it is what an approver does while deciding. A
+              closed permit is read-only — approval already moved goods across two warehouses. */}
+          {editing && (
+            <Table
+              style={{ marginTop: 16 }} size="small" rowKey="id" pagination={false}
+              dataSource={editing.lines ?? []}
+              locale={{ emptyText: 'مفيش أصناف على الإذن ده' }}
+              columns={[
+                { title: 'الصنف', dataIndex: 'item_id',
+                  render: (id: number) => <b>{nameOfItem(id)}</b> },
+                { title: 'المتاح في المصدر',
+                  render: (_: any, r: any) => {
+                    // Red the moment the line asks for more than is on the shelf — the ordinary
+                    // reason an approver hesitates, said before he presses اعتماد rather than by
+                    // the negative-stock guard afterwards.
+                    const have = reviewStock[r.item_id] ?? 0;
+                    const short = Number(r.quantity || 0) > have;
+                    return (
+                      <span style={{ color: short ? '#cf1322' : '#6AB42D', fontWeight: 600 }}>
+                        {qty(have)}
+                      </span>
+                    );
+                  } },
+                { title: 'الكمية المحوّلة', dataIndex: 'quantity',
+                  render: (v: any, r: any) => (editing.status === 'pending' ? (
+                    <InputNumber size="small" min={0} step={1}
+                      value={draftQty[r.id] ?? Number(v)}
+                      style={{ width: 120 }} keyboard={false} data-grid-col="qty"
+                      onChange={(val) => setDraftQty(
+                        (d) => ({ ...d, [r.id]: Number(val) }))}
+                      onPressEnter={() => setReviewLineQty(r.id, draftQty[r.id] ?? Number(v))}
+                      onBlur={() => setReviewLineQty(r.id, draftQty[r.id] ?? Number(v))} />
+                  ) : <b>{qty(Number(v))}</b>) },
+                ...(editing.status === 'pending' ? [{
+                  title: '', width: 50,
+                  render: (_: any, r: any) => (
+                    <Popconfirm title="تشيل الصنف ده من الإذن؟" okText="شيل" cancelText="لأ"
+                      onConfirm={() => removeReviewLine(r.id)}>
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  ),
+                }] : []),
+              ]}
+            />
+          )}
+
           {/* Lines */}
-          {lines.length > 0 && (
+          {!editing && lines.length > 0 && (
             <Table
               style={{ marginTop: 16 }} size="small" rowKey="key" pagination={false}
               dataSource={lines}
@@ -653,11 +800,16 @@ export default function Transfers() {
             <Space size={32} wrap>
               <span>
                 <span style={{ color: '#8a8a8a', fontSize: 12 }}>عدد الأصناف: </span>
-                <b>{lines.length}</b>
+                <b>{editing ? (editing.lines?.length ?? 0) : lines.length}</b>
               </span>
               <span>
                 <span style={{ color: '#8a8a8a', fontSize: 12 }}>إجمالي الكميات: </span>
-                <b style={{ color: '#6AB42D', fontSize: 18 }}>{qty(totalUnits)}</b>
+                <b style={{ color: '#6AB42D', fontSize: 18 }}>
+                  {qty(editing
+                    ? (editing.lines ?? []).reduce(
+                      (t: number, l: any) => t + Number(l.quantity || 0), 0)
+                    : totalUnits)}
+                </b>
               </span>
               {source && dest && route && !sameLocation && (
                 <span style={{ fontSize: 13 }}>
@@ -668,12 +820,32 @@ export default function Transfers() {
               )}
             </Space>
             <Space>
-              <Button type="primary" size="large" loading={submitting}
-                disabled={!route || sameLocation || lines.length === 0}
-                onClick={handleSubmit}>
-                إرسال طلب التحويل
-              </Button>
-              <Button size="large" onClick={closeCreate}>إلغاء</Button>
+              {/* The decision sits at the bottom of the document it is a decision about — the
+                  same place «إرسال طلب التحويل» sits when the document is new. */}
+              {editing ? (
+                <>
+                  {editing.status === 'pending' && canApprove && (
+                    <>
+                      <Button type="primary" size="large" icon={<CheckCircleOutlined />}
+                        disabled={(editing.lines?.length ?? 0) === 0 && !editing.item_id}
+                        onClick={() => handleApprove(editing.id)}>
+                        اعتماد الإذن
+                      </Button>
+                      <Button danger size="large" onClick={() => setRejectOpen(true)}>رفض</Button>
+                    </>
+                  )}
+                  <Button size="large" onClick={closeCreate}>إغلاق</Button>
+                </>
+              ) : (
+                <>
+                  <Button type="primary" size="large" loading={submitting}
+                    disabled={!route || sameLocation || lines.length === 0}
+                    onClick={handleSubmit}>
+                    إرسال طلب التحويل
+                  </Button>
+                  <Button size="large" onClick={closeCreate}>إلغاء</Button>
+                </>
+              )}
             </Space>
           </div>
         </Card>
@@ -712,9 +884,11 @@ export default function Transfers() {
       title: 'الإجراءات', key: 'actions',
       render: (_: any, record: TransferRecord) => (
         <Space size="middle">
+          {/* Opens the document — the decision is taken on the permit, not on a sheet ABOUT the
+              permit. Same page it was written on, same page it is fixed on. */}
           {record.status === 'pending' && canApprove && (
             <Button type="primary" size="small" icon={<CheckCircleOutlined />}
-              onClick={() => setReviewing(record)}>
+              onClick={() => openTransfer(record)}>
               اعتماد
             </Button>
           )}
@@ -730,115 +904,19 @@ export default function Transfers() {
   ];
 
   /**
-   * ورقة المراجعة — الإذن نفسه، وكل قرار عليه.
+   * سجل عمليات الإذن — مين عمل إيه وإمتى.
    *
-   * Deliberately NOT a confirm dialog. «هل أنت متأكد؟» over a document nobody has read is a
-   * question with no information in it; this shows what is being moved, from where to where, and
-   * lets the approver fix a quantity or drop an item before he answers.
+   * What used to sit here was a review sheet: a read-only modal that opened over the list with an
+   * اعتماد button on it. So the screen that WROTE a permit and the screen that DECIDED on it were
+   * two different things, and an approver who found a wrong quantity fixed it through a popup that
+   * looked nothing like the form it was typed in.
    *
-   * There is no delete button. The request is somebody's ask and somebody may have to answer for
-   * it — the way to say «مش هيتم» is to reject it, which leaves the reason on the document.
+   * The document page does both now, and the sheet is gone — two ways to approve is one way too
+   * many. What survives from it is the reasoning: a decision is taken by READING the permit and
+   * being able to correct it, never from a «هل أنت متأكد؟» over a document nobody has opened. And
+   * there is still no delete: the way to say «مش هيتم» is to reject, which leaves the reason on
+   * the document.
    */
-  const reviewSheet = (
-    <Modal
-      open={!!reviewing}
-      onCancel={() => setReviewing(null)}
-      width={760}
-      destroyOnHidden
-      title={reviewing ? `إذن تحويل ${reviewing.document_number}` : ''}
-      footer={reviewing && reviewing.status === 'pending' ? [
-        <Button key="log" onClick={() => setAuditFor(reviewing.id)}>سجل العمليات</Button>,
-        <Button key="close" onClick={() => setReviewing(null)}>إغلاق</Button>,
-        <Button key="reject" danger onClick={() => setRejectOpen(true)}>رفض</Button>,
-        <Button key="ok" type="primary" icon={<CheckCircleOutlined />}
-          disabled={(reviewing.lines?.length ?? 0) === 0 && !reviewing.item_id}
-          onClick={() => handleApprove(reviewing.id)}>اعتماد</Button>,
-      ] : [
-        <Button key="log" onClick={() => reviewing && setAuditFor(reviewing.id)}>سجل العمليات</Button>,
-        <Button key="close" onClick={() => setReviewing(null)}>إغلاق</Button>,
-      ]}
-    >
-      {reviewing && (
-        <>
-          <Descriptions bordered size="small" column={2} style={{ marginBottom: 12 }}>
-            <Descriptions.Item label="من">
-              {locationName(reviewing.source_location_kind, reviewing.source_location_id)}
-            </Descriptions.Item>
-            <Descriptions.Item label="إلى">
-              {locationName(reviewing.dest_location_kind, reviewing.dest_location_id)}
-            </Descriptions.Item>
-            <Descriptions.Item label="نوع المناقلة">
-              {ROUTE_LABELS[reviewing.route] || reviewing.route}
-            </Descriptions.Item>
-            <Descriptions.Item label="الحالة">
-              <Tag color={(STATUS_TAGS[reviewing.status] || {}).color}>
-                {(STATUS_TAGS[reviewing.status] || {}).text || reviewing.status}
-              </Tag>
-            </Descriptions.Item>
-            {reviewing.reject_reason && (
-              <Descriptions.Item label="سبب الرفض" span={2}>
-                {reviewing.reject_reason}
-              </Descriptions.Item>
-            )}
-          </Descriptions>
-
-          {reviewing.status === 'pending' && (reviewing.lines ?? []).some(
-            (l: any) => Number(l.quantity || 0) > (reviewStock[l.item_id] ?? 0)) && (
-            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-              message="فيه سطور أكتر من المتاح في المخزن"
-              description="عدّل الكميات للمتاح قبل الاعتماد — الاعتماد هيترفض، والرصيد ماينفعش ينزل تحت الصفر." />
-          )}
-          {reviewing.status !== 'pending' && (
-            <Alert type="info" showIcon style={{ marginBottom: 12 }}
-              message="الإذن ده اتقفل خلاص"
-              description="الإذن اللي اتعمد أو اترفض مايتعدلش — الاعتماد رحّل حركات على مخزنين، وتعديل الكمية بعدها بيسيب الأرصدة بتوصف مستند مابقاش بيقول اللي حصل." />
-          )}
-
-          <Table
-            size="small" rowKey="id" pagination={false}
-            dataSource={reviewing.lines ?? []}
-            locale={{ emptyText: reviewing.item_id
-              ? 'إذن قديم — الصنف مكتوب على المستند نفسه'
-              : 'مفيش أصناف على الإذن — ارفضه بدل ما تعتمده' }}
-            columns={[
-              { title: 'الصنف', dataIndex: 'item_id',
-                // The item's own name, from the catalogue the picker already loaded.
-                render: (id: number) => nameOfItem(id) },
-              // What is actually on the shelf right now, beside what is being asked for. The
-              // approver cannot answer «أوافق؟» without it, and finding out at approval — when the
-              // guard refuses — is finding out after the decision felt made.
-              { title: 'المتاح دلوقتي', key: 'avail', width: 120,
-                render: (_: any, r: any) => {
-                  const have = reviewStock[r.item_id] ?? 0;
-                  const want = Number(r.quantity || 0);
-                  return (
-                    <b style={{ color: have >= want ? '#6AB42D' : '#cf1322' }}>{qty(have)}</b>
-                  );
-                } },
-              { title: 'الكمية', dataIndex: 'quantity', width: 150,
-                render: (q: string, r: any) => (reviewing.status === 'pending' ? (
-                  <InputNumber size="small" min={0.001} step={1} defaultValue={Number(q)}
-                    style={{ width: 120 }} data-grid-col="qty" keyboard={false}
-                    max={reviewStock[r.item_id] ?? undefined}
-                    onBlur={(e) => setReviewLineQty(r.id, Number((e.target as any).value))} />
-                ) : <b>{qty(q)}</b>) },
-              ...(reviewing.status === 'pending' ? [{
-                title: '', width: 60,
-                render: (_: any, r: any) => (
-                  <Popconfirm title="تشيل الصنف ده من الإذن؟"
-                    okText="شيله" cancelText="سيبه"
-                    onConfirm={() => removeReviewLine(r.id)}>
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                ),
-              }] : []),
-            ]}
-          />
-        </>
-      )}
-    </Modal>
-  );
-
   const auditDialog = (
     <DocumentAuditModal
       entityType="stock_transfer" entityId={auditFor}
@@ -867,7 +945,6 @@ export default function Transfers() {
 
   return (
     <div>
-      {reviewSheet}
       {rejectDialog}
       {auditDialog}
       {/* The doors belong to BOTH branches. The create page is an early return, so a door declared
