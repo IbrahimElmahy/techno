@@ -214,6 +214,7 @@ const Vouchers: React.FC = () => {
 
   const [treasuries, setTreasuries] = useState<any[]>([]);
   const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
+  const [expenseGroups, setExpenseGroups] = useState<any[]>([]);
   const [cheques, setCheques] = useState<any[]>([]);
   const [periodLock, setPeriodLock] = useState<string | null>(null);
   const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
@@ -318,8 +319,14 @@ const Vouchers: React.FC = () => {
   /** حسابات المصروفات — بتتقرا تاني بعد ما حد يضيف واحد من جوّه السند. */
   const loadExpenseAccounts = useCallback(() => {
     api.get<any[]>('/api/v1/accounts')
-      .then((r) => setExpenseAccounts(
-        r.data.filter((a) => a.nature === 'expense' && a.is_postable && a.active !== false)))
+      .then((r) => {
+        const expense = r.data.filter((a) => a.nature === 'expense');
+        // Hidden accounts stay out of the picker but keep their entries — that is what the
+        // «إخفاء» on الحسابات الفرعيه is for.
+        setExpenseAccounts(expense.filter((a) => a.is_postable && a.active !== false));
+        // The headings a new one can be filed under.
+        setExpenseGroups(expense.filter((a) => !a.is_postable && a.active !== false));
+      })
       .catch(() => {});
   }, []);
 
@@ -1363,7 +1370,8 @@ const Vouchers: React.FC = () => {
                     submit('/api/v1/vouchers/expenses', v, expenseForm, 'تم تسجيل سند المصروف ✔')
                   }
                 >
-                  <ExpenseAccountField accounts={expenseAccounts} onCreated={loadExpenseAccounts} />
+                  <ExpenseAccountField accounts={expenseAccounts} groups={expenseGroups}
+                    onCreated={loadExpenseAccounts} />
                   <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
                     <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
                   </Form.Item>

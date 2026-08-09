@@ -4,6 +4,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, SearchOutlined, ReloadOutlined,
+  EyeOutlined, EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
@@ -108,6 +109,24 @@ export default function SubAccounts() {
     }
   };
 
+  /**
+   * إخفاء / إظهار الحساب.
+   *
+   * `active` was rendered as a «مخفي» tag and could not be set from anywhere, so a chart of
+   * accounts only ever grew. That is what makes the expense dropdown on سند مصروف unmanageable:
+   * an account opened once by mistake stays in the list of every voucher forever. Hiding rather
+   * than deleting, because entries already posted to it still have to resolve to a name.
+   */
+  const toggleActive = async (record: ChartAccount) => {
+    try {
+      await api.patch(`/api/v1/accounts/${record.id}`, { active: !record.active });
+      message.success(record.active ? 'اتخفى من القوايم' : 'رجع يظهر في القوايم');
+      load();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const openEdit = (record: ChartAccount) => {
     setEditing(record);
     editForm.setFieldsValue(record);
@@ -160,12 +179,19 @@ export default function SubAccounts() {
     ...(canWrite ? [{
       title: '',
       key: 'actions',
-      width: 60,
+      width: 96,
       render: (_: any, record: ChartAccount) => (
-        <Tooltip title="تعديل">
-          <Button type="text" icon={<EditOutlined />} disabled={record.is_system}
-            onClick={() => openEdit(record)} />
-        </Tooltip>
+        <Space size={0}>
+          <Tooltip title="تعديل">
+            <Button type="text" icon={<EditOutlined />} disabled={record.is_system}
+              onClick={() => openEdit(record)} />
+          </Tooltip>
+          <Tooltip title={record.active ? 'إخفاء من قوايم الاختيار' : 'إظهار في قوايم الاختيار'}>
+            <Button type="text" disabled={record.is_system}
+              icon={record.active ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+              onClick={() => toggleActive(record)} />
+          </Tooltip>
+        </Space>
       ),
     }] : []),
   ];

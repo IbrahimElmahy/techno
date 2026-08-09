@@ -117,8 +117,12 @@ export function defaultTreasuryId(treasuries: Treasury[]): number | undefined {
  * «مصروفات أخرى».
  */
 export function ExpenseAccountField({
-  accounts, onCreated, width = 300,
-}: { accounts: ExpenseAccount[]; onCreated: () => void; width?: number }) {
+  accounts, onCreated, width = 300, groups = [],
+}: {
+  accounts: ExpenseAccount[]; onCreated: () => void; width?: number;
+  /** المجموعات الرئيسية للمصروفات — الحساب الجديد لازم يقع تحت واحدة منها. */
+  groups?: ExpenseAccount[];
+}) {
   const [adding, setAdding] = useState(false);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
@@ -135,6 +139,9 @@ export function ExpenseAccountField({
     try {
       await api.post('/api/v1/accounts', {
         code: v.code, name: v.name, nature: 'expense', is_postable: true,
+        // Under a heading, not loose. An account with no parent is postable but belongs to no
+        // group, so it vanishes from دليل الحسابات and from every report that walks the tree.
+        parent_id: v.parent_id ?? null,
       });
       message.success('اتضاف حساب المصروف');
       setAdding(false);
@@ -186,6 +193,13 @@ export function ExpenseAccountField({
         confirmLoading={saving} destroyOnHidden width={420}
       >
         <Form form={form} layout="vertical" onFinish={create} requiredMark={false}>
+          <Form.Item name="parent_id" label="تحت أي حساب رئيسي"
+            rules={[{ required: true, message: 'اختر الحساب الرئيسي' }]}>
+            <Select showSearch optionFilterProp="label" placeholder="مصروفات ..."
+              options={groups.map((g) => ({
+                value: g.id, label: `${g.code ? `${g.code} — ` : ''}${g.name ?? ''}`.trim(),
+              }))} />
+          </Form.Item>
           <Form.Item name="code" label="الكود"
             rules={[{ required: true, message: 'اكتب كود الحساب' }]}>
             <Input placeholder="مثال: 5.010" />
@@ -196,6 +210,7 @@ export function ExpenseAccountField({
           </Form.Item>
           <div style={{ color: '#8a8a8a', fontSize: 12 }}>
             بيتعمل كحساب مصروف يقبل الترحيل، فيبان في القايمة على طول.
+            وتقدر تعدّله أو تخفيه بعد كده من «اداره الانشاءات ← الحسابات الفرعيه».
           </div>
         </Form>
       </Modal>
