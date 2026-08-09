@@ -3,7 +3,9 @@ import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Input, InputNumber, Modal,
   Popconfirm, Row, Segmented, Select, Space, Table, Tag, message,
 } from 'antd';
-import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined, PlusOutlined, ReloadOutlined, ArrowLeftOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
@@ -201,7 +203,18 @@ export default function Orders() {
     }
   };
 
+  /**
+   * صفحة المستند — واحدة، سواء بتكتب طلب أو بتقرا واحد.
+   *
+   * The order used to be written in a Modal and read in a Drawer: two shapes for one document, so
+   * opening yesterday's order landed nowhere near where it was typed. The list steps aside while
+   * a document is open.
+   */
+  const docOpen = creating || !!detail;
+
   return (
+    <>
+    {!docOpen && (
     <Card
       title="طلبات البيع والشراء"
       extra={(
@@ -269,8 +282,10 @@ export default function Orders() {
             ) },
         ]}
       />
+    </Card>
+    )}
 
-      {/* The doors and the window. Declared once and rendered here, above the create modal, so
+      {/* The doors and the window. Declared once and rendered here, above the create page, so
           neither can unmount the other by opening. */}
       <PartyPickerModal
         open={newStep === 'party' || partyPickerOpen}
@@ -292,12 +307,14 @@ export default function Orders() {
         onCancel={() => setPickerOpen(false)}
         onPick={addItem} />
 
-      <Modal
-        open={creating} onCancel={() => setCreating(false)} onOk={submit}
-        confirmLoading={saving} width={840} destroyOnHidden
-        title={kind === 'sale' ? 'طلب بيع جديد' : 'طلب شراء جديد'}
-        okText="حفظ الطلب" cancelText="إلغاء"
-      >
+      {creating && (
+      <Card title={(
+        <Space>
+          <Button type="text" icon={<ArrowLeftOutlined />}
+            onClick={() => setCreating(false)}>رجوع</Button>
+          <span>{kind === 'sale' ? 'طلب بيع جديد' : 'طلب شراء جديد'}</span>
+        </Space>
+      )}>
         {/* Changing the kind asks «مين» again rather than keeping the answer. A customer is not a
             supplier, and `submit` sends the party under whichever field the kind chose — so a
             silently kept party would have been dropped on save with nothing said. */}
@@ -377,12 +394,30 @@ export default function Orders() {
 
         <Input.TextArea rows={2} placeholder="ملاحظات" value={notes}
           onChange={(e) => setNotes(e.target.value)} />
-      </Modal>
 
-      <Drawer
-        open={!!detail} onClose={() => setDetail(null)} width={640}
-        title={detail?.document_number}
-        extra={detail?.status === 'open' && (
+        <div style={{
+          marginTop: 16, padding: 16, borderRadius: 10,
+          background: '#f6faf3', border: '1px solid #e6efe3',
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+        }}>
+          <Button type="primary" size="large" loading={saving} onClick={submit}>حفظ الطلب</Button>
+          <Button size="large" onClick={() => setCreating(false)}>إلغاء</Button>
+        </div>
+      </Card>
+      )}
+
+      {/* الطلب مفتوح — نفس الصفحة. An order is a promise, not a posting: nothing has moved, so
+          the only decision on it is whether it still stands. */}
+      {detail && (
+      <Card
+        title={(
+          <Space>
+            <Button type="text" icon={<ArrowLeftOutlined />}
+              onClick={() => setDetail(null)}>رجوع</Button>
+            <span>{detail.document_number}</span>
+          </Space>
+        )}
+        extra={detail.status === 'open' && (
           <Popconfirm title="إلغاء الطلب؟" onConfirm={() => cancel(detail)}
             okText="إلغاء الطلب" cancelText="رجوع">
             <Button danger>إلغاء الطلب</Button>
@@ -442,7 +477,12 @@ export default function Orders() {
             )}
           </>
         )}
-      </Drawer>
-    </Card>
+
+        <div style={{ marginTop: 16, textAlign: 'left' }}>
+          <Button size="large" onClick={() => setDetail(null)}>إغلاق</Button>
+        </div>
+      </Card>
+      )}
+    </>
   );
 }

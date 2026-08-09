@@ -133,3 +133,50 @@ describe('المستند المترحّل ينفع يتعدّل', () => {
     expect(read('Transfers.tsx')).toMatch(/«تعديل الإذن» بيعكسه ويفتح طلب جديد/);
   });
 });
+
+describe('باقي الشاشات — كلها بقت صفحة واحدة', () => {
+  // The rule the user asked for, applied across the system: «كل حاجة في النظام بيتم إنشاءها،
+  // العرض بتاعها والتعديل يكون من داخل صفحة الإنشاء بتاعتها».
+  const CONVERTED: [string, string][] = [
+    ['فاتورة الشراء', 'Purchases.tsx'],
+    ['مردود الشراء', 'PurchaseReturns.tsx'],
+    ['طلبات البيع', 'Orders.tsx'],
+    ['الحجوزات', 'Reservations.tsx'],
+    ['المعاينات', 'Inspections.tsx'],
+    ['استلام الكوبونات', 'CouponReceipts.tsx'],
+    ['الأصول الثابتة', 'FixedAssets.tsx'],
+  ];
+
+  it.each(CONVERTED)('«%s» مفيهاش درج عرض', (_label, file) => {
+    // A Drawer is a second shape for the same paper — a shrunk version of a document that was
+    // filled in full width.
+    const src = read(file);
+    expect(src).not.toMatch(/<Drawer/);
+    expect(src).not.toMatch(/Drawer,/);
+  });
+
+  it.each(CONVERTED)('«%s» المستند بيتفتح كصفحة', (_label, file) => {
+    // Every one of them steps the list aside and renders the document in a Card with a رجوع on
+    // it, instead of floating it over the register.
+    const src = read(file);
+    expect(src).toMatch(/ArrowLeftOutlined/);
+    expect(src).toMatch(/رجوع/);
+  });
+
+  it.each([
+    ['مردود الشراء', 'PurchaseReturns.tsx'],
+    ['طلبات البيع', 'Orders.tsx'],
+    ['الحجوزات', 'Reservations.tsx'],
+    ['الأصول الثابتة', 'FixedAssets.tsx'],
+  ])('«%s» القايمة بتفضي مكانها للمستند', (_label, file) => {
+    // Rendering the list behind the document is what made the old modals feel like popups.
+    expect(read(file)).toMatch(/docOpen/);
+  });
+
+  it('الشاشات اللي مالهاش تعديل بتقول ليه', () => {
+    // Not silence. A receipt is the act that spends a coupon and an asset's cost is what every
+    // past depreciation entry was computed from — so both say what the way out actually is.
+    expect(read('CouponReceipts.tsx')).toMatch(/un-spending one by editing/);
+    expect(read('FixedAssets.tsx')).toMatch(/استبعاد, which posts the disposal/);
+  });
+});

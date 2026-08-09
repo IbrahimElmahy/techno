@@ -3,7 +3,9 @@ import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, InputNumber, Modal,
   Popconfirm, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
-import { PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined, ReloadOutlined, StopOutlined, ArrowLeftOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -246,8 +248,17 @@ export default function Reservations() {
     () => customers.map((c) => ({ value: c.id, label: c.name })), [customers],
   );
 
+  /**
+   * صفحة المستند — واحدة، سواء بتكتب حجز أو بتقرا واحد.
+   *
+   * Written in one Modal and read in another: two shapes for one document. The list steps aside
+   * while a document is open.
+   */
+  const docOpen = creating || !!viewing;
+
   return (
     <div>
+      {!docOpen && (
       <Card
         title="حجز عملاء"
         extra={
@@ -297,6 +308,7 @@ export default function Reservations() {
             showTotal: (t) => `الإجمالي: ${t}` }}
         />
       </Card>
+      )}
 
       <PartyPickerModal
         open={newStep === 'customer' || customerPickerOpen} kind="customer"
@@ -317,11 +329,14 @@ export default function Reservations() {
         onCancel={() => setItemPickerOpen(false)}
         onPick={(id: number) => { setItemId(id); setItemPickerOpen(false); }} />
 
-      <Modal
-        centered title="حجز جديد" open={creating} width={640} destroyOnHidden
-        onCancel={() => setCreating(false)} onOk={submit} confirmLoading={saving}
-        okText="تسجيل الحجز" cancelText="إلغاء"
-      >
+      {creating && (
+      <Card title={(
+        <Space>
+          <Button type="text" icon={<ArrowLeftOutlined />}
+            onClick={() => setCreating(false)}>رجوع</Button>
+          <span>حجز جديد</span>
+        </Space>
+      )}>
         <Form layout="vertical">
           <Row gutter={12}>
             <Col span={24}>
@@ -382,21 +397,38 @@ export default function Reservations() {
             <Input.TextArea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Form.Item>
         </Form>
-      </Modal>
 
-      {/* الحجز مفتوح — بكل اللي عليه، مش بس الأعمدة اللي في القايمة. */}
-      <Modal
-        open={!!viewing} onCancel={() => setViewing(null)} width={640} destroyOnHidden
-        title={viewing ? `حجز ${viewing.document_number}` : 'حجز'}
-        footer={viewing?.status === 'active' ? [
-          <Popconfirm key="cancel" title="إلغاء الحجز؟"
+        <div style={{
+          marginTop: 16, padding: 16, borderRadius: 10,
+          background: '#f6faf3', border: '1px solid #e6efe3',
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+        }}>
+          <Button type="primary" size="large" loading={saving} onClick={submit}>تسجيل الحجز</Button>
+          <Button size="large" onClick={() => setCreating(false)}>إلغاء</Button>
+        </div>
+      </Card>
+      )}
+
+      {/* الحجز مفتوح — نفس الصفحة، بكل اللي عليه مش بس أعمدة القايمة.
+          A reservation holds stock back; it posts nothing. So the only decision on it is whether
+          it still stands, and cancelling it releases the stock the same minute. */}
+      {viewing && (
+      <Card
+        title={(
+          <Space>
+            <Button type="text" icon={<ArrowLeftOutlined />}
+              onClick={() => setViewing(null)}>رجوع</Button>
+            <span>{`حجز ${viewing.document_number}`}</span>
+          </Space>
+        )}
+        extra={viewing.status === 'active' && (
+          <Popconfirm title="إلغاء الحجز؟"
             description="الرصيد هيرجع متاح للبيع فوراً."
             okText="إلغاء الحجز" cancelText="رجوع"
             onConfirm={() => { cancel(viewing.id); setViewing(null); }}>
             <Button danger icon={<StopOutlined />}>إلغاء الحجز</Button>
-          </Popconfirm>,
-          <Button key="close" onClick={() => setViewing(null)}>إغلاق</Button>,
-        ] : [<Button key="close" onClick={() => setViewing(null)}>إغلاق</Button>]}
+          </Popconfirm>
+        )}
       >
         {viewing && (
           <Descriptions size="small" column={2} bordered>
@@ -434,7 +466,12 @@ export default function Reservations() {
             </Descriptions.Item>
           </Descriptions>
         )}
-      </Modal>
+
+        <div style={{ marginTop: 16, textAlign: 'left' }}>
+          <Button size="large" onClick={() => setViewing(null)}>إغلاق</Button>
+        </div>
+      </Card>
+      )}
     </div>
   );
 }

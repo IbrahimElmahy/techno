@@ -3,7 +3,7 @@ import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Input, InputNumber, Modal,
   Popconfirm, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -183,7 +183,17 @@ export default function FixedAssets() {
   const totalCost = active.reduce((s, a) => s + Number(a.cost), 0);
   const totalBook = active.reduce((s, a) => s + Number(a.book_value), 0);
 
+  /**
+   * صفحة الأصل — واحدة، سواء بتسجّل أصل أو بتقرا واحد.
+   *
+   * Registered in a Modal and read in a Drawer: two shapes for one record. The list steps aside
+   * while one is open.
+   */
+  const docOpen = creating || !!detail;
+
   return (
+    <>
+    {!docOpen && (
     <Card
       title="الاصول الثابتة"
       extra={(
@@ -278,11 +288,17 @@ export default function FixedAssets() {
             render: (v: string | null) => v || '-' },
         ]}
       />
+    </Card>
+    )}
 
-      <Modal
-        open={creating} onCancel={() => setCreating(false)} onOk={save} confirmLoading={saving}
-        title="تسجيل أصل ثابت" okText="حفظ" cancelText="إلغاء" destroyOnHidden width={720}
-      >
+      {creating && (
+      <Card title={(
+        <Space>
+          <Button type="text" icon={<ArrowLeftOutlined />}
+            onClick={() => setCreating(false)}>رجوع</Button>
+          <span>تسجيل أصل ثابت</span>
+        </Space>
+      )}>
         <Row gutter={[8, 8]}>
           <Col xs={24} md={12}>
             <Input placeholder="اسم الأصل" value={form.name}
@@ -334,8 +350,19 @@ export default function FixedAssets() {
         </Row>
         <Alert type="info" showIcon style={{ marginTop: 12 }}
           message="القيمة التخريدية ما بتتهلكش أبداً — الأصل بينزل لحد عندها ويقف." />
-      </Modal>
 
+        <div style={{
+          marginTop: 16, padding: 16, borderRadius: 10,
+          background: '#f6faf3', border: '1px solid #e6efe3',
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+        }}>
+          <Button type="primary" size="large" loading={saving} onClick={save}>حفظ</Button>
+          <Button size="large" onClick={() => setCreating(false)}>إلغاء</Button>
+        </div>
+      </Card>
+      )}
+
+      {/* الاستبعاد يفضل نافذة: ده قرار على أصل مفتوح قدامك، مش مستند لوحده. */}
       <Modal
         open={!!disposing} onCancel={() => setDisposing(null)} onOk={dispose}
         title={`استبعاد ${disposing?.name || ''}`} okText="تسجيل الاستبعاد" cancelText="إلغاء"
@@ -357,9 +384,19 @@ export default function FixedAssets() {
         </Space>
       </Modal>
 
-      <Drawer
-        open={!!detail} onClose={() => setDetail(null)} width={620} title={detail?.name}
-        extra={detail?.status === 'active' && (
+      {/* الأصل مفتوح — نفس الصفحة. Its cost and its life are what every past depreciation entry
+          was computed from, so they are not editable: the way an asset leaves the books is
+          استبعاد, which posts the disposal instead of rewriting the history. */}
+      {detail && (
+      <Card
+        title={(
+          <Space>
+            <Button type="text" icon={<ArrowLeftOutlined />}
+              onClick={() => setDetail(null)}>رجوع</Button>
+            <span>{detail.name}</span>
+          </Space>
+        )}
+        extra={detail.status === 'active' && (
           <Button danger onClick={() => { setDisposing(detail); setProceeds(0); }}>
             استبعاد الأصل
           </Button>
@@ -414,7 +451,12 @@ export default function FixedAssets() {
             />
           </>
         )}
-      </Drawer>
-    </Card>
+
+        <div style={{ marginTop: 16, textAlign: 'left' }}>
+          <Button size="large" onClick={() => setDetail(null)}>إغلاق</Button>
+        </div>
+      </Card>
+      )}
+    </>
   );
 }

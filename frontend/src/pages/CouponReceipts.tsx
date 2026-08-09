@@ -3,7 +3,9 @@ import {
   Alert, Button, Card, Col, Descriptions, Drawer, Empty, Input, InputNumber, Row, Select, Space,
   Statistic, Table, Tabs, Tag, message,
 } from 'antd';
-import { DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, ArrowLeftOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -268,34 +270,9 @@ export default function CouponReceipts() {
     </Row>
   );
 
-  const historyTab = (
-    <Card size="small" title="سجل الاستلامات"
-      extra={<Button icon={<ReloadOutlined />} onClick={loadReceipts}>تحديث</Button>}>
-      <ListToolbar
-        searchPlaceholder="بحث برقم المستند أو رقم كوبون"
-        query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
-        total={receipts.length} shown={filter.filtered.length} searchSpan={10}
-      />
-      <Table<Receipt>
-        rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
-        onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
-        locale={{ emptyText: 'لا توجد استلامات' }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-        columns={[
-          { title: 'رقم المستند', dataIndex: 'document_number',
-            render: (v: string) => <Tag>{v}</Tag> },
-          { title: 'العميل', dataIndex: 'customer_id',
-            render: (id: number | null) => customerName(id) },
-          { title: 'التاريخ', dataIndex: 'received_date',
-            render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
-          { title: 'عدد الكوبونات', dataIndex: 'coupon_count',
-            render: (v: number) => <b style={{ color: '#F5A11D' }}>{v}</b> },
-          { title: 'ملاحظات', dataIndex: 'notes', render: (v: string) => v || '-' },
-        ]}
-      />
-
-      <Drawer open={!!detail} onClose={() => setDetail(null)} width={520}
-        title={detail?.document_number}>
+  /** جسم الاستلام — اللي كان جوّه الدرج. */
+  const detailBody = (
+    <>
         {detail && (
           <>
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
@@ -324,7 +301,60 @@ export default function CouponReceipts() {
             ) : <Empty description="لا توجد سطور" />}
           </>
         )}
-      </Drawer>
+    </>
+  );
+
+  /**
+   * الاستلام المفتوح — نفس الصفحة، مش درج جانبي.
+   *
+   * A receipt was written on the «استلام كوبونات» tab and read in a Drawer over the history: two
+   * shapes for one document. The history steps aside while one is open.
+   *
+   * It is read-only, and there is nothing to soften about that: receiving a coupon is the act that
+   * makes it spent, and un-spending one by editing the paper that took it in would leave a coupon
+   * the system thinks is free and the customer has already handed over.
+   */
+  const historyTab = detail ? (
+    <Card
+      title={(
+        <Space>
+          <Button type="text" icon={<ArrowLeftOutlined />}
+            onClick={() => setDetail(null)}>رجوع</Button>
+          <span>{detail.document_number}</span>
+        </Space>
+      )}
+    >
+      {detailBody}
+      <div style={{ marginTop: 16, textAlign: 'left' }}>
+        <Button size="large" onClick={() => setDetail(null)}>إغلاق</Button>
+      </div>
+    </Card>
+  ) : (
+    <Card size="small" title="سجل الاستلامات"
+      extra={<Button icon={<ReloadOutlined />} onClick={loadReceipts}>تحديث</Button>}>
+      <ListToolbar
+        searchPlaceholder="بحث برقم المستند أو رقم كوبون"
+        query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
+        total={receipts.length} shown={filter.filtered.length} searchSpan={10}
+      />
+      <Table<Receipt>
+        rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
+        onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
+        locale={{ emptyText: 'لا توجد استلامات' }}
+        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        columns={[
+          { title: 'رقم المستند', dataIndex: 'document_number',
+            render: (v: string) => <Tag>{v}</Tag> },
+          { title: 'العميل', dataIndex: 'customer_id',
+            render: (id: number | null) => customerName(id) },
+          { title: 'التاريخ', dataIndex: 'received_date',
+            render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
+          { title: 'عدد الكوبونات', dataIndex: 'coupon_count',
+            render: (v: number) => <b style={{ color: '#F5A11D' }}>{v}</b> },
+          { title: 'ملاحظات', dataIndex: 'notes', render: (v: string) => v || '-' },
+        ]}
+      />
+
     </Card>
   );
 

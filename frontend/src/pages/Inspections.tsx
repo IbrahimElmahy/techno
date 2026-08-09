@@ -9,6 +9,7 @@ import {
   FilePdfOutlined,
   CloseCircleOutlined,
   SaveOutlined,
+  ArrowLeftOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
@@ -219,8 +220,17 @@ const Inspections: React.FC = () => {
     .filter((r) => r.status === 'accepted')
     .reduce((s, r) => s + Number(r.total_points || 0), 0);
 
+  /**
+   * صفحة الشهادة — نفس الصفحة اللي المعاينة بتتراجع منها.
+   *
+   * The certificate opened in a Modal over the list: a review sheet that carried real decisions —
+   * accept, reject, change the visit type — inside a popup. The list steps aside while one is
+   * open, so the decision is taken on the document rather than on top of the register.
+   */
   return (
     <div>
+      {!detail && (
+      <>
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={6}>
           <Card>
@@ -396,18 +406,20 @@ const Inspections: React.FC = () => {
           ]}
         />
       </Card>
+      </>
+      )}
 
-      <Modal centered
-        title={
-          detail
-            ? `شهادة ${detail.certificate_number ?? '—'} — ${detail.owner_name}`
-            : ''
-        }
-        open={!!detail}
-        onCancel={() => setDetail(null)}
-        width={620}
-        footer={
-          detail && (
+      {detail && (
+      <Card
+        title={(
+          <Space>
+            <Button type="text" icon={<ArrowLeftOutlined />}
+              onClick={() => setDetail(null)}>رجوع</Button>
+            <span>{`شهادة ${detail.certificate_number ?? '—'} — ${detail.owner_name}`}</span>
+          </Space>
+        )}
+        extra={
+          (
             <Space>
               {detail.status === 'rejected' ? (
                 <Tag color="red">مرفوضة</Tag>
@@ -419,7 +431,7 @@ const Inspections: React.FC = () => {
           )
         }
       >
-        {detail && (
+        {(
           <>
             <Card size="small" style={{ marginBottom: 16 }} title="إجراءات المراجعة">
               <Space wrap>
@@ -523,7 +535,12 @@ const Inspections: React.FC = () => {
             />
           </>
         )}
-      </Modal>
+
+        <div style={{ marginTop: 16, textAlign: 'left' }}>
+          <Button size="large" onClick={() => setDetail(null)}>إغلاق</Button>
+        </div>
+      </Card>
+      )}
     </div>
   );
 };

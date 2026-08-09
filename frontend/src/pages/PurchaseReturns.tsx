@@ -3,7 +3,9 @@ import {
   Alert, Button, Card, DatePicker, Descriptions, Divider, Form, Input, InputNumber, Modal,
   Select, Space, Table, Tag, message,
 } from 'antd';
-import { PlusOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowLeftOutlined,
+} from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { DocRef } from '../components/DocumentLink';
@@ -242,8 +244,18 @@ export default function PurchaseReturns() {
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: openReturn,
   });
 
+  /**
+   * صفحة المستند — واحدة، سواء بتكتب مردود أو بتقرا واحد اتّرحّل.
+   *
+   * It used to be two Modals over the list: one to write a return, another to look at one. Two
+   * shapes for the same paper, so opening yesterday's return landed nowhere near where it was
+   * typed. The list simply steps aside while a document is open.
+   */
+  const docOpen = creating || !!viewing;
+
   return (
     <div>
+      {!docOpen && (
       <Card
         title="مردودات الشراء"
         extra={
@@ -285,6 +297,7 @@ export default function PurchaseReturns() {
           }}
         />
       </Card>
+      )}
 
       {/* The date door. Declared beside the form, not inside it, so opening the form cannot
           unmount the door that opened it. */}
@@ -303,11 +316,14 @@ export default function PurchaseReturns() {
         </div>
       </Modal>
 
-      <Modal
-        centered title="تسجيل مردود شراء" open={creating} width={760} destroyOnHidden
-        onCancel={() => setCreating(false)} onOk={submit} confirmLoading={saving}
-        okText="ترحيل المردود" cancelText="إلغاء" okButtonProps={{ danger: true }}
-      >
+      {creating && (
+      <Card title={(
+        <Space>
+          <Button type="text" icon={<ArrowLeftOutlined />}
+            onClick={() => setCreating(false)}>رجوع</Button>
+          <span>تسجيل مردود شراء</span>
+        </Space>
+      )}>
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message="المردود بيتعمل على فاتورة شراء"
@@ -389,13 +405,32 @@ export default function PurchaseReturns() {
             )}
           </>
         )}
-      </Modal>
 
-      {/* المردود مفتوح — رقمه وتاريخه وسطوره، ومنه للفاتورة اللي جه منها. */}
-      <Modal
-        open={!!viewing} onCancel={() => setViewing(null)} footer={null} width={700} destroyOnHidden
-        title={viewing ? `مردود شراء ${viewing.document_number}` : 'مردود شراء'}
-      >
+        <div style={{
+          marginTop: 16, padding: 16, borderRadius: 10,
+          background: '#fdf6f3', border: '1px solid #f3e0d8',
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+        }}>
+          <Button type="primary" danger size="large" loading={saving} onClick={submit}>
+            ترحيل المردود
+          </Button>
+          <Button size="large" onClick={() => setCreating(false)}>إلغاء</Button>
+        </div>
+      </Card>
+      )}
+
+      {/* المردود بعد ما اترحّل — نفس الصفحة، بس مقفولة.
+          It moved goods back to the supplier and wrote a ledger entry, and there is no edit
+          endpoint for one: the way to undo it is to buy the goods again, which is a real event
+          with its own paper rather than a quiet rewrite of this one. */}
+      {viewing && (
+      <Card title={(
+        <Space>
+          <Button type="text" icon={<ArrowLeftOutlined />}
+            onClick={() => setViewing(null)}>رجوع</Button>
+          <span>{`مردود شراء ${viewing.document_number}`}</span>
+        </Space>
+      )}>
         {viewing && (
           <>
             <Descriptions size="small" column={2} bordered style={{ marginBottom: 12 }}>
@@ -427,7 +462,12 @@ export default function PurchaseReturns() {
             />
           </>
         )}
-      </Modal>
+
+        <div style={{ marginTop: 16, textAlign: 'left' }}>
+          <Button size="large" onClick={() => setViewing(null)}>إغلاق</Button>
+        </div>
+      </Card>
+      )}
     </div>
   );
 }
