@@ -397,6 +397,27 @@ export default function Transfers() {
   }, []);
   const nameOfItem = (id: number | null | undefined) =>
     (id ? itemNames[id] || `صنف #${id}` : '-');
+
+  /**
+   * أصناف الإذن — من السطور، أو من المستند نفسه لو إذن قديم.
+   *
+   * A transfer used to move ONE item, recorded as `item_id` + `quantity` on the document itself;
+   * the lines table came later. Every permit written before that has zero line rows, so a screen
+   * that reads only `lines` shows an empty document — «البيانات مش ظاهرة جوّه الإذن», which is
+   * three of the four transfers on this database.
+   *
+   * The old review sheet had the same hole and papered over it with «إذن قديم — الصنف مكتوب على
+   * المستند نفسه»: an apology in the place where the answer should be. It IS on the document, so
+   * read it from there and show it. Marked `_header` because there is no line row behind it —
+   * nothing to PATCH and nothing to DELETE — so those controls stay off it.
+   */
+  const docLines = (t: TransferRecord): any[] => {
+    if (t.lines?.length) return t.lines;
+    if (t.item_id) {
+      return [{ id: -1, _header: true, item_id: t.item_id, quantity: t.quantity }];
+    }
+    return [];
+  };
   const [rejectOpen, setRejectOpen] = useState(false);
   /** سجل عمليات الإذن — مين عمل إيه وإمتى. */
   const [auditFor, setAuditFor] = useState<number | null>(null);
@@ -713,8 +734,8 @@ export default function Transfers() {
           {editing && (
             <Table
               style={{ marginTop: 16 }} size="small" rowKey="id" pagination={false}
-              dataSource={editing.lines ?? []}
-              locale={{ emptyText: 'مفيش أصناف على الإذن ده' }}
+              dataSource={docLines(editing)}
+              locale={{ emptyText: 'مفيش أصناف على الإذن — ارفضه بدل ما تعتمده' }}
               columns={[
                 { title: 'الصنف', dataIndex: 'item_id',
                   render: (id: number) => <b>{nameOfItem(id)}</b> },
@@ -732,7 +753,7 @@ export default function Transfers() {
                     );
                   } },
                 { title: 'الكمية المحوّلة', dataIndex: 'quantity',
-                  render: (v: any, r: any) => (editing.status === 'pending' ? (
+                  render: (v: any, r: any) => (editing.status === 'pending' && !r._header ? (
                     <InputNumber size="small" min={0} step={1}
                       value={draftQty[r.id] ?? Number(v)}
                       style={{ width: 120 }} keyboard={false} data-grid-col="qty"
@@ -743,12 +764,12 @@ export default function Transfers() {
                   ) : <b>{qty(Number(v))}</b>) },
                 ...(editing.status === 'pending' ? [{
                   title: '', width: 50,
-                  render: (_: any, r: any) => (
+                  render: (_: any, r: any) => (r._header ? null : (
                     <Popconfirm title="تشيل الصنف ده من الإذن؟" okText="شيل" cancelText="لأ"
                       onConfirm={() => removeReviewLine(r.id)}>
                       <Button type="text" size="small" danger icon={<DeleteOutlined />} />
                     </Popconfirm>
-                  ),
+                  )),
                 }] : []),
               ]}
             />
@@ -800,13 +821,13 @@ export default function Transfers() {
             <Space size={32} wrap>
               <span>
                 <span style={{ color: '#8a8a8a', fontSize: 12 }}>عدد الأصناف: </span>
-                <b>{editing ? (editing.lines?.length ?? 0) : lines.length}</b>
+                <b>{editing ? docLines(editing).length : lines.length}</b>
               </span>
               <span>
                 <span style={{ color: '#8a8a8a', fontSize: 12 }}>إجمالي الكميات: </span>
                 <b style={{ color: '#6AB42D', fontSize: 18 }}>
                   {qty(editing
-                    ? (editing.lines ?? []).reduce(
+                    ? docLines(editing).reduce(
                       (t: number, l: any) => t + Number(l.quantity || 0), 0)
                     : totalUnits)}
                 </b>

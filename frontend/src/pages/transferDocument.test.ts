@@ -71,8 +71,10 @@ describe('التعديل من جوّه نفس الصفحة', () => {
   });
 
   it('الإذن المقفول مايتعدلش', () => {
-    // Approval already posted movements across two warehouses.
-    expect(src).toMatch(/editing\.status === 'pending' \? \(\s*\n\s*<InputNumber/);
+    // Approval already posted movements across two warehouses. The quantity is an input only
+    // while the permit is still a question; after that it is plain text.
+    expect(src).toMatch(/editing\.status === 'pending' && !r\._header \? \(/);
+    expect(src).toMatch(/\) : <b>\{qty\(Number\(v\)\)\}<\/b>\)/);
     expect(src).toMatch(/الإذن ده اتقفل خلاص/);
   });
 });
@@ -90,5 +92,40 @@ describe('المستند بيقول اللي جاي', () => {
   it('والمتاح في المصدر بيبقى أحمر لو الكمية أكتر منه', () => {
     // Said before اعتماد is pressed, rather than by the negative-stock guard afterwards.
     expect(src).toMatch(/const short = Number\(r\.quantity \|\| 0\) > have/);
+  });
+});
+
+describe('الإذن القديم بيعرض بياناته برضه', () => {
+  it('بيقرا الصنف من المستند نفسه لو مفيش سطور', () => {
+    // A transfer used to move ONE item, stored as `item_id` + `quantity` on the document; the
+    // lines table came later. Three of the four permits on this database predate it, so a screen
+    // reading only `lines` renders an EMPTY document — «البيانات مش ظاهرة جوّه الإذن».
+    expect(src).toMatch(/const docLines = \(t: TransferRecord\)/);
+    expect(src).toMatch(/if \(t\.item_id\)/);
+    expect(src).toMatch(/dataSource=\{docLines\(editing\)\}/);
+  });
+
+  it('والعدّادات تحت بتقرا من نفس المكان', () => {
+    // Reading the table from one source and the totals from another is how «عدد الأصناف: 0» ends
+    // up under a table with a row in it.
+    expect(src).toMatch(/\{editing \? docLines\(editing\)\.length : lines\.length\}/);
+    expect(src).toMatch(/\? docLines\(editing\)\.reduce\(/);
+  });
+
+  it('والسطر المقروء من المستند مالوش تعديل ولا حذف', () => {
+    // There is no line row behind it — nothing to PATCH and nothing to DELETE. Offering the
+    // controls anyway would be offering an edit that cannot land.
+    expect(src).toMatch(/_header: true/);
+    expect(src).toMatch(/'pending' && !r\._header/);
+    expect(src).toMatch(/\(r\._header \? null : \(/);
+  });
+
+  it('ومفيش اعتذار مكان الإجابة', () => {
+    // The old sheet said «إذن قديم — الصنف مكتوب على المستند نفسه» in the place where the item
+    // should have been. It IS on the document; read it from there and show it. Checked on the
+    // rendered emptyText rather than the file, so explaining the history in a comment is fine.
+    const emptyText = (src.match(/emptyText: [^}]+/) || [''])[0];
+    expect(emptyText).not.toMatch(/إذن قديم/);
+    expect(emptyText).toMatch(/ارفضه بدل ما تعتمده/);
   });
 });
