@@ -1,22 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Card,
-  Table,
-  Button,
-  Space,
-  InputNumber,
-  Input,
-  Modal,
-  Form,
-  Tag,
-  Switch,
-  Popconfirm,
-  message,
+  Card, Table, Button, Space, InputNumber, Input, Form, Tag, Switch, Popconfirm, message
 } from 'antd';
 import { PlusOutlined, EditOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { TabModal } from '../components/TabModal';
 
 interface ItemType {
   id: number;
@@ -230,7 +220,7 @@ const InspectionItems: React.FC = () => {
         />
       </Card>
 
-      <Modal
+      <TabModal
         title={editing ? 'تعديل صنف المعاينة' : 'إضافة صنف معاينة'}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
@@ -256,7 +246,7 @@ const InspectionItems: React.FC = () => {
             <InputNumber min={0} step={0.0001} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 };

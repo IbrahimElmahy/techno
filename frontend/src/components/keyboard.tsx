@@ -1,9 +1,12 @@
 import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from 'react';
-import { Modal, Input, List, Tag, Typography } from 'antd';
+import {
+  Input, List, Tag, Typography
+} from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { allScreens } from './navigation';
+import { TabModal } from './TabModal';
 
 /**
  * Working the whole system from the keyboard.
@@ -86,6 +89,18 @@ const KeyboardContext = createContext<KeyboardContextValue>({
  * looking at. Defaults to true so a screen rendered outside the tab workspace still keeps its keys.
  */
 export const TabActiveContext = createContext(true);
+
+/**
+ * الشاشة دي ظاهرة دلوقتي ولا في تبويب ورا؟
+ *
+ * Inactive tabs stay MOUNTED under `display: none`, but a dialog renders in a portal on
+ * `document.body` — outside that hidden div — so a dialog left open on one tab appears on top of
+ * whatever tab you switch to, over a screen that has nothing to do with it. `TabModal` is what
+ * consumes this; almost nothing should need to call it directly.
+ */
+export function useOnScreen(): boolean {
+  return useContext(TabActiveContext);
+}
 
 /** True when the key should be treated as text rather than a command. */
 function isTyping(e: KeyboardEvent): boolean {
@@ -435,7 +450,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
     <KeyboardContext.Provider value={value}>
       {children}
 
-      <Modal
+      <TabModal
         open={paletteOpen} onCancel={() => setPaletteOpen(false)} footer={null}
         title="اذهب إلى شاشة" width={520} destroyOnHidden
       >
@@ -460,9 +475,9 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
             </List.Item>
           )}
         />
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         open={helpOpen} onCancel={() => setHelpOpen(false)} footer={null}
         title="اختصارات الكيبورد" width={480} destroyOnHidden
       >
@@ -493,7 +508,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
             </List.Item>
           )}
         />
-      </Modal>
+      </TabModal>
     </KeyboardContext.Provider>
   );
 }

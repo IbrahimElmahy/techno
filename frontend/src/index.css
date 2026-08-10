@@ -156,3 +156,16 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   opacity: 0.55;
   cursor: col-resize;
 }
+
+/**
+ * بوباب تبويب مش ظاهر — يتخفي على طول.
+ *
+ * `TabModal` sets `open` to false when its tab goes to the background, but antd only removes a
+ * dialog from view once the CLOSE ANIMATION reports that it finished. A window that is not
+ * painting never delivers those frames, so the dialog stayed on screen, frozen mid-fade, over a
+ * screen it had nothing to do with. This hides it on the same render instead of on a frame that
+ * may never come — the dialog is still mounted underneath, so its half-typed form survives.
+ */
+.tab-dialog-away {
+  display: none !important;
+}

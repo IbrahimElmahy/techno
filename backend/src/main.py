@@ -28,6 +28,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     product_points,
     purchases,
     reports,
+    voucher_keys,
     rep_reports,
     reservations,  # حجز عملاء (031)  # تقارير مندوبين (031)
     sales,
@@ -106,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(points.router, prefix=prefix)
     app.include_router(coupons.router, prefix=prefix)
     app.include_router(reports.router, prefix=prefix)
+    app.include_router(voucher_keys.router, prefix=prefix)
     # General Ledger (005)
     app.include_router(accounting.router, prefix=prefix)
     # Cost Centers (006)
@@ -187,6 +189,10 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # (032) A voucher key's side may be a whole group instead of one account — «العملاء» is not a
+    # row in this chart, it is an account_type shared by every customer's account.
+    ("voucher_key", "debit_group", "VARCHAR(40)"),
+    ("voucher_key", "credit_group", "VARCHAR(40)"),
     # (031) The day the goods came back. `created_at` is when the row was typed, which is often
     # days later — a Saturday return entered on Monday would land in the wrong week on every
     # report that groups by day.

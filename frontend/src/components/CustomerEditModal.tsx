@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Modal, Form, Input, Select, Switch, Space, Button, Spin, Row, Col, message,
+  Form, Input, Select, Switch, Space, Button, Spin, Row, Col, message
 } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useLookup } from '../hooks/useLookup';
+import { TabModal } from './TabModal';
 
 /**
  * ONE edit form for a customer — data, address, phones, responsible rep/territory and price
@@ -141,7 +142,7 @@ export default function CustomerEditModal({
   };
 
   return (
-    <Modal
+    <TabModal
       open={open}
       title={record ? `تعديل بيانات العميل: ${record.name}` : 'تعديل بيانات العميل'}
       onCancel={onClose}
@@ -220,6 +221,6 @@ export default function CustomerEditModal({
           </Row>
         </Form>
       )}
-    </Modal>
+    </TabModal>
   );
 }

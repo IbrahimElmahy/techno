@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Segmented,
-  Select, Space,
-  Statistic, Table, Tag, message,
+  Alert, Button, Card, DatePicker, Form, Input, InputNumber, Popconfirm, Segmented, Select,
+  Space, Statistic, Table, Tag, message
 } from 'antd';
 import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined , ArrowRightOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -11,6 +10,7 @@ import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
+import { TabModal } from '../components/TabModal';
 
 /**
  * جرد المخازن و جرد عام — the counting cycle.
@@ -351,7 +351,7 @@ export default function StockCounts() {
       </Card>
       )}
 
-      <Modal
+      <TabModal
         centered title="فتح كشف جرد" open={openVisible} onCancel={() => setOpenVisible(false)}
         onOk={openSheet} confirmLoading={opening} okText="فتح الكشف" cancelText="إلغاء"
         destroyOnHidden
@@ -408,7 +408,7 @@ export default function StockCounts() {
             <Input.TextArea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
 
       {detailVisible && sheet && (
       <Card

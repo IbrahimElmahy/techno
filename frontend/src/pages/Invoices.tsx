@@ -25,6 +25,7 @@ import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { TabModal } from '../components/TabModal';
 
 interface InvoiceRecord {
   id: number;
@@ -2166,7 +2167,7 @@ export default function Invoices() {
       </Card>
 
       {/* Return Invoice Drawer */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title={`مرتجع مبيعات للفاتورة: ${selectedInvoice?.document_number || ''}`}
         width={500}
         onCancel={() => setReturnVisible(false)}
@@ -2211,10 +2212,10 @@ export default function Invoices() {
             <Button onClick={() => setReturnVisible(false)}>إلغاء</Button>
           </Space>
         </div>
-      </Modal>
+      </TabModal>
 
       {/* Invoice detail / view */}
-      <Modal centered
+      <TabModal centered
         title={(
           <Space>
             {/* Stepping between neighbours moved into the toolbar below, under التالى/السابق —
@@ -2255,7 +2256,7 @@ export default function Invoices() {
             )}
           </>
         )}
-      </Modal>
+      </TabModal>
 
       {/* The one step that opens a document: who it is for, and when. It lives in BOTH views —
           the create view renders its own copy for changing the party mid-invoice — and only one
@@ -2267,7 +2268,7 @@ export default function Invoices() {
 
       {/* الباب الأول: التاريخ. It lands on the ledger entry as well as the invoice, so it is
           settled before anything is priced rather than after. */}
-      <Modal
+      <TabModal
         open={newStep === 'date'}
         title="تاريخ الفاتورة"
         okText="التالي"
@@ -2289,7 +2290,7 @@ export default function Invoices() {
           التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
           في نفس اليوم.
         </div>
-      </Modal>
+      </TabModal>
 
     </div>
   );

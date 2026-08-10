@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Drawer, Input, InputNumber, Modal,
-  Popconfirm, Row, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Input, InputNumber, Popconfirm, Row,
+  Select, Space, Statistic, Table, Tag, message
 } from 'antd';
 import { PlusOutlined, ReloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { TabModal } from '../components/TabModal';
 
 /**
  * الأصول الثابتة والإهلاك — an asset is paid for once and consumed over years, so its cost
@@ -363,7 +364,7 @@ export default function FixedAssets() {
       )}
 
       {/* الاستبعاد يفضل نافذة: ده قرار على أصل مفتوح قدامك، مش مستند لوحده. */}
-      <Modal
+      <TabModal
         open={!!disposing} onCancel={() => setDisposing(null)} onOk={dispose}
         title={`استبعاد ${disposing?.name || ''}`} okText="تسجيل الاستبعاد" cancelText="إلغاء"
         destroyOnHidden
@@ -382,7 +383,7 @@ export default function FixedAssets() {
             />
           )}
         </Space>
-      </Modal>
+      </TabModal>
 
       {/* الأصل مفتوح — نفس الصفحة. Its cost and its life are what every past depreciation entry
           was computed from, so they are not editable: the way an asset leaves the books is

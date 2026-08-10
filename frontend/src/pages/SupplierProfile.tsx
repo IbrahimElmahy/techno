@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Tabs, Table, Descriptions, Statistic, Row, Col, Card, Tag, Spin,
-  DatePicker, Space, Button, Empty, Typography, Modal,
+  useNavigate, useParams } from 'react-router-dom';
+import {
+  Tabs, Table, Descriptions,
+  Statistic, Row, Col, Card, Tag, Spin, DatePicker, Space, Button, Empty, Typography
 } from 'antd';
 import { ReloadOutlined, ArrowRightOutlined, EditOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
@@ -14,6 +15,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import { useOpenDocument } from '../components/DocumentLink';
+import { TabModal } from '../components/TabModal';
 
 /**
  * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
@@ -466,7 +468,7 @@ export default function SupplierProfile() {
       </Card>
 
       {/* One popup for every document kind. */}
-      <Modal
+      <TabModal
         open={record !== null}
         title={record?.title || 'تفاصيل المستند'}
         onCancel={() => setRecord(null)}
@@ -528,7 +530,7 @@ export default function SupplierProfile() {
             )}
           </>
         )}
-      </Modal>
+      </TabModal>
 
       <SupplierEditModal
         supplier={data?.supplier}

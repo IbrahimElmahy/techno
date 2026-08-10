@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Input, InputNumber, Modal, Popconfirm, Row, Select, Space,
-  Table, Tabs, Tag, message,
+  Button, Card, Col, DatePicker, Input, InputNumber, Popconfirm, Row, Select, Space, Table,
+  Tabs, Tag, message
 } from 'antd';
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { TabModal } from '../components/TabModal';
 
 /**
  * الموظفون والوظائف — deliberately not the users screen.
@@ -199,7 +200,7 @@ export default function Employees() {
         ]}
       />
 
-      <Modal
+      <TabModal
         open={open} onCancel={() => setOpen(false)} onOk={save} confirmLoading={saving}
         title={editing ? `تعديل ${editing.name}` : 'موظف جديد'}
         okText="حفظ" cancelText="إلغاء" destroyOnHidden width={720}
@@ -271,7 +272,7 @@ export default function Employees() {
                 value: u.id, label: u.full_name || u.username }))} />
           </Col>
         </Row>
-      </Modal>
+      </TabModal>
     </Card>
   );
 

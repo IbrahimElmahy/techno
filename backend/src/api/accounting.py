@@ -58,6 +58,9 @@ class AccountOut(BaseModel):
     code: str | None
     name: str | None
     parent_id: int | None
+    # What the account IS to the system — «حساب عميل», «خزينة», «حساب أنشأه المستخدم». The screens
+    # group by this (the chart has no real «العملاء» row), so it has to travel with the row.
+    account_type: str | None = None
     nature: AccountNature | None
     normal_side: Direction
     is_postable: bool
@@ -176,7 +179,8 @@ def _account_out(db: Session, acc: Account, *, with_children: bool = False,
         children = [_account_out(db, k, with_children=True, owner_names=owner_names)
                     for k in kids]
     return AccountOut(
-        id=acc.id, code=acc.code, name=acc.name, parent_id=acc.parent_id, nature=acc.nature,
+        id=acc.id, code=acc.code, name=acc.name, parent_id=acc.parent_id,
+        account_type=acc.account_type.value if acc.account_type else None, nature=acc.nature,
         normal_side=acc.normal_side, is_postable=acc.is_postable, is_system=acc.is_system,
         active=acc.active, appears_in=acc.appears_in,
         main_level=getattr(acc, "main_level", None),

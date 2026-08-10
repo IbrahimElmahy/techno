@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Col, DatePicker, Empty, Form, Input, Modal, Row, Select, Space, Spin, Tag, message,
+  Button, Col, DatePicker, Empty, Form, Input, Row, Select, Space, Spin, Tag, message
 } from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { normalizeAr } from './ListToolbar';
+import { TabModal } from './TabModal';
 
 /**
  * اختيار الطرف — the first step of every sale/purchase document.
@@ -139,7 +140,7 @@ export default function PartyPickerModal({
   };
 
   return (
-    <Modal
+    <TabModal
       open={open} onCancel={onCancel} width={780} centered destroyOnHidden
       title={`اختيار ${KIND_LABEL[kind]}`}
       footer={
@@ -262,6 +263,6 @@ export default function PartyPickerModal({
           </div>
         </>
       )}
-    </Modal>
+    </TabModal>
   );
 }

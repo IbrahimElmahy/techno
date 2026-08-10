@@ -25,6 +25,7 @@ import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import { guardQuantity } from '../components/quantityGuard';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { TabModal } from '../components/TabModal';
 
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
@@ -590,7 +591,7 @@ export default function Returns() {
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
 
-      <Modal
+      <TabModal
         open={newStep === 'date'}
         title="تاريخ المرتجع"
         okText="التالي" cancelText="إلغاء"
@@ -610,7 +611,7 @@ export default function Returns() {
         <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
           ده يوم رجوع البضاعة، مش يوم ما اتكتب السند — والقيد المحاسبي بياخد نفس اليوم.
         </div>
-      </Modal>
+      </TabModal>
     </>
   );
 
@@ -1028,7 +1029,7 @@ export default function Returns() {
           </Form>
         </Card>
 
-        <Modal centered width={560} open={!!histModal} onCancel={() => setHistModal(null)}
+        <TabModal centered width={560} open={!!histModal} onCancel={() => setHistModal(null)}
           title={`سجل شراء العميل — ${histModal?.name ?? ''}`}
           footer={<Button onClick={() => setHistModal(null)}>إغلاق</Button>}>
           <Table size="small" pagination={false} rowKey="document_number"
@@ -1042,7 +1043,7 @@ export default function Returns() {
               { title: 'السعر الفعلي', dataIndex: 'effective_price',
                 render: (v: string) => <strong style={{ color: '#6AB42D' }}>{money(v)} ج.م</strong> },
             ]} />
-        </Modal>
+        </TabModal>
       </div>
     );
   }
@@ -1230,7 +1231,7 @@ export default function Returns() {
 
       {doors}
 
-      <Modal centered title={`تفاصيل المرتجع ${viewReturn?.document_number ?? ''}`} width={680}
+      <TabModal centered title={`تفاصيل المرتجع ${viewReturn?.document_number ?? ''}`} width={680}
         open={detailVisible} onCancel={() => setDetailVisible(false)} destroyOnHidden
         footer={invoiceFooter(returnDoc(viewReturn), () => setDetailVisible(false))}>
         {viewReturn && (
@@ -1269,7 +1270,7 @@ export default function Returns() {
             )}
           </>
         )}
-      </Modal>
+      </TabModal>
     </div>
   );
 }

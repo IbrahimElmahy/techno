@@ -93,8 +93,16 @@ def _split_across_lines(db: Session, accounts: list[CustomerAccount], amount: De
 
     Rounding is settled on the LAST line so the parts add back to the amount exactly. A split that
     loses a piastre would post an unbalanced entry, and the ledger would refuse it.
+
+    Only lines that actually OWE take a share. A line sitting in credit — the customer overpaid it
+    once — is owed money, not owing it, and letting it into the proportion made the other lines'
+    shares add up to MORE than the amount; the negative part that should have cancelled it was then
+    dropped by the `> ZERO` filter below, and the voucher was refused as «القيد مش متوازن». That is
+    an ordinary customer with one overpaid line, and «على إجمالي المديونية» simply would not post
+    for him.
     """
-    balances = [(a, to_money(ledger_service.balance_of(db, a.account_id))) for a in accounts]
+    owing = [(a, to_money(ledger_service.balance_of(db, a.account_id))) for a in accounts]
+    balances = [(a, b) for a, b in owing if b > ZERO]
     total = sum((b for _, b in balances), ZERO)
     if total <= ZERO:
         # Nothing owed on any line: «على الإجمالي» has no proportion to follow. Refusing beats

@@ -14,6 +14,7 @@ import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { TabModal } from '../components/TabModal';
 
 // The five negotiated tiers plus the published list price, in the order and wording their form
 // uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
@@ -60,7 +61,7 @@ const PriceTiersButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolea
   return (
     <>
       <Button size="small" type="link" icon={<DollarOutlined />} onClick={onOpen}>الأسعار</Button>
-      <Modal title="الأطر السعرية الخمسة" open={open} onCancel={() => setOpen(false)}
+      <TabModal title="الأطر السعرية الخمسة" open={open} onCancel={() => setOpen(false)}
         onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
         <p style={{ color: '#888' }}>سعر البيع المرجعي (الأساس): {base ? `${base} ج.م` : '—'} — يُستخدم كبديل لأي فئة غير محددة.</p>
         {PRICE_TIERS.map((t) => (
@@ -73,7 +74,7 @@ const PriceTiersButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolea
             </Col>
           </Row>
         ))}
-      </Modal>
+      </TabModal>
     </>
   );
 };
@@ -216,7 +217,7 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
   return (
     <>
       <Button size="small" type="link" icon={<ColumnWidthOutlined />} onClick={onOpen}>الوحدات</Button>
-      <Modal title="وحدات القياس ومعامل التحويل" open={open} onCancel={() => setOpen(false)}
+      <TabModal title="وحدات القياس ومعامل التحويل" open={open} onCancel={() => setOpen(false)}
         onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
         <p style={{ color: '#888' }}>الوحدة الأساسية: <strong>{base}</strong> (معامل = 1). أضف وحدات أكبر بمعاملها مقابل الأساس (مثلاً: كرتونة = 12).</p>
         {rows.map((r, i) => (
@@ -240,7 +241,7 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
           <Button type="dashed" block icon={<PlusOutlined />}
             onClick={() => setRows([...rows, { name: '', factor: null }])}>إضافة وحدة</Button>
         )}
-      </Modal>
+      </TabModal>
     </>
   );
 };
@@ -278,7 +279,7 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
   return (
     <>
       <Button size="small" type="link" icon={<BarcodeOutlined />} onClick={onOpen}>السيريال</Button>
-      <Modal title="الأرقام التسلسلية" open={open} onCancel={() => setOpen(false)} footer={null} width={560}>
+      <TabModal title="الأرقام التسلسلية" open={open} onCancel={() => setOpen(false)} footer={null} width={560}>
         {canEdit && (
           <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 8 }}>
             <strong>استلام أرقام تسلسلية للمخزون</strong>
@@ -295,7 +296,7 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
             { title: 'الرقم التسلسلي', dataIndex: 'serial' },
             { title: 'الموقع', dataIndex: 'location_id', render: (v: number, r: any) => r.location_kind ? `${r.location_kind} #${v}` : '-' },
           ]} />
-      </Modal>
+      </TabModal>
     </>
   );
 };
@@ -904,7 +905,7 @@ export default function Catalog() {
       {/* صنف جديد — laid out field for field against their الأصناف form: the same groups in the
           same order, because someone entering a hundred items a week does it by muscle memory, and
           a reordered form makes every one of them slower. */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title={editingItem ? `تعديل بيانات الصنف — ${editingItem.name}` : 'صنف جديد'}
         width={860}
         onCancel={() => setDrawerVisible(false)}
@@ -1118,7 +1119,7 @@ export default function Catalog() {
             <Button onClick={() => setDrawerVisible(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
+  Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, SearchOutlined, ReloadOutlined,
@@ -12,6 +12,7 @@ import { useAuth } from '../components/AuthProvider';
 import {
   APPEARS_IN_LABEL, ChartAccount, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
 } from '../utils/accounts';
+import { TabModal } from '../components/TabModal';
 
 /** الحسابات الرئيسيه — their `/mainaccounts`, its own screen.
  *
@@ -274,7 +275,7 @@ export default function MainAccounts() {
         />
       </Card>
 
-      <Modal footer={null} centered title="حساب رئيسي جديد" width={720} destroyOnHidden
+      <TabModal footer={null} centered title="حساب رئيسي جديد" width={720} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}>
           {formFields(true)}
@@ -283,9 +284,9 @@ export default function MainAccounts() {
             <Button onClick={() => setCreateOpen(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal footer={null} centered title="تعديل الحساب الرئيسي" width={720} destroyOnHidden
+      <TabModal footer={null} centered title="تعديل الحساب الرئيسي" width={720} destroyOnHidden
         open={!!editing} onCancel={() => setEditing(null)}>
         <Form form={editForm} layout="vertical" onFinish={onEdit} requiredMark={false}>
           {formFields(false)}
@@ -294,7 +295,7 @@ export default function MainAccounts() {
             <Button onClick={() => setEditing(null)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

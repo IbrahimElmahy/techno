@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Card, Collapse, Table, Button, Input, InputNumber, Switch, Space, Tag, message, Popconfirm,
-  Modal, Form, Tooltip, Select,
+  Form, Tooltip, Select
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useSectionParam } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { TabModal } from '../components/TabModal';
 
 interface CategoryMeta { category: string; label: string; system: boolean; }
 interface PageGroup { page: string; page_label: string; categories: CategoryMeta[]; }
@@ -315,7 +316,7 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
       <Table size="small" rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         pagination={false} />
 
-      <Modal title={`إضافة خيار إلى: ${meta.label}`} open={addOpen} onCancel={() => setAddOpen(false)}
+      <TabModal title={`إضافة خيار إلى: ${meta.label}`} open={addOpen} onCancel={() => setAddOpen(false)}
         onOk={() => addForm.submit()} okText="إضافة" cancelText="إلغاء" destroyOnHidden>
         <Form form={addForm} layout="vertical" onFinish={addOption}>
           <Form.Item name="label" label="الاسم المعروض"
@@ -328,7 +329,7 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
             <Input placeholder="مثال: wholesale_vip" />
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
     </Card>
   );
 }

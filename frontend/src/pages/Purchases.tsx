@@ -21,6 +21,7 @@ import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { TabModal } from '../components/TabModal';
 
 interface Supplier {
   id: number;
@@ -929,7 +930,7 @@ export default function Purchases() {
           if (picked) handleProductPicked(picked);
         }} />
 
-      <Modal
+      <TabModal
         open={newStep === 'date'}
         title="تاريخ فاتورة الشراء"
         okText="التالي" cancelText="إلغاء"
@@ -949,7 +950,7 @@ export default function Purchases() {
         <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
           ده يوم استلام البضاعة، مش يوم ما اتكتبت الفاتورة.
         </div>
-      </Modal>
+      </TabModal>
     </>
   );
 

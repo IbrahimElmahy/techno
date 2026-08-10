@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tabs, Tag, Tree, message, Radio,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Row, Select, Space,
+  Statistic, Table, Tabs, Tag, Tree, message, Radio
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
@@ -18,6 +19,7 @@ import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolb
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 import { entryTypeLabel } from '../components/labels';
+import { TabModal } from '../components/TabModal';
 
 // --- Types --------------------------------------------------------------------------------
 interface Account {
@@ -227,7 +229,7 @@ function ChartTab() {
         expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }}
       />
 
-      <Modal footer={null} centered title="إضافة حساب جديد" width={460} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
+      <TabModal footer={null} centered title="إضافة حساب جديد" width={460} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}
           initialValues={{ is_postable: true, nature: 'expense' }}>
           <Form.Item name="parent_id" label="الحساب الأب (المجموعة)"
@@ -267,7 +269,7 @@ function ChartTab() {
           </Form.Item>
           <Button type="primary" htmlType="submit" block>حفظ الحساب</Button>
         </Form>
-      </Modal>
+      </TabModal>
     </Card>
   );
 }
@@ -482,7 +484,7 @@ function JournalTab() {
       <Table {...entryKb.tableProps} rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
 
       {/* New journal drawer */}
-      <Modal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
+      <TabModal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onPost} requiredMark={false}
           initialValues={{ date: dayjs() }}>
           <Row gutter={16}>
@@ -549,10 +551,10 @@ function JournalTab() {
             {balanced ? 'ترحيل القيد' : 'القيد غير متوازن'}
           </Button>
         </Form>
-      </Modal>
+      </TabModal>
 
       {/* Opening balances drawer */}
-      <Modal footer={null} centered title="تسجيل الأرصدة الافتتاحية" width={560} open={openingDrawer}
+      <TabModal footer={null} centered title="تسجيل الأرصدة الافتتاحية" width={560} open={openingDrawer}
         onCancel={() => setOpeningDrawer(false)} destroyOnHidden>
         <Form form={openForm} layout="vertical" onFinish={onPostOpening} requiredMark={false}
           initialValues={{ date: dayjs().startOf('year') }}>
@@ -595,7 +597,7 @@ function JournalTab() {
           </Button>
           <Button type="primary" htmlType="submit" block>تسجيل الأرصدة الافتتاحية</Button>
         </Form>
-      </Modal>
+      </TabModal>
     </Card>
   );
 }

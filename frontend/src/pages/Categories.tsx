@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Card, Descriptions, Dropdown, Form, Input, Modal, Popconfirm, Space, Table, Tooltip,
-  message,
+  Button, Card, Descriptions, Dropdown, Form, Input, Popconfirm, Space, Table, Tooltip,
+  message
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, PrinterOutlined,
@@ -11,6 +11,7 @@ import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useScreenShortcuts } from '../components/keyboard';
+import { TabModal } from '../components/TabModal';
 
 /**
  * فئات الاصناف — the item categories, on a screen of their own.
@@ -235,7 +236,7 @@ export default function Categories() {
         ]}
       />
 
-      <Modal
+      <TabModal
         open={!!viewing} onCancel={() => setViewing(null)} footer={null} destroyOnHidden
         title="بيانات الفئة" width={420}
       >
@@ -245,9 +246,9 @@ export default function Categories() {
           <Descriptions.Item label="مخفي">{viewing?.active ? 'لا' : 'نعم'}</Descriptions.Item>
           <Descriptions.Item label="وصف">{viewing?.description || '—'}</Descriptions.Item>
         </Descriptions>
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         open={open} onCancel={() => setOpen(false)} footer={null} destroyOnHidden
         title={editing ? 'تعديل فئة' : 'فئة جديدة'} width={420}
       >
@@ -260,7 +261,7 @@ export default function Categories() {
           </Form.Item>
           <Button type="primary" htmlType="submit" block>حفظ</Button>
         </Form>
-      </Modal>
+      </TabModal>
     </Card>
   );
 }

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Button, Card, Checkbox, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip,
-  message,
+  Button, Card, Checkbox, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined,
@@ -12,6 +11,7 @@ import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { egp } from '../utils/accounts';
+import { TabModal } from '../components/TabModal';
 
 /** الخزينه و البنوك — their `/payment-methods`, its own screen.
  *
@@ -325,7 +325,7 @@ export default function Treasuries() {
         />
       </Card>
 
-      <Modal footer={null} centered title="خزينة جديدة" width={720} destroyOnHidden
+      <TabModal footer={null} centered title="خزينة جديدة" width={720} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}
           initialValues={{ kind: 'cash' }}>
@@ -335,9 +335,9 @@ export default function Treasuries() {
             <Button onClick={() => setCreateOpen(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal footer={null} centered title="تعديل الخزينة" width={720} destroyOnHidden
+      <TabModal footer={null} centered title="تعديل الخزينة" width={720} destroyOnHidden
         open={!!editing} onCancel={() => setEditing(null)}>
         <Form form={editForm} layout="vertical" onFinish={onEdit} requiredMark={false}>
           {formFields(false)}
@@ -346,7 +346,7 @@ export default function Treasuries() {
             <Button onClick={() => setEditing(null)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

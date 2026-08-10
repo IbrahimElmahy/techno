@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Card, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tag, message,
+  Button, Card, Col, Divider, Form, Input, InputNumber, Row, Select, Space, Table, Tag,
+  message
 } from 'antd';
 import { PlusOutlined, RollbackOutlined, WalletOutlined, FileSearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -10,6 +11,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { entryTypeLabel } from '../components/labels';
+import { TabModal } from '../components/TabModal';
 
 interface LedgerLine {
   id: number;
@@ -366,7 +368,7 @@ export default function Treasury() {
       </Card>
 
       {/* Manual Entry Drawer */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title="تسجيل قيد تسوية يدوية"
         width={550}
         onCancel={() => setDrawerVisible(false)}
@@ -480,7 +482,7 @@ export default function Treasury() {
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

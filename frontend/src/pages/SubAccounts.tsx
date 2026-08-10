@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Collapse, Empty, Form, Input, Modal, Row, Select, Skeleton, Space, Table,
-  Tag, Tooltip, message,
+  Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Table, Tag,
+  Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, SearchOutlined, ReloadOutlined,
@@ -12,6 +12,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { ChartAccount, NATURE_COLOR, NATURE_LABEL, egp } from '../utils/accounts';
+import { TabModal } from '../components/TabModal';
 
 /** الحسابات الفرعيه — their `/subaccounts`, its own screen.
  *
@@ -352,7 +353,7 @@ export default function SubAccounts() {
         />
       </Card>
 
-      <Modal footer={null} centered title="حساب فرعي جديد" width={720} destroyOnHidden
+      <TabModal footer={null} centered title="حساب فرعي جديد" width={720} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}>
           {formFields(true)}
@@ -361,9 +362,9 @@ export default function SubAccounts() {
             <Button onClick={() => setCreateOpen(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal footer={null} centered title="تعديل الحساب الفرعي" width={720} destroyOnHidden
+      <TabModal footer={null} centered title="تعديل الحساب الفرعي" width={720} destroyOnHidden
         open={!!editing} onCancel={() => setEditing(null)}>
         <Form form={editForm} layout="vertical" onFinish={onEdit} requiredMark={false}>
           {formFields(false)}
@@ -372,7 +373,7 @@ export default function SubAccounts() {
             <Button onClick={() => setEditing(null)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

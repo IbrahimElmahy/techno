@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, DatePicker, Descriptions, Divider, Form, Input, InputNumber, Modal,
-  Select, Space, Table, Tag, message,
+  Alert, Button, Card, DatePicker, Descriptions, Divider, Form, Input, InputNumber, Select,
+  Space, Table, Tag, message
 } from 'antd';
 import {
   PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowLeftOutlined,
@@ -14,6 +14,7 @@ import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
+import { TabModal } from '../components/TabModal';
 
 /**
  * مردودات شراء — goods going back to the supplier, as a register of its own.
@@ -303,7 +304,7 @@ export default function PurchaseReturns() {
 
       {/* The date door. Declared beside the form, not inside it, so opening the form cannot
           unmount the door that opened it. */}
-      <Modal
+      <TabModal
         open={newStep === 'date'}
         title="تاريخ مردود الشراء"
         okText="التالي" cancelText="إلغاء"
@@ -316,7 +317,7 @@ export default function PurchaseReturns() {
         <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
           اليوم اللي البضاعة رجعت فيه للمورد — مش يوم ما اتكتب في النظام.
         </div>
-      </Modal>
+      </TabModal>
 
       {creating && (
       <Card title={(

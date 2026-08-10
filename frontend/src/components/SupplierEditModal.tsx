@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Modal, Form, Input, Switch, Space, Button, Spin, Row, Col, message,
+  Form, Input, Switch, Space, Button, Spin, Row, Col, message
 } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { TabModal } from './TabModal';
 
 /**
  * ONE edit form for a supplier — shared by the suppliers grid and the supplier file.
@@ -98,7 +99,7 @@ export default function SupplierEditModal({
   };
 
   return (
-    <Modal
+    <TabModal
       open={open}
       title={record ? `تعديل بيانات المورد: ${record.name}` : 'تعديل بيانات المورد'}
       onCancel={onClose}
@@ -140,6 +141,6 @@ export default function SupplierEditModal({
           </Row>
         </Form>
       )}
-    </Modal>
+    </TabModal>
   );
 }

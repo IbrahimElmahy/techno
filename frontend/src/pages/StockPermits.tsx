@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, InputNumber, Modal,
-  Popconfirm, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, InputNumber, Popconfirm,
+  Row, Segmented, Select, Space, Table, Tabs, Tag, message
 } from 'antd';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowLeftOutlined,
@@ -14,6 +14,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
+import { TabModal } from '../components/TabModal';
 
 /**
  * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
@@ -272,7 +273,7 @@ export default function StockPermits() {
         onCancel={() => setPickerOpen(false)}
         onPick={addItem} />
 
-      <Modal
+      <TabModal
         open={newStep === 'warehouse'}
         title={kind === 'issue' ? 'الصرف من أي مخزن؟' : 'الإضافة لأي مخزن؟'}
         okText="التالي" cancelText="إلغاء"
@@ -290,7 +291,7 @@ export default function StockPermits() {
             ? 'الأصناف اللي هتظهر بعد كده هي المتاح في المخزن ده بس.'
             : 'البضاعة هتدخل على المخزن ده.'}
         </div>
-      </Modal>
+      </TabModal>
     </>
   );
 

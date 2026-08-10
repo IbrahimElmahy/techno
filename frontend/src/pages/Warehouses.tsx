@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
+  Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, TeamOutlined,
@@ -10,6 +10,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
+import { TabModal } from '../components/TabModal';
 
 /** المخازن — their `/stores`, its own screen at last.
  *
@@ -417,7 +418,7 @@ export default function Warehouses() {
         />
       </Card>
 
-      <Modal footer={null} centered title="مخزن جديد" width={640} destroyOnHidden
+      <TabModal footer={null} centered title="مخزن جديد" width={640} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}
           initialValues={{ warehouse_type: 'branch' }}>
@@ -427,9 +428,9 @@ export default function Warehouses() {
             <Button onClick={() => setCreateOpen(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal footer={null} centered title="تعديل المخزن" width={640} destroyOnHidden
+      <TabModal footer={null} centered title="تعديل المخزن" width={640} destroyOnHidden
         open={!!editing} onCancel={() => setEditing(null)}>
         <Form form={editForm} layout="vertical" onFinish={onEdit} requiredMark={false}>
           {formFields}
@@ -438,11 +439,11 @@ export default function Warehouses() {
             <Button onClick={() => setEditing(null)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
       {/* مناديب المخزن — picked from الموظفين. Saving owns the list: whoever is ticked works out
           of this store, whoever is not comes off it. */}
-      <Modal centered destroyOnHidden width={620}
+      <TabModal centered destroyOnHidden width={620}
         title={`مناديب المخزن — ${repsFor?.name ?? ''}`}
         open={!!repsFor}
         onCancel={() => setRepsFor(null)}
@@ -475,10 +476,10 @@ export default function Warehouses() {
             ].filter(Boolean).join(' · '),
           }))}
         />
-      </Modal>
+      </TabModal>
 
       {/* عملاء المندوب — who this rep may work with and sell to. */}
-      <Modal centered destroyOnHidden width={620}
+      <TabModal centered destroyOnHidden width={620}
         title={`عملاء المندوب — ${customersFor?.name ?? ''}`}
         open={!!customersFor}
         onCancel={() => setCustomersFor(null)}
@@ -530,7 +531,7 @@ export default function Warehouses() {
             </p>
           </>
         )}
-      </Modal>
+      </TabModal>
     </div>
   );
 }

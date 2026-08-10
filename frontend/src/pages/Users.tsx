@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
+import {
+  Button, Card, Form, Input, Select, Space, Switch, Table, Tag, message
+} from 'antd';
 import { UserAddOutlined, LockOutlined, EditOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useAuth, RoleName } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { TabModal } from '../components/TabModal';
 
 interface UserRecord {
   id: number;
@@ -264,7 +267,7 @@ export default function Users() {
         />
       </Card>
 
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title="إضافة مستخدم جديد"
         width={450}
         onCancel={() => setDrawerVisible(false)}
@@ -370,9 +373,9 @@ export default function Users() {
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title={editingUser ? `تعديل بيانات ${editingUser.username}` : 'تعديل بيانات المستخدم'}
         width={450}
         onCancel={() => {
@@ -483,7 +486,7 @@ export default function Users() {
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

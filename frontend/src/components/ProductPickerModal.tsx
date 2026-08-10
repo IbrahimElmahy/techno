@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Col, Empty, Input, Modal, Row, Space, Tag } from 'antd';
+import {
+  Button, Col, Empty, Input, Row, Space, Tag
+} from 'antd';
 import { normalizeAr } from './ListToolbar';
+import { TabModal } from './TabModal';
 
 /**
  * اختيار الصنف — categories on one side, their products on the other, in a window of its own.
@@ -97,7 +100,7 @@ export default function ProductPickerModal({
   };
 
   return (
-    <Modal open={open} onCancel={onCancel} footer={null} width={860} title={title}
+    <TabModal open={open} onCancel={onCancel} footer={null} width={860} title={title}
       // Do NOT hand focus back to whatever opened this. In the entry loop the opener is the
       // PREVIOUS line's quantity box, and restoring to it stole the caret back from the new
       // line the pick had just created — which is why the first product landed on its quantity
@@ -193,6 +196,6 @@ export default function ProductPickerModal({
           </Space>
         )}
       </div>
-    </Modal>
+    </TabModal>
   );
 }

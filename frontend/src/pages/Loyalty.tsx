@@ -9,6 +9,7 @@ import { showReversalConfirm, showDeactivationConfirm } from '../components/Conf
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
+import { TabModal } from '../components/TabModal';
 
 interface CouponType {
   id: number;
@@ -492,7 +493,7 @@ export default function Loyalty() {
       </Card>
 
       {/* Create Coupon Type Settings Drawer */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title="إضافة نوع كوبون ترويجي جديد"
         width={400}
         onCancel={() => setTypeVisible(false)}
@@ -544,10 +545,10 @@ export default function Loyalty() {
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
 
       {/* Edit Coupon Type Drawer */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title="تعديل نوع الكوبون الترويجي"
         width={400}
         onCancel={() => {
@@ -605,10 +606,10 @@ export default function Loyalty() {
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
 
       {/* Manual Points Conversion Drawer */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title="تحويل نقاط العميل يدويًا"
         width={400}
         onCancel={() => setConvertVisible(false)}
@@ -662,10 +663,10 @@ export default function Loyalty() {
             </Space>
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
 
       {/* Redeem Coupon Modal */}
-      <Modal
+      <TabModal
         title={`استرداد الكوبون: ${selectedCoupon?.serial || ''}`}
         open={redeemVisible}
         onCancel={() => setRedeemVisible(false)}
@@ -704,7 +705,7 @@ export default function Loyalty() {
             }}
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

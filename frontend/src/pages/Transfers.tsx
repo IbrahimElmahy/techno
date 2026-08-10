@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal,
-  Popconfirm, Row, Select, Space, Statistic,
-  Table, Tag, message,
+  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, InputNumber, Popconfirm,
+  Row, Select, Space, Statistic, Table, Tag, message
 } from 'antd';
 import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
@@ -21,6 +20,7 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableKeyboard } from '../components/keyboard';
+import { TabModal } from '../components/TabModal';
 
 /**
  * تحويلات المخزون — move stock between locations.
@@ -657,7 +657,7 @@ export default function Transfers() {
         onCancel={() => setPickerOpen(false)}
         onPick={(id: number) => { setPickerOpen(false); addItem(id); }} />
 
-      <Modal
+      <TabModal
         open={newStep === 'source'}
         title="التحويل من فين؟"
         okText="التالي" cancelText="إلغاء"
@@ -674,9 +674,9 @@ export default function Transfers() {
         <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
           البضاعة بتطلع من هنا — والرصيد المتاح بيتحمّل على أساسه.
         </div>
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         open={newStep === 'dest'}
         title="التحويل لفين؟"
         okText="ابدأ" cancelText="رجوع"
@@ -692,7 +692,7 @@ export default function Transfers() {
         <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
           المصدر مستبعد من القايمة — تحويل لنفس المكان مش تحويل.
         </div>
-      </Modal>
+      </TabModal>
     </>
   );
 
@@ -1111,7 +1111,7 @@ export default function Transfers() {
   );
 
   const rejectDialog = (
-    <Modal
+    <TabModal
       open={rejectOpen}
       title="رفض إذن التحويل"
       okText="ارفض" cancelText="تراجع"
@@ -1126,7 +1126,7 @@ export default function Transfers() {
       <Input.TextArea rows={3} value={rejectReason} autoFocus
         placeholder="سبب الرفض — أول سؤال هيسأله اللي طلب التحويل"
         onChange={(e: any) => setRejectReason(e.target.value)} />
-    </Modal>
+    </TabModal>
   );
 
   return (

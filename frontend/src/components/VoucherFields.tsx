@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Button, Form, Input, InputNumber, Modal, Select, Tag, message } from 'antd';
+import {
+  Button, Form, Input, InputNumber, Select, Tag, message
+} from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { TabModal } from './TabModal';
 
 /**
  * الخزنة وحساب المصروف — الحقلين اللي بيتحدد بيهم الفلوس بتتحرك منين وعلى إيه.
@@ -24,6 +27,8 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 export interface Treasury {
   id: number; name: string; kind?: string; balance?: string | number;
   is_default?: boolean; active?: boolean; bank_name?: string | null;
+  /** حساب الخزنة في الشجرة — بيه بنعرف إن الحساب ده خزنة، ومين. */
+  account_id?: number;
 }
 
 export interface ExpenseAccount {
@@ -187,7 +192,7 @@ export function ExpenseAccountField({
         />
       </Form.Item>
 
-      <Modal
+      <TabModal
         open={adding} onCancel={() => setAdding(false)} onOk={() => form.submit()}
         title="حساب مصروف جديد" okText="إضافة" cancelText="إلغاء"
         confirmLoading={saving} destroyOnHidden width={420}
@@ -213,7 +218,7 @@ export function ExpenseAccountField({
             وتقدر تعدّله أو تخفيه بعد كده من «اداره الانشاءات ← الحسابات الفرعيه».
           </div>
         </Form>
-      </Modal>
+      </TabModal>
     </>
   );
 }

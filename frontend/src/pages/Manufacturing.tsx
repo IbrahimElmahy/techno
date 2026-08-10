@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Popconfirm, Row,
+  Select, Space, Statistic, Table, Tabs, Tag, message
 } from 'antd';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
@@ -12,6 +13,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
+import { TabModal } from '../components/TabModal';
 
 interface Warehouse { id: number; name: string; }
 interface Item {
@@ -377,7 +379,7 @@ function OrdersTab({
         locale={{ emptyText: 'لا يوجد أوامر تصنيع بعد' }}
       />
 
-      <Modal centered
+      <TabModal centered
         title="أمر تصنيع جديد" width={560} open={open} onCancel={() => setOpen(false)}
         destroyOnHidden
         footer={<Button type="primary" onClick={() => form.submit()}>ترحيل الأمر</Button>}
@@ -452,7 +454,7 @@ function OrdersTab({
             )}
           </Form>
         )}
-      </Modal>
+      </TabModal>
     </div>
   );
 }
@@ -614,7 +616,7 @@ function RecipesTab({
         rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
 
-      <Modal centered
+      <TabModal centered
         title={editing ? 'تعديل وصفة' : 'وصفة جديدة'} width={560} open={open}
         onCancel={() => setOpen(false)} destroyOnHidden
         footer={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
@@ -726,7 +728,7 @@ function RecipesTab({
             )}
           </Form.List>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }
@@ -847,7 +849,7 @@ function WastageTab({
         rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
         locale={{ emptyText: 'لا يوجد مستندات هالك بعد' }} />
 
-      <Modal centered
+      <TabModal centered
         title="مستند هالك جديد" width={480} open={open} onCancel={() => setOpen(false)}
         destroyOnHidden
         footer={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
@@ -868,7 +870,7 @@ function WastageTab({
             <Input.TextArea rows={2} placeholder="سبب الهالك" />
           </Form.Item>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

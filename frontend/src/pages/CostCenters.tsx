@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
+  Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, StopOutlined, SearchOutlined, ReloadOutlined, EditOutlined,
@@ -10,6 +10,7 @@ import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { CostCenter } from '../utils/accounts';
+import { TabModal } from '../components/TabModal';
 
 /** مراكز التكلفة — their `/cost_centers`, its own screen.
  *
@@ -234,7 +235,7 @@ export default function CostCenters() {
           the level IS the depth of the parent chain, so choosing a parent sets it — and asking for
           both is asking for the day they disagree. The code is ours, for the same reason the chart
           of accounts keeps one: the numbering is the accountant's. */}
-      <Modal footer={null} centered title="مركز تكلفة جديد" width={620} destroyOnHidden
+      <TabModal footer={null} centered title="مركز تكلفة جديد" width={620} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}>
           <Row gutter={12}>
@@ -266,11 +267,11 @@ export default function CostCenters() {
             <Button onClick={() => setCreateOpen(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
       {/* التعديل: الاسم بس. الكود والمركز الأب مقفولين وبيتعرضوا عشان اللي بيعدّل يشوف إنه واقف
           على المركز الصح، مش عشان يغيّرهم. */}
-      <Modal footer={null} centered width={520} destroyOnHidden
+      <TabModal footer={null} centered width={520} destroyOnHidden
         title={editing ? `تعديل «${editing.name}»` : 'تعديل مركز تكلفة'}
         open={!!editing} onCancel={() => setEditing(null)}>
         {editing && (
@@ -299,7 +300,7 @@ export default function CostCenters() {
             </Space>
           </Form>
         )}
-      </Modal>
+      </TabModal>
     </div>
   );
 }

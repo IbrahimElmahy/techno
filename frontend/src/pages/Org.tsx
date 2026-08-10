@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Tabs, Table, Button, Space, Modal, Form, Input, Select, Checkbox, Tag, message } from 'antd';
+import {
+  Card, Tabs, Table, Button, Space, Form, Input, Select, Checkbox, Tag, message
+} from 'antd';
 import { PlusOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -8,6 +10,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { TabModal } from '../components/TabModal';
 
 const ADD_LABELS: Record<string, string> = {
   governorates: 'إضافة محافظة',
@@ -493,7 +496,7 @@ export default function Org() {
         <Tabs activeKey={activeTab} onChange={selectTab} items={tabItems} />
       </Card>
 
-      <Modal
+      <TabModal
         title={CREATE_TITLES[activeTab] || 'إضافة'}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
@@ -647,9 +650,9 @@ export default function Org() {
             </>
           )}
         </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         title={EDIT_TITLES[activeTab] || 'تعديل البيانات'}
         open={editVisible}
         onCancel={() => {
@@ -708,7 +711,7 @@ export default function Org() {
             </Form.Item>
           )}
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 }

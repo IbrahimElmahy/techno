@@ -50,6 +50,7 @@ import Settings from '../pages/Settings';
 import Inspections from '../pages/Inspections';
 import InspectionItems from '../pages/InspectionItems';
 import Vouchers from '../pages/Vouchers';
+import VoucherKeys from '../pages/VoucherKeys';
 import FinanceReports from '../pages/FinanceReports';
 
 const Placeholder = ({ name }: { name: string }) => (
@@ -101,6 +102,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/coupon-receipts" element={<CouponReceipts />} />
       <Route path="/treasury" element={<Treasury />} />
       <Route path="/vouchers" element={<Vouchers />} />
+      <Route path="/voucher-keys" element={<VoucherKeys />} />
       <Route path="/finance-reports" element={<FinanceReports />} />
       <Route path="/general-ledger" element={<GeneralLedger />} />
       <Route path="/loyalty" element={<Loyalty />} />

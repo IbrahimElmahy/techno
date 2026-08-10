@@ -12,6 +12,7 @@ import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { useNavigate } from 'react-router-dom';
+import { TabModal } from '../components/TabModal';
 
 interface CustomerRecord {
   id: number;
@@ -498,7 +499,7 @@ export default function Customers() {
       {/* عميل جديد — laid out field for field against their العملاء form: the same groups, three
           to a row, in their order. Whoever registers customers off a paper application reads down
           it in that order, and a form that asks in a different one turns typing into searching. */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title="عميل جديد"
         width={860}
         onCancel={() => setDrawerVisible(false)}
@@ -644,7 +645,7 @@ export default function Customers() {
             <Button onClick={() => setDrawerVisible(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
 
     </div>

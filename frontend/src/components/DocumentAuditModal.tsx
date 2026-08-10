@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Empty, Modal, Spin, Table, Tag } from 'antd';
+import {
+  Empty, Spin, Table, Tag
+} from 'antd';
 import { api } from '../api/client';
+import { TabModal } from './TabModal';
 
 /**
  * سجل عمليات المستند — مين عمل إيه وإمتى بالدقيقة.
@@ -69,7 +72,7 @@ export default function DocumentAuditModal({
   }, [entityType, entityId]);
 
   return (
-    <Modal
+    <TabModal
       open={!!entityId} onCancel={onClose} footer={null} width={760} destroyOnHidden
       title={title || 'سجل العمليات'}
     >
@@ -96,6 +99,6 @@ export default function DocumentAuditModal({
           ]}
         />
       )}
-    </Modal>
+    </TabModal>
   );
 }

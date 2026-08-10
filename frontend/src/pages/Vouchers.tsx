@@ -1,25 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card,
-  Tabs,
-  Table,
-  Form,
-  Segmented,
-  Select,
-  InputNumber,
-  DatePicker,
-  Input,
-  Button,
-  Space,
-  Tag,
-  Statistic,
-  Row,
-  Col,
-  Popconfirm,
-  message,
-  Descriptions,
-  Modal,
-  Alert,
+  Card, Tabs, Table, Form, Segmented, Select, InputNumber, DatePicker, Input, Button, Space,
+  Tag, Statistic, Row, Col, Popconfirm, message, Descriptions, Alert
 } from 'antd';
 import {
   DollarOutlined,
@@ -41,7 +23,9 @@ import { printDocument } from '../print/brand';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
 import { useLookup } from '../hooks/useLookup';
+import { VoucherKeyStrip, RunnerWorld } from '../components/VoucherKeyRunner';
 import { TreasuryField, ExpenseAccountField, defaultTreasuryId } from '../components/VoucherFields';
+import { TabModal } from '../components/TabModal';
 
 interface VoucherRecord {
   id: number;
@@ -218,6 +202,11 @@ const Vouchers: React.FC = () => {
   const [cheques, setCheques] = useState<any[]>([]);
   const [periodLock, setPeriodLock] = useState<string | null>(null);
   const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
+
+  /** اللي المفاتيح محتاجاه — من الليستات اللي الصفحة قرياها أصلاً، مش نداء تاني. */
+  const keyWorld = useMemo<RunnerWorld>(() => ({
+    treasuries: treasuries as any, customers, suppliers, reps: reps as any, accounts: [],
+  }), [treasuries, customers, suppliers, reps]);
 
   const [receiptForm] = Form.useForm();
   /**
@@ -602,6 +591,10 @@ const Vouchers: React.FC = () => {
 
   return (
     <div>
+      {/* المفاتيح الخاصة فوق الصفحة — السندات اللي بتتكتب كل يوم بضغطة، من غير ما حد يخرج من هنا.
+          نفس المحرك بتاع صفحة المفاتيح، مش نسخة تانية بتترحّل بطريقتها. */}
+      <VoucherKeyStrip world={keyWorld}
+        onPosted={() => { loadVouchers(); loadTreasuries(); }} />
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
           <Card>
@@ -1148,7 +1141,7 @@ const Vouchers: React.FC = () => {
       </Card>
 
       {/* The voucher itself — branded sheet with the amount in words, printable as-is. */}
-      <Modal
+      <TabModal
         open={voucherView !== null}
         title={`${voucherView ? VOUCHER_TITLES[voucherView.kind as VoucherDoc['kind']] : 'سند'} ${voucherView?.document_number ?? ''}`}
         onCancel={() => setVoucherView(null)}
@@ -1158,12 +1151,12 @@ const Vouchers: React.FC = () => {
         destroyOnHidden
       >
         {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
-      </Modal>
+      </TabModal>
 
 
       {/* سند قبض جديد. Vertical in a dialog rather than inline across a page: a row of eight
           fields is a form nobody reads the labels of. */}
-      <Modal
+      <TabModal
         open={receiptOpen}
         title="سند قبض — تحصيل من عميل"
         okText="تسجيل السند" cancelText="إلغاء"
@@ -1257,9 +1250,9 @@ const Vouchers: React.FC = () => {
                     </Button>
                   </Form.Item>
                 </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         open={paymentOpen}
         title="سند صرف — دفع لمورد"
         okText="تسجيل السند" cancelText="إلغاء"
@@ -1307,9 +1300,9 @@ const Vouchers: React.FC = () => {
                     </Button>
                   </Form.Item>
                 </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         open={handoverOpen}
         title="سند توريد مندوب"
         okText="تسجيل السند" cancelText="إلغاء"
@@ -1352,9 +1345,9 @@ const Vouchers: React.FC = () => {
                     </Button>
                   </Form.Item>
                 </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         open={expenseOpen}
         title="سند مصروف"
         okText="تسجيل السند" cancelText="إلغاء"
@@ -1388,9 +1381,9 @@ const Vouchers: React.FC = () => {
                     </Button>
                   </Form.Item>
                 </Form>
-      </Modal>
+      </TabModal>
 
-      <Modal
+      <TabModal
         open={transferOpen}
         title="تحويل نقدي بين خزينتين"
         okText="تسجيل السند" cancelText="إلغاء"
@@ -1432,10 +1425,10 @@ const Vouchers: React.FC = () => {
                     </Button>
                   </Form.Item>
                 </Form>
-      </Modal>
+      </TabModal>
       {/* ورقة قبض/دفع جديدة. Vertical, not the inline row it was: eight fields shoulder to
           shoulder is a form nobody reads the labels of. */}
-      <Modal
+      <TabModal
         open={chequeOpen}
         title="ورقة قبض / دفع جديدة"
         okText="تسجيل الشيك" cancelText="إلغاء"
@@ -1524,7 +1517,7 @@ const Vouchers: React.FC = () => {
             </Col>
           </Row>
         </Form>
-      </Modal>
+      </TabModal>
     </div>
   );
 };

@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { TabModal } from '../components/TabModal';
 
 interface SupplierRecord {
   id: number;
@@ -411,7 +412,7 @@ export default function Suppliers() {
           to a row, in their order. Note what their form does NOT have — no خصم, no ض.م, no default
           price tier, all three of which their customer form does. That asymmetry is theirs, and
           adding the three here would invent a negotiation this relationship is not run on. */}
-      <Modal footer={null} centered
+      <TabModal footer={null} centered
         title="مورد جديد"
         width={860}
         onCancel={() => setDrawerVisible(false)}
@@ -507,7 +508,7 @@ export default function Suppliers() {
             <Button onClick={() => setDrawerVisible(false)}>تراجع</Button>
           </Space>
         </Form>
-      </Modal>
+      </TabModal>
 
     </div>
   );

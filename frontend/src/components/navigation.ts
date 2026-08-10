@@ -216,6 +216,8 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
+          // مفاتيح خاصة — ربط بين حسابين رئيسيين، والسند بيتعمل بضغطة.
+          { key: '/voucher-keys', label: 'مفاتيح خاصة', roles: R(BOOKS) },
         ],
       },
       {

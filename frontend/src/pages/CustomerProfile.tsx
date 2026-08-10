@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Tabs, Table, Descriptions, Statistic, Row, Col, Card, Tag, Spin,
-  DatePicker, Space, Button, Empty, Typography, Modal, Segmented,
+  useNavigate, useParams } from 'react-router-dom';
+import {
+  Tabs, Table, Descriptions,
+  Statistic, Row, Col, Card, Tag, Spin, DatePicker, Space, Button, Empty, Typography,
+  Segmented
 } from 'antd';
 import { ReloadOutlined, ArrowRightOutlined, EditOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
@@ -15,6 +17,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import { useOpenDocument } from '../components/DocumentLink';
+import { TabModal } from '../components/TabModal';
 
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
@@ -608,7 +611,7 @@ export default function CustomerProfile() {
       </Card>
 
       {/* One popup for every document kind — the server returns fields + optional lines. */}
-      <Modal
+      <TabModal
         open={record !== null}
         title={record?.title || 'تفاصيل المستند'}
         onCancel={() => setRecord(null)}
@@ -671,7 +674,7 @@ export default function CustomerProfile() {
             )}
           </>
         )}
-      </Modal>
+      </TabModal>
 
       <CustomerEditModal
         customer={data?.customer}
