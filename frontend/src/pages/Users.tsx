@@ -9,6 +9,7 @@ import { useAuth, RoleName } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface UserRecord {
   id: number;
@@ -231,15 +232,21 @@ export default function Users() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('users', columns);
+
   return (
     <div>
       <Card
         title="إدارة مستخدمي النظام"
         extra={
-          <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
-            onClick={() => setDrawerVisible(true)}>
-            إضافة مستخدم
-          </Button>
+          <Space>
+            {tableCols.control}
+            <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
+              onClick={() => setDrawerVisible(true)}>
+              إضافة مستخدم
+            </Button>
+          </Space>
         }
       >
         <ListToolbar
@@ -260,7 +267,7 @@ export default function Users() {
         <Table
           {...kb.tableProps}
           dataSource={filter.filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}

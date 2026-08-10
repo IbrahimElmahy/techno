@@ -15,6 +15,7 @@ import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 // The five negotiated tiers plus the published list price, in the order and wording their form
 // uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
@@ -718,6 +719,9 @@ export default function Catalog() {
     }] : []),
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('catalog-items', columns);
+
   // Ours that used to be columns. «نقاط المنتج» in particular belongs here rather than in the
   // grid: it fetched once per visible row, so a page of 200 items fired 200 requests to fill a
   // column most people never read. Expanded, it is fetched for the one row actually opened.
@@ -748,11 +752,14 @@ export default function Catalog() {
       <Card
         title="الأصناف"
         extra={
-          canManageItems ? (
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
-              إضافة صنف للكتالوج
-            </Button>
-          ) : null
+          <Space>
+            {tableCols.control}
+            canManageItems ? (
+              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
+                إضافة صنف للكتالوج
+              </Button>
+            ) : null
+          </Space>
         }
       >
         {/* --- Search + filters (server-side, so they cover every item) --- */}
@@ -839,7 +846,7 @@ export default function Catalog() {
         {view === 'table' ? (
           <Table
             dataSource={filteredItems}
-            columns={columns}
+            columns={tableCols.columns}
             rowKey="id"
             loading={loading}
             size="middle"
@@ -879,10 +886,11 @@ export default function Catalog() {
                   إضافة صنف لهذه الفئة
                 </Button>
               ) : null,
+              // نفس القايمة مجمّعة بالفئة — فبتترتّب وتتخفي بنفس الاختيار.
               children: (
                 <Table
                   dataSource={g.rows}
-                  columns={columns}
+                  columns={tableCols.columns}
                   rowKey="id"
                   size="small"
                   loading={loading}

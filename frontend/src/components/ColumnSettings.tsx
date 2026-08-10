@@ -66,29 +66,45 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
   const full = `cols:${storageKey}`;
   const [prefs, setPrefs] = React.useState<StoredPrefs>(() => load(full, defaultHidden));
 
-  const save = (next: StoredPrefs) => {
-    setPrefs(next);
+  const persist = (next: StoredPrefs) => {
     try {
       localStorage.setItem(full, JSON.stringify(next));
     } catch {
       /* a browser with storage disabled just loses the preference, not the table */
     }
+    return next;
+  };
+
+  const save = (next: StoredPrefs) => {
+    setPrefs(persist(next));
+  };
+
+  /**
+   * زي `save` بس بيبني الجديد من اللي قبله — للضغطات المتتالية.
+   *
+   * Clicking the arrow three times quickly moved the column ONE step: React batches the three
+   * renders, so all three handlers read the same `prefs` from their closure and each computed the
+   * same single move from the same starting order. Reading the previous value inside the updater
+   * makes each click build on the one before it, which is what somebody holding the button means.
+   */
+  const update = (fn: (prev: StoredPrefs) => StoredPrefs) => {
+    setPrefs((prev) => persist(fn(prev)));
   };
 
   const setHidden = (hidden: string[]) => save({ ...prefs, hidden });
 
   /** حرّك عمود خطوة لفوق أو لتحت — من جوّه النافذة، فيسه ما اللي مرتّبه. */
-  const move = (key: string, direction: -1 | 1, allKeys: string[]) => {
+  const move = (key: string, direction: -1 | 1, allKeys: string[]) => update((prev) => {
     // The working order is the CURRENT rendered order — saved ranks first, then the unranked
-    // tail in the author's order — never a bare `prefs.order`, which for an untouched table is
+    // tail in the author's order — never a bare `prev.order`, which for an untouched table is
     // empty and would make the very first drag jump the column to one end.
-    const current = orderKeys(allKeys, prefs.order);
+    const current = orderKeys(allKeys, prev.order);
     const i = current.indexOf(key);
     const j = i + direction;
-    if (i < 0 || j < 0 || j >= current.length) return;
+    if (i < 0 || j < 0 || j >= current.length) return prev;
     [current[i], current[j]] = [current[j], current[i]];
-    save({ ...prefs, order: current });
-  };
+    return { ...prev, order: current };
+  });
 
   const reset = () => save({ hidden: [], order: undefined });
 
@@ -183,4 +199,56 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
       <Button icon={<SettingOutlined />} style={{ flexShrink: 0 }}>الأعمدة</Button>
     </Dropdown>
   );
+}
+
+/**
+ * سطر واحد بيدّي الجدول أعمدته والزرار بتاعه.
+ *
+ * The hook and the dropdown are the engine, but adopting them still meant a dozen lines per table:
+ * derive the keys, build the `choices` array, wire `hidden`/`order`/`onMove`, then remember to run
+ * `apply` on the columns. Written out at every table that is a dozen lines to get subtly wrong
+ * forty times over — and the one that is easiest to forget is `apply`, which fails silently: the
+ * dropdown works, the user hides a column, and the table ignores it.
+ *
+ * So the wiring lives here once. A screen says which table it is and what it must not lose, and
+ * gets back the columns to render and the control to drop in the toolbar.
+ *
+ *     const cols = useTableColumns('customers', columns, { locked: ['name'] });
+ *     …
+ *     extra={<Space>{cols.control}<Button…/></Space>}
+ *     <Table columns={cols.columns} … />
+ *
+ * `storageKey` names the TABLE, not the screen — a page with two tables needs two keys, or the two
+ * of them fight over one saved arrangement.
+ */
+export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; title?: any }>(
+  storageKey: string,
+  columns: T[],
+  opts: { defaultHidden?: string[]; locked?: string[] } = {},
+) {
+  const prefs = useHiddenColumns(storageKey, opts.defaultHidden);
+  const keyOf = (c: T) => String(c.key ?? c.dataIndex ?? '');
+  const allKeys = columns.map(keyOf);
+  // Nothing otherwise stops somebody unticking every column and being left with a table of blank
+  // rows and no way back except «إظهار الكل» — which is not obvious when there is nothing on screen
+  // to read. The first column is the row's own identity on essentially every table here, so it
+  // anchors by default; a screen whose first column is not that says so itself.
+  const locked = opts.locked ?? allKeys.slice(0, 1);
+
+  const control = (
+    <ColumnSettings
+      choices={columns.map((c) => ({
+        key: keyOf(c),
+        // An «إجراءات» column's title is usually a node, not a word; the list still has to name it.
+        title: typeof c.title === 'string' && c.title ? c.title : 'إجراءات',
+        locked: locked.includes(keyOf(c)),
+      }))}
+      hidden={prefs.hidden}
+      onChange={prefs.setHidden}
+      order={prefs.order}
+      onMove={(k, d) => prefs.move(k, d, allKeys)}
+    />
+  );
+
+  return { ...prefs, columns: prefs.apply(columns), control };
 }

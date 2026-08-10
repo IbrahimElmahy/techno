@@ -11,6 +11,7 @@ import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { CostCenter } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /** مراكز التكلفة — their `/cost_centers`, its own screen.
  *
@@ -194,12 +195,16 @@ export default function CostCenters() {
     }] : []),
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('cost-centers', columns);
+
   return (
     <div>
       <Card
         title="مراكز التكلفة"
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
             {canWrite && (
               <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
@@ -220,7 +225,7 @@ export default function CostCenters() {
         <Table
           {...kb.tableProps}
           dataSource={filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           size="middle"

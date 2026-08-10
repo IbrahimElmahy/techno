@@ -11,6 +11,7 @@ import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /** المخازن — their `/stores`, its own screen at last.
  *
@@ -319,6 +320,9 @@ export default function Warehouses() {
     }] : []),
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('warehouses', columns);
+
   // Opening a store shows who works out of it — the answer to «مين بيبيع من المخزن ده».
   const expandedRow = (record: WarehouseRecord) => {
     const mine = repsOf(record.id);
@@ -387,6 +391,7 @@ export default function Warehouses() {
         title="المخازن"
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
             {canWrite && (
               <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
@@ -407,7 +412,7 @@ export default function Warehouses() {
         <Table
           {...kb.tableProps}
           dataSource={filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           size="middle"

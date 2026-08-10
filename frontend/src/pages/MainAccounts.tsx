@@ -13,6 +13,7 @@ import {
   APPEARS_IN_LABEL, ChartAccount, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
 } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /** الحسابات الرئيسيه — their `/mainaccounts`, its own screen.
  *
@@ -183,6 +184,9 @@ export default function MainAccounts() {
     }] : []),
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('main-accounts', columns);
+
   // Their form: الاسم · المستوى الرئيسي · يظهر في · نوع الحساب. The code is ours — their system
   // numbers accounts for you, but a chart of accounts code carries a scheme the accountant owns
   // («١١٠٠» is current assets), and generating one would quietly break their numbering.
@@ -245,6 +249,7 @@ export default function MainAccounts() {
         title="الحسابات الرئيسيه"
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
             {canWrite && (
               <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
@@ -265,7 +270,7 @@ export default function MainAccounts() {
         <Table
           {...kb.tableProps}
           dataSource={filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           size="middle"

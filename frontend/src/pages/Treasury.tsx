@@ -12,6 +12,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface LedgerLine {
   id: number;
@@ -295,6 +296,9 @@ export default function Treasury() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('treasury-moves', columns);
+
   // القيد بسطوره ظاهر في الجدول؛ اللي بعده هو «الحساب ده رصيده بقى كام»، فالسطر بيودّي لكشف
   // حساب أول حساب في القيد.
   const kb = useTableKeyboard<LedgerEntry>({
@@ -337,9 +341,12 @@ export default function Treasury() {
       <Card
         title="الحسابات المالية (دفتر أستاذ القيود المزدوجة)"
         extra={
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
-            تسوية يدوية (قيد يومية جديد)
-          </Button>
+          <Space>
+            {tableCols.control}
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
+              تسوية يدوية (قيد يومية جديد)
+            </Button>
+          </Space>
         }
       >
         <ListToolbar
@@ -360,7 +367,7 @@ export default function Treasury() {
         <Table
           {...kb.tableProps}
           dataSource={filter.filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}

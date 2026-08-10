@@ -13,6 +13,7 @@ import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { useNavigate } from 'react-router-dom';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface CustomerRecord {
   id: number;
@@ -359,6 +360,9 @@ export default function Customers() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('customers', columns);
+
   // The three of ours that used to be columns. Opening a row costs one click and gives them back
   // in full, rather than making every row narrower for everyone who never looks at them.
   const expandedRow = (record: CustomerRecord) => (
@@ -391,10 +395,13 @@ export default function Customers() {
       <Card
         title="العملاء"
         extra={
-          <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
-            onClick={() => setDrawerVisible(true)}>
-            إضافة عميل
-          </Button>
+          <Space>
+            {tableCols.control}
+            <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
+              onClick={() => setDrawerVisible(true)}>
+              إضافة عميل
+            </Button>
+          </Space>
         }
       >
         {/* --- Search + filters (server-side, so they cover every customer) --- */}
@@ -481,7 +488,7 @@ export default function Customers() {
 
         <Table
           dataSource={customers}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           size="middle"

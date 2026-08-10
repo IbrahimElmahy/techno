@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Tag, Button, Descriptions } from 'antd';
+import { Table, Card, Tag, Button, Descriptions , Space} from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentAuditModal from '../components/DocumentAuditModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface AuditLog {
   id: number;
@@ -121,6 +122,9 @@ export default function Audit() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('audit', columns);
+
   // «إيه اللي حصل على المستند ده كله؟» — قراية سطر واحد في السجل بتفتح السؤال ده دايماً، وكان
   // لازم تفلتر بإيدك بنوع الكيان ورقمه. السطر بيفتح السجل المشترك مقصور على كيانه.
   const [trail, setTrail] = useState<{ type: string; id: number } | null>(null);
@@ -135,9 +139,12 @@ export default function Audit() {
       <Card
         title="سجل المراجعة والعمليات (Audit Logs)"
         extra={
-          <Button type="dashed" icon={<ReloadOutlined />} onClick={fetchLogs}>
-            تحديث السجل
-          </Button>
+          <Space>
+            {tableCols.control}
+            <Button type="dashed" icon={<ReloadOutlined />} onClick={fetchLogs}>
+              تحديث السجل
+            </Button>
+          </Space>
         }
       >
         <ListToolbar
@@ -160,7 +167,7 @@ export default function Audit() {
         <Table
           {...kb.tableProps}
           dataSource={filter.filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}

@@ -21,6 +21,7 @@ import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * تحويلات المخزون — move stock between locations.
@@ -1089,6 +1090,9 @@ export default function Transfers() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('transfer-requests', columns);
+
   /**
    * سجل عمليات الإذن — مين عمل إيه وإمتى.
    *
@@ -1140,10 +1144,13 @@ export default function Transfers() {
       <Card
         title="إدارة تحويلات ومناقلات المخزون"
         extra={
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={startNew}>
-            طلب تحويل مخزني
-          </Button>
+          <Space>
+            {tableCols.control}
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+              onClick={startNew}>
+              طلب تحويل مخزني
+            </Button>
+          </Space>
         }
       >
         <ListToolbar
@@ -1180,7 +1187,7 @@ export default function Transfers() {
 
         <Table
           {...listKb.tableProps}
-          dataSource={filter.filtered} columns={columns} rowKey="id" loading={loading}
+          dataSource={filter.filtered} columns={tableCols.columns} rowKey="id" loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         />

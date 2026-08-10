@@ -12,6 +12,7 @@ import { api } from '../api/client';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface SupplierRecord {
   id: number;
@@ -311,6 +312,9 @@ export default function Suppliers() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('suppliers', columns);
+
   // Ours, given back in full one click away rather than made narrower for everyone.
   const expandedRow = (record: SupplierRecord) => (
     <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
@@ -334,9 +338,12 @@ export default function Suppliers() {
       <Card
         title="الموردين"
         extra={
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
-            إضافة مورد
-          </Button>
+          <Space>
+            {tableCols.control}
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
+              إضافة مورد
+            </Button>
+          </Space>
         }
       >
         {/* --- Search + filters (server-side, so they cover every supplier) --- */}
@@ -393,7 +400,7 @@ export default function Suppliers() {
 
         <Table
           dataSource={suppliers}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           size="middle"

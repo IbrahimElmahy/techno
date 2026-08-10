@@ -13,6 +13,7 @@ import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { ChartAccount, NATURE_COLOR, NATURE_LABEL, egp } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /** الحسابات الفرعيه — their `/subaccounts`, its own screen.
  *
@@ -243,6 +244,8 @@ export default function SubAccounts() {
     }] : []),
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+
   // Their two fields, plus the code. Their system numbers accounts for you; ours asks, because a
   // chart of accounts code carries a scheme the accountant owns and generating one would quietly
   // break their numbering.
@@ -277,6 +280,9 @@ export default function SubAccounts() {
   // «الحساب الرئيسي» is the section heading, so repeating it on every row inside the section is
   // the same word four hundred times.
   const inSection = columns.filter((c: any) => c.key !== 'parent_id');
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه. بيشتغل على أعمدة
+  // القسم لأنها اللي بتوصل الجدول فعلاً، مش على القايمة الكاملة.
+  const tableCols = useTableColumns('sub-accounts', inSection);
 
   /** الأقسام — كل حساب رئيسي وتحته حساباته، ومعاه العدد والإجمالي. */
   const sections = useMemo(() => {
@@ -310,6 +316,7 @@ export default function SubAccounts() {
         title="الحسابات الفرعيه"
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
             {canWrite && (
               <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
@@ -347,7 +354,7 @@ export default function SubAccounts() {
               </Space>
             ),
             children: (
-              <AccountGroup rows={s.items} columns={inSection} onOpen={openEdit} />
+              <AccountGroup rows={s.items} columns={tableCols.columns} onOpen={openEdit} />
             ),
           }))}
         />

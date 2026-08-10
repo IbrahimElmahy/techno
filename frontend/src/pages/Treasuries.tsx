@@ -12,6 +12,7 @@ import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { egp } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /** الخزينه و البنوك — their `/payment-methods`, its own screen.
  *
@@ -214,6 +215,9 @@ export default function Treasuries() {
     }] : []),
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('treasuries', columns);
+
   // Ours that used to have no room: the bank's own details, and which safe a document falls back
   // to when it names none.
   const expandedRow = (r: TreasuryRecord) => (
@@ -294,6 +298,7 @@ export default function Treasuries() {
         title="الخزينه و البنوك"
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
             {canWrite && (
               <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
@@ -314,7 +319,7 @@ export default function Treasuries() {
         <Table
           {...kb.tableProps}
           dataSource={filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           size="middle"

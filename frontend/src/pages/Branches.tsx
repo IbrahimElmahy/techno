@@ -11,6 +11,7 @@ import { useScreenShortcuts } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /** الفروع — their `/branches`, its own screen.
  *
@@ -201,6 +202,9 @@ export default function Branches() {
     }] : []),
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('branches', columns);
+
   // Their three fields first, then the governorate we keep. The notes are two free lines on
   // purpose — a branch collects facts that belong to no column, and naming them now would only
   // be a name somebody has to work around later.
@@ -247,6 +251,7 @@ export default function Branches() {
         title="الفروع"
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
             {canWrite && (
               <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
@@ -267,7 +272,7 @@ export default function Branches() {
         <Table
           {...kb.tableProps}
           dataSource={filtered}
-          columns={columns}
+          columns={tableCols.columns}
           rowKey="id"
           loading={loading}
           size="middle"
