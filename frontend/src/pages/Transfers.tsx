@@ -7,12 +7,14 @@ import {
 import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
   ClearOutlined, ArrowLeftOutlined, CloseCircleOutlined, FileSearchOutlined, EditOutlined,
+  PrinterOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
+import { printTransfer } from '../components/TransferDocument';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
@@ -376,27 +378,44 @@ export default function Transfers() {
     const src = parseLoc(source);
     const dst = parseLoc(dest);
     setSubmitting(true);
-    // One transfer document per item (each is approved on its own), so report per line.
-    const failed: string[] = [];
-    let ok = 0;
-    for (const l of valid) {
-      try {
-        await api.post('/api/v1/transfers', {
-          item_id: l.item_id, quantity: Number(l.quantity || 0), route,
-          source: { location_kind: src.kind, location_id: src.id },
-          dest: { location_kind: dst.kind, location_id: dst.id },
+    // ONE document carrying every item — not one document per item.
+    //
+    // This used to POST once per line, so a request to move five things produced five separate
+    // permits with five numbers, each approved on its own. The storekeeper who was handed one
+    // list to pick had to find and approve five documents to release it, and approving four of
+    // them left a fourth-of-a-transfer nothing on the screen described. It also meant a partial
+    // failure — three posted, two refused — left the request half-written with no way to see that
+    // from the list.
+    //
+    // The document has carried lines since 031; the header's own `item_id`/`quantity` are the
+    // pre-lines shape and stay for old permits. The first line seeds them so a document written
+    // today reads the same way in anything that still looks at the header.
+    try {
+      const [first, ...rest] = valid;
+      const created = await api.post('/api/v1/transfers', {
+        item_id: first.item_id, quantity: Number(first.quantity || 0), route,
+        source: { location_kind: src.kind, location_id: src.id },
+        dest: { location_kind: dst.kind, location_id: dst.id },
+      });
+      // The header line is already on the document; add it as a real line too, so every item
+      // lives in the same place and the approver's table has no special first row.
+      await api.post(`/api/v1/transfers/${created.data.id}/lines`, {
+        item_id: first.item_id, quantity: String(first.quantity || 0),
+      });
+      for (const l of rest) {
+        await api.post(`/api/v1/transfers/${created.data.id}/lines`, {
+          item_id: l.item_id, quantity: String(l.quantity || 0),
         });
-        ok += 1;
-      } catch (err) {
-        console.error(err);
-        failed.push(l.name);
       }
+      message.success(`اتسجّل طلب التحويل بـ${valid.length} صنف`);
+      closeCreate();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذّر تسجيل طلب التحويل');
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+      fetchTransfers();
     }
-    setSubmitting(false);
-    if (ok) message.success(`تم تسجيل ${ok} طلب تحويل بنجاح`);
-    if (failed.length) message.error(`تعذّر تحويل: ${failed.join('، ')}`);
-    if (ok && !failed.length) closeCreate();
-    fetchTransfers();
   };
 
   // السطر يفتح المستند نفسه — نفس اللي زرار «اعتماد» بيعمله، بالكيبورد وبالماوس.
@@ -583,6 +602,28 @@ export default function Transfers() {
     fetchTransfers();
   };
 
+  /**
+   * الورقة اللي بتمشي مع البضاعة.
+   *
+   * A permit is not read on a screen at the moment it matters — the goods travel, and the paper
+   * travels with them so the receiving store can check what turned up against what was sent, and
+   * both sides sign. Built from the document that is open, so it prints exactly what is on screen.
+   */
+  const printOpenTransfer = (t: TransferRecord) => {
+    printTransfer({
+      document_number: t.document_number,
+      status: t.status,
+      source: locationName(t.source_location_kind, t.source_location_id),
+      dest: locationName(t.dest_location_kind, t.dest_location_id),
+      date: (t.created_at || '').slice(0, 10) || null,
+      approvedBy: t.approved_by ? (userNames[t.approved_by] || null) : null,
+      lines: docLines(t).map((l: any) => ({
+        name: nameOfItem(l.item_id),
+        quantity: l.quantity,
+      })),
+    });
+  };
+
   const handleReverse = (record: TransferRecord) => {
     showReversalConfirm({
       title: 'عكس عملية التحويل المخزني',
@@ -689,6 +730,12 @@ export default function Transfers() {
         { key: 'reverse', label: 'عكس', danger: true, icon: <RollbackOutlined />,
           onClick: () => handleReverse(editing) },
       ] as ToolbarAction[] : []),
+      // Printing is offered on any saved permit, whatever its state: a pending one is the picking
+      // list somebody walks to the store, and an approved one is the delivery note they sign.
+      ...(editing ? [{
+        key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        onClick: () => printOpenTransfer(editing),
+      } as ToolbarAction] : []),
       ...(editing ? [{
         key: 'log', label: 'سجل العمليات', icon: <FileSearchOutlined />,
         onClick: () => setAuditFor(editing.id),
