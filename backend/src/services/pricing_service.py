@@ -41,5 +41,5 @@ def tier_price(db: Session, item: Item, tier: PriceTier) -> Decimal:
     if item.sale_price is not None:
         return to_money(item.sale_price)
     raise PricingError(
-        f"Item {item.id} has no price for tier '{tier.value}' and no base sale price."
+        "الصنف ده مالوش سعر للشريحة دي ولا سعر بيع أساسي."
     )

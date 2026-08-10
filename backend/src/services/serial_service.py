@@ -63,15 +63,15 @@ def receive(
 ) -> list[ItemSerial]:
     """Register N new serials in_stock at a location and post a +N stock-in (FR-003)."""
     if not item.is_serialized:
-        raise SerialError("Item is not serialized.")
+        raise SerialError("الصنف ده مش متتبّع بسيريال.")
     if not serials:
-        raise SerialError("At least one serial is required.")
+        raise SerialError("لازم سيريال واحد على الأقل.")
     if len(set(serials)) != len(serials):
-        raise SerialError("Duplicate serial in the request.")
+        raise SerialError("فيه سيريال متكرر في الطلب.")
     rows: list[ItemSerial] = []
     for s in serials:
         if _get(db, item.id, s) is not None:
-            raise SerialError(f"Serial '{s}' already exists for this item.")
+            raise SerialError(f"السيريال «{s}» متسجّل قبل كده للصنف ده.")
         row = ItemSerial(
             item_id=item.id, serial=s, status=SerialStatus.in_stock,
             location_kind=location_kind, location_id=location_id,
@@ -99,16 +99,16 @@ def assert_sale_serials(
     has_serials = bool(serials)
     if not item.is_serialized:
         if has_serials:
-            raise SerialError("Serials provided for a non-serialized item.")
+            raise SerialError("اتبعت سيريالات لصنف مش متتبّع بسيريال.")
         return
     if not has_serials:
-        raise SerialError(f"Item {item.id} is serialized; serials are required.")
+        raise SerialError("الصنف ده متتبّع بسيريال — لازم تكتب السيريالات.")
     if to_qty(unit_factor) != to_qty(Decimal(1)):
-        raise SerialError("Serialized items must be sold in the base unit (no alternate unit).")
+        raise SerialError("الأصناف اللي بسيريال بتتباع بالوحدة الأساسية بس.")
     if len(set(serials)) != len(serials):
-        raise SerialError("Duplicate serial on the line.")
+        raise SerialError("فيه سيريال متكرر في السطر.")
     if Decimal(len(serials)) != to_qty(quantity):
-        raise SerialError("Serial count must equal the line quantity.")
+        raise SerialError("عدد السيريالات لازم يساوي كمية السطر.")
 
 
 def relocate(
@@ -177,9 +177,9 @@ def mark_sold(
     for s in serials:
         row = _get(db, item.id, s)
         if row is None or row.status != SerialStatus.in_stock:
-            raise SerialError(f"Serial '{s}' is not in stock.")
+            raise SerialError(f"السيريال «{s}» مش موجود في المخزن.")
         if row.location_kind != origin_kind or row.location_id != origin_id:
-            raise SerialError(f"Serial '{s}' is not at the sale origin.")
+            raise SerialError(f"السيريال «{s}» مش في المخزن اللي بتبيع منه.")
         row.status = SerialStatus.sold
         row.location_kind = None
         row.location_id = None
@@ -205,7 +205,7 @@ def restore_for_return(
     for s in serials:
         row = _get(db, item.id, s)
         if row is None or row.status != SerialStatus.sold or row.sold_invoice_id != invoice_id:
-            raise SerialError(f"Serial '{s}' was not sold on this invoice.")
+            raise SerialError(f"السيريال «{s}» مااتباعش على الفاتورة دي.")
         row.status = SerialStatus.in_stock
         row.location_kind = origin_kind
         row.location_id = origin_id

@@ -50,7 +50,7 @@ def _log(
 
 def _require_perishable(item: Item) -> None:
     if not item.is_perishable:
-        raise BatchError("Batches apply to perishable items only.")
+        raise BatchError("الدفعات بتتعمل للأصناف اللي ليها صلاحية بس.")
 
 
 def _find(db: Session, item_id: int, kind: LocationKind, loc_id: int,
@@ -88,13 +88,13 @@ def receive(db: Session, *, item_id: int, location_kind: LocationKind, location_
     """Take a lot into stock: register the batch and post the matching stock-in."""
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("Item not found.")
+        raise BatchError("الصنف مش موجود.")
     _require_perishable(item)
     qty = to_qty(quantity)
     if qty <= ZERO_QTY:
-        raise BatchError("Batch quantity must be greater than zero.")
+        raise BatchError("كمية الدفعة لازم تكون أكبر من صفر.")
     if expiry_date is None:
-        raise BatchError("A batch needs an expiry date.")
+        raise BatchError("الدفعة لازم يكون ليها تاريخ صلاحية.")
 
     stock_service.post_movement(
         db, item_id=item_id, location_kind=location_kind, location_id=location_id,
@@ -120,11 +120,11 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
     """
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("Item not found.")
+        raise BatchError("الصنف مش موجود.")
     _require_perishable(item)
     needed = to_qty(quantity)
     if needed <= ZERO_QTY:
-        raise BatchError("Consumed quantity must be greater than zero.")
+        raise BatchError("الكمية المستهلكة لازم تكون أكبر من صفر.")
 
     batches = db.scalars(
         select(StockBatch).where(
@@ -138,7 +138,7 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
     available = to_qty(sum((Decimal(str(b.quantity)) for b in batches), ZERO_QTY))
     if needed > available:
         raise BatchError(
-            f"Insufficient batch quantity: need {needed}, {available} available in lots."
+            f"الدفعات مش كفاية — محتاج {needed} والمتاح فيها {available}."
         )
 
     taken: list[tuple[date, Decimal]] = []
@@ -176,7 +176,7 @@ def relocate(db: Session, *, item_id: int, from_kind: LocationKind, from_id: int
     """
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("Item not found.")
+        raise BatchError("الصنف مش موجود.")
     if not getattr(item, "is_perishable", False):
         return []
     taken = consume_fefo(db, item_id=item_id, location_kind=from_kind, location_id=from_id,
@@ -204,13 +204,13 @@ def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind
     """
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("Item not found.")
+        raise BatchError("الصنف مش موجود.")
     _require_perishable(item)
     if expiry_date is None:
-        raise BatchError("A perishable return needs the expiry date of the goods coming back.")
+        raise BatchError("المرتجع لصنف له صلاحية لازم تكتب تاريخ صلاحية البضاعة الراجعة.")
     qty = to_qty(quantity)
     if qty <= ZERO_QTY:
-        raise BatchError("Returned quantity must be greater than zero.")
+        raise BatchError("الكمية المرتجعة لازم تكون أكبر من صفر.")
     batch = _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
                     expiry=expiry_date, quantity=qty)
     _log(db, item_id=item_id, expiry=expiry_date, location_kind=location_kind,

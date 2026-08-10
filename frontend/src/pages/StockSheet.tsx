@@ -304,6 +304,7 @@ export default function StockSheet() {
               locked: c.key === 'name',
             }))}
             hidden={cols.hidden} onChange={cols.setHidden}
+            order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
           />
           <Button icon={<DownloadOutlined />} onClick={exportCsv}>تصدير</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>

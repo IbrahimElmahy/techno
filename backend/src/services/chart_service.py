@@ -155,23 +155,23 @@ def create_account(
     the parent (if any) is a group node (FR-001/002/003/017)."""
     code = code.strip()
     if not code:
-        raise ChartError("Account code is required.")
+        raise ChartError("كود الحساب مطلوب.")
     if db.scalar(select(Account).where(Account.code == code)) is not None:
-        raise ChartError(f"Account code '{code}' already exists.")
+        raise ChartError(f"كود الحساب «{code}» متسجّل قبل كده.")
 
     parent: Account | None = None
     if parent_id is not None:
         parent = db.get(Account, parent_id)
         if parent is None:
-            raise ChartError("Parent account not found.")
+            raise ChartError("الحساب الرئيسي مش موجود.")
         if parent.is_postable:
-            raise ChartError("Parent must be a group (non-postable) account.")
+            raise ChartError("الحساب الرئيسي لازم يكون مجموعة مش حساب بيقبل الترحيل.")
         if not code.startswith(parent.code + "."):
             raise ChartError(
-                f"Child code '{code}' must be prefixed by its parent's code '{parent.code}.'"
+                f"كود الحساب الفرعي «{code}» لازم يبدأ بكود الرئيسي «{parent.code}»."
             )
     elif "." in code:
-        raise ChartError("A root account code must have no dot segment.")
+        raise ChartError("كود الحساب الرئيسي الأعلى مايكونش فيه نقطة.")
 
     acc = Account(
         account_type=AccountType.user_defined,
@@ -213,7 +213,7 @@ def update_account(
     deactivated if they still have active children (FR-005)."""
     acc = db.get(Account, account_id)
     if acc is None:
-        raise ChartError("Account not found.")
+        raise ChartError("الحساب مش موجود.")
     if name is not None:
         acc.name = name
     if appears_in is not None:
@@ -241,7 +241,7 @@ def deactivate_account(db: Session, *, account_id: int) -> Account:
     """Soft-delete: never hard-delete an account with children or posted lines (FR-005/IV)."""
     acc = db.get(Account, account_id)
     if acc is None:
-        raise ChartError("Account not found.")
+        raise ChartError("الحساب مش موجود.")
     _assert_deactivatable(db, acc)
     acc.active = False
     db.flush()
@@ -250,19 +250,19 @@ def deactivate_account(db: Session, *, account_id: int) -> Account:
 
 def _assert_deactivatable(db: Session, acc: Account) -> None:
     if acc.is_system:
-        raise ChartError("System accounts cannot be deactivated.")
+        raise ChartError("حسابات النظام مايتقفلوش.")
     has_active_child = db.scalar(
         select(Account.id).where(Account.parent_id == acc.id, Account.active.is_(True))
     )
     if has_active_child is not None:
-        raise ChartError("Account has active children; deactivate them first.")
+        raise ChartError("الحساب ده تحته حسابات شغالة — اقفلهم الأول.")
 
 
 def account_balance(db: Session, account_id: int) -> Decimal:
     """Derived balance: a leaf = signed Σ of its lines; a group = Σ of its descendant leaves."""
     acc = db.get(Account, account_id)
     if acc is None:
-        raise ChartError("Account not found.")
+        raise ChartError("الحساب مش موجود.")
     if acc.is_postable:
         return ledger_service.balance_of(db, account_id)
     total = ZERO

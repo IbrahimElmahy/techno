@@ -16,7 +16,7 @@ def scale_factor(output_quantity, produced_quantity) -> Decimal:
     """How many recipe batches the produced quantity represents (produced / batch yield)."""
     batch = to_qty(output_quantity)
     if batch <= to_qty(0):
-        raise ValueError("Recipe output quantity must be positive.")
+        raise ValueError("كمية ناتج التركيبة لازم تكون أكبر من صفر.")
     return to_qty(produced_quantity) / batch
 
 
@@ -32,7 +32,7 @@ def consumed_quantity(component_quantity, scale, unit_factor=1) -> Decimal:
     """
     factor = to_qty(unit_factor or 1)
     if factor <= to_qty(0):
-        raise ValueError("Unit factor must be positive.")
+        raise ValueError("معامل الوحدة لازم يكون أكبر من صفر.")
     return to_qty(Decimal(component_quantity) * Decimal(scale) * factor)
 
 

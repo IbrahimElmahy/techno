@@ -269,6 +269,7 @@ export default function Reservations() {
                 locked: c.key === 'document_number',
               }))}
               hidden={cols.hidden} onChange={cols.setHidden}
+              order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openCreate}>حجز جديد</Button>

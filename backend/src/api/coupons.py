@@ -88,7 +88,7 @@ def redeem(
                 db, coupon=coupon, sales_invoice_id=body.sales_invoice_id, actor_user_id=current.id)
         else:  # gift_product
             if body.item_id is None or body.location_kind is None or body.location_id is None or body.quantity is None:
-                raise CouponError("gift_product requires item_id, location, and quantity.")
+                raise CouponError("كوبون الهدية محتاج الصنف والمكان والكمية.")
             red = coupon_service.redeem_gift_product(
                 db, coupon=coupon, item_id=body.item_id, location_kind=body.location_kind,
                 location_id=body.location_id, quantity=body.quantity,

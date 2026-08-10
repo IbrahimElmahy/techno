@@ -60,7 +60,7 @@ def create_option(db: Session, *, category: str, value: str, label: str,
                   description: str | None = None) -> LookupOption:
     meta = CATEGORIES.get(category)
     if meta is None:
-        raise LookupError("Unknown category.")
+        raise LookupError("القايمة دي مش معروفة.")
     if meta.get("system"):
         raise LookupError(
             "This list is tied to system logic — you can relabel/reorder/hide its options, "
@@ -68,12 +68,12 @@ def create_option(db: Session, *, category: str, value: str, label: str,
         )
     _ensure_seeded(db, category)
     if not value or not label:
-        raise LookupError("Both value and label are required.")
+        raise LookupError("القيمة والاسم الاتنين مطلوبين.")
     dup = db.scalar(
         select(LookupOption).where(LookupOption.category == category, LookupOption.value == value)
     )
     if dup is not None:
-        raise LookupError("An option with this value already exists in the list.")
+        raise LookupError("فيه اختيار بنفس القيمة في القايمة دي.")
     if sort_order is None:
         current = db.scalars(
             select(LookupOption.sort_order).where(LookupOption.category == category)
@@ -91,7 +91,7 @@ def update_option(db: Session, *, option_id: int, label: str | None = None,
                   description: str | None = None) -> LookupOption:
     opt = db.get(LookupOption, option_id)
     if opt is None:
-        raise LookupError("Option not found.")
+        raise LookupError("الاختيار مش موجود.")
     if label is not None:
         opt.label = label
     if sort_order is not None:
@@ -108,7 +108,7 @@ def update_option(db: Session, *, option_id: int, label: str | None = None,
 def delete_option(db: Session, *, option_id: int) -> None:
     opt = db.get(LookupOption, option_id)
     if opt is None:
-        raise LookupError("Option not found.")
+        raise LookupError("الاختيار مش موجود.")
     if opt.is_system:
         raise LookupError("A system option cannot be deleted — hide it (deactivate) instead.")
     db.delete(opt)

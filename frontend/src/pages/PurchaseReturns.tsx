@@ -10,6 +10,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
@@ -266,6 +267,7 @@ export default function PurchaseReturns() {
                 locked: c.key === 'document_number',
               }))}
               hidden={cols.hidden} onChange={cols.setHidden}
+              order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
             <Button data-shortcut="F2" type="primary" danger icon={<PlusOutlined />} onClick={openCreate}>
@@ -373,13 +375,24 @@ export default function PurchaseReturns() {
                 },
                 {
                   title: 'الكمية الراجعة', width: 150,
+                  // Capped by what was actually purchased — but refused, not clamped. `max`
+                  // rewrote the number in silence, so somebody returning 50 of a line that only
+                  // bought 8 saw «8» appear and never learned why.
                   render: (_: any, ln: PurchaseLine) => (
                     <InputNumber
                       data-grid-col="qty" keyboard={false}
-                      style={{ width: '100%' }} min={0} max={Number(ln.quantity)}
+                      style={{ width: '100%' }}
                       value={qty[ln.item_id] ?? null}
                       placeholder="—"
                       onChange={(v) => setQty((p) => ({ ...p, [ln.item_id]: v as number | null }))}
+                      onBlur={() => setQty((p) => ({
+                        ...p,
+                        [ln.item_id]: guardQuantity({
+                          value: p[ln.item_id],
+                          available: Number(ln.quantity),
+                          itemName: itemName(ln.item_id),
+                        }, null),
+                      }))}
                     />
                   ),
                 },

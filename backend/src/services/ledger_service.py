@@ -31,13 +31,13 @@ class LineInput:
 
 def _validate_lines(lines: list[LineInput]) -> None:
     if len(lines) < 2:
-        raise LedgerError("A ledger entry MUST have at least two lines.")
+        raise LedgerError("القيد لازم يكون فيه سطرين على الأقل.")
     debit = sum((to_money(l.amount) for l in lines if l.direction == Direction.debit), ZERO)
     credit = sum((to_money(l.amount) for l in lines if l.direction == Direction.credit), ZERO)
     if any(to_money(l.amount) <= ZERO for l in lines):
-        raise LedgerError("Every line amount MUST be positive.")
+        raise LedgerError("كل سطر لازم يكون مبلغه أكبر من صفر.")
     if debit != credit:
-        raise LedgerError(f"Unbalanced entry: debit {debit} != credit {credit}.")
+        raise LedgerError(f"القيد مش متوازن — مدين {debit} ودائن {credit}.")
 
 
 def _assert_period_open(db: Session, when: date | None) -> None:
@@ -145,14 +145,14 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
     """
     original = db.get(LedgerEntry, original_id)
     if original is None:
-        raise LedgerError("Original entry not found.")
+        raise LedgerError("القيد الأصلي مش موجود.")
     if original.reverses_entry_id is not None:
-        raise LedgerError("A reversal entry is itself not re-reversible.")
+        raise LedgerError("القيد العكسي نفسه مايتعملهوش عكس.")
     existing = db.scalar(
         select(LedgerEntry).where(LedgerEntry.reverses_entry_id == original_id)
     )
     if existing is not None:
-        raise LedgerError("Entry has already been reversed (reverse-once).")
+        raise LedgerError("القيد ده اتعكس قبل كده.")
     _assert_within_edit_window(db, original, actor_user_id)
 
     swapped = [
@@ -213,7 +213,7 @@ def balance_of(db: Session, account_id: int) -> Decimal:
     """Derive an account's balance from its lines (signed by the account's normal side)."""
     account = db.get(Account, account_id)
     if account is None:
-        raise LedgerError("Account not found.")
+        raise LedgerError("الحساب مش موجود.")
     total = ZERO
     lines = db.scalars(select(LedgerLine).where(LedgerLine.account_id == account_id)).all()
     for line in lines:

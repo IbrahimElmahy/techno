@@ -8,6 +8,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
@@ -279,10 +280,16 @@ export default function FreeProduction() {
           </Col>
           <Col xs={12} md={4}>
             <Form.Item label="الكمية المنتجة" required style={{ marginBottom: 0 }}>
+              {/* Production has no shelf to check against — it CREATES the goods. Zero and
+                  negative are still refused: a negative production consumes the product it was
+                  meant to make. */}
               <InputNumber
                 data-grid-col="qty" keyboard={false}
-                style={{ width: '100%' }} min={0} value={quantity} placeholder="—"
+                style={{ width: '100%' }} value={quantity} placeholder="—"
                 onChange={(v) => setQuantity(v as number | null)}
+                onBlur={() => setQuantity(guardQuantity(
+                  { value: quantity, itemName: products.find((p) => p.id === productId)?.name },
+                  null))}
               />
             </Form.Item>
           </Col>
@@ -327,10 +334,26 @@ export default function FreeProduction() {
               render: (_: any, l: DraftLine) => (
                 <InputNumber
                   data-qty-key={l.key} data-grid-col="qty2" keyboard={false}
-                  onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
-                  style={{ width: '100%' }} min={0} value={l.quantity ?? null} placeholder="—"
+                  onPressEnter={(e) => {
+                    e.preventDefault();
+                    const kept = guardQuantity({
+                      value: l.quantity,
+                      itemName: materials.find((m) => m.id === l.item_id)?.name,
+                    }, null);
+                    setLines((p) => p.map((x) => (
+                      x.key === l.key ? { ...x, quantity: kept } : x)));
+                    if (kept !== null) setPickerOpen(true);
+                  }}
+                  style={{ width: '100%' }} value={l.quantity ?? null} placeholder="—"
                   onChange={(v) => setLines((p) => p.map((x) => (
                     x.key === l.key ? { ...x, quantity: v as number | null } : x)))}
+                  onBlur={() => setLines((p) => p.map((x) => (
+                    x.key === l.key
+                      ? { ...x, quantity: guardQuantity({
+                          value: x.quantity,
+                          itemName: materials.find((m) => m.id === x.item_id)?.name,
+                        }, null) }
+                      : x)))}
                 />
               ),
             },
@@ -377,6 +400,7 @@ export default function FreeProduction() {
                 locked: c.key === 'document_number',
               }))}
               hidden={cols.hidden} onChange={cols.setHidden}
+              order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
           </Space>

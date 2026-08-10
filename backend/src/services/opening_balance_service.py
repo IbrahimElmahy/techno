@@ -35,7 +35,7 @@ def post_opening_balances(
 ) -> LedgerEntry:
     """Post opening balances against opening_balance_equity as one balanced entry."""
     if not lines:
-        raise JournalError("Opening balances require at least one account line.")
+        raise JournalError("أرصدة أول المدة لازم يكون فيها سطر حساب واحد على الأقل.")
 
     equity = account_resolver.opening_balance_equity_account(db)
     journal_lines: list[JournalLineInput] = []
@@ -43,7 +43,7 @@ def post_opening_balances(
     credit_sum = ZERO
     for ln in lines:
         if not chart_service.is_postable_leaf(db, ln.account_id):
-            raise JournalError(f"Account {ln.account_id} is not a postable, active leaf.")
+            raise JournalError("الحساب ده مش حساب فرعي شغال بيقبل الترحيل.")
         acc = db.get(Account, ln.account_id)
         amount = to_money(ln.amount)
         # Opening posts on the account's normal side (assets debit; liab/equity/income credit).

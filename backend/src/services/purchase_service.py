@@ -72,10 +72,10 @@ def create_purchase(
     purchase_date=None,
 ) -> PurchaseInvoice:
     if not lines:
-        raise PurchaseError("A purchase needs at least one line.")
+        raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
-        raise PurchaseError("Supplier not found.")
+        raise PurchaseError("المورد مش موجود.")
     supplier_acc = db.scalar(
         select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id)
     )
@@ -85,7 +85,7 @@ def create_purchase(
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None:
-            raise PurchaseError("Purchased item not found.")
+            raise PurchaseError("الصنف المشترى مش موجود.")
         # Purchases accept any stocked item — raw materials AND finished products (resale/trading).
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)  # (008)
@@ -96,7 +96,7 @@ def create_purchase(
         built.append((ln, line_total, factor))
     total = to_money(total)
     if to_money(cash_amount) + to_money(credit_amount) != total:
-        raise PurchaseError("cash + credit must equal the purchase total.")
+        raise PurchaseError("النقدي + الآجل لازم يساوي إجمالي فاتورة الشراء.")
 
     # Stock in (raw materials) — one movement per line.
     invoice = PurchaseInvoice(
@@ -138,7 +138,7 @@ def create_purchase(
         entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_amount)))
     if to_money(credit_amount) > ZERO:
         if supplier_acc is None:
-            raise PurchaseError("Supplier has no payable account.")
+            raise PurchaseError("المورد ده مالوش حساب دائنين.")
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit, to_money(credit_amount)))
     entry = ledger_service.post_entry(
         db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
@@ -174,7 +174,7 @@ def return_purchase(
 ) -> PurchaseReturn:
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
-        raise PurchaseError("Purchase invoice not found.")
+        raise PurchaseError("فاتورة الشراء مش موجودة.")
     purchased = {
         ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
         for ln in inv.lines

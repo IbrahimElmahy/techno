@@ -130,7 +130,7 @@ def post_movement(
     """Append one immutable movement; reject an `out` that would drive on-hand below zero."""
     q = to_qty(quantity)
     if q <= ZERO_QTY:
-        raise StockError("Movement quantity must be positive.")
+        raise StockError("كمية الحركة لازم تكون أكبر من صفر.")
     _lock_locator(db, item_id, location_kind, location_id)
     if direction == StockDirection.out:
         current = on_hand(db, item_id, location_kind, location_id)
@@ -159,14 +159,14 @@ def reverse_movement(
     """Post the mirror of a movement (direction swapped); reverse-once; obeys no-negative-stock."""
     original = db.get(StockMovement, original_id)
     if original is None:
-        raise StockError("Original movement not found.")
+        raise StockError("الحركة الأصلية مش موجودة.")
     if original.reverses_movement_id is not None:
-        raise StockError("A reversal movement is itself not re-reversible.")
+        raise StockError("الحركة العكسية نفسها مايتعملهاش عكس.")
     existing = db.scalar(
         select(StockMovement).where(StockMovement.reverses_movement_id == original_id)
     )
     if existing is not None:
-        raise StockError("Movement already reversed (reverse-once).")
+        raise StockError("الحركة دي اتعكست قبل كده.")
     mirror = (
         StockDirection.out if original.direction == StockDirection.in_ else StockDirection.in_
     )

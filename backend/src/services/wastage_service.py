@@ -32,10 +32,10 @@ def create_wastage(
 ) -> WastageDocument:
     qty = to_qty(quantity)
     if qty <= to_qty(0):
-        raise WastageError("Wastage quantity must be positive.")
+        raise WastageError("كمية الهالك لازم تكون أكبر من صفر.")
     item = db.get(Item, item_id)
     if item is None:
-        raise WastageError("Item not found.")
+        raise WastageError("الصنف مش موجود.")
     unit_cost = to_money(item.purchase_price) if item.purchase_price is not None else ZERO
     doc = WastageDocument(
         document_number=_doc_number(db), item_id=item_id, warehouse_id=warehouse_id, quantity=qty,
@@ -60,11 +60,11 @@ def create_wastage(
 def reverse_wastage(db: Session, *, wastage_id: int, actor_user_id: int) -> WastageDocument:
     original = db.get(WastageDocument, wastage_id)
     if original is None:
-        raise WastageError("Wastage document not found.")
+        raise WastageError("مستند الهالك مش موجود.")
     if original.reverses_id is not None:
-        raise WastageError("A reversal is itself not re-reversible.")
+        raise WastageError("المستند العكسي نفسه مايتعملهوش عكس.")
     if db.scalar(select(WastageDocument).where(WastageDocument.reverses_id == wastage_id)) is not None:
-        raise WastageError("Document already reversed (reverse-once).")
+        raise WastageError("المستند ده اتعكس قبل كده.")
     mirror = stock_service.reverse_movement(
         db, original_id=original.stock_movement_id, actor_user_id=actor_user_id,
         movement_type="reverse_waste_out",

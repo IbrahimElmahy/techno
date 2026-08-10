@@ -43,15 +43,15 @@ def post_entry(
 ) -> LedgerEntry:
     """Post a manual journal entry. ≥2 balanced lines, all on postable+active leaves."""
     if not lines:
-        raise JournalError("A journal entry must have at least two lines.")
+        raise JournalError("قيد اليومية لازم يكون فيه سطرين على الأقل.")
     for ln in lines:
         if not chart_service.is_postable_leaf(db, ln.account_id):
             raise JournalError(
-                f"Account {ln.account_id} is not a postable, active leaf; journals post to leaves."
+                "الحساب ده مش حساب فرعي شغال بيقبل الترحيل — القيود بتترحّل على الحسابات الفرعية."
             )
         if ln.cost_center_id is not None and not cost_center_service.is_active(db, ln.cost_center_id):
             raise JournalError(
-                f"Cost center {ln.cost_center_id} is unknown or inactive."
+                "مركز التكلفة ده مش موجود أو مقفول."
             )
     try:
         entry = ledger_service.post_entry(

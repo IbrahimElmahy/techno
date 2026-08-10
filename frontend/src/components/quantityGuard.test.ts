@@ -59,20 +59,38 @@ describe('القاعدة نفسها', () => {
 describe('بتتطبّق على الشاشات اللي البضاعة بتطلع منها', () => {
   const read = (f: string) => readFileSync(join(SRC, f), 'utf8');
 
+  // Every screen where somebody types a quantity into a document line. The first three take goods
+  // OUT and are capped by the shelf; the last three bring goods in or create them and are capped
+  // by nothing — but zero and negative are refused on all six, because a negative quantity is not
+  // a small quantity, it is the document running backwards.
   it.each([
     ['فاتورة البيع', 'pages/Invoices.tsx'],
     ['إذن التحويل', 'pages/Transfers.tsx'],
     ['أذونات المخزن', 'pages/StockPermits.tsx'],
+    ['المرتجع', 'pages/Returns.tsx'],
+    ['مرتجع الشراء', 'pages/PurchaseReturns.tsx'],
+    ['الإنتاج الحر', 'pages/FreeProduction.tsx'],
   ])('«%s» بتستعمل الحارس', (_label, file) => {
     expect(read(file)).toMatch(/guardQuantity/);
+  });
+
+  it('مفيش شاشة فيها خانة كمية من غير حارس', () => {
+    // The rule the user asked for was «عموماً» — a screen that grows a quantity box and wires it
+    // straight to state is how «عموماً» quietly becomes «في الشاشات اللي افتكرناها».
+    const SCREENS = ['Invoices.tsx', 'Transfers.tsx', 'StockPermits.tsx',
+      'Returns.tsx', 'PurchaseReturns.tsx', 'FreeProduction.tsx'];
+    for (const f of SCREENS) {
+      expect(read(`pages/${f}`), f).toMatch(/guardQuantity\(/);
+    }
   });
 
   it('ومفيش `max` بيقصّ الرقم في السكوت', () => {
     // The whole reason the guard exists. A `max` bound to availability is the silent rewrite.
     const offenders: string[] = [];
-    for (const f of ['pages/Invoices.tsx', 'pages/Transfers.tsx', 'pages/StockPermits.tsx']) {
+    for (const f of ['pages/Invoices.tsx', 'pages/Transfers.tsx', 'pages/StockPermits.tsx',
+      'pages/PurchaseReturns.tsx']) {
       const src = read(f);
-      for (const m of src.matchAll(/max=\{[^}]*(availableFor|available|reviewStock)[^}]*\}/g)) {
+      for (const m of src.matchAll(/max=\{[^}]*(availableFor|available|reviewStock|ln\.quantity)[^}]*\}/g)) {
         offenders.push(`${f}: ${m[0].slice(0, 60)}`);
       }
     }

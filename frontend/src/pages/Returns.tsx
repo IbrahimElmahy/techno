@@ -23,6 +23,7 @@ import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
+import { guardQuantity } from '../components/quantityGuard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
@@ -886,17 +887,32 @@ export default function Returns() {
                                 )}
                               </Col>
                               <Col md={2} xs={8}>
-                                <InputNumber size="small" min={0.001} style={{ width: '100%' }}
+                                {/* No `available` — a return brings goods IN, so there is no
+                                    shelf to check against. Zero and negative are still refused:
+                                    a negative return REMOVES stock, posted as a return. */}
+                                <InputNumber size="small" style={{ width: '100%' }}
                                   ref={(el) => { qtyRefs.current[line.key] = el; }}
                                   data-qty-key={line.key}
                                   data-grid-col="qty" keyboard={false}
                                   placeholder="الكمية"
                                   value={line.quantity ?? undefined}
                                   onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
+                                  onBlur={() => handleLineChange(line.key, 'quantity', guardQuantity({
+                                    value: line.quantity,
+                                    itemName: products.find((p) => p.id === line.item_id)?.name,
+                                  }, null))}
                                   // Enter means «this line is done» — straight back to the picker.
                                   // preventDefault so the global «Enter moves to the next field»
                                   // does not run after this and drag the caret off the new line.
-                                  onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }} />
+                                  onPressEnter={(e) => {
+                                    e.preventDefault();
+                                    const kept = guardQuantity({
+                                      value: line.quantity,
+                                      itemName: products.find((p) => p.id === line.item_id)?.name,
+                                    }, null);
+                                    handleLineChange(line.key, 'quantity', kept);
+                                    if (kept !== null) setPickerOpen(true);
+                                  }} />
                               </Col>
                               <Col md={3} xs={8}>
                                 <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
@@ -1156,6 +1172,8 @@ export default function Returns() {
               }))}
               hidden={returnCols.hidden}
               onChange={returnCols.setHidden}
+              order={returnCols.order}
+              onMove={(k, d) => returnCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" danger icon={<PlusOutlined />}

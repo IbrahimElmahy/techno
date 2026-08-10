@@ -29,5 +29,5 @@ def resolve_factor(db: Session, item: Item, unit: str | None) -> Decimal:
         select(ItemUnit).where(ItemUnit.item_id == item.id, ItemUnit.name == unit)
     )
     if row is None:
-        raise UomError(f"Unit '{unit}' is not defined for item {item.id}.")
+        raise UomError(f"الوحدة «{unit}» مش معرّفة للصنف ده.")
     return to_qty(row.factor)

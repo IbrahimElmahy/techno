@@ -1709,6 +1709,9 @@ export default function Invoices() {
               ]}
               hidden={lineCols.hidden}
               onChange={lineCols.setHidden}
+              // No `order`/`onMove` here: these cells are hand-placed in JSX, not read from a
+              // `columns={...}` array — `apply()` has nothing to reorder, so offering arrows that
+              // silently did nothing would be worse than not offering them.
             />
           </div>
 
@@ -2058,6 +2061,8 @@ export default function Invoices() {
               }))}
               hidden={invoiceCols.hidden}
               onChange={invoiceCols.setHidden}
+              order={invoiceCols.order}
+              onMove={(k, d) => invoiceCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" icon={<PlusOutlined />}

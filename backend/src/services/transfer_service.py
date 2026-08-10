@@ -63,12 +63,12 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
              dest_kind, dest_id, initiated_by) -> StockTransfer:
     want_src, want_dst = _ROUTE_KINDS[route]
     if source_kind != want_src or dest_kind != want_dst:
-        raise TransferError(f"Illegal route {route.value} for the given location kinds.")
+        raise TransferError("نوع التحويل ده مش متاح بين المكانين دول.")
     qty = Decimal(quantity)
     if qty <= 0:
-        raise TransferError("Transfer quantity must be greater than zero.")
+        raise TransferError("كمية التحويل لازم تكون أكبر من صفر.")
     if source_kind == dest_kind and source_id == dest_id:
-        raise TransferError("Source and destination must be different locations.")
+        raise TransferError("المصدر والوجهة لازم يكونوا مكانين مختلفين.")
     # Fail fast: never let a request be raised for more than the source actually holds. The
     # authoritative no-negative guard still runs at approve time (stock can move in between).
     # (031) Reserved stock does not move. A hold is a promise to a customer at THIS location, and
@@ -85,7 +85,7 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
                 f"في المخزن ده."
             )
         raise TransferError(
-            f"Requested {qty} exceeds the {available} available at the source location."
+            f"طالب {qty} والمتاح في المصدر {available} بس."
         )
     transfer = StockTransfer(
         document_number=_doc_number(db), item_id=item_id, quantity=Decimal(quantity), route=route,
@@ -102,9 +102,9 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
             approver_user_id: int, is_admin: bool) -> StockTransfer:
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
-        raise TransferError("Transfer not found.")
+        raise TransferError("إذن التحويل مش موجود.")
     if transfer.status != TransferStatus.pending:
-        raise TransferError("Only a pending transfer can be approved.")
+        raise TransferError("الإذن اللي اتعتمد أو اترفض مايتعتمدش تاني.")
 
     src_branch = _location_branch(db, transfer.source_location_kind, transfer.source_location_id)
     # Source-branch authority: central source (None) ⇒ admin/central; else the source-branch manager.
@@ -181,9 +181,9 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
 def reverse(db, *, transfer_id: int, actor_user_id: int) -> StockTransfer:
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
-        raise TransferError("Transfer not found.")
+        raise TransferError("إذن التحويل مش موجود.")
     if transfer.status != TransferStatus.approved:
-        raise TransferError("Only an approved transfer can be reversed.")
+        raise TransferError("الإذن المعتمد بس هو اللي ينفع يتعكس.")
     stock_service.reverse_movement(db, original_id=transfer.out_movement_id, actor_user_id=actor_user_id)
     stock_service.reverse_movement(db, original_id=transfer.in_movement_id, actor_user_id=actor_user_id)
     transfer.status = TransferStatus.reversed

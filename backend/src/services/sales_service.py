@@ -83,9 +83,9 @@ def _revenue_account_id(db: Session, chosen: int | None) -> int:
 
     acc = db.get(Account, chosen)
     if acc is None or not acc.active:
-        raise SalesError("Revenue account not found.")
+        raise SalesError("حساب الإيراد مش موجود.")
     if not acc.is_postable:
-        raise SalesError("Revenue account is a group; pick a postable account.")
+        raise SalesError("حساب الإيراد ده مجموعة مش حساب — اختار حساب بيقبل الترحيل.")
     return acc.id
 
 
@@ -226,12 +226,12 @@ def create_sale(
     expenses: list[dict] | None = None,
 ) -> SalesInvoice:
     if not lines:
-        raise SalesError("A sale needs at least one line.")
+        raise SalesError("الفاتورة لازم يكون فيها صنف واحد على الأقل.")
     fixed = fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
     combined = fixed + variable
     if combined >= Decimal("100") or variable < ZERO:
-        raise SalesError("Combined discount must be < 100% and the variable discount non-negative.")
+        raise SalesError("الخصم المجمّع لازم يكون أقل من ١٠٠٪ والخصم المتغيّر مايكونش بالسالب.")
 
     customer = db.get(Customer, customer_id)
 
@@ -243,7 +243,7 @@ def create_sale(
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
-            raise SalesError("Sales accept products only.")
+            raise SalesError("البيع بيقبل منتجات بس — مش خامات.")
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
@@ -251,7 +251,7 @@ def create_sale(
         # (011) A batch quantity is expressed in base units, so a perishable line must be too —
         # otherwise the lot arithmetic and the stock movement would disagree.
         if item.is_perishable and factor != Decimal("1"):
-            raise SalesError("Perishable items are sold in the base unit.")
+            raise SalesError("الأصناف اللي ليها صلاحية بتتباع بوحدتها الأساسية.")
         try:  # (009) validate serial count/base-unit/serialized consistency before any stock move
             serial_service.assert_sale_serials(
                 item, quantity=ln.quantity, unit_factor=factor, serials=ln.serials
@@ -267,8 +267,8 @@ def create_sale(
         unit_price = to_money(ln.unit_price) if ln.unit_price is not None else list_price
         if unit_price < list_price and not can_sell_below:
             raise SalesError(
-                f"Selling below the '{tier.value}' tier price ({list_price}) requires the "
-                f"sell.below_price capability."
+                f"البيع بأقل من سعر الشريحة ({list_price}) محتاج صلاحية "
+                f"«البيع تحت السعر» — مالكش الصلاحية دي."
             )
         # (031) Which discount the line takes, most specific first:
         #
@@ -289,7 +289,7 @@ def create_sale(
                      else Decimal(customer.discount_pct) if customer.discount_pct is not None
                      else Decimal(item.default_discount_pct or 0))
         if line_disc < ZERO or line_disc >= Decimal("100"):
-            raise SalesError("Line discount must be between 0 and under 100%.")
+            raise SalesError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * unit_price
         line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
         gross += line_total
@@ -304,7 +304,7 @@ def create_sale(
     payable = to_money(net + tax + billed_expenses)
     if to_money(cash_amount) + to_money(credit_amount) != payable:
         raise SalesError(
-            "cash + credit must equal the net total." if tax == ZERO and not billed_expenses
+            "النقدي + الآجل لازم يساوي صافي الفاتورة." if tax == ZERO and not billed_expenses
             else f"cash + credit must equal the total including VAT and expenses ({payable})."
         )
 
@@ -315,7 +315,7 @@ def create_sale(
     except MergeError as exc:
         raise SalesError(str(exc)) from exc
     if cust_acc is None:
-        raise SalesError("Customer has no account.")
+        raise SalesError("العميل ده مالوش حساب ذمم.")
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
 
     invoice = SalesInvoice(
@@ -476,7 +476,7 @@ def return_sale(
 ) -> SalesReturn:
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
-        raise SalesError("Sales invoice not found.")
+        raise SalesError("فاتورة البيع مش موجودة.")
     # (008) carry the line's unit_factor so the return reverses stock in base units.
     sold = {
         ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
@@ -555,7 +555,7 @@ def return_sale(
         if item.is_serialized:
             ser = (serials or {}).get(item_id) or []
             if Decimal(len(ser)) != to_qty(Decimal(qty)):
-                raise SalesError("Serial count must equal the returned quantity.")
+                raise SalesError("عدد السيريالات لازم يساوي الكمية المرتجعة.")
             try:
                 serial_service.restore_for_return(
                     db, item=item, invoice_id=inv.id, origin_kind=back_kind,
@@ -632,20 +632,20 @@ def create_standalone_return(
     treasury and/or a reduction of what they owe). Prices default to what the customer last paid.
     """
     if not lines:
-        raise SalesError("A return needs at least one line.")
+        raise SalesError("المرتجع لازم يكون فيه صنف واحد على الأقل.")
     variable = Decimal(variable_discount_pct)
     if variable < ZERO or variable >= Decimal("100"):
-        raise SalesError("The invoice-level discount must be between 0 and under 100%.")
+        raise SalesError("خصم الفاتورة لازم يكون من صفر لأقل من ١٠٠٪.")
 
     customer = db.get(Customer, customer_id)
     if customer is None:
-        raise SalesError("Customer not found.")
+        raise SalesError("العميل مش موجود.")
     try:
         cust_acc = customer_merge_service.receivable_account(db, customer_id, family)
     except MergeError as exc:
         raise SalesError(str(exc)) from exc
     if cust_acc is None:
-        raise SalesError("Customer has no account.")
+        raise SalesError("العميل ده مالوش حساب ذمم.")
 
     # (031) Remember where this customer's returns come back to, the FIRST time it is answered.
     # His goods come back to the branch that serves him, and asking again on every return is
@@ -662,21 +662,21 @@ def create_standalone_return(
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
-            raise SalesError("Returns accept products only.")
+            raise SalesError("المرتجع بيقبل منتجات بس — مش خامات.")
         if item.is_serialized:
             # Serial ownership can only be restored against the original sale — route serialized
             # items through the invoice-bound return instead.
-            raise SalesError("Serialized items must be returned from their original invoice.")
+            raise SalesError("الأصناف اللي بسيريال بترجع من فاتورتها الأصلية — افتح الفاتورة واعمل المرتجع منها.")
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
             raise SalesError(str(exc)) from exc
         unit_price = to_money(ln.unit_price)
         if unit_price < ZERO:
-            raise SalesError("The refund price cannot be negative.")
+            raise SalesError("سعر الاسترداد مايكونش بالسالب.")
         line_disc = Decimal(ln.discount_pct) if ln.discount_pct is not None else ZERO
         if line_disc < ZERO or line_disc >= Decimal("100"):
-            raise SalesError("Line discount must be between 0 and under 100%.")
+            raise SalesError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * unit_price
         line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
         gross += line_total
@@ -687,7 +687,7 @@ def create_standalone_return(
     refund_total = to_money(net + tax)
     if to_money(cash_refund) + to_money(credit_reduction) != refund_total:
         raise SalesError(
-            "cash refund + credit reduction must equal the net total." if tax == ZERO
+            "المرتجع نقدي + اللي بيتخصم من المديونية لازم يساوي صافي المرتجع." if tax == ZERO
             else f"cash refund + credit reduction must equal the total including VAT ({refund_total})."
         )
 

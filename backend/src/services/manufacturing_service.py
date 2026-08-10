@@ -64,7 +64,7 @@ def _op(db, *, op_type, item_id, location_kind, location_id, quantity, movement_
 def consume(db, *, item_id, location_kind, location_id, quantity, actor_user_id) -> ManufacturingOp:
     item = db.get(Item, item_id)
     if item is None or item.kind != ItemKind.raw_material:
-        raise ManufacturingError("Consume requires a raw material.")
+        raise ManufacturingError("الاستهلاك بيكون لخامة.")
     return _op(db, op_type=ManufactureOpType.consume, item_id=item_id, location_kind=location_kind,
                location_id=location_id, quantity=quantity, movement_type="consumption_out",
                direction=StockDirection.out, actor_user_id=actor_user_id)
@@ -73,7 +73,7 @@ def consume(db, *, item_id, location_kind, location_id, quantity, actor_user_id)
 def produce(db, *, item_id, location_kind, location_id, quantity, actor_user_id) -> ManufacturingOp:
     item = db.get(Item, item_id)
     if item is None or item.kind != ItemKind.product:
-        raise ManufacturingError("Produce requires a product.")
+        raise ManufacturingError("الإنتاج بيكون لمنتج.")
     return _op(db, op_type=ManufactureOpType.produce, item_id=item_id, location_kind=location_kind,
                location_id=location_id, quantity=quantity, movement_type="production_in",
                direction=StockDirection.in_, actor_user_id=actor_user_id)
@@ -83,11 +83,11 @@ def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
     """Reverse a consume/produce: mirror stock movement + a linked reversal op (reverse-once)."""
     original = db.get(ManufacturingOp, op_id)
     if original is None:
-        raise ManufacturingError("Manufacturing op not found.")
+        raise ManufacturingError("عملية التصنيع مش موجودة.")
     if original.reverses_op_id is not None:
-        raise ManufacturingError("A reversal op is itself not re-reversible.")
+        raise ManufacturingError("العملية العكسية نفسها مايتعملهاش عكس.")
     if db.scalar(select(ManufacturingOp).where(ManufacturingOp.reverses_op_id == op_id)) is not None:
-        raise ManufacturingError("Op already reversed (reverse-once).")
+        raise ManufacturingError("العملية دي اتعكست قبل كده.")
     # Mirror the underlying movement (consume↔return-to-stock, produce↔remove); no-negative applies.
     mirror = stock_service.reverse_movement(
         db, original_id=original.stock_movement_id, actor_user_id=actor_user_id,
@@ -130,21 +130,21 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
                      resources=None) -> None:
     product = db.get(Item, product_id)
     if product is None or product.kind != ItemKind.product:
-        raise ManufacturingError("A recipe's output must be a product.")
+        raise ManufacturingError("ناتج التركيبة لازم يكون منتج.")
     if to_qty(output_quantity) <= to_qty(0):
-        raise ManufacturingError("Recipe output quantity must be positive.")
+        raise ManufacturingError("كمية ناتج التركيبة لازم تكون أكبر من صفر.")
     if not components:
-        raise ManufacturingError("A recipe needs at least one raw-material component.")
+        raise ManufacturingError("التركيبة لازم يكون فيها خامة واحدة على الأقل.")
     seen: set[int] = set()
     for item_id, qty, unit in _component_rows(components):
         if item_id in seen:
-            raise ManufacturingError("A raw material appears more than once in the recipe.")
+            raise ManufacturingError("فيه خامة متكررة أكتر من مرة في التركيبة.")
         seen.add(item_id)
         comp = db.get(Item, item_id)
         if comp is None or comp.kind != ItemKind.raw_material:
-            raise ManufacturingError("Recipe components must be raw materials.")
+            raise ManufacturingError("مكوّنات التركيبة لازم تكون خامات.")
         if to_qty(qty) <= to_qty(0):
-            raise ManufacturingError("Each component quantity must be positive.")
+            raise ManufacturingError("كمية كل مكوّن لازم تكون أكبر من صفر.")
         # Rejected here rather than at order time: a recipe saved with a unit the item does not
         # have would fail every order made from it, long after whoever typed it has moved on.
         if unit:
@@ -158,9 +158,9 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
         try:
             ResourceKind(kind)
         except ValueError:
-            raise ManufacturingError(f"Unknown resource kind '{kind}'.") from None
+            raise ManufacturingError(f"نوع المورد «{kind}» مش معروف.") from None
         if to_qty(qty) < to_qty(0) or to_money(rate) < ZERO:
-            raise ManufacturingError("Resource quantity and rate must be non-negative.")
+            raise ManufacturingError("كمية المورد وسعره مايكونوش بالسالب.")
 
 
 def _persist_recipe_lines(db: Session, bom: Bom, components, resources) -> None:
@@ -202,7 +202,7 @@ def update_bom(
     """Replace a recipe's name/output/components/resources in place (recipes are editable)."""
     bom = db.get(Bom, bom_id)
     if bom is None:
-        raise ManufacturingError("Recipe not found.")
+        raise ManufacturingError("التركيبة مش موجودة.")
     _validate_recipe(db, product_id=bom.product_id, output_quantity=output_quantity,
                      components=components, resources=resources)
     bom.name = name
@@ -221,7 +221,7 @@ def update_bom(
 def deactivate_bom(db: Session, *, bom_id: int, actor_user_id: int) -> Bom:
     bom = db.get(Bom, bom_id)
     if bom is None:
-        raise ManufacturingError("Recipe not found.")
+        raise ManufacturingError("التركيبة مش موجودة.")
     bom.active = False
     db.flush()
     audit_service.record(db, action="bom.deactivate", actor_user_id=actor_user_id,
@@ -285,10 +285,10 @@ def create_order(
     """
     qty = to_qty(quantity)
     if qty <= to_qty(0):
-        raise ManufacturingError("Produced quantity must be positive.")
+        raise ManufacturingError("الكمية المنتجة لازم تكون أكبر من صفر.")
     product = db.get(Item, product_id)
     if product is None or product.kind != ItemKind.product:
-        raise ManufacturingError("A manufacturing order produces a product.")
+        raise ManufacturingError("أمر التصنيع بينتج منتج.")
     free = components is not None
     if free:
         bom = None
@@ -297,21 +297,21 @@ def create_order(
         scale = None
         comp_rows = [(int(iid), to_qty(q)) for iid, q in components]
         if not comp_rows:
-            raise ManufacturingError("Free production needs at least one component.")
+            raise ManufacturingError("الإنتاج الحر لازم يكون فيه مكوّن واحد على الأقل.")
         if any(q <= to_qty(0) for _, q in comp_rows):
-            raise ManufacturingError("Component quantity must be positive.")
+            raise ManufacturingError("كمية المكوّن لازم تكون أكبر من صفر.")
         if len({iid for iid, _ in comp_rows}) != len(comp_rows):
             # Two rows for one item would each post their own movement and each be reversed, so
             # the total is right by luck and every per-line reading of it is wrong.
-            raise ManufacturingError("An item can appear only once in a free production order.")
+            raise ManufacturingError("الصنف مايتكررش في أمر الإنتاج الحر.")
     else:
         bom = db.get(Bom, bom_id) if bom_id is not None else active_bom_for(db, product_id)
         if bom is None:
-            raise ManufacturingError("No recipe found for this product. Create a recipe first.")
+            raise ManufacturingError("المنتج ده مالوش تركيبة — اعمل تركيبة الأول.")
         if bom.product_id != product_id:
-            raise ManufacturingError("Recipe does not belong to this product.")
+            raise ManufacturingError("التركيبة دي مش بتاعة المنتج ده.")
         if not bom.components:
-            raise ManufacturingError("Recipe has no components.")
+            raise ManufacturingError("التركيبة مفيهاش مكوّنات.")
         scale = production.scale_factor(bom.output_quantity, qty)
         comp_rows = [
             (c.item_id, production.consumed_quantity(
@@ -341,7 +341,7 @@ def create_order(
     for comp_item_id, consumed in comp_rows:
         raw = db.get(Item, comp_item_id)
         if raw is None:
-            raise ManufacturingError("Component item not found.")
+            raise ManufacturingError("صنف المكوّن مش موجود.")
         wk, wid = production.resolve_warehouse(
             raw.default_warehouse_id if raw else None, location_kind, location_id)
         unit_cost = to_money(raw.purchase_price) if raw and raw.purchase_price is not None else ZERO
@@ -349,7 +349,7 @@ def create_order(
         material_cost += line_cost
         waste_qty = to_qty(wastes.get(comp_item_id, 0))
         if waste_qty < to_qty(0) or waste_qty > consumed:
-            raise ManufacturingError("Waste quantity must be between 0 and the consumed quantity.")
+            raise ManufacturingError("كمية الهالك لازم تكون بين صفر والكمية المستهلكة.")
         mv = stock_service.post_movement(
             db, item_id=comp_item_id, location_kind=wk, location_id=wid,
             movement_type="consumption_out", direction=StockDirection.out, quantity=consumed,
@@ -416,13 +416,13 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Manufact
     """
     original = db.get(ManufacturingOrder, order_id)
     if original is None:
-        raise ManufacturingError("Manufacturing order not found.")
+        raise ManufacturingError("أمر التصنيع مش موجود.")
     if original.reverses_order_id is not None:
-        raise ManufacturingError("A reversal order is itself not re-reversible.")
+        raise ManufacturingError("الأمر العكسي نفسه مايتعملهوش عكس.")
     if db.scalar(
         select(ManufacturingOrder).where(ManufacturingOrder.reverses_order_id == order_id)
     ) is not None:
-        raise ManufacturingError("Order already reversed (reverse-once).")
+        raise ManufacturingError("الأمر ده اتعكس قبل كده.")
 
     rev = ManufacturingOrder(
         document_number=_order_doc_number(db), product_id=original.product_id,

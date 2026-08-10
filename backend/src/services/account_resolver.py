@@ -128,6 +128,6 @@ def resolve_cash_account(db: Session, *, role: RoleName, user_id: int) -> Accoun
     if role == RoleName.sales_rep:
         custody = db.scalar(select(Custody).where(Custody.rep_id == user_id))
         if custody is None or custody.account_id is None:
-            raise AccountResolutionError("Sales Rep has no custody account; create one first.")
+            raise AccountResolutionError("المندوب ده مالوش حساب عهدة — اعمله واحد الأول.")
         return db.get(Account, custody.account_id)
     return treasury_account(db)

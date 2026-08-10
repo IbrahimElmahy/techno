@@ -164,7 +164,7 @@ def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_
     """Convert points into coupons (one per listed type). Whole coupons only; reject if a type's
     point cost exceeds the remaining available balance (FR-007/008)."""
     if not coupon_type_ids:
-        raise PointError("Select at least one coupon type.")
+        raise PointError("اختار نوع كوبون واحد على الأقل.")
     available = balance(db, customer_id)
     conversion = PointConversion(customer_id=customer_id, actor_user_id=actor_user_id)
     db.add(conversion)
@@ -173,10 +173,10 @@ def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_
     for type_id in coupon_type_ids:
         ct = db.get(CouponType, type_id)
         if ct is None or not ct.active:
-            raise PointError("Coupon type not found or inactive.")
+            raise PointError("نوع الكوبون مش موجود أو مقفول.")
         cost = _points(ct.point_cost)
         if cost > available:
-            raise PointError("Insufficient points for the selected coupon type.")
+            raise PointError("نقاط العميل مش كفاية لنوع الكوبون المختار.")
         available -= cost
         coupon = Coupon(
             serial=_next_serial(db), customer_id=customer_id, coupon_type_id=ct.id,

@@ -237,7 +237,7 @@ def create_inspection(
     for ln in lines:
         qty = to_qty(ln.quantity)
         if qty <= 0:
-            raise InspectionError("Line quantity must be positive.")
+            raise InspectionError("كمية السطر لازم تكون أكبر من صفر.")
         # Snapshot the name so the record survives later catalog renames/removals.
         name = ln.item_name
         if ln.item_id is not None:

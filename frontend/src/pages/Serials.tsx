@@ -245,6 +245,7 @@ export default function Serials() {
                       locked: c.key === 'serial',
                     }))}
                     hidden={serialCols.hidden} onChange={serialCols.setHidden}
+                    order={serialCols.order} onMove={(k, d) => serialCols.move(k, d, serialColumns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
                   />
                   {refresh}
                 </Space>
@@ -294,6 +295,7 @@ export default function Serials() {
                       locked: c.key === 'serial',
                     }))}
                     hidden={movementCols.hidden} onChange={movementCols.setHidden}
+                    order={movementCols.order} onMove={(k, d) => movementCols.move(k, d, movementColumns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
                   />
                   {refresh}
                 </Space>

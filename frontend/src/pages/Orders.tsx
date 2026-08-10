@@ -16,11 +16,14 @@ import PartyPickerModal from '../components/PartyPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 
 /**
- * طلبات البيع والشراء — the paperwork that exists before the trade.
+ * طلبات البيع والشراء — شيت تسعير، مش مستند حركة.
  *
- * An order moves no stock, owes no money and reserves nothing, which is precisely why it can be
- * written for goods that have not arrived yet. It becomes an invoice at most once: converting a
- * second time would double the sale, so the screen stamps the link and then refuses.
+ * Renamed on request to say plainly what it already was: a pricing sheet. It moves no stock, owes
+ * no money and checks no shelf — the quantity typed here is never compared against what is
+ * actually available, on purpose, because the whole point is to price something before it is
+ * committed to. It can be written for goods that have not arrived yet, quoted at any quantity a
+ * customer asks about, and it becomes a real invoice at most once — converting a second time would
+ * double the sale, so the screen stamps the link and then refuses.
  */
 
 type Kind = 'sale' | 'purchase';
@@ -216,21 +219,21 @@ export default function Orders() {
     <>
     {!docOpen && (
     <Card
-      title="طلبات البيع والشراء"
+      title="شيت التسعير — بيع وشراء"
       extra={(
         <Space>
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={() => startNew('sale')}>طلب بيع</Button>
+            onClick={() => startNew('sale')}>تسعيرة بيع</Button>
           <Button icon={<PlusOutlined />}
-            onClick={() => startNew('purchase')}>طلب شراء</Button>
+            onClick={() => startNew('purchase')}>تسعيرة شراء</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
       )}
     >
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message="الطلب ما بيحرّكش مخزون ولا بيسجّل مديونية."
-        description="ده مستند قبل البيع — ينفع يتكتب لبضاعة لسه ما وصلتش، ولما يتأكد بتعمل الفاتورة وتربطها بيه."
+        message="شيت تسعير — مش بيحرّك مخزون ولا خزينة ولا أي حاجة تانية."
+        description="اكتب أي كمية، بغض النظر عن المتاح في المخزن — الغرض إنك تسعّر أو تعرض، مش إنك ترحّل. لما البيع يتأكد، اعمل الفاتورة واربطها بالطلب ده."
       />
 
       <ListToolbar
@@ -241,7 +244,7 @@ export default function Orders() {
         onReset={filter.reset} total={orders.length} shown={filter.filtered.length}
         filters={[
           { key: 'kind', placeholder: 'النوع', options: [
-            { value: 'sale', label: 'طلب بيع' }, { value: 'purchase', label: 'طلب شراء' }] },
+            { value: 'sale', label: 'تسعيرة بيع' }, { value: 'purchase', label: 'تسعيرة شراء' }] },
           { key: 'status', placeholder: 'الحالة', options: [
             { value: 'open', label: 'مفتوح' },
             { value: 'converted', label: 'اتحوّل' },
@@ -312,7 +315,7 @@ export default function Orders() {
         <Space>
           <Button type="text" icon={<ArrowLeftOutlined />}
             onClick={() => setCreating(false)}>رجوع</Button>
-          <span>{kind === 'sale' ? 'طلب بيع جديد' : 'طلب شراء جديد'}</span>
+          <span>{kind === 'sale' ? 'تسعيرة بيع جديدة' : 'تسعيرة شراء جديدة'}</span>
         </Space>
       )}>
         {/* Changing the kind asks «مين» again rather than keeping the answer. A customer is not a
@@ -324,8 +327,8 @@ export default function Orders() {
             setNewStep('party'); }}
           style={{ marginBottom: 12 }}
           options={[
-            { value: 'sale', label: 'طلب بيع (عميل)' },
-            { value: 'purchase', label: 'طلب شراء (مورد)' },
+            { value: 'sale', label: 'تسعيرة بيع (عميل)' },
+            { value: 'purchase', label: 'تسعيرة شراء (مورد)' },
           ]}
         />
 
@@ -428,7 +431,7 @@ export default function Orders() {
           <>
             <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
               <Descriptions.Item label="النوع">
-                {detail.kind === 'sale' ? 'طلب بيع' : 'طلب شراء'}
+                {detail.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'}
               </Descriptions.Item>
               <Descriptions.Item label="الطرف">{partyName(detail)}</Descriptions.Item>
               <Descriptions.Item label="الاستحقاق">
