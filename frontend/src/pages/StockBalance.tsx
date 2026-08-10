@@ -5,7 +5,7 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { normalizeAr } from '../components/ListToolbar';
-import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 
 /**
@@ -165,7 +165,7 @@ export default function StockBalance() {
 
   return (
     <>
-      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
+      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
     <Card title={TITLES[view] ?? TITLES.balance} styles={{ body: { paddingTop: 12 } }}
       extra={
         <Radio.Group size="small" value={stockScope} onChange={(e) => setStockScope(e.target.value)}>

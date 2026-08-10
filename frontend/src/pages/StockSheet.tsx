@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
-import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 
 /**
@@ -406,7 +406,7 @@ export default function StockSheet() {
         }}
       />
 
-      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
+      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
     </Card>
   );
 }

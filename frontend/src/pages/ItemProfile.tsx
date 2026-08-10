@@ -14,7 +14,7 @@ import { SerialsPanel, UnitsPanel } from '../components/ItemUnitsPanel';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink, { useOpenDocument } from '../components/DocumentLink';
 import { useTableKeyboard } from '../components/keyboard';
-import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 
 /**
@@ -504,7 +504,7 @@ export default function ItemProfile() {
         canEditPrices={canEditPrices}
         canEditPoints={canEditPoints}
       />
-      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
+      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
     </div>
   );
 }

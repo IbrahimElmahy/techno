@@ -8,7 +8,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
-import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 
 /**
@@ -294,7 +294,7 @@ export default function Stocktake() {
           );
         }}
       />
-      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
+      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
     </Card>
   );
 }

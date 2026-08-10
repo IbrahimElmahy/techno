@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
-import MovementHistoryModal, { MovementHistoryTarget } from '../components/MovementHistoryModal';
+import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 
 /**
  * جرد المخازن و جرد عام — the counting cycle.
@@ -258,7 +258,7 @@ export default function StockCounts() {
   return (
     <div>
       {/* Mounted at the root so it survives the sheet dialog closing under it. */}
-      <MovementHistoryModal target={history} onClose={() => setHistory(null)} />
+      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
       {/* صفحة واحدة في المرة: يا القايمة يا الكشف. الكشف كان بيتفتح في نافذة عرضها ٨٨٠ بكسل
           و١٢ سطر في الصفحة — وجرد كلي بيبقى مئات السطور، فاللي بيعدّ كان بيعدّ من خرم إبرة.
           دلوقتي بياخد الصفحة كلها. */}

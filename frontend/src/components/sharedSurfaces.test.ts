@@ -26,7 +26,7 @@ describe('سجل عمليات الصنف', () => {
   /** The screen that IS the item card report. It owns the endpoint by definition. */
   const OWNER = 'ItemCard.tsx';
 
-  it('is fetched by its own screen and by the shared modal — nobody else', () => {
+  it('is fetched by its own screen and by the shared log — nobody else', () => {
     const direct = pageFiles.filter((f) => f !== OWNER
       && /items\/\$\{[^}]+\}\/card/.test(read(f)));
     expect(direct, 'شاشة بتعمل سجل حركات لنفسها بدل ما تستعمل المشترك').toEqual([]);
@@ -34,8 +34,9 @@ describe('سجل عمليات الصنف', () => {
 
   it('is actually reachable from the screens a difference is read on', () => {
     // A shared surface nobody opens is not shared, it is unused. These are the three screens where
-    // a quantity raises «الرقم ده جه منين».
-    const users = pageFiles.filter((f) => read(f).includes('MovementHistoryModal'));
+    // a quantity raises «الرقم ده جه منين». It renders in place now rather than as a modal — the
+    // difference being explained is on the row behind it, and a popup covered it.
+    const users = pageFiles.filter((f) => read(f).includes('MovementHistoryLog'));
     expect(users).toEqual(
       expect.arrayContaining(['StockBalance.tsx', 'StockCounts.tsx', 'Stocktake.tsx']));
   });
