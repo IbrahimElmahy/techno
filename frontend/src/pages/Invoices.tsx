@@ -21,6 +21,7 @@ import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
@@ -634,6 +635,25 @@ export default function Invoices() {
     return f > 0 ? base / f : base;
   };
 
+  /**
+   * اللي الحارس بيتأكد منه على سطر البيع.
+   *
+   * The availability is passed as `undefined` — «not known» — until the line has a warehouse.
+   * `availableFor` answers 0 for a line with no store, which is true as arithmetic and false as a
+   * statement: nothing is available from nowhere. Handing that to the guard made it refuse every
+   * quantity typed before a store was picked, and tell the person «المتاح ٠» about an item sitting
+   * on a shelf. The save still checks, and so does the server.
+   */
+  const lineQuantityCheck = (line: SaleLineItem) => {
+    const wh = lineWarehouse(line);
+    return {
+      value: line.quantity,
+      available: wh ? availableFor(line.item_id, line.unit, wh) : undefined,
+      itemName: products.find((p) => p.id === line.item_id)?.name,
+      unit: line.unit,
+    };
+  };
+
   /** The store a rep sells out of, found through his employee record.
    *
    *  customer → rep (a login) → employee (by `user_id`) → store. The store lives on the employee
@@ -868,15 +888,19 @@ export default function Invoices() {
    * editing that cannot rewrite a month that has already been reported on.
    */
   /**
-   * فتح فاتورة مرحّلة للتعديل.
+   * فتح فاتورة مرحّلة للتعديل — على طول، من غير سؤال.
    *
-   * A posted invoice cannot be altered in place — the ledger is append-only — so «تعديل» REVERSES
-   * it with a full return and reopens the form on what it held. That is a real posting, and since
-   * opening an invoice now goes straight here, it is one click away.
+   * A posted invoice cannot be altered in place — the ledger is append-only — so «تعديل» reverses
+   * it with a full return and reopens the form on what it held.
    *
-   * So it asks first. It did not before, when «تعديل» was a second button somebody had to aim at;
-   * with the row itself leading here, an unconfirmed reversal would be a mis-click that posts a
-   * return against a customer.
+   * It used to ask first, and the question was removed on request: clicking تعديل IS the answer,
+   * and a dialog that always gets the same reply is a keystroke, not a safeguard. What actually
+   * protects the books is that the reversal is a posting with its own document — undoing it is
+   * reading the register, not hunting for something that was overwritten.
+   *
+   * An invoice that has ALREADY been returned in full is refused here rather than at the server:
+   * the reversal has nothing left to give back, and the failure used to arrive as «Cumulative
+   * return exceeds sold quantity» — in English, naming no invoice and no way forward.
    */
   const handleEditInvoice = async (record: InvoiceRecord) => {
     let det: any;
@@ -886,17 +910,25 @@ export default function Invoices() {
       message.error('تعذر قراءة الفاتورة');
       return;
     }
-    const ok = await new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: `تعديل ${record.document_number}؟`,
-        content: 'الفاتورة المرحّلة ماتتعدلش في مكانها: هيتعمل لها مرتجع كامل وتتفتح من جديد '
-          + 'للتعديل، وترحّل تاني لما تحفظ. الرصيد والمخزون بيرجعوا زي ما كانوا قبلها.',
-        okText: 'اعكسها وافتحها', cancelText: 'سيبها زي ما هي',
-        okButtonProps: { danger: true },
-        onOk: () => resolve(true), onCancel: () => resolve(false),
+
+    // Read from `/returns` rather than off the detail: the sale's detail payload carries no
+    // returns (the purchase's does), so `det.returns` would have been permanently empty and this
+    // guard would have looked present while never once firing.
+    let returned = 0;
+    try {
+      const rets = (await api.get(`/api/v1/sales/${record.id}/returns`)).data || [];
+      returned = rets.reduce((t: number, r: any) => t + Number(r.value ?? r.net ?? 0), 0);
+    } catch { /* unreadable returns must not block an edit that would have worked */ }
+    if (returned > 0 && Math.abs(returned - Number(det.net || 0)) < 0.01) {
+      Modal.warning({
+        title: `${record.document_number} اترجّعت بالكامل`,
+        content: 'الفاتورة دي اتعملها مرتجع بكل قيمتها، فمفيش حاجة تتعكس عشان تتفتح للتعديل. '
+          + 'لو محتاج تسجّل بيع جديد، اعمل فاتورة جديدة.',
+        okText: 'تمام',
       });
-    });
-    if (!ok) return;
+      return;
+    }
+
     if (!(await reverseInvoice(record, 'edit'))) return;
 
     message.success('اتعكست الفاتورة — عدّل وارحّل من جديد');
@@ -1809,11 +1841,17 @@ export default function Invoices() {
                               screen and the transfer already allow those, so a floor of 1 here
                               meant a thing could be given back and moved between stores in a
                               fraction and never sold in one. */}
-                          <InputNumber size="small" min={0.001} style={{ width: '100%' }}
+                          {/* No `max`. It looks like protection and behaves like a silent
+                              rewrite: ask for 50 out of a store holding 8 and the box shows 8
+                              with nothing said, so the invoice disagrees with the person who
+                              typed it. The guard refuses instead, on blur and on Enter, and says
+                              what is actually there. */}
+                          <InputNumber size="small" style={{ width: '100%' }}
                             ref={(el) => { qtyRefs.current[line.key] = el; }}
                             data-qty-key={line.key}
                             data-grid-col="qty" keyboard={false}
-                            max={availableFor(line.item_id, line.unit, lineWarehouse(line)) || undefined}
+                            onBlur={() => handleLineChange(line.key, 'quantity',
+                              guardQuantity(lineQuantityCheck(line), null))}
                             status={Number(line.quantity || 0)
                               > availableFor(line.item_id, line.unit, lineWarehouse(line))
                               ? 'error' : undefined}
@@ -1830,7 +1868,14 @@ export default function Invoices() {
                             // to the next field» listens on the window and would otherwise run
                             // after this and drag the caret off to the next input, so the picker
                             // opened onto a cursor that had already wandered.
-                            onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }} />
+                            onPressEnter={(e) => {
+                              e.preventDefault();
+                              const kept = guardQuantity(lineQuantityCheck(line), null);
+                              handleLineChange(line.key, 'quantity', kept);
+                              // Only move on when the line is actually usable. Opening the picker
+                              // over a refused quantity walks away from the thing being corrected.
+                              if (kept !== null) setPickerOpen(true);
+                            }} />
                         </Col>
                         {showCol('unit_price') && (
                         <Col md={2} xs={8}>

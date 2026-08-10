@@ -497,9 +497,14 @@ def return_sale(
     for item_id, qty in lines:
         qty = Decimal(qty)
         if item_id not in sold:
-            raise SalesError("Returned item was not on the invoice.")
+            raise SalesError("الصنف ده مش على الفاتورة دي أصلاً.")
         if prior.get(item_id, ZERO) + qty > sold[item_id][0]:
-            raise SalesError("Cumulative return exceeds sold quantity.")
+            # Arabic, because this one reaches a person. It fires most often on «تعديل» for an
+            # invoice that has already been returned in full, and «Cumulative return exceeds sold
+            # quantity» told them nothing about which invoice, which item, or what to do next.
+            raise SalesError(
+                f"مرتجعات الفاتورة دي وصلت للكمية المباعة خلاص — "
+                f"اتباع {sold[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
         value += to_money(qty * sold[item_id][1])
     value = to_money(value)
 

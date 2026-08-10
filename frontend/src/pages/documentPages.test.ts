@@ -102,14 +102,19 @@ describe('المستند المترحّل ينفع يتعدّل', () => {
   });
 
   it.each([
+    ['فاتورة البيع', 'Invoices.tsx'],
     ['إذن التحويل', 'Transfers.tsx'],
     ['أذونات المخزن', 'StockPermits.tsx'],
-  ])('«%s» بتسأل الأول — العكس ترحيل حقيقي', (_label, file) => {
-    // The row itself leads to the document, so an unconfirmed reversal would be one mis-click
-    // away from moving stock.
-    const src = read(file);
-    expect(src).toMatch(/Modal\.confirm/);
-    expect(src).toMatch(/okText: 'اعكسه وافتحه'/);
+  ])('«%s» بتعدّل على طول — من غير سؤال', (_label, file) => {
+    // Removed on request: «الغي البوباب بتاع عكس الفاتورة عشان التعديل، خليه يعدّل علطول».
+    //
+    // Pressing تعديل IS the answer, and a dialog that always gets the same reply is a keystroke
+    // rather than a safeguard — one people learn to dismiss without reading, which then costs
+    // them on the dialog that mattered. What actually protects the books is that the reversal is
+    // a posting with its own document: the original, its reversal and the correction all stay, so
+    // undoing it is reading the register rather than hunting for something overwritten.
+    expect(read(file)).not.toMatch(/okText: 'اعكسه وافتحه'/);
+    expect(read(file)).not.toMatch(/okText: 'اعكسها وافتحها'/);
   });
 
   it.each([

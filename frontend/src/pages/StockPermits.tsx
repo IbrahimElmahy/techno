@@ -13,6 +13,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { guardQuantity } from '../components/quantityGuard';
 
 /**
  * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
@@ -207,21 +208,10 @@ export default function StockPermits() {
    * it means on a posted invoice — reverse it in full, and reopen the form on exactly what it
    * held. Both papers stay in the record: the original, its reversal, and the corrected one.
    *
-   * It asks first, because the row itself leads here and the reversal is a real posting. An
-   * unconfirmed one would be a mis-click that moves stock.
+   * No confirmation: pressing تعديل IS the answer. What protects the record is that the reversal
+   * is a posting with its own document — the original, its reversal and the correction all stay.
    */
   const editPosted = async (p: Permit) => {
-    const ok = await new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: `تعديل ${p.document_number}؟`,
-        content: 'الإذن المترحّل ماينفعش يتعدّل في مكانه: هيتعمل له إذن عكسي يرجّع المخزون زي ما '
-          + 'كان، ويتفتح تاني بمحتواه عشان تصحّح وترحّل من جديد. التلاتة بيفضلوا في السجل.',
-        okText: 'اعكسه وافتحه', cancelText: 'سيبه زي ما هو',
-        okButtonProps: { danger: true },
-        onOk: () => resolve(true), onCancel: () => resolve(false),
-      });
-    });
-    if (!ok) return;
     try {
       await api.post(`/api/v1/stock/permits/${p.id}/reverse`);
     } catch (err: any) {
@@ -355,10 +345,29 @@ export default function StockPermits() {
           { title: 'الكمية', dataIndex: 'quantity', width: 140,
             render: (v, r) => (
               <InputNumber
-                min={0} style={{ width: '100%' }} value={v}
+                style={{ width: '100%' }} value={v}
                 data-qty-key={r.key} data-grid-col="qty" keyboard={false}
-                onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
-                max={kind === 'issue' && r.item_id ? available[r.item_id] : undefined}
+                // An issue takes goods OUT, so it is capped by what the store holds; a receipt
+                // brings them in and has no ceiling. Both refuse zero and negatives.
+                onBlur={() => setLines((prev) => prev.map((l) => (l.key === r.key
+                  ? { ...l, quantity: guardQuantity({
+                      value: l.quantity,
+                      available: kind === 'issue' && l.item_id ? available[l.item_id] : undefined,
+                      itemName: items.find((i) => i.id === l.item_id)?.name,
+                    }, null) as number }
+                  : l)))}
+                onPressEnter={(e) => {
+                  e.preventDefault();
+                  const line = lines.find((l) => l.key === r.key);
+                  const kept = guardQuantity({
+                    value: line?.quantity,
+                    available: kind === 'issue' && r.item_id ? available[r.item_id] : undefined,
+                    itemName: items.find((i) => i.id === r.item_id)?.name,
+                  }, null);
+                  setLines((prev) => prev.map((l) => (l.key === r.key
+                    ? { ...l, quantity: kept as number } : l)));
+                  if (kept !== null) setPickerOpen(true);
+                }}
                 onChange={(q) => setLines((prev) => prev.map((l) => (l.key === r.key
                   ? { ...l, quantity: q as number } : l)))}
               />

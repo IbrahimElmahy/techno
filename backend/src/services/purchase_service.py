@@ -192,9 +192,11 @@ def return_purchase(
     for item_id, qty in lines:
         qty = Decimal(qty)
         if item_id not in purchased:
-            raise PurchaseError("Returned item was not on the purchase.")
+            raise PurchaseError("الصنف ده مش على فاتورة الشراء دي أصلاً.")
         if prior.get(item_id, ZERO) + qty > purchased[item_id][0]:
-            raise PurchaseError("Cumulative return exceeds purchased quantity.")
+            raise PurchaseError(
+                f"مرتجعات الفاتورة دي وصلت للكمية المشتراة خلاص — "
+                f"اتشرى {purchased[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
         value += to_money(qty * purchased[item_id][1])
     value = to_money(value)
 

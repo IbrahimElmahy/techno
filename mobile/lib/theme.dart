@@ -35,7 +35,10 @@ ThemeData buildTheme() {
       centerTitle: true,
       titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
     ),
-    cardTheme: CardTheme(
+    // `CardThemeData`, not `CardTheme`. Flutter split the two: the *Theme classes are now the
+    // inherited widgets and the *ThemeData classes are the value objects that ThemeData holds.
+    // Same fields, same values — only the type this slot accepts changed.
+    cardTheme: CardThemeData(
       elevation: 1.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       surfaceTintColor: Colors.white,

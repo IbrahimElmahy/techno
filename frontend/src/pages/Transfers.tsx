@@ -12,6 +12,7 @@ import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
@@ -533,20 +534,11 @@ export default function Transfers() {
    * «تعديل» means what it means on a posted invoice: reverse it in full, and reopen the form on
    * exactly what it moved. The original, its reversal and the corrected permit all stay.
    *
-   * It asks first — the reversal is a real posting, and the row itself leads here.
+   * No confirmation: pressing تعديل IS the answer, and a dialog that always gets the same reply
+   * is a keystroke rather than a safeguard. What protects the record is that the reversal is a
+   * posting with its own document — the original, its reversal and the correction all stay.
    */
   const editApproved = async (t: TransferRecord) => {
-    const ok = await new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: `تعديل ${t.document_number}؟`,
-        content: 'الإذن المعتمد ماينفعش يتعدّل في مكانه: هيتعمل له إذن عكسي يرجّع البضاعة لمخزنها، '
-          + 'ويتفتح طلب جديد بمحتواه عشان تصحّح وتبعته للاعتماد من جديد. التلاتة بيفضلوا في السجل.',
-        okText: 'اعكسه وافتحه', cancelText: 'سيبه زي ما هو',
-        okButtonProps: { danger: true },
-        onOk: () => resolve(true), onCancel: () => resolve(false),
-      });
-    });
-    if (!ok) return;
     try {
       await api.post(`/api/v1/transfers/${t.id}/reverse`);
     } catch (err: any) {
@@ -855,8 +847,16 @@ export default function Transfers() {
                       style={{ width: 120 }} keyboard={false} data-grid-col="qty"
                       onChange={(val) => setDraftQty(
                         (d) => ({ ...d, [r.id]: Number(val) }))}
-                      onPressEnter={() => setReviewLineQty(r.id, draftQty[r.id] ?? Number(v))}
-                      onBlur={() => setReviewLineQty(r.id, draftQty[r.id] ?? Number(v))} />
+                      onPressEnter={() => setReviewLineQty(r.id, guardQuantity({
+                        value: draftQty[r.id] ?? Number(v),
+                        available: reviewStock[r.item_id] ?? 0,
+                        itemName: nameOfItem(r.item_id),
+                      }, Number(v)) as number)}
+                      onBlur={() => setReviewLineQty(r.id, guardQuantity({
+                        value: draftQty[r.id] ?? Number(v),
+                        available: reviewStock[r.item_id] ?? 0,
+                        itemName: nameOfItem(r.item_id),
+                      }, Number(v)) as number)} />
                   ) : <b>{qty(Number(v))}</b>) },
                 ...(editing.status === 'pending' ? [{
                   title: '', width: 50,
@@ -887,14 +887,26 @@ export default function Transfers() {
                     </span>
                   ) },
                 { title: 'الكمية المحوّلة', dataIndex: 'quantity',
+                  // No `max` — see `quantityGuard`: capping silently rewrites the number
+                  // somebody typed, and they never learn it was changed.
                   render: (v: number, r: TransferLine) => (
-                    <InputNumber size="small" min={0} max={r.available} step={1} value={v}
+                    <InputNumber size="small" step={1} value={v}
                       style={{ width: 120 }}
                       data-qty-key={r.key}
                       data-grid-col="qty" keyboard={false}
+                      onBlur={() => setLineQty(r.key, guardQuantity(
+                        { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
+                        null) as number)}
                       // Enter means «this line is done» — the window opens for the next item,
                       // exactly as on the sale, the return and the purchase.
-                      onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
+                      onPressEnter={(e) => {
+                        e.preventDefault();
+                        const kept = guardQuantity(
+                          { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
+                          null);
+                        setLineQty(r.key, kept as number);
+                        if (kept !== null) setPickerOpen(true);
+                      }}
                       onChange={(val) => setLineQty(r.key, Number(val))} />
                   ) },
                 { title: 'المتبقي بعد التحويل',
