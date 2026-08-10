@@ -27,6 +27,7 @@ from src.models.catalog import Item
 from src.models.stock import LocationKind, StockDirection
 from src.models.stock_permit import PermitKind, StockPermit, StockPermitLine
 from src.models.warehouse import Warehouse
+from src.services import batch_service
 from src.services import audit_service, costing_service, stock_service
 
 ZERO_QTY = to_qty(0)
@@ -63,7 +64,7 @@ def create_permit(
     if db.get(Warehouse, warehouse_id) is None:
         raise StockPermitError("المخزن غير موجود.")
 
-    built: list[tuple[Item, object, object]] = []
+    built: list[tuple[Item, object, object, object]] = []
     for raw in lines:
         item = db.get(Item, raw.get("item_id"))
         if item is None:
@@ -80,7 +81,14 @@ def create_permit(
             cost = costing_service.unit_cost(db, item.id)
         if cost < ZERO:
             raise StockPermitError("التكلفة لا تكون بالسالب.")
-        built.append((item, quantity, cost))
+        # (011) A perishable item lives in expiry lots, and stock that moves without its lot
+        # moving breaks Σ(batch) == on-hand. Bringing goods IN has to say which lot they are;
+        # sending them out does not, because FEFO picks — earliest expiry first, same as a sale.
+        expiry = raw.get("expiry_date")
+        if getattr(item, "is_perishable", False)                 and permit_kind in (PermitKind.receipt, PermitKind.opening) and not expiry:
+            raise StockPermitError(
+                f"«{item.name}» صنف له صلاحية — لازم تكتب تاريخ صلاحية البضاعة الداخلة.")
+        built.append((item, quantity, cost, expiry))
 
     permit = StockPermit(
         document_number=_doc_number(db, permit_kind), kind=permit_kind,
@@ -92,12 +100,12 @@ def create_permit(
 
     movement_type, direction = _MOVEMENT[permit_kind]
     total = ZERO
-    for item, quantity, cost in built:
+    for item, quantity, cost, expiry in built:
         line_cost = to_money(quantity * cost)
         total = to_money(total + line_cost)
         line = StockPermitLine(
             permit_id=permit.id, item_id=item.id, quantity=quantity,
-            unit_cost=cost, line_cost=line_cost,
+            unit_cost=cost, line_cost=line_cost, expiry_date=expiry,
         )
         db.add(line)
         db.flush()
@@ -109,6 +117,28 @@ def create_permit(
             actor_user_id=actor_user_id, source_doc_type="stock_permit", source_doc_id=permit.id,
         )
         line.stock_movement_id = mv.id
+
+        # The lot side of the same movement. Both halves move together or the invariant drifts.
+        if getattr(item, "is_perishable", False):
+            try:
+                if permit_kind in (PermitKind.receipt, PermitKind.opening):
+                    batch_service.add_to_lot(
+                        db, item_id=item.id, location_kind=LocationKind.warehouse,
+                        location_id=warehouse_id, expiry_date=expiry, quantity=quantity,
+                        document_type="stock_permit", document_id=permit.id,
+                        actor_user_id=actor_user_id)
+                else:
+                    # FEFO, and it records every lot it drew from — which is what the reversal reads.
+                    taken = batch_service.consume_fefo(
+                        db, item_id=item.id, location_kind=LocationKind.warehouse,
+                        location_id=warehouse_id, quantity=quantity,
+                        document_type="stock_permit", document_id=permit.id,
+                        actor_user_id=actor_user_id)
+                    # One line reverses into one lot, so remember the earliest it emptied.
+                    if taken:
+                        line.expiry_date = min(e for e, _q in taken)
+            except batch_service.BatchError as exc:
+                raise StockPermitError(str(exc)) from exc
 
     permit.total_cost = total
     db.flush()
@@ -147,7 +177,7 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
     for line in original.lines:
         mirror = StockPermitLine(
             permit_id=reversal.id, item_id=line.item_id, quantity=line.quantity,
-            unit_cost=line.unit_cost, line_cost=line.line_cost,
+            unit_cost=line.unit_cost, line_cost=line.line_cost, expiry_date=line.expiry_date,
         )
         db.add(mirror)
         db.flush()
@@ -155,6 +185,27 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
             mv = stock_service.reverse_movement(
                 db, original_id=line.stock_movement_id, actor_user_id=actor_user_id)
             mirror.stock_movement_id = mv.id
+
+        # (011) The lot follows the stock, on the way back as on the way out. The original line
+        # wrote down which lot it touched precisely so this does not have to guess a date — the
+        # same reason a sale records what FEFO drew from.
+        item = db.get(Item, line.item_id)
+        if item is not None and getattr(item, "is_perishable", False) and line.expiry_date:
+            try:
+                if original.kind in (PermitKind.receipt, PermitKind.opening):
+                    # An addition is undone by taking the goods back OUT of the lot it filled.
+                    batch_service.consume_fefo(
+                        db, item_id=item.id, location_kind=LocationKind.warehouse,
+                        location_id=original.warehouse_id, quantity=line.quantity,
+                        document_type="stock_permit", document_id=reversal.id,
+                        actor_user_id=actor_user_id)
+                else:
+                    batch_service.restore_for_return(
+                        db, item_id=item.id, location_kind=LocationKind.warehouse,
+                        location_id=original.warehouse_id, expiry_date=line.expiry_date,
+                        quantity=line.quantity, actor_user_id=actor_user_id)
+            except batch_service.BatchError as exc:
+                raise StockPermitError(str(exc)) from exc
 
     db.flush()
     audit_service.record(

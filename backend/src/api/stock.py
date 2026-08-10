@@ -220,6 +220,10 @@ class PermitLineIn(BaseModel):
     quantity: Decimal
     # Only meaningful on a receipt; an issue is costed from the costing method.
     unit_cost: Decimal | None = None
+    # (011) Required for a perishable item on an ADDITION — goods coming in belong to a lot, and
+    # stock that moves without its lot moving breaks Σ(batch) == on-hand. An issue needs none:
+    # FEFO picks the earliest expiry, exactly as a sale does.
+    expiry_date: date | None = None
 
 
 class PermitIn(BaseModel):

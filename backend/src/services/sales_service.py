@@ -463,6 +463,109 @@ def _already_returned(db: Session, invoice_id: int) -> dict[int, Decimal]:
     return {item_id: Decimal(qty) for item_id, qty in rows}
 
 
+def sold_lots(db: Session, invoice_id: int, item_id: int) -> dict:
+    """أي دفعات الصنف ده اللي الفاتورة دي خدت منها — والكمية من كل واحدة.
+
+    FEFO chooses lots at the moment of sale and writes each draw down. A reversal must put the
+    goods back into the SAME lots, so it reads that trail instead of asking somebody to retype an
+    expiry date they were never told.
+
+    Netted against anything already returned on this invoice, so reversing an invoice that had a
+    partial return does not try to give back more of a lot than left it.
+    """
+    from src.models.catalog import BatchMovementKind, StockBatchMovement
+
+    rows = db.scalars(
+        select(StockBatchMovement).where(
+            StockBatchMovement.document_type == "sales_invoice",
+            StockBatchMovement.document_id == invoice_id,
+            StockBatchMovement.item_id == item_id,
+        )
+    ).all()
+    taken: dict = {}
+    for r in rows:
+        q = to_qty(r.quantity)
+        if r.kind == BatchMovementKind.consumed:
+            taken[r.expiry_date] = to_qty(taken.get(r.expiry_date, ZERO) + q)
+        elif r.kind == BatchMovementKind.returned:
+            taken[r.expiry_date] = to_qty(taken.get(r.expiry_date, ZERO) - q)
+    return {k: v for k, v in taken.items() if v > ZERO}
+
+
+def sold_serials(db: Session, invoice_id: int, item_id: int) -> list[str]:
+    """السيريالات اللي لسه متسجّلة إنها اتباعت على الفاتورة دي.
+
+    Same idea as the lots: the sale recorded which units went out, so a reversal reads them rather
+    than asking. Ones already returned are no longer marked sold against this invoice and drop out
+    on their own.
+    """
+    from src.models.catalog import ItemSerial, SerialStatus
+
+    return [
+        r.serial for r in db.scalars(
+            select(ItemSerial).where(
+                ItemSerial.item_id == item_id,
+                ItemSerial.sold_invoice_id == invoice_id,
+                ItemSerial.status == SerialStatus.sold,
+            )
+        ).all()
+    ]
+
+
+def reverse_sale(db: Session, *, sales_invoice_id: int, actor_user_id: int) -> SalesReturn:
+    """عكس فاتورة بالكامل — للتعديل أو للإلغاء.
+
+    A reversal is NOT a customer return, and treating it as one is what made «تعديل» fail on
+    perfectly ordinary invoices. A real return has to ask questions the shop cannot answer for the
+    customer — which lot did these goods come from, which serial numbers came back — because the
+    customer is handing over goods whose history nobody watched.
+
+    A reversal has none of that uncertainty. It is undoing THIS invoice, so the lots it drew from
+    and the serials it sold are already written down, and asking a user to retype them is asking
+    them to guess at facts the system holds. That is why editing an invoice with a perishable item
+    used to stop at «المرتجع لصنف له صلاحية لازم تكتب تاريخ صلاحية البضاعة الراجعة»: nothing on
+    the edit screen could have known the answer, and the answer was in the database.
+
+    So this fills in every answer from the invoice and hands the whole thing to `return_sale`,
+    which stays the single place that knows how to give goods and money back. One posting path,
+    two entry points.
+    """
+    inv = db.get(SalesInvoice, sales_invoice_id)
+    if inv is None:
+        raise SalesError("فاتورة البيع مش موجودة.")
+
+    prior = _already_returned(db, sales_invoice_id)
+    lines: list[tuple[int, Decimal]] = []
+    expiry_dates: dict = {}
+    serials: dict[int, list[str]] = {}
+
+    for ln in inv.lines:
+        # What is LEFT to reverse — an invoice with a partial return against it reverses only the
+        # remainder, instead of being refused for exceeding the sold quantity.
+        remaining = to_qty(Decimal(ln.quantity) - prior.get(ln.item_id, ZERO))
+        if remaining <= ZERO:
+            continue
+        lines.append((ln.item_id, remaining))
+        item = db.get(Item, ln.item_id)
+        if item is not None and item.is_perishable:
+            lots = sold_lots(db, sales_invoice_id, ln.item_id)
+            if lots:
+                # `return_sale` puts a line back into ONE lot. Where a line drew on several, the
+                # earliest expiry is the honest choice: it is the lot FEFO emptied first, so it is
+                # the one with room for the goods coming back.
+                expiry_dates[ln.item_id] = min(lots.keys())
+        if item is not None and item.is_serialized:
+            serials[ln.item_id] = sold_serials(db, sales_invoice_id, ln.item_id)
+
+    if not lines:
+        raise SalesError("الفاتورة دي اترجّعت بالكامل قبل كده — مفيش حاجة تتعكس.")
+
+    return return_sale(
+        db, sales_invoice_id=sales_invoice_id, lines=lines, actor_user_id=actor_user_id,
+        serials=serials or None, expiry_dates=expiry_dates or None,
+    )
+
+
 def return_sale(
     db: Session,
     *,

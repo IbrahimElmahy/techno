@@ -340,10 +340,22 @@ def reverse_purchase(
     if inv is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "الفاتورة غير موجودة"})
-    lines = [(line.item_id, line.quantity) for line in inv.lines]
-    if not lines:
+    # What is LEFT to reverse. Sending the full quantity on an invoice that already had a partial
+    # supplier return exceeded what remained and was refused outright — the same defect the sale
+    # had, where «تعديل» on a partly-returned invoice failed instead of reversing the remainder.
+    prior = purchase_service._already_returned(db, purchase_id)
+    lines = []
+    for line in inv.lines:
+        remaining = Decimal(line.quantity) - prior.get(line.item_id, Decimal("0"))
+        if remaining > 0:
+            lines.append((line.item_id, remaining))
+    if not inv.lines:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "validation", "message": "الفاتورة من غير سطور"})
+    if not lines:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "reverse_invalid",
+                             "message": "الفاتورة دي اترجّعت بالكامل قبل كده — مفيش حاجة تتعكس."})
     try:
         ret = purchase_service.return_purchase(
             db, purchase_invoice_id=purchase_id, lines=lines,

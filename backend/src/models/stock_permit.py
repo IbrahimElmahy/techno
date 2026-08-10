@@ -72,5 +72,12 @@ class StockPermitLine(Base):
     stock_movement_id: Mapped[int | None] = mapped_column(
         ForeignKey("stock_movement.id"), nullable=True
     )
+    # (011) الدفعة اللي السطر ده حطّ فيها أو خد منها — للأصناف اللي ليها صلاحية بس.
+    #
+    # A permit moved stock and left the expiry lots untouched, which breaks the invariant the
+    # whole perishable feature rests on: Σ(batch quantity) == derived on-hand at every location.
+    # Recording the lot here is what lets the REVERSAL undo the same lot instead of guessing a
+    # date — the same reason a sale writes down which lots FEFO drew from.
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     permit: Mapped[StockPermit] = relationship(back_populates="lines")

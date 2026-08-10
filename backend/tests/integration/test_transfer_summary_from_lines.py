@@ -109,3 +109,48 @@ def test_what_approval_moves_is_what_the_summary_said(client, inv_world, login):
     moved = next((r for r in rows if r["item_id"] == item["id"]), None)
     assert moved is not None and Decimal(moved["on_hand"]) == Decimal("1"), \
         "اتحركت الكمية القديمة مش المعدّلة"
+
+
+def test_reversing_a_multi_line_permit_brings_back_every_item(client, inv_world, login):
+    """عكس إذن فيه أكتر من صنف لازم يرجّعهم كلهم.
+
+    Approval records the movements per LINE, but `transfer.out_movement_id`/`in_movement_id` hold
+    only the FIRST line's pair — they date from when a permit moved one item. The reversal read
+    those two and nothing else, so it undid one item and left the rest sitting in the destination
+    store with the document stamped «معكوس» and the stock saying otherwise.
+
+    Invisible while every permit held a single line. A live hole the moment one carries several,
+    which is exactly what «الطلب يكون فيه كل الأصناف بتاعته» made normal.
+    """
+    from decimal import Decimal
+
+    h = login("admin")
+    wh, dest = inv_world["central_wh"], inv_world["branch_wh"]
+    a = _stocked(client, h, wh, "صنف العكس أ")
+    b = _stocked(client, h, wh, "صنف العكس ب")
+
+    doc = _transfer(client, h, inv_world, a["id"], "2")
+    client.post(f"/api/v1/transfers/{doc['id']}/lines", headers=h,
+                json={"item_id": a["id"], "quantity": "2"})
+    client.post(f"/api/v1/transfers/{doc['id']}/lines", headers=h,
+                json={"item_id": b["id"], "quantity": "5"})
+    assert client.post(f"/api/v1/transfers/{doc['id']}/approve",
+                       headers=h).status_code == 200
+
+    def at(loc, item_id):
+        rows = client.get("/api/v1/stock/by-location", headers=h, params={
+            "location_kind": "warehouse", "location_id": loc}).json()
+        row = next((r for r in rows if r["item_id"] == item_id), None)
+        return Decimal(row["on_hand"]) if row else Decimal("0")
+
+    assert at(dest, a["id"]) == Decimal("2")
+    assert at(dest, b["id"]) == Decimal("5")
+
+    rev = client.post(f"/api/v1/transfers/{doc['id']}/reverse", headers=h)
+    assert rev.status_code == 201, rev.text
+
+    # BOTH items back where they started — not just the first one.
+    assert at(dest, a["id"]) == Decimal("0"), "الصنف الأول بس هو اللي رجع"
+    assert at(dest, b["id"]) == Decimal("0"), "الصنف التاني فضل في المخزن المستقبِل"
+    assert at(wh, a["id"]) == Decimal("20")
+    assert at(wh, b["id"]) == Decimal("20")

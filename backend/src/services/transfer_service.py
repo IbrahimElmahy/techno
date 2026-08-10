@@ -184,8 +184,42 @@ def reverse(db, *, transfer_id: int, actor_user_id: int) -> StockTransfer:
         raise TransferError("إذن التحويل مش موجود.")
     if transfer.status != TransferStatus.approved:
         raise TransferError("الإذن المعتمد بس هو اللي ينفع يتعكس.")
-    stock_service.reverse_movement(db, original_id=transfer.out_movement_id, actor_user_id=actor_user_id)
-    stock_service.reverse_movement(db, original_id=transfer.in_movement_id, actor_user_id=actor_user_id)
+    # EVERY line's movements, not just the header's pair.
+    #
+    # `transfer.out_movement_id`/`in_movement_id` hold the FIRST line's movements — they date from
+    # when a permit moved one item, and approval still fills them so old documents keep reading.
+    # Reversing only those undid one item out of however many the permit carried and left the rest
+    # sitting in the destination store, with the document marked «معكوس» and the stock saying
+    # otherwise. Invisible while every permit held one line; a live hole the moment one carries
+    # several.
+    lines = db.scalars(select(StockTransferLine).where(
+        StockTransferLine.transfer_id == transfer.id)).all()
+    pairs = [(ln.out_movement_id, ln.in_movement_id) for ln in lines
+             if ln.out_movement_id and ln.in_movement_id]         or [(transfer.out_movement_id, transfer.in_movement_id)]
+    for out_id, in_id in pairs:
+        stock_service.reverse_movement(db, original_id=out_id, actor_user_id=actor_user_id)
+        stock_service.reverse_movement(db, original_id=in_id, actor_user_id=actor_user_id)
+
+    # The things that say WHICH units moved have to come back too — the same reasoning approval
+    # applies on the way out. Leaving them at the destination is the drift the serial and batch
+    # integrity checks exist to catch.
+    for ln in lines or []:
+        item = db.get(Item, ln.item_id)
+        if item is None:
+            continue
+        if getattr(item, "is_serialized", False):
+            serial_service.relocate(
+                db, item=item,
+                from_kind=transfer.dest_location_kind, from_id=transfer.dest_location_id,
+                to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
+                quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
+        if getattr(item, "is_perishable", False):
+            batch_service.relocate(
+                db, item_id=item.id,
+                from_kind=transfer.dest_location_kind, from_id=transfer.dest_location_id,
+                to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
+                quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
+
     transfer.status = TransferStatus.reversed
     db.flush()
     audit_service.record(db, action="transfer.reverse", actor_user_id=actor_user_id,

@@ -109,6 +109,36 @@ def receive(db: Session, *, item_id: int, location_kind: LocationKind, location_
     return batch
 
 
+def add_to_lot(db: Session, *, item_id: int, location_kind: LocationKind, location_id: int,
+               expiry_date: date, quantity: Decimal,
+               document_type: str | None = None, document_id: int | None = None,
+               actor_user_id: int | None = None) -> StockBatch:
+    """الدفعة بس — من غير حركة مخزون.
+
+    `receive` posts the stock-in itself, which is right when a lot IS the document. It is wrong
+    for a caller that has already posted its own movement — a stock permit, say — because the
+    goods would be counted twice: once by the permit and once here.
+
+    So this is the batch half on its own, the mirror of `restore_for_return`. Both halves still
+    move together; the caller just owns one of them.
+    """
+    item = db.get(Item, item_id)
+    if item is None:
+        raise BatchError("الصنف مش موجود.")
+    _require_perishable(item)
+    qty = to_qty(quantity)
+    if qty <= ZERO_QTY:
+        raise BatchError("كمية الدفعة لازم تكون أكبر من صفر.")
+    if expiry_date is None:
+        raise BatchError("الدفعة لازم يكون ليها تاريخ صلاحية.")
+    batch = _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
+                    expiry=expiry_date, quantity=qty)
+    _log(db, item_id=item_id, expiry=expiry_date, location_kind=location_kind,
+         location_id=location_id, kind=BatchMovementKind.received, quantity=qty,
+         document_type=document_type, document_id=document_id, actor_user_id=actor_user_id)
+    return batch
+
+
 def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, location_id: int,
                  quantity: Decimal, log_kind: BatchMovementKind | None = None,
                  document_type: str | None = None, document_id: int | None = None,

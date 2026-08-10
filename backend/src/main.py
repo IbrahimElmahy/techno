@@ -198,6 +198,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer_account", "commission_pct", "DECIMAL(9,4)"),
     ("sales_invoice", "family", "VARCHAR(40)"),
     ("sales_return", "family", "VARCHAR(40)"),
+    # (011) Which expiry lot a permit line touched, so its reversal undoes the same one.
+    ("stock_permit_line", "expiry_date", "DATE"),
     ("voucher", "family", "VARCHAR(40)"),
     ("customer", "default_return_warehouse_id", "BIGINT"),
     ("stock_transfer", "reject_reason", "VARCHAR(240)"),

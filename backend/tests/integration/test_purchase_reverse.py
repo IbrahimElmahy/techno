@@ -107,3 +107,26 @@ def test_reversing_twice_is_refused_rather_than_doubled(client, inv_world, login
     second = client.post(url, headers=h, json={"reason": "edit"})
     assert second.status_code == 409, second.text
     assert _on_hand(client, h, item["id"], wh) == Decimal("0")
+
+
+def test_reversing_an_invoice_that_was_partly_returned(client, inv_world, login):
+    """Reverse what is LEFT, not the original quantity.
+
+    Sending the full amount on an invoice that already had a partial supplier return exceeded what
+    remained and was refused — so «تعديل» stopped working on exactly the invoices most likely to
+    need it. Same defect the sale had, fixed the same way.
+    """
+    h = login("admin")
+    wh = inv_world["central_wh"]
+    item, inv = _buy(client, h, wh, qty="10")
+
+    part = client.post(f"/api/v1/purchases/{inv['id']}/returns", headers=h,
+                       json={"lines": [{"item_id": item["id"], "quantity": "4"}]})
+    assert part.status_code == 201, part.text
+    assert _on_hand(client, h, item["id"], wh) == Decimal("6")
+
+    rev = client.post(f"/api/v1/purchases/{inv['id']}/reverse",
+                      headers=h, json={"reason": "edit"})
+    assert rev.status_code == 201, rev.text
+    # The remaining 6 went back to the supplier — not 10, which the shelf never held.
+    assert _on_hand(client, h, item["id"], wh) == Decimal("0")

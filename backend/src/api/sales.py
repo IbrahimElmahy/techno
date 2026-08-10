@@ -598,12 +598,15 @@ def reverse_sale(
     inv = db.get(SalesInvoice, sale_id)
     if inv is None:
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
-    lines = [(l.item_id, l.quantity) for l in inv.lines]
-    if not lines:
+    if not inv.lines:
         raise HTTPException(422, {"code": "validation", "message": "الفاتورة من غير سطور"})
     try:
-        ret = sales_service.return_sale(
-            db, sales_invoice_id=sale_id, lines=lines, actor_user_id=current.id)
+        # `reverse_sale`, not `return_sale`: a reversal fills in the lots and the serials from the
+        # invoice itself. Calling the return path directly is what made «تعديل» fail on any
+        # invoice holding a perishable or a serialized item — it demanded answers only the
+        # original sale knew, and the sale had already written them down.
+        ret = sales_service.reverse_sale(
+            db, sales_invoice_id=sale_id, actor_user_id=current.id)
     except (SalesError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "return_invalid", "message": str(exc)})
