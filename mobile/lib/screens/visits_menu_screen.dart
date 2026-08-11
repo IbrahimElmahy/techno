@@ -88,7 +88,7 @@ class _VisitCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_left, color: Colors.grey),
+              const Icon(Icons.chevron_right, color: Colors.grey),
             ],
           ),
         ),

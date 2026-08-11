@@ -12,28 +12,37 @@ class LocalDb {
 
   Future<Database> get db async {
     if (_db != null) return _db!;
-    final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 5, onUpgrade: (d, from, to) async {
+    String path;
+    try {
+      final dbPath = await getDatabasesPath();
+      path = p.join(dbPath, 'techno_inspections.db');
+    } catch (_) {
+      path = 'techno_inspections.db';
+    }
+    _db = await openDatabase(path, version: 6, onUpgrade: (d, from, to) async {
       if (from < 2) {
-        // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
-        await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
+        try { await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL'); } catch (_) {}
       }
       if (from < 3) {
-        // v3: cached customers + the regular visit's customer link.
-        await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT)');
-        await d.execute('ALTER TABLE inspection ADD COLUMN customer_id INTEGER');
+        try { await d.execute('CREATE TABLE IF NOT EXISTS customer(id INTEGER PRIMARY KEY, name TEXT)'); } catch (_) {}
+        try { await d.execute('ALTER TABLE inspection ADD COLUMN customer_id INTEGER'); } catch (_) {}
       }
       if (from < 5) {
-        // v5: coupons taken back from customers on the round. Queued like an inspection —
-        // the rep is at a door with no signal far more often than not.
-        await d.execute(_couponReceiptTable);
+        try { await d.execute(_couponReceiptTable); } catch (_) {}
       }
       if (from < 4) {
-        // v4: the inspection point-items catalog + customer contact fields for autofill.
-        await d.execute('CREATE TABLE insp_item_type('
-            'id INTEGER PRIMARY KEY, name TEXT, points REAL)');
-        await d.execute('ALTER TABLE customer ADD COLUMN phone TEXT');
-        await d.execute('ALTER TABLE customer ADD COLUMN address TEXT');
+        try {
+          await d.execute('CREATE TABLE IF NOT EXISTS insp_item_type('
+              'id INTEGER PRIMARY KEY, name TEXT, points REAL)');
+        } catch (_) {}
+        try { await d.execute('ALTER TABLE customer ADD COLUMN phone TEXT'); } catch (_) {}
+        try { await d.execute('ALTER TABLE customer ADD COLUMN address TEXT'); } catch (_) {}
+      }
+      if (from < 6) {
+        try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN customer_type TEXT'); } catch (_) {}
+        try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN receipt_date TEXT'); } catch (_) {}
+        try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN coupon_type TEXT'); } catch (_) {}
+        try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN coupon_value REAL'); } catch (_) {}
       }
     }, onCreate: (d, v) async {
       await d.execute(_couponReceiptTable);
@@ -222,13 +231,21 @@ class LocalDb {
   }
 
   Future<List<Inspection>> listInspections(
-      {String? date, String? visitKind, bool? synced}) async {
+      {String? date, String? fromDate, String? toDate, String? visitKind, bool? synced}) async {
     final d = await db;
     final where = <String>[];
     final args = <Object?>[];
     if (date != null) {
       where.add('inspection_date = ?');
       args.add(date);
+    }
+    if (fromDate != null) {
+      where.add('inspection_date >= ?');
+      args.add(fromDate);
+    }
+    if (toDate != null) {
+      where.add('inspection_date <= ?');
+      args.add(toDate);
     }
     if (visitKind != null) {
       where.add('visit_kind = ?');
@@ -316,12 +333,20 @@ class LocalDb {
     required List<String> serials,
     int? customerId,
     String? customerName,
+    String? customerType,
+    String? receiptDate,
+    String? couponType,
+    double? couponValue,
     String? notes,
   }) async {
     return (await db).insert('coupon_receipt', {
       'client_uuid': clientUuid,
       'customer_id': customerId,
       'customer_name': customerName,
+      'customer_type': customerType,
+      'receipt_date': receiptDate,
+      'coupon_type': couponType,
+      'coupon_value': couponValue,
       'serials': serials.join(','),
       'coupon_count': serials.length,
       'notes': notes,
@@ -360,6 +385,10 @@ const _couponReceiptTable = '''
     client_uuid TEXT UNIQUE NOT NULL,
     customer_id INTEGER,
     customer_name TEXT,
+    customer_type TEXT,
+    receipt_date TEXT,
+    coupon_type TEXT,
+    coupon_value REAL,
     serials TEXT NOT NULL,
     coupon_count INTEGER NOT NULL DEFAULT 0,
     notes TEXT,

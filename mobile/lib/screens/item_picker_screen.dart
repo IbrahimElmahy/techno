@@ -4,141 +4,340 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// Searchable picker over «أصناف المعاينة» (the points catalog, not the system's products).
-/// Tapping an item asks for the quantity — points come from the item type — and returns a line.
-class ItemPickerScreen extends StatefulWidget {
-  const ItemPickerScreen({super.key});
+class AddItemFlow {
+  static Future<void> show(
+    BuildContext context,
+    void Function(CatalogItem item, double quantity) onAdd,
+  ) async {
+    final items = await LocalDb.instance.itemTypes();
+    if (!context.mounted) return;
 
-  @override
-  State<ItemPickerScreen> createState() => _ItemPickerScreenState();
+    if (items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('مفيش أصناف محمّلة — اعمل "مزامنة البيانات" الأول')),
+      );
+      return;
+    }
+
+    _showDialogLoop(context, items, onAdd);
+  }
+
+  static void _showDialogLoop(
+    BuildContext context,
+    List<CatalogItem> items,
+    void Function(CatalogItem item, double quantity) onAdd,
+  ) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => _AddItemModalDialog(
+        items: items,
+        onNext: (item, qty) {
+          onAdd(item, qty);
+          Navigator.of(ctx).pop();
+          // Loop to open next item popup automatically
+          _showDialogLoop(context, items, onAdd);
+        },
+        onDone: (item, qty) {
+          onAdd(item, qty);
+          Navigator.of(ctx).pop();
+        },
+      ),
+    );
+  }
 }
 
-class _ItemPickerScreenState extends State<ItemPickerScreen> {
-  final _search = TextEditingController();
-  List<CatalogItem> _items = [];
-  bool _loading = true;
+class _AddItemModalDialog extends StatefulWidget {
+  final List<CatalogItem> items;
+  final Function(CatalogItem item, double qty) onNext;
+  final Function(CatalogItem item, double qty) onDone;
+
+  const _AddItemModalDialog({
+    required this.items,
+    required this.onNext,
+    required this.onDone,
+  });
+
+  @override
+  State<_AddItemModalDialog> createState() => _AddItemModalDialogState();
+}
+
+class _AddItemModalDialogState extends State<_AddItemModalDialog> {
+  late CatalogItem _selectedItem;
+  final _qtyCtrl = TextEditingController(text: '');
+  final _searchCtrl = TextEditingController();
+  List<CatalogItem> _filteredItems = [];
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _filteredItems = widget.items;
+    _selectedItem = widget.items.first;
   }
 
-  Future<void> _load([String q = '']) async {
-    final items = await LocalDb.instance.itemTypes(query: q);
-    if (mounted) {
-      setState(() {
-        _items = items;
-        _loading = false;
-      });
-    }
+  void _filter(String query) {
+    setState(() {
+      if (query.trim().isEmpty) {
+        _filteredItems = widget.items;
+      } else {
+        _filteredItems = widget.items
+            .where((i) => i.name.toLowerCase().contains(query.toLowerCase()))
+            .toList();
+      }
+      if (_filteredItems.isNotEmpty && !_filteredItems.contains(_selectedItem)) {
+        _selectedItem = _filteredItems.first;
+      }
+    });
   }
 
-  static String _fmt(double v) {
-    if (v == v.roundToDouble()) return v.toInt().toString();
-    // Trim trailing zeros on fractional points (0.1667 → 0.1667, 0.5000 → 0.5).
-    return v.toStringAsFixed(4).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
-  }
-
-  Future<void> _pick(CatalogItem item) async {
-    final qty = TextEditingController(text: '1');
-    final result = await showDialog<InspectionLine>(
-      context: context,
-      builder: (c) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: AlertDialog(
-          title: Text(item.name),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('نقاط الوحدة: ${_fmt(item.points)}',
-                  style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: qty,
-                autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'الكمية'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(c), child: const Text('إلغاء')),
-            FilledButton(
-              onPressed: () {
-                final q = double.tryParse(qty.text) ?? 0;
-                if (q <= 0) return;
-                // item_id stays null on the wire — these are point-items, not product SKUs.
-                Navigator.pop(
-                    c,
-                    InspectionLine(
-                        itemId: null, itemName: item.name, quantity: q, points: item.points));
-              },
-              child: const Text('تم'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (result != null && mounted) Navigator.pop(context, result);
-  }
+  double get _qty => double.tryParse(_qtyCtrl.text.trim()) ?? 0;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('اختيار صنف')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _search,
-              onChanged: _load,
-              decoration: InputDecoration(
-                hintText: 'ابحث بإسم الصنف...',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _search.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _search.clear();
-                          _load();
-                        },
-                      ),
+    final double calculatedPoints = _selectedItem.points * _qty;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 440),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Modal Header with X Close Icon
+              Row(
+                children: [
+                  const Text(
+                    'إضافة مادة جديدة',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.ink),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
               ),
-            ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _items.isEmpty
-                    ? const Center(
-                        child: Text('مفيش أصناف — اعمل «تحديث الأصناف والقوائم» من القائمة'))
-                    : ListView.separated(
-                        itemCount: _items.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (c, i) {
-                          final it = _items[i];
-                          return ListTile(
-                            title: Text(it.name),
-                            trailing: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.accent.withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text('${_fmt(it.points)} نقطة',
-                                  style: const TextStyle(
-                                      fontSize: 12, fontWeight: FontWeight.w700)),
-                            ),
-                            onTap: () => _pick(it),
-                          );
-                        },
+              const SizedBox(height: 12),
+
+              // Search Box
+              TextField(
+                controller: _searchCtrl,
+                onChanged: _filter,
+                decoration: const InputDecoration(
+                  hintText: 'اكتب اسم أو كود المنتج...',
+                  prefixIcon: Icon(Icons.search, color: Color(0xFF9CA3AF)),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Quick Filter Chips (Matching Image 5 mockup)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final item in widget.items.take(4))
+                      Padding(
+                        padding: const EdgeInsetsDirectional.only(start: 6),
+                        child: ActionChip(
+                          label: Text(item.name),
+                          backgroundColor: _selectedItem.id == item.id
+                              ? AppColors.primary.withOpacity(0.15)
+                              : const Color(0xFFF3F4F6),
+                          labelStyle: TextStyle(
+                            color: _selectedItem.id == item.id ? AppColors.primary : const Color(0xFF374151),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          onPressed: () => setState(() => _selectedItem = item),
+                        ),
                       ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 14),
+
+              // Product Dropdown Selection
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFAFAFA),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<CatalogItem>(
+                    value: _filteredItems.contains(_selectedItem) ? _selectedItem : null,
+                    isExpanded: true,
+                    items: [
+                      for (final item in _filteredItems)
+                        DropdownMenuItem(
+                          value: item,
+                          child: Text(
+                            '${item.name} (${item.points.toInt()} نقطة)',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) setState(() => _selectedItem = val);
+                    },
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Quantity Counter (- / input / +)
+              const Text(
+                'الكمية',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6B7280)),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  InkWell(
+                    onTap: () {
+                      final q = (_qty - 1).clamp(0, 9999).toInt();
+                      _qtyCtrl.text = q > 0 ? q.toString() : '';
+                      setState(() {});
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.remove, color: Color(0xFF374151)),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _qtyCtrl,
+                      keyboardType: TextInputType.number,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      onChanged: (_) => setState(() {}),
+                      decoration: const InputDecoration(
+                        hintText: '0',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  InkWell(
+                    onTap: () {
+                      final q = (_qty + 1).toInt();
+                      _qtyCtrl.text = q.toString();
+                      setState(() {});
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F4F6),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.add, color: Color(0xFF374151)),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 14),
+
+              // Calculated Points Box
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFAFAFA),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: Row(
+                  children: [
+                    const Text(
+                      'النقاط المحتسبة:',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF6B7280)),
+                    ),
+                    const Spacer(),
+                    Text(
+                      calculatedPoints > 0 ? '${calculatedPoints.toInt()} نقطة' : '--',
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primary),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Action Buttons: Next (Green Primary) & Done (Outlined)
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () {
+                        if (_qty <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('يرجى كتابة كمية أكبر من صفر')),
+                          );
+                          return;
+                        }
+                        widget.onNext(_selectedItem, _qty);
+                      },
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.arrow_forward, size: 18),
+                          SizedBox(width: 6),
+                          Text('التالي', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        side: const BorderSide(color: Color(0xFF9CA3AF)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () {
+                        if (_qty <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('يرجى كتابة كمية أكبر من صفر')),
+                          );
+                          return;
+                        }
+                        widget.onDone(_selectedItem, _qty);
+                      },
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check, size: 18, color: Color(0xFF374151)),
+                          SizedBox(width: 6),
+                          Text('تم', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF374151))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

@@ -71,19 +71,22 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   }
 
   Future<void> _addItem() async {
-    final line = await Navigator.push<InspectionLine>(
-        context, MaterialPageRoute(builder: (_) => const ItemPickerScreen()));
-    if (line != null) {
+    await AddItemFlow.show(context, (item, qty) {
       setState(() {
         final existing = _lines.indexWhere(
-            (l) => l.itemId == line.itemId && l.itemName == line.itemName);
+            (l) => l.itemId == item.id && l.itemName == item.name);
         if (existing >= 0) {
-          _lines[existing].quantity += line.quantity;
+          _lines[existing].quantity += qty;
         } else {
-          _lines.add(line);
+          _lines.add(InspectionLine(
+            itemId: item.id,
+            itemName: item.name,
+            quantity: qty,
+            points: item.points,
+          ));
         }
       });
-    }
+    });
   }
 
   void _showCart() {
@@ -250,7 +253,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   );
                 },
                 optionsViewBuilder: (context, onSelected, options) => Align(
-                  alignment: Alignment.topRight,
+                  alignment: AlignmentDirectional.topStart,
                   child: Material(
                     elevation: 4,
                     child: SizedBox(
@@ -407,7 +410,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 key: ValueKey('${_lines[i].itemName}-$i'),
                 direction: DismissDirection.endToStart,
                 background: Container(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerEnd,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   color: AppColors.danger,
                   child: const Icon(Icons.delete, color: Colors.white),

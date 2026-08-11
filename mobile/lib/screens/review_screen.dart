@@ -5,7 +5,7 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// «مراجعة الزيارات» — inspections recorded on this device, filtered by date.
+/// «مراجعة الزيارات» — inspections recorded on this device, filtered by date range (من وإلى).
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key});
 
@@ -14,7 +14,8 @@ class ReviewScreen extends StatefulWidget {
 }
 
 class _ReviewScreenState extends State<ReviewScreen> {
-  DateTime? _date = DateTime.now();
+  DateTime? _fromDate;
+  DateTime? _toDate;
   String? _kind; // null = الكل | technician | regular
   bool? _synced; // null = الكل | true متزامنة | false معلقة
   List<Inspection> _rows = [];
@@ -23,13 +24,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
   @override
   void initState() {
     super.initState();
+    // Default to current month or today
+    _toDate = DateTime.now();
+    _fromDate = DateTime(_toDate!.year, _toDate!.month, 1); // First of current month
     _load();
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     final rows = await LocalDb.instance.listInspections(
-        date: _date == null ? null : intl.DateFormat('yyyy-MM-dd').format(_date!),
+        fromDate: _fromDate == null ? null : intl.DateFormat('yyyy-MM-dd').format(_fromDate!),
+        toDate: _toDate == null ? null : intl.DateFormat('yyyy-MM-dd').format(_toDate!),
         visitKind: _kind,
         synced: _synced);
     if (mounted) {
@@ -43,92 +48,159 @@ class _ReviewScreenState extends State<ReviewScreen> {
   static String _fmt(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
+  Future<void> _pickFromDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _fromDate ?? DateTime.now(),
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked != null) {
+      setState(() => _fromDate = picked);
+      _load();
+    }
+  }
+
+  Future<void> _pickToDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _toDate ?? DateTime.now(),
+      firstDate: DateTime(2024),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked != null) {
+      setState(() => _toDate = picked);
+      _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('مراجعة الزيارات')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _date ?? DateTime.now(),
-                        firstDate: DateTime(2024),
-                        lastDate: DateTime.now().add(const Duration(days: 1)),
-                      );
-                      if (picked != null) {
-                        setState(() => _date = picked);
-                        _load();
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                          labelText: 'التاريخ', prefixIcon: Icon(Icons.calendar_today)),
-                      child: Text(_date == null
-                          ? 'كل التواريخ'
-                          : intl.DateFormat('yyyy/MM/dd').format(_date!)),
-                    ),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('مراجعة الزيارات')),
+        body: Column(
+          children: [
+            // --- تصفية النطاق الزمني (التاريخ من وإلى) ---
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Card(
+                elevation: 2,
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.date_range, color: AppColors.primary, size: 20),
+                          SizedBox(width: 6),
+                          Text('تحديد نطاق التاريخ (من وإلى)',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: _pickFromDate,
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'التاريخ من',
+                                  prefixIcon: Icon(Icons.calendar_today, size: 18),
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                ),
+                                child: Text(_fromDate == null
+                                    ? 'من البداية'
+                                    : intl.DateFormat('yyyy/MM/dd').format(_fromDate!)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: InkWell(
+                              onTap: _pickToDate,
+                              child: InputDecorator(
+                                decoration: const InputDecoration(
+                                  labelText: 'التاريخ إلى',
+                                  prefixIcon: Icon(Icons.event, size: 18),
+                                  border: OutlineInputBorder(),
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                ),
+                                child: Text(_toDate == null
+                                    ? 'إلى اليوم'
+                                    : intl.DateFormat('yyyy/MM/dd').format(_toDate!)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          IconButton.filledTonal(
+                            tooltip: 'إلغاء تصفية التاريخ',
+                            icon: const Icon(Icons.filter_alt_off_outlined),
+                            onPressed: () {
+                              setState(() {
+                                _fromDate = null;
+                                _toDate = null;
+                              });
+                              _load();
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  tooltip: 'كل التواريخ',
-                  icon: const Icon(Icons.filter_alt_off_outlined),
-                  onPressed: () {
-                    setState(() => _date = null);
-                    _load();
-                  },
-                ),
-              ],
+              ),
             ),
-          ),
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: [
-                _chip('الكل', _kind == null && _synced == null, () {
-                  _kind = null;
-                  _synced = null;
-                }),
-                _chip('معاينات فنيين', _kind == 'technician',
-                    () => _kind = _kind == 'technician' ? null : 'technician'),
-                _chip('زيارات عادية', _kind == 'regular',
-                    () => _kind = _kind == 'regular' ? null : 'regular'),
-                _chip('متزامنة', _synced == true,
-                    () => _synced = _synced == true ? null : true),
-                _chip('في انتظار المزامنة', _synced == false,
-                    () => _synced = _synced == false ? null : false),
-              ],
+
+            // --- فلتر نوع الزيارة والحالة ---
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: [
+                  _chip('الكل', _kind == null && _synced == null, () {
+                    _kind = null;
+                    _synced = null;
+                  }),
+                  _chip('معاينات فنيين', _kind == 'technician',
+                      () => _kind = _kind == 'technician' ? null : 'technician'),
+                  _chip('زيارات عادية', _kind == 'regular',
+                      () => _kind = _kind == 'regular' ? null : 'regular'),
+                  _chip('متزامنة', _synced == true,
+                      () => _synced = _synced == true ? null : true),
+                  _chip('في انتظار المزامنة', _synced == false,
+                      () => _synced = _synced == false ? null : false),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _rows.isEmpty
-                    ? const Center(child: Text('مفيش زيارات في اليوم ده'))
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        itemCount: _rows.length,
-                        itemBuilder: (c, i) => _card(_rows[i]),
-                      ),
-          ),
-        ],
+            const SizedBox(height: 4),
+
+            // --- قائمة الزيارات ---
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _rows.isEmpty
+                      ? const Center(child: Text('مفيش زيارات مسجلة في هذا النطاق'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          itemCount: _rows.length,
+                          itemBuilder: (c, i) => _card(_rows[i]),
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _chip(String label, bool selected, VoidCallback toggle) {
     return Padding(
-      padding: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsetsDirectional.only(start: 8),
       child: FilterChip(
         label: Text(label),
         selected: selected,
@@ -145,6 +217,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   Widget _card(Inspection insp) {
     final isTech = insp.visitKind == 'technician';
     return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         leading: CircleAvatar(
@@ -204,7 +277,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         textDirection: TextDirection.rtl,
         child: DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.7,
+          initialChildSize: 0.75,
           builder: (c, scroll) => ListView(
             controller: scroll,
             padding: const EdgeInsets.all(20),

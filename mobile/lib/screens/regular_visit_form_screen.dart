@@ -41,19 +41,22 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   }
 
   Future<void> _addItem() async {
-    final line = await Navigator.push<InspectionLine>(
-        context, MaterialPageRoute(builder: (_) => const ItemPickerScreen()));
-    if (line != null) {
+    await AddItemFlow.show(context, (item, qty) {
       setState(() {
         final existing = _lines.indexWhere(
-            (l) => l.itemId == line.itemId && l.itemName == line.itemName);
+            (l) => l.itemId == item.id && l.itemName == item.name);
         if (existing >= 0) {
-          _lines[existing].quantity += line.quantity;
+          _lines[existing].quantity += qty;
         } else {
-          _lines.add(line);
+          _lines.add(InspectionLine(
+            itemId: item.id,
+            itemName: item.name,
+            quantity: qty,
+            points: item.points,
+          ));
         }
       });
-    }
+    });
   }
 
   Future<void> _save() async {
@@ -148,7 +151,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                               return TextField(
                                 controller: controller,
                                 focusNode: focusNode,
-                                textAlign: TextAlign.right,
+                                textAlign: TextAlign.start,
                                 onChanged: (v) {
                                   _customerName.text = v;
                                   _customerId = null; // typing a new/edited name unlinks
@@ -163,7 +166,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                               );
                             },
                             optionsViewBuilder: (context, onSelected, options) => Align(
-                              alignment: Alignment.topRight,
+                              alignment: AlignmentDirectional.topStart,
                               child: Material(
                                 elevation: 4,
                                 child: SizedBox(
