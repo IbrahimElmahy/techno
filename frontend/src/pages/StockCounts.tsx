@@ -11,6 +11,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * جرد المخازن و جرد عام — the counting cycle.
@@ -255,6 +256,48 @@ export default function StockCounts() {
     return d !== null && d !== 0;
   }).length;
 
+  const columns = [
+    // The register filters per column too — «جرد دوري على مخزن الفرع لسه ماخلصش» is
+    // three columns, and the strip above can only hold so many boxes before it is a form.
+    { title: 'التاريخ', dataIndex: 'count_date', width: 110,
+      ...numberColumn((r: Sheet) => Date.parse(r.count_date) || 0) },
+    { title: 'رقم الكشف', dataIndex: 'document_number', width: 130,
+      ...textColumn(sheets, (r: Sheet) => r.document_number),
+      render: (v: string) => <Tag color="cyan">{v}</Tag> },
+    // On the list because a cycle count that looks like a failed full count is how people
+    // stop trusting the numbers: «ليه ٢٠ صنف بس؟» has an answer, and it belongs here.
+    { title: 'النوع', dataIndex: 'kind', width: 90,
+      ...choiceColumn<Sheet>(
+        [{ text: 'كلي', value: 'full' }, { text: 'دوري', value: 'cycle' },
+         { text: 'عينة', value: 'spot' }],
+        (r, v) => (r.kind || 'full') === v),
+      render: (k: string) => {
+        const t: Record<string, { c: string; n: string }> = {
+          full: { c: 'blue', n: 'كلي' },
+          cycle: { c: 'green', n: 'دوري' },
+          spot: { c: 'gold', n: 'عينة' },
+        };
+        const v = t[k] || { c: 'default', n: k || 'كلي' };
+        return <Tag color={v.c}>{v.n}</Tag>;
+      } },
+    { title: 'المخزن', dataIndex: 'warehouse_name', ellipsis: true,
+      ...textColumn(sheets, (r: Sheet) => r.warehouse_name),
+      render: (v: string | null) => v ?? <Tag>كل المخازن</Tag> },
+    { title: 'السطور', key: 'lines', width: 150,
+      ...numberColumn((r: Sheet) => r.line_count),
+      render: (_: any, r: Sheet) => `${r.counted_count} / ${r.line_count} متعدود` },
+    { title: 'الحالة', dataIndex: 'status', width: 120,
+      ...choiceColumn<Sheet>(
+        [{ text: 'مفتوح', value: 'draft' }, { text: 'مترحّل', value: 'posted' },
+         { text: 'ملغي', value: 'cancelled' }],
+        (r, v) => r.status === v),
+      render: (v: Sheet['status']) => (v === 'posted' ? <Tag color="green">مترحّل</Tag>
+        : v === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="blue">مفتوح</Tag>) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('stock-counts', columns);
+
   return (
     <div>
       {/* Mounted at the root so it survives the sheet dialog closing under it. */}
@@ -267,6 +310,7 @@ export default function StockCounts() {
         title="دورة الجرد — عدّ وتسوية"
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
               onClick={() => { setWarehouseId(undefined); setNotes(''); setOpenVisible(true); }}>
@@ -309,44 +353,7 @@ export default function StockCounts() {
           locale={{ emptyText: 'مفيش كشوف جرد' }}
           pagination={{ defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}` }}
-          columns={[
-            // The register filters per column too — «جرد دوري على مخزن الفرع لسه ماخلصش» is
-            // three columns, and the strip above can only hold so many boxes before it is a form.
-            { title: 'التاريخ', dataIndex: 'count_date', width: 110,
-              ...numberColumn((r: Sheet) => Date.parse(r.count_date) || 0) },
-            { title: 'رقم الكشف', dataIndex: 'document_number', width: 130,
-              ...textColumn(sheets, (r: Sheet) => r.document_number),
-              render: (v: string) => <Tag color="cyan">{v}</Tag> },
-            // On the list because a cycle count that looks like a failed full count is how people
-            // stop trusting the numbers: «ليه ٢٠ صنف بس؟» has an answer, and it belongs here.
-            { title: 'النوع', dataIndex: 'kind', width: 90,
-              ...choiceColumn<Sheet>(
-                [{ text: 'كلي', value: 'full' }, { text: 'دوري', value: 'cycle' },
-                 { text: 'عينة', value: 'spot' }],
-                (r, v) => (r.kind || 'full') === v),
-              render: (k: string) => {
-                const t: Record<string, { c: string; n: string }> = {
-                  full: { c: 'blue', n: 'كلي' },
-                  cycle: { c: 'green', n: 'دوري' },
-                  spot: { c: 'gold', n: 'عينة' },
-                };
-                const v = t[k] || { c: 'default', n: k || 'كلي' };
-                return <Tag color={v.c}>{v.n}</Tag>;
-              } },
-            { title: 'المخزن', dataIndex: 'warehouse_name', ellipsis: true,
-              ...textColumn(sheets, (r: Sheet) => r.warehouse_name),
-              render: (v: string | null) => v ?? <Tag>كل المخازن</Tag> },
-            { title: 'السطور', key: 'lines', width: 150,
-              ...numberColumn((r: Sheet) => r.line_count),
-              render: (_: any, r: Sheet) => `${r.counted_count} / ${r.line_count} متعدود` },
-            { title: 'الحالة', dataIndex: 'status', width: 120,
-              ...choiceColumn<Sheet>(
-                [{ text: 'مفتوح', value: 'draft' }, { text: 'مترحّل', value: 'posted' },
-                 { text: 'ملغي', value: 'cancelled' }],
-                (r, v) => r.status === v),
-              render: (v: Sheet['status']) => (v === 'posted' ? <Tag color="green">مترحّل</Tag>
-                : v === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="blue">مفتوح</Tag>) },
-          ]}
+          columns={tableCols.columns}
         />
       </Card>
       )}

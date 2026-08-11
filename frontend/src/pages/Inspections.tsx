@@ -15,6 +15,8 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { printDocument } from '../print/brand';
 import { useLookup } from '../hooks/useLookup';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface InspectionLine {
   id: number;
@@ -227,6 +229,52 @@ const Inspections: React.FC = () => {
    * accept, reject, change the visit type — inside a popup. The list steps aside while one is
    * open, so the decision is taken on the document rather than on top of the register.
    */
+  const columns: ColumnsType<InspectionRecord> = [
+    {
+      title: 'رقم الشهادة',
+      dataIndex: 'certificate_number',
+      width: 110,
+      render: (v: number | null) => <b>{v ?? '—'}</b>,
+    },
+    { title: 'اسم المالك', dataIndex: 'owner_name' },
+    { title: 'تاريخ المعاينة', dataIndex: 'inspection_date', width: 115 },
+    { title: 'اسم الفني', dataIndex: 'technician_name', width: 140 },
+    { title: 'المندوب', dataIndex: 'rep_user_id', width: 130, render: repName },
+    {
+      title: 'الحالة',
+      dataIndex: 'status',
+      width: 90,
+      render: (v: string) =>
+        v === 'rejected' ? <Tag color="red">مرفوضة</Tag> : <Tag color="green">مقبولة</Tag>,
+    },
+    {
+      title: 'الطباعة',
+      dataIndex: 'printed',
+      width: 90,
+      align: 'center' as const,
+      render: (v: boolean) => (v ? <Tag color="blue">تم</Tag> : <Tag>غير مطبوعة</Tag>),
+    },
+    { title: 'التاجر', dataIndex: 'purchase_shop', width: 120 },
+    {
+      title: 'عدد النقاط',
+      dataIndex: 'total_points',
+      width: 100,
+      align: 'center' as const,
+      render: (v: string) => <b>{fmt(v)}</b>,
+    },
+    {
+      title: 'نوع الزيارة',
+      dataIndex: 'visit_type',
+      width: 100,
+      render: (v: string) => (
+        <Tag color={v === 'مرمة' ? 'orange' : 'cyan'}>{v}</Tag>
+      ),
+    },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('inspections', columns);
+
   return (
     <div>
       {!detail && (
@@ -362,48 +410,7 @@ const Inspections: React.FC = () => {
           dataSource={rows}
           onRow={(record) => ({ onClick: () => openDetail(record), style: { cursor: 'pointer' } })}
           pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
-          columns={[
-            {
-              title: 'رقم الشهادة',
-              dataIndex: 'certificate_number',
-              width: 110,
-              render: (v: number | null) => <b>{v ?? '—'}</b>,
-            },
-            { title: 'اسم المالك', dataIndex: 'owner_name' },
-            { title: 'تاريخ المعاينة', dataIndex: 'inspection_date', width: 115 },
-            { title: 'اسم الفني', dataIndex: 'technician_name', width: 140 },
-            { title: 'المندوب', dataIndex: 'rep_user_id', width: 130, render: repName },
-            {
-              title: 'الحالة',
-              dataIndex: 'status',
-              width: 90,
-              render: (v: string) =>
-                v === 'rejected' ? <Tag color="red">مرفوضة</Tag> : <Tag color="green">مقبولة</Tag>,
-            },
-            {
-              title: 'الطباعة',
-              dataIndex: 'printed',
-              width: 90,
-              align: 'center' as const,
-              render: (v: boolean) => (v ? <Tag color="blue">تم</Tag> : <Tag>غير مطبوعة</Tag>),
-            },
-            { title: 'التاجر', dataIndex: 'purchase_shop', width: 120 },
-            {
-              title: 'عدد النقاط',
-              dataIndex: 'total_points',
-              width: 100,
-              align: 'center' as const,
-              render: (v: string) => <b>{fmt(v)}</b>,
-            },
-            {
-              title: 'نوع الزيارة',
-              dataIndex: 'visit_type',
-              width: 100,
-              render: (v: string) => (
-                <Tag color={v === 'مرمة' ? 'orange' : 'cyan'}>{v}</Tag>
-              ),
-            },
-          ]}
+          columns={tableCols.columns}
         />
       </Card>
       </>
@@ -419,16 +426,19 @@ const Inspections: React.FC = () => {
           </Space>
         )}
         extra={
-          (
-            <Space>
-              {detail.status === 'rejected' ? (
-                <Tag color="red">مرفوضة</Tag>
-              ) : (
-                <Tag color="green">مقبولة</Tag>
-              )}
-              {detail.printed && <Tag color="blue">تم الطباعة</Tag>}
-            </Space>
-          )
+          <Space>
+            {tableCols.control}
+            (
+              <Space>
+                {detail.status === 'rejected' ? (
+                  <Tag color="red">مرفوضة</Tag>
+                ) : (
+                  <Tag color="green">مقبولة</Tag>
+                )}
+                {detail.printed && <Tag color="blue">تم الطباعة</Tag>}
+              </Space>
+            )
+          </Space>
         }
       >
         {(

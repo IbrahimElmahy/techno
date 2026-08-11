@@ -10,6 +10,8 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * كشف حساب — any account in the chart, not only customers and suppliers.
@@ -202,11 +204,57 @@ export default function AccountStatement() {
     onOpen: (l) => { if (l.doc_kind && l.doc_id) openDoc(l.doc_kind, l.doc_id); },
   });
 
+  const columns: ColumnsType<StatementLine> = [
+    { title: 'التاريخ', dataIndex: 'entry_date',
+      ...dateColumn<StatementLine>((l) => l.entry_date),
+      render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
+    { title: 'النوع', dataIndex: 'entry_type',
+      ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
+      render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
+    { title: 'البيان', dataIndex: 'description',
+      ...textColumn(lines, (l: StatementLine) => l.description) },
+    // Their statement has a cost-centre column. The journal line has always carried one
+    // and this screen dropped it, so «against which project?» meant opening the entry.
+    // The line never held a rep; the document that posted it did. A manual journal
+    // entry has none and says so rather than borrowing one.
+    { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
+      ...textColumn(lines, (l: StatementLine) => l.rep_name),
+      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
+    { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
+      ...textColumn(lines, (l: StatementLine) => l.cost_center_name),
+      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
+    { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
+      ...numberColumn<StatementLine>((l) => l.balance_before),
+      render: (v: string) => <span style={{ color: '#8a8a8a' }}>{money(v)}</span> },
+    { title: 'مدين', dataIndex: 'debit', align: 'left',
+      ...numberColumn<StatementLine>((l) => l.debit),
+      render: (v: string) => (Number(v) ? money(v) : '-') },
+    { title: 'دائن', dataIndex: 'credit', align: 'left',
+      ...numberColumn<StatementLine>((l) => l.credit),
+      render: (v: string) => (Number(v) ? money(v) : '-') },
+    { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left',
+      ...numberColumn<StatementLine>((l) => l.balance),
+      render: (v: string) => <b>{money(v)}</b> },
+    // The whole point of a statement is to answer «إيه السطر ده؟» — so the answer is
+    // one click away rather than a number to memorise and search for elsewhere.
+    { title: 'المستند', key: 'doc', align: 'center',
+      ...textColumn(lines, (l: StatementLine) => l.doc_number),
+      render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
+        <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
+          label={l.doc_number || undefined}
+          allowEdit={l.doc_kind === 'invoice'} />
+      ) : <span style={{ color: '#bbb' }}>قيد يدوي</span>) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('account-statement', columns);
+
   return (
     <Card
       title="كشف حساب"
       extra={(
         <>
+          {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv}
             disabled={!statement?.lines.length} style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
           <Button icon={<ReloadOutlined />} onClick={load} disabled={!accountId}>تحديث</Button>
@@ -307,47 +355,7 @@ export default function AccountStatement() {
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
             pagination={{ defaultPageSize: 25, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
-            columns={[
-              { title: 'التاريخ', dataIndex: 'entry_date',
-                ...dateColumn<StatementLine>((l) => l.entry_date),
-                render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
-              { title: 'النوع', dataIndex: 'entry_type',
-                ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
-                render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
-              { title: 'البيان', dataIndex: 'description',
-                ...textColumn(lines, (l: StatementLine) => l.description) },
-              // Their statement has a cost-centre column. The journal line has always carried one
-              // and this screen dropped it, so «against which project?» meant opening the entry.
-              // The line never held a rep; the document that posted it did. A manual journal
-              // entry has none and says so rather than borrowing one.
-              { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
-                ...textColumn(lines, (l: StatementLine) => l.rep_name),
-                render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
-              { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
-                ...textColumn(lines, (l: StatementLine) => l.cost_center_name),
-                render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
-              { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
-                ...numberColumn<StatementLine>((l) => l.balance_before),
-                render: (v: string) => <span style={{ color: '#8a8a8a' }}>{money(v)}</span> },
-              { title: 'مدين', dataIndex: 'debit', align: 'left',
-                ...numberColumn<StatementLine>((l) => l.debit),
-                render: (v: string) => (Number(v) ? money(v) : '-') },
-              { title: 'دائن', dataIndex: 'credit', align: 'left',
-                ...numberColumn<StatementLine>((l) => l.credit),
-                render: (v: string) => (Number(v) ? money(v) : '-') },
-              { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left',
-                ...numberColumn<StatementLine>((l) => l.balance),
-                render: (v: string) => <b>{money(v)}</b> },
-              // The whole point of a statement is to answer «إيه السطر ده؟» — so the answer is
-              // one click away rather than a number to memorise and search for elsewhere.
-              { title: 'المستند', key: 'doc', align: 'center',
-                ...textColumn(lines, (l: StatementLine) => l.doc_number),
-                render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
-                  <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
-                    label={l.doc_number || undefined}
-                    allowEdit={l.doc_kind === 'invoice'} />
-                ) : <span style={{ color: '#bbb' }}>قيد يدوي</span>) },
-            ]}
+            columns={tableCols.columns}
           />
         </>
       )}

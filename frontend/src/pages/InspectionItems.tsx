@@ -7,6 +7,8 @@ import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface ItemType {
   id: number;
@@ -124,12 +126,68 @@ const InspectionItems: React.FC = () => {
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
 
+  const columns: ColumnsType<ItemType> = [
+    { title: '#', width: 60, render: (_: any, __: any, i: number) => i + 1 },
+    { title: 'اسم الصنف', dataIndex: 'name' },
+    {
+      title: 'النقاط',
+      dataIndex: 'points',
+      width: 120,
+      align: 'center' as const,
+      render: (v: string) => <b>{fmtPoints(v)}</b>,
+    },
+    {
+      title: 'الحالة',
+      dataIndex: 'active',
+      width: 110,
+      align: 'center' as const,
+      render: (active: boolean, row: ItemType) => (
+        <Switch
+          checked={active}
+          size="small"
+          onChange={(v) => toggleActive(row, v)}
+          checkedChildren="نشط"
+          unCheckedChildren="موقوف"
+        />
+      ),
+    },
+    {
+      title: '',
+      width: 170,
+      render: (_: any, row: ItemType) => (
+        <Space>
+          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>
+            تعديل
+          </Button>
+          {row.active && (
+            <Popconfirm
+              title="إيقاف الصنف؟"
+              description="هيختفي من التطبيق، والمعاينات القديمة تفضل زي ما هي."
+              okText="إيقاف"
+              cancelText="إلغاء"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => deactivate(row)}
+            >
+              <Button size="small" danger icon={<StopOutlined />}>
+                إيقاف
+              </Button>
+            </Popconfirm>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('inspection-items', columns);
+
   return (
     <div>
       <Card
         title="أصناف المعاينة وقيمة النقاط"
         extra={
           <Space>
+            {tableCols.control}
             <Space size={4}>
               <Switch checked={showInactive} onChange={setShowInactive} size="small" />
               <span>عرض الموقوفة</span>
@@ -166,57 +224,7 @@ const InspectionItems: React.FC = () => {
           loading={loading}
           dataSource={filter.filtered}
           pagination={{ defaultPageSize: 50, showTotal: (t) => `إجمالي ${t}` }}
-          columns={[
-            { title: '#', width: 60, render: (_: any, __: any, i: number) => i + 1 },
-            { title: 'اسم الصنف', dataIndex: 'name' },
-            {
-              title: 'النقاط',
-              dataIndex: 'points',
-              width: 120,
-              align: 'center' as const,
-              render: (v: string) => <b>{fmtPoints(v)}</b>,
-            },
-            {
-              title: 'الحالة',
-              dataIndex: 'active',
-              width: 110,
-              align: 'center' as const,
-              render: (active: boolean, row: ItemType) => (
-                <Switch
-                  checked={active}
-                  size="small"
-                  onChange={(v) => toggleActive(row, v)}
-                  checkedChildren="نشط"
-                  unCheckedChildren="موقوف"
-                />
-              ),
-            },
-            {
-              title: '',
-              width: 170,
-              render: (_: any, row: ItemType) => (
-                <Space>
-                  <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>
-                    تعديل
-                  </Button>
-                  {row.active && (
-                    <Popconfirm
-                      title="إيقاف الصنف؟"
-                      description="هيختفي من التطبيق، والمعاينات القديمة تفضل زي ما هي."
-                      okText="إيقاف"
-                      cancelText="إلغاء"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => deactivate(row)}
-                    >
-                      <Button size="small" danger icon={<StopOutlined />}>
-                        إيقاف
-                      </Button>
-                    </Popconfirm>
-                  )}
-                </Space>
-              ),
-            },
-          ]}
+          columns={tableCols.columns}
         />
       </Card>
 

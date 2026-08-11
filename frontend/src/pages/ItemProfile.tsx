@@ -16,6 +16,7 @@ import DocumentLink, { useOpenDocument } from '../components/DocumentLink';
 import { useTableKeyboard } from '../components/keyboard';
 import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
@@ -145,6 +146,31 @@ export default function ItemProfile() {
     onOpen: () => navigate(`/item-card?item=${itemId}`),
   });
 
+  const columns = [
+    { title: 'الفاتورة', dataIndex: 'document_number', key: 'n', ...textColumn(data?.sales ?? [], (r: any) => r.document_number) },
+    { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
+    { title: 'العميل', dataIndex: 'party', key: 'p', ...textColumn(data?.sales ?? [], (r: any) => r.party) },
+    { title: 'الكمية', dataIndex: 'quantity', key: 'q',
+      ...numberColumn<any>((r) => r.quantity),
+      render: (v: string) => qty(v) },
+    { title: 'سعر البيع', dataIndex: 'unit_price', key: 'u', ...numberColumn<any>((r) => r.unit_price),
+      render: (v: string) => <b>{money(v)} ج.م</b> },
+    { title: 'الفئة', dataIndex: 'tier', key: 't',
+      ...textColumn(data?.sales ?? [], (r: any) => r.tier),
+      render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
+    { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot', ...numberColumn<any>((r) => r.line_total),
+      render: (v: string) => `${money(v)} ج.م` },
+    // The item's history used to be read-only rows; now each one leads
+    // back to the invoice it came from.
+    { title: '', key: 'link', width: 180,
+      render: (_: any, r: any) => (r.invoice_id
+        ? <DocumentLink kind="invoice" id={r.invoice_id} size="small" allowEdit />
+        : null) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('item-sales', columns);
+
   return (
     <div>
       <Card
@@ -160,6 +186,7 @@ export default function ItemProfile() {
         }
         extra={
           <Space>
+            {tableCols.control}
             <Button icon={<FileTextOutlined />} disabled={!itemId}
               onClick={() => navigate(`/item-card?item=${itemId}`)}>
               كارت الصنف
@@ -358,27 +385,7 @@ export default function ItemProfile() {
                         scroll={{ x: true }}
                         pagination={{ defaultPageSize: 20, showSizeChanger: true,
                           pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                        columns={[
-                          { title: 'الفاتورة', dataIndex: 'document_number', key: 'n', ...textColumn(data?.sales ?? [], (r: any) => r.document_number) },
-                          { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
-                          { title: 'العميل', dataIndex: 'party', key: 'p', ...textColumn(data?.sales ?? [], (r: any) => r.party) },
-                          { title: 'الكمية', dataIndex: 'quantity', key: 'q',
-                            ...numberColumn<any>((r) => r.quantity),
-                            render: (v: string) => qty(v) },
-                          { title: 'سعر البيع', dataIndex: 'unit_price', key: 'u', ...numberColumn<any>((r) => r.unit_price),
-                            render: (v: string) => <b>{money(v)} ج.م</b> },
-                          { title: 'الفئة', dataIndex: 'tier', key: 't',
-                            ...textColumn(data?.sales ?? [], (r: any) => r.tier),
-                            render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
-                          { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot', ...numberColumn<any>((r) => r.line_total),
-                            render: (v: string) => `${money(v)} ج.م` },
-                          // The item's history used to be read-only rows; now each one leads
-                          // back to the invoice it came from.
-                          { title: '', key: 'link', width: 180,
-                            render: (_: any, r: any) => (r.invoice_id
-                              ? <DocumentLink kind="invoice" id={r.invoice_id} size="small" allowEdit />
-                              : null) },
-                        ]}
+                        columns={tableCols.columns}
                       />
                     </>
                   ),

@@ -9,6 +9,8 @@ import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentLink, { docKindOf, useOpenDocument } from '../components/DocumentLink';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
@@ -158,11 +160,97 @@ export default function ItemCard() {
     },
   });
 
+  const columns: ColumnsType<CardRow> = [
+    { title: 'التاريخ', dataIndex: 'date', ...dateColumn<CardRow>((r) => r.date),
+      render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
+    { title: 'نوع الحركة', dataIndex: 'movement_type',
+      ...textColumn(cardRows, (r: CardRow) => MOVEMENT_LABELS[r.movement_type] || r.movement_type),
+      render: (t: string, r) => (
+        <>
+          <Tag color={r.direction === 'in' ? 'green' : 'red'}>
+            {MOVEMENT_LABELS[t] || t}
+          </Tag>
+          {r.is_reversal && <Tag color="orange">عكسي</Tag>}
+        </>
+      ) },
+    { title: 'وارد', dataIndex: 'quantity_in', align: 'left',
+      ...numberColumn<CardRow>((r) => r.quantity_in),
+      render: (v: string) => (Number(v) ? (
+        <b style={{ color: '#6AB42D' }}>{qty(v)}</b>) : '-') },
+    { title: 'منصرف', dataIndex: 'quantity_out', align: 'left',
+      ...numberColumn<CardRow>((r) => r.quantity_out),
+      render: (v: string) => (Number(v) ? (
+        <b style={{ color: '#cf1322' }}>{qty(v)}</b>) : '-') },
+    { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
+      ...numberColumn<CardRow>((r) => r.balance_before),
+      render: (v: string) => <span style={{ color: '#8a8a8a' }}>{qty(v)}</span> },
+    { title: 'الرصيد بعد', dataIndex: 'balance_after', align: 'left',
+      ...numberColumn<CardRow>((r) => r.balance_after),
+      render: (v: string) => <b>{qty(v)}</b> },
+    { title: 'الموقع', dataIndex: 'location',
+      ...textColumn(cardRows, (r: CardRow) => r.location) },
+    // الوحده / القطعه. The card counts in pieces because that is how stock is kept; the
+    // line was TRADED in whatever unit the customer buys by. «منصرف ٤٨» against a
+    // document saying «٤ كراتين» is one fact told two ways with nothing connecting them.
+    { title: 'بالوحدة', dataIndex: 'quantity_in_unit', align: 'left', width: 120,
+      ...numberColumn<CardRow>((r) => r.quantity_in_unit),
+      render: (v: string | null, r: CardRow) => (v
+        ? <span>{qty(v)} <span style={{ color: '#8a8a8a' }}>{r.unit}</span></span>
+        // Empty when the trading unit IS the piece — repeating «٥ قطعة / ٥» on every
+        // loose-sold row is noise, not information.
+        : <span style={{ color: '#bbb' }}>-</span>) },
+    // Their card carries the party, the price and the total on every row. None of it was
+    // missing data — a sale line has always known all three — so «منصرف ٥» used to mean
+    // opening the sales screen to find out who took them and for how much.
+    { title: 'جهه التعامل', dataIndex: 'party', ellipsis: true,
+      ...textColumn(cardRows, (r: CardRow) => r.party),
+      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
+    { title: 'السعر', dataIndex: 'unit_price', align: 'left',
+      ...numberColumn<CardRow>((r) => r.unit_price),
+      render: (v: string | null) => (v ? money(v) : '-') },
+    { title: 'الاجمالي', dataIndex: 'line_total', align: 'left',
+      ...numberColumn<CardRow>((r) => r.line_total),
+      render: (v: string | null) => (v ? <b>{money(v)}</b> : '-') },
+    { title: 'خصم', dataIndex: 'discount_pct', align: 'left', width: 90,
+      ...numberColumn<CardRow>((r) => r.discount_pct),
+      render: (v: string | null) => (Number(v)
+        ? <Tag color="gold">{`${Number(v)}%`}</Tag>
+        : <span style={{ color: '#bbb' }}>-</span>) },
+    // The line's share of the document VAT — its share of the gross, which is the same
+    // proportional rule the return already uses to decide how much tax to refund.
+    { title: 'ض.م', dataIndex: 'tax_amount', align: 'left', width: 110,
+      ...numberColumn<CardRow>((r) => r.tax_amount),
+      render: (v: string | null) => (Number(v)
+        ? money(v) : <span style={{ color: '#bbb' }}>-</span>) },
+    // Which lot went out. FEFO chose it at the moment of sale; the card reads that back
+    // rather than leaving a recall to guess.
+    { title: 'انتهاء', dataIndex: 'expiry_date', width: 120,
+      ...dateColumn<CardRow>((r) => r.expiry_date),
+      render: (v: string | null) => (v
+        ? <Tag color={dayjs(v).isBefore(dayjs()) ? 'red' : 'orange'}>{v}</Tag>
+        : <span style={{ color: '#bbb' }}>-</span>) },
+    { title: 'المستند', dataIndex: 'source_doc_id',
+      ...textColumn(cardRows, (r: CardRow) => r.document_number),
+      // Reading a card is asking «الحركة دي جات منين؟» — so the row opens its document
+      // when it has one, and stays a plain tag when there is no screen to open.
+      render: (id: number | null, r) => (id
+        ? (docKindOf(r.source_doc_type)
+            ? <DocumentLink kind={docKindOf(r.source_doc_type)!} id={id} size="small"
+                label={r.document_number || `#${id}`}
+                allowEdit={r.source_doc_type === 'sale'} />
+            : <Tag>{r.source_doc_type} #{id}</Tag>)
+        : '-') },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('item-card', columns);
+
   return (
     <Card
       title="كارت الصنف"
       extra={(
         <>
+          {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv} style={{ marginInlineEnd: 8 }}
             disabled={!card?.rows.length}>تصدير CSV</Button>
           <Button icon={<ReloadOutlined />} onClick={load} disabled={!itemId}>تحديث</Button>
@@ -245,87 +333,7 @@ export default function ItemCard() {
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
             pagination={{ defaultPageSize: 25, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
-            columns={[
-              { title: 'التاريخ', dataIndex: 'date', ...dateColumn<CardRow>((r) => r.date),
-                render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
-              { title: 'نوع الحركة', dataIndex: 'movement_type',
-                ...textColumn(cardRows, (r: CardRow) => MOVEMENT_LABELS[r.movement_type] || r.movement_type),
-                render: (t: string, r) => (
-                  <>
-                    <Tag color={r.direction === 'in' ? 'green' : 'red'}>
-                      {MOVEMENT_LABELS[t] || t}
-                    </Tag>
-                    {r.is_reversal && <Tag color="orange">عكسي</Tag>}
-                  </>
-                ) },
-              { title: 'وارد', dataIndex: 'quantity_in', align: 'left',
-                ...numberColumn<CardRow>((r) => r.quantity_in),
-                render: (v: string) => (Number(v) ? (
-                  <b style={{ color: '#6AB42D' }}>{qty(v)}</b>) : '-') },
-              { title: 'منصرف', dataIndex: 'quantity_out', align: 'left',
-                ...numberColumn<CardRow>((r) => r.quantity_out),
-                render: (v: string) => (Number(v) ? (
-                  <b style={{ color: '#cf1322' }}>{qty(v)}</b>) : '-') },
-              { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
-                ...numberColumn<CardRow>((r) => r.balance_before),
-                render: (v: string) => <span style={{ color: '#8a8a8a' }}>{qty(v)}</span> },
-              { title: 'الرصيد بعد', dataIndex: 'balance_after', align: 'left',
-                ...numberColumn<CardRow>((r) => r.balance_after),
-                render: (v: string) => <b>{qty(v)}</b> },
-              { title: 'الموقع', dataIndex: 'location',
-                ...textColumn(cardRows, (r: CardRow) => r.location) },
-              // الوحده / القطعه. The card counts in pieces because that is how stock is kept; the
-              // line was TRADED in whatever unit the customer buys by. «منصرف ٤٨» against a
-              // document saying «٤ كراتين» is one fact told two ways with nothing connecting them.
-              { title: 'بالوحدة', dataIndex: 'quantity_in_unit', align: 'left', width: 120,
-                ...numberColumn<CardRow>((r) => r.quantity_in_unit),
-                render: (v: string | null, r: CardRow) => (v
-                  ? <span>{qty(v)} <span style={{ color: '#8a8a8a' }}>{r.unit}</span></span>
-                  // Empty when the trading unit IS the piece — repeating «٥ قطعة / ٥» on every
-                  // loose-sold row is noise, not information.
-                  : <span style={{ color: '#bbb' }}>-</span>) },
-              // Their card carries the party, the price and the total on every row. None of it was
-              // missing data — a sale line has always known all three — so «منصرف ٥» used to mean
-              // opening the sales screen to find out who took them and for how much.
-              { title: 'جهه التعامل', dataIndex: 'party', ellipsis: true,
-                ...textColumn(cardRows, (r: CardRow) => r.party),
-                render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
-              { title: 'السعر', dataIndex: 'unit_price', align: 'left',
-                ...numberColumn<CardRow>((r) => r.unit_price),
-                render: (v: string | null) => (v ? money(v) : '-') },
-              { title: 'الاجمالي', dataIndex: 'line_total', align: 'left',
-                ...numberColumn<CardRow>((r) => r.line_total),
-                render: (v: string | null) => (v ? <b>{money(v)}</b> : '-') },
-              { title: 'خصم', dataIndex: 'discount_pct', align: 'left', width: 90,
-                ...numberColumn<CardRow>((r) => r.discount_pct),
-                render: (v: string | null) => (Number(v)
-                  ? <Tag color="gold">{`${Number(v)}%`}</Tag>
-                  : <span style={{ color: '#bbb' }}>-</span>) },
-              // The line's share of the document VAT — its share of the gross, which is the same
-              // proportional rule the return already uses to decide how much tax to refund.
-              { title: 'ض.م', dataIndex: 'tax_amount', align: 'left', width: 110,
-                ...numberColumn<CardRow>((r) => r.tax_amount),
-                render: (v: string | null) => (Number(v)
-                  ? money(v) : <span style={{ color: '#bbb' }}>-</span>) },
-              // Which lot went out. FEFO chose it at the moment of sale; the card reads that back
-              // rather than leaving a recall to guess.
-              { title: 'انتهاء', dataIndex: 'expiry_date', width: 120,
-                ...dateColumn<CardRow>((r) => r.expiry_date),
-                render: (v: string | null) => (v
-                  ? <Tag color={dayjs(v).isBefore(dayjs()) ? 'red' : 'orange'}>{v}</Tag>
-                  : <span style={{ color: '#bbb' }}>-</span>) },
-              { title: 'المستند', dataIndex: 'source_doc_id',
-                ...textColumn(cardRows, (r: CardRow) => r.document_number),
-                // Reading a card is asking «الحركة دي جات منين؟» — so the row opens its document
-                // when it has one, and stays a plain tag when there is no screen to open.
-                render: (id: number | null, r) => (id
-                  ? (docKindOf(r.source_doc_type)
-                      ? <DocumentLink kind={docKindOf(r.source_doc_type)!} id={id} size="small"
-                          label={r.document_number || `#${id}`}
-                          allowEdit={r.source_doc_type === 'sale'} />
-                      : <Tag>{r.source_doc_type} #{id}</Tag>)
-                  : '-') },
-            ]}
+            columns={tableCols.columns}
           />
         </>
       )}

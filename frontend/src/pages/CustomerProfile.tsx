@@ -18,6 +18,7 @@ import DocumentLink from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import { useOpenDocument } from '../components/DocumentLink';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
@@ -238,6 +239,26 @@ export default function CustomerProfile() {
     style: { cursor: 'pointer' },
   });
 
+  const columns = [
+    { title: 'التاريخ', dataIndex: 'entry_date', key: 'd',
+      render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
+    { title: 'النوع', dataIndex: 'entry_type', key: 't',
+      render: (t: string) => entryTypeLabel(t) },
+    { title: 'البيان', dataIndex: 'description', key: 'desc' },
+    { title: 'الرصيد قبل', dataIndex: 'balance_before', key: 'bb',
+      render: (v: string) => (
+        <span style={{ color: '#8a8a8a' }}>{money(v)}</span>) },
+    { title: 'مدين', dataIndex: 'debit', key: 'dr',
+      render: (v: string) => money(v) },
+    { title: 'دائن', dataIndex: 'credit', key: 'cr',
+      render: (v: string) => money(v) },
+    { title: 'الرصيد بعد', dataIndex: 'balance', key: 'bal',
+      render: (v: string) => <b>{money(v)}</b> },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('customer-ledger', columns);
+
   return (
     <div>
       <Card
@@ -253,6 +274,7 @@ export default function CustomerProfile() {
         }
         extra={
           <Space>
+            {tableCols.control}
             <Button type="primary" icon={<EditOutlined />} onClick={() => setEditOpen(true)}>
               تعديل البيانات
             </Button>
@@ -464,22 +486,7 @@ export default function CustomerProfile() {
                             dataSource={stmtFilter.filtered} onRow={rowProps('entry')}
                             pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                             scroll={{ x: true }}
-                            columns={[
-                              { title: 'التاريخ', dataIndex: 'entry_date', key: 'd',
-                                render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
-                              { title: 'النوع', dataIndex: 'entry_type', key: 't',
-                                render: (t: string) => entryTypeLabel(t) },
-                              { title: 'البيان', dataIndex: 'description', key: 'desc' },
-                              { title: 'الرصيد قبل', dataIndex: 'balance_before', key: 'bb',
-                                render: (v: string) => (
-                                  <span style={{ color: '#8a8a8a' }}>{money(v)}</span>) },
-                              { title: 'مدين', dataIndex: 'debit', key: 'dr',
-                                render: (v: string) => money(v) },
-                              { title: 'دائن', dataIndex: 'credit', key: 'cr',
-                                render: (v: string) => money(v) },
-                              { title: 'الرصيد بعد', dataIndex: 'balance', key: 'bal',
-                                render: (v: string) => <b>{money(v)}</b> },
-                            ]}
+                            columns={tableCols.columns}
                           />
                         </>
                       )}

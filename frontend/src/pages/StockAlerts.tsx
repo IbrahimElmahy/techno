@@ -11,6 +11,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 import { useNavigate } from 'react-router-dom';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
@@ -150,6 +151,46 @@ export default function StockAlerts() {
     onOpen: (r) => { if (r.document_type === 'sales_invoice') openDoc('invoice', r.document_id); },
   });
 
+  const columns = [
+    { title: 'الكود', dataIndex: 'code', ...textColumn(reorder, (r: ReorderRow) => r.code),
+      render: (c: string) => <Tag>{c}</Tag> },
+    { title: 'الصنف', dataIndex: 'name', ...textColumn(reorder, (r: ReorderRow) => r.name),
+      render: (n: string) => <b>{n}</b> },
+    { title: 'الرصيد الحالي', dataIndex: 'on_hand',
+      ...numberColumn<ReorderRow>((r) => r.on_hand),
+      render: (v: string, r: ReorderRow) => (
+        <span style={{ fontWeight: 600,
+          color: r.flag === 'below_min' ? '#cf1322' : '#F5A11D' }}>
+          {qty(v)} {r.unit_of_measure || ''}
+        </span>
+      ) },
+    { title: 'الحد الأدنى', dataIndex: 'min_stock',
+      ...numberColumn<ReorderRow>((r) => r.min_stock),
+      render: (v: string) => (v ? qty(v) : '-') },
+    { title: 'الحد الأقصى', dataIndex: 'max_stock',
+      ...numberColumn<ReorderRow>((r) => r.max_stock),
+      render: (v: string) => (v ? qty(v) : '-') },
+    { title: 'المطلوب شراؤه', dataIndex: 'shortfall',
+      ...numberColumn<ReorderRow>((r) => r.shortfall),
+      render: (v: string | null) => (v
+        ? <b style={{ color: '#cf1322' }}>{qty(v)}</b> : '-') },
+    { title: 'الزائد', dataIndex: 'excess',
+      ...numberColumn<ReorderRow>((r) => r.excess),
+      render: (v: string | null) => (v
+        ? <b style={{ color: '#F5A11D' }}>{qty(v)}</b> : '-') },
+    { title: 'الحالة', dataIndex: 'flag',
+      ...choiceColumn<ReorderRow>(
+        [{ text: 'تحت الأدنى', value: 'below_min' },
+         { text: 'فوق الأقصى', value: 'above_max' }],
+        (r, v) => r.flag === v),
+      render: (f: string) => (f === 'below_min'
+        ? <Tag color="red">تحت الأدنى</Tag>
+        : <Tag color="orange">فوق الأقصى</Tag>) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('stock-alerts', columns);
+
   return (
     <Tabs
       activeKey={tab} onChange={setTab}
@@ -197,42 +238,7 @@ export default function StockAlerts() {
                 dataSource={reorderFilter.filtered}
                 locale={{ emptyText: 'كل الأصناف داخل حدودها' }}
                 pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-                columns={[
-                  { title: 'الكود', dataIndex: 'code', ...textColumn(reorder, (r: ReorderRow) => r.code),
-                    render: (c: string) => <Tag>{c}</Tag> },
-                  { title: 'الصنف', dataIndex: 'name', ...textColumn(reorder, (r: ReorderRow) => r.name),
-                    render: (n: string) => <b>{n}</b> },
-                  { title: 'الرصيد الحالي', dataIndex: 'on_hand',
-                    ...numberColumn<ReorderRow>((r) => r.on_hand),
-                    render: (v: string, r: ReorderRow) => (
-                      <span style={{ fontWeight: 600,
-                        color: r.flag === 'below_min' ? '#cf1322' : '#F5A11D' }}>
-                        {qty(v)} {r.unit_of_measure || ''}
-                      </span>
-                    ) },
-                  { title: 'الحد الأدنى', dataIndex: 'min_stock',
-                    ...numberColumn<ReorderRow>((r) => r.min_stock),
-                    render: (v: string) => (v ? qty(v) : '-') },
-                  { title: 'الحد الأقصى', dataIndex: 'max_stock',
-                    ...numberColumn<ReorderRow>((r) => r.max_stock),
-                    render: (v: string) => (v ? qty(v) : '-') },
-                  { title: 'المطلوب شراؤه', dataIndex: 'shortfall',
-                    ...numberColumn<ReorderRow>((r) => r.shortfall),
-                    render: (v: string | null) => (v
-                      ? <b style={{ color: '#cf1322' }}>{qty(v)}</b> : '-') },
-                  { title: 'الزائد', dataIndex: 'excess',
-                    ...numberColumn<ReorderRow>((r) => r.excess),
-                    render: (v: string | null) => (v
-                      ? <b style={{ color: '#F5A11D' }}>{qty(v)}</b> : '-') },
-                  { title: 'الحالة', dataIndex: 'flag',
-                    ...choiceColumn<ReorderRow>(
-                      [{ text: 'تحت الأدنى', value: 'below_min' },
-                       { text: 'فوق الأقصى', value: 'above_max' }],
-                      (r, v) => r.flag === v),
-                    render: (f: string) => (f === 'below_min'
-                      ? <Tag color="red">تحت الأدنى</Tag>
-                      : <Tag color="orange">فوق الأقصى</Tag>) },
-                ]}
+                columns={tableCols.columns}
               />
             </Card>
           ),
@@ -313,6 +319,7 @@ export default function StockAlerts() {
                 : 'حركات التشغيلات'}
               extra={(
                 <Space>
+                  {tableCols.control}
                   {tracedLot && <Button onClick={() => setTracedLot(null)}>عرض الكل</Button>}
                   <Button icon={<ReloadOutlined />} onClick={loadMoves}>تحديث</Button>
                 </Space>

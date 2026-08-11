@@ -8,6 +8,8 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * الأصول الثابتة والإهلاك — an asset is paid for once and consumed over years, so its cost
@@ -192,6 +194,37 @@ export default function FixedAssets() {
    */
   const docOpen = creating || !!detail;
 
+  const columns: ColumnsType<Asset> = [
+    // Their eight, in their order: `رقم · تاريخ البداية · الاسم · الفرع · فترة الاهلاك ·
+    // نسبه الاهلاك · التكلفه · وصف`. Ours moved into the expanded row.
+    { title: 'رقم', dataIndex: 'code', width: 110, render: (v: string) => <Tag>{v}</Tag> },
+    { title: 'تاريخ البداية', dataIndex: 'acquisition_date', width: 120,
+      render: (d: string) => String(d).slice(0, 10) },
+    { title: 'الاسم', dataIndex: 'name', ellipsis: true,
+      render: (v: string, r: Asset) => (
+        <Space size={4}>
+          <b>{v}</b>
+          {r.status !== 'active' && <Tag>متصرّف فيه</Tag>}
+        </Space>
+      ) },
+    { title: 'الفرع', dataIndex: 'branch_id', ellipsis: true,
+      render: (id: number | null) => branches.find((b) => b.id === id)?.name || '-' },
+    { title: 'فترة الاهلاك', dataIndex: 'useful_life_months', width: 110,
+      render: (m: number) => `${m} شهر` },
+    // Derived, not stored. Their form asks for the rate AND the period, which lets the two
+    // contradict each other; one is the other, so we keep the period and show the rate.
+    { title: 'نسبه الاهلاك', key: 'rate', width: 110,
+      render: (_: any, r: Asset) => (r.useful_life_months
+        ? `${(1200 / r.useful_life_months).toFixed(2)}%` : '-') },
+    { title: 'التكلفه', dataIndex: 'cost', align: 'left', width: 130,
+      render: (v: string) => money(v) },
+    { title: 'وصف', dataIndex: 'notes', ellipsis: true,
+      render: (v: string | null) => v || '-' },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('fixed-assets', columns);
+
   return (
     <>
     {!docOpen && (
@@ -199,6 +232,7 @@ export default function FixedAssets() {
       title="الاصول الثابتة"
       extra={(
         <Space>
+          {tableCols.control}
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
             onClick={() => setCreating(true)}>أصل جديد</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
@@ -261,33 +295,7 @@ export default function FixedAssets() {
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         tableLayout="fixed"
         expandable={{ expandedRowRender: expandedRow }}
-        columns={[
-          // Their eight, in their order: `رقم · تاريخ البداية · الاسم · الفرع · فترة الاهلاك ·
-          // نسبه الاهلاك · التكلفه · وصف`. Ours moved into the expanded row.
-          { title: 'رقم', dataIndex: 'code', width: 110, render: (v: string) => <Tag>{v}</Tag> },
-          { title: 'تاريخ البداية', dataIndex: 'acquisition_date', width: 120,
-            render: (d: string) => String(d).slice(0, 10) },
-          { title: 'الاسم', dataIndex: 'name', ellipsis: true,
-            render: (v: string, r: Asset) => (
-              <Space size={4}>
-                <b>{v}</b>
-                {r.status !== 'active' && <Tag>متصرّف فيه</Tag>}
-              </Space>
-            ) },
-          { title: 'الفرع', dataIndex: 'branch_id', ellipsis: true,
-            render: (id: number | null) => branches.find((b) => b.id === id)?.name || '-' },
-          { title: 'فترة الاهلاك', dataIndex: 'useful_life_months', width: 110,
-            render: (m: number) => `${m} شهر` },
-          // Derived, not stored. Their form asks for the rate AND the period, which lets the two
-          // contradict each other; one is the other, so we keep the period and show the rate.
-          { title: 'نسبه الاهلاك', key: 'rate', width: 110,
-            render: (_: any, r: Asset) => (r.useful_life_months
-              ? `${(1200 / r.useful_life_months).toFixed(2)}%` : '-') },
-          { title: 'التكلفه', dataIndex: 'cost', align: 'left', width: 130,
-            render: (v: string) => money(v) },
-          { title: 'وصف', dataIndex: 'notes', ellipsis: true,
-            render: (v: string | null) => v || '-' },
-        ]}
+        columns={tableCols.columns}
       />
     </Card>
     )}
