@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -12,11 +13,15 @@ class LocalDb {
 
   Future<Database> get db async {
     if (_db != null) return _db!;
+    // A bare filename is a RELATIVE path, and on a phone the working directory is not somewhere
+    // the app may write — so this fallback turned «I could not find the databases directory» into
+    // «unable to open database file (code 14)», which points at the file and not at the reason.
+    // Kept for desktop and tests, where a relative path does work, and it says so when it happens.
     String path;
     try {
-      final dbPath = await getDatabasesPath();
-      path = p.join(dbPath, 'techno_inspections.db');
-    } catch (_) {
+      path = p.join(await getDatabasesPath(), 'techno_inspections.db');
+    } catch (e) {
+      debugPrint('getDatabasesPath() فشل ($e) — هنجرب مسار نسبي، وده مابيشتغلش على الموبايل');
       path = 'techno_inspections.db';
     }
     _db = await openDatabase(path, version: 6, onUpgrade: (d, from, to) async {

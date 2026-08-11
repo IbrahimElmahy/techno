@@ -12,15 +12,34 @@ import 'theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  _useTheRightDatabaseForThisPlatform();
+  runApp(const TechnoInspectionsApp());
+}
+
+/// أنهي محرّك قاعدة بيانات يشتغل على الجهاز ده.
+///
+/// **The phone must keep the sqflite PLUGIN.** `databaseFactoryFfi` is the desktop engine: it opens
+/// a file by path itself instead of going through the Android plugin, and on a phone that path is
+/// not somewhere the app may write. What the rep saw was the login screen refusing with
+/// «unable to open database file (code 14)» — the app could not open its own storage, so it could
+/// do nothing at all.
+///
+/// It was set for every non-web platform at once, wrapped in a `catch (_) {}` that threw the
+/// evidence away, so the phone silently got the desktop engine and nothing said so until an APK was
+/// on a device.
+void _useTheRightDatabaseForThisPlatform() {
   if (kIsWeb) {
     databaseFactory = databaseFactoryFfiWeb;
-  } else {
-    try {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    } catch (_) {}
+    return;
   }
-  runApp(const TechnoInspectionsApp());
+  // Desktop has no sqflite plugin, so it genuinely needs the FFI engine.
+  const desktop = {TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS};
+  if (desktop.contains(defaultTargetPlatform)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+  // Android and iOS fall through on purpose: the plugin registers its own factory, and replacing
+  // it is what broke them.
 }
 
 class TechnoInspectionsApp extends StatelessWidget {
