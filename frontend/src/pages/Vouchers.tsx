@@ -17,6 +17,7 @@ import PartyField from '../components/PartyField';
 import { entryTypeLabel } from '../components/labels';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import { printDocument } from '../print/brand';
@@ -580,6 +581,10 @@ const Vouchers: React.FC = () => {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه. مفتاح واحد لكل
+  // تبويبات السندات، لأنها كلها بتعرض نفس الأعمدة: ترتّبها مرة تمشي عليهم كلهم.
+  const voucherCols = useTableColumns('vouchers', voucherColumns);
+
   const totals = {
     receipts: vouchers.filter((v) => v.kind === 'receipt' && !v.is_reversal)
       .reduce((s, v) => s + Number(v.amount), 0),
@@ -649,10 +654,13 @@ const Vouchers: React.FC = () => {
             children: (
               <Card title="تحصيل من عميل"
                 extra={(
+                  <Space>
+                  {voucherCols.control}
                   <Button type="primary" icon={<PlusOutlined />}
                     onClick={() => { setReceiptTarget(''); openVoucher(receiptForm, setReceiptOpen); }}>
                     سند قبض جديد
                   </Button>
+                  </Space>
                 )}>
                 {/* السندات اللي اتعملت — the thing this screen is opened for most days. A tab whose
                     whole body was a creation form answered «اعمل سند» and nothing else. */}
@@ -660,7 +668,7 @@ const Vouchers: React.FC = () => {
                   {...receiptKb.tableProps}
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('receipt')}
-                  columns={voucherColumns}
+                  columns={voucherCols.columns}
                   locale={{ emptyText: 'مفيش سندات قبض' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
@@ -682,7 +690,7 @@ const Vouchers: React.FC = () => {
                   {...paymentKb.tableProps}
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('payment')}
-                  columns={voucherColumns}
+                  columns={voucherCols.columns}
                   locale={{ emptyText: 'مفيش سندات صرف' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
@@ -704,7 +712,7 @@ const Vouchers: React.FC = () => {
                   {...handoverKb.tableProps}
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('rep_handover')}
-                  columns={voucherColumns}
+                  columns={voucherCols.columns}
                   locale={{ emptyText: 'مفيش سندات توريد' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
@@ -726,7 +734,7 @@ const Vouchers: React.FC = () => {
                   {...expenseKb.tableProps}
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('expense')}
-                  columns={voucherColumns}
+                  columns={voucherCols.columns}
                   locale={{ emptyText: 'مفيش مصروفات' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
@@ -757,7 +765,7 @@ const Vouchers: React.FC = () => {
                   {...transferKb.tableProps}
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('cash_transfer')}
-                  columns={voucherColumns}
+                  columns={voucherCols.columns}
                   locale={{ emptyText: 'مفيش تحويلات' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
@@ -1134,7 +1142,7 @@ const Vouchers: React.FC = () => {
           rowKey="id"
           loading={loading}
           dataSource={shownVouchers}
-          columns={voucherColumns}
+          columns={voucherCols.columns}
           pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
           size="small"
         />

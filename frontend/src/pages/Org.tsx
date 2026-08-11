@@ -5,6 +5,7 @@ import {
 import { PlusOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import { useTableKeyboard } from '../components/keyboard';
 import { useQueryTab } from '../components/useQueryTab';
 import { useAuth } from '../components/AuthProvider';
@@ -290,6 +291,9 @@ export default function Org() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const branchCols = useTableColumns('org-branches', branchColumns);
+
   const warehouseColumns = [
     { title: 'كود المستودع', dataIndex: 'id', key: 'id' },
     { title: 'اسم المستودع', dataIndex: 'name', key: 'name' },
@@ -333,6 +337,9 @@ export default function Org() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const whCols = useTableColumns('org-warehouses', warehouseColumns);
+
   const governorateColumns = [
     { title: 'كود المحافظة', dataIndex: 'id', key: 'id' },
     { title: 'اسم المحافظة', dataIndex: 'name', key: 'name' },
@@ -348,6 +355,9 @@ export default function Org() {
       ),
     },
   ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const govCols = useTableColumns('org-governorates', governorateColumns);
 
   const custodyColumns = [
     { title: 'رقم العهدة', dataIndex: 'id', key: 'id' },
@@ -388,6 +398,9 @@ export default function Org() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const custodyCols = useTableColumns('org-custodies', custodyColumns);
+
   const tabItems = [
     {
       key: 'governorates',
@@ -402,7 +415,8 @@ export default function Org() {
             onReset={govFilter.reset}
             total={governorates.length} shown={govFilter.filtered.length}
           />
-          <Table {...govKb.tableProps} dataSource={govFilter.filtered} columns={governorateColumns}
+          <div style={{ textAlign: 'end', marginBottom: 8 }}>{govCols.control}</div>
+          <Table {...govKb.tableProps} dataSource={govFilter.filtered} columns={govCols.columns}
             rowKey="id" loading={loading} />
         </>
       ),
@@ -427,7 +441,8 @@ export default function Org() {
                 options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
             ]}
           />
-          <Table {...branchKb.tableProps} dataSource={branchFilter.filtered} columns={branchColumns}
+          <div style={{ textAlign: 'end', marginBottom: 8 }}>{branchCols.control}</div>
+          <Table {...branchKb.tableProps} dataSource={branchFilter.filtered} columns={branchCols.columns}
             rowKey="id" loading={loading} />
         </>
       ),
@@ -452,7 +467,8 @@ export default function Org() {
                 options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
             ]}
           />
-          <Table {...warehouseKb.tableProps} dataSource={warehouseFilter.filtered} columns={warehouseColumns}
+          <div style={{ textAlign: 'end', marginBottom: 8 }}>{whCols.control}</div>
+          <Table {...warehouseKb.tableProps} dataSource={warehouseFilter.filtered} columns={whCols.columns}
             rowKey="id" loading={loading} />
         </>
       ),
@@ -476,7 +492,8 @@ export default function Org() {
                 options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطل' }] },
             ]}
           />
-          <Table {...custodyKb.tableProps} dataSource={custodyFilter.filtered} columns={custodyColumns}
+          <div style={{ textAlign: 'end', marginBottom: 8 }}>{custodyCols.control}</div>
+          <Table {...custodyKb.tableProps} dataSource={custodyFilter.filtered} columns={custodyCols.columns}
             rowKey="id" loading={loading} />
         </>
       ),

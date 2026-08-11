@@ -5,6 +5,7 @@ import {
 import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
@@ -354,6 +355,9 @@ export default function Loyalty() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const typeCols = useTableColumns('loyalty-coupon-types', typeColumns);
+
   const couponColumns = [
     { title: 'الرقم التسلسلي الكوبون', dataIndex: 'serial', key: 'serial',
       ...textColumn(coupons, (r: any) => r.serial),
@@ -427,6 +431,9 @@ export default function Loyalty() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const couponCols = useTableColumns('loyalty-coupons', couponColumns);
+
   const items = [
     {
       key: 'settings',
@@ -451,7 +458,8 @@ export default function Loyalty() {
                 options: [{ value: 'active', label: 'متاح للتحويل' }, { value: 'inactive', label: 'موقف' }] },
             ]}
           />
-          <Table {...typeKb.tableProps} dataSource={typeFilter.filtered} columns={typeColumns}
+          <div style={{ textAlign: 'end', marginBottom: 8 }}>{typeCols.control}</div>
+          <Table {...typeKb.tableProps} dataSource={typeFilter.filtered} columns={typeCols.columns}
             rowKey="id" loading={loading} pagination={false} />
         </div>
       ),
@@ -479,7 +487,8 @@ export default function Loyalty() {
                 options: customers.map((c) => ({ value: c.id, label: c.name })) },
             ]}
           />
-          <Table {...couponKb.tableProps} dataSource={couponFilter.filtered} columns={couponColumns}
+          <div style={{ textAlign: 'end', marginBottom: 8 }}>{couponCols.control}</div>
+          <Table {...couponKb.tableProps} dataSource={couponFilter.filtered} columns={couponCols.columns}
             rowKey="id" loading={loading} />
         </div>
       ),

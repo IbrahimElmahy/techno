@@ -12,6 +12,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
+import { useTableColumns } from '../components/ColumnSettings';
 
 const { RangePicker } = DatePicker;
 
@@ -237,6 +238,9 @@ function InventoryTab({ warehouses, items }: TabProps) {
     { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const inventoryTabCols = useTableColumns('rep-inventory', columns);
+
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
@@ -252,8 +256,9 @@ function InventoryTab({ warehouses, items }: TabProps) {
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
       </Space>
 
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{inventoryTabCols.control}</div>
       <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-        dataSource={rows} columns={columns}
+        dataSource={rows} columns={inventoryTabCols.columns}
         summary={(data) => {
           const total = data.reduce((s, r) => s + Number(r.value ?? 0), 0);
           return (
@@ -317,6 +322,9 @@ function WastageTab({ range, warehouses, items }: TabProps) {
     { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', ...dateColumn<any>((r) => r.created_at), render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const wastageTabCols = useTableColumns('rep-wastage', columns);
+
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
@@ -341,8 +349,9 @@ function WastageTab({ range, warehouses, items }: TabProps) {
         </Col>
       </Row>
 
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{wastageTabCols.control}</div>
       <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-        dataSource={rows} columns={columns}
+        dataSource={rows} columns={wastageTabCols.columns}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
   );
@@ -390,6 +399,9 @@ function StagnantTab({ warehouses }: TabProps) {
     { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const stagnantTabCols = useTableColumns('rep-stagnant', columns);
+
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
@@ -403,8 +415,9 @@ function StagnantTab({ warehouses }: TabProps) {
         {asOf && <Tag color="default">حتى تاريخ: {dayjs(asOf).format('YYYY-MM-DD')}</Tag>}
       </Space>
 
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{stagnantTabCols.control}</div>
       <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-        dataSource={rows} columns={columns}
+        dataSource={rows} columns={stagnantTabCols.columns}
         rowClassName={(r) => (r.last_out_date === null ? 'stagnant-never-moved' : '')}
         onRow={(r) => (r.last_out_date === null ? { style: { background: '#fff1f0' } } : {})}
         summary={(data) => {

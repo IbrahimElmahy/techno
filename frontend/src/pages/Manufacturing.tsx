@@ -14,6 +14,7 @@ import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 interface Warehouse { id: number; name: string; }
 interface Item {
@@ -295,6 +296,9 @@ function OrdersTab({
         ) },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const ordersTabCols = useTableColumns('mfg-orders', columns);
+
   return (
     <div>
       <div style={{ marginBottom: 16, textAlign: 'left' }}>
@@ -332,9 +336,10 @@ function OrdersTab({
         ]}
       />
 
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{ordersTabCols.control}</div>
       <Table
         {...ordersKb.tableProps}
-        rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
+        rowKey="id" loading={loading} dataSource={filter.filtered} columns={ordersTabCols.columns}
         expandable={{
           expandedRowKeys: expanded,
           onExpandedRowsChange: (keys) => setExpanded(keys as number[]),
@@ -590,6 +595,9 @@ function RecipesTab({
       ) },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const recipesTabCols = useTableColumns('mfg-recipes', columns);
+
   return (
     <div>
       <div style={{ marginBottom: 16, textAlign: 'left' }}>
@@ -612,8 +620,9 @@ function RecipesTab({
         ]}
       />
 
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{recipesTabCols.control}</div>
       <Table {...bomsKb.tableProps}
-        rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
+        rowKey="id" loading={loading} dataSource={filter.filtered} columns={recipesTabCols.columns}
         locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
 
       <TabModal centered
@@ -821,6 +830,9 @@ function WastageTab({
         ) },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const wastageTabCols = useTableColumns('mfg-wastage', columns);
+
   return (
     <div>
       <div style={{ marginBottom: 16, textAlign: 'left' }}>
@@ -845,8 +857,9 @@ function WastageTab({
         ]}
       />
 
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{wastageTabCols.control}</div>
       <Table {...wastageKb.tableProps}
-        rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
+        rowKey="id" loading={loading} dataSource={filter.filtered} columns={wastageTabCols.columns}
         locale={{ emptyText: 'لا يوجد مستندات هالك بعد' }} />
 
       <TabModal centered

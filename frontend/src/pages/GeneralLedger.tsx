@@ -20,6 +20,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 // --- Types --------------------------------------------------------------------------------
 interface Account {
@@ -185,6 +186,9 @@ function ChartTab() {
       render: (b: string) => <strong>{egp(b)}</strong> },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const chartTabCols = useTableColumns('gl-chart', columns);
+
   // الحساب في الشجرة بيفتح كشف حسابه. اللي بيبص على شجرة الحسابات بيدوّر على حساب عشان يشوف
   // حركته — والشجرة كانت بتوقف عند الاسم.
   const chartKb = useTableKeyboard<any>({
@@ -219,12 +223,13 @@ function ChartTab() {
             options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'معطّل' }] },
         ]}
       />
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{chartTabCols.control}</div>
       <Table
         {...chartKb.tableProps}
         rowKey="id"
         loading={loading}
         dataSource={filter.filtered}
-        columns={columns}
+        columns={chartTabCols.columns}
         pagination={false}
         expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }}
       />
@@ -449,6 +454,9 @@ function JournalTab() {
         ) : <Tag color="red">معكوس</Tag> },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const journalTabCols = useTableColumns('gl-journal', columns);
+
   // القيد بيفتح كشف حساب أول سطر فيه — القيد بسطوره ظاهر في الجدول نفسه، واللي بعده هو
   // «الحساب ده رصيده بقى كام».
   const entryKb = useTableKeyboard<any>({
@@ -481,7 +489,8 @@ function JournalTab() {
             options: [{ value: 0, label: 'عام' }, ...branches.map((b) => ({ value: b.id, label: b.name }))] },
         ]}
       />
-      <Table {...entryKb.tableProps} rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+      <div style={{ textAlign: 'end', marginBottom: 8 }}>{journalTabCols.control}</div>
+      <Table {...entryKb.tableProps} rowKey="id" loading={loading} dataSource={filter.filtered} columns={journalTabCols.columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
 
       {/* New journal drawer */}
       <TabModal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
@@ -684,6 +693,9 @@ function TrialBalanceTab() {
       render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const trialBalanceTabCols = useTableColumns('gl-trial-balance', columns);
+
   // ميزان المراجعة → كشف الحساب: النزول من الرقم المجمّع للحركات اللي عملته. الجداول التلاتة
   // (مقسّم بالطبيعة، وبدون تصنيف، والمسطّح) بتتشارك المؤشر لأن `account_id` مايتكررش بينهم،
   // وواحد بس منهم بيتعرض في المرة.
@@ -709,6 +721,7 @@ function TrialBalanceTab() {
           <Radio.Button value={false}>ميزان مسطّح</Radio.Button>
         </Radio.Group>
         <Button type="primary" icon={<ReloadOutlined />} onClick={run} loading={loading}>عرض</Button>
+        {trialBalanceTabCols.control}
       </Space>
 
       {data && grouped ? (
@@ -720,7 +733,7 @@ function TrialBalanceTab() {
             return (
               <Table
                 {...trialKb.tableProps}
-                key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={columns}
+                key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={trialBalanceTabCols.columns}
                 loading={loading} pagination={false} size="small"
                 style={{ marginBottom: 18 }}
                 title={() => <strong>{label}</strong>}
@@ -743,7 +756,7 @@ function TrialBalanceTab() {
           {shownRows.some((r) => !r.nature) && (
             <Table
               {...trialKb.tableProps}
-              rowKey="account_id" columns={columns} pagination={false} size="small"
+              rowKey="account_id" columns={trialBalanceTabCols.columns} pagination={false} size="small"
               dataSource={shownRows.filter((r) => !r.nature)}
               title={() => <strong style={{ color: '#d46b08' }}>بدون تصنيف</strong>}
             />
@@ -755,7 +768,7 @@ function TrialBalanceTab() {
         </>
       ) : data ? (
         <>
-          <Table {...trialKb.tableProps} rowKey="account_id" dataSource={shownRows} columns={columns} loading={loading}
+          <Table {...trialKb.tableProps} rowKey="account_id" dataSource={shownRows} columns={trialBalanceTabCols.columns} loading={loading}
             pagination={false} size="small"
             summary={() => (
               <Table.Summary fixed>

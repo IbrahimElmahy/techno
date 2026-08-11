@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import { useSectionParam } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
@@ -289,14 +290,22 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('settings-lookups', columns);
+
   return (
     <Card
       size="small"
       title={<span>{meta.label} {meta.system && <Tag icon={<LockOutlined />} color="gold">مقيّدة</Tag>}</span>}
-      extra={!meta.system && (
-        <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-          إضافة خيار
-        </Button>
+      extra={(
+        <Space>
+        {tableCols.control}
+        {!meta.system && (
+          <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
+            إضافة خيار
+          </Button>
+        )}
+        </Space>
       )}
     >
       <ListToolbar
@@ -313,7 +322,7 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
             options: [{ value: 'visible', label: 'ظاهر' }, { value: 'hidden', label: 'مخفي' }] },
         ]}
       />
-      <Table size="small" rowKey="id" loading={loading} dataSource={filter.filtered} columns={columns}
+      <Table size="small" rowKey="id" loading={loading} dataSource={filter.filtered} columns={tableCols.columns}
         pagination={false} />
 
       <TabModal title={`إضافة خيار إلى: ${meta.label}`} open={addOpen} onCancel={() => setAddOpen(false)}
