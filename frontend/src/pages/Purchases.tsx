@@ -10,6 +10,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import ItemStockPanel from '../components/ItemStockPanel';
 import TotalsLadder from '../components/TotalsLadder';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
@@ -871,8 +872,11 @@ export default function Purchases() {
     },
   ];
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const listCols = useTableColumns('purchase-list', listColumns);
+
   const listContent = (
-    <Card title="سجل المشتريات">
+    <Card title="سجل المشتريات" extra={listCols.control}>
       <ListToolbar
         searchPlaceholder="بحث برقم المستند أو اسم المورد"
         query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}
@@ -888,7 +892,7 @@ export default function Purchases() {
       <Table
         {...listKb.tableProps}
         dataSource={purchasesFilter.filtered}
-        columns={listColumns}
+        columns={listCols.columns}
         rowKey="id"
         loading={listLoading}
         pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}

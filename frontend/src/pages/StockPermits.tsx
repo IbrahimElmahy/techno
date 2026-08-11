@@ -15,6 +15,8 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
 import { TabModal } from '../components/TabModal';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
@@ -520,6 +522,30 @@ export default function StockPermits() {
     </>
   );
 
+  const columns: ColumnsType<Permit> = [
+    { title: 'رقم الإذن', dataIndex: 'document_number',
+      render: (v: string) => <Tag>{v}</Tag> },
+    { title: 'النوع', dataIndex: 'kind',
+      render: (k: Kind, r) => (
+        <>
+          <Tag color={KIND_COLOR[k]}>{KIND_LABEL[k] || k}</Tag>
+          {r.is_reversal && <Tag color="orange">عكسي</Tag>}
+          {r.reversed_by && <Tag color="default">اتعكس</Tag>}
+        </>
+      ) },
+    { title: 'التاريخ', dataIndex: 'permit_date',
+      render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
+    { title: 'المخزن', dataIndex: 'warehouse_name' },
+    { title: 'عدد الأصناف', dataIndex: 'lines',
+      render: (l: PermitLine[]) => l.length },
+    { title: 'السبب', dataIndex: 'reason', render: (v: string) => v || '-' },
+    { title: 'التكلفة', dataIndex: 'total_cost', align: 'left',
+      render: (v: string) => <b>{money(v)}</b> },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('stock-permits', columns);
+
   // The document page — the SAME page whether it is being written or being read. This is the
   // whole point: «افتح الإذن» lands where «اعمل إذن» lands, so nothing has to be relearned to
   // look at what you typed yesterday.
@@ -543,11 +569,13 @@ export default function StockPermits() {
     );
   }
 
+
   return (
     <Card
       title="أذونات المخزن"
       extra={(
         <Space>
+          {tableCols.control}
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
             onClick={() => { setKind('receipt'); startNew(); }}>إذن إضافة</Button>
           <Button icon={<PlusOutlined />}
@@ -578,26 +606,7 @@ export default function StockPermits() {
         onRow={(r) => ({ onClick: () => openPermit(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد أذونات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-        columns={[
-          { title: 'رقم الإذن', dataIndex: 'document_number',
-            render: (v: string) => <Tag>{v}</Tag> },
-          { title: 'النوع', dataIndex: 'kind',
-            render: (k: Kind, r) => (
-              <>
-                <Tag color={KIND_COLOR[k]}>{KIND_LABEL[k] || k}</Tag>
-                {r.is_reversal && <Tag color="orange">عكسي</Tag>}
-                {r.reversed_by && <Tag color="default">اتعكس</Tag>}
-              </>
-            ) },
-          { title: 'التاريخ', dataIndex: 'permit_date',
-            render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
-          { title: 'المخزن', dataIndex: 'warehouse_name' },
-          { title: 'عدد الأصناف', dataIndex: 'lines',
-            render: (l: PermitLine[]) => l.length },
-          { title: 'السبب', dataIndex: 'reason', render: (v: string) => v || '-' },
-          { title: 'التكلفة', dataIndex: 'total_cost', align: 'left',
-            render: (v: string) => <b>{money(v)}</b> },
-        ]}
+        columns={tableCols.columns}
       />
 
     </Card>

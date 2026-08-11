@@ -749,6 +749,52 @@ export default function Transfers() {
     ];
   };
 
+  const columns = [
+    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number',
+      render: (doc: string) => <Tag color="blue">{doc}</Tag> },
+    { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
+      render: (id: number | null) => nameOfItem(id) },
+    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity',
+      render: (q: string | null) => <b>{qty(q)}</b> },
+    { title: 'من', key: 'src',
+      render: (_: any, r: TransferRecord) => locationName(r.source_location_kind, r.source_location_id) },
+    { title: 'إلى', key: 'dst',
+      render: (_: any, r: TransferRecord) => locationName(r.dest_location_kind, r.dest_location_id) },
+    { title: 'نوع المناقلة', dataIndex: 'route', key: 'route',
+      render: (r: string) => ROUTE_LABELS[r] || r },
+    { title: 'الحالة', dataIndex: 'status', key: 'status',
+      render: (s: string) => {
+        const tag = STATUS_TAGS[s] || { color: 'default', text: s };
+        return <Tag color={tag.color}>{tag.text}</Tag>;
+      } },
+    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at',
+      render: (v: string | null) => (v ? String(v).slice(0, 10) : '-') },
+    {
+      title: 'الإجراءات', key: 'actions',
+      render: (_: any, record: TransferRecord) => (
+        <Space size="middle">
+          {/* Opens the document — the decision is taken on the permit, not on a sheet ABOUT the
+              permit. Same page it was written on, same page it is fixed on. */}
+          {record.status === 'pending' && canApprove && (
+            <Button type="primary" size="small" icon={<CheckCircleOutlined />}
+              onClick={() => openTransfer(record)}>
+              اعتماد
+            </Button>
+          )}
+          {record.status === 'approved' && canApprove && (
+            <Button type="primary" danger size="small" icon={<RollbackOutlined />}
+              onClick={() => handleReverse(record)}>
+              عكس
+            </Button>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('transfer-requests', columns);
+
   if (createVisible) {
     const stockOfCategory = sourceStock.filter((s) => (
       activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
@@ -1047,51 +1093,6 @@ export default function Transfers() {
     approved: transfers.filter((t) => t.status === 'approved').length,
   };
 
-  const columns = [
-    { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number',
-      render: (doc: string) => <Tag color="blue">{doc}</Tag> },
-    { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
-      render: (id: number | null) => nameOfItem(id) },
-    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity',
-      render: (q: string | null) => <b>{qty(q)}</b> },
-    { title: 'من', key: 'src',
-      render: (_: any, r: TransferRecord) => locationName(r.source_location_kind, r.source_location_id) },
-    { title: 'إلى', key: 'dst',
-      render: (_: any, r: TransferRecord) => locationName(r.dest_location_kind, r.dest_location_id) },
-    { title: 'نوع المناقلة', dataIndex: 'route', key: 'route',
-      render: (r: string) => ROUTE_LABELS[r] || r },
-    { title: 'الحالة', dataIndex: 'status', key: 'status',
-      render: (s: string) => {
-        const tag = STATUS_TAGS[s] || { color: 'default', text: s };
-        return <Tag color={tag.color}>{tag.text}</Tag>;
-      } },
-    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at',
-      render: (v: string | null) => (v ? String(v).slice(0, 10) : '-') },
-    {
-      title: 'الإجراءات', key: 'actions',
-      render: (_: any, record: TransferRecord) => (
-        <Space size="middle">
-          {/* Opens the document — the decision is taken on the permit, not on a sheet ABOUT the
-              permit. Same page it was written on, same page it is fixed on. */}
-          {record.status === 'pending' && canApprove && (
-            <Button type="primary" size="small" icon={<CheckCircleOutlined />}
-              onClick={() => openTransfer(record)}>
-              اعتماد
-            </Button>
-          )}
-          {record.status === 'approved' && canApprove && (
-            <Button type="primary" danger size="small" icon={<RollbackOutlined />}
-              onClick={() => handleReverse(record)}>
-              عكس
-            </Button>
-          )}
-        </Space>
-      ),
-    },
-  ];
-
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('transfer-requests', columns);
 
   /**
    * سجل عمليات الإذن — مين عمل إيه وإمتى.

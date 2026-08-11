@@ -5,6 +5,7 @@ import {
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
 import { useTableKeyboard } from '../components/keyboard';
@@ -258,6 +259,9 @@ export default function TradeReports() {
     onOpen: (r) => { if (r.doc_id && DOC_SCREEN[docType]) openDoc(DOC_SCREEN[docType], r.doc_id); },
   });
 
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('trade-reports', columns);
+
   return (
     <Card
       title={(
@@ -272,7 +276,9 @@ export default function TradeReports() {
       )}
       extra={(
         <>
-          <Button icon={<DownloadOutlined />} onClick={exportCsv} style={{ marginInlineEnd: 8 }}>
+          {tableCols.control}
+          <Button icon={<DownloadOutlined />} onClick={exportCsv}
+            style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
             تصدير CSV
           </Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
@@ -389,7 +395,7 @@ export default function TradeReports() {
       <Table
         {...kb.tableProps}
         rowKey={(r: any) => r.key ?? `${r.document_number}-${r.item_id ?? ''}-${r.warehouse ?? ''}`}
-        size="small" loading={loading} dataSource={rows} columns={columns}
+        size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
         locale={{ emptyText: 'لا توجد بيانات في هذه الفترة' }}
         pagination={{ defaultPageSize: 25, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}

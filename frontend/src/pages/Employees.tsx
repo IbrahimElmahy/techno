@@ -6,6 +6,8 @@ import {
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
@@ -137,11 +139,48 @@ export default function Employees() {
     }
   };
 
+  const employeeColumns: ColumnsType<Employee> = [
+    // Their column order: رقم · الاسم · المخزن · الفرع · الوظيفة · مخفي.
+    { title: 'رقم', dataIndex: 'code', width: 100, render: (v: string) => <Tag>{v}</Tag> },
+    { title: 'الاسم', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
+    { title: 'المخزن', dataIndex: 'warehouse_id',
+      render: (v: number) => warehouses.find((w) => w.id === v)?.name || '' },
+    { title: 'الفرع', dataIndex: 'branch_id',
+      render: (v: number) => branches.find((b) => b.id === v)?.name || '' },
+    { title: 'الوظيفة', dataIndex: 'job_title', render: (v: string) => v || '' },
+    { title: 'التليفون', dataIndex: 'phone', render: (v: string) => v || '' },
+    { title: 'تاريخ التعيين', dataIndex: 'hire_date',
+      render: (v: string) => (v ? String(v).slice(0, 10) : '-') },
+    { title: 'الراتب', dataIndex: 'salary', align: 'left',
+      render: (v: string) => money(v) },
+    { title: 'له حساب دخول', dataIndex: 'user_id',
+      render: (v: number | null) => (v ? <Tag color="blue">نعم</Tag> : '-') },
+    { title: 'الحالة', dataIndex: 'active',
+      render: (v: boolean) => (v
+        ? <Tag color="green">على رأس العمل</Tag> : <Tag>موقوف</Tag>) },
+    { title: '', width: 100,
+      render: (_: any, r: Employee) => (
+        <Space>
+          <Button type="text" icon={<EditOutlined />} onClick={() => startEdit(r)} />
+          {r.active && (
+            <Popconfirm title="إيقاف الموظف؟" onConfirm={() => deactivate(r)}
+              okText="إيقاف" cancelText="إلغاء">
+              <Button type="text" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          )}
+        </Space>
+      ) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const employeeCols = useTableColumns('employees', employeeColumns);
+
   const employeesTab = (
     <Card
       title="الموظفون"
       extra={(
         <Space>
+          {employeeCols.control}
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={startCreate}>موظف جديد</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
@@ -166,38 +205,7 @@ export default function Employees() {
         locale={{ emptyText: 'لا يوجد موظفون' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
-        columns={[
-          // Their column order: رقم · الاسم · المخزن · الفرع · الوظيفة · مخفي.
-          { title: 'رقم', dataIndex: 'code', width: 100, render: (v: string) => <Tag>{v}</Tag> },
-          { title: 'الاسم', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
-          { title: 'المخزن', dataIndex: 'warehouse_id',
-            render: (v: number) => warehouses.find((w) => w.id === v)?.name || '' },
-          { title: 'الفرع', dataIndex: 'branch_id',
-            render: (v: number) => branches.find((b) => b.id === v)?.name || '' },
-          { title: 'الوظيفة', dataIndex: 'job_title', render: (v: string) => v || '' },
-          { title: 'التليفون', dataIndex: 'phone', render: (v: string) => v || '' },
-          { title: 'تاريخ التعيين', dataIndex: 'hire_date',
-            render: (v: string) => (v ? String(v).slice(0, 10) : '-') },
-          { title: 'الراتب', dataIndex: 'salary', align: 'left',
-            render: (v: string) => money(v) },
-          { title: 'له حساب دخول', dataIndex: 'user_id',
-            render: (v: number | null) => (v ? <Tag color="blue">نعم</Tag> : '-') },
-          { title: 'الحالة', dataIndex: 'active',
-            render: (v: boolean) => (v
-              ? <Tag color="green">على رأس العمل</Tag> : <Tag>موقوف</Tag>) },
-          { title: '', width: 100,
-            render: (_: any, r: Employee) => (
-              <Space>
-                <Button type="text" icon={<EditOutlined />} onClick={() => startEdit(r)} />
-                {r.active && (
-                  <Popconfirm title="إيقاف الموظف؟" onConfirm={() => deactivate(r)}
-                    okText="إيقاف" cancelText="إلغاء">
-                    <Button type="text" danger icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                )}
-              </Space>
-            ) },
-        ]}
+        columns={employeeCols.columns}
       />
 
       <TabModal

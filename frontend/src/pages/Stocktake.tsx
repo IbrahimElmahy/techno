@@ -10,6 +10,8 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -134,11 +136,78 @@ export default function Stocktake() {
     }),
   });
 
+  const columns: ColumnsType<Row> = [
+    { title: 'الكود', dataIndex: 'code', ...textColumn(rows, (r: Row) => r.code),
+      render: (c: string) => (c ? <Tag>{c}</Tag> : '-') },
+    { title: 'الصنف', dataIndex: 'name', ...textColumn(rows, (r: Row) => r.name),
+      render: (n: string) => <b>{n}</b> },
+    { title: 'الفئة', dataIndex: 'category', width: 150,
+      ...textColumn(rows, (r: Row) => r.category),
+      render: (c: string | null) => c || <span style={{ color: '#bbb' }}>بدون فئة</span> },
+    { title: 'الوحدة', dataIndex: 'unit_of_measure',
+      ...textColumn(rows, (r: Row) => r.unit_of_measure),
+      render: (u: string) => u || '-' },
+    { title: 'الموقع', dataIndex: 'location',
+      ...textColumn(rows, (r: Row) => r.location) },
+    { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
+      ...numberColumn((r: Row) => r.quantity),
+      render: (v: string) => <b>{qty(v)}</b> },
+    // العدد الفعلي — typed here, held on screen, never posted. The line under the table
+    // says so, because a hundred counts typed into a screen that keeps none of them is a
+    // morning lost.
+    { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
+      ...numberColumn<Row>((r) => actual[rowKey(r)]),
+      render: (_: any, r: Row) => (
+        <InputNumber
+          size="small" min={0} placeholder="—" style={{ width: '100%' }}
+          data-grid-col="actual" keyboard={false}
+          value={actual[rowKey(r)] ?? null}
+          onChange={(v: any) => setActual((p) => ({ ...p, [rowKey(r)]: v as number | null }))}
+        />
+      ) },
+    { title: 'الفرق', key: 'diff', align: 'left' as const, width: 130,
+      ...choiceColumn<Row>(
+        [{ text: 'عجز', value: 'short' },
+         { text: 'زيادة', value: 'over' },
+         { text: 'مطابق', value: 'match' },
+         { text: 'لسه ماتعدش', value: 'none' }],
+        (r: Row, v: string) => {
+          const d = diffOf(r);
+          if (v === 'none') return d === null;
+          if (d === null) return false;
+          if (v === 'match') return d === 0;
+          // «عجز» = النظام بيقول أكتر من اللي لقيناه.
+          return v === 'short' ? d > 0 : d < 0;
+        }),
+      render: (_: any, r: Row) => {
+        const d = diffOf(r);
+        if (d === null) return <span style={{ color: '#bbb' }}>—</span>;
+        if (d === 0) return <Tag color="green">مطابق</Tag>;
+        // Only a real difference is a link. One that opens an empty log teaches people the
+        // link is broken, and then they stop using the one that works.
+        return (
+          <a onClick={() => setHistory({
+            itemId: r.item_id, itemName: r.name,
+            dateFrom: dateFrom.format('YYYY-MM-DD'),
+            dateTo: asOf.format('YYYY-MM-DD'),
+          })}>
+            <b style={{ color: d > 0 ? '#cf1322' : '#6AB42D' }}>
+              {d > 0 ? `عجز ${qty(d)}` : `زيادة ${qty(Math.abs(d))}`}
+            </b>
+          </a>
+        );
+      } },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('stocktake', columns);
+
   return (
     <Card
       title="جرد حق تاريخ"
       extra={(
         <>
+          {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!rows.length}
             style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
@@ -214,68 +283,7 @@ export default function Stocktake() {
         // Every column filters and sorts on its own, and the narrowings combine — «خامات مخزن
         // الفرع اللي قيمتها فوق الألف» is three columns at once, and a single search box above the
         // table cannot express it however good the search is.
-        columns={[
-          { title: 'الكود', dataIndex: 'code', ...textColumn(rows, (r: Row) => r.code),
-            render: (c: string) => (c ? <Tag>{c}</Tag> : '-') },
-          { title: 'الصنف', dataIndex: 'name', ...textColumn(rows, (r: Row) => r.name),
-            render: (n: string) => <b>{n}</b> },
-          { title: 'الفئة', dataIndex: 'category', width: 150,
-            ...textColumn(rows, (r: Row) => r.category),
-            render: (c: string | null) => c || <span style={{ color: '#bbb' }}>بدون فئة</span> },
-          { title: 'الوحدة', dataIndex: 'unit_of_measure',
-            ...textColumn(rows, (r: Row) => r.unit_of_measure),
-            render: (u: string) => u || '-' },
-          { title: 'الموقع', dataIndex: 'location',
-            ...textColumn(rows, (r: Row) => r.location) },
-          { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
-            ...numberColumn((r: Row) => r.quantity),
-            render: (v: string) => <b>{qty(v)}</b> },
-          // العدد الفعلي — typed here, held on screen, never posted. The line under the table
-          // says so, because a hundred counts typed into a screen that keeps none of them is a
-          // morning lost.
-          { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
-            ...numberColumn<Row>((r) => actual[rowKey(r)]),
-            render: (_: any, r: Row) => (
-              <InputNumber
-                size="small" min={0} placeholder="—" style={{ width: '100%' }}
-                data-grid-col="actual" keyboard={false}
-                value={actual[rowKey(r)] ?? null}
-                onChange={(v: any) => setActual((p) => ({ ...p, [rowKey(r)]: v as number | null }))}
-              />
-            ) },
-          { title: 'الفرق', key: 'diff', align: 'left' as const, width: 130,
-            ...choiceColumn<Row>(
-              [{ text: 'عجز', value: 'short' },
-               { text: 'زيادة', value: 'over' },
-               { text: 'مطابق', value: 'match' },
-               { text: 'لسه ماتعدش', value: 'none' }],
-              (r: Row, v: string) => {
-                const d = diffOf(r);
-                if (v === 'none') return d === null;
-                if (d === null) return false;
-                if (v === 'match') return d === 0;
-                // «عجز» = النظام بيقول أكتر من اللي لقيناه.
-                return v === 'short' ? d > 0 : d < 0;
-              }),
-            render: (_: any, r: Row) => {
-              const d = diffOf(r);
-              if (d === null) return <span style={{ color: '#bbb' }}>—</span>;
-              if (d === 0) return <Tag color="green">مطابق</Tag>;
-              // Only a real difference is a link. One that opens an empty log teaches people the
-              // link is broken, and then they stop using the one that works.
-              return (
-                <a onClick={() => setHistory({
-                  itemId: r.item_id, itemName: r.name,
-                  dateFrom: dateFrom.format('YYYY-MM-DD'),
-                  dateTo: asOf.format('YYYY-MM-DD'),
-                })}>
-                  <b style={{ color: d > 0 ? '#cf1322' : '#6AB42D' }}>
-                    {d > 0 ? `عجز ${qty(d)}` : `زيادة ${qty(Math.abs(d))}`}
-                  </b>
-                </a>
-              );
-            } },
-        ]}
+        columns={tableCols.columns}
         // The bottom line follows the filters: a total that ignores them answers a question nobody
         // asked, and reads as if the filter had not applied.
         summary={(shown) => {

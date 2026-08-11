@@ -14,6 +14,8 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import PartyPickerModal from '../components/PartyPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import type { ColumnsType } from 'antd/es/table';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * طلبات البيع والشراء — شيت تسعير، مش مستند حركة.
@@ -215,6 +217,36 @@ export default function Orders() {
    */
   const docOpen = creating || !!detail;
 
+  const columns: ColumnsType<Order> = [
+    { title: 'رقم الطلب', dataIndex: 'document_number',
+      render: (v: string) => <Tag>{v}</Tag> },
+    { title: 'النوع', dataIndex: 'kind',
+      render: (k: Kind) => (k === 'sale'
+        ? <Tag color="green">بيع</Tag> : <Tag color="purple">شراء</Tag>) },
+    { title: 'الطرف', render: (_: any, r: Order) => partyName(r) },
+    { title: 'التاريخ', dataIndex: 'order_date',
+      render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
+    { title: 'الاستحقاق', dataIndex: 'due_date',
+      render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
+    { title: 'عدد الأصناف', dataIndex: 'lines',
+      render: (l: OrderLine[]) => l.length },
+    { title: 'الإجمالي', dataIndex: 'total', align: 'left',
+      render: (v: string) => <b>{money(v)}</b> },
+    { title: 'الحالة', dataIndex: 'status',
+      render: (s: string, r) => (
+        <>
+          <Tag color={STATUS_LABELS[s]?.color}>{STATUS_LABELS[s]?.text || s}</Tag>
+          {r.converted_invoice_id && (
+            <DocumentLink kind="invoice" id={r.converted_invoice_id} size="small"
+              label={`فاتورة #${r.converted_invoice_id}`} />
+          )}
+        </>
+      ) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('orders', columns);
+
   return (
     <>
     {!docOpen && (
@@ -222,6 +254,7 @@ export default function Orders() {
       title="شيت التسعير — بيع وشراء"
       extra={(
         <Space>
+          {tableCols.control}
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
             onClick={() => startNew('sale')}>تسعيرة بيع</Button>
           <Button icon={<PlusOutlined />}
@@ -258,32 +291,7 @@ export default function Orders() {
         locale={{ emptyText: 'لا توجد طلبات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
-        columns={[
-          { title: 'رقم الطلب', dataIndex: 'document_number',
-            render: (v: string) => <Tag>{v}</Tag> },
-          { title: 'النوع', dataIndex: 'kind',
-            render: (k: Kind) => (k === 'sale'
-              ? <Tag color="green">بيع</Tag> : <Tag color="purple">شراء</Tag>) },
-          { title: 'الطرف', render: (_: any, r: Order) => partyName(r) },
-          { title: 'التاريخ', dataIndex: 'order_date',
-            render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
-          { title: 'الاستحقاق', dataIndex: 'due_date',
-            render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
-          { title: 'عدد الأصناف', dataIndex: 'lines',
-            render: (l: OrderLine[]) => l.length },
-          { title: 'الإجمالي', dataIndex: 'total', align: 'left',
-            render: (v: string) => <b>{money(v)}</b> },
-          { title: 'الحالة', dataIndex: 'status',
-            render: (s: string, r) => (
-              <>
-                <Tag color={STATUS_LABELS[s]?.color}>{STATUS_LABELS[s]?.text || s}</Tag>
-                {r.converted_invoice_id && (
-                  <DocumentLink kind="invoice" id={r.converted_invoice_id} size="small"
-                    label={`فاتورة #${r.converted_invoice_id}`} />
-                )}
-              </>
-            ) },
-        ]}
+        columns={tableCols.columns}
       />
     </Card>
     )}

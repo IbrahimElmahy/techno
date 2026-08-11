@@ -12,6 +12,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useScreenShortcuts } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
+import { useTableColumns } from '../components/ColumnSettings';
 
 /**
  * فئات الاصناف — the item categories, on a screen of their own.
@@ -169,6 +170,41 @@ export default function Categories() {
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
 
+  const columns = [
+    { title: 'رقم', dataIndex: 'id', width: 70, align: 'center' as const },
+    { title: 'الاسم', dataIndex: 'label' },
+    // They show hidden-ness rather than active-ness, as an icon. Same fact, their way round —
+    // and worth matching, because a column that means the opposite of what someone expects is
+    // read wrong at a glance long before anyone notices the label changed.
+    { title: 'مخفي', dataIndex: 'active', width: 90, align: 'center' as const,
+      render: (a: boolean) => (a
+        ? <CloseCircleOutlined style={{ color: '#cf1322' }} />
+        : <CheckCircleOutlined style={{ color: '#6AB42D' }} />) },
+    { title: 'وصف', dataIndex: 'description', render: (v: string) => v || '' },
+    { title: '', key: 'act', width: 110, align: 'center' as const,
+      render: (_: unknown, row: Category) => (
+        <Space size={4}>
+          <Popconfirm title="تشيل الفئة دي؟" okText="أيوه" cancelText="لأ"
+            onConfirm={() => remove(row)}>
+            <Tooltip title="حذف">
+              <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+            </Tooltip>
+          </Popconfirm>
+          <Tooltip title="تعديل">
+            <Button type="text" size="small" icon={<EditOutlined />}
+              onClick={() => openEdit(row)} />
+          </Tooltip>
+          <Tooltip title="عرض">
+            <Button type="text" size="small" icon={<EyeOutlined />}
+              onClick={() => setViewing(row)} />
+          </Tooltip>
+        </Space>
+      ) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const tableCols = useTableColumns('categories', columns);
+
   return (
     <Card
       // Their page is titled «الفئات» while the menu entry reads «فئات الاصناف». Both are kept as
@@ -177,6 +213,7 @@ export default function Categories() {
       title="الفئات"
       extra={(
         <Space>
+          {tableCols.control}
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openCreate} />
           <Button type="primary" onClick={load}>اعادة تحميل</Button>
           <Dropdown menu={{ items: moreMenu }}>
@@ -203,37 +240,7 @@ export default function Categories() {
         locale={{ emptyText: 'لا توجد فئات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         // Their column order exactly: رقم · الاسم · مخفي · وصف, then the row's three icons.
-        columns={[
-          { title: 'رقم', dataIndex: 'id', width: 70, align: 'center' as const },
-          { title: 'الاسم', dataIndex: 'label' },
-          // They show hidden-ness rather than active-ness, as an icon. Same fact, their way round —
-          // and worth matching, because a column that means the opposite of what someone expects is
-          // read wrong at a glance long before anyone notices the label changed.
-          { title: 'مخفي', dataIndex: 'active', width: 90, align: 'center' as const,
-            render: (a: boolean) => (a
-              ? <CloseCircleOutlined style={{ color: '#cf1322' }} />
-              : <CheckCircleOutlined style={{ color: '#6AB42D' }} />) },
-          { title: 'وصف', dataIndex: 'description', render: (v: string) => v || '' },
-          { title: '', key: 'act', width: 110, align: 'center' as const,
-            render: (_: unknown, row: Category) => (
-              <Space size={4}>
-                <Popconfirm title="تشيل الفئة دي؟" okText="أيوه" cancelText="لأ"
-                  onConfirm={() => remove(row)}>
-                  <Tooltip title="حذف">
-                    <Button type="text" danger size="small" icon={<DeleteOutlined />} />
-                  </Tooltip>
-                </Popconfirm>
-                <Tooltip title="تعديل">
-                  <Button type="text" size="small" icon={<EditOutlined />}
-                    onClick={() => openEdit(row)} />
-                </Tooltip>
-                <Tooltip title="عرض">
-                  <Button type="text" size="small" icon={<EyeOutlined />}
-                    onClick={() => setViewing(row)} />
-                </Tooltip>
-              </Space>
-            ) },
-        ]}
+        columns={tableCols.columns}
       />
 
       <TabModal
