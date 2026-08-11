@@ -7,6 +7,7 @@ import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, ArrowLeftOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 
@@ -271,6 +272,21 @@ export default function CouponReceipts() {
   );
 
   /** جسم الاستلام — اللي كان جوّه الدرج. */
+  const listColumns = [
+    { title: 'رقم المستند', dataIndex: 'document_number',
+      render: (v: string) => <Tag>{v}</Tag> },
+    { title: 'العميل', dataIndex: 'customer_id',
+      render: (id: number | null) => customerName(id) },
+    { title: 'التاريخ', dataIndex: 'received_date',
+      render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
+    { title: 'عدد الكوبونات', dataIndex: 'coupon_count',
+      render: (v: number) => <b style={{ color: '#F5A11D' }}>{v}</b> },
+    { title: 'ملاحظات', dataIndex: 'notes', render: (v: string) => v || '-' },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const listCols = useTableColumns('coupon-receipts', listColumns);
+
   const detailBody = (
     <>
         {detail && (
@@ -331,7 +347,12 @@ export default function CouponReceipts() {
     </Card>
   ) : (
     <Card size="small" title="سجل الاستلامات"
-      extra={<Button icon={<ReloadOutlined />} onClick={loadReceipts}>تحديث</Button>}>
+      extra={(
+        <Space>
+          {listCols.control}
+          <Button icon={<ReloadOutlined />} onClick={loadReceipts}>تحديث</Button>
+        </Space>
+      )}>
       <ListToolbar
         searchPlaceholder="بحث برقم المستند أو رقم كوبون"
         query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
@@ -342,17 +363,7 @@ export default function CouponReceipts() {
         onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد استلامات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-        columns={[
-          { title: 'رقم المستند', dataIndex: 'document_number',
-            render: (v: string) => <Tag>{v}</Tag> },
-          { title: 'العميل', dataIndex: 'customer_id',
-            render: (id: number | null) => customerName(id) },
-          { title: 'التاريخ', dataIndex: 'received_date',
-            render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
-          { title: 'عدد الكوبونات', dataIndex: 'coupon_count',
-            render: (v: number) => <b style={{ color: '#F5A11D' }}>{v}</b> },
-          { title: 'ملاحظات', dataIndex: 'notes', render: (v: string) => v || '-' },
-        ]}
+        columns={listCols.columns}
       />
 
     </Card>

@@ -6,6 +6,7 @@ import { ReloadOutlined, TeamOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
@@ -126,6 +127,67 @@ export default function RepReports() {
     onOpen: (r) => navigate(`/catalog/${r.item_id}`),
   });
 
+  const repItemsColumns = [
+    { title: 'المندوب', dataIndex: 'rep_name', width: 200,
+      ...textColumn(items, (r: RepItemRow) => r.rep_name),
+      render: (v: string) => <b>{v}</b> },
+    { title: 'الصنف', dataIndex: 'item_name',
+      ...textColumn(items, (r: RepItemRow) => r.item_name),
+      render: (v: string, r: RepItemRow) => (
+        <a onClick={() => navigate(`/catalog/${r.item_id}`)}>{v}</a>
+      ) },
+    { title: 'الكمية', dataIndex: 'quantity', width: 120,
+      ...numberColumn<RepItemRow>((r) => r.quantity),
+      render: (v: string) => qty(v) },
+    // Net of the document's discount, so these add up to the invoices rather than
+    // showing a rep selling more than the customer was billed.
+    { title: 'الصافي', dataIndex: 'net', width: 165, align: 'left' as const,
+      ...numberColumn<RepItemRow>((r) => r.net),
+      render: (v: string) => <b>{money(v)} ج.م</b> },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const repItemsCols = useTableColumns('rep-item-sales', repItemsColumns);
+
+  const repCustomersColumns = [
+    { title: 'المندوب', dataIndex: 'rep_name', width: 200,
+      ...textColumn(byCustomer, (r: ByCustomerRow) => r.rep_name),
+      render: (v: string) => <b>{v}</b> },
+    { title: 'العميل', dataIndex: 'customer_name',
+      ...textColumn(byCustomer, (r: ByCustomerRow) => r.customer_name),
+      // Money with no customer on it is still money the rep collected; dropping the
+      // row would make this screen's total disagree with the one beside it.
+      render: (v: string | null, r: ByCustomerRow) => (v && r.customer_id
+        ? <a onClick={() => navigate(`/customers/${r.customer_id}`)}>{v}</a>
+        : <Tag>بدون عميل</Tag>) },
+    { title: 'عدد السندات', dataIndex: 'receipts', width: 130,
+      ...numberColumn<ByCustomerRow>((r) => r.receipts) },
+    { title: 'المُحصّل', dataIndex: 'collected', width: 165,
+      align: 'left' as const,
+      ...numberColumn<ByCustomerRow>((r) => r.collected),
+      render: (v: string) => <b>{money(v)} ج.م</b> },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const repCustomersCols = useTableColumns('rep-collections-by-customer', repCustomersColumns);
+
+  const repCollectionsColumns = [
+    { title: 'المندوب', dataIndex: 'rep_name',
+      ...textColumn(collections, (r: CollectionRow) => r.rep_name),
+      render: (v: string) => <b>{v}</b> },
+    { title: 'عدد السندات', dataIndex: 'receipts', width: 140,
+      ...numberColumn<CollectionRow>((r) => r.receipts) },
+    { title: 'المُحصّل', dataIndex: 'collected', width: 180,
+      align: 'left' as const,
+      ...numberColumn<CollectionRow>((r) => r.collected),
+      render: (v: string) => (
+        <b style={{ color: '#6AB42D' }}>{money(v)} ج.م</b>
+      ) },
+  ];
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const repCollectionsCols = useTableColumns('rep-collections', repCollectionsColumns);
+
   return (
     <Card title={<span><TeamOutlined /> تقارير المندوبين</span>} extra={header}>
       <Space size="large" style={{ marginBottom: 12 }}>
@@ -149,25 +211,14 @@ export default function RepReports() {
                   total={collections.length} shown={collectionFilter.filtered.length}
                   searchSpan={10}
                 />
+                <div style={{ textAlign: 'end', marginBottom: 8 }}>{repCollectionsCols.control}</div>
                 <Table
                   {...collectionKb.tableProps}
                   rowKey="rep_user_id" size="middle" loading={loading}
                   dataSource={collectionFilter.filtered}
                   locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
                   pagination={false}
-                  columns={[
-                    { title: 'المندوب', dataIndex: 'rep_name',
-                      ...textColumn(collections, (r: CollectionRow) => r.rep_name),
-                      render: (v: string) => <b>{v}</b> },
-                    { title: 'عدد السندات', dataIndex: 'receipts', width: 140,
-                      ...numberColumn<CollectionRow>((r) => r.receipts) },
-                    { title: 'المُحصّل', dataIndex: 'collected', width: 180,
-                      align: 'left' as const,
-                      ...numberColumn<CollectionRow>((r) => r.collected),
-                      render: (v: string) => (
-                        <b style={{ color: '#6AB42D' }}>{money(v)} ج.م</b>
-                      ) },
-                  ]}
+                  columns={repCollectionsCols.columns}
                 />
               </>
             ),
@@ -186,6 +237,7 @@ export default function RepReports() {
                   filters={[{ key: 'rep_user_id', placeholder: 'المندوب', span: 7,
                     options: repOptions }]}
                 />
+                <div style={{ textAlign: 'end', marginBottom: 8 }}>{repCustomersCols.control}</div>
                 <Table
                   {...customerKb.tableProps}
                   rowKey={(r) => `${r.rep_user_id}-${r.customer_id ?? 0}`}
@@ -193,24 +245,7 @@ export default function RepReports() {
                   locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
                   pagination={{ defaultPageSize: 20, showSizeChanger: true,
                     showTotal: (t) => `الإجمالي: ${t}` }}
-                  columns={[
-                    { title: 'المندوب', dataIndex: 'rep_name', width: 200,
-                      ...textColumn(byCustomer, (r: ByCustomerRow) => r.rep_name),
-                      render: (v: string) => <b>{v}</b> },
-                    { title: 'العميل', dataIndex: 'customer_name',
-                      ...textColumn(byCustomer, (r: ByCustomerRow) => r.customer_name),
-                      // Money with no customer on it is still money the rep collected; dropping the
-                      // row would make this screen's total disagree with the one beside it.
-                      render: (v: string | null, r: ByCustomerRow) => (v && r.customer_id
-                        ? <a onClick={() => navigate(`/customers/${r.customer_id}`)}>{v}</a>
-                        : <Tag>بدون عميل</Tag>) },
-                    { title: 'عدد السندات', dataIndex: 'receipts', width: 130,
-                      ...numberColumn<ByCustomerRow>((r) => r.receipts) },
-                    { title: 'المُحصّل', dataIndex: 'collected', width: 165,
-                      align: 'left' as const,
-                      ...numberColumn<ByCustomerRow>((r) => r.collected),
-                      render: (v: string) => <b>{money(v)} ج.م</b> },
-                  ]}
+                  columns={repCustomersCols.columns}
                 />
               </>
             ),
@@ -229,6 +264,7 @@ export default function RepReports() {
                   filters={[{ key: 'rep_user_id', placeholder: 'المندوب', span: 7,
                     options: repOptions }]}
                 />
+                <div style={{ textAlign: 'end', marginBottom: 8 }}>{repItemsCols.control}</div>
                 <Table
                   {...itemKb.tableProps}
                   rowKey={(r) => `${r.rep_user_id}-${r.item_id}`}
@@ -236,24 +272,7 @@ export default function RepReports() {
                   locale={{ emptyText: 'مفيش مبيعات في الفترة دي' }}
                   pagination={{ defaultPageSize: 20, showSizeChanger: true,
                     showTotal: (t) => `الإجمالي: ${t}` }}
-                  columns={[
-                    { title: 'المندوب', dataIndex: 'rep_name', width: 200,
-                      ...textColumn(items, (r: RepItemRow) => r.rep_name),
-                      render: (v: string) => <b>{v}</b> },
-                    { title: 'الصنف', dataIndex: 'item_name',
-                      ...textColumn(items, (r: RepItemRow) => r.item_name),
-                      render: (v: string, r: RepItemRow) => (
-                        <a onClick={() => navigate(`/catalog/${r.item_id}`)}>{v}</a>
-                      ) },
-                    { title: 'الكمية', dataIndex: 'quantity', width: 120,
-                      ...numberColumn<RepItemRow>((r) => r.quantity),
-                      render: (v: string) => qty(v) },
-                    // Net of the document's discount, so these add up to the invoices rather than
-                    // showing a rep selling more than the customer was billed.
-                    { title: 'الصافي', dataIndex: 'net', width: 165, align: 'left' as const,
-                      ...numberColumn<RepItemRow>((r) => r.net),
-                      render: (v: string) => <b>{money(v)} ج.م</b> },
-                  ]}
+                  columns={repItemsCols.columns}
                 />
               </>
             ),

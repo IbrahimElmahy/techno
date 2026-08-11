@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Empty, Input, Radio, Row, Spin, Table, Tag } from 'antd';
+import { Card, Col, Empty, Input, Radio, Row, Spin, Table, Tag , Space} from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useTableColumns } from '../components/ColumnSettings';
 import { useQueryTab } from '../components/useQueryTab';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { normalizeAr } from '../components/ListToolbar';
@@ -163,16 +164,46 @@ export default function StockBalance() {
     }),
   });
 
+  // أعمدة جدول المخازن. جوّه useMemo لأنها بتقرا من `balance` وهو ممكن يكون null قبل ما
+  // الصنف يتحمّل — والهوك لازم يتنادى في كل رندر، يعني مايقدرش يستنى وراه.
+  const locationColumns = useMemo(() => (balance ? [
+      // The store's name opens what happened in it. A balance is the end of a story,
+      // and «ليه الرقم ده؟» is answered by the movements, not by the number.
+      { title: 'المخزن', dataIndex: 'name',
+        render: (n: string, r: any) => (
+          <a onClick={() => setHistory({
+            itemId: balance.item.id, itemName: balance.item.name,
+            locationKind: r.kind, locationId: r.id,
+          })}>{n}</a>
+        ) },
+      {
+        title: `الوحدة${balance.item.unit_of_measure ? ` (${balance.item.unit_of_measure})` : ''}`,
+        dataIndex: 'quantity', align: 'center' as const, width: 120,
+        render: (v: string) => (
+          <span style={{ fontWeight: Number(v) ? 700 : 400,
+                         color: Number(v) > 0 ? '#6AB42D' : Number(v) < 0 ? '#cf1322' : '#999' }}>
+            {qty(v)}
+          </span>
+        ),
+      },
+  ] : []), [balance]);
+
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  const locCols = useTableColumns('stock-balance-locations', locationColumns);
+
   return (
     <>
       <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
     <Card title={TITLES[view] ?? TITLES.balance} styles={{ body: { paddingTop: 12 } }}
       extra={
+        <Space>
+        {locCols.control}
         <Radio.Group size="small" value={stockScope} onChange={(e) => setStockScope(e.target.value)}>
           <Radio.Button value="all">كل الأصناف</Radio.Button>
           <Radio.Button value="in_stock">رصيد فقط</Radio.Button>
           <Radio.Button value="moved">له حركة</Radio.Button>
         </Radio.Group>
+        </Space>
       }>
       <Row gutter={12}>
         {/* 1) Category */}
@@ -276,27 +307,7 @@ export default function StockBalance() {
                 rowKey={(r) => `${r.kind}-${r.id}`}
                 pagination={false}
                 dataSource={balance.locations}
-                columns={[
-                  // The store's name opens what happened in it. A balance is the end of a story,
-                  // and «ليه الرقم ده؟» is answered by the movements, not by the number.
-                  { title: 'المخزن', dataIndex: 'name',
-                    render: (n: string, r: any) => (
-                      <a onClick={() => setHistory({
-                        itemId: balance.item.id, itemName: balance.item.name,
-                        locationKind: r.kind, locationId: r.id,
-                      })}>{n}</a>
-                    ) },
-                  {
-                    title: `الوحدة${balance.item.unit_of_measure ? ` (${balance.item.unit_of_measure})` : ''}`,
-                    dataIndex: 'quantity', align: 'center' as const, width: 120,
-                    render: (v: string) => (
-                      <span style={{ fontWeight: Number(v) ? 700 : 400,
-                                     color: Number(v) > 0 ? '#6AB42D' : Number(v) < 0 ? '#cf1322' : '#999' }}>
-                        {qty(v)}
-                      </span>
-                    ),
-                  },
-                ]}
+                columns={locCols.columns}
                 summary={() => (
                   <Table.Summary.Row>
                     <Table.Summary.Cell index={0}><b>الإجمالي</b></Table.Summary.Cell>
