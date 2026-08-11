@@ -261,7 +261,10 @@ class _HomeScreenState extends State<HomeScreen> {
         child: CustomScrollView(
           slivers: [
             SliverAppBar(
-              expandedHeight: 240.0,
+              // 240 سابت فراغ أخضر فاضي فوق الأفاتار قد تلت الهيدر تقريباً. اللي جوّه —
+              // الأفاتار والترحيب مع الحشو وشريط الحالة — بياخد حوالي 156، فالرقم ده بيسيب
+              // مساحة تتنفس من غير ما الهيدر ياخد تلت الشاشة وهو فاضي.
+              expandedHeight: 180.0,
               floating: false,
               pinned: true,
               backgroundColor: AppColors.primary,
@@ -362,10 +365,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             SliverToBoxAdapter(
-              child: Transform.translate(
-                offset: const Offset(0, -30),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              // الكروت كانت متسحوبة 30 لفوق عشان تتراكب مع الهيدر — والهيدر `pinned`، يعني
+              // بيترسم فوقها مش تحتها، فكان بيقص أول 30 بكسل من الكرتين. التراكب ده مايشتغلش
+              // مع هيدر مثبّت أصلاً: عشان يشتغل لازم الكروت تبقى جوّه نفس الـStack بتاع الهيدر.
+              child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -517,7 +521,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-              ),
             ),
           ],
         ),
