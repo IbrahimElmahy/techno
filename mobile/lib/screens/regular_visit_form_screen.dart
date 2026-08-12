@@ -43,12 +43,20 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
     await AddItemFlow.show(context, (item, qty) {
       setState(() {
         final existing = _lines.indexWhere(
-            (l) => l.itemId == item.id && l.itemName == item.name);
+            (l) => l.itemName == item.name);
         if (existing >= 0) {
           _lines[existing].quantity += qty;
         } else {
           _lines.add(InspectionLine(
-            itemId: item.id,
+            // بيفضل null على السلك — دول أصناف نقاط، مش منتجات.
+            //
+            // `item_id` on the server is a foreign key to the PRODUCTS table, and it is not just a
+            // label: a line that carries one gets its name overwritten with that product's name and
+            // posts a stock movement deducting that product from the rep's custody. The inspection
+            // catalogue numbers from 1 and so do the products, so eight of the thirty-two ids point
+            // at a real and completely unrelated product — the rest are rejected outright with
+            // «الرصيد غير كافٍ في عهدتك».
+            itemId: null,
             itemName: item.name,
             quantity: qty,
             points: item.points,
