@@ -6,6 +6,7 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'item_picker_screen.dart';
+import '../models/points.dart';
 
 /// The inspection entry form — the heart of the app. Saves locally (offline-first);
 /// sync to the server happens later from the sync screen.
@@ -121,8 +122,8 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(l.itemName),
                           subtitle: Text(
-                              'الكمية: ${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
-                          trailing: Text(_fmt(l.total),
+                              'الكمية: ${points(l.quantity)} × ${points(l.points)} نقطة'),
+                          trailing: Text(points(l.total),
                               style: const TextStyle(
                                   fontWeight: FontWeight.w700, fontSize: 15)),
                         ),
@@ -135,7 +136,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 children: [
                   const Text('إجمالي النقاط',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text(_fmt(_totalPoints),
+                  Text(points(_totalPoints),
                       style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -181,8 +182,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   String? _nullable(TextEditingController c) =>
       c.text.trim().isEmpty ? null : c.text.trim();
 
-  static String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   @override
   Widget build(BuildContext context) {
@@ -359,7 +358,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   children: [
                     Text('إجمالي النقاط',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                    Text(_fmt(_totalPoints),
+                    Text(points(_totalPoints),
                         style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -420,11 +419,11 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(_lines[i].itemName),
                   subtitle:
-                      Text('${_fmt(_lines[i].quantity)} × ${_fmt(_lines[i].points)} نقطة'),
+                      Text('${points(_lines[i].quantity)} × ${points(_lines[i].points)} نقطة'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(_fmt(_lines[i].total),
+                      Text(points(_lines[i].total),
                           style: const TextStyle(
                               fontWeight: FontWeight.w700, fontSize: 15)),
                       IconButton(
@@ -443,7 +442,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
 
   Future<void> _editLine(int index) async {
     final line = _lines[index];
-    final qty = TextEditingController(text: _fmt(line.quantity));
+    final qty = TextEditingController(text: points(line.quantity));
     final updated = await showDialog<double>(
       context: context,
       builder: (c) => Directionality(

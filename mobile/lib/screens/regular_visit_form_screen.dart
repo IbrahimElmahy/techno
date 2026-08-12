@@ -6,6 +6,7 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'item_picker_screen.dart';
+import '../models/points.dart';
 
 /// «الزيارة العادية» — أبسط من معاينة الفنيين: مرتبطة بعميل مختار من النظام، وبتسجل
 /// تفاصيل الزيارة وأصناف. الكود تلقائي، والحفظ محلي (أوفلاين) زي المعاينات.
@@ -27,8 +28,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   double get _totalPoints =>
       double.parse(_lines.fold<double>(0, (s, l) => s + l.total).toStringAsFixed(3));
 
-  static String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -241,7 +240,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                   children: [
                     Text('إجمالي النقاط',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                    Text(_fmt(_totalPoints),
+                    Text(points(_totalPoints),
                         style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -303,11 +302,11 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: Text(_lines[i].itemName),
                 subtitle:
-                    Text('${_fmt(_lines[i].quantity)} × ${_fmt(_lines[i].points)} نقطة'),
+                    Text('${points(_lines[i].quantity)} × ${points(_lines[i].points)} نقطة'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(_fmt(_lines[i].total),
+                    Text(points(_lines[i].total),
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
@@ -349,8 +348,8 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text(l.itemName),
-                    subtitle: Text('الكمية: ${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
-                    trailing: Text(_fmt(l.total),
+                    subtitle: Text('الكمية: ${points(l.quantity)} × ${points(l.points)} نقطة'),
+                    trailing: Text(points(l.total),
                         style:
                             const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                   ),
@@ -360,7 +359,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                 children: [
                   const Text('إجمالي النقاط',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text(_fmt(_totalPoints),
+                  Text(points(_totalPoints),
                       style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,

@@ -25,6 +25,10 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   String _couponType = 'silver'; // 'standard' | 'silver' | 'gold' | 'diamond'
   final _couponValueCtrl = TextEditingController(text: '50');
   final _serialCtrl = TextEditingController();
+  // النطاق «من – إلى». الكوبونات بتتصرف على شكل دفاتر متسلسلة، فالمندوب بيستلم عشرين ورقة
+  // ورا بعض — كتابتهم واحدة واحدة هي اللي خلّت الشاشة غير قابلة للاستخدام في الميدان.
+  final _fromCtrl = TextEditingController();
+  final _toCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
 
   List<Map<String, dynamic>> _addedItems = [];
@@ -67,6 +71,72 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       });
       _serialCtrl.clear();
     });
+  }
+
+  /// أقصى عدد في المرة. رقم نهاية مكتوب غلط ممكن يعمل ملايين الصفوف ويقفل الشاشة.
+  static const _maxRange = 100;
+
+  @override
+  void dispose() {
+    // مكانش فيه dispose خالص — كل الكنترولرات كانت بتتسرّب كل مرة الشاشة تتقفل.
+    _searchCustomerCtrl.dispose();
+    _couponValueCtrl.dispose();
+    _serialCtrl.dispose();
+    _fromCtrl.dispose();
+    _toCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  /// إضافة نطاق كامل بنفس الفئة والقيمة.
+  ///
+  /// Each serial becomes its own line, exactly as if it had been typed one at a time — the summary,
+  /// the totals and what gets sent all stay in the same shape, so nothing downstream has to know a
+  /// range was used.
+  void _addRange() {
+    final first = int.tryParse(_fromCtrl.text.trim());
+    final last = int.tryParse(_toCtrl.text.trim());
+    if (first == null || last == null) {
+      _snack('النطاق لازم يكون أرقام');
+      return;
+    }
+    if (last < first) {
+      _snack('رقم النهاية أصغر من البداية');
+      return;
+    }
+    if (last - first + 1 > _maxRange) {
+      _snack('النطاق كبير — أقصى $_maxRange كوبون في المرة');
+      return;
+    }
+    final val = double.tryParse(_couponValueCtrl.text.trim()) ?? 0;
+    if (val <= 0) {
+      _snack('يرجى إدخال قيمة صحيحة للكوبون');
+      return;
+    }
+
+    var added = 0;
+    var duplicates = 0;
+    setState(() {
+      for (var n = first; n <= last; n++) {
+        final serial = n.toString();
+        if (_addedItems.any((i) => i['serial'] == serial)) {
+          duplicates++;
+          continue;
+        }
+        _addedItems.add({'type': _couponType, 'value': val, 'serial': serial, 'qty': 1});
+        added++;
+      }
+      _fromCtrl.clear();
+      _toCtrl.clear();
+    });
+    _snack(duplicates == 0
+        ? 'اتضاف $added كوبون'
+        : 'اتضاف $added كوبون، و$duplicates كانوا مضافين قبل كده');
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   double get _totalAmount {
@@ -435,6 +505,42 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                         decoration: const InputDecoration(
                           hintText: 'S/N...',
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+
+                // نطاق متسلسل «من – إلى»
+                const Text(
+                  'أو نطاق متسلسل (من – إلى)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF6B7280)),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _fromCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(hintText: 'من'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _toCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(hintText: 'إلى'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: _addRange,
+                        child: const Text('أضف النطاق'),
                       ),
                     ),
                   ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
+import '../models/points.dart';
 
 class AddItemFlow {
   static Future<void> show(
@@ -179,7 +180,7 @@ class _AddItemModalDialogState extends State<_AddItemModalDialog> {
                         DropdownMenuItem(
                           value: item,
                           child: Text(
-                            '${item.name} (${item.points.toInt()} نقطة)',
+                            '${item.name} (${points(item.points)} نقطة)',
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -268,7 +269,7 @@ class _AddItemModalDialogState extends State<_AddItemModalDialog> {
                     ),
                     const Spacer(),
                     Text(
-                      calculatedPoints > 0 ? '${calculatedPoints.toInt()} نقطة' : '--',
+                      calculatedPoints > 0 ? '${points(calculatedPoints)} نقطة' : '--',
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.primary),
                     ),
                   ],
