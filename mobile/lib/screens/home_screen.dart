@@ -5,6 +5,7 @@ import '../db/local_db.dart';
 import '../theme.dart';
 import 'login_screen.dart';
 import 'coupon_receipt_screen.dart';
+import 'coupon_review_screen.dart';
 import 'review_screen.dart';
 import 'sync_screen.dart';
 import 'visits_menu_screen.dart';
@@ -138,6 +139,15 @@ class _HomeScreenState extends State<HomeScreen> {
                           MaterialPageRoute(builder: (_) => const CouponReceiptScreen()));
                       _refresh();
                     },
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.summarize_outlined,
+                    color: AppColors.primary,
+                    title: 'مراجعة الكوبونات',
+                    subtitle: 'الإجمالي لكل عميل بالنوع — من الجهاز',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const CouponReviewScreen())),
                   ),
                   const SizedBox(height: 14),
                   _BigAction(

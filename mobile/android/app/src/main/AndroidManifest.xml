@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- المرفقات: المندوب بيصوّر العداد أو الوصلة في الشارع. -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <application
         android:label="تكنو ثيرم — المعاينات"
         android:name="${applicationName}"

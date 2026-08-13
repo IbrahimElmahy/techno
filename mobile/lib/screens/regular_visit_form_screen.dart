@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:uuid/uuid.dart';
 
+import '../widgets/attachments_field.dart';
+
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
@@ -17,6 +19,13 @@ class RegularVisitFormScreen extends StatefulWidget {
 }
 
 class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
+  /// رقم الزيارة اتحدد من أول ما الشاشة فتحت.
+  ///
+  /// The attachments are keyed by it, and they are picked BEFORE the visit is saved — so the name
+  /// has to exist from the start rather than being minted at save time.
+  final String _uuid = const Uuid().v4();
+  final List<AttachmentRef> _attachments = [];
+
   final _visitDetails = TextEditingController();
   final _customerName = TextEditingController(); // free text: pick an existing one OR type a new
   DateTime _date = DateTime.now();
@@ -63,7 +72,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
     }
     setState(() => _saving = true);
     final insp = Inspection(
-      clientUuid: const Uuid().v4(),
+      clientUuid: _uuid,
       visitKind: 'regular',
       inspectionDate: intl.DateFormat('yyyy-MM-dd').format(_date),
       ownerName: name,
@@ -72,6 +81,15 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
       lines: _lines,
     );
     await LocalDb.instance.saveInspection(insp);
+    for (final a in _attachments) {
+      await LocalDb.instance.addAttachment(
+        inspectionUuid: _uuid,
+        path: a.path,
+        name: a.name,
+        kind: a.kind,
+        bytes: a.bytes,
+      );
+    }
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -212,6 +230,12 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                     controller: _visitDetails,
                     maxLines: 5,
                     decoration: const InputDecoration(hintText: 'اكتب تفاصيل الزيارة…'),
+                  ),
+                  const Divider(height: 26),
+                  AttachmentsField(
+                    items: _attachments,
+                    onAdd: (a) => setState(() => _attachments.add(a)),
+                    onRemove: (a) => setState(() => _attachments.remove(a)),
                   ),
                 ],
               ),

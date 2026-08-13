@@ -1,0 +1,224 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart' as intl;
+
+import '../db/local_db.dart';
+import '../theme.dart';
+
+/// مراجعة استلام الكوبونات — الإجمالي لكل عميل، بالنوع.
+///
+/// Reads what is ON THE PHONE, not the server: the rep needs to answer «العميل ده سلّم كام؟» while
+/// he is standing in front of him, and that is exactly when there is no signal. Receipts still
+/// waiting to sync are counted here too — they were taken, and leaving them out would make the
+/// screen disagree with the receipts in the customer's hand.
+class CouponReviewScreen extends StatefulWidget {
+  const CouponReviewScreen({super.key});
+
+  @override
+  State<CouponReviewScreen> createState() => _CouponReviewScreenState();
+}
+
+/// إجمالي عميل واحد: العدد لكل نوع، والقيمة.
+class _CustomerTotal {
+  _CustomerTotal(this.name);
+  final String name;
+  final Map<String, int> byKind = {};
+  double value = 0;
+  int receipts = 0;
+  int pending = 0;
+
+  int get count => byKind.values.fold(0, (a, b) => a + b);
+}
+
+class _CouponReviewScreenState extends State<CouponReviewScreen> {
+  DateTime? _from;
+  DateTime? _to;
+  List<_CustomerTotal> _rows = [];
+  bool _loading = true;
+
+  static const _kinds = <String, String>{
+    'standard': 'عادي',
+    'silver': 'فضي',
+    'gold': 'ذهبي',
+    'diamond': 'ماسي',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  static String? _iso(DateTime? d) =>
+      d == null ? null : intl.DateFormat('yyyy-MM-dd').format(d);
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final receipts = await LocalDb.instance.couponReceipts();
+    final from = _iso(_from);
+    final to = _iso(_to);
+
+    final totals = <String, _CustomerTotal>{};
+    for (final r in receipts) {
+      // A receipt written before the date field existed has none; it is still a receipt, so it is
+      // only dropped when a filter is actually set.
+      final date = r['received_date'] as String?;
+      if (from != null && (date == null || date.compareTo(from) < 0)) continue;
+      if (to != null && (date == null || date.compareTo(to) > 0)) continue;
+
+      final name = (r['customer_name'] as String?)?.trim();
+      final key = name == null || name.isEmpty ? '— من غير اسم —' : name;
+      final t = totals.putIfAbsent(key, () => _CustomerTotal(key));
+
+      final kind = (r['coupon_kind'] as String?) ?? 'standard';
+      final count = (r['coupon_count'] as int?) ?? 0;
+      t.byKind[kind] = (t.byKind[kind] ?? 0) + count;
+      t.value += ((r['coupon_value'] as num?)?.toDouble() ?? 0) * count;
+      t.receipts += 1;
+      if ((r['synced'] as int?) != 1) t.pending += 1;
+    }
+
+    final rows = totals.values.toList()
+      ..sort((a, b) => b.count.compareTo(a.count));
+    if (mounted) setState(() { _rows = rows; _loading = false; });
+  }
+
+  Widget _dateBox(String label, DateTime? value, void Function(DateTime?) set) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: value ?? DateTime.now(),
+          firstDate: DateTime(2024),
+          lastDate: DateTime.now().add(const Duration(days: 1)),
+        );
+        if (picked == null) return;
+        set(picked);
+        _load();
+      },
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: const Icon(Icons.calendar_today, size: 18),
+          suffixIcon: value == null
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () { set(null); _load(); },
+                ),
+        ),
+        child: Text(value == null ? 'الكل' : intl.DateFormat('yyyy/MM/dd').format(value)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final grand = _rows.fold<int>(0, (a, r) => a + r.count);
+    final grandValue = _rows.fold<double>(0, (a, r) => a + r.value);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('مراجعة الكوبونات')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(child: _dateBox('من', _from, (d) => setState(() => _from = d))),
+                const SizedBox(width: 8),
+                Expanded(child: _dateBox('إلى', _to, (d) => setState(() => _to = d))),
+              ],
+            ),
+          ),
+          if (!_loading && _rows.isNotEmpty)
+            Container(
+              width: double.infinity,
+              color: AppColors.primary.withOpacity(0.08),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('$grand كوبون من ${_rows.length} عميل',
+                      style: const TextStyle(fontWeight: FontWeight.w800)),
+                  if (grandValue > 0)
+                    Text('${grandValue.toStringAsFixed(2)} ج.م',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, color: AppColors.success)),
+                ],
+              ),
+            ),
+          Expanded(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _rows.isEmpty
+                    ? const Center(child: Text('مفيش كوبونات في المدة دي'))
+                    : ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        itemCount: _rows.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final r = _rows[i];
+                          return ListTile(
+                            title: Text(r.name,
+                                style: const TextStyle(fontWeight: FontWeight.w700)),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  for (final e in r.byKind.entries)
+                                    _KindChip(label: _kinds[e.key] ?? e.key, count: e.value),
+                                  if (r.pending > 0)
+                                    _KindChip(
+                                      label: 'مستني المزامنة',
+                                      count: r.pending,
+                                      color: AppColors.accent,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            trailing: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text('${r.count}',
+                                    style: const TextStyle(
+                                        fontSize: 20, fontWeight: FontWeight.w800)),
+                                if (r.value > 0)
+                                  Text('${r.value.toStringAsFixed(0)} ج.م',
+                                      style: const TextStyle(
+                                          fontSize: 12, color: AppColors.success)),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _KindChip extends StatelessWidget {
+  const _KindChip({required this.label, required this.count, this.color});
+
+  final String label;
+  final int count;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? AppColors.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text('$label · $count',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c)),
+    );
+  }
+}

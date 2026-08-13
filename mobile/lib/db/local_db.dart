@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 7, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 8, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -27,6 +27,9 @@ class LocalDb {
         // v5: coupons taken back from customers on the round. Queued like an inspection —
         // the rep is at a door with no signal far more often than not.
         await d.execute(_couponReceiptTable);
+      }
+      if (from < 8) {
+        try { await d.execute(_attachmentTable); } catch (_) {}
       }
       if (from < 7) {
         // v7: تاريخ الاستلام ونوع الكوبون وقيمته ونوع العميل.
@@ -47,6 +50,7 @@ class LocalDb {
         await d.execute('ALTER TABLE customer ADD COLUMN address TEXT');
       }
     }, onCreate: (d, v) async {
+      await d.execute(_attachmentTable);
       await d.execute(_couponReceiptTable);
       await d.execute('''
         CREATE TABLE inspection(
@@ -333,6 +337,35 @@ class LocalDb {
 
   /// Queue a handover taken at the door. `client_uuid` is what makes a retry safe: the server
   /// keys on it, so a receipt sent twice after a dropped connection lands once.
+  // --- المرفقات ---
+
+  Future<int> addAttachment({
+    required String inspectionUuid,
+    required String path,
+    String? name,
+    String? kind,
+    int? bytes,
+  }) async {
+    return (await db).insert('attachment', {
+      'inspection_uuid': inspectionUuid,
+      'path': path,
+      'name': name,
+      'kind': kind,
+      'bytes': bytes,
+      'synced': 0,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<List<Map<String, Object?>>> attachments(String inspectionUuid) async {
+    return (await db).query('attachment',
+        where: 'inspection_uuid = ?', whereArgs: [inspectionUuid], orderBy: 'local_id');
+  }
+
+  Future<void> deleteAttachment(int localId) async {
+    await (await db).delete('attachment', where: 'local_id = ?', whereArgs: [localId]);
+  }
+
   Future<int> saveCouponReceipt({
     required String clientUuid,
     required List<String> serials,
@@ -383,6 +416,22 @@ class LocalDb {
     await (await db).delete('coupon_receipt', where: 'local_id = ?', whereArgs: [localId]);
   }
 }
+
+/// المرفقات المربوطة بزيارة — بتتخزن على الجهاز وبتتزامن بعد الزيارة نفسها.
+///
+/// Keyed by the visit's `client_uuid`, not its row id: the visit is created offline and only gets
+/// a server id later, so the uuid is the one name that is true from the moment it is written.
+const _attachmentTable = '''
+  CREATE TABLE attachment(
+    local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inspection_uuid TEXT NOT NULL,
+    path TEXT NOT NULL,
+    name TEXT,
+    kind TEXT,
+    bytes INTEGER,
+    synced INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  )''';
 
 const _couponReceiptTable = '''
   CREATE TABLE coupon_receipt(
