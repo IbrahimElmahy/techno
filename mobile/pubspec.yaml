@@ -11,8 +11,6 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  # بصمة الباسورد للدخول من غير نت. كانت جاية أصلاً مع الحزم التانية.
-  crypto: ^3.0.0
   http: ^1.6.0
   # Pinned by flutter_localizations, not by us: the Flutter SDK ships a hard `intl 0.20.2`, so an
   # exact `0.19.0` here made `pub get` unsolvable the moment the SDK moved forward. Only
@@ -22,37 +20,12 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.5.3
   sqflite: ^2.4.1
-  sqflite_common_ffi: ^2.4.2
-  sqflite_common_ffi_web: ^1.1.2
   uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
-  flutter_launcher_icons: ^0.14.2
-
-flutter_launcher_icons:
-  android: true
-  ios: true
-  web:
-    generate: true
-    image_path: "assets/logo.png"
-  image_path: "assets/logo.png"
-  adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/logo.png"
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/
-    - assets/logo.png
-  # الخط. الثيم كان بيطلب Cairo من غير ما حد يحمّله، فـFlutter كان بيرجع لخط النظام من غير
-  # ما يشتكي — التطبيق كان شكله مختلف عن النظام على الويب ومحدش يعرف ليه.
-  #
-  # ملف واحد variable بكل الأوزان بدل ملف لكل وزن، فـ`fontWeight` بيتحرك على محور الـwght.
-  # متحمّل جوّه التطبيق مش من الإنترنت، لأنه تطبيق ميداني بيشتغل من غير شبكة.
-  fonts:
-    - family: Cairo
-      fonts:
-        - asset: assets/fonts/Cairo.ttf

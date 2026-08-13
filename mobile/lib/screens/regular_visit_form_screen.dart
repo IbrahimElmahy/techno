@@ -6,7 +6,6 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'item_picker_screen.dart';
-import '../models/points.dart';
 
 /// «الزيارة العادية» — أبسط من معاينة الفنيين: مرتبطة بعميل مختار من النظام، وبتسجل
 /// تفاصيل الزيارة وأصناف. الكود تلقائي، والحفظ محلي (أوفلاين) زي المعاينات.
@@ -28,6 +27,8 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   double get _totalPoints =>
       double.parse(_lines.fold<double>(0, (s, l) => s + l.total).toStringAsFixed(3));
 
+  static String _fmt(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -40,30 +41,19 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   }
 
   Future<void> _addItem() async {
-    await AddItemFlow.show(context, (item, qty) {
+    final line = await Navigator.push<InspectionLine>(
+        context, MaterialPageRoute(builder: (_) => const ItemPickerScreen()));
+    if (line != null) {
       setState(() {
         final existing = _lines.indexWhere(
-            (l) => l.itemName == item.name);
+            (l) => l.itemId == line.itemId && l.itemName == line.itemName);
         if (existing >= 0) {
-          _lines[existing].quantity += qty;
+          _lines[existing].quantity += line.quantity;
         } else {
-          _lines.add(InspectionLine(
-            // بيفضل null على السلك — دول أصناف نقاط، مش منتجات.
-            //
-            // `item_id` on the server is a foreign key to the PRODUCTS table, and it is not just a
-            // label: a line that carries one gets its name overwritten with that product's name and
-            // posts a stock movement deducting that product from the rep's custody. The inspection
-            // catalogue numbers from 1 and so do the products, so eight of the thirty-two ids point
-            // at a real and completely unrelated product — the rest are rejected outright with
-            // «الرصيد غير كافٍ في عهدتك».
-            itemId: null,
-            itemName: item.name,
-            quantity: qty,
-            points: item.points,
-          ));
+          _lines.add(line);
         }
       });
-    });
+    }
   }
 
   Future<void> _save() async {
@@ -158,7 +148,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                               return TextField(
                                 controller: controller,
                                 focusNode: focusNode,
-                                textAlign: TextAlign.start,
+                                textAlign: TextAlign.right,
                                 onChanged: (v) {
                                   _customerName.text = v;
                                   _customerId = null; // typing a new/edited name unlinks
@@ -173,7 +163,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                               );
                             },
                             optionsViewBuilder: (context, onSelected, options) => Align(
-                              alignment: AlignmentDirectional.topStart,
+                              alignment: Alignment.topRight,
                               child: Material(
                                 elevation: 4,
                                 child: SizedBox(
@@ -248,7 +238,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                   children: [
                     Text('إجمالي النقاط',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                    Text(points(_totalPoints),
+                    Text(_fmt(_totalPoints),
                         style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -310,11 +300,11 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                 contentPadding: EdgeInsets.zero,
                 title: Text(_lines[i].itemName),
                 subtitle:
-                    Text('${points(_lines[i].quantity)} × ${points(_lines[i].points)} نقطة'),
+                    Text('${_fmt(_lines[i].quantity)} × ${_fmt(_lines[i].points)} نقطة'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(points(_lines[i].total),
+                    Text(_fmt(_lines[i].total),
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
@@ -356,8 +346,8 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text(l.itemName),
-                    subtitle: Text('الكمية: ${points(l.quantity)} × ${points(l.points)} نقطة'),
-                    trailing: Text(points(l.total),
+                    subtitle: Text('الكمية: ${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
+                    trailing: Text(_fmt(l.total),
                         style:
                             const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
                   ),
@@ -367,7 +357,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                 children: [
                   const Text('إجمالي النقاط',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text(points(_totalPoints),
+                  Text(_fmt(_totalPoints),
                       style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,

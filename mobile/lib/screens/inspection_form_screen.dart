@@ -6,7 +6,6 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'item_picker_screen.dart';
-import '../models/points.dart';
 
 /// The inspection entry form — the heart of the app. Saves locally (offline-first);
 /// sync to the server happens later from the sync screen.
@@ -72,30 +71,19 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   }
 
   Future<void> _addItem() async {
-    await AddItemFlow.show(context, (item, qty) {
+    final line = await Navigator.push<InspectionLine>(
+        context, MaterialPageRoute(builder: (_) => const ItemPickerScreen()));
+    if (line != null) {
       setState(() {
         final existing = _lines.indexWhere(
-            (l) => l.itemName == item.name);
+            (l) => l.itemId == line.itemId && l.itemName == line.itemName);
         if (existing >= 0) {
-          _lines[existing].quantity += qty;
+          _lines[existing].quantity += line.quantity;
         } else {
-          _lines.add(InspectionLine(
-            // بيفضل null على السلك — دول أصناف نقاط، مش منتجات.
-            //
-            // `item_id` on the server is a foreign key to the PRODUCTS table, and it is not just a
-            // label: a line that carries one gets its name overwritten with that product's name and
-            // posts a stock movement deducting that product from the rep's custody. The inspection
-            // catalogue numbers from 1 and so do the products, so eight of the thirty-two ids point
-            // at a real and completely unrelated product — the rest are rejected outright with
-            // «الرصيد غير كافٍ في عهدتك».
-            itemId: null,
-            itemName: item.name,
-            quantity: qty,
-            points: item.points,
-          ));
+          _lines.add(line);
         }
       });
-    });
+    }
   }
 
   void _showCart() {
@@ -130,8 +118,8 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(l.itemName),
                           subtitle: Text(
-                              'الكمية: ${points(l.quantity)} × ${points(l.points)} نقطة'),
-                          trailing: Text(points(l.total),
+                              'الكمية: ${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
+                          trailing: Text(_fmt(l.total),
                               style: const TextStyle(
                                   fontWeight: FontWeight.w700, fontSize: 15)),
                         ),
@@ -144,7 +132,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 children: [
                   const Text('إجمالي النقاط',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text(points(_totalPoints),
+                  Text(_fmt(_totalPoints),
                       style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -190,6 +178,8 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   String? _nullable(TextEditingController c) =>
       c.text.trim().isEmpty ? null : c.text.trim();
 
+  static String _fmt(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   @override
   Widget build(BuildContext context) {
@@ -260,7 +250,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   );
                 },
                 optionsViewBuilder: (context, onSelected, options) => Align(
-                  alignment: AlignmentDirectional.topStart,
+                  alignment: Alignment.topRight,
                   child: Material(
                     elevation: 4,
                     child: SizedBox(
@@ -366,7 +356,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   children: [
                     Text('إجمالي النقاط',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                    Text(points(_totalPoints),
+                    Text(_fmt(_totalPoints),
                         style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -417,7 +407,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 key: ValueKey('${_lines[i].itemName}-$i'),
                 direction: DismissDirection.endToStart,
                 background: Container(
-                  alignment: AlignmentDirectional.centerEnd,
+                  alignment: Alignment.centerLeft,
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   color: AppColors.danger,
                   child: const Icon(Icons.delete, color: Colors.white),
@@ -427,11 +417,11 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(_lines[i].itemName),
                   subtitle:
-                      Text('${points(_lines[i].quantity)} × ${points(_lines[i].points)} نقطة'),
+                      Text('${_fmt(_lines[i].quantity)} × ${_fmt(_lines[i].points)} نقطة'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(points(_lines[i].total),
+                      Text(_fmt(_lines[i].total),
                           style: const TextStyle(
                               fontWeight: FontWeight.w700, fontSize: 15)),
                       IconButton(
@@ -450,7 +440,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
 
   Future<void> _editLine(int index) async {
     final line = _lines[index];
-    final qty = TextEditingController(text: points(line.quantity));
+    final qty = TextEditingController(text: _fmt(line.quantity));
     final updated = await showDialog<double>(
       context: context,
       builder: (c) => Directionality(

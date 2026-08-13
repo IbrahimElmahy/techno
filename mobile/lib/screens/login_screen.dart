@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (_username.text.trim().isEmpty || _password.text.isEmpty) {
-      setState(() => _error = 'يرجى إدخال اسم المستخدم وكلمة المرور');
+      setState(() => _error = 'اكتب اسم المستخدم وكلمة السر');
       return;
     }
     setState(() {
@@ -29,13 +29,13 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       await ApiClient.instance.login(_username.text.trim(), _password.text);
+      // First pull of catalog + lookups so the rep can work offline right away.
       try {
         await ApiClient.instance.pullReferenceData();
-      } catch (_) {}
+      } catch (_) {/* offline pull can happen later from settings */}
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainNavigationContainer()),
-      );
+          MaterialPageRoute(builder: (_) => const HomeScreen()));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -46,174 +46,79 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FB),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 420),
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 24,
-                    offset: const Offset(0, 10),
-                  )
-                ],
-              ),
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppColors.headerGradient),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Logo
-                  Image.asset(
-                    'assets/images/technotherm_logo_original.png',
-                    height: 110,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Image.asset(
-                      'assets/images/technotherm_logo.png',
-                      height: 110,
-                      fit: BoxFit.contain,
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.12),
+                      shape: BoxShape.circle,
                     ),
+                    child: const Icon(Icons.plumbing, size: 64, color: Colors.white),
                   ),
-                  const SizedBox(height: 36),
-
-                  // Username Field
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'اسم المستخدم',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.ink),
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _username,
-                        textInputAction: TextInputAction.next,
-                        decoration: InputDecoration(
-                          hintText: 'اسم المستخدم',
-                          prefixIcon: const Icon(Icons.person_outline, color: Color(0xFF6B7280)),
-                          fillColor: const Color(0xFFFAFAFA),
-                          filled: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Password Field
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'كلمة المرور',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.ink),
-                      ),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _password,
-                        obscureText: _hide,
-                        onSubmitted: (_) => _login(),
-                        decoration: InputDecoration(
-                          hintText: '••••••',
-                          prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF6B7280)),
-                          suffixIcon: IconButton(
-                            icon: Icon(_hide ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: const Color(0xFF6B7280)),
-                            onPressed: () => setState(() => _hide = !_hide),
-                          ),
-                          fillColor: const Color(0xFFFAFAFA),
-                          filled: true,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  if (_error != null) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.danger.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.danger.withOpacity(0.3)),
-                      ),
-                      child: Row(
+                  const SizedBox(height: 16),
+                  const Text('تكنو ثيرم',
+                      style: TextStyle(
+                          fontSize: 30, fontWeight: FontWeight.w800, color: Colors.white)),
+                  const Text('نظام المعاينات الميدانية',
+                      style: TextStyle(fontSize: 15, color: Colors.white70)),
+                  const SizedBox(height: 32),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
                         children: [
-                          const Icon(Icons.error_outline, color: AppColors.danger, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(color: AppColors.danger, fontSize: 13, fontWeight: FontWeight.bold),
+                          TextField(
+                            controller: _username,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'اسم المستخدم',
+                              prefixIcon: Icon(Icons.person_outline),
                             ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _password,
+                            obscureText: _hide,
+                            onSubmitted: (_) => _login(),
+                            decoration: InputDecoration(
+                              labelText: 'كلمة السر',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: IconButton(
+                                icon: Icon(_hide ? Icons.visibility : Icons.visibility_off),
+                                onPressed: () => setState(() => _hide = !_hide),
+                              ),
+                            ),
+                          ),
+                          if (_error != null) ...[
+                            const SizedBox(height: 12),
+                            Text(_error!,
+                                style: const TextStyle(color: AppColors.danger),
+                                textAlign: TextAlign.center),
+                          ],
+                          const SizedBox(height: 20),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(50)),
+                            onPressed: _busy ? null : _login,
+                            icon: _busy
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white))
+                                : const Icon(Icons.login),
+                            label: const Text('دخول'),
                           ),
                         ],
                       ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 28),
-
-                  // Login Button (Orange Primary matching mockup)
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
-                      backgroundColor: AppColors.accent, // Therm Orange
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                    ),
-                    onPressed: _busy ? null : _login,
-                    child: _busy
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                          )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'تسجيل الدخول',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                              ),
-                              SizedBox(width: 8),
-                              Icon(Icons.login, size: 20, color: Colors.white),
-                            ],
-                          ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Footer
-                  const Text(
-                    'GERMAN TECHNOLOGY V. 2.4.1',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF9CA3AF),
-                      letterSpacing: 1.0,
                     ),
                   ),
                 ],
