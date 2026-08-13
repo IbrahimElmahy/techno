@@ -55,13 +55,25 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // اللوجو الحقيقي بدل أيقونة مواسير عامة.
+                  //
+                  // The logo is dark green and orange on a transparent background, so it needs to
+                  // sit on white to read at all — on the blue it would disappear.
                   Container(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.12),
-                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Icon(Icons.plumbing, size: 64, color: Colors.white),
+                    child: Image.asset(
+                      'assets/images/technotherm_logo.png',
+                      height: 72,
+                      fit: BoxFit.contain,
+                      // A missing asset otherwise throws a red box over the login screen; the old
+                      // icon is a poor logo but a working screen.
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.plumbing, size: 64, color: AppColors.primary),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   const Text('تكنو ثيرم',

@@ -20,12 +20,35 @@ dependencies:
   path: ^1.9.0
   shared_preferences: ^2.5.3
   sqflite: ^2.4.1
+  # عشان التطبيق يفتح على المتصفح للتجربة — المتصفح مالوش بلجن sqflite.
+  #
+  # الويب بس، من غير حزمة الديسكتوب: دي بتجرّ نسخة sqlite3 أصلية لكل معمارية أندرويد
+  # وبتكسر بيلد الـAPK على تحميل ناقص، وإحنا أصلاً مش بنشغّل التطبيق على ويندوز.
+  sqflite_common_ffi_web: ^1.1.2
   uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.2
+
+# أيقونة التطبيق. اتعملت من اللوجو الحقيقي — assets/images/technotherm_logo.png —
+# مش من assets/logo.png، لأن دي طلعت صورة شاشة دخول اتحفظت بالاسم ده بالغلط، وكانت
+# هتطلع أيقونة عبارة عن لقطة شاشة مصغّرة.
+#
+# ملفين: واحد كامل للأيقونة العادية، وواحد اللوجو فيه أصغر للأندرويد التكيّفي —
+# النظام بيقص أطراف دي حسب شكل الأيقونة على كل تليفون، فاللي يملا المربع بيتاكل.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  remove_alpha_ios: true
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icon/
