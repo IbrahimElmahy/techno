@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 5, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 7, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -27,6 +27,17 @@ class LocalDb {
         // v5: coupons taken back from customers on the round. Queued like an inspection —
         // the rep is at a door with no signal far more often than not.
         await d.execute(_couponReceiptTable);
+      }
+      if (from < 7) {
+        // v7: تاريخ الاستلام ونوع الكوبون وقيمته ونوع العميل.
+        for (final col in [
+          'received_date TEXT',
+          'coupon_kind TEXT',
+          'coupon_value REAL',
+          'customer_type TEXT',
+        ]) {
+          try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN $col'); } catch (_) {}
+        }
       }
       if (from < 4) {
         // v4: the inspection point-items catalog + customer contact fields for autofill.
@@ -327,12 +338,20 @@ class LocalDb {
     required List<String> serials,
     int? customerId,
     String? customerName,
+    String? customerType,
+    String? receivedDate,
+    String? couponKind,
+    double? couponValue,
     String? notes,
   }) async {
     return (await db).insert('coupon_receipt', {
       'client_uuid': clientUuid,
       'customer_id': customerId,
       'customer_name': customerName,
+      'customer_type': customerType,
+      'received_date': receivedDate,
+      'coupon_kind': couponKind,
+      'coupon_value': couponValue,
       'serials': serials.join(','),
       'coupon_count': serials.length,
       'notes': notes,
@@ -373,6 +392,17 @@ const _couponReceiptTable = '''
     customer_name TEXT,
     serials TEXT NOT NULL,
     coupon_count INTEGER NOT NULL DEFAULT 0,
+    -- تاريخ الاستلام اللي المندوب اختاره. مش وقت الكتابة: ممكن يسجّل النهاردة استلام
+    -- حصل امبارح، والتقارير بتتجمّع بالتاريخ ده.
+    received_date TEXT,
+    -- نوع الكوبون وقيمته زي ما المندوب قالهم.
+    --
+    -- The server derives the true kind from the serial's issued range, but only when the phone
+    -- reaches it. A rep with no signal still has to see «ثلاثة ذهبي وواحد فضي» before he hands the
+    -- customer a receipt, so what he declared is kept here and travels with the sync.
+    coupon_kind TEXT,
+    coupon_value REAL,
+    customer_type TEXT,
     notes TEXT,
     synced INTEGER NOT NULL DEFAULT 0,
     document_number TEXT,
