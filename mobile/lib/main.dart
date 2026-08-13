@@ -7,6 +7,7 @@ import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 import 'db/local_db.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/splash_screen.dart';
 import 'theme.dart';
 
 void main() {
@@ -63,19 +64,38 @@ class _Gate extends StatefulWidget {
 class _GateState extends State<_Gate> {
   bool? _loggedIn;
 
+  /// أقل مدة تفضل فيها شاشة البداية ظاهرة.
+  ///
+  /// Reading the token is fast, so without a floor the splash would flash and vanish — which looks
+  /// like the app stuttering on open. The wait runs ALONGSIDE the check, not after it: whichever
+  /// finishes last decides, so the app is never held back by the animation.
+  static const _minimumSplash = Duration(milliseconds: 1400);
+
   @override
   void initState() {
     super.initState();
-    LocalDb.instance
-        .getKv('token')
-        .then((t) => setState(() => _loggedIn = t != null));
+    _decide();
+  }
+
+  Future<void> _decide() async {
+    // Started BEFORE the wait, awaited after it — so the two overlap and the splash costs nothing
+    // beyond its floor.
+    final reading = LocalDb.instance.getKv('token');
+    await Future<void>.delayed(_minimumSplash);
+    final token = await reading;
+    if (!mounted) return;
+    setState(() => _loggedIn = token != null);
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loggedIn == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    return _loggedIn! ? const HomeScreen() : const LoginScreen();
+    // A plain swap would cut from the splash to the next screen in one frame; the fade makes it
+    // read as one screen settling into another.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 450),
+      child: _loggedIn == null
+          ? const SplashScreen()
+          : (_loggedIn! ? const HomeScreen() : const LoginScreen()),
+    );
   }
 }

@@ -11,7 +11,23 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+  /// دخول الشاشة — اللوجو الأول والفورمة وراه.
+  ///
+  /// The screen arrived fully formed in one frame, right after the splash faded. Letting it settle
+  /// in the same direction the splash was moving makes the two read as one opening rather than two
+  /// separate screens.
+  late final AnimationController _enter = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 750),
+  )..forward();
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _enter, curve: const Interval(0.0, 0.7, curve: Curves.easeOut));
+  late final Animation<Offset> _rise = Tween(
+    begin: const Offset(0, 0.12),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _enter, curve: Curves.easeOutCubic));
+
   final _username = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
@@ -44,6 +60,14 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   @override
+  void dispose() {
+    _enter.dispose();
+    _username.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
@@ -52,7 +76,11 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
-              child: Column(
+              child: FadeTransition(
+                opacity: _fade,
+                child: SlideTransition(
+                  position: _rise,
+                  child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // اللوجو الحقيقي بدل أيقونة مواسير عامة.
@@ -134,6 +162,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                 ],
+                  ),
+                ),
               ),
             ),
           ),

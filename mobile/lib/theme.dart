@@ -25,7 +25,7 @@ ThemeData buildTheme() {
       surface: Colors.white,
     ),
     scaffoldBackgroundColor: AppColors.surface,
-    fontFamily: 'Roboto',
+    fontFamily: 'Cairo',
   );
   return base.copyWith(
     appBarTheme: const AppBarTheme(
