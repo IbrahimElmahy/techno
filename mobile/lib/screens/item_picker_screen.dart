@@ -216,8 +216,19 @@ class _QuantityDialogState extends State<_QuantityDialog> {
     Navigator.pop(
       context,
       _QuantityAnswer(
-        // item_id stays null on the wire — these are point-items, not product SKUs. Sending the
-        // catalogue id would land on an unrelated product and deduct it from the rep's custody.
+        // `item_id` بيفضل null — والقرار ده قرار شغل مش تفصيلة تقنية.
+        //
+        // أصناف المعاينة **بتتعدّ للنقاط بس**؛ المندوب مش بيركّبها من عربيته. اتأكدنا من ده
+        // مع صاحب النظام.
+        //
+        // The server treats a line carrying an `item_id` as a real movement: it renames the line
+        // after that product and posts an `inspection_out` deducting it from the rep's custody.
+        // The two catalogues are numbered from 1 independently, so eight of the thirty-two
+        // inspection ids land on an unrelated product — the line would draw down something the rep
+        // never touched, or be refused outright with «الرصيد غير كافٍ في عهدتك».
+        //
+        // If the business ever changes and these items ARE fitted from the van, this is not the
+        // place to fix it: the inspection catalogue would first have to point at real products.
         InspectionLine(
           itemId: null,
           itemName: widget.item.name,

@@ -31,7 +31,15 @@ void _useTheRightDatabaseForThisPlatform() {
 }
 
 class TechnoInspectionsApp extends StatelessWidget {
-  const TechnoInspectionsApp({super.key});
+  const TechnoInspectionsApp({super.key, this.home});
+
+  /// الشاشة اللي تفتح الأول — بتتبدّل في الاختبارات بس.
+  ///
+  /// `_Gate` reads the local database and waits out the splash, so mounting the real shell in a
+  /// widget test leaves timers pending and the run fails before asserting anything. Letting the
+  /// shell take its first screen means the direction, the locale and the delegates get checked as
+  /// they actually ship, instead of being re-declared in the test and proving nothing.
+  final Widget? home;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +56,7 @@ class TechnoInspectionsApp extends StatelessWidget {
       ],
       builder: (context, child) =>
           Directionality(textDirection: TextDirection.rtl, child: child!),
-      home: const _Gate(),
+      home: home ?? const _Gate(),
     );
   }
 }
