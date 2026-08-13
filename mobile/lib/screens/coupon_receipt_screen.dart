@@ -111,8 +111,6 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     }
     final entry = _CouponEntry(serial);
     setState(() => _entries.insert(0, entry));
-    _serialCtrl.clear();
-    _focus.requestFocus();
     await _verify(entry);
   }
 
@@ -146,6 +144,9 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     }
   }
 
+  /// أقصى عدد كوبونات في النطاق الواحد.
+  static const _maxRange = 2000;
+
   Future<void> _addRange() async {
     final first = int.tryParse(_fromCtrl.text.trim());
     final last = int.tryParse(_toCtrl.text.trim());
@@ -157,8 +158,11 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       _toast('رقم النهاية أصغر من البداية');
       return;
     }
-    if (last - first + 1 > 100) {
-      _toast('النطاق كبير — أقصى ١٠٠ كوبون في المرة');
+    // Raised from a hundred because a real book runs longer than that and the cap was refusing
+    // honest work. It cannot go altogether: «من ١٢٠٠ إلى ١٢٠٠٠٠٠» is a slip of one finger, and
+    // with no ceiling it builds a million rows and takes the screen down with it.
+    if (last - first + 1 > _maxRange) {
+      _toast('النطاق كبير — أقصى $_maxRange كوبون في المرة');
       return;
     }
     _fromCtrl.clear();
@@ -263,96 +267,107 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                   ),
                   const SizedBox(height: 10),
 
-                  // ٢) نوع الكوبون
-                  DropdownButtonFormField<String>(
-                    initialValue: _kind,
-                    decoration: const InputDecoration(
-                      labelText: 'نوع الكوبون',
-                      prefixIcon: Icon(Icons.workspace_premium_outlined),
-                    ),
-                    items: [
-                      for (final e in kinds.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
-                    ],
-                    onChanged: (v) => setState(() => _kind = v ?? _kind),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // ٣) قيمة الكوبون — فاضية عشان المندوب يكتبها بنفسه
-                  TextField(
-                    controller: _valueCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    // عشان الإجمالي في الملخص يتحرك مع الكتابة.
-                    onChanged: (_) => setState(() {}),
-                    decoration: const InputDecoration(
-                      labelText: 'قيمة الكوبون',
-                      hintText: 'اكتب القيمة',
-                      prefixIcon: Icon(Icons.payments_outlined),
-                      suffixText: 'ج.م',
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // ٤) سباك ولا تاجر
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'plumber', label: Text('سباك')),
-                      ButtonSegment(value: 'merchant', label: Text('تاجر')),
-                    ],
-                    selected: {_customerType},
-                    onSelectionChanged: (v) => setState(() => _customerType = v.first),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // ٥) العميل — من المتاحين للمندوب، من الكاش فبيشتغل من غير نت
-                  Autocomplete<CustomerRef>(
-                    displayStringForOption: (c) => c.name,
-                    optionsBuilder: (v) {
-                      final q = v.text.trim();
-                      if (q.isEmpty) return _customers.take(15);
-                      return _customers.where((c) => c.name.contains(q));
-                    },
-                    onSelected: (c) => setState(() {
-                      _customerId = c.id;
-                      _customerName = c.name;
-                    }),
-                    fieldViewBuilder: (ctx, ctrl, focus, _) => TextField(
-                      controller: ctrl,
-                      focusNode: focus,
-                      onChanged: (q) {
-                        _loadCustomers(q);
-                        // Typing past a chosen name unlinks it: a receipt credited to somebody the
-                        // rep already moved on from is worse than one with no name yet.
-                        if (_customerName != null && q != _customerName) {
-                          setState(() { _customerId = null; _customerName = null; });
-                        }
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'العميل',
-                        hintText: 'ابحث بالاسم',
-                        prefixIcon: const Icon(Icons.person_outline),
-                        suffixIcon: _customerId == null
-                            ? null
-                            : const Icon(Icons.check_circle, color: AppColors.success),
+                  // ٢) النوع والقيمة جنب بعض — سؤالين عن نفس الكوبون، فسطر واحد.
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _kind,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            labelText: 'نوع الكوبون',
+                            prefixIcon: Icon(Icons.workspace_premium_outlined),
+                          ),
+                          items: [
+                            for (final e in kinds.entries)
+                              DropdownMenuItem(value: e.key, child: Text(e.value)),
+                          ],
+                          onChanged: (v) => setState(() => _kind = v ?? _kind),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: TextField(
+                          controller: _valueCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          // عشان الإجمالي في الملخص يتحرك مع الكتابة.
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            isDense: true,
+                            labelText: 'القيمة',
+                            hintText: '0.00',
+                            suffixText: 'ج.م',
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const Divider(height: 26),
+                  const SizedBox(height: 10),
 
-                  TextField(
-                    controller: _serialCtrl,
-                    focusNode: _focus,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    textInputAction: TextInputAction.done,
-                    inputFormatters: [LengthLimitingTextInputFormatter(24)],
-                    decoration: const InputDecoration(
-                      labelText: 'رقم الكوبون',
-                      hintText: 'اكتب الرقم واضغط إدخال',
-                      prefixIcon: Icon(Icons.confirmation_number_outlined),
-                    ),
-                    onSubmitted: _add,
+                  // ٣) نوع العميل واسمه جنب بعض — «سباك أحمد» جملة واحدة مش سطرين.
+                  Row(
+                    children: [
+                      SegmentedButton<String>(
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity(horizontal: -2, vertical: -2),
+                        ),
+                        segments: const [
+                          ButtonSegment(value: 'plumber', label: Text('سباك')),
+                          ButtonSegment(value: 'merchant', label: Text('تاجر')),
+                        ],
+                        selected: {_customerType},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (v) => setState(() => _customerType = v.first),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Autocomplete<CustomerRef>(
+                          displayStringForOption: (c) => c.name,
+                          optionsBuilder: (v) {
+                            final q = v.text.trim();
+                            if (q.isEmpty) return _customers.take(15);
+                            return _customers.where((c) => c.name.contains(q));
+                          },
+                          onSelected: (c) => setState(() {
+                            _customerId = c.id;
+                            _customerName = c.name;
+                          }),
+                          fieldViewBuilder: (ctx, ctrl, focus, _) => TextField(
+                            controller: ctrl,
+                            focusNode: focus,
+                            onChanged: (q) {
+                              _loadCustomers(q);
+                              // Typing past a chosen name unlinks it: a receipt credited to
+                              // somebody the rep already moved on from is worse than one with no
+                              // name yet.
+                              if (_customerName != null && q != _customerName) {
+                                setState(() { _customerId = null; _customerName = null; });
+                              }
+                            },
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: 'العميل',
+                              hintText: 'ابحث بالاسم',
+                              suffixIcon: _customerId == null
+                                  ? null
+                                  : const Icon(Icons.check_circle,
+                                      color: AppColors.success, size: 20),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                  const Divider(height: 22),
+
+                  // ٤) النطاق — ودي الطريقة الوحيدة لإدخال الكوبونات.
+                  //
+                  // The single «رقم الكوبون» box is gone: coupons are issued in numbered books, so
+                  // a rep is always holding a run. One number is just a run of one — «من ١٢٠٠ إلى
+                  // ١٢٠٠» — and keeping a second box for it meant two ways to do the same thing,
+                  // with the wrong one grabbing the keyboard on open.
                   const SizedBox(height: 10),
                   Row(
                     children: [
@@ -368,15 +383,23 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                         child: TextField(
                           controller: _toCtrl,
                           keyboardType: TextInputType.number,
+                          textInputAction: TextInputAction.done,
+                          // Enter on «إلى» adds the run — the rep's hands are already on the
+                          // number pad and reaching for a button breaks the rhythm.
+                          onSubmitted: (_) => _addRange(),
                           decoration: const InputDecoration(labelText: 'إلى رقم'),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      FilledButton.tonal(
-                        onPressed: _addRange,
-                        child: const Text('إضافة نطاق'),
-                      ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _addRange,
+                      icon: const Icon(Icons.playlist_add),
+                      label: const Text('إضافة النطاق'),
+                    ),
                   ),
                 ],
               ),
@@ -385,10 +408,12 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
               Container(
                 width: double.infinity,
                 color: AppColors.primary.withOpacity(0.08),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text('العميل: $_customerName',
                     style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
+            // القايمة بتاخد كل اللي فاضل — دي الحتة اللي المندوب بيراجعها قدام العميل، والحقول
+            // فوق بقت مضغوطة عشان تسيبلها مكان.
             Expanded(
               child: _entries.isEmpty
                   ? const Center(child: Text('مافيش كوبونات مضافة'))

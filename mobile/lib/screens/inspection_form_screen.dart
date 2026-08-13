@@ -313,9 +313,60 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
             ]),
             if (_isTechnician)
               _section('بيانات الفني', Icons.engineering, [
-                TextFormField(
-                  controller: _technicianName,
-                  decoration: const InputDecoration(labelText: 'اسم الفني'),
+                // بحث زي بيانات المالك: الفني اللي المندوب زاره قبل كده موجود في نفس الكاش،
+                // فكتابة اسمه من الأول كل مرة كانت شغل مكرر — واسم متكتب مرتين بشكلين بيبقى
+                // شخصين في التقارير.
+                Autocomplete<CustomerRef>(
+                  displayStringForOption: (c) => c.name,
+                  optionsBuilder: (value) async {
+                    final q = value.text.trim();
+                    if (q.length < 2) return const Iterable<CustomerRef>.empty();
+                    return LocalDb.instance.customers(query: q, limit: 8);
+                  },
+                  onSelected: (c) {
+                    _technicianName.text = c.name;
+                    if ((c.phone ?? '').isNotEmpty) _technicianPhone.text = c.phone!;
+                    setState(() {});
+                  },
+                  fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                    controller.text = _technicianName.text;
+                    controller.selection =
+                        TextSelection.collapsed(offset: controller.text.length);
+                    return TextFormField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      onChanged: (v) => _technicianName.text = v,
+                      decoration: const InputDecoration(
+                        labelText: 'اسم الفني',
+                        prefixIcon: Icon(Icons.search),
+                        helperText: 'اكتب الاسم — لو اتسجّل قبل كده هيظهر لتختاره',
+                      ),
+                    );
+                  },
+                  optionsViewBuilder: (context, onSelected, options) => Align(
+                    alignment: AlignmentDirectional.topStart,
+                    child: Material(
+                      elevation: 4,
+                      child: SizedBox(
+                        width: MediaQuery.of(context).size.width - 60,
+                        child: ListView(
+                          padding: EdgeInsets.zero,
+                          shrinkWrap: true,
+                          children: [
+                            for (final o in options)
+                              ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.engineering,
+                                    color: AppColors.primary),
+                                title: Text(o.name),
+                                subtitle: (o.phone ?? '').isEmpty ? null : Text(o.phone!),
+                                onTap: () => onSelected(o),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
                 TextFormField(
                   controller: _technicianPhone,

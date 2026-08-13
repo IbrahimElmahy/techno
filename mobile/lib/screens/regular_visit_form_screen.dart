@@ -7,10 +7,12 @@ import '../widgets/attachments_field.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
-import 'item_picker_screen.dart';
 
-/// «الزيارة العادية» — أبسط من معاينة الفنيين: مرتبطة بعميل مختار من النظام، وبتسجل
-/// تفاصيل الزيارة وأصناف. الكود تلقائي، والحفظ محلي (أوفلاين) زي المعاينات.
+/// «الزيارة العادية» — تسجيل زيارة، مش حدث نقاط.
+///
+/// Date, customer, what happened, and photographs. No items and no points: those belong to
+/// «معاينة فنيين», and having them on both screens meant a rep could record the same points twice
+/// under two different kinds of visit.
 class RegularVisitFormScreen extends StatefulWidget {
   const RegularVisitFormScreen({super.key});
 
@@ -30,14 +32,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   final _customerName = TextEditingController(); // free text: pick an existing one OR type a new
   DateTime _date = DateTime.now();
   int? _customerId; // set only when an existing customer is picked
-  final List<InspectionLine> _lines = [];
   bool _saving = false;
-
-  double get _totalPoints =>
-      double.parse(_lines.fold<double>(0, (s, l) => s + l.total).toStringAsFixed(3));
-
-  static String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -49,19 +44,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
     if (picked != null) setState(() => _date = picked);
   }
 
-  Future<void> _addItem() async {
-    // بيفضل مفتوح لحد ما المندوب يقول «تم» — إضافة سبع أصناف بقت سبع ضغطات مش سبع دخلات وخرجات.
-    await AddItemFlow.show(context, (line) {
-      setState(() {
-        final existing = _lines.indexWhere((l) => l.itemName == line.itemName);
-        if (existing >= 0) {
-          _lines[existing].quantity += line.quantity;
-        } else {
-          _lines.add(line);
-        }
-      });
-    });
-  }
 
   Future<void> _save() async {
     final name = _customerName.text.trim();
@@ -78,7 +60,8 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
       ownerName: name,
       customerId: _customerId, // null for a new name typed freely
       visitDetails: _visitDetails.text.trim().isEmpty ? null : _visitDetails.text.trim(),
-      lines: _lines,
+      // زيارة عادية مالهاش أصناف ولا نقاط — دي معاينة الفنيين.
+      lines: const [],
     );
     await LocalDb.instance.saveInspection(insp);
     for (final a in _attachments) {
@@ -102,16 +85,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('زيارة عادية'),
-        actions: [
-          IconButton(
-            onPressed: () => _showCart(),
-            icon: Badge(
-              isLabelVisible: _lines.isNotEmpty,
-              label: Text('${_lines.length}'),
-              child: const Icon(Icons.shopping_cart_outlined),
-            ),
-          ),
-        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -241,7 +214,8 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
               ),
             ),
           ),
-          _itemsSection(),
+          // قسم الأصناف اتشال: «زيارة عادية» تسجيل زيارة مش حدث نقاط. الأصناف والنقاط مكانها
+          // «معاينة فنيين».
           const SizedBox(height: 90),
         ],
       ),
@@ -254,22 +228,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
           child: Row(
             children: [
               Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('إجمالي النقاط',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                    Text(_fmt(_totalPoints),
-                        style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary)),
-                  ],
-                ),
-              ),
-              Expanded(
-                flex: 2,
                 child: FilledButton.icon(
                   onPressed: _saving ? null : _save,
                   icon: const Icon(Icons.save_outlined),
@@ -295,101 +253,5 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
         ),
       );
 
-  Widget _itemsSection() {
-    return Card(
-      margin: const EdgeInsets.only(top: 6),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.widgets_outlined, color: AppColors.primary),
-                const SizedBox(width: 8),
-                const Expanded(
-                    child: Text('الأصناف',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                FilledButton.tonalIcon(
-                  onPressed: _addItem,
-                  icon: const Icon(Icons.add),
-                  label: const Text('إضافة صنف'),
-                ),
-              ],
-            ),
-            for (var i = 0; i < _lines.length; i++)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(_lines[i].itemName),
-                subtitle:
-                    Text('${_fmt(_lines[i].quantity)} × ${_fmt(_lines[i].points)} نقطة'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(_fmt(_lines[i].total),
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                    IconButton(
-                      icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
-                      onPressed: () => setState(() => _lines.removeAt(i)),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  void _showCart() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (c) => Directionality(
-        textDirection: TextDirection.rtl,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('ملخص الأصناف',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              if (_lines.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: Text('لسه ما اتضافش أصناف')),
-                )
-              else
-                for (final l in _lines)
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(l.itemName),
-                    subtitle: Text('الكمية: ${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
-                    trailing: Text(_fmt(l.total),
-                        style:
-                            const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                  ),
-              const Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('إجمالي النقاط',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text(_fmt(_totalPoints),
-                      style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary)),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

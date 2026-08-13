@@ -16,8 +16,12 @@ class ReviewScreen extends StatefulWidget {
 class _ReviewScreenState extends State<ReviewScreen> {
   // «من – إلى» بدل يوم واحد: المندوب بيراجع أسبوعه، والفلتر بيوم واحد كان بيخليه يفتح
   // الشاشة سبع مرات عشان يشوف أسبوع.
-  DateTime? _from;
-  DateTime? _to;
+  //
+  // وبيفتحوا على تاريخ النهاردة مكتوب، مش فاضيين: «الكل» كانت بتحمّل كل زيارة اتسجلت من أول
+  // يوم، والمندوب اللي فاتح الشاشة بيدور على شغل النهاردة. مكتوب قدامه يبقى يعدّله بضغطة،
+  // و«كل التواريخ» جنبه لو عايز يرجّع الفلتر مفتوح.
+  DateTime? _from = DateUtils.dateOnly(DateTime.now());
+  DateTime? _to = DateUtils.dateOnly(DateTime.now());
   String? _kind; // null = الكل | technician | regular
   bool? _synced; // null = الكل | true متزامنة | false معلقة
   List<Inspection> _rows = [];
@@ -51,6 +55,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   /// خانة تاريخ واحدة — «من» أو «إلى». فاضية معناها مفيش حد من الناحية دي.
+  ///
+  /// The box is deliberately spare — label, date, and nothing else. It used to carry a calendar
+  /// icon on one side and a clear button on the other, which on a phone left «2026/08/14» about
+  /// forty pixels to sit in and it wrapped mid-date («2026/0» over «8/14»). Tapping opens the
+  /// picker, and «كل التواريخ» next to the pair clears both.
   Widget _dateBox(String label, DateTime? value, void Function(DateTime?) set) {
     return InkWell(
       onTap: () async {
@@ -72,16 +81,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: const Icon(Icons.calendar_today, size: 18),
-          // A cleared end is «open», not «today» — so it can be undone.
-          suffixIcon: value == null
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear, size: 18),
-                  onPressed: () { set(null); _load(); },
-                ),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         ),
-        child: Text(value == null ? 'الكل' : intl.DateFormat('yyyy/MM/dd').format(value)),
+        child: Text(
+          value == null ? 'الكل' : intl.DateFormat('yyyy/MM/dd').format(value),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }
