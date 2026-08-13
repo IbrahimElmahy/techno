@@ -52,6 +52,14 @@ interface PurchaseItem {
   quantity: number | null;
   unit_price: number;
   unit: string | null;
+  /** خصم السطر. null = مفيش خصم متفق عليه — مش صفر.
+   *  Stored on the line rather than taken off the price, so «اتفقنا على عشرة في المية» can be read
+   *  back off the document instead of being inferred from a number that looks odd. */
+  discount_pct: number | null;
+  /** المخزن اللي السطر ده بيتستلم فيه. null = مخزن المستند.
+   *  One purchase can be split across stores — the server has carried this since 030 and the
+   *  screen simply never offered it. */
+  warehouse_id: number | null;
 }
 
 interface ItemUnit { name: string; factor: number; is_base: boolean; }
@@ -102,6 +110,7 @@ export default function Purchases() {
   const navigate = useNavigate();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
   const [items, setItems] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -115,11 +124,14 @@ export default function Purchases() {
   // Form state
   const [form] = Form.useForm();
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([
-    { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null },
+    { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+    discount_pct: null, warehouse_id: null },
   ]);
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
 
   // Payment splits
+  /** خصم الفاتورة المتغيّر. الثابت بيتقرا من الإعدادات على السيرفر زي البيع. */
+  const [variableDiscount, setVariableDiscount] = useState<number>(0);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
 
@@ -247,12 +259,15 @@ export default function Purchases() {
   const loadLookups = async () => {
     setLoading(true);
     try {
-      const [supRes, whRes, itemsRes] = await Promise.all([
+      const [supRes, whRes, itemsRes, userRes] = await Promise.all([
         api.get('/api/v1/suppliers'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/items'),  // purchases accept raw materials AND products (resale)
+        // Reps are optional on a purchase, so a failure here must not take the screen down with it.
+        api.get('/api/v1/users').catch(() => ({ data: [] })),
       ]);
       setSuppliers(supRes.data);
+      setReps((userRes.data || []).filter((u: any) => u.role === 'sales_rep'));
       // Filter out central/branch warehouses
       setWarehouses(whRes.data);
       setItems(itemsRes.data.filter((i: any) => i.active !== false));
@@ -299,7 +314,8 @@ export default function Purchases() {
     const newKey = Date.now().toString();
     setPurchaseItems([
       ...purchaseItems,
-      { key: newKey, item_id: null, quantity: null, unit_price: 0, unit: null },
+      { key: newKey, item_id: null, quantity: null, unit_price: 0, unit: null,
+    discount_pct: null, warehouse_id: null },
     ]);
     if (focusIt) setFocusRowKey(newKey);
   };
@@ -358,12 +374,17 @@ export default function Purchases() {
     setPurchaseItems(updated);
   };
 
-  // Calculations
-  const calculateTotal = () => {
-    return purchaseItems.reduce((sum, item) => sum + Number(item.quantity || 0) * item.unit_price, 0);
+  // نفس ترتيب فاتورة البيع: خصم السطر ينزل على سطره، السطور تتجمع، وخصم الفاتورة ينزل على
+  // المجموع مرة واحدة. الشاشة بتحسبه محلياً عشان المشتري يشوف الرقم وهو بيكتب — والسيرفر هو
+  // اللي بيحسبه الحسبة النهائية، فلو اختلفوا الفاتورة بتترفض بدل ما تعدّي بالرقم الغلط.
+  const lineTotal = (it: PurchaseItem) => {
+    const before = Number(it.quantity || 0) * (it.unit_price || 0);
+    const disc = it.discount_pct ?? 0;
+    return before * (1 - disc / 100);
   };
 
-  const invoiceTotal = calculateTotal();
+  const grossTotal = purchaseItems.reduce((sum, it) => sum + lineTotal(it), 0);
+  const invoiceTotal = grossTotal * (1 - (variableDiscount || 0) / 100);
 
   const handleSplitBalance = () => {
     // Automatically fill credit with remaining total
@@ -383,12 +404,14 @@ export default function Purchases() {
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => { form.resetFields(); setPurchaseItems([
-          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]);
+          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+    discount_pct: null, warehouse_id: null }]);
           setPurchaseDate(dayjs()); setNewStep('date'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setPurchaseItems([
-          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]) },
+          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+    discount_pct: null, warehouse_id: null }]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0, onClick: () => form.submit() },
       { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
@@ -397,7 +420,8 @@ export default function Purchases() {
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0,
         onClick: () => setPurchaseItems([
-          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]) },
+          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+    discount_pct: null, warehouse_id: null }]) },
       { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
       { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
@@ -451,7 +475,12 @@ export default function Purchases() {
       quantity: Number(l.quantity) || null,
       unit_price: Number(l.unit_price) || 0,
       unit: l.unit ?? null,
+      // The discount is a fact about the deal, so reopening has to bring it back — rebuilding the
+      // line without it would quietly re-price the invoice on save.
+      discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
+      warehouse_id: l.line_location_id ?? null,
     })));
+    setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
     setDetail(null);
@@ -489,11 +518,20 @@ export default function Purchases() {
         },
         cash_amount: cashAmount,
         credit_amount: creditAmount,
+        variable_discount_pct: variableDiscount || 0,
+        rep_id: values.rep_id ?? null,
+        external_document_number: values.external_document_number || null,
+        notes: values.notes || null,
+        statement1: values.statement1 || null,
+        statement2: values.statement2 || null,
+        statement3: values.statement3 || null,
         lines: validLines.map((l) => ({
           item_id: l.item_id,
           quantity: Number(l.quantity || 0),
           unit_price: l.unit_price,
           unit: l.unit,
+          discount_pct: l.discount_pct,
+          warehouse_id: l.warehouse_id,
         })),
         // The day the goods were received, taken from the first door — not the day this row was
         // typed, which is what `created_at` would have recorded.
@@ -504,7 +542,8 @@ export default function Purchases() {
       setDocResult(res.data);
       message.success('تم تسجيل فاتورة الشراء بنجاح');
       form.resetFields();
-      setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null }]);
+      setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+        discount_pct: null, warehouse_id: null }]);
       setCashAmount(0);
       setCreditAmount(0);
       fetchPurchases();
@@ -536,7 +575,8 @@ export default function Purchases() {
     const key = blank ? blank.key : String(Date.now());
     if (!blank) {
       setPurchaseItems((prev) => [...prev,
-        { key, item_id: null, quantity: null, unit_price: 0, unit: null }]);
+        { key, item_id: null, quantity: null, unit_price: 0, unit: null,
+    discount_pct: null, warehouse_id: null }]);
     }
     setPanelItemId(item.id);
     // Through the same handler the dropdown uses, so the purchase price and the unit list are
@@ -624,12 +664,52 @@ export default function Purchases() {
       ),
     },
     {
+      title: 'خصم %',
+      dataIndex: 'discount_pct',
+      key: 'discount_pct',
+      width: '12%',
+      render: (val: number | null, record: PurchaseItem) => (
+        <InputNumber
+          min={0}
+          max={99.99}
+          step={0.5}
+          style={{ width: '100%' }}
+          // Blank, not zero: «مفيش خصم متفق عليه» and «اتفقنا على صفر» are different facts, and a
+          // box that opens at 0 makes the second one impossible to tell from the first.
+          placeholder="—"
+          value={val}
+          onChange={(v) => handleItemChange(record.key, 'discount_pct',
+            v === null || v === undefined ? null : v)}
+        />
+      ),
+    },
+    {
+      title: 'المخزن',
+      dataIndex: 'warehouse_id',
+      key: 'warehouse_id',
+      width: '16%',
+      render: (val: number | null, record: PurchaseItem) => (
+        <Select
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          style={{ width: '100%' }}
+          // Empty means «مخزن المستند» — one purchase can land in several stores, and the server
+          // has taken a per-line warehouse since 030.
+          placeholder="مخزن المستند"
+          value={val ?? undefined}
+          onChange={(v) => handleItemChange(record.key, 'warehouse_id', v ?? null)}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+        />
+      ),
+    },
+    {
       title: 'الإجمالي (ج.م)',
       key: 'total',
       width: '15%',
       render: (_: any, record: PurchaseItem) => (
         <span style={{ fontWeight: 'bold' }}>
-          {(Number(record.quantity || 0) * record.unit_price).toFixed(2)}
+          {lineTotal(record).toFixed(2)}
         </span>
       ),
     },
@@ -746,6 +826,38 @@ export default function Purchases() {
             </Col>
           </Row>
 
+          {/* حقول المستند — الثلاثة دول السيرفر مستنيهم من 030 والشاشة مكانتش بتبعتهم. */}
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item name="rep_id" label="المندوب" style={{ marginBottom: 8 }}>
+                <Select allowClear showSearch optionFilterProp="label"
+                  placeholder="اختياري — مين استلم الشحنة"
+                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="external_document_number" label="رقم المستند (الورقي)"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري — رقم فاتورة المورد الورقية" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            {([1, 2, 3] as const).map((n) => (
+              <Col xs={24} md={8} key={n}>
+                <Form.Item name={`statement${n}`} label={`بيان ${n}`}
+                  style={{ marginBottom: 8 }}>
+                  <Input placeholder="اختياري" />
+                </Form.Item>
+              </Col>
+            ))}
+          </Row>
+
           <Divider orientation="right">أصناف الفاتورة</Divider>
 
           <Row gutter={16}>
@@ -782,13 +894,28 @@ export default function Purchases() {
           <TotalsLadder
             tone="sale"
             inputs={(
-              <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
-                help="الباقي بيتسجّل آجل على حساب المورد">
-                <InputNumber style={{ width: '100%' }} min={0} addonAfter="ج.م"
-                  value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
-              </Form.Item>
+              <>
+                <Form.Item label="خصم على الفاتورة %" style={{ marginBottom: 12 }}
+                  help="بينزل على مجموع السطور بعد خصم كل سطر — زي فاتورة البيع">
+                  <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
+                    addonAfter="%" value={variableDiscount}
+                    onChange={(val) => setVariableDiscount(val || 0)} />
+                </Form.Item>
+                <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
+                  help="الباقي بيتسجّل آجل على حساب المورد">
+                  <InputNumber style={{ width: '100%' }} min={0} addonAfter="ج.م"
+                    value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
+                </Form.Item>
+              </>
             )}
             rows={[
+              // The gross only earns a line when a discount actually moved it — otherwise it says
+              // the same number twice and the reader has to work out that nothing happened.
+              { label: 'إجمالي السطور', value: grossTotal.toFixed(2),
+                show: variableDiscount > 0.001 },
+              { label: `خصم الفاتورة ${variableDiscount}%`,
+                value: `− ${(grossTotal - invoiceTotal).toFixed(2)}`,
+                color: '#cf1322', show: variableDiscount > 0.001 },
               { label: 'إجمالي أصناف الفاتورة', value: invoiceTotal.toFixed(2),
                 strong: true, color: '#6AB42D' },
               { label: 'المدفوع نقداً', value: `− ${cashAmount.toFixed(2)}`,
