@@ -7,6 +7,7 @@ ways that check has to hold: a serial nobody issued is refused, a serial already
 be handed in again, and a coupon issued to one customer cannot be credited to another.
 """
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -149,3 +150,40 @@ def test_a_rep_can_receive_coupons_on_his_round(client, sold, login):
         "serials": ["1248"], "customer_id": sold["customer_id"]})
     assert resp.status_code == 201, resp.text
     assert resp.json()["rep_user_id"] is not None
+
+
+def test_what_the_rep_declared_travels_with_the_receipt(client, sold, db):
+    """نوع الكوبون وقيمته اللي المندوب قالهم بيوصلوا ويتخزنوا.
+
+    He picks the kind on a phone with no signal, because asking the server per serial is not
+    something a rep in a basement can do. The server still checks every serial against what was
+    issued — but what he SAID has to be written down too, or a later disagreement has nothing to
+    compare against.
+    """
+    from src.models.coupon_receipt import CouponReceipt
+
+    admin = sold["admin"]
+    res = client.post("/api/v1/coupon-receipts", headers=admin, json={
+        "serials": ["1203", "1204"],
+        "customer_id": sold["customer_id"],
+        "received_date": str(date.today()),
+        "declared_kind": "gold",
+        "declared_value": "25.00",
+        "customer_type": "plumber",
+        "client_uuid": "declared-1",
+    })
+    assert res.status_code == 201, res.text
+
+    row = db.get(CouponReceipt, res.json()["id"])
+    assert row.declared_kind == "gold"
+    assert Decimal(str(row.declared_value)) == Decimal("25.00")
+    assert row.customer_type == "plumber"
+
+
+def test_a_receipt_with_nothing_declared_still_posts(client, sold):
+    """The fields are what the rep offered, not a new requirement — a receipt taken before the
+    screen had them, or by somebody who skipped them, is still a receipt."""
+    admin = sold["admin"]
+    res = client.post("/api/v1/coupon-receipts", headers=admin, json={
+        "serials": ["1205"], "customer_id": sold["customer_id"]})
+    assert res.status_code == 201, res.text

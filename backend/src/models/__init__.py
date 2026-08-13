@@ -66,6 +66,7 @@ from src.models.account_routing import AccountRouting  # noqa: E402
 from src.models.employee import Employee, JobTitle  # noqa: E402
 from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
+from src.models.attachment import InspectionAttachment  # noqa: E402
 
 __all__ = [
     "AccountRouting",
@@ -81,4 +82,5 @@ __all__ = [
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
     "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord", "Employee", "JobTitle", "CouponReceipt", "CouponReceiptLine", "TradeOrder", "TradeOrderLine", "SalesInvoiceExpense", "VoucherKey",
+    "InspectionAttachment",
 ]

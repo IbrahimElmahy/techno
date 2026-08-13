@@ -8,6 +8,7 @@ import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event sub
 from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     accounting,  # General Ledger (005)
     admin,  # Demo data seeding (system admin)
+    attachments,  # مرفقات الزيارات (صور المندوب)
     audit,
     auth,
     catalog,
@@ -132,6 +133,7 @@ def create_app() -> FastAPI:
     app.include_router(orders.router, prefix=prefix)
     # Coupon hand-back from customers (mobile app + office)
     app.include_router(coupon_receipts.router, prefix=prefix)
+    app.include_router(attachments.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
 
@@ -189,6 +191,10 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # (033) اللي المندوب قاله عن الكوبونات على الجهاز — بيوصل مع المزامنة.
+    ("coupon_receipt", "declared_kind", "VARCHAR(24)"),
+    ("coupon_receipt", "declared_value", "DECIMAL(18,2)"),
+    ("coupon_receipt", "customer_type", "VARCHAR(16)"),
     # (032) A voucher key's side may be a whole group instead of one account — «العملاء» is not a
     # row in this chart, it is an account_type shared by every customer's account.
     ("voucher_key", "debit_group", "VARCHAR(40)"),

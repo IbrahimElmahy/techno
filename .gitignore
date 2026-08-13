@@ -42,3 +42,6 @@ frontend/dist-electron/
 frontend/dist-package/
 
 *.apk
+
+# صور المرفقات المرفوعة — بيانات مش كود.
+backend/uploads/

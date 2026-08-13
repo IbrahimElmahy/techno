@@ -47,7 +47,8 @@
         "--web-hostname",
         "127.0.0.1",
         "--web-port",
-        "5199"
+        "5199",
+        "--release"
       ],
       "cwd": "D:/techno/mobile",
       "port": 5199

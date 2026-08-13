@@ -25,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
+from src.core.money import MONEY
 
 
 class CouponReceipt(Base):
@@ -40,6 +41,15 @@ class CouponReceipt(Base):
     received_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     coupon_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # نوع الكوبون وقيمته زي ما المندوب قالهم على الجهاز.
+    #
+    # The true kind is derivable from each serial's issued range, and the receipt's lines carry the
+    # invoice that proves it. This is what the REP declared, kept because he declares it with no
+    # signal and the customer is handed a total on the spot — a later reconciliation that disagrees
+    # is a finding, and it can only be a finding if what he said was written down.
+    declared_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    declared_value: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    customer_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Idempotency key from the mobile app: the same queued receipt retried after a dropped
     # connection must land once, not twice.
     client_uuid: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True,

@@ -362,6 +362,11 @@ class LocalDb {
         where: 'inspection_uuid = ?', whereArgs: [inspectionUuid], orderBy: 'local_id');
   }
 
+  Future<void> markAttachmentSynced(int localId) async {
+    await (await db).update('attachment', {'synced': 1},
+        where: 'local_id = ?', whereArgs: [localId]);
+  }
+
   Future<void> deleteAttachment(int localId) async {
     await (await db).delete('attachment', where: 'local_id = ?', whereArgs: [localId]);
   }

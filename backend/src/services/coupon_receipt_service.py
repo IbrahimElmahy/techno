@@ -153,6 +153,8 @@ def create_receipt(
     db: Session, *, serials: list[str], actor_user_id: int,
     customer_id: int | None = None, rep_user_id: int | None = None,
     received_date: date | None = None, notes: str | None = None,
+    declared_kind: str | None = None, declared_value: object | None = None,
+    customer_type: str | None = None,
     client_uuid: str | None = None,
 ) -> CouponReceipt:
     """Take in a handful of coupons, or refuse the lot.
@@ -206,6 +208,8 @@ def create_receipt(
     receipt = CouponReceipt(
         document_number=_doc_number(db), customer_id=customer_id, rep_user_id=rep_user_id,
         received_date=received_date, coupon_count=len(matched), notes=notes,
+        declared_kind=declared_kind, declared_value=declared_value,
+        customer_type=customer_type,
         client_uuid=client_uuid, actor_user_id=actor_user_id,
     )
     db.add(receipt)

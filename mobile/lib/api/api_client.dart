@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../db/local_db.dart';
 import '../models/models.dart';
@@ -128,12 +130,68 @@ class ApiClient {
     final results = jsonDecode(utf8.decode(r.bodyBytes)) as List;
     for (final res in results) {
       final uuid = res['client_uuid'] as String?;
-      if (uuid != null) {
-        await LocalDb.instance.markSynced(uuid, res['document_number'] as String);
+      if (uuid == null) continue;
+      await LocalDb.instance.markSynced(uuid, res['document_number'] as String);
+      // الصور بعد ما الزيارة نفسها تدخل.
+      //
+      // A separate request per picture, on purpose: the RECORD is what the books need, and a rep
+      // at the edge of coverage should get it in before spending his signal on photographs. A
+      // photo that fails to upload leaves the visit synced and tries again next time.
+      final id = res['id'];
+      if (id is int) {
+        try {
+          await pushAttachments(uuid, id);
+        } catch (_) {/* the visit is in; pictures retry on the next sync */}
       }
     }
     await LocalDb.instance.setKv('last_sync', DateTime.now().toIso8601String());
     return results.length;
+  }
+
+  /// بيرفع صور زيارة اتزامنت. بيرجّع عدد اللي اترفع.
+  Future<int> pushAttachments(String inspectionUuid, int inspectionId) async {
+    final rows = await LocalDb.instance.attachments(inspectionUuid);
+    var sent = 0;
+    for (final row in rows) {
+      if ((row['synced'] as int?) == 1) continue;
+      final path = row['path'] as String;
+      final file = File(path);
+      // A picture the phone cleaned up behind us is marked done rather than retried forever.
+      if (!file.existsSync()) {
+        await LocalDb.instance.markAttachmentSynced(row['local_id'] as int);
+        continue;
+      }
+      final req = http.MultipartRequest(
+        'POST',
+        await _uri('/inspections/$inspectionId/attachments'),
+      )
+        ..headers.addAll(await _headers())
+        // Its own uuid so a retry after a dropped connection stores one copy, not three.
+        ..fields['client_uuid'] = 'att-$inspectionUuid-${row['local_id']}'
+        ..files.add(await http.MultipartFile.fromPath(
+          'file',
+          path,
+          contentType: MediaType('image', _ext(path)),
+        ));
+      // Content-Type is set per part by MultipartRequest; a JSON one from _headers would break it.
+      req.headers.remove('Content-Type');
+
+      final res = await http.Response.fromStream(
+          await req.send().timeout(const Duration(seconds: 120)));
+      if (res.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (res.statusCode == 201) {
+        await LocalDb.instance.markAttachmentSynced(row['local_id'] as int);
+        sent++;
+      }
+    }
+    return sent;
+  }
+
+  static String _ext(String path) {
+    final dot = path.lastIndexOf('.');
+    final ext = dot < 0 ? '' : path.substring(dot + 1).toLowerCase();
+    return const {'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png', 'webp': 'webp', 'heic': 'heic'}[ext]
+        ?? 'jpeg';
   }
 
   // ------------------------------------------------------------ coupon receipts
@@ -168,6 +226,11 @@ class ApiClient {
                 'customer_id': row['customer_id'],
                 'notes': row['notes'],
                 'client_uuid': row['client_uuid'],
+                // اللي المندوب قاله على الجهاز — بيوصل زي ما هو، والسيرفر بيفضل يتحقق من السريالات.
+                'received_date': row['received_date'],
+                'declared_kind': row['coupon_kind'],
+                'declared_value': row['coupon_value'],
+                'customer_type': row['customer_type'],
               }))
           .timeout(const Duration(seconds: 60));
       if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
