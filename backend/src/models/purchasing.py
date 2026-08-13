@@ -8,7 +8,7 @@ from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, QTY
+from src.core.money import MONEY, PCT, QTY
 from src.models.stock import LocationKind
 
 
@@ -35,6 +35,20 @@ class PurchaseInvoice(Base):
     # same reason: a document dated one day and posted on another makes every statement disagree
     # with the paper.
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    # الإجمالي قبل خصم الفاتورة — مجموع السطور بعد خصم كل سطر.
+    #
+    # Mirrors the sale exactly: a line carries its own discount, those net line totals add up to
+    # `gross`, the invoice discount comes off that once to give `net`, and the tax sits on `net`.
+    # Doing it in that order matters — an invoice discount applied per line and a line discount
+    # applied to the invoice give different money on the same numbers.
+    gross: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    fixed_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
+    variable_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
+    combined_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
+    net: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    tax_amount: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    # اللي اتدفع فعلاً = net + الضريبة. اسمه `total` من قبل الخصومات ما تدخل، وسايبينه زي ما هو
+    # عشان الفواتير القديمة تفضل مقروءة.
     total: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
@@ -55,6 +69,11 @@ class PurchaseInvoiceLine(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # per chosen unit snapshot
+    # خصم السطر. NULL معناه «مفيش خصم متفق عليه» — مش صفر.
+    #
+    # Nullable on purpose, the same way the sale's is: an agreed zero and no agreement at all are
+    # different facts, and a column defaulted to zero cannot tell them apart.
+    discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
     # Unit of measure used on this line (008); NULL = base. Stock in base = quantity × unit_factor.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)

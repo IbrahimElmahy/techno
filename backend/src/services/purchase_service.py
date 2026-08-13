@@ -27,7 +27,15 @@ from src.models.purchasing import (
 from src.models.role import RoleName
 from src.models.stock import LocationKind, StockDirection
 from src.models.supplier import Supplier, SupplierAccount
-from src.services import account_resolver, audit_service, ledger_service, stock_service, uom_service
+from src.services import (
+    account_resolver,
+    audit_service,
+    ledger_service,
+    sales_service,
+    stock_service,
+    tax_service,
+    uom_service,
+)
 from src.services.ledger_service import LineInput
 from src.services.uom_service import UomError
 
@@ -44,6 +52,8 @@ class PurchaseLine:
     unit: str | None = None    # (008) unit of measure; None = base unit
     # (030) receive this line into its own warehouse; None = the document's location
     warehouse_id: int | None = None
+    # خصم السطر. None = مفيش خصم متفق عليه — مش صفر.
+    discount_pct: Decimal | None = None
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -70,6 +80,8 @@ def create_purchase(
     statement2: str | None = None,
     statement3: str | None = None,
     purchase_date=None,
+    # خصم الفاتورة والضريبة — نفس ترتيب البيع بالظبط.
+    variable_discount_pct: Decimal = ZERO,
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
@@ -80,8 +92,14 @@ def create_purchase(
         select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id)
     )
 
-    total = ZERO
-    built: list[tuple[PurchaseLine, Decimal, Decimal]] = []
+    fixed = sales_service.fixed_discount_pct(db)
+    variable = Decimal(variable_discount_pct)
+    combined = fixed + variable
+    if combined >= Decimal("100") or variable < ZERO:
+        raise PurchaseError("الخصم المجمّع لازم يكون أقل من ١٠٠٪ والخصم المتغيّر مايكونش بالسالب.")
+
+    gross = ZERO
+    built: list[tuple[PurchaseLine, Decimal, Decimal, Decimal | None]] = []
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None:
@@ -91,10 +109,19 @@ def create_purchase(
             factor = uom_service.resolve_factor(db, item, ln.unit)  # (008)
         except UomError as exc:
             raise PurchaseError(str(exc)) from exc
-        line_total = to_money(Decimal(ln.quantity) * Decimal(ln.unit_price))
-        total += line_total
-        built.append((ln, line_total, factor))
-    total = to_money(total)
+        line_disc = Decimal(ln.discount_pct) if getattr(ln, "discount_pct", None) is not None             else ZERO
+        if line_disc < ZERO or line_disc >= Decimal("100"):
+            raise PurchaseError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
+        line_before = Decimal(ln.quantity) * Decimal(ln.unit_price)
+        line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
+        gross += line_total
+        built.append((ln, line_total, factor, line_disc))
+    gross = to_money(gross)
+    # The invoice discount comes off the summed lines ONCE — applying it per line instead gives
+    # different money on the same numbers, and the sale settles it this way.
+    net = sales_service.compute_net(gross, combined)
+    tax = tax_service.tax_on(net, tax_service.vat_rate(db))
+    total = to_money(net + tax)
     if to_money(cash_amount) + to_money(credit_amount) != total:
         raise PurchaseError("النقدي + الآجل لازم يساوي إجمالي فاتورة الشراء.")
 
@@ -102,6 +129,8 @@ def create_purchase(
     invoice = PurchaseInvoice(
         document_number=_doc_number(db, PurchaseInvoice, "PINV"),
         supplier_id=supplier_id, location_kind=location_kind, location_id=location_id,
+        gross=gross, fixed_discount_pct=fixed, variable_discount_pct=variable,
+        combined_pct=combined, net=net, tax_amount=tax,
         total=total, cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         ledger_entry_id=None, actor_user_id=actor_user_id,
         rep_id=rep_id, expense_account_id=expense_account_id,
@@ -113,7 +142,7 @@ def create_purchase(
     )
     db.add(invoice)
     db.flush()
-    for ln, line_total, factor in built:
+    for ln, line_total, factor, line_disc in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock in base units
         # (030) Each line may be received into its own warehouse.
         line_kind, line_loc = ((LocationKind.warehouse, ln.warehouse_id)
@@ -126,7 +155,7 @@ def create_purchase(
         invoice.lines.append(
             PurchaseInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                                 unit_price=to_money(ln.unit_price), line_total=line_total,
-                                unit=ln.unit, unit_factor=factor,
+                                discount_pct=ln.discount_pct, unit=ln.unit, unit_factor=factor,
                                 line_location_kind=line_kind, line_location_id=line_loc)
         )
 

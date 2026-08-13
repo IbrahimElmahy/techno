@@ -34,10 +34,13 @@ class PurchaseLineIn(BaseModel):
     unit_price: Decimal
     unit: str | None = None    # (008) unit of measure; None = base
     warehouse_id: int | None = None   # (030) receive this line into its own warehouse
+    discount_pct: Decimal | None = None   # خصم السطر؛ None = مفيش خصم متفق عليه
 
 
 class PurchaseCreate(BaseModel):
     supplier_id: int
+    # خصم الفاتورة المتغيّر. الثابت بيتقرا من الإعدادات زي البيع.
+    variable_discount_pct: Decimal = Decimal("0")
     location: LocationIn
     cash_amount: Decimal
     credit_amount: Decimal
@@ -70,6 +73,15 @@ class DocOut(BaseModel):
     id: int
     document_number: str
     ledger_entry_id: int | None = None
+    # نفس اللي فاتورة البيع بترجّعه ساعة الإنشاء: الشاشة محتاجة ترسم إجمالي المشتري يقدر يراجعه،
+    # ونداء تاني عشان تقراه معناه لحظة الفاتورة فيها فيه رقم على الشاشة ورقم في الدفاتر.
+    gross: Decimal = Decimal("0")
+    combined_pct: Decimal = Decimal("0")
+    net: Decimal = Decimal("0")
+    tax_amount: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
+    cash_amount: Decimal = Decimal("0")
+    credit_amount: Decimal = Decimal("0")
 
 
 class PurchaseListOut(BaseModel):
@@ -77,6 +89,10 @@ class PurchaseListOut(BaseModel):
     document_number: str
     supplier_id: int
     supplier_name: str | None
+    gross: Decimal = Decimal("0")
+    combined_pct: Decimal = Decimal("0")
+    net: Decimal = Decimal("0")
+    tax_amount: Decimal = Decimal("0")
     total: Decimal
     cash_amount: Decimal
     credit_amount: Decimal
@@ -92,6 +108,7 @@ class PurchaseLineOut(BaseModel):
     item_id: int
     quantity: Decimal
     unit_price: Decimal
+    discount_pct: Decimal | None = None
     line_total: Decimal
     unit: str | None = None
 
@@ -261,6 +278,7 @@ def get_purchase(
         external_document_number=p.external_document_number, notes=p.notes,
         location_kind=p.location_kind.value, location_id=p.location_id,
         lines=[PurchaseLineOut(item_id=ln.item_id, quantity=ln.quantity, unit_price=ln.unit_price,
+                               discount_pct=ln.discount_pct,
                                line_total=ln.line_total, unit=ln.unit) for ln in p.lines],
         returns=[PurchaseReturnOut(id=r.id, document_number=r.document_number, value=r.value,
                                    created_at=str(r.created_at)) for r in returns],
@@ -278,18 +296,25 @@ def create_purchase(
             db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
             location_id=body.location.location_id, cash_amount=body.cash_amount,
             credit_amount=body.credit_amount,
-            lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id)
+            lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id,
+                                l.discount_pct)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
             rep_id=body.rep_id, expense_account_id=body.expense_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             purchase_date=body.purchase_date,
+            variable_discount_pct=body.variable_discount_pct,
         )
     except (PurchaseError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "purchase_invalid", "message": str(exc)})
     db.commit()
-    return DocOut(id=inv.id, document_number=inv.document_number, ledger_entry_id=inv.ledger_entry_id)
+    return DocOut(
+        id=inv.id, document_number=inv.document_number, ledger_entry_id=inv.ledger_entry_id,
+        gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net,
+        tax_amount=inv.tax_amount, total=inv.total,
+        cash_amount=inv.cash_amount, credit_amount=inv.credit_amount,
+    )
 
 
 @router.post("/{purchase_id}/returns", response_model=DocOut, status_code=status.HTTP_201_CREATED)
