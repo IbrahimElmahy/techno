@@ -14,7 +14,10 @@ class ReviewScreen extends StatefulWidget {
 }
 
 class _ReviewScreenState extends State<ReviewScreen> {
-  DateTime? _date = DateTime.now();
+  // «من – إلى» بدل يوم واحد: المندوب بيراجع أسبوعه، والفلتر بيوم واحد كان بيخليه يفتح
+  // الشاشة سبع مرات عشان يشوف أسبوع.
+  DateTime? _from;
+  DateTime? _to;
   String? _kind; // null = الكل | technician | regular
   bool? _synced; // null = الكل | true متزامنة | false معلقة
   List<Inspection> _rows = [];
@@ -26,10 +29,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
     _load();
   }
 
+  static String? _iso(DateTime? d) =>
+      d == null ? null : intl.DateFormat('yyyy-MM-dd').format(d);
+
   Future<void> _load() async {
     setState(() => _loading = true);
     final rows = await LocalDb.instance.listInspections(
-        date: _date == null ? null : intl.DateFormat('yyyy-MM-dd').format(_date!),
+        from: _iso(_from),
+        to: _iso(_to),
         visitKind: _kind,
         synced: _synced);
     if (mounted) {
@@ -43,6 +50,42 @@ class _ReviewScreenState extends State<ReviewScreen> {
   static String _fmt(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
+  /// خانة تاريخ واحدة — «من» أو «إلى». فاضية معناها مفيش حد من الناحية دي.
+  Widget _dateBox(String label, DateTime? value, void Function(DateTime?) set) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: value ?? DateTime.now(),
+          firstDate: DateTime(2024),
+          lastDate: DateTime.now().add(const Duration(days: 1)),
+        );
+        if (picked == null) return;
+        set(picked);
+        // A range typed backwards would silently show nothing; nudging the other end keeps the
+        // filter meaning what it says.
+        if (_from != null && _to != null && _to!.isBefore(_from!)) {
+          setState(() => label == 'من' ? _to = picked : _from = picked);
+        }
+        _load();
+      },
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: const Icon(Icons.calendar_today, size: 18),
+          // A cleared end is «open», not «today» — so it can be undone.
+          suffixIcon: value == null
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () { set(null); _load(); },
+                ),
+        ),
+        child: Text(value == null ? 'الكل' : intl.DateFormat('yyyy/MM/dd').format(value)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -53,35 +96,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _date ?? DateTime.now(),
-                        firstDate: DateTime(2024),
-                        lastDate: DateTime.now().add(const Duration(days: 1)),
-                      );
-                      if (picked != null) {
-                        setState(() => _date = picked);
-                        _load();
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                          labelText: 'التاريخ', prefixIcon: Icon(Icons.calendar_today)),
-                      child: Text(_date == null
-                          ? 'كل التواريخ'
-                          : intl.DateFormat('yyyy/MM/dd').format(_date!)),
-                    ),
-                  ),
-                ),
+                Expanded(child: _dateBox('من', _from, (d) => setState(() => _from = d))),
+                const SizedBox(width: 8),
+                Expanded(child: _dateBox('إلى', _to, (d) => setState(() => _to = d))),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
                   tooltip: 'كل التواريخ',
                   icon: const Icon(Icons.filter_alt_off_outlined),
                   onPressed: () {
-                    setState(() => _date = null);
+                    setState(() { _from = null; _to = null; });
                     _load();
                   },
                 ),

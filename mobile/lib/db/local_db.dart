@@ -221,14 +221,25 @@ class LocalDb {
     });
   }
 
+  /// الزيارات المسجّلة على الجهاز. [from]/[to] بصيغة yyyy-MM-dd وشاملين الطرفين.
   Future<List<Inspection>> listInspections(
-      {String? date, String? visitKind, bool? synced}) async {
+      {String? date, String? from, String? to, String? visitKind, bool? synced}) async {
     final d = await db;
     final where = <String>[];
     final args = <Object?>[];
     if (date != null) {
       where.add('inspection_date = ?');
       args.add(date);
+    }
+    // Dates are stored as yyyy-MM-dd text, which sorts and compares the same way it reads — so a
+    // plain BETWEEN is correct without parsing anything.
+    if (from != null) {
+      where.add('inspection_date >= ?');
+      args.add(from);
+    }
+    if (to != null) {
+      where.add('inspection_date <= ?');
+      args.add(to);
     }
     if (visitKind != null) {
       where.add('visit_kind = ?');

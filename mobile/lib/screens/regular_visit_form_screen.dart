@@ -41,19 +41,17 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   }
 
   Future<void> _addItem() async {
-    final line = await Navigator.push<InspectionLine>(
-        context, MaterialPageRoute(builder: (_) => const ItemPickerScreen()));
-    if (line != null) {
+    // بيفضل مفتوح لحد ما المندوب يقول «تم» — إضافة سبع أصناف بقت سبع ضغطات مش سبع دخلات وخرجات.
+    await AddItemFlow.show(context, (line) {
       setState(() {
-        final existing = _lines.indexWhere(
-            (l) => l.itemId == line.itemId && l.itemName == line.itemName);
+        final existing = _lines.indexWhere((l) => l.itemName == line.itemName);
         if (existing >= 0) {
           _lines[existing].quantity += line.quantity;
         } else {
           _lines.add(line);
         }
       });
-    }
+    });
   }
 
   Future<void> _save() async {
