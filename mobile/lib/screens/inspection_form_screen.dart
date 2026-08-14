@@ -27,6 +27,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   final _technicianName = TextEditingController();
   final _technicianPhone = TextEditingController();
   final _purchaseShop = TextEditingController();
+  final _purchaseShopPhone = TextEditingController();
   final _visitDetails = TextEditingController();
 
   DateTime _date = DateTime.now();
@@ -161,6 +162,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       technicianName: _nullable(_technicianName),
       technicianPhone: _nullable(_technicianPhone),
       purchaseShop: _nullable(_purchaseShop),
+      purchaseShopPhone: _nullable(_purchaseShopPhone),
       visitDetails: _nullable(_visitDetails),
       customerId: _selectedCustomerId,
       lines: _lines,
@@ -211,84 +213,17 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
               ),
             ]),
             _section('بيانات المالك', Icons.person_outline, [
-              // Type the name: existing customers appear as suggestions; picking one auto-fills
-              // his phone/address and links the record. A brand-new name is typed freely.
-              Autocomplete<CustomerRef>(
-                displayStringForOption: (c) => c.name,
-                optionsBuilder: (value) async {
-                  final q = value.text.trim();
-                  if (q.length < 2) return const Iterable<CustomerRef>.empty();
-                  return LocalDb.instance.customers(query: q, limit: 8);
-                },
-                onSelected: (c) {
-                  _ownerName.text = c.name;
+              _nameSearch(
+                label: 'اسم صاحب الشقة *',
+                controller: _ownerName,
+                helper: 'اكتب الاسم — لو عميل موجود هيظهر لتختاره وتتملأ بياناته',
+                onPick: (c) {
                   _selectedCustomerId = c.id;
                   if ((c.phone ?? '').isNotEmpty) _ownerPhone.text = c.phone!;
                   if ((c.address ?? '').isNotEmpty) _ownerAddress.text = c.address!;
-                  setState(() {});
                 },
-                fieldViewBuilder: (context, controller, focusNode, onSubmit) {
-                  // Keep our controller in sync so save() and validation see the text.
-                  controller.text = _ownerName.text;
-                  controller.selection = TextSelection.collapsed(offset: controller.text.length);
-                  return TextFormField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    onChanged: (v) {
-                      _ownerName.text = v;
-                      _selectedCustomerId = null; // typing a new/edited name unlinks
-                    },
-                    decoration: const InputDecoration(
-                      labelText: 'اسم صاحب الشقة *',
-                      prefixIcon: Icon(Icons.search),
-                      helperText: 'اكتب الاسم — لو عميل موجود هيظهر لتختاره وتتملأ بياناته',
-                    ),
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'الاسم مطلوب' : null,
-                  );
-                },
-                optionsViewBuilder: (context, onSelected, options) => Align(
-                  alignment: Alignment.topRight,
-                  child: Material(
-                    elevation: 4,
-                    child: SizedBox(
-                      width: MediaQuery.of(context).size.width - 60,
-                      child: ListView(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        children: [
-                          for (final o in options)
-                            ListTile(
-                              dense: true,
-                              leading: const Icon(Icons.person_outline,
-                                  color: AppColors.primary),
-                              title: Text(o.name),
-                              subtitle: (o.phone ?? '').isEmpty ? null : Text(o.phone!),
-                              onTap: () => onSelected(o),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              TextFormField(
-                controller: _ownerPhone,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'تليفون المالك'),
-              ),
-              TextFormField(
-                controller: _nationalId,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'رقم البطاقة'),
-              ),
-              TextFormField(
-                controller: _ownerAddress,
-                decoration: const InputDecoration(labelText: 'عنوان المالك'),
-              ),
-              TextFormField(
-                controller: _floorNumber,
-                decoration: const InputDecoration(labelText: 'رقم الدور'),
+                onType: () => _selectedCustomerId = null, // اسم متكتب بالإيد بيفكّ الربط
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'الاسم مطلوب' : null,
               ),
             ]),
             _section('تفاصيل المعاينة', Icons.checklist, [
@@ -313,60 +248,15 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
             ]),
             if (_isTechnician)
               _section('بيانات الفني', Icons.engineering, [
-                // بحث زي بيانات المالك: الفني اللي المندوب زاره قبل كده موجود في نفس الكاش،
-                // فكتابة اسمه من الأول كل مرة كانت شغل مكرر — واسم متكتب مرتين بشكلين بيبقى
-                // شخصين في التقارير.
-                Autocomplete<CustomerRef>(
-                  displayStringForOption: (c) => c.name,
-                  optionsBuilder: (value) async {
-                    final q = value.text.trim();
-                    if (q.length < 2) return const Iterable<CustomerRef>.empty();
-                    return LocalDb.instance.customers(query: q, limit: 8);
-                  },
-                  onSelected: (c) {
-                    _technicianName.text = c.name;
+                _nameSearch(
+                  label: 'اسم الفني',
+                  controller: _technicianName,
+                  helper: 'اكتب الاسم — لو اتسجّل قبل كده هيظهر ويجيب تليفونه',
+                  leading: Icons.engineering,
+                  onPick: (c) {
                     if ((c.phone ?? '').isNotEmpty) _technicianPhone.text = c.phone!;
-                    setState(() {});
                   },
-                  fieldViewBuilder: (context, controller, focusNode, onSubmit) {
-                    controller.text = _technicianName.text;
-                    controller.selection =
-                        TextSelection.collapsed(offset: controller.text.length);
-                    return TextFormField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      onChanged: (v) => _technicianName.text = v,
-                      decoration: const InputDecoration(
-                        labelText: 'اسم الفني',
-                        prefixIcon: Icon(Icons.search),
-                        helperText: 'اكتب الاسم — لو اتسجّل قبل كده هيظهر لتختاره',
-                      ),
-                    );
-                  },
-                  optionsViewBuilder: (context, onSelected, options) => Align(
-                    alignment: AlignmentDirectional.topStart,
-                    child: Material(
-                      elevation: 4,
-                      child: SizedBox(
-                        width: MediaQuery.of(context).size.width - 60,
-                        child: ListView(
-                          padding: EdgeInsets.zero,
-                          shrinkWrap: true,
-                          children: [
-                            for (final o in options)
-                              ListTile(
-                                dense: true,
-                                leading: const Icon(Icons.engineering,
-                                    color: AppColors.primary),
-                                title: Text(o.name),
-                                subtitle: (o.phone ?? '').isEmpty ? null : Text(o.phone!),
-                                onTap: () => onSelected(o),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
+                  onType: () {},
                 ),
                 TextFormField(
                   controller: _technicianPhone,
@@ -375,9 +265,24 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 ),
               ]),
             _section('معلومات إضافية', Icons.notes, [
-              TextFormField(
+              // محل الشراء = التاجر المتسجّل عندنا.
+              //
+              // Typed free-hand it was a different spelling every visit, and no way back to the
+              // shop. Picking him off the rep's own list brings his phone with him.
+              _nameSearch(
+                label: 'محل الشراء',
                 controller: _purchaseShop,
-                decoration: const InputDecoration(labelText: 'محل الشراء'),
+                helper: 'اكتب اسم التاجر — لو متسجّل هيظهر ويجيب تليفونه',
+                leading: Icons.store_outlined,
+                onPick: (c) {
+                  if ((c.phone ?? '').isNotEmpty) _purchaseShopPhone.text = c.phone!;
+                },
+                onType: () {},
+              ),
+              TextFormField(
+                controller: _purchaseShopPhone,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'تليفون محل الشراء'),
               ),
               TextFormField(
                 controller: _visitDetails,
@@ -462,8 +367,16 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   child: const Icon(Icons.delete, color: Colors.white),
                 ),
                 onDismissed: (_) => setState(() => _lines.removeAt(i)),
+                // السطر كله بيفتح التعديل، مش القلم لوحده.
+                //
+                // The pencil was an IconButton inside the ListTile's `trailing`, which gives its
+                // child a bounded box: the button's 48px tap target did not fit next to the total
+                // and the part that stuck out was clipped — it drew fine and swallowed every tap.
+                // A whole-row `onTap` is a bigger target and cannot be clipped out of existence;
+                // the pencil stays as the hint that the row is editable.
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
+                  onTap: () => _editLine(i),
                   title: Text(_lines[i].itemName),
                   subtitle:
                       Text('${_fmt(_lines[i].quantity)} × ${_fmt(_lines[i].points)} نقطة'),
@@ -473,10 +386,8 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                       Text(_fmt(_lines[i].total),
                           style: const TextStyle(
                               fontWeight: FontWeight.w700, fontSize: 15)),
-                      IconButton(
-                        icon: const Icon(Icons.edit_outlined, size: 20),
-                        onPressed: () => _editLine(i),
-                      ),
+                      const SizedBox(width: 10),
+                      const Icon(Icons.edit_outlined, size: 18, color: AppColors.primary),
                     ],
                   ),
                 ),
@@ -515,6 +426,77 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     if (updated != null && updated > 0) {
       setState(() => _lines[index].quantity = updated);
     }
+  }
+
+  /// خانة اسم بتبحث في عملاء المندوب — مالك، فني، أو محل شراء.
+  ///
+  /// The three fields are the same interaction with a different label, and they were three copies
+  /// of forty lines. A name that is NOT in the list is still accepted: the rep meets people the
+  /// office has not carded yet, and refusing the visit over that would lose the visit.
+  Widget _nameSearch({
+    required String label,
+    required TextEditingController controller,
+    required void Function(CustomerRef) onPick,
+    required void Function() onType,
+    String? helper,
+    IconData leading = Icons.person_outline,
+    String? Function(String?)? validator,
+  }) {
+    return Autocomplete<CustomerRef>(
+      displayStringForOption: (c) => c.name,
+      optionsBuilder: (value) async {
+        final q = value.text.trim();
+        if (q.length < 2) return const Iterable<CustomerRef>.empty();
+        return LocalDb.instance.customers(query: q, limit: 8);
+      },
+      onSelected: (c) {
+        controller.text = c.name;
+        onPick(c);
+        setState(() {});
+      },
+      fieldViewBuilder: (context, textCtrl, focusNode, onSubmit) {
+        // Keep our controller in sync so save() and validation see the text.
+        textCtrl.text = controller.text;
+        textCtrl.selection = TextSelection.collapsed(offset: textCtrl.text.length);
+        return TextFormField(
+          controller: textCtrl,
+          focusNode: focusNode,
+          onChanged: (v) {
+            controller.text = v;
+            onType();
+          },
+          decoration: InputDecoration(
+            labelText: label,
+            prefixIcon: const Icon(Icons.search),
+            helperText: helper,
+          ),
+          validator: validator,
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) => Align(
+        alignment: AlignmentDirectional.topStart,
+        child: Material(
+          elevation: 4,
+          child: SizedBox(
+            width: MediaQuery.of(context).size.width - 60,
+            child: ListView(
+              padding: EdgeInsets.zero,
+              shrinkWrap: true,
+              children: [
+                for (final o in options)
+                  ListTile(
+                    dense: true,
+                    leading: Icon(leading, color: AppColors.primary),
+                    title: Text(o.name),
+                    subtitle: (o.phone ?? '').isEmpty ? null : Text(o.phone!),
+                    onTap: () => onSelected(o),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _section(String title, IconData icon, List<Widget> children) {

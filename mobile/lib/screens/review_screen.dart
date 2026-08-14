@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 
@@ -291,31 +293,44 @@ class _ReviewScreenState extends State<ReviewScreen> {
               _kv('تليفون الفني', insp.technicianPhone),
               _kv('محل الشراء', insp.purchaseShop),
               _kv('تفاصيل الزيارة', insp.visitDetails),
-              const Divider(height: 24),
-              const Text('الأصناف',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              for (final l in insp.lines)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l.itemName),
-                  subtitle: Text('${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
-                  trailing: Text(_fmt(l.total),
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
+              // الأصناف والنقاط بيظهروا لو فيه أصناف بس.
+              //
+              // A «زيارة عادية» has no items by design, and the section still printed its heading
+              // and «الإجمالي ٠ نقطة» under every one of them — a heading over nothing, and a
+              // zero that reads like the rep forgot to record something.
+              if (insp.lines.isNotEmpty) ...[
+                const Divider(height: 24),
+                const Text('الأصناف',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                for (final l in insp.lines)
+                  ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(l.itemName),
+                    subtitle: Text('${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
+                    trailing: Text(_fmt(l.total),
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                const Divider(),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('الإجمالي',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    Text('${_fmt(insp.totalPoints)} نقطة',
+                        style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary)),
+                  ],
                 ),
-              const Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('الإجمالي',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text('${_fmt(insp.totalPoints)} نقطة',
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary)),
-                ],
-              ),
+              ],
+              // المرفقات — الصور اللي المندوب صوّرها في الزيارة.
+              //
+              // They were saved and synced but had nowhere to be seen: the sheet is the only place
+              // a recorded visit can be read back, and it showed everything about the visit except
+              // the photographs of it.
+              _AttachmentsPreview(inspectionUuid: insp.clientUuid),
             ],
           ),
         ),
@@ -336,6 +351,88 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 13))),
           Expanded(child: Text(value, style: const TextStyle(fontSize: 14))),
         ],
+      ),
+    );
+  }
+}
+
+/// صور الزيارة — بتتقرا من قاعدة الجهاز لما التفاصيل تتفتح.
+///
+/// Loaded here rather than with the visit list: a hundred rows would each hit the attachment
+/// table for photographs nobody has asked to see yet.
+class _AttachmentsPreview extends StatefulWidget {
+  const _AttachmentsPreview({required this.inspectionUuid});
+  final String inspectionUuid;
+
+  @override
+  State<_AttachmentsPreview> createState() => _AttachmentsPreviewState();
+}
+
+class _AttachmentsPreviewState extends State<_AttachmentsPreview> {
+  List<Map<String, Object?>> _rows = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    LocalDb.instance.attachments(widget.inspectionUuid).then((r) {
+      if (mounted) setState(() { _rows = r; _loading = false; });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading || _rows.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 24),
+        Text('المرفقات (${_rows.length})',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _rows.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final path = _rows[i]['path'] as String;
+              final file = File(path);
+              return InkWell(
+                onTap: () => _openFull(context, file),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: file.existsSync()
+                      ? Image.file(file, width: 110, height: 110, fit: BoxFit.cover)
+                      // The row is kept even when the file is gone — deleted from the gallery,
+                      // or restored onto a different phone. Silently dropping it would say the
+                      // visit had no photographs, which is a different and wronger claim.
+                      : Container(
+                          width: 110,
+                          height: 110,
+                          color: Colors.black12,
+                          child: const Center(
+                            child: Icon(Icons.image_not_supported_outlined,
+                                color: Colors.blueGrey),
+                          ),
+                        ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _openFull(BuildContext context, File file) {
+    if (!file.existsSync()) return;
+    showDialog(
+      context: context,
+      builder: (c) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: InteractiveViewer(child: Image.file(file)),
       ),
     );
   }

@@ -192,7 +192,8 @@ def create_inspection(
     owner_address: str | None = None, floor_number: str | None = None,
     description: str | None = None, inspection_type: str | None = None,
     technician_name: str | None = None, technician_phone: str | None = None,
-    purchase_shop: str | None = None, visit_details: str | None = None,
+    purchase_shop: str | None = None, purchase_shop_phone: str | None = None,
+    visit_details: str | None = None,
     customer_id: int | None = None, client_uuid: str | None = None,
 ) -> Inspection:
     # A regular visit is tied to a chosen customer; its owner_name is filled from the customer,
@@ -222,7 +223,8 @@ def create_inspection(
         national_id=national_id, owner_address=owner_address, floor_number=floor_number,
         description=description, inspection_type=inspection_type,
         technician_name=technician_name, technician_phone=technician_phone,
-        purchase_shop=purchase_shop, visit_details=visit_details,
+        purchase_shop=purchase_shop, purchase_shop_phone=purchase_shop_phone,
+        visit_details=visit_details,
         total_points=_points(0), rep_user_id=rep_user_id,
     )
     db.add(insp)

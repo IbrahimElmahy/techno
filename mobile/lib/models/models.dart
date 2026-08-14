@@ -75,6 +75,7 @@ class Inspection {
   String? technicianName;
   String? technicianPhone;
   String? purchaseShop;
+  String? purchaseShopPhone;
   String? visitDetails;
   int? customerId; // الزيارة العادية مرتبطة بعميل
   List<InspectionLine> lines;
@@ -97,6 +98,7 @@ class Inspection {
     this.technicianName,
     this.technicianPhone,
     this.purchaseShop,
+    this.purchaseShopPhone,
     this.visitDetails,
     this.customerId,
     List<InspectionLine>? lines,
@@ -123,6 +125,7 @@ class Inspection {
         'technician_name': technicianName,
         'technician_phone': technicianPhone,
         'purchase_shop': purchaseShop,
+        'purchase_shop_phone': purchaseShopPhone,
         'visit_details': visitDetails,
         'customer_id': customerId,
         'items': [

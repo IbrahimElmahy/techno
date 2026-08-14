@@ -20,7 +20,13 @@ import '../theme.dart';
 /// With no signal the coupon still goes on the list — it is queued and checked when the phone
 /// next reaches the server. A rep at a door in a village cannot be told to come back later.
 class CouponReceiptScreen extends StatefulWidget {
-  const CouponReceiptScreen({super.key});
+  const CouponReceiptScreen({super.key, this.existing});
+
+  /// استلام متسجّل قبل كده وجاي يتعدّل — من صفحة المراجعة.
+  ///
+  /// Only ever passed for a receipt that has NOT synced. Once it is on the server it is a
+  /// document, and a document is corrected by a new one, not by editing history under it.
+  final Map<String, Object?>? existing;
 
   @override
   State<CouponReceiptScreen> createState() => _CouponReceiptScreenState();
@@ -79,11 +85,40 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     'diamond': 'ماسي',
   };
 
+  /// رقم الاستلام — ثابت من أول ما الشاشة فتحت، وبيتقفل على القديم لو بنعدّل.
+  late final String _uuid;
+
+  bool get _isEdit => widget.existing != null;
+
   @override
   void initState() {
     super.initState();
     _loadCustomers();
+    final e = widget.existing;
+    _uuid = (e?['client_uuid'] as String?) ??
+        'cr-${DateTime.now().microsecondsSinceEpoch}';
+    if (e == null) return;
+    // The saved row is flat text; unpacking it here is what makes «اضغط عليه وعدّل فيه» possible
+    // at all — every field the rep typed has to come back exactly as he left it.
+    _customerId = e['customer_id'] as int?;
+    _customerName = e['customer_name'] as String?;
+    _customerType = (e['customer_type'] as String?) ?? 'plumber';
+    _kind = (e['coupon_kind'] as String?) ?? 'silver';
+    final v = e['coupon_value'] as num?;
+    if (v != null) _valueCtrl.text = _fmtValue(v.toDouble());
+    _notesCtrl.text = (e['notes'] as String?) ?? '';
+    final d = e['received_date'] as String?;
+    if (d != null) _received = DateTime.tryParse(d) ?? _received;
+    for (final serial in ((e['serials'] as String?) ?? '').split(',')) {
+      final t = serial.trim();
+      if (t.isEmpty) continue;
+      final entry = _CouponEntry(t)..status = 'valid'..customerName = _customerName;
+      _entries.add(entry);
+    }
   }
+
+  static String _fmtValue(double v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
   Future<void> _loadCustomers([String q = '']) async {
     final rows = await LocalDb.instance.customers(query: q);
@@ -206,9 +241,13 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     }
     setState(() => _saving = true);
     try {
-      final uuid = 'cr-${DateTime.now().microsecondsSinceEpoch}';
+      // نفس الـuuid لو بنعدّل: السطر القديم بيتشال والجديد بياخد مكانه، فمابيبقاش في
+      // استلامين لنفس العملية.
+      if (_isEdit) {
+        await LocalDb.instance.deleteCouponReceipt(widget.existing!['local_id'] as int);
+      }
       await LocalDb.instance.saveCouponReceipt(
-        clientUuid: uuid,
+        clientUuid: _uuid,
         serials: [for (final e in _entries) e.serial],
         customerId: _customerId,
         customerName: _customerName,
@@ -238,8 +277,21 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(title: const Text('استلام كوبونات')),
+      // رجوع بالغلط كان بيضيّع الشغل.
+      //
+      // Nothing on this screen is saved until «تسجيل الاستلام»: a rep who has typed a book of
+      // coupons and hits the back gesture loses every one of them with no warning and no way
+      // back. It only asks when there IS something to lose.
+      child: PopScope(
+        canPop: _entries.isEmpty,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop || !mounted) return;
+          if (await _confirmLeave()) {
+            if (mounted) Navigator.pop(context);
+          }
+        },
+        child: Scaffold(
+        appBar: AppBar(title: Text(_isEdit ? 'تعديل استلام' : 'استلام كوبونات')),
         body: Column(
           children: [
             Padding(
@@ -423,10 +475,25 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                       itemBuilder: (_, i) {
                         final e = _entries[i];
                         return ListTile(
+                          dense: true,
                           leading: _statusIcon(e.status),
-                          title: Text(e.serial,
-                              style: const TextStyle(fontWeight: FontWeight.w700)),
-                          subtitle: Text(_statusText(e)),
+                          // الحالة جنب الرقم، مش سطر تحته.
+                          //
+                          // A rejected coupon used to give «مش متصرّف من النظام» a full line of its
+                          // own under the number, so a book of a hundred was a hundred repetitions
+                          // of the same sentence and four numbers fit on the screen. Beside the
+                          // number it is a chip the eye skips once it has read it — and for a
+                          // coupon the system DOES know, that chip is the far more useful fact:
+                          // اسم التاجر اللي الكوبون متصرّف له.
+                          title: Row(
+                            children: [
+                              Text(e.serial,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700, fontSize: 15)),
+                              const SizedBox(width: 10),
+                              Flexible(child: _statusChip(e)),
+                            ],
+                          ),
                           trailing: IconButton(
                             icon: const Icon(Icons.close),
                             onPressed: () => setState(() => _entries.removeAt(i)),
@@ -509,7 +576,9 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                         FilledButton.icon(
                           onPressed: _saving ? null : _save,
                           icon: const Icon(Icons.save_outlined),
-                          label: Text(_saving ? 'جارِ الحفظ…' : 'تسجيل الاستلام'),
+                          label: Text(_saving
+                              ? 'جارِ الحفظ…'
+                              : (_isEdit ? 'حفظ التعديل' : 'تسجيل الاستلام')),
                         ),
                       ],
                     ),
@@ -519,8 +588,33 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
             ),
           ],
         ),
+        ),
       ),
     );
+  }
+
+  /// سؤال قبل ما الشغل يضيع.
+  Future<bool> _confirmLeave() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (c) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تسيب الاستلام؟'),
+          content: Text('عندك ${_entries.length} كوبون متسجّلين ولسه متسجّلوش. '
+              'لو خرجت دلوقتي هيروحوا.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('أكمّل')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('اخرج وامسح'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return leave ?? false;
   }
 
   Widget _statusIcon(String status) {
@@ -536,16 +630,28 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     }
   }
 
-  String _statusText(_CouponEntry e) {
-    switch (e.status) {
-      case 'valid':
-        return 'سليم — ${e.documentNumber ?? ''} · ${e.customerName ?? ''}';
-      case 'unknown':
-        return 'مش متصرّف من النظام';
-      case 'received':
-        return 'اتستلم قبل كده';
-      default:
-        return 'هيتراجع مع المزامنة';
-    }
+  /// الكلمة اللي جنب الرقم — واسم التاجر لو النظام عارف الكوبون.
+  Widget _statusChip(_CouponEntry e) {
+    final (text, color) = switch (e.status) {
+      // اسم التاجر هو المطلوب هنا، مش كلمة «سليم»: الكوبون السليم اللي المندوب بيستلمه من
+      // تاجر، اللي يهمه يشوفه إن ده كوبون التاجر ده فعلاً.
+      'valid' => ((e.customerName ?? 'سليم'), AppColors.success),
+      'unknown' => ('مش متصرّف من النظام', AppColors.danger),
+      'received' => ('اتستلم قبل كده', AppColors.accent),
+      _ => ('هيتراجع مع المزامنة', Colors.blueGrey),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: color),
+      ),
+    );
   }
 }

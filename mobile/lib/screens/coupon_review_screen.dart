@@ -3,6 +3,7 @@ import 'package:intl/intl.dart' as intl;
 
 import '../db/local_db.dart';
 import '../theme.dart';
+import 'coupon_receipt_screen.dart';
 
 /// مراجعة استلام الكوبونات — الإجمالي لكل عميل، بالنوع.
 ///
@@ -21,6 +22,8 @@ class CouponReviewScreen extends StatefulWidget {
 class _CustomerTotal {
   _CustomerTotal(this.name);
   final String name;
+  /// عمليات الاستلام اللي الإجمالي ده اتجمّع منها — عشان الضغط يفتحها.
+  final List<Map<String, Object?>> rows = [];
   final Map<String, int> byKind = {};
   double value = 0;
   int receipts = 0;
@@ -30,8 +33,10 @@ class _CustomerTotal {
 }
 
 class _CouponReviewScreenState extends State<CouponReviewScreen> {
-  DateTime? _from;
-  DateTime? _to;
+  // نفس منطق مراجعة الزيارات: التاريخ مكتوب من أول ما الشاشة تفتح.
+  DateTime? _from = DateUtils.dateOnly(DateTime.now());
+  DateTime? _to = DateUtils.dateOnly(DateTime.now());
+  final _customerFilter = TextEditingController();
   List<_CustomerTotal> _rows = [];
   bool _loading = true;
 
@@ -67,7 +72,10 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
 
       final name = (r['customer_name'] as String?)?.trim();
       final key = name == null || name.isEmpty ? '— من غير اسم —' : name;
+      final q = _customerFilter.text.trim();
+      if (q.isNotEmpty && !key.toLowerCase().contains(q.toLowerCase())) continue;
       final t = totals.putIfAbsent(key, () => _CustomerTotal(key));
+      t.rows.add(r);
 
       final kind = (r['coupon_kind'] as String?) ?? 'standard';
       final count = (r['coupon_count'] as int?) ?? 0;
@@ -95,20 +103,127 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
         set(picked);
         _load();
       },
+      // خانة بسيطة: الأيقونة وزرار المسح كانوا واكلين عرضها والتاريخ بيلف سطرين.
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: const Icon(Icons.calendar_today, size: 18),
-          suffixIcon: value == null
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear, size: 18),
-                  onPressed: () { set(null); _load(); },
-                ),
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         ),
-        child: Text(value == null ? 'الكل' : intl.DateFormat('yyyy/MM/dd').format(value)),
+        child: Text(
+          value == null ? 'الكل' : intl.DateFormat('yyyy/MM/dd').format(value),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _customerFilter.dispose();
+    super.dispose();
+  }
+
+  /// عمليات الاستلام بتاعة عميل واحد — تعديل أو إلغاء طول ما هي متزامنتش.
+  ///
+  /// The row on the screen is a total across several handovers, so «اضغط عليه» cannot open one
+  /// receipt — it opens the list of them. A synced receipt is a document on the server and is not
+  /// touched here: correcting one is a new receipt, not a rewrite of history.
+  void _showReceipts(_CustomerTotal t) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheet) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text(t.name,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text('${t.rows.length} عملية استلام · ${t.count} كوبون',
+                  style: const TextStyle(color: Colors.blueGrey)),
+              const Divider(height: 24),
+              for (final r in t.rows)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(_receiptLine(r)),
+                  subtitle: Text((r['synced'] as int?) == 1
+                      ? 'اتزامنت'
+                      : 'لسه متزامنتش'),
+                  trailing: (r['synced'] as int?) == 1
+                      ? const Icon(Icons.cloud_done_outlined, color: AppColors.success)
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'تعديل',
+                              icon: const Icon(Icons.edit_outlined),
+                              onPressed: () async {
+                                Navigator.pop(sheet);
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => CouponReceiptScreen(existing: r)),
+                                );
+                                _load();
+                              },
+                            ),
+                            IconButton(
+                              tooltip: 'إلغاء الاستلام',
+                              icon: const Icon(Icons.delete_outline,
+                                  color: AppColors.danger),
+                              onPressed: () => _deleteReceipt(sheet, r),
+                            ),
+                          ],
+                        ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// «٢٠٢٦/٠٨/١٤ · ذهبي ٣»
+  String _receiptLine(Map<String, Object?> r) {
+    final date = r['received_date'] ?? '—';
+    final kind = _kinds[r['coupon_kind']] ?? (r['coupon_kind'] ?? '');
+    return '$date · $kind ${r['coupon_count']}';
+  }
+
+  Future<void> _deleteReceipt(BuildContext sheet, Map<String, Object?> r) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('إلغاء الاستلام؟'),
+          content: Text('${r['coupon_count']} كوبون هيتشالوا من الجهاز، '
+              'والعملية دي لسه ما اترفعتش للسيرفر.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('رجوع')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              onPressed: () => Navigator.pop(d, true),
+              child: const Text('إلغاء الاستلام'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    await LocalDb.instance.deleteCouponReceipt(r['local_id'] as int);
+    if (sheet.mounted) Navigator.pop(sheet);
+    _load();
   }
 
   @override
@@ -127,7 +242,34 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                 Expanded(child: _dateBox('من', _from, (d) => setState(() => _from = d))),
                 const SizedBox(width: 8),
                 Expanded(child: _dateBox('إلى', _to, (d) => setState(() => _to = d))),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  tooltip: 'كل التواريخ',
+                  icon: const Icon(Icons.filter_alt_off_outlined),
+                  onPressed: () {
+                    setState(() { _from = null; _to = null; });
+                    _load();
+                  },
+                ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: TextField(
+              controller: _customerFilter,
+              onChanged: (_) => _load(),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'فلتر بإسم العميل',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: _customerFilter.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () { _customerFilter.clear(); _load(); },
+                      ),
+              ),
             ),
           ),
           if (!_loading && _rows.isNotEmpty)
@@ -159,6 +301,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                         itemBuilder: (_, i) {
                           final r = _rows[i];
                           return ListTile(
+                            onTap: () => _showReceipts(r),
                             title: Text(r.name,
                                 style: const TextStyle(fontWeight: FontWeight.w700)),
                             subtitle: Padding(

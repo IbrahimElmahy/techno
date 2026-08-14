@@ -191,6 +191,8 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # (035) «محل الشراء» بقى تاجر مختار من قايمة المندوب، وتليفونه بيتسجّل معاه.
+    ("inspection", "purchase_shop_phone", "VARCHAR(40)"),
     # (034) فاتورة الشرا بقت نسخة من البيع: خصم على السطر، خصم على الفاتورة، وضريبة.
     ("purchase_invoice", "gross", "DECIMAL(18,2)"),
     ("purchase_invoice", "fixed_discount_pct", "DECIMAL(9,4)"),

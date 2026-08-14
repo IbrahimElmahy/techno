@@ -50,6 +50,7 @@ class InspectionIn(BaseModel):
     technician_name: str | None = None
     technician_phone: str | None = None
     purchase_shop: str | None = None
+    purchase_shop_phone: str | None = None
     visit_details: str | None = None
     client_uuid: str | None = Field(default=None, max_length=40)
     items: list[InspectionLineIn] = []
@@ -85,6 +86,7 @@ class InspectionOut(BaseModel):
     technician_name: str | None
     technician_phone: str | None
     purchase_shop: str | None
+    purchase_shop_phone: str | None
     visit_details: str | None
     total_points: Decimal
     rep_user_id: int
@@ -142,6 +144,7 @@ def _out(i) -> InspectionOut:
         floor_number=i.floor_number, description=i.description,
         inspection_type=i.inspection_type, technician_name=i.technician_name,
         technician_phone=i.technician_phone, purchase_shop=i.purchase_shop,
+        purchase_shop_phone=i.purchase_shop_phone,
         visit_details=i.visit_details, total_points=i.total_points, rep_user_id=i.rep_user_id,
         items=[InspectionLineOut(id=ln.id, item_id=ln.item_id, item_name=ln.item_name,
                                  quantity=ln.quantity, points=ln.points, total=ln.total)
@@ -158,7 +161,8 @@ def _create(db: Session, body: InspectionIn, current: CurrentUser):
         owner_address=body.owner_address, floor_number=body.floor_number,
         description=body.description, inspection_type=body.inspection_type,
         technician_name=body.technician_name, technician_phone=body.technician_phone,
-        purchase_shop=body.purchase_shop, visit_details=body.visit_details,
+        purchase_shop=body.purchase_shop, purchase_shop_phone=body.purchase_shop_phone,
+        visit_details=body.visit_details,
         client_uuid=body.client_uuid,
         lines=[LineIn(item_id=ln.item_id, item_name=ln.item_name,
                       quantity=ln.quantity, points=ln.points) for ln in body.items],

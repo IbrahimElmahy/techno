@@ -61,6 +61,10 @@ class Inspection(Base):
     technician_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     purchase_shop: Mapped[str | None] = mapped_column(String(160), nullable=True)  # محل الشراء
+    # تليفون محل الشراء — «محل الشراء» تاجر متسجّل عندنا، والمندوب بيختاره من قايمته.
+    # The name alone is a string a second rep spells differently; carrying the phone with it
+    # is what lets the office ring the shop back about the visit.
+    purchase_shop_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
     visit_details: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     total_points: Mapped[object] = mapped_column(POINTS, nullable=False, default=0)

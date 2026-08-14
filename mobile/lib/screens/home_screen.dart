@@ -68,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: CustomScrollView(
           slivers: [
             SliverAppBar(
-              expandedHeight: 170,
+              expandedHeight: 190,
               pinned: true,
               flexibleSpace: FlexibleSpaceBar(
                 background: Container(
@@ -80,12 +80,37 @@ class _HomeScreenState extends State<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text('تكنو ثيرم',
-                              style: TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white)),
-                          const SizedBox(height: 4),
+                          // اللوجو نفسه، مش اسم مكتوب.
+                          //
+                          // The mark is green and orange on transparency, and its «GERMAN
+                          // TECHNOLOGY» line is near-black — dropped straight onto the blue it
+                          // reads as a smudge. Same white plate the splash uses, so the two
+                          // screens carry the brand identically.
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.16),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Image.asset(
+                              'assets/images/technotherm_logo.png',
+                              height: 46,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => const Text('تكنو ثيرم',
+                                  style: TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.primary)),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
                           Text('أهلاً $_username 👋',
                               style: const TextStyle(fontSize: 15, color: Colors.white70)),
                         ],
@@ -93,7 +118,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                title: const Text('المعاينات'),
+                // أبيض صريح: العنوان بياخد لون النص الافتراضي (غامق)، وهو قاعد على تدرّج
+                // أزرق — فكان بيتقرا بالعافية.
+                title: const Text('المعاينات',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
               ),
             ),
             SliverPadding(

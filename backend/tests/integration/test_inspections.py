@@ -208,3 +208,33 @@ def test_inspection_lookups_seeded(client, world, login):
     assert "حمام و مطبخ" in values and "2 حمام" in values
     r2 = client.get("/api/v1/settings/lookups?category=inspection_type", headers=h)
     assert {"تغذية و صرف", "تغذية فقط", "صرف فقط"} <= {o["value"] for o in r2.json()}
+
+
+def test_the_purchase_shops_phone_is_stored_and_returned(client, world, login):
+    """«محل الشراء» بقى تاجر متسجّل، وتليفونه بيتسجّل معاه.
+
+    The shop used to be a free-typed name and nothing else, so a visit recorded «محل النور» with no
+    way to ring it back and no way to tell one محل النور from another. The rep now picks the trader
+    off his own customer list and the phone travels with the name.
+
+    Written after the field reached the API but not the service underneath it, which is a shape
+    that fails on EVERY create, not only the ones carrying a phone.
+    """
+    h = login("rep_a")
+    res = client.post("/api/v1/inspections", headers=h,
+                      json=_payload(purchase_shop="محل النور", purchase_shop_phone="01234567890"))
+    assert res.status_code == 201, res.text
+    assert res.json()["purchase_shop_phone"] == "01234567890"
+
+    read_back = client.get(f"/api/v1/inspections/{res.json()['id']}", headers=h)
+    assert read_back.status_code == 200, read_back.text
+    assert read_back.json()["purchase_shop_phone"] == "01234567890", "اتسجّل وماترجعش"
+
+
+def test_an_inspection_with_no_shop_phone_is_still_accepted(client, world, login):
+    """A rep visiting someone who bought from a shop we have never carded still records the visit —
+    the phone is extra information, not a new requirement."""
+    h = login("rep_a")
+    res = client.post("/api/v1/inspections", headers=h, json=_payload())
+    assert res.status_code == 201, res.text
+    assert res.json()["purchase_shop_phone"] is None
