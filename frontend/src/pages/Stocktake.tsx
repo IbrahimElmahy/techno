@@ -3,7 +3,7 @@ import {
   Alert, Button, Card, Col, DatePicker, InputNumber, Row, Select, Statistic, Table, Tag,
   message,
 } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -12,6 +12,8 @@ import MovementHistoryLog, { MovementHistoryTarget } from '../components/Movemen
 import { useTableKeyboard } from '../components/keyboard';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
+import { printReport, type PrintColumn } from '../print/reportSheet';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -106,25 +108,33 @@ export default function Stocktake() {
     if (!rows.length) { message.info('لا توجد أرصدة للتصدير'); return; }
     // The export follows the columns. A file whose headings say «تكلفة الوحدة» over a column of
     // counted quantities is worse than no export — it is read once, believed, and filed.
-    const heads = ['الكود', 'الصنف', 'الفئة', 'الوحدة', 'الموقع', 'الكمية في النظام',
-      'العدد الفعلي', 'الفرق'];
-    const lines = [heads.join(',')];
-    filter.filtered.forEach((r) => {
-      const a = actual[rowKey(r)];
-      const d = diffOf(r);
-      lines.push([
-        r.code ?? '', r.name, r.category ?? '', r.unit_of_measure ?? '', r.location,
-        r.quantity,
-        a === null || a === undefined ? '' : a,
-        d === null ? '' : d,
-      ].map((v) => `"${v}"`).join(','));
-    });
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `stocktake-${asOf.format('YYYY-MM-DD')}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const cols: CsvColumn<any>[] = [
+      { title: 'الكود', value: 'code' },
+      { title: 'الصنف', value: 'name' },
+      { title: 'الفئة', value: 'category' },
+      { title: 'الوحدة', value: 'unit_of_measure' },
+      { title: 'الموقع', value: 'location' },
+      { title: 'الكمية في النظام', value: 'quantity' },
+      { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)] },
+      { title: 'الفرق', value: (r) => diffOf(r) },
+    ];
+    writeCsv(`stocktake-${asOf.format('YYYY-MM-DD')}`, cols, filter.filtered);
+  };
+
+  const printIt = () => {
+    const cols: PrintColumn<any>[] = [
+      { title: 'الكود', value: 'code' },
+      { title: 'الصنف', value: 'name' },
+      { title: 'الموقع', value: 'location' },
+      { title: 'الكمية في النظام', value: 'quantity', numeric: true },
+      { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)], numeric: true },
+      { title: 'الفرق', value: (r) => diffOf(r), numeric: true },
+    ];
+    printReport(
+      { title: 'جرد حق تاريخ', date: asOf.format('YYYY/MM/DD'),
+        meta: [['حتى تاريخ', asOf.format('YYYY/MM/DD')]] },
+      cols, filter.filtered,
+    );
   };
 
   // أي سطر في الجرد يفتح سجل حركاته — «الفرق ده جه منين» مالهاش إجابة غير دي.
@@ -210,6 +220,8 @@ export default function Stocktake() {
           {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!rows.length}
             style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
+          <Button icon={<PrinterOutlined />} onClick={printIt}
+            style={{ marginInlineEnd: 8 }}>طباعة</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </>
       )}

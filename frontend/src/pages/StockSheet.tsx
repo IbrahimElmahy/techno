@@ -10,6 +10,7 @@ import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
+import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 
 /**
  * جرد المخازن · جرد عام المخازن — صفوف وأعمدة، وخلاص.
@@ -283,14 +284,11 @@ export default function StockSheet() {
       }
       return r[c.dataIndex] ?? '';
     };
-    const heads = visible.map((c) => c.title);
-    const lines = [heads.join(','), ...shown.map((r: any) =>
-      visible.map((c) => `"${String(cell(c, r)).replace(/"/g, '""')}"`).join(','))];
-    const blob = new Blob([`﻿${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${view === 'general' ? 'general-stock' : 'stock-sheet'}.csv`;
-    a.click();
+    const csvCols: CsvColumn<any>[] = visible.map((c) => ({
+      title: String(c.title ?? ''),
+      value: (r: any) => cell(c, r),
+    }));
+    writeCsv(view === 'general' ? 'general-stock' : 'stock-sheet', csvCols, shown);
   };
 
   return (

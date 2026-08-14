@@ -13,6 +13,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useScreenShortcuts } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import { buildCsv, downloadCsv } from '../utils/exportCsv';
 
 /**
  * فئات الاصناف — the item categories, on a screen of their own.
@@ -58,15 +59,14 @@ export default function Categories() {
    * nobody can tell which half landed.
    */
   const csv = (name: string, rows: (string | number)[][]) => {
-    const body = rows.map((r) => r.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','));
-    // The BOM matters: without it Excel opens Arabic as mojibake, which is the whole difference
-    // between a file someone uses and a file someone reports as broken.
-    const blob = new Blob(['﻿' + body.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // These sheets are already built as raw cell arrays (headings are just the first row), so this
+    // one goes through `buildCsv` with positional columns rather than named ones.
+    const width = Math.max(0, ...rows.map((r) => r.length));
+    const cols = Array.from({ length: width }, (_, i) => ({
+      title: String(rows[0]?.[i] ?? ''),
+      value: (r: (string | number)[]) => r[i],
+    }));
+    downloadCsv(name, buildCsv(cols, rows.slice(1)));
   };
 
   const moreMenu = [

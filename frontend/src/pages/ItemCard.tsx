@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Statistic, Table, Tag, message,
 } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -11,6 +11,8 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import DocumentLink, { docKindOf, useOpenDocument } from '../components/DocumentLink';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
+import { printReport, type PrintColumn } from '../print/reportSheet';
 
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
@@ -130,20 +132,35 @@ export default function ItemCard() {
 
   const exportCsv = () => {
     if (!card?.rows.length) { message.info('لا توجد حركات للتصدير'); return; }
-    const heads = ['التاريخ', 'النوع', 'وارد', 'منصرف', 'الرصيد قبل', 'الرصيد بعد',
-      'الموقع', 'المستند'];
-    const lines = [heads.join(',')];
-    card.rows.forEach((r) => lines.push([
-      r.date ?? '', MOVEMENT_LABELS[r.movement_type] || r.movement_type,
-      r.quantity_in, r.quantity_out, r.balance_before, r.balance_after,
-      r.location, r.source_doc_id ? `${r.source_doc_type}#${r.source_doc_id}` : '',
-    ].map((v) => `"${v}"`).join(',')));
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `item-card-${card.item_code || card.item_id}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const cols: CsvColumn<any>[] = [
+      { title: 'التاريخ', value: 'date' },
+      { title: 'النوع', value: (r) => MOVEMENT_LABELS[r.movement_type] || r.movement_type },
+      { title: 'وارد', value: 'quantity_in' },
+      { title: 'منصرف', value: 'quantity_out' },
+      { title: 'الرصيد قبل', value: 'balance_before' },
+      { title: 'الرصيد بعد', value: 'balance_after' },
+      { title: 'الموقع', value: 'location' },
+      { title: 'المستند',
+        value: (r) => (r.source_doc_id ? `${r.source_doc_type}#${r.source_doc_id}` : '') },
+    ];
+    writeCsv(`item-card-${card.item_code || card.item_id}`, cols, card.rows);
+  };
+
+  const printIt = () => {
+    if (!card) return;
+    const cols: PrintColumn<any>[] = [
+      { title: 'التاريخ', value: 'date' },
+      { title: 'النوع', value: (r) => MOVEMENT_LABELS[r.movement_type] || r.movement_type },
+      { title: 'وارد', value: 'quantity_in', numeric: true },
+      { title: 'منصرف', value: 'quantity_out', numeric: true },
+      { title: 'الرصيد بعد', value: 'balance_after', numeric: true },
+      { title: 'الموقع', value: 'location' },
+    ];
+    printReport(
+      { title: 'كارت صنف', number: card.item_code || undefined,
+        meta: [['الصنف', card.item_name ?? '']] },
+      cols, card.rows,
+    );
   };
 
   // قراية الكارت هي سؤال «الحركة دي جات منين؟»، فالسطر يفتح مستندها. الحركات اللي مالهاش شاشة
@@ -253,6 +270,8 @@ export default function ItemCard() {
           {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv} style={{ marginInlineEnd: 8 }}
             disabled={!card?.rows.length}>تصدير CSV</Button>
+          <Button icon={<PrinterOutlined />} onClick={printIt} disabled={!card?.rows.length}
+            style={{ marginInlineEnd: 8 }}>طباعة</Button>
           <Button icon={<ReloadOutlined />} onClick={load} disabled={!itemId}>تحديث</Button>
         </>
       )}

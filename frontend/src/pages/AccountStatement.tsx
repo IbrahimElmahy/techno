@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Statistic, Table, Tag, message,
 } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -12,6 +12,8 @@ import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLi
 import { entryTypeLabel } from '../components/labels';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
+import { printReport, type PrintColumn } from '../print/reportSheet';
 
 /**
  * كشف حساب — any account in the chart, not only customers and suppliers.
@@ -160,18 +162,38 @@ export default function AccountStatement() {
 
   const exportCsv = () => {
     if (!statement?.lines.length) { message.info('لا توجد حركات للتصدير'); return; }
-    const heads = ['التاريخ', 'النوع', 'البيان', 'الرصيد قبل', 'مدين', 'دائن', 'الرصيد بعد'];
-    const lines = [heads.join(',')];
-    statement.lines.forEach((l) => lines.push([
-      String(l.entry_date).slice(0, 10), entryTypeLabel(l.entry_type), l.description,
-      l.balance_before, l.debit, l.credit, l.balance,
-    ].map((v) => `"${v ?? ''}"`).join(',')));
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `statement-${statement.account_id}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const cols: CsvColumn<any>[] = [
+      { title: 'التاريخ', value: (l) => String(l.entry_date).slice(0, 10) },
+      { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) },
+      { title: 'البيان', value: 'description' },
+      { title: 'الرصيد قبل', value: 'balance_before' },
+      { title: 'مدين', value: 'debit' },
+      { title: 'دائن', value: 'credit' },
+      { title: 'الرصيد بعد', value: 'balance' },
+    ];
+    writeCsv(`statement-${statement.account_id}`, cols, statement.lines);
+  };
+
+  const printIt = () => {
+    if (!statement) return;
+    const cols: PrintColumn<any>[] = [
+      { title: 'التاريخ', value: (l) => String(l.entry_date).slice(0, 10) },
+      { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) },
+      { title: 'البيان', value: 'description' },
+      { title: 'مدين', value: 'debit', numeric: true },
+      { title: 'دائن', value: 'credit', numeric: true },
+      { title: 'الرصيد', value: 'balance', numeric: true },
+    ];
+    printReport(
+      { title: 'كشف حساب', meta: [['الحساب', statement.account_name ?? '']] },
+      cols, statement.lines,
+      [
+        { label: 'رصيد أول المدة', value: money(statement.opening_balance) },
+        { label: 'إجمالي مدين', value: money(statement.total_debit) },
+        { label: 'إجمالي دائن', value: money(statement.total_credit) },
+        { label: 'الرصيد الختامي', value: money(statement.closing_balance) },
+      ],
+    );
   };
 
   // «إيه السطر ده؟» — السطر كله يفتح مستنده، مش عمود المستند لوحده. اللي بيقرا كشف حساب
@@ -257,6 +279,9 @@ export default function AccountStatement() {
           {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv}
             disabled={!statement?.lines.length} style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
+          <Button icon={<PrinterOutlined />} onClick={printIt}
+            disabled={!statement?.lines.length}
+            style={{ marginInlineEnd: 8 }}>طباعة</Button>
           <Button icon={<ReloadOutlined />} onClick={load} disabled={!accountId}>تحديث</Button>
         </>
       )}

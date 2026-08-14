@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
 } from 'antd';
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -10,6 +10,8 @@ import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
+import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
+import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
 // Only the kinds that have a screen able to show them; a purchase return has no screen of its
 // own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
@@ -233,22 +235,55 @@ export default function TradeReports() {
           : null) },
     ];
 
+  /** الفلاتر اللي التقرير اتقرا بيها — بتطلع في ترويسة الصفحة المطبوعة.
+   *
+   * A printed report with no dates on it is a page of numbers nobody can date, and it gets read
+   * six months later as if it were current. */
+  const printMeta = (): [string, string][] => {
+    const pairs: [string, string][] = [
+      ['من', range ? range[0].format('YYYY/MM/DD') : 'كل التواريخ'],
+      ['إلى', range ? range[1].format('YYYY/MM/DD') : 'كل التواريخ'],
+    ];
+    if (partyId) {
+      pairs.push([isSale ? 'العميل' : 'المورد',
+        (isSale ? customers : suppliers).find((p: any) => p.id === partyId)?.name ?? '']);
+    }
+    if (itemId) pairs.push(['الصنف', items.find((i: any) => i.id === itemId)?.name ?? '']);
+    if (warehouseId) {
+      pairs.push(['المخزن', warehouses.find((w: any) => w.id === warehouseId)?.name ?? '']);
+    }
+    return pairs;
+  };
+
+  const printIt = () => {
+    const printable: PrintColumn<any>[] = columns
+      .filter((c) => (c as any).dataIndex)
+      .map((c) => ({ title: String(c.title ?? ''), value: (c as any).dataIndex }));
+    const lines: PrintTotal[] = totals
+      ? [
+          { label: 'عدد المستندات', value: totals.document_count },
+          { label: 'إجمالي الكمية', value: qty(totals.quantity) },
+          // Profit only exists on sales — printing «الربح: ٠» on a purchase report would be a
+          // stated figure that is not a fact.
+          ...(totals.profit !== null
+            ? [{ label: 'التكلفة', value: money(totals.cost) },
+               { label: 'الربح', value: money(totals.profit) }]
+            : []),
+          { label: 'الصافي', value: money(totals.net) },
+        ]
+      : [];
+    printReport(
+      { title: view?.label ?? 'تقرير', date: dayjs().format('YYYY/MM/DD'), meta: printMeta() },
+      printable, rows, lines,
+    );
+  };
+
   /** Exported straight from what is on screen, so the file always matches the report read. */
   const exportCsv = () => {
     if (!rows.length) { message.info('لا توجد بيانات للتصدير'); return; }
-    // The action column has no data behind it — exporting it would add a blank column.
-    const exportable = columns.filter((c) => c.dataIndex);
-    const heads = exportable.map((c) => c.title);
-    const keys = exportable.map((c) => c.dataIndex);
-    const lines = [heads.join(',')];
-    rows.forEach((r) => lines.push(keys.map((k) => `"${r[k] ?? ''}"`).join(',')));
-    // BOM so Excel opens the Arabic headers correctly.
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${docType}-${level}-${groupBy}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // `columnsFromTable` drops the action column — it has no data behind it, and exporting it
+    // would add a blank column carrying a heading.
+    writeCsv(`${docType}-${level}-${groupBy}`, columnsFromTable(columns as any[]), rows);
   };
 
   // رقم في تقرير مالوش قيمة من غير ما توصل للمستند اللي وراه. الزرار موجود في آخر السطر؛ ده
@@ -278,8 +313,12 @@ export default function TradeReports() {
         <>
           {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv}
-            style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
+            style={{ marginInlineStart: 8 }}>
             تصدير CSV
+          </Button>
+          <Button icon={<PrinterOutlined />} onClick={printIt}
+            style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
+            طباعة
           </Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </>

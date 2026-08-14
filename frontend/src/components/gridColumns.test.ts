@@ -95,9 +95,18 @@ describe('شاشات الجرد التلاتة بنفس الأعمدة', () => {
 
   it('exports الفئة too, since the export claims to follow the columns', () => {
     // A file whose headings do not match the screen is read once, believed, and filed.
+    //
+    // This used to slice 260 characters after «const heads =» and look inside — which stopped
+    // meaning anything the moment the export moved to the shared `exportCsv` helper and the
+    // hand-built heads array went away. The property is about the EXPORT's columns, so it reads
+    // the `exportCsv` body now; the anchors are asserted so a future rename fails loudly here
+    // instead of quietly passing over an empty string.
     const src = read('Stocktake.tsx');
-    const heads = src.slice(src.indexOf('const heads ='), src.indexOf('const heads =') + 260);
-    expect(heads).toContain('الفئة');
+    const start = src.indexOf('const exportCsv =');
+    expect(start, 'مافيش دالة exportCsv في Stocktake — الاختبار بيقرا حاجة مش موجودة').toBeGreaterThan(-1);
+    const body = src.slice(start, src.indexOf('};', start));
+    expect(body, 'جسم exportCsv طلع فاضي').not.toBe('');
+    expect(body).toContain('الفئة');
   });
 
   it('always shows الفئة on the counting sheet, not only when it varies', () => {
