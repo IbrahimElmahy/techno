@@ -17,6 +17,9 @@ class InspectionFormScreen extends StatefulWidget {
   State<InspectionFormScreen> createState() => _InspectionFormScreenState();
 }
 
+/// إشارة «احذف» الراجعة من بوباب التعديل — مش كمية، فمش هتتلخبط مع رقم.
+const Object _kDelete = Object();
+
 class _InspectionFormScreenState extends State<InspectionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _ownerName = TextEditingController();
@@ -398,10 +401,18 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     );
   }
 
+  /// تعديل السطر — أو حذفه.
+  ///
+  /// الحذف كان بالسحب بس، ومحدش يعرف كده.
+  ///
+  /// The row has been swipe-to-delete since it was written, and nothing on screen says so — no
+  /// hint, no bin icon, nothing. A rep who put a line in by mistake had no way he could find to
+  /// take it out. The delete now sits inside the dialog he is already standing in, because he got
+  /// there by tapping the row he wants gone. The swipe still works for whoever knows it.
   Future<void> _editLine(int index) async {
     final line = _lines[index];
     final qty = TextEditingController(text: _fmt(line.quantity));
-    final updated = await showDialog<double>(
+    final answer = await showDialog<Object>(
       context: context,
       builder: (c) => Directionality(
         textDirection: TextDirection.rtl,
@@ -411,9 +422,17 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
             controller: qty,
             autofocus: true,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            onSubmitted: (_) => Navigator.pop(c, double.tryParse(qty.text)),
             decoration: const InputDecoration(labelText: 'الكمية'),
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(8, 0, 8, 10),
           actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.pop(c, _kDelete),
+              icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.danger),
+              label: const Text('حذف', style: TextStyle(color: AppColors.danger)),
+            ),
+            const Spacer(),
             TextButton(onPressed: () => Navigator.pop(c), child: const Text('إلغاء')),
             FilledButton(
               onPressed: () => Navigator.pop(c, double.tryParse(qty.text)),
@@ -423,8 +442,12 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
         ),
       ),
     );
-    if (updated != null && updated > 0) {
-      setState(() => _lines[index].quantity = updated);
+    if (answer == _kDelete) {
+      setState(() => _lines.removeAt(index));
+      return;
+    }
+    if (answer is double && answer > 0) {
+      setState(() => _lines[index].quantity = answer);
     }
   }
 

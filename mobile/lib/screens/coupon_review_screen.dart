@@ -11,6 +11,17 @@ import 'coupon_receipt_screen.dart';
 /// he is standing in front of him, and that is exactly when there is no signal. Receipts still
 /// waiting to sync are counted here too — they were taken, and leaving them out would make the
 /// screen disagree with the receipts in the customer's hand.
+/// تاريخ الاستلام، وإلا يوم ما اتكتب.
+///
+/// Top-level and public so it can be tested on its own: it is the whole of the date filter, and
+/// the bug it fixes was invisible from the screen — the list simply came back empty.
+String? receiptDate(Map<String, Object?> r) {
+  final received = (r['received_date'] as String?)?.trim();
+  if (received != null && received.isNotEmpty) return received;
+  final created = (r['created_at'] as String?) ?? '';
+  return created.length >= 10 ? created.substring(0, 10) : null;
+}
+
 class CouponReviewScreen extends StatefulWidget {
   const CouponReviewScreen({super.key});
 
@@ -56,6 +67,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
   static String? _iso(DateTime? d) =>
       d == null ? null : intl.DateFormat('yyyy-MM-dd').format(d);
 
+
   Future<void> _load() async {
     setState(() => _loading = true);
     final receipts = await LocalDb.instance.couponReceipts();
@@ -64,9 +76,15 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
 
     final totals = <String, _CustomerTotal>{};
     for (final r in receipts) {
-      // A receipt written before the date field existed has none; it is still a receipt, so it is
-      // only dropped when a filter is actually set.
-      final date = r['received_date'] as String?;
+      // استلام من غير تاريخ استلام لسه اتسجّل في يوم معروف.
+      //
+      // `received_date` came in with v7 of the phone database; everything saved before it has
+      // NULL. The filter used to drop those rows the moment ANY date was set — so the screen went
+      // blank on a filter that should have narrowed it, and the only way to see anything was to
+      // clear the dates entirely. Falling back to the day the row was written is not a guess:
+      // `created_at` is an ISO timestamp whose first ten characters are that date in the same
+      // format the filter compares.
+      final date = receiptDate(r);
       if (from != null && (date == null || date.compareTo(from) < 0)) continue;
       if (to != null && (date == null || date.compareTo(to) > 0)) continue;
 
@@ -195,7 +213,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
 
   /// «٢٠٢٦/٠٨/١٤ · ذهبي ٣»
   String _receiptLine(Map<String, Object?> r) {
-    final date = r['received_date'] ?? '—';
+    final date = receiptDate(r) ?? '—';
     final kind = _kinds[r['coupon_kind']] ?? (r['coupon_kind'] ?? '');
     return '$date · $kind ${r['coupon_count']}';
   }
