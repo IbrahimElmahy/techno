@@ -6,6 +6,7 @@ import 'package:intl/intl.dart' as intl;
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
+import 'inspection_form_screen.dart';
 
 /// «مراجعة الزيارات» — inspections recorded on this device, filtered by date.
 class ReviewScreen extends StatefulWidget {
@@ -251,6 +252,40 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         style: const TextStyle(
                             fontSize: 20, fontWeight: FontWeight.w800)),
                   ),
+                  // التعديل طول ما هي متزامنتش.
+                  //
+                  // A visit that has not reached the server exists on this phone and nowhere else,
+                  // so correcting it is just correcting a form. Once it HAS synced it is a record
+                  // the office may already have acted on, and the phone is no longer where it gets
+                  // corrected — hence the badge instead of a disabled button nobody can explain.
+                  if (!insp.synced)
+                    IconButton(
+                      tooltip: 'تعديل',
+                      icon: const Icon(Icons.edit_outlined, color: AppColors.primary),
+                      onPressed: () async {
+                        Navigator.pop(c);
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => InspectionFormScreen(
+                              visitKind: insp.visitKind,
+                              existing: insp,
+                            ),
+                          ),
+                        );
+                        _load();
+                      },
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsetsDirectional.only(end: 4),
+                      child: Chip(
+                        avatar: Icon(Icons.lock_outline, size: 16, color: AppColors.success),
+                        label: Text('اتزامنت — مش بتتعدّل من التطبيق',
+                            style: TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
                   if (!insp.synced)
                     IconButton(
                       tooltip: 'حذف',
