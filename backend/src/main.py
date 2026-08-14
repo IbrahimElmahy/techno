@@ -20,6 +20,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     loyalty_settings,
     coupon_receipts,  # استلام الكوبونات من العملاء
     employees,  # الموظفون والوظائف (B8)
+    hr,  # الموارد البشرية — الأقسام ونهاية الخدمة (HR-1)
     fixed_assets,  # الأصول الثابتة والإهلاك (B6)
     manufacturing,
     orders,  # طلبات البيع والشراء (B9)
@@ -129,6 +130,8 @@ def create_app() -> FastAPI:
     app.include_router(fixed_assets.router, prefix=prefix)
     # Employees + job titles (B8)
     app.include_router(employees.router, prefix=prefix)
+    # الموارد البشرية — الأقسام ونهاية الخدمة (HR-1)
+    app.include_router(hr.router, prefix=prefix)
     # Sales / purchase orders (B9)
     app.include_router(orders.router, prefix=prefix)
     # Coupon hand-back from customers (mobile app + office)
@@ -191,6 +194,10 @@ def create_app() -> FastAPI:
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    # (HR-1) «القسم» بقى جدول. نفس شكل ("employee","warehouse_id","BIGINT") اللي عدّى قبل كده:
+    # nullable، من غير default، ومن غير FK في نص الـDDL — أي حاجة فيها NOT NULL DEFAULT بتختلف
+    # من لهجة للتانية، والفشل هنا بيتبلع عند مستوى info فبيفضل غلط في صمت.
+    ("employee", "department_id", "BIGINT"),
     # (035) «محل الشراء» بقى تاجر مختار من قايمة المندوب، وتليفونه بيتسجّل معاه.
     ("inspection", "purchase_shop_phone", "VARCHAR(40)"),
     # (034) فاتورة الشرا بقت نسخة من البيع: خصم على السطر، خصم على الفاتورة، وضريبة.

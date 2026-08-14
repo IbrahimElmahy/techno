@@ -48,6 +48,9 @@ const STOCK = ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_ma
 const BOOKS = ['system_admin', 'branch_manager', 'accountant'];
 /** Read-only roles are added to a screen only when the screen is genuinely just for looking. */
 const R = (base: string[]) => [...base, 'viewer'];
+/** الموارد البشرية. Kept as one shorthand so it cannot drift from the `hr.*` capabilities
+ *  the backend gates on — the two vocabularies are separate and nothing enforces they agree. */
+const HR = ['system_admin', 'branch_manager', 'accountant'];
 
 export const NAVIGATION: NavGroup[] = [
   // ١) اداره الانشاءات — master data. Theirs lists all twelve as separate screens; ours had four of
@@ -59,7 +62,8 @@ export const NAVIGATION: NavGroup[] = [
     children: [
       { key: '/categories', label: 'فئات الاصناف', roles: R(STOCK), a5: '/categories' },
       { key: '/catalog', label: 'الأصناف', roles: R(STOCK), a5: '/items' },
-      { key: '/employees', label: 'الموظفين', roles: OFFICE, a5: '/employees' },
+      { key: '/employees', label: 'الموظفين', roles: HR, a5: '/employees' },
+      { key: '/departments', label: 'الأقسام', roles: HR },
       { key: '/customers', label: 'العملاء', roles: R([...SALES, 'after_sales_staff']), a5: '/clients' },
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
       { key: '/warehouses', label: 'المخازن', roles: R(STOCK), a5: '/stores' },

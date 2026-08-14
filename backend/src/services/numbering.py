@@ -29,13 +29,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 
-def next_document_number(db: Session, model, prefix: str, *, where=None) -> str:
+def next_document_number(db: Session, model, prefix: str, *, where=None, column=None,
+                         width: int = 6) -> str:
     """The next `PREFIX-000001`-style number for `model`.
 
     `where` narrows the series — vouchers share a table and number per kind, so a receipt and a
     payment each count from one.
+
+    `column` names the column holding the number when it is not called `document_number`. Master
+    data numbers itself too — an employee is `EMP-0001` in `Employee.code` — and it was counting
+    rows, which is the bug this module was written to end.
+
+    `width` is the zero padding. Documents use six; the master-data codes that already exist in the
+    field use four, and re-padding them would renumber people.
     """
-    column = model.document_number
+    column = column if column is not None else model.document_number
     stmt = select(column).where(column.like(f"{prefix}-%"))
     if where is not None:
         stmt = stmt.where(where)
@@ -49,4 +57,4 @@ def next_document_number(db: Session, model, prefix: str, *, where=None) -> str:
             # edited by hand, or carried in from the old system, should not stop new ones being
             # issued.
             highest = max(highest, int(m.group(1)))
-    return f"{prefix}-{highest + 1:06d}"
+    return f"{prefix}-{highest + 1:0{width}d}"

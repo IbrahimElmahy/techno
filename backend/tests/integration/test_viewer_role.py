@@ -77,3 +77,31 @@ def test_a_viewer_cannot_change_settings(client, world, login, viewer):
     resp = client.put("/api/v1/settings/sales", headers=viewer, json={
         "fixed_discount_pct": "5", "vat_rate_pct": "0"})
     assert resp.status_code == 403, resp.text
+
+
+def test_the_viewer_cannot_see_anybody_salary():
+    """`salary.view` مسمّاها مكسورة عن قصد — ودي أهم حاجة في الملف ده.
+
+    Every other capability in the system names its read `<x>.read`, and the viewer set is derived
+    from exactly that suffix. Following the convention here would have handed every viewer in the
+    company every colleague's salary — and the owner who wanted a look-but-not-touch login for a
+    visiting auditor would have been handing over the payroll without knowing it.
+
+    So the naming convention loses to the thing the convention exists to protect. This test is here
+    because `salary.view` reads like an oversight, and the next person to tidy the file will want
+    to rename it.
+    """
+    caps = ROLE_CAPABILITIES[RoleName.viewer]
+    assert "salary.view" in ALL_CAPABILITIES, "الصلاحية نفسها اتشالت"
+    assert "salary.view" not in caps, (
+        "القارئ بقى بيشوف مرتبات الناس — يغلب الظن إن الاسم اتغيّر لـ salary.read"
+    )
+
+
+def test_hr_reads_are_derived_like_everything_else():
+    """The exception is ONE capability, not the module. Attendance and leave follow the rule."""
+    caps = ROLE_CAPABILITIES[RoleName.viewer]
+    assert "hr.read" in caps
+    assert "payroll.read" in caps
+    assert "hr.write" not in caps
+    assert "payroll.post" not in caps

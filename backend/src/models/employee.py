@@ -40,7 +40,16 @@ class Employee(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     job_title_id: Mapped[int | None] = mapped_column(ForeignKey("job_title.id"), nullable=True,
                                                      index=True)
+    # «القسم» اتنقل لجدول حقيقي (HR-1). النص القديم فاضل، وبيتقرا لحد ما الموظف يتربط.
+    #
+    # Free text is how «المبيعات» and «مبيعات» and «قسم المبيعات» become three departments in a
+    # report nobody can total — and a string cannot carry a manager, a parent, or a cost centre,
+    # so «تكلفة أجور قسم المخازن» had no answer. `department_id` is the truth once set; this
+    # column is the fallback for anyone the import has not mapped yet, so no data is lost.
     department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("department.id"), nullable=True, index=True
+    )
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     national_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)

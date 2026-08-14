@@ -128,3 +128,33 @@ def test_two_series_do_not_share_a_counter(db, inv_world):
     a = numbering.next_document_number(db, Voucher, "RCV", where=Voucher.kind == VoucherKind.receipt)
     b = numbering.next_document_number(db, Voucher, "PAY", where=Voucher.kind == VoucherKind.payment)
     assert a.startswith("RCV-") and b.startswith("PAY-")
+
+
+def test_employee_codes_survive_a_removed_row(client, h, db):
+    """كود الموظف كان بيعدّ الصفوف — نفس الغلط بالظبط، بس على البيانات الأساسية.
+
+    `EMP-` was minted as `count() + 1` long after this module existed to stop exactly that. It is
+    worse here than on a document, because master data is where rows genuinely do go: a row cleaned
+    up by hand, a partial restore, a person entered twice and one of them removed.
+
+    Three employees, remove the middle one, and the count says two — so the next is offered
+    `EMP-0003`, which the third is already holding. `code` is UNIQUE, so the insert fails, and it
+    keeps failing, because the count is stuck one behind forever.
+    """
+    from src.models.employee import Employee
+
+    made = [client.post("/api/v1/employees", headers=h, json={"name": f"موظف {i}"}).json()
+            for i in range(3)]
+    assert [e["code"] for e in made] == ["EMP-0001", "EMP-0002", "EMP-0003"]
+
+    db.delete(db.get(Employee, made[1]["id"]))
+    db.commit()
+
+    res = client.post("/api/v1/employees", headers=h, json={"name": "موظف جديد"})
+    assert res.status_code == 201, res.text
+    assert res.json()["code"] == "EMP-0004", "الكود اترجّع لواحد موجود بالفعل"
+
+    codes = [e["code"] for e in client.get("/api/v1/employees", headers=h).json()]
+    assert len(codes) == len(set(codes)), "فيه كودين متكررين"
+    # الفجوة بتفضل فجوة: EMP-0002 اتشال ومحدش أخد رقمه.
+    assert "EMP-0002" not in codes

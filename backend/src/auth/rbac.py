@@ -246,6 +246,44 @@ ALL_CAPABILITIES |= _VOUCHER_ALL
 
 
 # ---------------------------------------------------------------------------
+# الموارد البشرية (HR) — additive.
+# ---------------------------------------------------------------------------
+CAP_HR_READ = "hr.read"
+CAP_HR_WRITE = "hr.write"
+
+# «مسير الرواتب» منفصل عن باقي الموارد البشرية عن قصد: مدير الفرع لازم يشوف الحضور والأجازات
+# ويعتمدهم، ومرتبات الناس حاجة تانية خالص.
+CAP_PAYROLL_READ = "payroll.read"
+CAP_PAYROLL_POST = "payroll.post"
+
+# ⚠️ الاسم ده مكسور عن قصد — متصلّحوش.
+#
+# `salary.view` does NOT end in `.read`, and that is the entire point. The viewer role is derived
+# at the bottom of this file as «every capability whose name ends in .read» — a rule that is right
+# for every other module and catastrophic for this one: naming this `salary.read` would hand every
+# viewer in the company every colleague's salary, and the owner who wanted a look-but-not-touch
+# login for an auditor would be handing over the payroll.
+#
+# So the naming convention loses to the thing the convention exists to protect. Anything that
+# returns an amount against a named employee — salary structure, payroll line, payslip, advance —
+# gates on this, and it is granted explicitly, never derived.
+CAP_SALARY_VIEW = "salary.view"
+
+_HR_ALL = {CAP_HR_READ, CAP_HR_WRITE}
+_PAYROLL_ALL = {CAP_PAYROLL_READ, CAP_PAYROLL_POST, CAP_SALARY_VIEW}
+
+# الإدارة بتشوف وتكتب كل حاجة؛ المحاسب بيرحّل المرتبات.
+for _role in (RoleName.system_admin, RoleName.branch_manager):
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(_HR_ALL)
+for _role in (RoleName.system_admin, RoleName.accountant):
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(_PAYROLL_ALL)
+# مدير الفرع بيعتمد الحضور والأجازات وبيشوف إن المسير اترحّل — من غير ما يشوف رقم حد.
+ROLE_CAPABILITIES.setdefault(RoleName.branch_manager, set()).add(CAP_PAYROLL_READ)
+ROLE_CAPABILITIES.setdefault(RoleName.accountant, set()).add(CAP_HR_READ)
+
+ALL_CAPABILITIES |= _HR_ALL | _PAYROLL_ALL
+
+# ---------------------------------------------------------------------------
 # «قارئ» — the read-only role.
 # ---------------------------------------------------------------------------
 # Derived by rule instead of listed: every capability whose name ends in `.read`, and nothing else.

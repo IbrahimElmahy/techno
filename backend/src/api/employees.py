@@ -11,13 +11,15 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_USER_READ, CAP_USER_WRITE
 from src.core.db import get_db
 from src.models.employee import Employee, JobTitle
+from src.models.hr_org import Department
+from src.services import numbering
 
 router = APIRouter(tags=["employees"], prefix="")
 
@@ -37,7 +39,9 @@ class JobTitleOut(BaseModel):
 class EmployeeIn(BaseModel):
     name: str
     job_title_id: int | None = None
+    # `department` النص الحر فاضل مقبول عشان أي مستهلك قديم مايتكسرش؛ `department_id` هو الحقيقة.
     department: str | None = None
+    department_id: int | None = None
     phone: str | None = None
     national_id: str | None = None
     hire_date: date | None = None
@@ -56,6 +60,7 @@ class EmployeePatch(BaseModel):
     name: str | None = None
     job_title_id: int | None = None
     department: str | None = None
+    department_id: int | None = None
     phone: str | None = None
     national_id: str | None = None
     hire_date: date | None = None
@@ -78,6 +83,7 @@ class EmployeeOut(BaseModel):
     job_title_id: int | None
     job_title: str | None = None
     department: str | None
+    department_id: int | None = None
     phone: str | None
     national_id: str | None
     hire_date: date | None
@@ -97,7 +103,12 @@ def _out(db: Session, e: Employee) -> EmployeeOut:
     title = db.get(JobTitle, e.job_title_id) if e.job_title_id else None
     return EmployeeOut(
         id=e.id, code=e.code, name=e.name, job_title_id=e.job_title_id,
-        job_title=title.name if title else None, department=e.department, phone=e.phone,
+        job_title=title.name if title else None,
+        # الاسم اللي بيرجع هو اسم القسم المربوط لو موجود، وإلا النص القديم — فالشاشات والتطبيق
+        # مش محتاجين يتغيّروا عشان الترحيل.
+        department=(dept.name if (dept := (db.get(Department, e.department_id)
+                                          if e.department_id else None)) else e.department),
+        department_id=e.department_id, phone=e.phone,
         national_id=e.national_id, hire_date=e.hire_date, salary=e.salary,
         address=getattr(e, "address", None), work_start=getattr(e, "work_start", None),
         work_end=getattr(e, "work_end", None),
@@ -185,10 +196,13 @@ def create_employee(
     if body.user_id and db.scalar(select(Employee).where(Employee.user_id == body.user_id)):
         raise HTTPException(409, {"code": "duplicate",
                                   "message": "المستخدم ده مربوط بموظف تاني."})
-    n = db.scalar(select(func.count()).select_from(Employee)) or 0
+    # كان بيعدّ الصفوف — وده بالظبط الغلط اللي `numbering` اتكتبت عشانه: امسح موظف واحد من
+    # تلاتة، العدد يقول اتنين، فالتالي بياخد `EMP-0003` وهو موجود على التالت. والعمود unique،
+    # فالحفظ بيفشل — وبيفضل فاشل، لأن العدد عالق ورا واحد للأبد.
     emp = Employee(
-        code=f"EMP-{n + 1:04d}", name=name, job_title_id=body.job_title_id,
-        department=body.department, phone=body.phone, national_id=body.national_id,
+        code=numbering.next_document_number(db, Employee, "EMP", column=Employee.code, width=4),
+        name=name, job_title_id=body.job_title_id,
+        department=body.department, department_id=body.department_id, phone=body.phone, national_id=body.national_id,
         hire_date=body.hire_date, salary=body.salary, branch_id=body.branch_id,
         warehouse_id=body.warehouse_id,
         user_id=body.user_id, notes=body.notes,
