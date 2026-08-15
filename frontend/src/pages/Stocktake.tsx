@@ -8,7 +8,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
-import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
+import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -64,7 +64,17 @@ export default function Stocktake() {
    * them to be kept.
    */
   const [actual, setActual] = useState<Record<string, number | null>>({});
-  const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
+  /**
+   * السطور المفتوحة سجلها — أكتر من واحد في نفس الوقت.
+   *
+   * The log used to sit at the bottom of the page and hold ONE item: opening a second closed the
+   * first, and the row it belonged to was three screens up. Reading a stocktake is comparing —
+   * «الصنف ده ناقص خمسة والتاني زايد خمسة، هما نفس الحاجة؟» — and you cannot compare two things
+   * one at a time.
+   *
+   * A set rather than a single key, and it lives under the row it explains.
+   */
+  const [openRows, setOpenRows] = useState<React.Key[]>([]);
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -137,13 +147,17 @@ export default function Stocktake() {
     );
   };
 
+  const rowKeyOf = (r: Row) => `${r.item_id}-${r.location}`;
+
+  /** بيفتح أو بيقفل سجل سطر — من غير ما يلمس الباقي. */
+  const toggleRow = (key: React.Key) =>
+    setOpenRows((prev) => (prev.includes(key)
+      ? prev.filter((k) => k !== key) : [...prev, key]));
+
   // أي سطر في الجرد يفتح سجل حركاته — «الفرق ده جه منين» مالهاش إجابة غير دي.
   const kb = useTableKeyboard<Row>({
-    rows: filter.filtered, rowKey: (r) => `${r.item_id}-${r.location}`,
-    onOpen: (r) => setHistory({
-      itemId: r.item_id, itemName: r.name,
-      dateFrom: dateFrom.format('YYYY-MM-DD'), dateTo: asOf.format('YYYY-MM-DD'),
-    }),
+    rows: filter.filtered, rowKey: rowKeyOf,
+    onOpen: (r) => toggleRow(rowKeyOf(r)),
   });
 
   const columns: ColumnsType<Row> = [
@@ -196,11 +210,7 @@ export default function Stocktake() {
         // Only a real difference is a link. One that opens an empty log teaches people the
         // link is broken, and then they stop using the one that works.
         return (
-          <a onClick={() => setHistory({
-            itemId: r.item_id, itemName: r.name,
-            dateFrom: dateFrom.format('YYYY-MM-DD'),
-            dateTo: asOf.format('YYYY-MM-DD'),
-          })}>
+          <a onClick={() => toggleRow(rowKeyOf(r))}>
             <b style={{ color: d > 0 ? '#cf1322' : '#6AB42D' }}>
               {d > 0 ? `عجز ${qty(d)}` : `زيادة ${qty(Math.abs(d))}`}
             </b>
@@ -287,7 +297,22 @@ export default function Stocktake() {
 
       <Table<Row>
         {...kb.tableProps}
-        rowKey={(r) => `${r.item_id}-${r.location}`} size="small" loading={loading}
+        rowKey={rowKeyOf} size="small" loading={loading}
+        // السجل بيتفتح تحت السطر بتاعه، وأكتر من سطر بيفضلوا مفتوحين مع بعض.
+        expandable={{
+          expandedRowKeys: openRows,
+          onExpandedRowsChange: (keys) => setOpenRows([...keys]),
+          expandedRowRender: (r) => (
+            <MovementHistoryLog
+              target={{
+                itemId: r.item_id, itemName: r.name,
+                dateFrom: dateFrom.format('YYYY-MM-DD'),
+                dateTo: asOf.format('YYYY-MM-DD'),
+              }}
+              onClose={() => toggleRow(rowKeyOf(r))}
+            />
+          ),
+        }}
         dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد أرصدة في هذا التاريخ' }}
         pagination={{ defaultPageSize: 25, showSizeChanger: true }}
@@ -314,7 +339,6 @@ export default function Stocktake() {
           );
         }}
       />
-      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
     </Card>
   );
 }

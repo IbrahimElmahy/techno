@@ -156,7 +156,8 @@ function ProductionTab({ period, range, items }: TabProps) {
       setByPeriod(res.data.by_period || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
+  useEffect(() => { load(); }, [period, range, productId]);
 
   const periodCols = [
     { title: 'الفترة', dataIndex: 'period', key: 'period', ...textColumn(byPeriod, (r: any) => r.period) },
@@ -228,7 +229,8 @@ function InventoryTab({ warehouses, items }: TabProps) {
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
+  useEffect(() => { load(); }, [warehouseId, itemId]);
 
   const columns = [
     { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
@@ -307,7 +309,8 @@ function WastageTab({ range, warehouses, items }: TabProps) {
       setTotalCost(res.data.total_cost ?? '0');
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
+  useEffect(() => { load(); }, [range, itemId, warehouseId]);
 
   const columns = [
     { title: 'المصدر', dataIndex: 'source', key: 'source', ...textColumn(rows, (r: any) => r.source), width: 110,
@@ -386,7 +389,8 @@ function StagnantTab({ warehouses }: TabProps) {
       setAsOf(res.data.as_of || '');
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // أي فلتر يتغيّر بيحمّل على طول.
+  useEffect(() => { load(); }, [days, warehouseId]);
 
   const columns = [
     { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
@@ -467,7 +471,8 @@ function SalesTab({ period, range }: TabProps) {
       setNetTotal(res.data.net_total ?? '0');
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // أي فلتر يتغيّر بيحمّل على طول.
+  useEffect(() => { load(); }, [period, range]);
 
   const periodCols = [
     { title: 'الفترة', dataIndex: 'period', key: 'period', ...textColumn(byPeriod, (r: any) => r.period) },

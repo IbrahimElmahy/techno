@@ -671,7 +671,10 @@ function TrialBalanceTab() {
       setData(res.data);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  useEffect(() => { run(); }, []);
+  // الفترة والفرع ومركز التكلفة كلهم بيحمّلوا على طول — «عرض» فضل للتحديث بنفس الفلاتر.
+  // فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور، والراجل يا بيصدّق الأرقام القديمة
+  // يا بيضغط الزرار ويستغرب ليه كان لازم.
+  useEffect(() => { run(); }, [range, branchId, costCenterId]);
 
   const columns = [
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 130,

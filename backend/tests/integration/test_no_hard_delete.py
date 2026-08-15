@@ -54,3 +54,39 @@ def test_deactivation_preserves_user_and_ledger_history(client, world, login, Se
     assert rep is not None and rep.active is False  # preserved, not removed
     assert s.get(LedgerEntry, entry["id"]) is not None  # ledger history intact
     s.close()
+
+
+def test_account_delete_is_deactivation_and_keeps_the_name_readable(client, chart, login, db):
+    """`DELETE /accounts/{id}` بيقفل، مابيمسحش — والفرق ده هو اللي بيخلّي الكشوف تفضل مقروءة.
+
+    A chart account that has ever been posted to is named on ledger entries that cannot be edited.
+    Erase the row and those entries point at a number with no name: a statement that used to read
+    «إيراد المبيعات» reads «#41», and there is no way back because the ledger is append-only.
+
+    The frontend screens now offer a «حذف» button. It is safe precisely because this endpoint is a
+    deactivation — which is a property of the SERVER, so it is held here rather than by forbidding
+    the button in a source-shape test.
+    """
+    from src.models.ledger import Account
+
+    h = login("admin")
+    parent = db.get(Account, chart["rent"]).parent_id
+    made = client.post("/api/v1/accounts", headers=h, json={
+        "code": "5.10.900", "name": "حساب للإقفال", "nature": "expense",
+        "is_postable": True, "parent_id": parent})
+    assert made.status_code == 201, made.text
+    account_id = made.json()["id"]
+
+    assert client.delete(f"/api/v1/accounts/{account_id}", headers=h).status_code == 204
+
+    row = db.get(Account, account_id)
+    assert row is not None, "الحساب اتمسح — القيود اللي عليه هتبقى بأرقام من غير أسماء"
+    assert row.active is False
+    assert row.name == "حساب للإقفال", "الاسم اتغيّر — الكشف القديم مش هيتقري زي ما كان"
+
+
+def test_a_system_account_refuses_to_be_closed(client, chart, login, db):
+    """حسابات النظام مايتقفلوش — البيع والشرا بيرحّلوا عليها من غير ما حد يختارها."""
+    h = login("admin")
+    res = client.delete(f"/api/v1/accounts/{chart['treasury']}", headers=h)
+    assert res.status_code in (403, 409, 422), res.text

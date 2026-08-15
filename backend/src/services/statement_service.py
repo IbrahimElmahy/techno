@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
 from src.models.cost_center import CostCenter
+from src.models.user import User
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 
 
@@ -37,6 +38,14 @@ class StatementLine:
     # the statement dropped it, so «which project was this against?» meant opening the entry.
     cost_center_id: int | None = None
     cost_center_name: str | None = None
+    # المندوب اللي حرّك السطر ده. `LedgerEntry.rep_id` كان موجود من زمان والكشف مكانش بيقراه —
+    # فسؤال «المندوب ده حرّك إيه على الحساب ده» مكانش ليه إجابة من الشاشة، والفلتر اللي
+    # المفروض يجاوبه كان مطفي على طول لأن مافيش اسم بيوصل أصلاً.
+    #
+    # A manual journal entry has no rep, and that is a real answer rather than a gap: `None` means
+    # nobody's round put it there.
+    rep_id: int | None = None
+    rep_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +97,9 @@ def account_statement(
 
     # One query for the names rather than one per line: a statement can run to hundreds of rows.
     cost_centers = {c.id: c.name for c in db.scalars(select(CostCenter)).all()}
+    # نفس المنطق: استعلام واحد للأسماء بدل واحد لكل سطر.
+    reps = {u.id: (u.full_name or u.username)
+            for u in db.scalars(select(User)).all()}
 
     def signed(line: LedgerLine) -> Decimal:
         amount = to_money(line.amount)
@@ -131,6 +143,9 @@ def account_statement(
             debit=debit, credit=credit, balance_before=before, balance=balance,
             cost_center_id=line.cost_center_id,
             cost_center_name=cost_centers.get(line.cost_center_id),
+            # المندوب على القيد مش على السطر: القيد الواحد بيتكتب في جولة مندوب واحد.
+            rep_id=line.entry.rep_id,
+            rep_name=reps.get(line.entry.rep_id),
         ))
 
     parent = db.get(Account, account.parent_id) if account.parent_id else None

@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Table, Tag,
+  Button, Card, Col, Collapse, Empty, Form, Input, Popconfirm, Row, Select, Skeleton, Space,
+  Table, Tag,
   Tooltip, message
 } from 'antd';
 import {
-  PlusOutlined, EditOutlined, SearchOutlined, ReloadOutlined,
+  PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined,
   EyeOutlined, EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
@@ -175,6 +176,26 @@ export default function SubAccounts() {
     }
   };
 
+
+  /**
+   * حذف الحساب — إقفال، مش مسح.
+   *
+   * `DELETE /accounts/{id}` deactivates. A chart account that has ever been posted to is named on
+   * ledger entries that cannot be edited, so erasing the row would leave those entries pointing at
+   * a number with no name — the statement would read «#41» where the account used to be. The
+   * server refuses a system account and one with live children underneath it, and says which.
+   */
+  const removeAccount = async (record: ChartAccount) => {
+    try {
+      await api.delete(`/api/v1/accounts/${record.id}`);
+      message.success('اتقفل الحساب');
+      load();
+    } catch (err: any) {
+      // الرفض بيقول السبب — «تحته حسابات شغالة» خطوة تالية، مش حيطة.
+      message.error(err?.response?.data?.detail?.message || 'تعذر إقفال الحساب', 6);
+    }
+  };
+
   const openEdit = (record: ChartAccount) => {
     setEditing(record);
     editForm.setFieldsValue(record);
@@ -227,7 +248,7 @@ export default function SubAccounts() {
     ...(canWrite ? [{
       title: '',
       key: 'actions',
-      width: 96,
+      width: 132,
       render: (_: any, record: ChartAccount) => (
         <Space size={0}>
           <Tooltip title="تعديل">
@@ -239,6 +260,17 @@ export default function SubAccounts() {
               icon={record.active ? <EyeInvisibleOutlined /> : <EyeOutlined />}
               onClick={() => toggleActive(record)} />
           </Tooltip>
+          <Popconfirm
+            title="تقفل الحساب؟"
+            description="بيتقفل مش بيتمسح — اسمه بيفضل مقروء على القيود اللي اتكتبت عليه."
+            okText="اقفل" cancelText="رجوع" okButtonProps={{ danger: true }}
+            onConfirm={() => removeAccount(record)}
+          >
+            <Tooltip title="حذف (إقفال)">
+              <Button type="text" danger icon={<DeleteOutlined />}
+                disabled={record.is_system || !record.active} />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     }] : []),

@@ -231,8 +231,16 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None) -> Sta
             doc_id=(docs.get(ln.entry_id) or {}).get("id"),
             doc_number=(docs.get(ln.entry_id) or {}).get("document_number"),
             cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name,
-            rep_user_id=(docs.get(ln.entry_id) or {}).get("rep_user_id"),
-            rep_name=reps.get((docs.get(ln.entry_id) or {}).get("rep_user_id")))
+            # المستند الأول، والقيد نفسه لو المستند مش معروف.
+            #
+            # `document_resolver` only maps the document kinds it knows, so an entry it cannot
+            # place came back with no rep at all — and the rep filter on the statement screen is
+            # driven by the names that arrive, so it sat permanently disabled on accounts a rep
+            # had plainly moved. `LedgerEntry.rep_id` is stamped on every entry a rep's round
+            # posted, whatever the document was.
+            rep_user_id=((docs.get(ln.entry_id) or {}).get("rep_user_id") or ln.rep_id),
+            rep_name=(reps.get((docs.get(ln.entry_id) or {}).get("rep_user_id"))
+                      or ln.rep_name))
             for ln in s.lines],
     )
 

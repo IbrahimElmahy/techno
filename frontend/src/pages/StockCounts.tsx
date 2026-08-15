@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
-import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
+import MovementHistoryLog from '../components/MovementHistoryLog';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
@@ -205,7 +205,11 @@ export default function StockCounts() {
    */
   const [lineView, setLineView] = useState<'all' | 'differing' | 'uncounted'>('all');
   /** سجل عمليات الصنف — نفس السطح اللي جرد حتى تاريخ بيستعمله. */
-  const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
+  // نفس منطق شاشات الجرد التانية: السجل تحت سطره، وأكتر من سطر مفتوح مع بعض.
+  const [openLines, setOpenLines] = useState<React.Key[]>([]);
+  const toggleLine = (key: React.Key) =>
+    setOpenLines((prev) => (prev.includes(key)
+      ? prev.filter((k) => k !== key) : [...prev, key]));
   const [lineCategory, setLineCategory] = useState<string | null>(null);
 
   const allLines = sheet?.lines ?? [];
@@ -301,7 +305,6 @@ export default function StockCounts() {
   return (
     <div>
       {/* Mounted at the root so it survives the sheet dialog closing under it. */}
-      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
       {/* صفحة واحدة في المرة: يا القايمة يا الكشف. الكشف كان بيتفتح في نافذة عرضها ٨٨٠ بكسل
           و١٢ سطر في الصفحة — وجرد كلي بيبقى مئات السطور، فاللي بيعدّ كان بيعدّ من خرم إبرة.
           دلوقتي بياخد الصفحة كلها. */}
@@ -487,6 +490,20 @@ export default function StockCounts() {
             </Space>
 
             <Table
+              expandable={{
+                expandedRowKeys: openLines,
+                onExpandedRowsChange: (keys) => setOpenLines([...keys]),
+                expandedRowRender: (r: Line) => (
+                  <MovementHistoryLog
+                    target={{
+                      itemId: r.item_id, itemName: r.item_name,
+                      locationKind: 'warehouse', locationId: r.warehouse_id,
+                      dateTo: sheet?.count_date ?? null,
+                    }}
+                    onClose={() => toggleLine(r.id)}
+                  />
+                ),
+              }}
               size="small" rowKey="id" dataSource={draftLines}
               tableLayout="fixed" scroll={{ x: 'max-content' }}
               pagination={{ defaultPageSize: 50, showSizeChanger: true,
@@ -502,11 +519,7 @@ export default function StockCounts() {
                   // sheet the question behind a name is «الفرق ده جه منين», and the answer is the
                   // movements — not the item's price and unit.
                   render: (v: string | null, r: Line) => (
-                    <a onClick={() => setHistory({
-                      itemId: r.item_id, itemName: v,
-                      locationKind: 'warehouse', locationId: r.warehouse_id,
-                      dateTo: sheet?.count_date ?? null,
-                    })}>
+                    <a onClick={() => toggleLine(r.id)}>
                       {v ?? `صنف #${r.item_id}`}
                     </a>
                   ) },

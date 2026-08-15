@@ -8,7 +8,7 @@ import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
-import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
+import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 
@@ -93,7 +93,9 @@ export default function StockSheet() {
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [costingMethod, setCostingMethod] = useState<string | null>(null);
-  const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
+  // نفس منطق «جرد حتى تاريخ»: السجل تحت سطره، وأكتر من واحد مفتوح مع بعض — قراية الجرد
+  // مقارنة، والمقارنة مابتحصلش واحد واحد.
+  const [openRows, setOpenRows] = useState<React.Key[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -167,7 +169,14 @@ export default function StockSheet() {
     return Number(Number(r.quantity || 0) - a);
   };
 
-  const openHistory = (r: any) => setHistory({
+  /** بيفتح أو بيقفل سجل سطر — من غير ما يلمس الباقي. */
+  const toggleRow = (key: React.Key) =>
+    setOpenRows((prev) => (prev.includes(key)
+      ? prev.filter((k) => k !== key) : [...prev, key]));
+
+  const openHistory = (r: any) => toggleRow(rowKey(r));
+
+  const historyTarget = (r: any) => ({
     itemId: r.item_id, itemName: r.name,
     // Scoped to the store when the sheet is showing stores, and to the item as a whole when it is
     // summing them — the log has to answer the question the row was asking.
@@ -343,6 +352,17 @@ export default function StockSheet() {
       />
 
       <Table
+        // السجل بيتفتح تحت السطر بتاعه، وأكتر من سطر مع بعض.
+        expandable={{
+          expandedRowKeys: openRows,
+          onExpandedRowsChange: (keys) => setOpenRows([...keys]),
+          expandedRowRender: (r: any) => (
+            <MovementHistoryLog
+              target={historyTarget(r)}
+              onClose={() => toggleRow(rowKey(r))}
+            />
+          ),
+        }}
         {...kb.tableProps}
         rowKey={rowKey}
         size="small"
@@ -404,7 +424,6 @@ export default function StockSheet() {
         }}
       />
 
-      <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
     </Card>
   );
 }

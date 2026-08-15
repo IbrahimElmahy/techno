@@ -98,3 +98,41 @@ def test_a_top_level_account_reports_no_parent(client, sold, db):
     res = client.get(f"/api/v1/accounts/{root.id}/statement", headers=sold["h"])
     assert res.status_code == 200, res.text
     assert res.json()["main_account_id"] is None
+
+
+def test_an_entry_names_its_rep_even_with_no_document_behind_it(client, sold, db, inv_world):
+    """المندوب على القيد نفسه — مش بس على المستند اللي الحلّال يعرفه.
+
+    `document_resolver` maps the document kinds it knows about. An entry it cannot place came back
+    with no rep at all — and the rep filter on كشف الحساب is driven by the names that arrive, so on
+    an account a rep had plainly moved the filter sat permanently greyed out. Nothing about that
+    reads as a bug: the column is there, it is simply always empty.
+
+    `LedgerEntry.rep_id` is stamped by whoever posted the entry regardless of the document, so it is
+    the fallback. The row above this one still proves the other direction — an entry with no rep
+    reports none rather than borrowing one from a neighbour.
+    """
+    import datetime
+
+    from src.models.ledger import Direction
+    from src.services import account_resolver, ledger_service
+    from src.services.ledger_service import LineInput
+
+    equity = account_resolver.opening_balance_equity_account(db)
+    ledger_service.post_entry(
+        db, entry_type="journal", actor_user_id=inv_world["admin"],
+        entry_date=datetime.date(2026, 1, 3),
+        rep_id=inv_world["rep_a"],
+        lines=[LineInput(sold["revenue_id"], Direction.credit, 70),
+               LineInput(equity.id, Direction.debit, 70)])
+    db.commit()
+
+    rows = client.get(f"/api/v1/accounts/{sold['revenue_id']}/statement",
+                      headers=sold["h"]).json()["lines"]
+    # القيد اليدوي بالذات — مش أي سطر. الفاتورة في الفكسشر عليها مندوب أصلاً، فأي فحص على
+    # «فيه سطر عليه اسم» بيعدّي حتى لو المرتجع بتاع القيد اتشال خالص.
+    manual = [ln for ln in rows
+              if ln["entry_type"] == "journal" and ln["rep_user_id"] == inv_world["rep_a"]]
+    assert manual, "القيد اللي عليه مندوب رجع من غير اسم — الفلتر هيفضل مطفي"
+    assert manual[0]["rep_name"], "الرقم رجع والاسم لأ — الفلتر بيتبني على الأسماء"
+

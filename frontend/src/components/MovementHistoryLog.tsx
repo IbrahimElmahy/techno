@@ -11,11 +11,15 @@ import { api } from '../api/client';
  * somebody; the movements behind it explain — a sale on Tuesday, a transfer on Thursday, and the
  * shortfall is the one nobody wrote down.
  *
- * It used to open as a modal over the sheet, which is the wrong shape for this: the difference is
- * on the row behind the popup, so reading the history meant covering the very number being
- * explained, and comparing two items meant opening and closing two dialogs. It renders in place
- * now — one collapsible row per movement, and the full detail of whichever one is opened directly
- * underneath it.
+ * It opened as a modal over the sheet first, then as a panel at the FOOT of the page. Both were
+ * the wrong shape, and for the same reason twice: the number being explained is on a row, and the
+ * explanation has to sit with it. The modal covered the row; the foot panel put the answer three
+ * screens below the question, and holding one item at a time meant «الصنف ده ناقص خمسة والتاني
+ * زايد خمسة، هما نفس الحاجة؟» could not be asked at all.
+ *
+ * It renders as the EXPANDED ROW under its own item now, and several rows stay open together —
+ * which is what reading a stocktake actually is. One collapsible row per movement, and the full
+ * detail of whichever one is opened directly underneath it.
  *
  * One component, five screens (الجرد · جرد المخازن · دورة الجرد · رصيد الصنف · ملف الصنف). They
  * all render it the same way, so this shape change reached all five without touching any of them.
@@ -94,8 +98,8 @@ export default function MovementHistoryLog({
       .finally(() => setLoading(false));
   }, [target, range]);
 
-  // It renders below the sheet now, so it can open off-screen. Bringing it into view is the
-  // difference between «فتح» and «فتح وأنا شايفه».
+  // Harmless where the caller expands a row (antd has already brought it into view) and still
+  // needed on the screens that render this on its own — رصيد الصنف and ملف الصنف.
   useEffect(() => {
     if (target) box.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [target]);
