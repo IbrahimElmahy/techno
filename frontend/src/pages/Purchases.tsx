@@ -110,7 +110,21 @@ export default function Purchases() {
   const navigate = useNavigate();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
+
+  /**
+   * آخر مخزن اتختار على سطر — بيتورّث للسطور اللي بعده.
+   *
+   * The document used to carry its own «مستودع الاستلام» at the top and every line could override
+   * it, which meant answering the same question in two places for the ordinary shipment that all
+   * goes to one store. The top field is gone: the FIRST line's warehouse is the document's, and
+   * every line after it starts on the same one — so the common case is one choice for the whole
+   * invoice, and a line that genuinely landed somewhere else is still one dropdown away.
+   *
+   * Changing it applies to the lines added AFTER, not to the ones already typed. Rewriting a line
+   * somebody has already entered because a later line went elsewhere is the kind of silent change
+   * that gets found out at the stocktake.
+   */
+  const [stickyWarehouseId, setStickyWarehouseId] = useState<number | null>(null);
   const [items, setItems] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -269,15 +283,13 @@ export default function Purchases() {
   const loadLookups = async () => {
     setLoading(true);
     try {
-      const [supRes, whRes, itemsRes, userRes] = await Promise.all([
+      // مفيش استعلام مستخدمين — كان بس عشان قايمة المناديب، والمندوب اتشال من الشرا.
+      const [supRes, whRes, itemsRes] = await Promise.all([
         api.get('/api/v1/suppliers'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/items'),  // purchases accept raw materials AND products (resale)
-        // Reps are optional on a purchase, so a failure here must not take the screen down with it.
-        api.get('/api/v1/users').catch(() => ({ data: [] })),
       ]);
       setSuppliers(supRes.data);
-      setReps((userRes.data || []).filter((u: any) => u.role === 'sales_rep'));
       // Filter out central/branch warehouses
       setWarehouses(whRes.data);
       setItems(itemsRes.data.filter((i: any) => i.active !== false));
@@ -489,8 +501,11 @@ export default function Purchases() {
       // The discount is a fact about the deal, so reopening has to bring it back — rebuilding the
       // line without it would quietly re-price the invoice on save.
       discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
-      warehouse_id: l.line_location_id ?? null,
+      warehouse_id: l.line_location_id ?? det.location_id ?? null,
     })));
+    // الفاتورة اللي بتتفتح للتعديل بتيجي بمخزنها — فالسطر الجاي يبدأ عليه مش على فاضي.
+    setStickyWarehouseId(
+      ((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
     setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
@@ -510,6 +525,13 @@ export default function Purchases() {
       message.error('يرجى إضافة صنف واحد صالح على الأقل!');
       return;
     }
+    // مخزن المستند بقى مخزن أول سطر، فسطر من غير مخزن مالوش مكان ينزل فيه. الرفض بيسمّي
+    // الصنف عشان اللي بيقرا يلاقيه في فاتورة فيها خمستاشر سطر.
+    const homeless = validLines.find((l) => l.warehouse_id == null);
+    if (homeless) {
+      message.error(`«${itemName(homeless.item_id as number)}»: اختار مخزن الاستلام.`);
+      return;
+    }
     // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has to
     // be caught rather than posted as whatever the default happened to be.
     const noQty = validLines.find((l) => !Number(l.quantity));
@@ -523,14 +545,15 @@ export default function Purchases() {
     try {
       const payload = {
         supplier_id: values.supplier_id,
+        // مخزن المستند بقى مخزن أول سطر. السيرفر لسه محتاج مكان على المستند (٠٣٠)، والسطر
+        // اللي نزل مخزن تاني شايل مخزنه بنفسه — فالاتنين متسقين من غير ما حد يتسأل مرتين.
         location: {
           location_kind: 'warehouse',
-          location_id: values.warehouse_id,
+          location_id: validLines[0].warehouse_id,
         },
         cash_amount: cashAmount,
         credit_amount: creditAmount,
         variable_discount_pct: variableDiscount || 0,
-        rep_id: values.rep_id ?? null,
         external_document_number: values.external_document_number || null,
         notes: values.notes || null,
         statement1: values.statement1 || null,
@@ -598,7 +621,10 @@ export default function Purchases() {
     if (!blank) {
       setPurchaseItems((prev) => [...prev,
         { key, item_id: null, quantity: null, unit_price: 0, unit: null,
-          discount_pct: null, warehouse_id: null }]);
+          // بيرث آخر مخزن اتختار — الشحنة العادية كلها بتنزل مخزن واحد.
+          discount_pct: null, warehouse_id: stickyWarehouseId }]);
+    } else if (blank.warehouse_id === null && stickyWarehouseId !== null) {
+      handleItemChange(blank.key, 'warehouse_id', stickyWarehouseId);
     }
     setPanelItemId(itemId);
     // Through the same handler the dropdown uses, so the purchase price and the unit list are
@@ -729,33 +755,14 @@ export default function Purchases() {
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item
-                name="warehouse_id"
-                label="مستودع الاستلام"
-                rules={[{ required: true, message: 'يرجى اختيار مستودع الاستلام!' }]}
-              >
-                <Select placeholder="اختر المستودع لاستلام المواد الخام">
-                  {warehouses.map((w) => (
-                    <Select.Option key={w.id} value={w.id}>
-                      {w.name} ({w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})
-                    </Select.Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
           </Row>
 
-          {/* حقول المستند — الثلاثة دول السيرفر مستنيهم من 030 والشاشة مكانتش بتبعتهم. */}
+          {/* حقول المستند اللي السيرفر مستنيها من 030.
+              «المندوب» اتشال بقرار العميل: المندوب بتاع البيع — هو اللي بيبيع وبيتحصّل
+              وبتتحسبله عمولة. الشحنة الواردة بيستلمها أمين المخزن، والمخزن نفسه متسجّل على
+              كل سطر. حقل بيتساب فاضي دايماً هو عمود فاضي في كل تقرير بعد كده. */}
           <Row gutter={16}>
-            <Col xs={24} md={8}>
-              <Form.Item name="rep_id" label="المندوب" style={{ marginBottom: 8 }}>
-                <Select allowClear showSearch optionFilterProp="label"
-                  placeholder="اختياري — مين استلم الشحنة"
-                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={12}>
               <Form.Item name="external_document_number" label="رقم المستند (الورقي)"
                 style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري — رقم فاتورة المورد الورقية" />
@@ -873,13 +880,20 @@ export default function Purchases() {
                           <Col md={4} xs={12}>
                             {/* فاضي = مخزن المستند. الفاتورة الواحدة ممكن تتوزّع على أكتر
                                 من مخزن. */}
-                            <Select size="small" style={{ width: '100%' }} allowClear
-                              placeholder="مخزن المستند"
+                            <Select size="small" style={{ width: '100%' }}
+                              placeholder="مخزن الاستلام"
                               value={line.warehouse_id ?? undefined}
-                              onChange={(val) => handleItemChange(
-                                line.key, 'warehouse_id', val ?? null)}
+                              onChange={(val) => {
+                                handleItemChange(line.key, 'warehouse_id', val ?? null);
+                                // اللي بتختاره هنا بيبقى الافتراضي للسطور الجاية — مش
+                                // بيرجع يعدّل اللي اتكتب قبل كده.
+                                setStickyWarehouseId(val ?? null);
+                              }}
                               options={warehouses.map((w: any) => ({
-                                value: w.id, label: w.name }))} />
+                                value: w.id,
+                                label: `${w.name} (${w.warehouse_type === 'central'
+                                  ? 'مركزي' : 'فرعي'})`,
+                              }))} />
                           </Col>
                           <Col md={2} xs={12} style={{ textAlign: 'end' }}>
                             <Button size="small" danger type="text" icon={<DeleteOutlined />}

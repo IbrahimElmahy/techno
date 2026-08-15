@@ -146,13 +146,68 @@ describe('نفس تركيب الصفحة', () => {
   });
 });
 
+describe('مخزن الاستلام', () => {
+  /**
+   * سؤال واحد، في مكان واحد، وبيفضل متجاوب عليه.
+   *
+   * The document used to carry «مستودع الاستلام» at the top AND every line could override it —
+   * the same question asked twice for the ordinary shipment that all goes to one store. The top
+   * field is gone: the first line's warehouse IS the document's, and every line after it starts
+   * on the same one.
+   *
+   * The part that must not drift: changing it applies to lines added AFTER, never to the ones
+   * already typed. Rewriting a line somebody has already entered because a later line went
+   * somewhere else is the kind of silent change that surfaces at the stocktake.
+   */
+  it('مافيش حقل مخزن على المستند', () => {
+    expect(buy).not.toContain('label="مستودع الاستلام"');
+    expect(buy).not.toContain('name="warehouse_id"');
+  });
+
+  it('مخزن المستند بيتاخد من أول سطر', () => {
+    // السيرفر لسه محتاج مكان على المستند (٠٣٠)؛ بقى مشتق مش مسؤول عنه حد تاني.
+    expect(/location_id: validLines\[0\]\.warehouse_id/.test(buy)).toBe(true);
+  });
+
+  it('السطر الجديد بيرث آخر مخزن اتختار', () => {
+    expect(buy).toContain('stickyWarehouseId');
+    expect(/warehouse_id: stickyWarehouseId/.test(buy)).toBe(true);
+  });
+
+  it('تغيير المخزن على سطر بيثبّت الجديد للسطور الجاية', () => {
+    const at = buy.indexOf('setStickyWarehouseId(val ?? null)');
+    expect(at, 'تغيير المخزن مابيثبّتش الجديد').toBeGreaterThan(-1);
+    // وبيتغيّر على السطر نفسه كمان، مش بس الافتراضي.
+    expect(buy.slice(at - 400, at)).toContain("handleItemChange(line.key, 'warehouse_id'");
+  });
+
+  it('مافيش سطر بيتساب من غير مخزن', () => {
+    // مخزن المستند بقى مخزن أول سطر — فسطر من غير مخزن مالوش مكان ينزل فيه.
+    expect(buy).toContain('اختار مخزن الاستلام');
+  });
+});
+
 describe('الحاجات اللي مالهاش لازمة في الشرا', () => {
-  // فاتورة الشرا نسخة من البيع **من غير** الحاجات دي — قرار العميل، مش سهو.
+  /**
+   * فاتورة الشرا نسخة من البيع **من غير** الحاجات دي — قرار العميل، مش سهو.
+   *
+   * «المندوب» is the one that will look like an oversight to whoever reads the two screens side
+   * by side, so it is written down: a rep is a SELLING role — he sells, he collects, and a
+   * commission is worked out on what he brought in. An incoming shipment is received by the
+   * storekeeper, and which store it landed in is already on every line. A field that is left
+   * blank every time is an empty column in every report built on it afterwards.
+   */
   it.each([
     ['الكوبونات', /couponCount|coupon_from/],
     ['النقاط', /pointValues|totalPoints/],
     ['شرايح الأسعار (أبيض وبولي)', /TIER_LABELS/],
+    ['المندوب', /rep_id/],
   ])('مافيش %s', (_label, pattern) => {
     expect(pattern.test(buy)).toBe(false);
+  });
+
+  it('البيع لسه فيه المندوب — الشيل ده للشرا بس', () => {
+    // من غير ده، الاختبار اللي فوق يعدّي لو حد شال المندوب من الشاشتين.
+    expect(/rep_id/.test(sale)).toBe(true);
   });
 });
