@@ -405,6 +405,102 @@ def check_duplicate_customers(db: Session) -> Issue | None:
 
 
 # ---------------------------------------------------------------------------
+# التشغيل — حاجات فات ميعادها وقاعدة (٨)
+# ---------------------------------------------------------------------------
+#
+# التلاتة دول ليهم تقارير دلوقتي، والتقرير بيتفتح لما حد يفتحه. These are the findings from those
+# reports that nobody would think to go looking for: the point of putting them here is that each is
+# a deadline the company itself set and the data has quietly passed.
+
+def check_overdue_cheques(db: Session, *, now: datetime | None = None) -> Issue | None:
+    """شيكات فات استحقاقها وهي لسه تحت التحصيل — فلوس المفروض دخلت وماحدش سأل.
+
+    A cheque past its due date and still `pending` is money the company is owed on a date that has
+    gone by. Either it was collected and nobody wrote that down — in which case the treasury
+    balance is wrong — or it was not, and nobody is chasing it.
+    """
+    from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
+
+    today = (now or datetime.utcnow()).date()
+    rows = db.execute(
+        select(Cheque.document_number, Cheque.cheque_number, Cheque.amount,
+               Cheque.due_date, Cheque.direction)
+        .where(Cheque.status == ChequeStatus.pending, Cheque.due_date < today)
+        .order_by(Cheque.due_date)
+    ).all()
+    if not rows:
+        return None
+    total = sum((to_money(r.amount) for r in rows), ZERO)
+    return Issue(
+        key="overdue_cheques", title="شيكات فات استحقاقها", group="الحسابات",
+        severity="high", count=len(rows),
+        hint=f"إجمالي {_money(total)} تاريخ استحقاقه عدّى وهو لسه تحت التحصيل — "
+             "يا اتحصّل وماتسجّلش، يا محدش بيجري وراه.",
+        link="/ops-reports?view=cheque-wallet",
+        samples=[{
+            "label": f"{'وارد' if r.direction == ChequeDirection.incoming else 'صادر'} "
+                     f"{r.cheque_number}",
+            "detail": f"{_money(r.amount)} — استحق {r.due_date} ({(today - r.due_date).days} يوم)",
+        } for r in rows[:SAMPLE]],
+    )
+
+
+def check_expired_reservations(db: Session, *, now: datetime | None = None) -> Issue | None:
+    """حجوزات سارية فات ميعادها — بضاعة محجوزة لحد محدش بيسأل عنه.
+
+    An expired hold still subtracts from what the sales screen says is available, so the stock is
+    unsellable to anyone else while belonging to nobody.
+    """
+    from src.models.reservation import Reservation, ReservationStatus
+
+    today = (now or datetime.utcnow()).date()
+    rows = db.execute(
+        select(Reservation.document_number, Reservation.quantity, Reservation.expires_on)
+        .where(Reservation.status == ReservationStatus.active,
+               Reservation.expires_on < today)
+        .order_by(Reservation.expires_on)
+    ).all()
+    if not rows:
+        return None
+    return Issue(
+        key="expired_reservations", title="حجوزات منتهية لسه ماسكة بضاعة",
+        group="المخزون", severity="medium", count=len(rows),
+        hint="الكمية المحجوزة بتتخصم من المتاح للبيع، فالبضاعة دي مش بتتباع لحد "
+             "وهي مش محجوزة لحد فعلاً.",
+        link="/ops-reports?view=reservations-open",
+        samples=[{"label": r.document_number,
+                  "detail": f"{to_qty(r.quantity)} — انتهى {r.expires_on}"}
+                 for r in rows[:SAMPLE]],
+    )
+
+
+def check_late_orders(db: Session, *, now: datetime | None = None) -> Issue | None:
+    """طلبات مفتوحة فات ميعاد تسليمها."""
+    from src.models.trade_order import OrderStatus, TradeOrder
+
+    today = (now or datetime.utcnow()).date()
+    rows = db.execute(
+        select(TradeOrder.document_number, TradeOrder.total, TradeOrder.due_date,
+               TradeOrder.kind)
+        .where(TradeOrder.status == OrderStatus.open,
+               TradeOrder.due_date.is_not(None), TradeOrder.due_date < today)
+        .order_by(TradeOrder.due_date)
+    ).all()
+    if not rows:
+        return None
+    return Issue(
+        key="late_orders", title="طلبات فات ميعادها", group="المبيعات",
+        severity="low", count=len(rows),
+        hint="اتفق عليها بتاريخ عدّى وهي لسه مفتوحة — يا اتنفّذت وماتحوّلتش لفاتورة، "
+             "يا العميل مستني.",
+        link="/ops-reports?view=orders-open",
+        samples=[{"label": r.document_number,
+                  "detail": f"{_money(r.total)} — كان مستحق {r.due_date}"}
+                 for r in rows[:SAMPLE]],
+    )
+
+
+# ---------------------------------------------------------------------------
 
 def run_all(db: Session, *, now: datetime | None = None) -> dict:
     """كل الفحوصات — والصفحة الفاضية إجابة برضه."""
@@ -423,6 +519,9 @@ def run_all(db: Session, *, now: datetime | None = None) -> dict:
         check_unbalanced_entries(db),
         check_negative_treasuries(db),
         check_duplicate_customers(db),
+        check_overdue_cheques(db, now=now),
+        check_expired_reservations(db, now=now),
+        check_late_orders(db, now=now),
     ]
     issues = [i for i in found if i is not None]
     issues.sort(key=lambda i: (SEVERITY_ORDER.get(i.severity, 9), -i.count))

@@ -125,6 +125,25 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   background: #e6f4ff !important;
   box-shadow: inset 2px 0 0 #1677ff;
 }
+/*
+ * السطر الملغي — معروض ومش محسوب.
+ *
+ * A voided coupon, a rejected inspection, a cancelled order: rows worth keeping on screen, because
+ * somebody is looking for why they are gone, and figures worth leaving out of the totals. Fading
+ * them says which half is which without a legend — and it must stay readable rather than becoming
+ * decoration, so this is muted text, not a strikethrough on a whole row.
+ *
+ * Deliberately weaker than `.row-cursor`: if the keyboard is sitting on a cancelled row, «where am
+ * I» is the more urgent of the two things the row is saying.
+ */
+.row-muted > td {
+  color: #8c8c8c;
+  background: #fafafa;
+}
+.row-muted.row-cursor > td {
+  background: #e6f4ff !important;
+}
+
 /* The row takes focus so Enter reaches it, but a browser focus ring on a whole table row reads as
    a rendering fault rather than a cursor — the background above is the cursor. */
 .ant-table-tbody > tr[tabindex]:focus,

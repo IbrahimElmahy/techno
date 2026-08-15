@@ -193,3 +193,78 @@ def test_it_answers_in_one_call(client, inv_world, login):
     body = _health(client, login("admin"))
     groups = {i["group"] for i in body["issues"]}
     assert groups <= {"المنتجات", "رصيد المنتجات", "فواتير العملاء", "الحسابات"}
+
+
+# ---------------------------------------------------------------------------
+# مواعيد عدّت وقاعدة (٨)
+# ---------------------------------------------------------------------------
+#
+# التلاتة دول ليهم تقارير، والتقرير بيتفتح لما حد يفتحه. Each is a deadline the company itself set
+# and the data has quietly passed — which is exactly the kind of thing this page exists to say
+# without being asked.
+
+
+def test_it_finds_a_cheque_whose_due_date_went_by(client, inv_world, login, db):
+    """شيك فات استحقاقه وهو لسه تحت التحصيل — يا اتحصّل وماتسجّلش، يا محدش بيجري وراه."""
+    from datetime import date, timedelta
+
+    from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
+
+    due = date.today() - timedelta(days=12)
+    db.add(Cheque(document_number="CHQ-H1", direction=ChequeDirection.incoming,
+                  status=ChequeStatus.pending, cheque_number="998877",
+                  amount=Decimal("4500.00"), issue_date=due - timedelta(days=30),
+                  due_date=due, actor_user_id=inv_world["admin"]))
+    db.commit()
+
+    found = _issue(_health(client, login("admin")), "overdue_cheques")
+    assert found, "شيك فات استحقاقه عدّى من غير ما حد يقول"
+    assert found["count"] == 1
+    assert found["severity"] == "high"
+    assert "4,500.00" in found["hint"], "بيقول فيه شيك ومش بيقول بكام"
+
+
+def test_a_settled_cheque_is_not_an_overdue_one(client, inv_world, login, db):
+    """المتأخر هو اللي فات استحقاقه وهو **لسه** تحت التحصيل."""
+    from datetime import date, timedelta
+
+    from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
+
+    due = date.today() - timedelta(days=12)
+    db.add(Cheque(document_number="CHQ-H2", direction=ChequeDirection.incoming,
+                  status=ChequeStatus.settled, cheque_number="112233",
+                  amount=Decimal("900.00"), issue_date=due - timedelta(days=30),
+                  due_date=due, settled_on=date.today(),
+                  actor_user_id=inv_world["admin"]))
+    db.commit()
+
+    assert _issue(_health(client, login("admin")), "overdue_cheques") is None
+
+
+def test_it_finds_a_hold_that_expired_while_still_holding(client, inv_world, login, db):
+    """الكمية المحجوزة بتتخصم من المتاح — فحجز منتهي بضاعة مش بتتباع لحد."""
+    from datetime import date, timedelta
+
+    from src.models.catalog import Item, ItemKind
+    from src.models.reservation import Reservation, ReservationStatus
+    from src.models.stock import LocationKind
+
+    from tests.conftest import make_customer_with_account
+
+    item = Item(code="RES-H1", name="صنف محجوز", kind=ItemKind.product,
+                unit_of_measure="pc", active=True)
+    db.add(item)
+    db.flush()
+    holder, _ = make_customer_with_account(db, inv_world["rep_a"], inv_world["terr_a"],
+                                           code="RES-CUST", name="عميل حاجز")
+    db.add(Reservation(
+        document_number="RSV-H1", customer_id=holder.id, item_id=item.id,
+        location_kind=LocationKind.warehouse, location_id=inv_world["central_wh"],
+        quantity=Decimal("5.000"), expires_on=date.today() - timedelta(days=3),
+        status=ReservationStatus.active, actor_user_id=inv_world["admin"]))
+    db.commit()
+
+    found = _issue(_health(client, login("admin")), "expired_reservations")
+    assert found, "حجز منتهي فاضل ماسك بضاعة"
+    assert found["count"] == 1
+    assert found["link"].startswith("/ops-reports")

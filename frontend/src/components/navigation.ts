@@ -51,6 +51,8 @@ const R = (base: string[]) => [...base, 'viewer'];
 /** الموارد البشرية. Kept as one shorthand so it cannot drift from the `hr.*` capabilities
  *  the backend gates on — the two vocabularies are separate and nothing enforces they agree. */
 const HR = ['system_admin', 'branch_manager', 'accountant'];
+/** مين بيقرا النقاط والكوبونات — نسخة من حاملي `loyalty.read`. */
+const LOYALTY = ['system_admin', 'after_sales_staff', 'viewer'];
 /** مين بيشوف مبلغ باسم موظف. Deliberately narrower than `HR` and narrower than `BOOKS`: the
  *  backend grants `salary.view` to system_admin and accountant only, and a menu entry that opens
  *  onto a 403 is worse than no entry — it reads as a broken screen. Mirrors `rbac.py:_PAYROLL_ALL`. */
@@ -101,6 +103,15 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردود مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
       { key: '/reservations', label: 'الحجوزات', roles: SALES, a5: '/reservations/create' },
       { key: '/orders?kind=sale', label: 'طلبات بيع', roles: R(SALES), a5: '/saleorders/create' },
+      {
+        key: 'grp-orders-reports',
+        label: 'تقارير الطلبات والحجوزات',
+        children: [
+          { key: '/ops-reports?view=orders-list', label: 'كشف الطلبات', roles: R(SALES) },
+          { key: '/ops-reports?view=orders-open', label: 'الطلبات المعلقة', roles: R(SALES) },
+          { key: '/ops-reports?view=reservations-open', label: 'الحجوزات المفتوحة', roles: R(SALES) },
+        ],
+      },
       {
         key: 'grp-rep-reports',
         label: 'تقارير مندوبين',
@@ -232,6 +243,10 @@ export const NAVIGATION: NavGroup[] = [
         children: [
           { key: '/vouchers?tab=cheques&direction=incoming', label: 'أوراق قبض', roles: R(BOOKS), a5: '/notes-receivable' },
           { key: '/vouchers?tab=cheques&direction=outgoing', label: 'أوراق دفع', roles: R(BOOKS), a5: '/notes-payable' },
+          // محفظة الشيكات — «إيه اللي عندي وإيه اللي بيستحق»، مش «إيه اللي اتسجّل».
+          { key: '/ops-reports?view=cheque-wallet', label: 'محفظة الشيكات', roles: R(BOOKS) },
+          { key: '/ops-reports?view=cheques-due-soon', label: 'شيكات تستحق قريباً', roles: R(BOOKS) },
+          { key: '/ops-reports?view=cheques-by-status', label: 'الشيكات بالحالة', roles: R(BOOKS) },
         ],
       },
       {
@@ -243,6 +258,9 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/finance-reports?tab=sheet&period=1', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
           { key: '/finance-reports?tab=income', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
           { key: '/finance-reports?tab=income&period=1', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
+          // نفس أرقام قائمة الدخل، مقسومة — فمكانها جنبها.
+          { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: R(BOOKS) },
+          { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
         ],
       },
     ],
@@ -345,6 +363,31 @@ export const EXTRA_SECTIONS: NavGroup[] = [
       { key: '/loyalty', label: 'خدمة ما بعد البيع والنقاط', roles: ['system_admin', 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/inspection-items', label: 'أصناف المعاينة', roles: OFFICE },
+      {
+        key: 'grp-loyalty-reports',
+        label: 'تقارير النقاط والكوبونات',
+        children: [
+          { key: '/ops-reports?view=points-movement', label: 'حركة النقاط', roles: LOYALTY },
+          { key: '/ops-reports?view=points-by-customer', label: 'النقاط بالعميل', roles: LOYALTY },
+          { key: '/ops-reports?view=points-by-kind', label: 'النقاط بنوع الحركة', roles: LOYALTY },
+          { key: '/ops-reports?view=coupons-list', label: 'كشف الكوبونات', roles: LOYALTY },
+          { key: '/ops-reports?view=coupons-by-status', label: 'الكوبونات بالحالة', roles: LOYALTY },
+          { key: '/ops-reports?view=coupons-by-customer', label: 'الكوبونات بالعميل', roles: LOYALTY },
+          { key: '/ops-reports?view=coupon-receipts', label: 'تقرير استلام الكوبونات', roles: LOYALTY },
+          { key: '/ops-reports?view=coupon-receipts-by-rep', label: 'استلام الكوبونات بالمندوب', roles: LOYALTY },
+        ],
+      },
+      {
+        key: 'grp-inspection-reports',
+        label: 'تقارير المعاينات',
+        children: [
+          { key: '/ops-reports?view=inspections-list', label: 'كشف المعاينات', roles: R([...SALES, 'after_sales_staff']) },
+          { key: '/ops-reports?view=inspections-by-rep', label: 'المعاينات بالمندوب', roles: R([...SALES, 'after_sales_staff']) },
+          { key: '/ops-reports?view=inspections-by-kind', label: 'المعاينات بالنوع', roles: R([...SALES, 'after_sales_staff']) },
+          { key: '/ops-reports?view=inspections-by-shop', label: 'المعاينات بمحل الشراء', roles: R([...SALES, 'after_sales_staff']) },
+          { key: '/ops-reports?view=inspections-by-month', label: 'المعاينات شهر بشهر', roles: R([...SALES, 'after_sales_staff']) },
+        ],
+      },
       { key: '/audit', label: 'سجل العمليات', roles: OFFICE },
     ],
   },
