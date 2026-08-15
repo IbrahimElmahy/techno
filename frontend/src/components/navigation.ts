@@ -270,6 +270,9 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/leave', label: 'الأجازات', roles: HR },
       { key: '/leave?tab=balances', label: 'أرصدة الأجازات', roles: HR },
       { key: '/leave?tab=types', label: 'أنواع الأجازات', roles: HR },
+      { key: '/payroll-settings', label: 'شرايح الضريبة والتأمينات', roles: BOOKS },
+      { key: '/payroll-settings?tab=components', label: 'بنود الراتب', roles: BOOKS },
+      { key: '/payroll-settings?tab=rules', label: 'أرقام المسير', roles: BOOKS },
     ],
   },
 

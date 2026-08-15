@@ -69,6 +69,10 @@ from src.models.wastage import WastageDocument  # noqa: E402
 from src.models.attachment import InspectionAttachment  # noqa: E402
 from src.models.hr_org import Department, EmployeeTermination  # noqa: E402
 from src.models.hr_leave import LeaveEntitlement, LeaveRequest, LeaveType  # noqa: E402
+from src.models.hr_payroll import (  # noqa: E402
+    EmployeeSalary, EmployeeSalaryLine, PayrollSchemeBracket, PayrollSchemeVersion,
+    PayrollSetting, SalaryComponent,
+)
 from src.models.hr_attendance import (  # noqa: E402
     AttendanceDay, AttendanceImport, EmployeeShiftAssignment, Holiday, WorkShift,
 )
@@ -91,4 +95,6 @@ __all__ = [
     "Department", "EmployeeTermination",
     "WorkShift", "EmployeeShiftAssignment", "Holiday", "AttendanceDay", "AttendanceImport",
     "LeaveType", "LeaveEntitlement", "LeaveRequest",
+    "SalaryComponent", "EmployeeSalary", "EmployeeSalaryLine", "PayrollSetting",
+    "PayrollSchemeVersion", "PayrollSchemeBracket",
 ]
