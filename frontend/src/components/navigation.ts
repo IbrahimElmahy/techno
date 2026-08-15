@@ -172,13 +172,13 @@ export const NAVIGATION: NavGroup[] = [
         key: 'grp-stock-reports',
         label: 'تقارير المخازن',
         children: [
-          { key: '/stock-alerts?tab=reorder', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
+          { key: '/stock-alerts', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
           { key: '/reports?view=stagnant', label: 'اصناف راكدة', roles: R(STOCK), a5: '/stagnant-items' },
-          { key: '/serials', label: 'السرايل', roles: R(STOCK), a5: '/serials' },
-          { key: '/serials?view=movements', label: 'حركات سرايل', roles: R(STOCK), a5: '/serialtransactions' },
-          { key: '/stock-alerts?tab=movements', label: 'حركات انتهاء الصلاحية', roles: R(STOCK), a5: '/expiretransactions' },
-          { key: '/stock-alerts?tab=expiring', label: 'كميات انتهاء الصلاحية', roles: R(STOCK), a5: '/expirequantities' },
-          { key: '/price-display', label: 'شاشة معلومات المنتج', roles: R(STOCK), a5: '/price-display-screen' },
+          // «السرايل» و«حركات سرايل» و«حركات/كميات انتهاء الصلاحية» و«شاشة معلومات المنتج»
+          // اتشالوا بطلب العميل — الشركة مابتستعملهمش. زي الباركود، ده اختلاف مقصود عن a5
+          // مش نقص، فمتترجعش لمجرد إنها موجودة عندهم.
+          // ملحوظة: السرايل وتواريخ الصلاحية لسه شغالين تحت — الفاتورة لسه بتاخد سيريال،
+          // والبيع لسه بيصرف بالأقرب انتهاءً. اللي اتشال الشاشات اللي بتتفرّج عليهم.
         ],
       },
     ],

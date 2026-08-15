@@ -26,7 +26,8 @@ const REPORTS = [
   'StockSheet.tsx', 'Stocktake.tsx', 'StockCounts.tsx', 'ItemCard.tsx', 'AccountStatement.tsx',
   'TradeReports.tsx', 'RepReports.tsx', 'FinanceReports.tsx', 'GeneralLedger.tsx',
   'StockAlerts.tsx', 'Loyalty.tsx', 'Treasury.tsx', 'Audit.tsx', 'ItemProfile.tsx',
-  'Reports.tsx', 'Serials.tsx',
+  'Reports.tsx',
+  // «السرايل» اتشالت بطلب العميل — الشركة مابتستعملهاش.
 ];
 
 /**

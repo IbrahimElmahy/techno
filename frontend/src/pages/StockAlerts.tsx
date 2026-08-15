@@ -1,17 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Statistic, Table, Tabs, Tag, message, Space,
+  Alert, Button, Card, Col, Row, Statistic, Table, Tag,
 } from 'antd';
-import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
-import dayjs, { Dayjs } from 'dayjs';
+import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
-import { DocRef, useOpenDocument } from '../components/DocumentLink';
-import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
-import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
-import { useNavigate } from 'react-router-dom';
+import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { useTableColumns } from '../components/ColumnSettings';
+import { useNavigate } from 'react-router-dom';
 
 /**
  * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
@@ -34,57 +31,22 @@ interface ReorderRow {
   flag: 'below_min' | 'above_max';
 }
 
-interface BatchMove {
-  id: number; item_id: number; item_name: string | null; expiry_date: string;
-  kind: 'received' | 'consumed' | 'relocated_out' | 'relocated_in' | 'returned';
-  location_kind: string; location_id: number; location_name: string | null;
-  quantity: string; document_type: string | null; document_id: number | null; created_at: string;
-}
-
-const MOVE_KIND: Record<BatchMove['kind'], { text: string; color: string }> = {
-  received: { text: 'استلام', color: 'green' },
-  consumed: { text: 'صرف بالبيع', color: 'volcano' },
-  relocated_out: { text: 'خرج بتحويل', color: 'blue' },
-  relocated_in: { text: 'دخل بتحويل', color: 'cyan' },
-  returned: { text: 'مرتجع', color: 'gold' },
-};
-
-const MOVE_DOC: Record<string, string> = {
-  sales_invoice: 'فاتورة بيع',
-  transfer: 'إذن تحويل',
-  batch_receive: 'استلام تشغيلة',
-};
-
-interface BatchRow {
-  batch_id: number;
-  item_id: number;
-  code: string | null;
-  name: string;
-  location_kind: string;
-  location_id: number;
-  expiry_date: string;
-  quantity: string;
-}
-
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
+/**
+ * حد إعادة الطلب — كام لازم نشتري.
+ *
+ * The screen used to carry two more tabs, «كميات انتهاء الصلاحية» and «حركات انتهاء الصلاحية».
+ * Both were removed at the client's request: the company does not work with expiry dates on what
+ * it sells, so the screens were answering a question nobody here asks.
+ *
+ * الصلاحية نفسها لسه شغالة تحت — البيع لسه بيصرف بالأقرب انتهاءً، والمرتجع لسه بيرجّع لتشغيلته.
+ * The tracking is untouched; only the two screens that displayed it are gone.
+ */
 export default function StockAlerts() {
-  // «كميات انتهاء الصلاحية» is their own screen; ours is the second tab here.
-  const [tab, setTab] = useQueryTab('reorder');
-  // «حركات انتهاء الصلاحية» — where each lot went, beside «كميات انتهاء الصلاحية» which is what
-  // is left of it. Two of their screens, and the second only answers half the question.
-  const navigate = useNavigate();
-  const [moves, setMoves] = useState<BatchMove[]>([]);
-  const [movesLoading, setMovesLoading] = useState(false);
-  const [tracedLot, setTracedLot] = useState<{ item_id: number; expiry: string } | null>(null);
   const [reorder, setReorder] = useState<ReorderRow[]>([]);
   const [summary, setSummary] = useState({ below_min: 0, above_max: 0 });
-  const [batches, setBatches] = useState<BatchRow[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  // Default horizon: what expires within the next month — the window a buyer can still act on.
-  const [before, setBefore] = useState<Dayjs>(dayjs().add(30, 'day'));
-  const [warehouseId, setWarehouseId] = useState<number | undefined>();
 
   const loadReorder = async () => {
     setLoading(true);
@@ -95,61 +57,20 @@ export default function StockAlerts() {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  const loadBatches = async () => {
-    setLoading(true);
-    try {
-      const params: any = { before: before.format('YYYY-MM-DD') };
-      if (warehouseId) { params.location_kind = 'warehouse'; params.location_id = warehouseId; }
-      const res = await api.get('/api/v1/stock/batches/expiring', { params });
-      setBatches(res.data || []);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
-
-  const loadMoves = async () => {
-    setMovesLoading(true);
-    try {
-      const params: any = {};
-      if (tracedLot) { params.item_id = tracedLot.item_id; params.expiry_date = tracedLot.expiry; }
-      const res = await api.get('/api/v1/stock/batches/movements', { params });
-      setMoves(res.data || []);
-    } catch (err) { console.error(err); } finally { setMovesLoading(false); }
-  };
-
-  // Following one lot is a fresh query, not a client-side filter: a recall asks about a lot that
-  // may have emptied months ago, and the loaded page only holds the last thousand rows.
-  useEffect(() => { if (tab === 'movements') loadMoves(); }, [tab, tracedLot]);
-
-  useEffect(() => {
-    loadReorder();
-    api.get('/api/v1/warehouses').then((r) => setWarehouses(r.data)).catch(console.error);
-  }, []);
-  useEffect(() => { loadBatches(); }, [before, warehouseId]);
+  useEffect(() => { loadReorder(); }, []);
 
   const reorderFilter = useListFilter(reorder, {
     search: (r) => [r.code, r.name],
     filters: { flag: (r, v) => r.flag === v },
   });
-  const batchFilter = useListFilter(batches, { search: (b) => [b.code, b.name] });
-
-  const warehouseName = (id: number) =>
-    warehouses.find((w) => w.id === id)?.name ?? `#${id}`;
-
-  const openDoc = useOpenDocument();
   // «الصنف ده تحت الأدنى» — الخطوة اللي بعدها دايماً هي فتح ملف الصنف عشان تشوف حركته وتقرّر
   // تشتري كام، فالسطر بيوصّلك هناك على طول.
+  const navigate = useNavigate();
   const reorderKb = useTableKeyboard<ReorderRow>({
     rows: reorderFilter.filtered, rowKey: (r) => r.item_id,
     onOpen: (r) => navigate(`/catalog/${r.item_id}`),
   });
-  // والتشغيلة اللي هتنتهي: السطر يفتح أثرها — «دي راحت فين» هو سؤال الاسترجاع نفسه.
-  const batchKb = useTableKeyboard<BatchRow>({
-    rows: batchFilter.filtered, rowKey: (r) => r.batch_id,
-    onOpen: (r) => setTracedLot({ item_id: r.item_id, expiry: r.expiry_date }),
-  });
-  const movesKb = useTableKeyboard<BatchMove>({
-    rows: moves, rowKey: (r) => r.id,
-    onOpen: (r) => { if (r.document_type === 'sales_invoice') openDoc('invoice', r.document_id); },
-  });
+
 
   const columns = [
     { title: 'الكود', dataIndex: 'code', ...textColumn(reorder, (r: ReorderRow) => r.code),
@@ -191,14 +112,9 @@ export default function StockAlerts() {
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('stock-alerts', columns);
 
+  // تبويب واحد بس فضل، فمافيش شريط تبويبات. «قرب انتهاء الصلاحية» و«حركات انتهاء
+  // الصلاحية» اتشالوا بطلب العميل — الشركة مابتستعملهمش.
   return (
-    <Tabs
-      activeKey={tab} onChange={setTab}
-      items={[
-        {
-          key: 'reorder',
-          label: `حد إعادة الطلب (${reorder.length})`,
-          children: (
             <Card title="الأصناف خارج حدودها المخزنية"
               extra={<Button icon={<ReloadOutlined />} onClick={loadReorder}>تحديث</Button>}>
               <Alert type="info" showIcon style={{ marginBottom: 12 }}
@@ -241,147 +157,5 @@ export default function StockAlerts() {
                 columns={tableCols.columns}
               />
             </Card>
-          ),
-        },
-        {
-          key: 'expiring',
-          label: `قرب انتهاء الصلاحية (${batches.length})`,
-          children: (
-            <Card title="تشغيلات قاربت على الانتهاء"
-              extra={<Button icon={<ReloadOutlined />} onClick={loadBatches}>تحديث</Button>}>
-              <Row gutter={8} style={{ marginBottom: 12 }}>
-                <Col xs={24} md={8}>
-                  <DatePicker style={{ width: '100%' }} value={before}
-                    onChange={(v) => v && setBefore(v)}
-                    // Everything expiring on or before this date.
-                    placeholder="تنتهي قبل تاريخ" />
-                </Col>
-                <Col xs={24} md={8}>
-                  <Select allowClear style={{ width: '100%' }} placeholder="كل المخازن"
-                    value={warehouseId} onChange={(v) => setWarehouseId(v)}
-                    options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-                </Col>
-              </Row>
-
-              <ListToolbar
-                searchPlaceholder="بحث بالصنف أو الكود"
-                query={batchFilter.query} onQueryChange={batchFilter.setQuery}
-                onReset={batchFilter.reset}
-                total={batches.length} shown={batchFilter.filtered.length}
-                searchSpan={10}
-              />
-
-              <Table
-                {...batchKb.tableProps}
-                rowKey="batch_id" size="small" loading={loading}
-                dataSource={batchFilter.filtered}
-                locale={{ emptyText: 'لا توجد تشغيلات تنتهي قبل هذا التاريخ' }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true }}
-                columns={[
-                  { title: 'الكود', dataIndex: 'code', ...textColumn(batches, (r: BatchRow) => r.code),
-                    render: (c: string) => <Tag>{c}</Tag> },
-                  { title: 'الصنف', dataIndex: 'name', ...textColumn(batches, (r: BatchRow) => r.name),
-                    render: (n: string) => <b>{n}</b> },
-                  { title: 'المخزن', dataIndex: 'location_id',
-                    ...textColumn(batches, (r: BatchRow) => (r.location_kind === 'warehouse'
-                      ? warehouseName(r.location_id) : `عهدة #${r.location_id}`)),
-                    render: (id: number, r: BatchRow) => (r.location_kind === 'warehouse'
-                      ? warehouseName(id) : `عهدة #${id}`) },
-                  { title: 'تاريخ الانتهاء', dataIndex: 'expiry_date',
-                    ...dateColumn<BatchRow>((r) => r.expiry_date),
-                    render: (d: string) => {
-                      const days = dayjs(d).diff(dayjs(), 'day');
-                      const colour = days < 0 ? 'red' : days <= 7 ? 'volcano' : 'orange';
-                      return (
-                        <span>
-                          <Tag color={colour}>{d}</Tag>
-                          <span style={{ fontSize: 12, color: '#8a8a8a' }}>
-                            {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : `باقي ${days} يوم`}
-                          </span>
-                        </span>
-                      );
-                    } },
-                  { title: 'الكمية المتبقية', dataIndex: 'quantity',
-                    ...numberColumn<BatchRow>((r) => r.quantity),
-                    render: (v: string) => <b style={{ color: '#6AB42D' }}>{qty(v)}</b> },
-                ]}
-              />
-            </Card>
-          ),
-        },
-        {
-          key: 'movements',
-          label: 'حركات انتهاء الصلاحية',
-          children: (
-            <Card
-              title={tracedLot
-                ? `حركة التشغيلة المنتهية ${tracedLot.expiry}`
-                : 'حركات التشغيلات'}
-              extra={(
-                <Space>
-                  {tableCols.control}
-                  {tracedLot && <Button onClick={() => setTracedLot(null)}>عرض الكل</Button>}
-                  <Button icon={<ReloadOutlined />} onClick={loadMoves}>تحديث</Button>
-                </Space>
-              )}
-            >
-              <Table
-                {...movesKb.tableProps}
-                rowKey="id" size="small" loading={movesLoading} dataSource={moves}
-                tableLayout="fixed"
-                locale={{
-                  emptyText: (
-                    // Lots received before this trail existed have none, and saying so beats an
-                    // empty table that reads like a fault.
-                    'مفيش حركات مسجّلة. التشغيلات اللي دخلت قبل ما السجل ده يتعمل مالهاش أثر.'
-                  ),
-                }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                  showTotal: (t) => `الإجمالي: ${t}` }}
-                columns={[
-                  { title: 'التاريخ', dataIndex: 'created_at', width: 150,
-                    ...dateColumn<BatchMove>((r) => r.created_at),
-                    render: (v: string) => String(v).slice(0, 16) },
-                  { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
-                    ...textColumn(moves, (r: BatchMove) => r.item_name),
-                    render: (n: string | null, r: BatchMove) => n ?? `صنف #${r.item_id}` },
-                  { title: 'تاريخ الانتهاء', dataIndex: 'expiry_date', width: 150,
-                    ...dateColumn<BatchMove>((r) => r.expiry_date),
-                    render: (d: string, r: BatchMove) => (
-                      <a onClick={() => setTracedLot({ item_id: r.item_id, expiry: d })}>
-                        <Tag color={dayjs(d).isBefore(dayjs()) ? 'red' : 'orange'}>{d}</Tag>
-                      </a>
-                    ) },
-                  { title: 'الحركة', dataIndex: 'kind', width: 130,
-                    ...textColumn(moves, (r: BatchMove) => (MOVE_KIND[r.kind]?.text ?? r.kind)),
-                    render: (k: BatchMove['kind']) => (
-                      <Tag color={MOVE_KIND[k].color}>{MOVE_KIND[k].text}</Tag>
-                    ) },
-                  { title: 'المخزن', dataIndex: 'location_name', width: 170,
-                    ...textColumn(moves, (r: BatchMove) => r.location_name),
-                    render: (v: string | null) => v ?? '-' },
-                  { title: 'الكمية', dataIndex: 'quantity', width: 100, align: 'left' as const,
-                    ...numberColumn<BatchMove>((r) => r.quantity),
-                    render: (v: string) => <b>{qty(v)}</b> },
-                  { title: 'المستند', key: 'doc', width: 185,
-                    ...textColumn(moves, (r: BatchMove) => (r.document_type
-                      ? (MOVE_DOC[r.document_type] ?? r.document_type) : '')),
-                    render: (_: any, r: BatchMove) => {
-                      if (!r.document_type) return '-';
-                      const label = `${MOVE_DOC[r.document_type] ?? r.document_type}`
-                        + (r.document_id ? ` #${r.document_id}` : '');
-                      // A recall follows the lot to the sale that took it; the transfer and the
-                      // receipt have no single-document screen, so they stay plain.
-                      return r.document_type === 'sales_invoice'
-                        ? <DocRef kind="invoice" id={r.document_id} label={label} />
-                        : <span>{label}</span>;
-                    } },
-                ]}
-              />
-            </Card>
-          ),
-        },
-      ]}
-    />
   );
 }
