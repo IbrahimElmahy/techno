@@ -267,6 +267,9 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/attendance', label: 'الحضور والانصراف', roles: HR },
       { key: '/attendance?tab=entry', label: 'إدخال حضور', roles: HR },
       { key: '/attendance?tab=import', label: 'استيراد بصمة', roles: HR },
+      { key: '/leave', label: 'الأجازات', roles: HR },
+      { key: '/leave?tab=balances', label: 'أرصدة الأجازات', roles: HR },
+      { key: '/leave?tab=types', label: 'أنواع الأجازات', roles: HR },
     ],
   },
 

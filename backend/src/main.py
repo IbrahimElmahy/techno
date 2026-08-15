@@ -21,6 +21,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     coupon_receipts,  # استلام الكوبونات من العملاء
     employees,  # الموظفون والوظائف (B8)
     attendance,  # الحضور والانصراف (HR-2)
+    leave,  # الأجازات (HR-3)
     hr,  # الموارد البشرية — الأقسام ونهاية الخدمة (HR-1)
     fixed_assets,  # الأصول الثابتة والإهلاك (B6)
     manufacturing,
@@ -135,6 +136,8 @@ def create_app() -> FastAPI:
     app.include_router(hr.router, prefix=prefix)
     # الحضور والانصراف (HR-2)
     app.include_router(attendance.router, prefix=prefix)
+    # الأجازات (HR-3)
+    app.include_router(leave.router, prefix=prefix)
     # Sales / purchase orders (B9)
     app.include_router(orders.router, prefix=prefix)
     # Coupon hand-back from customers (mobile app + office)
