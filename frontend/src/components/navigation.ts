@@ -273,6 +273,8 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/payroll-settings', label: 'شرايح الضريبة والتأمينات', roles: BOOKS },
       { key: '/payroll-settings?tab=components', label: 'بنود الراتب', roles: BOOKS },
       { key: '/payroll-settings?tab=rules', label: 'أرقام المسير', roles: BOOKS },
+      { key: '/advances', label: 'سلف العاملين', roles: BOOKS },
+      { key: '/advances?tab=adjustments', label: 'الجزاءات والمكافآت', roles: BOOKS },
     ],
   },
 

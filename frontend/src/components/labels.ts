@@ -32,6 +32,8 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   expense: 'مصروف',
   depreciation: 'إهلاك',
   asset_disposal: 'استبعاد أصل',
+  // الموارد البشرية — السلفة أصل على الموظف، مش مصروف على الشركة.
+  employee_advance: 'سلفة موظف',
 };
 
 /**
