@@ -275,6 +275,7 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/payroll-settings?tab=rules', label: 'أرقام المسير', roles: BOOKS },
       { key: '/advances', label: 'سلف العاملين', roles: BOOKS },
       { key: '/advances?tab=adjustments', label: 'الجزاءات والمكافآت', roles: BOOKS },
+      { key: '/payroll', label: 'مسير الرواتب', roles: BOOKS },
     ],
   },
 

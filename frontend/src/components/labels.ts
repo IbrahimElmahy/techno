@@ -34,6 +34,9 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   asset_disposal: 'استبعاد أصل',
   // الموارد البشرية — السلفة أصل على الموظف، مش مصروف على الشركة.
   employee_advance: 'سلفة موظف',
+  payroll_accrual: 'استحقاق مرتبات',
+  payroll_payment: 'صرف مرتبات',
+  payroll_remittance: 'سداد تأمينات/ضرايب',
 };
 
 /**
