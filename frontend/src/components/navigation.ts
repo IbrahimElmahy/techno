@@ -62,8 +62,6 @@ export const NAVIGATION: NavGroup[] = [
     children: [
       { key: '/categories', label: 'فئات الاصناف', roles: R(STOCK), a5: '/categories' },
       { key: '/catalog', label: 'الأصناف', roles: R(STOCK), a5: '/items' },
-      { key: '/employees', label: 'الموظفين', roles: HR, a5: '/employees' },
-      { key: '/departments', label: 'الأقسام', roles: HR },
       { key: '/customers', label: 'العملاء', roles: R([...SALES, 'after_sales_staff']), a5: '/clients' },
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
       { key: '/warehouses', label: 'المخازن', roles: R(STOCK), a5: '/stores' },
@@ -255,6 +253,20 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/free-production', label: 'انتاج حر', roles: BUYING, a5: '/productions/free' },
       { key: '/manufacturing?tab=orders', label: 'انتاج حسب النسب', roles: BUYING, a5: '/productions/proportion' },
       { key: '/reports?view=production', label: 'تقرير الانتاج', roles: R(BUYING), a5: '/productions/report' },
+    ],
+  },
+
+  // اداره الموارد البشرية — قسم جديد. مش في قايمة a5 أصلاً: نظامهم عنده «الموظفين» كبيانات
+  // أساسية وبس، فالترتيب هنا بتاعنا مش مطابق لحاجة.
+  {
+    key: 'grp-hr',
+    label: 'اداره الموارد البشرية',
+    children: [
+      { key: '/employees', label: 'الموظفين', roles: HR, a5: '/employees' },
+      { key: '/departments', label: 'الأقسام', roles: HR },
+      { key: '/attendance', label: 'الحضور والانصراف', roles: HR },
+      { key: '/attendance?tab=entry', label: 'إدخال حضور', roles: HR },
+      { key: '/attendance?tab=import', label: 'استيراد بصمة', roles: HR },
     ],
   },
 

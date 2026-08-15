@@ -68,6 +68,9 @@ from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 from src.models.attachment import InspectionAttachment  # noqa: E402
 from src.models.hr_org import Department, EmployeeTermination  # noqa: E402
+from src.models.hr_attendance import (  # noqa: E402
+    AttendanceDay, AttendanceImport, EmployeeShiftAssignment, Holiday, WorkShift,
+)
 
 __all__ = [
     "AccountRouting",
@@ -85,4 +88,5 @@ __all__ = [
     "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord", "Employee", "JobTitle", "CouponReceipt", "CouponReceiptLine", "TradeOrder", "TradeOrderLine", "SalesInvoiceExpense", "VoucherKey",
     "InspectionAttachment",
     "Department", "EmployeeTermination",
+    "WorkShift", "EmployeeShiftAssignment", "Holiday", "AttendanceDay", "AttendanceImport",
 ]
