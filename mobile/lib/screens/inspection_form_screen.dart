@@ -265,6 +265,24 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 onType: () => _selectedCustomerId = null, // اسم متكتب بالإيد بيفكّ الربط
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'الاسم مطلوب' : null,
               ),
+              TextFormField(
+                controller: _ownerPhone,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(labelText: 'تليفون المالك'),
+              ),
+              TextFormField(
+                controller: _nationalId,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'رقم البطاقة'),
+              ),
+              TextFormField(
+                controller: _ownerAddress,
+                decoration: const InputDecoration(labelText: 'عنوان المالك'),
+              ),
+              TextFormField(
+                controller: _floorNumber,
+                decoration: const InputDecoration(labelText: 'رقم الدور'),
+              ),
             ]),
             _section('تفاصيل المعاينة', Icons.checklist, [
               DropdownButtonFormField<String>(
