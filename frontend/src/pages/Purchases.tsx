@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message, DatePicker,
+  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tag, Typography, message, DatePicker,
 } from 'antd';
 import {
-  PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
+  PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined,
   PrinterOutlined, FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
@@ -139,7 +139,17 @@ export default function Purchases() {
   const [docResult, setDocResult] = useState<any>(null);
 
   // Active tab + purchases history list
-  const [activeTab, setActiveTab] = useState<string>('create');
+  /**
+   * السجل هو الصفحة، والكتابة بتحل محله — نفس تركيب شاشة البيع بالظبط.
+   *
+   * It was a two-tab screen: «فاتورة جديدة» and «سجل المشتريات» side by side, so the record was a
+   * place you switched to and the blank form was what the screen opened on. The sale is the other
+   * way round and it is the right way round: what somebody opens a documents screen for is almost
+   * always to look something up, and writing a new one is a deliberate act that starts with a
+   * button. Two screens for the same job that disagree about which is the front door cost the
+   * person a pause every time they switch.
+   */
+  const [createVisible, setCreateVisible] = useState(false);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
   /** The row whose item box should take the caret next — the purchase's version of the sale's
@@ -211,7 +221,7 @@ export default function Purchases() {
    * yesterday's invoice landed somewhere that looked nothing like where it was typed.
    */
   const openDetail = async (record: PurchaseRecord) => {
-    setActiveTab('create');
+    setCreateVisible(true);
     setDetail(null);
     setDetailLoading(true);
     try {
@@ -406,7 +416,8 @@ export default function Purchases() {
         onClick: () => { form.resetFields(); setPurchaseItems([
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
     discount_pct: null, warehouse_id: null }]);
-          setPurchaseDate(dayjs()); setNewStep('date'); } },
+          setPurchaseDate(dayjs()); setDetail(null); setDocResult(null);
+          setNewStep('date'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setPurchaseItems([
@@ -558,7 +569,8 @@ export default function Purchases() {
    *  the second door and hands over to the page — the same order the sale opens in. */
   const handlePartyPicked = (picked: Party) => {
     setPartyPickerOpen(false);
-    if (newStep === 'party') setNewStep(null);
+    // الباب الأخير بيسلّم للصفحة نفسها — التاريخ، وبعده المورد، وبعده الفاتورة بتفتح.
+    if (newStep === 'party') { setNewStep(null); setCreateVisible(true); }
     form.setFieldsValue({ supplier_id: picked.id });
     // A supplier created inside the picker is not in the loaded list yet, so the field would show
     // a bare id until the next reload.
@@ -613,6 +625,14 @@ export default function Purchases() {
   }, [purchaseItems, items]);
 
 
+
+  /** رجوع للسجل — والشاشة بترجع فاضية عشان الفاتورة الجاية تبدأ من نضيف. */
+  const closeCreate = () => {
+    setCreateVisible(false);
+    setDetail(null);
+    setDocResult(null);
+    setNewStep(null);
+  };
 
   const createContent = docResult ? (
     <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
@@ -674,7 +694,18 @@ export default function Purchases() {
       </div>
     </Card>
   ) : (
-    <Card title="فاتورة شراء جديدة"
+    <Card title={(
+      <Space>
+        <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+        <Typography.Text strong style={{ fontSize: 16 }}>فاتورة شراء جديدة</Typography.Text>
+        {/* ظاهر وقابل للتغيير: اللي بيكتب لازم يشوف اليوم اللي بيكتب فيه، خصوصاً لما
+            مايكونش النهاردة. */}
+        <DatePicker
+          value={purchaseDate} allowClear={false} format="YYYY-MM-DD"
+          onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())}
+        />
+      </Space>
+    )}
       extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
       {/* The same strip of verbs the sale carries, in the same places — a purchase is the same
           job from the other side, and a hand that has learned one row should not have to learn
@@ -985,7 +1016,29 @@ export default function Purchases() {
   const listCols = useTableColumns('purchase-list', listColumns);
 
   const listContent = (
-    <Card title="سجل المشتريات" extra={listCols.control}>
+    <Card
+      title="المشتريات (سجل فواتير الشراء)"
+      extra={(
+        <Space>
+          {listCols.control}
+          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+          {/* من غير F2 — المفتاح بتاع «إضافة صنف» جوّه الفاتورة، زي شاشة البيع بالظبط.
+              المحرك بيقرا الملف كله، فزرارين بيدّعوا نفس المفتاح مابيبقاش واضح مين هيترد عليه. */}
+          <Button type="primary" icon={<PlusOutlined />}
+            onClick={() => {
+              form.resetFields();
+              setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0,
+                unit: null, discount_pct: null, warehouse_id: null }]);
+              setPurchaseDate(dayjs());
+              setDetail(null);
+              setDocResult(null);
+              setNewStep('date');
+            }}>
+            تسجيل فاتورة شراء
+          </Button>
+        </Space>
+      )}
+    >
       <ListToolbar
         searchPlaceholder="بحث برقم المستند أو اسم المورد"
         query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}
@@ -1073,26 +1126,9 @@ export default function Purchases() {
     </>
   );
 
-  return (
-    <div>
-      {doors}
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          {
-            key: 'create',
-            label: <span><FileDoneOutlined /> فاتورة شراء جديدة</span>,
-            children: createContent,
-          },
-          {
-            key: 'list',
-            label: <span><UnorderedListOutlined /> سجل المشتريات</span>,
-            children: listContent,
-          },
-        ]}
-      />
+  if (createVisible) {
+    return <div>{doors}{createContent}</div>;
+  }
 
-    </div>
-  );
+  return <div>{doors}{listContent}</div>;
 }

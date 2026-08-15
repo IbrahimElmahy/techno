@@ -101,6 +101,51 @@ describe('إضافة الصنف بنفس الحركة', () => {
   });
 });
 
+describe('نفس تركيب الصفحة', () => {
+  /**
+   * السجل هو الصفحة، والكتابة بتحل محله.
+   *
+   * The purchase was a two-tab screen — «فاتورة جديدة» beside «سجل المشتريات» — so the record was
+   * a place you switched to and the blank form was what the screen opened on. The sale is the
+   * other way round, and it is the right way round: what somebody opens a documents screen for is
+   * almost always to look something up, and writing a new one is a deliberate act that starts with
+   * a button.
+   */
+  it.each([['البيع', 'Invoices.tsx'], ['الشرا', 'Purchases.tsx']])(
+    'شاشة %s مبنية على «السجل هو الصفحة»', (_name, file) => {
+      const src = read(file);
+      expect(src).toContain('createVisible');
+      // الكتابة بترجع بدري وبتحل محل الصفحة، مش تبويب جنبها.
+      expect(/if \(createVisible\)[\s\S]{0,40}return/.test(src)).toBe(true);
+      expect(src).not.toContain('<Tabs');
+    });
+
+  it.each([['البيع', 'Invoices.tsx'], ['الشرا', 'Purchases.tsx']])(
+    'شاشة %s فيها زرار «تسجيل فاتورة» بيبدأ ببوباب التاريخ', (_name, file) => {
+      const src = read(file);
+      expect(src).toContain("setNewStep('date')");
+      // التاريخ الأول، وبعده الطرف — نفس الترتيب في الاتنين.
+      expect(src).toContain("newStep === 'date'");
+      expect(src).toContain("newStep === 'party'");
+    });
+
+  it.each([['البيع', 'Invoices.tsx'], ['الشرا', 'Purchases.tsx']])(
+    'شاشة %s بيرجع منها للسجل بزرار رجوع', (_name, file) => {
+      const src = read(file);
+      expect(src).toContain('closeCreate');
+      expect(src).toContain('رجوع');
+    });
+
+  it('اختيار الطرف بيسلّم للصفحة في الاتنين', () => {
+    // آخر باب بيقفل ويفتح الفاتورة — مش بيسيب الواحد على شاشة فاضية.
+    for (const [name, file] of [['البيع', 'Invoices.tsx'], ['الشرا', 'Purchases.tsx']] as const) {
+      const src = read(file);
+      expect(/newStep === 'party'[\s\S]{0,160}setCreateVisible\(true\)/.test(src), name)
+        .toBe(true);
+    }
+  });
+});
+
 describe('الحاجات اللي مالهاش لازمة في الشرا', () => {
   // فاتورة الشرا نسخة من البيع **من غير** الحاجات دي — قرار العميل، مش سهو.
   it.each([
