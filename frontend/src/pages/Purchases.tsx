@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Descriptions, Divider, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message, DatePicker,
+  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, InputNumber, Modal, Result, Row, Select, Space, Table, Tabs, Tag, message, DatePicker,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, UnorderedListOutlined,
@@ -568,165 +568,51 @@ export default function Purchases() {
 
   /** A picked product becomes a line, and the caret lands in its quantity — so the next thing
    *  typed is the number, not a hunt for the box. Same loop as the sale and the return. */
-  const handleProductPicked = (item: any) => {
-    setPickerOpen(false);
+  /** الصنف اللي على الفاتورة بالفعل بتزيد كميته بدل ما يتكرّر سطر — زي شاشة البيع بالظبط. */
+  const addProductById = async (itemId: number) => {
+    if (!itemId) return;
+    const existing = purchaseItems.find((l) => l.item_id === itemId);
+    if (existing) {
+      setPurchaseItems((prev) => prev.map((l) => (l.key === existing.key
+        ? { ...l, quantity: Number(l.quantity || 0) + 1 } : l)));
+      // العين تتبع الرقم اللي اتحرك، مش سطر جديد.
+      setPanelItemId(itemId);
+      setFocusLineKey(existing.key);
+      return;
+    }
     // Reuse a blank row rather than leaving an empty line above the real one.
     const blank = purchaseItems.find((l) => l.item_id === null);
-    const key = blank ? blank.key : String(Date.now());
+    const key = blank ? blank.key : `${Date.now()}-${itemId}`;
     if (!blank) {
       setPurchaseItems((prev) => [...prev,
         { key, item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, warehouse_id: null }]);
+          discount_pct: null, warehouse_id: null }]);
     }
-    setPanelItemId(item.id);
+    setPanelItemId(itemId);
     // Through the same handler the dropdown uses, so the purchase price and the unit list are
     // filled in one place rather than two that can drift.
-    setTimeout(() => handleItemChange(key, 'item_id', item.id), 0);
+    setTimeout(() => handleItemChange(key, 'item_id', itemId), 0);
     setFocusLineKey(key);
   };
 
-  const columns = [
-    {
-      title: 'الصنف (مادة خام)',
-      dataIndex: 'item_id',
-      key: 'item_id',
-      width: '40%',
-      render: (itemId: number | null, record: PurchaseItem) => (
-        <Select
-          placeholder="اختر المادة الخام"
-          style={{ width: '100%' }}
-          showSearch
-          optionFilterProp="children"
-          data-item-key={record.key}
-          ref={(el) => { itemRefs.current[record.key] = el; }}
-          value={itemId}
-          onChange={(val) => { setPanelItemId(val as number); handleItemChange(record.key, 'item_id', val); }}
-        >
-          {items.map((i) => (
-            <Select.Option key={i.id} value={i.id}>
-              {i.name} ({i.code})
-            </Select.Option>
-          ))}
-        </Select>
-      ),
-    },
-    {
-      title: 'الوحدة',
-      dataIndex: 'unit',
-      key: 'unit',
-      width: '15%',
-      render: (unit: string | null, record: PurchaseItem) => (
-        <Select style={{ width: '100%' }} placeholder="الوحدة" disabled={!record.item_id}
-          value={unit ?? '__base__'}
-          onChange={(val) => handleItemChange(record.key, 'unit', val === '__base__' ? null : val)}>
-          {(unitsCache[record.item_id || 0] || []).map((u) => (
-            <Select.Option key={u.name} value={u.is_base ? '__base__' : u.name}>
-              {u.name}{u.is_base ? '' : ` (×${u.factor})`}
-            </Select.Option>
-          ))}
-        </Select>
-      ),
-    },
-    {
-      title: 'الكمية',
-      dataIndex: 'quantity',
-      key: 'quantity',
-      width: '12%',
-      render: (qty: number, record: PurchaseItem) => (
-        <InputNumber
-          min={0.01}
-          style={{ width: '100%' }}
-          value={qty}
-          placeholder="الكمية"
-          onChange={(val) => handleItemChange(record.key, 'quantity', val ?? null)}
-          data-qty-key={record.key}
-          data-grid-col="qty" keyboard={false}
-          // Enter means «this line is done» — the picker opens for the next product, exactly as
-          // on the sale and the return. preventDefault so the global «Enter moves to the next
-          // field» does not run after this and take the caret elsewhere.
-          onPressEnter={(e) => { e.preventDefault(); setPickerOpen(true); }}
-        />
-      ),
-    },
-    {
-      title: 'سعر الوحدة (ج.م)',
-      dataIndex: 'unit_price',
-      key: 'unit_price',
-      width: '20%',
-      render: (price: number, record: PurchaseItem) => (
-        <InputNumber
-          min={0}
-          step={0.01}
-          style={{ width: '100%' }}
-          value={price}
-          onChange={(val) => handleItemChange(record.key, 'unit_price', val || 0)}
-        />
-      ),
-    },
-    {
-      title: 'خصم %',
-      dataIndex: 'discount_pct',
-      key: 'discount_pct',
-      width: '12%',
-      render: (val: number | null, record: PurchaseItem) => (
-        <InputNumber
-          min={0}
-          max={99.99}
-          step={0.5}
-          style={{ width: '100%' }}
-          // Blank, not zero: «مفيش خصم متفق عليه» and «اتفقنا على صفر» are different facts, and a
-          // box that opens at 0 makes the second one impossible to tell from the first.
-          placeholder="—"
-          value={val}
-          onChange={(v) => handleItemChange(record.key, 'discount_pct',
-            v === null || v === undefined ? null : v)}
-        />
-      ),
-    },
-    {
-      title: 'المخزن',
-      dataIndex: 'warehouse_id',
-      key: 'warehouse_id',
-      width: '16%',
-      render: (val: number | null, record: PurchaseItem) => (
-        <Select
-          allowClear
-          showSearch
-          optionFilterProp="label"
-          style={{ width: '100%' }}
-          // Empty means «مخزن المستند» — one purchase can land in several stores, and the server
-          // has taken a per-line warehouse since 030.
-          placeholder="مخزن المستند"
-          value={val ?? undefined}
-          onChange={(v) => handleItemChange(record.key, 'warehouse_id', v ?? null)}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-        />
-      ),
-    },
-    {
-      title: 'الإجمالي (ج.م)',
-      key: 'total',
-      width: '15%',
-      render: (_: any, record: PurchaseItem) => (
-        <span style={{ fontWeight: 'bold' }}>
-          {lineTotal(record).toFixed(2)}
-        </span>
-      ),
-    },
-    {
-      title: 'حذف',
-      key: 'delete',
-      width: '5%',
-      render: (_: any, record: PurchaseItem) => (
-        <Button
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={() => handleRemoveItem(record.key)}
-        />
-      ),
-    },
-  ];
+  const handleProductPicked = (item: any) => {
+    setPickerOpen(false);
+    addProductById(item.id);
+  };
+
+  /** سطور الفاتورة متجمّعة بالفئة — نفس عرض شاشة البيع. */
+  const linesByCategory = React.useMemo(() => {
+    const groups: { category: string | null; items: PurchaseItem[] }[] = [];
+    purchaseItems.forEach((l) => {
+      const category = (items.find((i: any) => i.id === l.item_id) as any)?.category ?? null;
+      let g = groups.find((x) => x.category === category);
+      if (!g) { g = { category, items: [] }; groups.push(g); }
+      g.items.push(l);
+    });
+    return groups;
+  }, [purchaseItems, items]);
+
+
 
   const createContent = docResult ? (
     <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
@@ -736,7 +622,10 @@ export default function Purchases() {
           title="تم تسجيل فاتورة الشراء بنجاح"
           subTitle={`رقم مستند الفاتورة: ${docResult.document_number} | رقم قيد اليومية: ${docResult.ledger_entry_id || 'لا يوجد'}`}
           extra={[
-            <Button data-shortcut="F2" type="primary" key="new" onClick={() => setDocResult(null)}>
+            // F2 على «إضافة صنف» مش هنا — زي شاشة البيع بالظبط. الزرار ده بيتضغط مرة
+            // واحدة بعد الحفظ؛ زرار إضافة الصنف بيتضغط خمستاشر مرة في الفاتورة الواحدة،
+            // وهو اللي يستاهل المفتاح.
+            <Button type="primary" key="new" onClick={() => setDocResult(null)}>
               تسجيل فاتورة جديدة
             </Button>,
           ]}
@@ -862,23 +751,116 @@ export default function Purchases() {
 
           <Row gutter={16}>
             <Col xs={24} lg={18}>
-              <Table
-                dataSource={purchaseItems}
-                columns={columns}
-                pagination={false}
-                rowKey="key"
-                style={{ marginBottom: 16 }}
-              />
-
-              <Button
-                type="dashed"
+              {/* الزرار فوق السطور، كبير، وF2 عليه — نفس شاشة البيع.
+                  It used to be a small dashed button UNDERNEATH the table, which on an invoice of
+                  fifteen lines is a scroll to find and a click to choose, twice per line, all day.
+                  Above the lines it is always in the same place. */}
+              <Button data-shortcut="F2"
+                type="primary" size="large" icon={<PlusOutlined />} block
+                style={{ marginBottom: 14, height: 46 }}
                 onClick={() => setPickerOpen(true)}
-                block
-                icon={<PlusOutlined />}
-                style={{ marginBottom: 24 }}
               >
-                إضافة صنف
+                إضافة صنف للفاتورة
               </Button>
+
+              {purchaseItems.length === 0 ? (
+                <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
+                  style={{ margin: '12px 0' }} />
+              ) : (
+                linesByCategory.map((group) => (
+                  <div key={group.category ?? '__none__'}
+                    style={{ border: '1px solid #e6efe3', borderRadius: 10, overflow: 'hidden',
+                             marginBottom: 12 }}>
+                    <div style={{ background: '#f2f9f3', padding: '8px 12px', display: 'flex',
+                                  alignItems: 'center', gap: 8 }}>
+                      <Tag color="green" style={{ fontWeight: 700, margin: 0 }}>
+                        {group.category
+                          ? (categoryLabels[group.category] || group.category)
+                          : 'بدون فئة'}
+                      </Tag>
+                      <span style={{ color: '#8a8a8a', fontSize: 12 }}>
+                        {group.items.length} صنف
+                      </span>
+                    </div>
+
+                    {group.items.map((line) => (
+                      <div key={line.key}
+                        style={{ padding: '4px 12px 6px', borderTop: '1px solid #f0f5ee' }}>
+                        <Row gutter={8} align="middle">
+                          <Col md={5} xs={24}>
+                            {/* الضغط على الاسم بيوجّه لوحة المخزون للصنف ده. */}
+                            <b style={{ cursor: 'pointer' }}
+                              onClick={() => setPanelItemId(line.item_id)}>
+                              {line.item_id ? itemName(line.item_id) : 'اختر الصنف'}
+                            </b>
+                          </Col>
+                          <Col md={3} xs={12}>
+                            <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+                              value={line.unit ?? '__base__'}
+                              onChange={(val) => handleItemChange(
+                                line.key, 'unit', val === '__base__' ? null : val)}>
+                              {(unitsCache[line.item_id || 0] || []).map((u) => (
+                                <Select.Option key={u.name}
+                                  value={u.is_base ? '__base__' : u.name}>
+                                  {u.name}{u.is_base ? '' : ` (×${u.factor})`}
+                                </Select.Option>
+                              ))}
+                            </Select>
+                          </Col>
+                          <Col md={3} xs={8}>
+                            {/* فاضية معناها «مااتكتبتش». صندوق بيفتح على ١ بيحوّل «٥» لـ«١٥»
+                                لأي حد يكتب من غير ما يمسح الأول. */}
+                            <InputNumber size="small" style={{ width: '100%' }} min={0.001}
+                              step={1} placeholder="الكمية"
+                              value={line.quantity ?? undefined}
+                              data-qty-key={line.key}
+                              data-grid-col="qty" keyboard={false}
+                              onChange={(val) => handleItemChange(line.key, 'quantity', val ?? null)}
+                              // Enter معناها «السطر ده خلص» — البوباب بيفتح للصنف اللي بعده،
+                              // فالفاتورة كلها: اختار، اكتب كمية، Enter، اختار… من غير ما
+                              // الإيد تسيب الكيبورد.
+                              onPressEnter={(e) => {
+                                e.preventDefault();
+                                if (Number(line.quantity || 0) > 0) setPickerOpen(true);
+                              }} />
+                          </Col>
+                          <Col md={4} xs={8}>
+                            <InputNumber size="small" min={0} step={0.01}
+                              style={{ width: '100%' }} placeholder="سعر الوحدة"
+                              value={line.unit_price}
+                              onChange={(val) => handleItemChange(
+                                line.key, 'unit_price', val || 0)} />
+                          </Col>
+                          <Col md={3} xs={8}>
+                            {/* فاضي = مفيش خصم متفق عليه، مش صفر. */}
+                            <InputNumber size="small" min={0} max={99.99} step={0.5}
+                              style={{ width: '100%' }} placeholder="خصم %"
+                              value={line.discount_pct ?? undefined}
+                              onChange={(val) => handleItemChange(
+                                line.key, 'discount_pct', val ?? null)} />
+                          </Col>
+                          <Col md={4} xs={12}>
+                            {/* فاضي = مخزن المستند. الفاتورة الواحدة ممكن تتوزّع على أكتر
+                                من مخزن. */}
+                            <Select size="small" style={{ width: '100%' }} allowClear
+                              placeholder="مخزن المستند"
+                              value={line.warehouse_id ?? undefined}
+                              onChange={(val) => handleItemChange(
+                                line.key, 'warehouse_id', val ?? null)}
+                              options={warehouses.map((w: any) => ({
+                                value: w.id, label: w.name }))} />
+                          </Col>
+                          <Col md={2} xs={12} style={{ textAlign: 'end' }}>
+                            <Button size="small" danger type="text" icon={<DeleteOutlined />}
+                              onClick={() => setPurchaseItems(
+                                (prev) => prev.filter((x) => x.key !== line.key))} />
+                          </Col>
+                        </Row>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
             </Col>
             <Col xs={24} lg={6}>
               {/* Same panel the sales invoice uses — the question is identical on both sides. */}
@@ -1057,8 +1039,14 @@ export default function Purchases() {
         onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
         onCancel={() => setPickerOpen(false)}
         onPick={(id) => {
-          const picked = items.find((i) => i.id === id);
-          if (picked) handleProductPicked(picked);
+          setPickerOpen(false);
+          addProductById(id);
+        }}
+        onPickMany={async (ids) => {
+          setPickerOpen(false);
+          // بالترتيب: كل إضافة بتقرا السطور اللي بتتضاف عليها، فلو اتنفّذوا مع بعض كل واحد
+          // فيهم هيشوف القايمة زي ما كانت قبل أي إضافة.
+          for (const id of ids) await addProductById(id);
         }} />
 
       <TabModal
