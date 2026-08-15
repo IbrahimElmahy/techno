@@ -40,6 +40,7 @@ import Leave from '../pages/Leave';
 import PayrollSettings from '../pages/PayrollSettings';
 import Advances from '../pages/Advances';
 import Payroll from '../pages/Payroll';
+import HrReports from '../pages/HrReports';
 import Orders from '../pages/Orders';
 import CouponReceipts from '../pages/CouponReceipts';
 import Invoices from '../pages/Invoices';
@@ -108,6 +109,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/payroll-settings" element={<PayrollSettings />} />
       <Route path="/advances" element={<Advances />} />
       <Route path="/payroll" element={<Payroll />} />
+      <Route path="/hr-reports" element={<HrReports />} />
       <Route path="/orders" element={<Orders />} />
       <Route path="/coupon-receipts" element={<CouponReceipts />} />
       <Route path="/treasury" element={<Treasury />} />

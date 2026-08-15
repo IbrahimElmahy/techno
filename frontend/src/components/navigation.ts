@@ -51,6 +51,10 @@ const R = (base: string[]) => [...base, 'viewer'];
 /** الموارد البشرية. Kept as one shorthand so it cannot drift from the `hr.*` capabilities
  *  the backend gates on — the two vocabularies are separate and nothing enforces they agree. */
 const HR = ['system_admin', 'branch_manager', 'accountant'];
+/** مين بيشوف مبلغ باسم موظف. Deliberately narrower than `HR` and narrower than `BOOKS`: the
+ *  backend grants `salary.view` to system_admin and accountant only, and a menu entry that opens
+ *  onto a 403 is worse than no entry — it reads as a broken screen. Mirrors `rbac.py:_PAYROLL_ALL`. */
+const SALARY = ['system_admin', 'accountant'];
 
 export const NAVIGATION: NavGroup[] = [
   // ١) اداره الانشاءات — master data. Theirs lists all twelve as separate screens; ours had four of
@@ -276,6 +280,33 @@ export const NAVIGATION: NavGroup[] = [
       { key: '/advances', label: 'سلف العاملين', roles: BOOKS },
       { key: '/advances?tab=adjustments', label: 'الجزاءات والمكافآت', roles: BOOKS },
       { key: '/payroll', label: 'مسير الرواتب', roles: BOOKS },
+      // تقارير الموارد البشرية — تسعتاشر اسم على محرك واحد (`pages/HrReports.tsx`). التقارير
+      // اللي فيها مبالغ باسم موظف بتتقفل على `SALARY` مش `HR`.
+      {
+        key: 'grp-hr-reports',
+        label: 'تقارير الموارد البشرية',
+        children: [
+          { key: '/hr-reports?view=staff-list', label: 'كشف الموظفين', roles: R(HR) },
+          { key: '/hr-reports?view=staff-by-department', label: 'الموظفين بالقسم', roles: R(HR) },
+          { key: '/hr-reports?view=staff-by-branch', label: 'الموظفين بالفرع', roles: R(HR) },
+          { key: '/hr-reports?view=staff-by-title', label: 'الموظفين بالوظيفة', roles: R(HR) },
+          { key: '/hr-reports?view=staff-movement', label: 'الداخلين والخارجين', roles: R(HR) },
+          { key: '/hr-reports?view=attendance-sheet', label: 'كشف حضور وانصراف', roles: R(HR) },
+          { key: '/hr-reports?view=attendance-by-employee', label: 'ملخص الحضور بالموظف', roles: R(HR) },
+          { key: '/hr-reports?view=attendance-by-department', label: 'ملخص الحضور بالقسم', roles: R(HR) },
+          { key: '/hr-reports?view=attendance-by-status', label: 'الغياب والتأخير', roles: R(HR) },
+          { key: '/hr-reports?view=leave-movement', label: 'حركة الأجازات', roles: R(HR) },
+          { key: '/hr-reports?view=leave-by-type', label: 'الأجازات بالنوع', roles: R(HR) },
+          { key: '/hr-reports?view=leave-balances', label: 'كشف أرصدة الأجازات', roles: R(HR) },
+          { key: '/hr-reports?view=payroll-sheet', label: 'مسير المرتبات', roles: SALARY },
+          { key: '/hr-reports?view=payroll-by-month', label: 'المرتبات شهر بشهر', roles: SALARY },
+          { key: '/hr-reports?view=cost-by-component', label: 'تكلفة الأجور بالبند', roles: SALARY },
+          { key: '/hr-reports?view=cost-by-department', label: 'تكلفة الأجور بالقسم', roles: SALARY },
+          { key: '/hr-reports?view=cost-by-branch', label: 'تكلفة الأجور بالفرع', roles: SALARY },
+          { key: '/hr-reports?view=advances-outstanding', label: 'السلف وأرصدتها', roles: SALARY },
+          { key: '/hr-reports?view=penalties-bonuses', label: 'كشف الجزاءات والمكافآت', roles: SALARY },
+        ],
+      },
     ],
   },
 
