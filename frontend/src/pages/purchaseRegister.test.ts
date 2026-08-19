@@ -127,3 +127,25 @@ describe('فلترة وترتيب على كل عمود', () => {
     expect(columnBlock).not.toMatch(/textColumn\(purchasesFilter/);
   });
 });
+
+describe('توزيع الصفحة', () => {
+  it('الجدول بيتمرّر أفقياً وعمود الهوية مثبّت', () => {
+    // سبعتاشر عمود في عرض الشاشة معناه أرقام متعصورة وملفوفة على سطرين.
+    expect(src).toMatch(/scroll=\{\{ x: 'max-content' \}\}/);
+    expect(columnBlock).toMatch(/document_number'[\s\S]{0,120}fixed: 'left'/);
+  });
+
+  it('فيه صف إجماليات على المعروض مش على السجل كله', () => {
+    const summary = src.slice(src.indexOf('summary={(rows)'), src.indexOf('</Table.Summary>'));
+    expect(summary).toContain('Table.Summary');
+    // بيجمع من `rows` اللي الجدول مدّيهاله — يعني المفلتر.
+    expect(summary).toContain('list.reduce');
+    expect(summary, 'بيجمع من كل السجل').not.toContain('purchases.reduce');
+  });
+
+  it('صف الإجماليات بيتبني من الأعمدة المعروضة', () => {
+    // مواضع محفوظة بتحط مجموع «الباقي» تحت «الضرائب» أول ما حد يخفي عمود.
+    const summary = src.slice(src.indexOf('summary={(rows)'), src.indexOf('</Table.Summary>'));
+    expect(summary).toContain('listCols.columns');
+  });
+});

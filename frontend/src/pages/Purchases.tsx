@@ -944,7 +944,7 @@ export default function Purchases() {
           <Divider orientation="right">أصناف الفاتورة</Divider>
 
           <Row gutter={16}>
-            <Col xs={24} lg={18}>
+            <Col xs={24}>
               {/* الزرار فوق السطور، كبير، وF2 عليه — نفس شاشة البيع.
                   It used to be a small dashed button UNDERNEATH the table, which on an invoice of
                   fifteen lines is a scroll to find and a click to choose, twice per line, all day.
@@ -1117,17 +1117,21 @@ export default function Purchases() {
                 </div>
               )}
             </Col>
-            <Col xs={24} lg={6}>
-              {/* Same panel the sales invoice uses — the question is identical on both sides. */}
-              <ItemStockPanel itemId={panelItemId} products={items}
-                onPickItem={(id) => setPanelItemId(id)} />
-            </Col>
           </Row>
 
           <Divider />
 
           {/* Same ladder as the sales screens — the supplier side of the identical question:
               what the goods cost, what we paid now, what we still owe him. */}
+          <Row gutter={16}>
+            <Col xs={24} lg={8}>
+              {/* Same panel the sales invoice uses — the question is identical on both sides.
+                  نزلت هنا عشان السطور تاخد عرض الصفحة: «الصنف ده عندي منه كام» سؤال بيتسأل مرة
+                  كل شوية، مش مع كل سطر، فمكانه جنب الإجماليات مش واكل ربع مساحة الكتابة. */}
+              <ItemStockPanel itemId={panelItemId} products={items}
+                onPickItem={(id) => setPanelItemId(id)} />
+            </Col>
+            <Col xs={24} lg={16}>
           <TotalsLadder
             tone="sale"
             inputs={(
@@ -1165,6 +1169,8 @@ export default function Purchases() {
                 color: creditAmount > 0.001 ? '#cf1322' : '#6AB42D' },
             ]}
           />
+            </Col>
+          </Row>
 
           <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
             <Button
@@ -1200,6 +1206,7 @@ export default function Purchases() {
    */
   const listColumns = [
     { title: 'مستند رقم', dataIndex: 'document_number', key: 'document_number',
+      fixed: 'left' as const, width: 130,
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
       render: (doc: string) => <Tag color="blue">{doc}</Tag> },
     { title: 'التاريخ', dataIndex: 'purchase_date', key: 'purchase_date',
@@ -1299,8 +1306,11 @@ export default function Purchases() {
         </Space>
       )}
     >
+      {/* الأعرض بيتحدد عشان الصف الأول يملا ٢٤ بالظبط: بحث ٥ + مستند ٣ + فاتورة ٣ + فرع ٤ +
+          مورد ٤ + ملاحظات ٥. من غير كده الفلاتر بتلف وتسيب فراغ في نص الشريط. */}
       <ListToolbar
-        searchPlaceholder="بحث برقم المستند أو اسم المورد"
+        searchSpan={5}
+        searchPlaceholder="بحث برقم المستند أو المورد أو رقم فاتورته أو الملاحظات"
         query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}
         values={purchasesFilter.values} onValueChange={purchasesFilter.setValue}
         showDateRange range={purchasesFilter.range} onRangeChange={purchasesFilter.setRange}
@@ -1314,17 +1324,70 @@ export default function Purchases() {
             options: branches.map((b: any) => ({ value: b.id, label: b.name })) },
           { key: 'supplier_id', placeholder: 'المورد', span: 4,
             options: suppliers.map((s) => ({ value: s.id, label: s.name })) },
-          { key: 'notes', placeholder: 'ملاحظات', kind: 'text', span: 4 },
+          { key: 'notes', placeholder: 'ملاحظات', kind: 'text', span: 5 },
         ]}
       />
+      {/*
+        * سبعتاشر عمود عايزين مساحة — `max-content` بيدّي كل عمود عرضه الطبيعي والجدول بيتمرّر
+        * أفقياً، بدل ما antd تعصر الأرقام في عرض الشاشة وتلفّ «١٢٬٥٠٠٫٠٠ ج.م» على سطرين.
+        *
+        * و«مستند رقم» مثبّت: وانت بتمرّر لتحت الشمال عشان تشوف الباقي والضرايب، لازم تفضل عارف
+        * إنت في سطر مين. من غيره بتعدّ السطور بصباعك على الشاشة.
+        */}
       <Table
         {...listKb.tableProps}
+        size="small"
         dataSource={purchasesFilter.filtered}
         columns={listCols.columns}
         rowKey="id"
         loading={listLoading}
+        scroll={{ x: 'max-content' }}
         pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         locale={{ emptyText: 'لا يوجد فواتير شراء بعد' }}
+        summary={(rows) => {
+          /*
+           * إجمالي المعروض — على اللي الفلاتر سابته، مش على كل السجل.
+           *
+           * «الشهر ده اشترينا بكام» سؤال بيتسأل **بعد** ما تحط فلتر، وإجمالي بيوصف السجل كله
+           * بيبان كأنه إجابة السؤال وهو مش هو.
+           *
+           * الخلايا بتتبني من الأعمدة **المعروضة** مش من ترتيب ثابت: `useTableColumns` بيخلّي
+           * الواحد يخفي عمود ويرتّب الباقي، فصف إجماليات بمواضع محفوظة كان هيحط مجموع «الباقي»
+           * تحت عنوان «الضرائب» أول ما حد يخفي عمود — رقم صح تحت اسم غلط، وده أوحش من مفيش رقم.
+           */
+          const list = rows as readonly PurchaseRecord[];
+          if (!list.length) return null;
+          const sum = (get: (r: PurchaseRecord) => any) =>
+            list.reduce((n, r) => n + Number(get(r) || 0), 0);
+          // القيمة نفسها `| undefined`: من غير كده الفهرسة بترجّع دالة مؤكدة، والشرط تحت
+          // بيبان دايماً صح مهما كان المفتاح مش موجود.
+          const MONEY: Record<string, ((r: PurchaseRecord) => any) | undefined> = {
+            gross: (r) => r.gross,
+            discount_amount: (r) => r.discount_amount,
+            tax_amount: (r) => r.tax_amount,
+            net: (r) => r.net,
+            total: (r) => r.total,
+            cash_amount: (r) => r.cash_amount,
+            credit_amount: (r) => r.credit_amount,
+          };
+          return (
+            <Table.Summary fixed>
+              <Table.Summary.Row style={{ background: '#f6faf3', fontWeight: 700 }}>
+                {(listCols.columns as any[]).map((col, i) => {
+                  const key = String(col.key ?? col.dataIndex ?? i);
+                  const get = MONEY[key];
+                  return (
+                    <Table.Summary.Cell key={key} index={i}
+                      align={get ? ('left' as const) : undefined}>
+                      {i === 0 ? `${list.length} فاتورة`
+                        : get ? `${fmtMoney(sum(get))} ج.م` : ''}
+                    </Table.Summary.Cell>
+                  );
+                })}
+              </Table.Summary.Row>
+            </Table.Summary>
+          );
+        }}
       />
     </Card>
   );
