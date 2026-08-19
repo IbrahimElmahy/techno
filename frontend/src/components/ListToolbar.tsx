@@ -31,7 +31,18 @@ export function normalizeAr(value: any): string {
 export interface FilterDef {
   key: string;
   placeholder: string;
-  options: { value: any; label: string }[];
+  /** Choices for a `select` filter. Ignored — and unnecessary — when `kind` is `text`. */
+  options?: { value: any; label: string }[];
+  /**
+   * `select` (الافتراضي) بيدّي قايمة، و`text` بيدّي خانة كتابة.
+   *
+   * A register is filtered by two different kinds of thing. «الفرع» and «المورد» are a closed set
+   * somebody picks from. «مستند رقم» and «رقم الفاتورة» and «ملاحظات» are open text nobody can
+   * enumerate — the document numbers are unbounded and the notes are free prose. Forcing those
+   * into a dropdown would mean building a list of every value in the table, which grows without
+   * limit and still cannot answer «اللي فيه كلمة كذا».
+   */
+  kind?: 'select' | 'text';
   /** Bootstrap-style column span out of 24 (defaults to 5). */
   span?: number;
 }
@@ -133,16 +144,28 @@ export default function ListToolbar({
 
       {filters.map((f) => (
         <Col xs={12} md={f.span ?? 5} key={f.key}>
-          <Select
-            allowClear
-            showSearch
-            style={{ width: '100%' }}
-            placeholder={f.placeholder}
-            value={values[f.key] ?? undefined}
-            optionFilterProp="label"
-            onChange={(v) => onValueChange?.(f.key, v)}
-            options={f.options}
-          />
+          {f.kind === 'text' ? (
+            /* خانة كتابة — بتفلتر وانت بتكتب، من غير Enter ولا زرار.
+               `undefined` مش `''` عشان antd تعرض الـplaceholder بدل خانة فاضية بلا اسم. */
+            <Input
+              allowClear
+              style={{ width: '100%' }}
+              placeholder={f.placeholder}
+              value={values[f.key] ?? undefined}
+              onChange={(e) => onValueChange?.(f.key, e.target.value || undefined)}
+            />
+          ) : (
+            <Select
+              allowClear
+              showSearch
+              style={{ width: '100%' }}
+              placeholder={f.placeholder}
+              value={values[f.key] ?? undefined}
+              optionFilterProp="label"
+              onChange={(v) => onValueChange?.(f.key, v)}
+              options={f.options}
+            />
+          )}
         </Col>
       ))}
 

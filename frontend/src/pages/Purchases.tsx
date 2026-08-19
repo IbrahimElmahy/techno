@@ -73,6 +73,21 @@ interface PurchaseRecord {
   cash_amount: string;
   credit_amount: string;
   created_at: string;
+  // الأعمدة اللي السجل بيعرضها. أربعة منهم (`gross` و`combined_pct` و`net` و`tax_amount`) كانوا
+  // في عقد السيرفر من زمان وبيرجعوا أصفار — الـendpoint مكانش بيمرّرهم.
+  purchase_date: string | null;
+  external_document_number: string | null;
+  notes: string | null;
+  branch_id: number | null;
+  branch_name: string | null;
+  expense_account_id: number | null;
+  expense_account_name: string | null;
+  gross: string;
+  discount_amount: string;
+  combined_pct: string;
+  tax_amount: string;
+  tax_pct: string;
+  net: string;
 }
 
 interface PurchaseDetailLine {
@@ -194,12 +209,36 @@ export default function Purchases() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
 
+  /**
+   * فلاتر السجل — نفس اللي في الشاشة اللي العميل شغّال عليها.
+   *
+   * التاريخ · مستند رقم · الفاتورة رقم · الفرع · المورد · ملاحظات. كان فيه خانة بحث واحدة
+   * والمورد وبس، فـ«هات الفاتورة اللي رقمها عند المورد كذا» مكانش ليها طريق غير التقليب.
+   *
+   * الفلترة بتحصل في المتصفح على قايمة محمّلة — يعني بتتحرّك مع كل حرف، من غير زرار «عرض» ولا
+   * رحلة للسيرفر. ده اللي طلبه: الفلتر يتغيّر والبيانات تتعرض على طول.
+   *
+   * `dateOf` بقى `purchase_date` — يوم ما البضاعة وصلت — و`created_at` بيقع عليه بس لما تكون
+   * الفاتورة قديمة ومالهاش تاريخ مسجّل. فلتر بيقيس يوم الكتابة بيرمي فاتورة أول الشهر اتسجّلت
+   * آخره، واللي بيدوّر عليها بيفتكرها مش موجودة.
+   */
+  // الفروع — فلتر في السجل. بتتحمّل مرة مع باقي القوايم؛ الفلترة نفسها في المتصفح.
+  const [branches, setBranches] = useState<any[]>([]);
+  useEffect(() => {
+    api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(console.error);
+  }, []);
+
   const purchasesFilter = useListFilter(purchases, {
-    search: (p) => [p.document_number, p.supplier_name],
+    search: (p) => [p.document_number, p.supplier_name, p.external_document_number, p.notes],
     filters: {
       supplier_id: (p, v) => p.supplier_id === v,
+      branch_id: (p, v) => p.branch_id === v,
+      document_number: (p, v) => (p.document_number || '').includes(String(v)),
+      external_document_number: (p, v) => (p.external_document_number || '')
+        .toLowerCase().includes(String(v).toLowerCase()),
+      notes: (p, v) => (p.notes || '').toLowerCase().includes(String(v).toLowerCase()),
     },
-    dateOf: (p) => p.created_at,
+    dateOf: (p) => p.purchase_date || p.created_at,
   });
 
   const itemName = useMemo(() => {
@@ -870,6 +909,8 @@ export default function Purchases() {
                         <th style={{ minWidth: 96 }}>الوحدة</th>
                         <th style={{ minWidth: 84 }}>الكمية</th>
                         <th style={{ minWidth: 100 }}>سعر الوحدة</th>
+                        <th style={{ minWidth: 100 }}>اجمالي قبل</th>
+                        <th style={{ minWidth: 90 }}>خصم</th>
                         <th style={{ minWidth: 78 }}>خصم %</th>
                         <th style={{ minWidth: 100 }}>الإجمالي</th>
                         <th style={{ width: 40 }} />
@@ -940,6 +981,17 @@ export default function Purchases() {
                                 line.key, 'unit_price', val || 0)}
                               onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
                           </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            {/* قبل الخصم — الكمية × السعر. مشتق، فمفيش رقمين يختلفوا. */}
+                            {fmtMoney(Number(line.quantity || 0) * (line.unit_price || 0))}
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            {/* «١٠٪» مابتقولش كام اتخصم — والمشتري بيراجع بالجنيه. */}
+                            {line.discount_pct
+                              ? fmtMoney(Number(line.quantity || 0) * (line.unit_price || 0)
+                                  * (line.discount_pct / 100))
+                              : '-'}
+                          </td>
                           <td>
                             {/* فاضي = مفيش خصم متفق عليه، مش صفر. */}
                             <InputNumber size="small" min={0} max={99.99} step={0.5}
@@ -960,6 +1012,31 @@ export default function Purchases() {
                         </tr>
                       ))}
                     </tbody>
+                    {/*
+                      * صف الإجمالي تحت السطور — زي الشاشة اللي العميل شغّال عليها.
+                      *
+                      * «الفاتورة دي كام قطعة وبكام» سؤال بيتسأل وانت بتكتب، والإجابة كانت تحت في
+                      * سلّم الإجماليات بعد تمرير. هنا في آخر الجدول، جنب الأرقام اللي جمّعته.
+                      */}
+                    <tfoot>
+                      <tr>
+                        <td colSpan={4} style={{ fontWeight: 700 }}>الإجمالي</td>
+                        <td style={{ fontWeight: 700 }}>
+                          {purchaseItems.reduce((n, l) => n + Number(l.quantity || 0), 0)
+                            .toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                        </td>
+                        <td />
+                        <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {fmtMoney(purchaseItems.reduce(
+                            (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0))}
+                        </td>
+                        <td colSpan={2} />
+                        <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          {fmtMoney(grossTotal)}
+                        </td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
@@ -1025,47 +1102,53 @@ export default function Purchases() {
     </Card>
   );
 
+  /**
+   * أعمدة السجل — نفس اللي في الشاشة اللي العميل شغّال عليها.
+   *
+   * كان فيه ستة أعمدة: مستند، مورد، إجمالي، نقدي، آجل، تاريخ. اللي بيراجع مشتريات الشهر مكانش
+   * يقدر يشوف الفاتورة اتخصم منها كام، ولا الصافي، ولا رقمها عند المورد، ولا على أنهي حساب
+   * اترحّلت — كل ده كان لازم يفتح كل فاتورة لوحدها.
+   *
+   * `useTableColumns` بيخلّي الواحد يخفي اللي مش محتاجه ويرتّب الباقي، فالعدد الكبير مش عبء:
+   * اللي عايز ستة أعمدة بيخفي الباقي مرة واحدة وبيفضل مخفي.
+   */
   const listColumns = [
-    {
-      title: 'رقم المستند',
-      dataIndex: 'document_number',
-      key: 'document_number',
-      render: (doc: string) => <Tag color="blue">{doc}</Tag>,
-    },
-    {
-      title: 'المورد',
-      dataIndex: 'supplier_name',
-      key: 'supplier_name',
-      render: (name: string, record: PurchaseRecord) => (
-        <a onClick={(e) => { e.stopPropagation(); navigate(`/suppliers/${record.supplier_id}`); }}>
-          {name || `مورد #${record.supplier_id}`}
-        </a>
-      ),
-    },
-    {
-      title: 'الإجمالي',
-      dataIndex: 'total',
-      key: 'total',
-      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong>,
-    },
-    {
-      title: 'نقدي',
-      dataIndex: 'cash_amount',
-      key: 'cash_amount',
-      render: (val: string) => `${fmtMoney(val)} ج.م`,
-    },
-    {
-      title: 'آجل',
-      dataIndex: 'credit_amount',
-      key: 'credit_amount',
-      render: (val: string) => `${fmtMoney(val)} ج.م`,
-    },
-    {
-      title: 'التاريخ',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (val: string) => fmtDate(val),
-    },
+    { title: 'مستند رقم', dataIndex: 'document_number', key: 'document_number',
+      render: (doc: string) => <Tag color="blue">{doc}</Tag> },
+    { title: 'التاريخ', dataIndex: 'purchase_date', key: 'purchase_date',
+      // يوم ما البضاعة وصلت. `created_at` يوم ما الصف اتكتب — سؤال تاني، ومحدش بيسأله.
+      render: (v: string | null, r: PurchaseRecord) => fmtDate(v || r.created_at) },
+    { title: 'الفاتورة رقم', dataIndex: 'external_document_number',
+      key: 'external_document_number', render: (v: string | null) => v || '-' },
+    { title: 'جهة التعامل', dataIndex: 'supplier_name', key: 'supplier_name',
+      render: (v: string) => <b>{v}</b> },
+    { title: 'الفرع', dataIndex: 'branch_name', key: 'branch_name',
+      render: (v: string | null) => v || '-' },
+    { title: 'الحساب الفرعي', dataIndex: 'expense_account_name', key: 'expense_account_name',
+      render: (v: string | null) => v || '-' },
+    { title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross',
+      render: (v: string) => `${fmtMoney(v)} ج.م` },
+    { title: 'خصم فاتورة', dataIndex: 'discount_amount', key: 'discount_amount',
+      render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
+    { title: 'خصم فاتورة %', dataIndex: 'combined_pct', key: 'combined_pct',
+      render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
+    { title: 'الضرائب', dataIndex: 'tax_amount', key: 'tax_amount',
+      render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
+    { title: 'الضرائب %', dataIndex: 'tax_pct', key: 'tax_pct',
+      render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
+    { title: 'الصافي', dataIndex: 'net', key: 'net',
+      render: (v: string) => `${fmtMoney(v)} ج.م` },
+    { title: 'الاجمالي', dataIndex: 'total', key: 'total',
+      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong> },
+    { title: 'تم السداد', dataIndex: 'cash_amount', key: 'cash_amount',
+      render: (val: string) => `${fmtMoney(val)} ج.م` },
+    { title: 'الباقي', dataIndex: 'credit_amount', key: 'credit_amount',
+      // الباقي هو اللي لسه على الشركة — أحمر لما يكون فيه رقم، مش لون واحد للكل.
+      render: (val: string) => (Number(val)
+        ? <b style={{ color: '#cf1322' }}>{fmtMoney(val)} ج.م</b>
+        : `${fmtMoney(val)} ج.م`) },
+    { title: 'ملاحظات', dataIndex: 'notes', key: 'notes',
+      render: (v: string | null) => v || '-' },
     {
       title: 'الإجراءات',
       key: 'actions',
@@ -1118,8 +1201,14 @@ export default function Purchases() {
         onReset={purchasesFilter.reset}
         total={purchases.length} shown={purchasesFilter.filtered.length}
         filters={[
-          { key: 'supplier_id', placeholder: 'المورد',
+          { key: 'document_number', placeholder: 'مستند رقم', kind: 'text', span: 3 },
+          { key: 'external_document_number', placeholder: 'الفاتورة رقم',
+            kind: 'text', span: 3 },
+          { key: 'branch_id', placeholder: 'الفرع', span: 4,
+            options: branches.map((b: any) => ({ value: b.id, label: b.name })) },
+          { key: 'supplier_id', placeholder: 'المورد', span: 4,
             options: suppliers.map((s) => ({ value: s.id, label: s.name })) },
+          { key: 'notes', placeholder: 'ملاحظات', kind: 'text', span: 4 },
         ]}
       />
       <Table

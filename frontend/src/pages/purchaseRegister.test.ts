@@ -1,0 +1,99 @@
+/**
+ * سجل فواتير الشرا — نفس فلاتر وأعمدة الشاشة اللي العميل شغّال عليها.
+ *
+ * صوّر الشاشة وطلب نفس الحاجات بالظبط. اللي كان عندنا: خانة بحث والمورد وبس، وستة أعمدة. يعني
+ * «هات الفاتورة اللي رقمها عند المورد كذا» مكانش ليها طريق غير التقليب، والفاتورة اتخصم منها كام
+ * مكانش يتشاف غير بفتحها.
+ *
+ * وأهم من الشكل: **الفلترة بتحصل وانت بتكتب** — مفيش زرار «عرض». الشاشة اللي عنده فيها زرار
+ * عرض، وهو قال بالنص إن الفلتر لما يتغيّر البيانات تتعرض على طول. فالقايمة بتتحمّل مرة والفلترة
+ * بتحصل في المتصفح، يعني بتتحرّك مع كل حرف من غير رحلة للسيرفر.
+ *
+ * أربع أعمدة في شاشته مالهاش داتا في النظام ده أصلاً — مصروفات، تسوية، مصروفات تشغيل، مراكز
+ * التكلفة — لأن فاتورة الشرا عندنا مافيهاش الحقول دي. عمود بيعرض فراغ دايماً أوحش من عمود مش
+ * موجود، فمااتحطّوش لغاية ما الحقول نفسها تتضاف.
+ */
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const src = readFileSync(join(__dirname, 'Purchases.tsx'), 'utf8');
+const toolbar = readFileSync(join(__dirname, '..', 'components', 'ListToolbar.tsx'), 'utf8');
+
+/** بلوك الفلاتر اللي بيتبعت لشريط الأدوات. */
+const filterBlock = src.slice(src.indexOf('filters={['), src.indexOf(']}', src.indexOf('filters={[')));
+/** بلوك أعمدة السجل. */
+const columnBlock = src.slice(src.indexOf('const listColumns = ['),
+  src.indexOf("useTableColumns('purchase-list'"));
+
+describe('فلاتر السجل', () => {
+  it.each([
+    ['مستند رقم', 'document_number'],
+    ['الفاتورة رقم', 'external_document_number'],
+    ['الفرع', 'branch_id'],
+    ['المورد', 'supplier_id'],
+    ['ملاحظات', 'notes'],
+  ])('فيه فلتر «%s»', (label, key) => {
+    expect(filterBlock, `فلتر «${label}» ناقص`).toContain(`key: '${key}'`);
+    expect(filterBlock).toContain(label);
+  });
+
+  it('فيه فلتر تاريخ', () => {
+    expect(src).toContain('showDateRange');
+  });
+
+  it('كل فلتر ليه منطق بيفلتر بيه فعلاً', () => {
+    // فلتر في الشريط من غير predicate بيبان شغّال ومابيعملش حاجة — أوحش من إنه مش موجود.
+    const logic = src.slice(src.indexOf('const purchasesFilter'), src.indexOf('dateOf:'));
+    for (const key of ['supplier_id', 'branch_id', 'document_number',
+      'external_document_number', 'notes']) {
+      expect(logic, `«${key}» في الشريط ومالوش منطق`).toContain(`${key}:`);
+    }
+  });
+
+  it('الفلتر بالتاريخ بيقيس يوم وصول البضاعة مش يوم كتابة الصف', () => {
+    // فاتورة أول الشهر اتسجّلت آخره بتقع برّه المدى، واللي بيدوّر عليها بيفتكرها مش موجودة.
+    expect(src).toMatch(/dateOf: \(p\) => p\.purchase_date \|\| p\.created_at/);
+  });
+
+  it('مفيش زرار «عرض» على الفلاتر — بتشتغل وانت بتكتب', () => {
+    // «عرض» الوحيد المسموح بيه هو اللي بيفتح فاتورة من سطر في السجل.
+    const openRow = columnBlock.includes('onClick={() => openDetail(record)}');
+    expect(openRow, 'زرار فتح الفاتورة اتشال').toBe(true);
+    const bar = src.slice(src.indexOf('<ListToolbar'), src.indexOf('</Card>', src.indexOf('<ListToolbar')));
+    expect(bar, 'رجع زرار عرض على الفلاتر').not.toMatch(/>\s*(عرض|بحث|تطبيق)\s*</);
+  });
+});
+
+describe('أعمدة السجل', () => {
+  it.each([
+    'مستند رقم', 'التاريخ', 'الفاتورة رقم', 'جهة التعامل', 'الفرع', 'الحساب الفرعي',
+    'اجمالي قبل', 'خصم فاتورة', 'خصم فاتورة %', 'الضرائب', 'الضرائب %', 'الصافي',
+    'الاجمالي', 'تم السداد', 'الباقي', 'ملاحظات',
+  ])('فيه عمود «%s»', (title) => {
+    expect(columnBlock, `عمود «${title}» ناقص`).toContain(`title: '${title}'`);
+  });
+
+  it('الأرقام اللي كانت بترجع أصفار بقى ليها أعمدة بتقراها', () => {
+    // `gross` و`combined_pct` و`net` و`tax_amount` كانوا في عقد السيرفر وبيرجعوا صفر — الشاشة
+    // مكانتش بتعرضهم، فالصفر مكانش بيبان لحد.
+    for (const field of ['gross', 'combined_pct', 'net', 'tax_amount']) {
+      expect(columnBlock, `«${field}» لسه مش معروض`).toContain(`dataIndex: '${field}'`);
+    }
+  });
+});
+
+describe('شريط الأدوات', () => {
+  it('بيعرف الفلتر النصي مش القوايم بس', () => {
+    // «مستند رقم» و«ملاحظات» نص مفتوح — قايمة بكل القيم بتكبر بلا حدود وبرضه مش هتجاوب
+    // «اللي فيه كلمة كذا».
+    expect(toolbar).toContain("kind?: 'select' | 'text'");
+    expect(toolbar).toMatch(/f\.kind === 'text' \? \(/);
+  });
+
+  it('الفلتر النصي بيفلتر مع كل حرف', () => {
+    const textBranch = toolbar.slice(toolbar.indexOf("f.kind === 'text'"));
+    expect(textBranch.slice(0, 600)).toContain('onChange');
+    expect(textBranch.slice(0, 600), 'محتاج Enter عشان يشتغل').not.toContain('onPressEnter');
+  });
+});

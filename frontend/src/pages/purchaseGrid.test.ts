@@ -23,7 +23,8 @@ describe('شكل الجدول', () => {
 
   it('الأعمدة اللي الفاتورة بتتكتب بيها كلها موجودة', () => {
     const head = src.slice(src.indexOf('<thead>'), src.indexOf('</thead>'));
-    for (const col of ['المخزن', 'الصنف', 'الوحدة', 'الكمية', 'سعر الوحدة', 'خصم %', 'الإجمالي']) {
+    for (const col of ['المخزن', 'الصنف', 'الوحدة', 'الكمية', 'سعر الوحدة',
+      'اجمالي قبل', 'خصم', 'خصم %', 'الإجمالي']) {
       expect(head, `عمود «${col}» ناقص`).toContain(col);
     }
   });
@@ -75,5 +76,15 @@ describe('الباركود', () => {
     const markup = src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
     expect(markup, 'رجعت خانة أو بحث بالباركود').not.toMatch(/(placeholder|label|title)=["'][^"']*باركود/i);
     expect(markup, 'رجع حقل باركود').not.toMatch(/barcode/i);
+  });
+});
+
+describe('صف الإجمالي', () => {
+  it('الجدول بينتهي بصف بيجمع الكميات والقيم', () => {
+    // «الفاتورة دي كام قطعة وبكام» سؤال بيتسأل وانت بتكتب — والإجابة كانت محتاجة تمرير لتحت.
+    expect(src).toMatch(/<tfoot>/);
+    const foot = src.slice(src.indexOf('<tfoot>'), src.indexOf('</tfoot>'));
+    expect(foot, 'مافيش مجموع كميات').toContain("l.quantity || 0");
+    expect(foot, 'مافيش مجموع قيم').toContain('fmtMoney(grossTotal)');
   });
 });

@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
 from src.core.db import get_db
+from src.core.money import to_money
 from src.models.catalog import Item
+from src.models.ledger import Account
 from src.models.purchasing import PurchaseInvoice, PurchaseReturn
 from src.models.stock import LocationKind
 from src.models.supplier import Supplier
@@ -102,6 +104,18 @@ class PurchaseListOut(BaseModel):
     purchase_date: str | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # (٨) الأعمدة اللي سجل الشرا عند العميل بيعرضها والسجل عندنا مكانش بيرجّعها.
+    #
+    # `gross` و`combined_pct` و`net` و`tax_amount` كانوا **معرّفين فوق من الأول وماكانوش
+    # بيتعبّوا** — الـendpoint مكانش بيمرّرهم، فالـdefault كان بيخلّيهم أصفار في كل صف. يعني
+    # العقد بيوعد بأربع أرقام والسجل بيرجّعهم صفر من غير ما حاجة تزعق.
+    branch_id: int | None = None
+    branch_name: str | None = None
+    expense_account_id: int | None = None
+    expense_account_name: str | None = None
+    #  قيمة الخصم بالجنيه — النسبة لوحدها مابتقولش كام اتخصم.
+    discount_amount: Decimal = Decimal("0")
+    tax_pct: Decimal = Decimal("0")
 
 
 class PurchaseLineOut(BaseModel):
@@ -155,16 +169,42 @@ def list_purchases(
 ) -> list[PurchaseListOut]:
     names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
     rows = db.scalars(select(PurchaseInvoice).order_by(PurchaseInvoice.id.desc())).all()
-    return [
-        PurchaseListOut(
+
+    # الفرع مش على الفاتورة — هو على المخزن اللي البضاعة نزلت فيه، فبيتجاب منه.
+    from src.models.org import Branch
+    from src.models.warehouse import Warehouse
+
+    warehouses = {w.id: w for w in db.scalars(select(Warehouse)).all()}
+    branches = {b.id: b.name for b in db.scalars(select(Branch)).all()}
+    accounts = {
+        a.id: (f"{a.code} {a.name}" if a.code and a.name else (a.name or a.code))
+        for a in db.scalars(select(Account)).all()
+    }
+
+    out = []
+    for p in rows:
+        warehouse = (warehouses.get(p.location_id)
+                     if p.location_kind == LocationKind.warehouse else None)
+        branch_id = warehouse.branch_id if warehouse else None
+        gross = to_money(p.gross or 0)
+        net = to_money(p.net or 0)
+        out.append(PurchaseListOut(
             id=p.id, document_number=p.document_number, supplier_id=p.supplier_id,
             supplier_name=names.get(p.supplier_id), total=p.total, cash_amount=p.cash_amount,
             credit_amount=p.credit_amount, created_at=str(p.created_at),
             purchase_date=str(p.purchase_date) if p.purchase_date else None,
             external_document_number=p.external_document_number, notes=p.notes,
-        )
-        for p in rows
-    ]
+            gross=gross, combined_pct=p.combined_pct or 0, net=net,
+            tax_amount=to_money(p.tax_amount or 0),
+            branch_id=branch_id, branch_name=branches.get(branch_id) if branch_id else None,
+            expense_account_id=p.expense_account_id,
+            expense_account_name=accounts.get(p.expense_account_id),
+            # الخصم بالجنيه = قبل الخصم ناقص بعده. مشتق مش محفوظ، فمافيش رقمين يختلفوا.
+            discount_amount=to_money(gross - net),
+            # الضريبة كنسبة من الصافي — الصافي صفر يعني مفيش نسبة، مش قسمة على صفر.
+            tax_pct=(to_money(to_money(p.tax_amount or 0) / net * 100) if net else Decimal("0")),
+        ))
+    return out
 
 
 # Declared BEFORE `/{purchase_id}` on purpose: FastAPI matches in declaration order, and a later

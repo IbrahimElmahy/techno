@@ -147,10 +147,17 @@ export default function SupplierProfile() {
     }
   };
 
-  useEffect(() => {
-    load();
-    loadStatement(true);
-  }, [supplierId]);
+  useEffect(() => { load(); }, [supplierId]);
+
+  // كشف الحساب بيتقرا مع أي تغيير في الفلتر — مفيش زرار «عرض».
+  //
+  // كان الفلتر بيتغيّر والأرقام القديمة فاضلة على الشاشة لغاية ما حد يدوس «عرض». ده بيتقري
+  // كأنه عطل: اللي بيغيّر الفترة بيشوف أرقام الفترة القديمة، فيا بيصدّقها — وده النص الخطر —
+  // يا بيدوس الزرار ويستغرب كان لازمته إيه.
+  //
+  // `range` بيبدأ `null`، فأول تحميل بيبعت من غير تواريخ — نفس اللي كان بيعمله `loadStatement(true)`.
+  // وزرار «تحديث» فاضل: إعادة قراءة **نفس** الفلتر بعد ما حد تاني رحّل حاجة حاجة حقيقية.
+  useEffect(() => { loadStatement(); }, [supplierId, range]);
 
   const openRecord = async (kind: string, id: number) => {
     setRecordRef({ kind, id });
@@ -308,8 +315,7 @@ export default function SupplierProfile() {
                       <Space style={{ marginBottom: 12 }} wrap>
                         <DatePicker.RangePicker value={range as any}
                           onChange={(v) => setRange(v as any)} />
-                        <Button type="primary" onClick={() => loadStatement()}>عرض</Button>
-                        <Button onClick={() => { setRange(null); loadStatement(true); }}>
+                        <Button onClick={() => setRange(null)}>
                           كل الفترات
                         </Button>
                       </Space>

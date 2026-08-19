@@ -161,6 +161,12 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .entry-grid tbody tr:last-child td {
   border-bottom: none;
 }
+.entry-grid tfoot td {
+  background: #f2f9f3;
+  padding: 7px 8px;
+  border-top: 2px solid #e6efe3;
+}
+
 /* السطر اللي المؤشر واقف عليه — نفس منطق `.row-cursor` في جداول العرض. */
 .entry-grid tbody tr:focus-within td {
   background: #f7fbf6;
