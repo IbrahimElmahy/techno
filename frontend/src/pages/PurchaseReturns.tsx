@@ -12,6 +12,7 @@ import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
@@ -190,15 +191,26 @@ export default function PurchaseReturns() {
     } finally { setSaving(false); }
   };
 
+  /**
+   * أعمدة السجل — كل واحد بيتفلتر ويتترتب، زي سجل الشرا بالظبط.
+   *
+   * الفلترة كانت من شريط فوق الجدول: بحث والمورد وبس. «هات المردودات اللي قيمتها فوق الألف»
+   * و«رتّبهم بالأكبر» أسئلة بتتسأل على عمود، مش على المستند كله.
+   *
+   * والترتيب الافتراضي من الأحدث — اللي بيفتح السجل عايز يشوف آخر اللي رجع.
+   */
   const columns = [
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 80,
+      ...numberColumn<ReturnRow>((r) => r.id),
       render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
     },
     {
       // The day the goods went back, falling back to when the row was typed for returns recorded
       // before the document had a date of its own. Not silently: those rows say so.
-      title: 'التاريخ', dataIndex: 'return_date', key: 'return_date', width: 115,
+      title: 'التاريخ', dataIndex: 'return_date', key: 'return_date', width: 130,
+      ...dateColumn<ReturnRow>((r) => r.return_date || r.created_at),
+      defaultSortOrder: 'descend' as const,
       render: (v: string | null, r: ReturnRow) => (v ? String(v).slice(0, 10) : (
         <span style={{ color: '#8a8a8a' }} title="مردود قديم — التاريخ ده يوم التسجيل">
           {r.created_at ? `${String(r.created_at).slice(0, 10)}*` : '-'}
@@ -206,12 +218,15 @@ export default function PurchaseReturns() {
       )),
     },
     {
-      title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', width: 125,
+      title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', width: 140,
+      fixed: 'left' as const,
+      ...textColumn(rows, (r: ReturnRow) => r.document_number),
       render: (d: string) => <Tag color="volcano">{d}</Tag>,
     },
     {
       title: 'الفاتورة رقم', dataIndex: 'purchase_document_number', key: 'purchase_document_number',
-      width: 130,
+      width: 140,
+      ...textColumn(rows, (r: ReturnRow) => r.purchase_document_number),
       // The purchase this came off, opened in the purchases screen — the register exists to answer
       // «which invoice?», and stopping at the number would leave the trip half made.
       render: (v: string | null, r: ReturnRow) => (
@@ -220,20 +235,36 @@ export default function PurchaseReturns() {
     },
     {
       title: 'جهه التعامل', dataIndex: 'supplier_name', key: 'supplier_name', ellipsis: true,
+      ...textColumn(rows, (r: ReturnRow) => r.supplier_name),
       render: (v: string | null) => v ?? '-',
     },
     {
-      title: 'القيمة', dataIndex: 'value', key: 'value', width: 130, align: 'left' as const,
+      title: 'القيمة', dataIndex: 'value', key: 'value', width: 140, align: 'left' as const,
+      ...numberColumn<ReturnRow>((r) => r.value),
       render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)} ج.م</strong>,
+    },
+    {
+      title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true,
+      ...textColumn(rows, (r: ReturnRow) => r.notes),
+      render: (v: string | null) => v || '-',
     },
   ];
 
   const cols = useHiddenColumns('purchase-returns-list', ['id']);
 
   const filter = useListFilter<ReturnRow>(rows, {
-    search: (r) => [r.document_number, r.purchase_document_number, r.supplier_name, r.value],
-    filters: { supplier_id: (r, v) => r.supplier_id === v },
-    dateOf: (r) => r.created_at,
+    search: (r) => [r.document_number, r.purchase_document_number, r.supplier_name,
+      r.value, r.notes],
+    filters: {
+      supplier_id: (r, v) => r.supplier_id === v,
+      document_number: (r, v) => (r.document_number || '').includes(String(v)),
+      purchase_document_number: (r, v) => (r.purchase_document_number || '')
+        .toLowerCase().includes(String(v).toLowerCase()),
+      notes: (r, v) => (r.notes || '').toLowerCase().includes(String(v).toLowerCase()),
+    },
+    // يوم ما البضاعة رجعت، مش يوم ما الصف اتكتب — مردود أول الشهر اتسجّل آخره كان بيقع برّه
+    // المدى واللي بيدوّر عليه بيفتكره مش موجود.
+    dateOf: (r) => r.return_date || r.created_at,
   });
 
   const suppliers = useMemo(() => {
@@ -283,17 +314,51 @@ export default function PurchaseReturns() {
           values={filter.values} onValueChange={filter.setValue}
           showDateRange range={filter.range} onRangeChange={filter.setRange}
           onReset={filter.reset} total={rows.length} shown={filter.filtered.length}
-          filters={[{ key: 'supplier_id', placeholder: 'المورد', span: 6, options: suppliers }]}
+          searchSpan={6}
+          filters={[
+            { key: 'supplier_id', placeholder: 'المورد', span: 5, options: suppliers },
+            // تحت «فلاتر أكثر» — بتتسأل كل شوية، ولها فلتر على العمود كمان.
+            { key: 'document_number', placeholder: 'رقم السند', kind: 'text',
+              advanced: true, span: 5 },
+            { key: 'purchase_document_number', placeholder: 'الفاتورة رقم', kind: 'text',
+              advanced: true, span: 5 },
+            { key: 'notes', placeholder: 'ملاحظات', kind: 'text', advanced: true, span: 6 },
+          ]}
         />
 
         <Table
           {...kb.tableProps}
           dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
-          size="middle" tableLayout="fixed"
+          size="small" scroll={{ x: 'max-content' }}
           // Two marks that mean different things: «وصلت من لينك» يبهت، و«الكيبورد واقف هنا» يفضل.
           rowClassName={(r) => [
             r.id === highlight ? 'row-arrived' : '', kb.rowClassName(r),
           ].filter(Boolean).join(' ')}
+          summary={(shown) => {
+            /* إجمالي المعروض — على اللي الفلاتر سابته مش على السجل كله. «الشهر ده رجّعنا بكام»
+               سؤال بيتسأل بعد ما تحط فلتر، وإجمالي بيوصف السجل كله بيبان كأنه إجابته.
+               الخلايا بتتبني من الأعمدة المعروضة: `useHiddenColumns` بيخلّي الواحد يخفي عمود،
+               وصف بمواضع ثابتة كان هيحط القيمة تحت عنوان تاني. */
+            const list = shown as readonly ReturnRow[];
+            if (!list.length) return null;
+            const total = list.reduce((n, r) => n + Number(r.value || 0), 0);
+            return (
+              <Table.Summary fixed>
+                <Table.Summary.Row style={{ background: '#fff7f0', fontWeight: 700 }}>
+                  {(cols.apply(columns) as any[]).map((col, i) => {
+                    const key = String(col.key ?? col.dataIndex ?? i);
+                    return (
+                      <Table.Summary.Cell key={key} index={i}
+                        align={key === 'value' ? ('left' as const) : undefined}>
+                        {i === 0 ? `${list.length} مردود`
+                          : key === 'value' ? `${money(total)} ج.م` : ''}
+                      </Table.Summary.Cell>
+                    );
+                  })}
+                </Table.Summary.Row>
+              </Table.Summary>
+            );
+          }}
           pagination={{
             defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100'],
