@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Button, Col, DatePicker, Input, Row, Select, Tag } from 'antd';
-import { SearchOutlined, ClearOutlined } from '@ant-design/icons';
+import { SearchOutlined, ClearOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useScreenShortcuts } from './keyboard';
 
@@ -43,6 +43,17 @@ export interface FilterDef {
    * limit and still cannot answer «اللي فيه كلمة كذا».
    */
   kind?: 'select' | 'text';
+  /**
+   * فلتر بيتخبى تحت «المزيد من الفلاتر».
+   *
+   * الشريط بيتحمّل بسرعة: بحث وتاريخ وتلات قوايم وزرار مسح وعدّاد بيبقوا تمن عناصر، وتمنية
+   * مايركبوش صف واحد على شاشة عادية من غير ما الواحد منهم يبقى ضيّق لدرجة إنه مايتقريش.
+   *
+   * فاللي بيتسأل كل يوم بيفضل بارز، واللي بيتسأل كل شوية بينزل تحت طيّة — نفس اللي في الشاشة
+   * اللي العميل شغّال عليها. الفلتر المخبي لسه شغّال: لو ليه قيمة، الطيّة بتفتح لوحدها عشان
+   * مايبقاش فيه فلتر بيضيّق النتايج وهو مش باين.
+   */
+  advanced?: boolean;
   /** Bootstrap-style column span out of 24 (defaults to 5). */
   span?: number;
 }
@@ -129,67 +140,104 @@ export default function ListToolbar({
   // registered nearer the top, and this bar is always underneath the screen it sits in.
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
+  /**
+   * الشريط صف واحد، واللي مابيتسألش كل يوم تحت طيّة.
+   *
+   * بحث + تاريخ + تلات قوايم + مسح + عدّاد = تمن عناصر، وتمنية مايركبوش صف واحد من غير ما كل
+   * واحد فيهم يبقى ضيّق لدرجة إنه مايتقريش — خصوصاً مدى التواريخ، اللي محتاج ضعف عرض القايمة.
+   *
+   * فاللي بيتفلتر بيه كل يوم فاضل بارز، والباقي تحت «المزيد من الفلاتر». والفلتر المخبي لو ليه
+   * قيمة الطيّة بتفتح لوحدها: فلتر بيضيّق النتايج وهو مش باين بيخلّي الواحد يبص على قايمة ناقصة
+   * ويفتكرها كاملة.
+   */
+  const primary = filters.filter((f) => !f.advanced);
+  const advanced = filters.filter((f) => f.advanced);
+  const [showMore, setShowMore] = useState(false);
+  const hiddenActive = advanced.some((f) => values[f.key] !== undefined
+    && values[f.key] !== null && values[f.key] !== '');
+  const expanded = showMore || hiddenActive;
+
+  const control = (f: FilterDef) => (f.kind === 'text' ? (
+    /* خانة كتابة — بتفلتر وانت بتكتب، من غير Enter ولا زرار.
+       `undefined` مش `''` عشان antd تعرض الـplaceholder بدل خانة فاضية بلا اسم. */
+    <Input
+      allowClear
+      style={{ width: '100%' }}
+      placeholder={f.placeholder}
+      value={values[f.key] ?? undefined}
+      onChange={(e) => onValueChange?.(f.key, e.target.value || undefined)}
+    />
+  ) : (
+    <Select
+      allowClear
+      showSearch
+      style={{ width: '100%' }}
+      placeholder={f.placeholder}
+      value={values[f.key] ?? undefined}
+      optionFilterProp="label"
+      onChange={(v) => onValueChange?.(f.key, v)}
+      options={f.options}
+    />
+  ));
+
   return (
-    <Row gutter={[8, 8]} style={{ marginBottom: 12 }} align="middle">
-      <Col xs={24} md={searchSpan}>
-        <Input
-          allowClear
-          ref={searchRef}
-          value={query}
-          placeholder={searchPlaceholder}
-          prefix={<SearchOutlined />}
-          onChange={(e) => onQueryChange(e.target.value)}
-        />
-      </Col>
-
-      {filters.map((f) => (
-        <Col xs={12} md={f.span ?? 5} key={f.key}>
-          {f.kind === 'text' ? (
-            /* خانة كتابة — بتفلتر وانت بتكتب، من غير Enter ولا زرار.
-               `undefined` مش `''` عشان antd تعرض الـplaceholder بدل خانة فاضية بلا اسم. */
-            <Input
-              allowClear
-              style={{ width: '100%' }}
-              placeholder={f.placeholder}
-              value={values[f.key] ?? undefined}
-              onChange={(e) => onValueChange?.(f.key, e.target.value || undefined)}
-            />
-          ) : (
-            <Select
-              allowClear
-              showSearch
-              style={{ width: '100%' }}
-              placeholder={f.placeholder}
-              value={values[f.key] ?? undefined}
-              optionFilterProp="label"
-              onChange={(v) => onValueChange?.(f.key, v)}
-              options={f.options}
-            />
-          )}
-        </Col>
-      ))}
-
-      {showDateRange && (
-        <Col xs={24} md={6}>
-          <DatePicker.RangePicker
-            style={{ width: '100%' }}
-            value={range ?? null}
-            onChange={(v) => onRangeChange?.(v as [Dayjs, Dayjs] | null)}
+    <>
+      <Row gutter={[8, 8]} style={{ marginBottom: expanded ? 8 : 12 }} align="middle">
+        <Col xs={24} md={searchSpan}>
+          <Input
+            allowClear
+            ref={searchRef}
+            value={query}
+            placeholder={searchPlaceholder}
+            prefix={<SearchOutlined />}
+            onChange={(e) => onQueryChange(e.target.value)}
           />
         </Col>
-      )}
 
-      <Col xs={12} md={3}>
-        <Button icon={<ClearOutlined />} onClick={onReset} block>مسح</Button>
-      </Col>
+        {primary.map((f) => (
+          <Col xs={12} md={f.span ?? 5} key={f.key}>{control(f)}</Col>
+        ))}
 
-      {total !== undefined && (
-        <Col xs={12} md={3} style={{ textAlign: 'center' }}>
-          <Tag color={shown !== undefined && shown < total ? 'orange' : 'default'}>
-            {shown !== undefined && shown < total ? `${shown} من ${total}` : `${total} سجل`}
-          </Tag>
+        {showDateRange && (
+          <Col xs={24} md={6}>
+            <DatePicker.RangePicker
+              style={{ width: '100%' }}
+              value={range ?? null}
+              onChange={(v) => onRangeChange?.(v as [Dayjs, Dayjs] | null)}
+            />
+          </Col>
+        )}
+
+        {advanced.length > 0 && (
+          <Col xs={12} md={3}>
+            <Button type="link" style={{ padding: 0 }}
+              icon={expanded ? <UpOutlined /> : <DownOutlined />}
+              onClick={() => setShowMore((v) => !v)}>
+              فلاتر أكثر
+            </Button>
+          </Col>
+        )}
+
+        <Col xs={12} md={2}>
+          <Button icon={<ClearOutlined />} onClick={onReset} block />
         </Col>
+
+        {total !== undefined && (
+          <Col xs={12} md={2} style={{ textAlign: 'center' }}>
+            <Tag color={shown !== undefined && shown < total ? 'orange' : 'default'}>
+              {shown !== undefined && shown < total ? `${shown}/${total}` : `${total}`}
+            </Tag>
+          </Col>
+        )}
+      </Row>
+
+      {expanded && advanced.length > 0 && (
+        <Row gutter={[8, 8]} style={{ marginBottom: 12 }} align="middle">
+          {advanced.map((f) => (
+            <Col xs={12} md={f.span ?? 5} key={f.key}>{control(f)}</Col>
+          ))}
+        </Row>
       )}
-    </Row>
+    </>
   );
 }

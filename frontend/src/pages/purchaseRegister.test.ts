@@ -58,7 +58,7 @@ describe('فلاتر السجل', () => {
 
   it('مفيش زرار «عرض» على الفلاتر — بتشتغل وانت بتكتب', () => {
     // «عرض» الوحيد المسموح بيه هو اللي بيفتح فاتورة من سطر في السجل.
-    const openRow = columnBlock.includes('onClick={() => openDetail(record)}');
+    const openRow = columnBlock.includes('onClick={() => openRow(record)}');
     expect(openRow, 'زرار فتح الفاتورة اتشال').toBe(true);
     const bar = src.slice(src.indexOf('<ListToolbar'), src.indexOf('</Card>', src.indexOf('<ListToolbar')));
     expect(bar, 'رجع زرار عرض على الفلاتر').not.toMatch(/>\s*(عرض|بحث|تطبيق)\s*</);
@@ -147,5 +147,55 @@ describe('توزيع الصفحة', () => {
     // مواضع محفوظة بتحط مجموع «الباقي» تحت «الضرائب» أول ما حد يخفي عمود.
     const summary = src.slice(src.indexOf('summary={(rows)'), src.indexOf('</Table.Summary>'));
     expect(summary).toContain('listCols.columns');
+  });
+});
+
+describe('سجل لكل عمليات الشرا', () => {
+  it('بيقرا الفواتير والمرتجعات مع بعض', () => {
+    const fetch = src.slice(src.indexOf('const fetchPurchases'), src.indexOf('setListLoading(false)'));
+    expect(fetch).toContain("api.get('/api/v1/purchases')");
+    expect(fetch).toContain("api.get('/api/v1/purchases/returns')");
+  });
+
+  it('فيه عمود وفلتر للنوع', () => {
+    expect(columnBlock).toContain("dataIndex: 'kind'");
+    expect(columnBlock).toContain('مرتجع');
+    expect(filterBlock).toContain("key: 'kind'");
+  });
+
+  it('أعمدة الفاتورة اللي مالهاش معنى على المرتجع بتفضل فاضية مش أصفار', () => {
+    // صفر معناه «اتحسبت وطلعت صفر»؛ الفراغ معناه «السؤال ده مالوش لازمة على المستند ده».
+    const fetch = src.slice(src.indexOf('const fetchPurchases'), src.indexOf('setListLoading(false)'));
+    expect(fetch).toMatch(/gross: null, discount_amount: null/);
+    for (const field of ['gross', 'net', 'cash_amount']) {
+      const at = columnBlock.indexOf(`dataIndex: '${field}'`);
+      expect(columnBlock.slice(at, at + 300), `«${field}» بيعرض صفر بدل فراغ`)
+        .toContain("=== null ? '-'");
+    }
+  });
+
+  it('مفتاح الصف بيفرّق بين فاتورة ومرتجع', () => {
+    // الاتنين ممكن يكون ليهم نفس الـid، ومفتاح مكرر بيخلّي React تخلط السطور.
+    expect(src).toMatch(/rowKey=\{\(r: PurchaseRecord\) => `\$\{r\.kind\}-\$\{r\.id\}`\}/);
+  });
+
+  it('المرتجع بيفتح الفاتورة اللي طالع منها', () => {
+    const open = src.slice(src.indexOf('const openRow'), src.indexOf('const openRow') + 400);
+    expect(open).toContain("row.kind === 'return'");
+    expect(open).toContain('row.parent_id');
+  });
+});
+
+describe('شريط الفلاتر صف واحد', () => {
+  it('اللي مابيتسألش كل يوم تحت طيّة', () => {
+    expect(filterBlock).toMatch(/document_number'[\s\S]{0,120}advanced: true/);
+    expect(filterBlock).toMatch(/notes'[\s\S]{0,120}advanced: true/);
+  });
+
+  it('الشريط بيعرف الفلتر المطوي وبيفتحه لو ليه قيمة', () => {
+    // فلتر بيضيّق النتايج وهو مش باين بيخلّي الواحد يبص على قايمة ناقصة ويفتكرها كاملة.
+    expect(toolbar).toContain('advanced?: boolean');
+    expect(toolbar).toContain('hiddenActive');
+    expect(toolbar).toMatch(/const expanded = showMore \|\| hiddenActive/);
   });
 });

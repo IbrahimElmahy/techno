@@ -66,13 +66,22 @@ interface PurchaseItem {
 interface ItemUnit { name: string; factor: number; is_base: boolean; }
 
 interface PurchaseRecord {
+  /**
+   * فاتورة ولا مرتجع.
+   *
+   * السجل بقى لكل عمليات الشرا. المرتجع مستند أنحف من الفاتورة — مفيهوش خصم ولا ضرايب ولا
+   * سداد نقدي: البضاعة بترجع للمورد واللي عليه بينقص بقيمتها. فأعمدة الفاتورة اللي مالهاش
+   * معنى عنده بتفضل **فاضية** مش أصفار: صفر معناه «اتحسبت وطلعت صفر»، والفراغ معناه «السؤال
+   * ده مالوش لازمة على المستند ده».
+   */
+  kind: 'purchase' | 'return';
   id: number;
   document_number: string;
   supplier_id: number;
   supplier_name: string;
   total: string;
-  cash_amount: string;
-  credit_amount: string;
+  cash_amount: string | null;
+  credit_amount: string | null;
   created_at: string;
   // الأعمدة اللي السجل بيعرضها. أربعة منهم (`gross` و`combined_pct` و`net` و`tax_amount`) كانوا
   // في عقد السيرفر من زمان وبيرجعوا أصفار — الـendpoint مكانش بيمرّرهم.
@@ -83,12 +92,15 @@ interface PurchaseRecord {
   branch_name: string | null;
   expense_account_id: number | null;
   expense_account_name: string | null;
-  gross: string;
-  discount_amount: string;
-  combined_pct: string;
-  tax_amount: string;
-  tax_pct: string;
-  net: string;
+  /** المستند اللي المرتجع طالع منه — بيفتحه لما السطر يتضغط. */
+  parent_id?: number;
+  parent_document_number?: string | null;
+  gross: string | null;
+  discount_amount: string | null;
+  combined_pct: string | null;
+  tax_amount: string | null;
+  tax_pct: string | null;
+  net: string | null;
 }
 
 interface PurchaseDetailLine {
@@ -252,6 +264,7 @@ export default function Purchases() {
   const purchasesFilter = useListFilter(purchases, {
     search: (p) => [p.document_number, p.supplier_name, p.external_document_number, p.notes],
     filters: {
+      kind: (p, v) => p.kind === v,
       supplier_id: (p, v) => p.supplier_id === v,
       branch_id: (p, v) => p.branch_id === v,
       document_number: (p, v) => (p.document_number || '').includes(String(v)),
@@ -268,11 +281,47 @@ export default function Purchases() {
     return (id: number) => m.get(id)?.name ?? `صنف #${id}`;
   }, [items]);
 
+  /**
+   * السجل بيقرا **كل عمليات الشرا** — الفواتير والمرتجعات في قايمة واحدة.
+   *
+   * كانوا شاشتين. و«المورد ده اتعامل معاه إيه الشهر ده» سؤال بيتجاوب من الاتنين مع بعض: فاتورة
+   * بعشرة آلاف ومرتجع بألفين معناهم تمنية، واللي شايف الفاتورة بس شايف رقم مش صح.
+   *
+   * المرتجع بيتسطّح لنفس شكل الصف: أعمدة الفاتورة اللي مالهاش معنى عنده بتفضل `null` — فاضية
+   * في العرض — بدل أصفار. صفر معناه «اتحسبت وطلعت صفر»؛ الفراغ معناه «السؤال ده مالوش لازمة
+   * على المستند ده»، وده الفرق اللي بيمنع حد يجمع عمود ويطلعله رقم مالوش أصل.
+   */
   const fetchPurchases = async () => {
     setListLoading(true);
     try {
-      const res = await api.get('/api/v1/purchases');
-      setPurchases(res.data);
+      const [inv, ret] = await Promise.all([
+        api.get('/api/v1/purchases'),
+        api.get('/api/v1/purchases/returns').catch(() => ({ data: [] })),
+      ]);
+      const invoices: PurchaseRecord[] = (inv.data || []).map((r: any) => ({
+        ...r, kind: 'purchase' as const,
+      }));
+      const returns: PurchaseRecord[] = (ret.data || []).map((r: any) => ({
+        kind: 'return' as const,
+        id: r.id,
+        document_number: r.document_number,
+        supplier_id: r.supplier_id ?? 0,
+        supplier_name: r.supplier_name ?? '',
+        purchase_date: r.return_date ?? null,
+        created_at: r.created_at,
+        notes: r.notes ?? null,
+        // قيمة البضاعة الراجعة. بتنزل في «الاجمالي» عشان تتجمع مع الفواتير في نفس العمود.
+        total: r.value,
+        external_document_number: null,
+        branch_id: null, branch_name: null,
+        expense_account_id: null, expense_account_name: null,
+        gross: null, discount_amount: null, combined_pct: null,
+        tax_amount: null, tax_pct: null, net: null,
+        cash_amount: null, credit_amount: null,
+        parent_id: r.purchase_invoice_id,
+        parent_document_number: r.purchase_document_number ?? null,
+      }));
+      setPurchases([...invoices, ...returns]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -328,8 +377,9 @@ export default function Purchases() {
       partyPhone: (supplier as any)?.phone ?? null,
       gross: p.total,
       net: p.total,           // purchases carry no invoice-level discount today
-      cash: p.cash_amount,
-      credit: p.credit_amount,
+      // المستند المطبوع دايماً فاتورة — الأعمدة اللي بتفضل فاضية على المرتجع بتتقرا صفر هنا.
+      cash: p.cash_amount ?? 0,
+      credit: p.credit_amount ?? 0,
       lines: (p.lines || []).map((l) => ({
         name: itemName(l.item_id),
         quantity: l.quantity,
@@ -1187,6 +1237,16 @@ export default function Purchases() {
     </Card>
   );
 
+  /** فتح سطر من السجل — المرتجع بيوصّل لفاتورته، والفاتورة لنفسها. */
+  const openRow = (row: PurchaseRecord) => {
+    if (row.kind === 'return' && row.parent_id) {
+      const parent = purchases.find(
+        (x) => x.kind === 'purchase' && x.id === row.parent_id);
+      if (parent) { openDetail(parent); return; }
+    }
+    openDetail(row);
+  };
+
   /**
    * أعمدة السجل — نفس اللي في الشاشة اللي العميل شغّال عليها، وكل واحد بيتفلتر ويتترتب.
    *
@@ -1205,6 +1265,12 @@ export default function Purchases() {
    * اتكتبت في النظام.
    */
   const listColumns = [
+    { title: 'النوع', dataIndex: 'kind', key: 'kind', fixed: 'left' as const, width: 86,
+      filters: [{ text: 'فاتورة', value: 'purchase' }, { text: 'مرتجع', value: 'return' }],
+      onFilter: (v: any, r: PurchaseRecord) => r.kind === v,
+      render: (v: string) => (v === 'return'
+        ? <Tag color="orange">مرتجع</Tag>
+        : <Tag color="green">فاتورة</Tag>) },
     { title: 'مستند رقم', dataIndex: 'document_number', key: 'document_number',
       fixed: 'left' as const, width: 130,
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
@@ -1229,7 +1295,8 @@ export default function Purchases() {
       render: (v: string | null) => v || '-' },
     { title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.gross),
-      render: (v: string) => `${fmtMoney(v)} ج.م` },
+      // فاضي على المرتجع — مالوش «اجمالي قبل خصم»، والصفر كان هيتقري كأنه رقم محسوب.
+      render: (v: string | null) => (v === null ? '-' : `${fmtMoney(v)} ج.م`) },
     { title: 'خصم فاتورة', dataIndex: 'discount_amount', key: 'discount_amount',
       align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.discount_amount),
@@ -1246,17 +1313,17 @@ export default function Purchases() {
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
     { title: 'الصافي', dataIndex: 'net', key: 'net', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.net),
-      render: (v: string) => `${fmtMoney(v)} ج.م` },
+      render: (v: string | null) => (v === null ? '-' : `${fmtMoney(v)} ج.م`) },
     { title: 'الاجمالي', dataIndex: 'total', key: 'total', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.total),
       render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong> },
     { title: 'تم السداد', dataIndex: 'cash_amount', key: 'cash_amount', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.cash_amount),
-      render: (val: string) => `${fmtMoney(val)} ج.م` },
+      render: (val: string | null) => (val === null ? '-' : `${fmtMoney(val)} ج.م`) },
     { title: 'الباقي', dataIndex: 'credit_amount', key: 'credit_amount', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.credit_amount),
       // الباقي هو اللي لسه على الشركة — أحمر لما يكون فيه رقم، مش لون واحد للكل.
-      render: (val: string) => (Number(val)
+      render: (val: string | null) => (val === null ? '-' : Number(val)
         ? <b style={{ color: '#cf1322' }}>{fmtMoney(val)} ج.م</b>
         : `${fmtMoney(val)} ج.م`) },
     { title: 'ملاحظات', dataIndex: 'notes', key: 'notes',
@@ -1267,11 +1334,12 @@ export default function Purchases() {
       key: 'actions',
       render: (_: any, record: PurchaseRecord) => (
         <Space size="middle">
-          <Button type="dashed" icon={<EyeOutlined />} onClick={() => openDetail(record)}>
+          {/* المرتجع بيفتح الفاتورة اللي طالع منها — شاشة الفاتورة بتعرض مرتجعاتها تحتها،
+              فده بيوصل للمستند وللي وراه مع بعض بدل ما السطر مايفتحش حاجة. */}
+          <Button type="dashed" icon={<EyeOutlined />} onClick={() => openRow(record)}>
             عرض
           </Button>
-          {/* Opens the invoice (loading its lines) so it can be printed from there. */}
-          <Button type="link" icon={<PrinterOutlined />} onClick={() => openDetail(record)}>
+          <Button type="link" icon={<PrinterOutlined />} onClick={() => openRow(record)}>
             طباعة
           </Button>
         </Space>
@@ -1284,7 +1352,7 @@ export default function Purchases() {
 
   const listContent = (
     <Card
-      title="المشتريات (سجل فواتير الشراء)"
+      title="سجل عمليات الشراء — فواتير ومرتجعات"
       extra={(
         <Space>
           {listCols.control}
@@ -1317,14 +1385,21 @@ export default function Purchases() {
         onReset={purchasesFilter.reset}
         total={purchases.length} shown={purchasesFilter.filtered.length}
         filters={[
-          { key: 'document_number', placeholder: 'مستند رقم', kind: 'text', span: 3 },
-          { key: 'external_document_number', placeholder: 'الفاتورة رقم',
-            kind: 'text', span: 3 },
+          // الصف الأول: بحث ٥ + فرع ٤ + مورد ٤ + تاريخ ٦ + «فلاتر أكثر» ٣ + مسح ٢ + عدّاد ٢ = ٢٦
+          // على شاشة عريضة، وبيتلمّ على ٢٤ بإن العدّاد والمسح أيقونة بس.
+          { key: 'kind', placeholder: 'النوع', span: 3,
+            options: [{ value: 'purchase', label: 'فواتير' },
+              { value: 'return', label: 'مرتجعات' }] },
           { key: 'branch_id', placeholder: 'الفرع', span: 4,
             options: branches.map((b: any) => ({ value: b.id, label: b.name })) },
           { key: 'supplier_id', placeholder: 'المورد', span: 4,
             options: suppliers.map((s) => ({ value: s.id, label: s.name })) },
-          { key: 'notes', placeholder: 'ملاحظات', kind: 'text', span: 5 },
+          // تحت الطيّة: بيتسألوا كل شوية، ولهم فلتر على العمود نفسه كمان.
+          { key: 'document_number', placeholder: 'مستند رقم', kind: 'text',
+            advanced: true, span: 5 },
+          { key: 'external_document_number', placeholder: 'الفاتورة رقم', kind: 'text',
+            advanced: true, span: 5 },
+          { key: 'notes', placeholder: 'ملاحظات', kind: 'text', advanced: true, span: 6 },
         ]}
       />
       {/*
@@ -1339,11 +1414,12 @@ export default function Purchases() {
         size="small"
         dataSource={purchasesFilter.filtered}
         columns={listCols.columns}
-        rowKey="id"
+        // فاتورة ومرتجع ممكن يكون ليهم نفس الـid — المفتاح لازم يشيل النوع كمان.
+        rowKey={(r: PurchaseRecord) => `${r.kind}-${r.id}`}
         loading={listLoading}
         scroll={{ x: 'max-content' }}
         pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-        locale={{ emptyText: 'لا يوجد فواتير شراء بعد' }}
+        locale={{ emptyText: 'لا يوجد عمليات شراء بعد' }}
         summary={(rows) => {
           /*
            * إجمالي المعروض — على اللي الفلاتر سابته، مش على كل السجل.
