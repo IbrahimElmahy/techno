@@ -93,3 +93,22 @@ describe('صف الإجمالي', () => {
     expect(foot, 'مافيش مجموع قيم').toContain('fmtMoney(grossTotal)');
   });
 });
+
+describe('خانة الوحدة', () => {
+  it('مفيش قيمة داخلية بتظهر للمستخدم', () => {
+    /*
+     * `__base__` قيمة داخلية معناها «الوحدة الأساسية»، بتتخزّن `null` على السطر. وantd لما
+     * تلاقي قيمة مالهاش خيار مطابق بتعرض القيمة نفسها — فكانت بتكتب `__base__` بالإنجليزي
+     * في خانة عربية، كل ما قايمة وحدات الصنف ماتكونش وصلت لسه.
+     */
+    expect(src).toMatch(/const unitOptions = \(itemId: number \| null\)/);
+    const opts = src.slice(src.indexOf('const unitOptions'), src.indexOf('const fetchUnits'));
+    // الخيار الأساسي موجود دايماً، سواء وصلت الوحدات أو لأ.
+    expect(opts).toContain("{ value: '__base__', label: base?.name || 'الأساسية' }");
+  });
+
+  it('الفاتورة اللي بتتفتح للتعديل بتجيب وحدات أصنافها', () => {
+    const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const handleSubmit'));
+    expect(edit).toContain('fetchUnits(id as number)');
+  });
+});

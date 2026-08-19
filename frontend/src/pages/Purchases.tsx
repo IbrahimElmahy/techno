@@ -11,7 +11,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
-import ItemStockPanel from '../components/ItemStockPanel';
 import TotalsLadder from '../components/TotalsLadder';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
@@ -159,6 +158,8 @@ export default function Purchases() {
   const [submitLoading, setSubmitLoading] = useState(false);
   // The item the side stock panel is showing — a buyer about to reorder wants to see what the
   // branches are already sitting on before committing to a quantity.
+  /** الصنف اللي بوباب الاختيار واقف عليه — بيغذّي لوحة الرصيد اللي جوّه البوباب نفسه.
+   *  لوحة الرصيد اللي كانت تحت الفاتورة اتشالت: كانت فاضية وواخدة تلت العرض. */
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
   // Same contract as the sales screen: a link elsewhere names a document, this screen opens it.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -508,6 +509,27 @@ export default function Purchases() {
     return () => cancelAnimationFrame(raf);
   }, [focusRowKey, purchaseItems.length]);
 
+  /**
+   * خيارات الوحدة لصنف — وفيها **دايماً** خيار الوحدة الأساسية.
+   *
+   * `__base__` قيمة داخلية معناها «الوحدة الأساسية بتاعة الصنف»، بتتخزّن `null` على السطر.
+   * وantd لما تلاقي قيمة مالهاش خيار مطابق بتعرض القيمة نفسها — فكانت بتكتب `__base__`
+   * بالإنجليزي في خانة عربية.
+   *
+   * وده كان بيحصل كل ما قايمة وحدات الصنف ماتكونش وصلت لسه: فاتورة بتتفتح للتعديل بتملا
+   * سطورها فوراً، والوحدات بتيجي بعدها بنداء تاني. فالخيار الوحيد بقى مضمون إنه موجود من
+   * غير انتظار، واسمه اسم الوحدة الحقيقي لما تعرف، و«الأساسية» لغاية ما تعرف.
+   */
+  const unitOptions = (itemId: number | null) => {
+    const units = unitsCache[itemId || 0] || [];
+    const base = units.find((u) => u.is_base);
+    return [
+      { value: '__base__', label: base?.name || 'الأساسية' },
+      ...units.filter((u) => !u.is_base)
+        .map((u) => ({ value: u.name, label: `${u.name} (×${u.factor})` })),
+    ];
+  };
+
   const fetchUnits = async (itemId: number) => {
     if (unitsCache[itemId]) return;
     try {
@@ -647,6 +669,9 @@ export default function Purchases() {
     // الفاتورة اللي بتتفتح للتعديل بتيجي بمخزنها — فالسطر الجاي يبدأ عليه مش على فاضي.
     setStickyWarehouseId(
       ((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
+    // وحدات كل صنف على الفاتورة — من غيرها خانة الوحدة بتفضل من غير خيارات لحد ما حد يفتحها.
+    [...new Set((det.lines || []).map((l: any) => l.item_id))]
+      .forEach((id) => fetchUnits(id as number));
     setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
@@ -1101,14 +1126,8 @@ export default function Purchases() {
                             <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
                               value={line.unit ?? '__base__'}
                               onChange={(val) => handleItemChange(
-                                line.key, 'unit', val === '__base__' ? null : val)}>
-                              {(unitsCache[line.item_id || 0] || []).map((u) => (
-                                <Select.Option key={u.name}
-                                  value={u.is_base ? '__base__' : u.name}>
-                                  {u.name}{u.is_base ? '' : ` (×${u.factor})`}
-                                </Select.Option>
-                              ))}
-                            </Select>
+                                line.key, 'unit', val === '__base__' ? null : val)}
+                              options={unitOptions(line.item_id)} />
                           </td>
                           <td>
                             {/* فاضية معناها «مااتكتبتش». صندوق بيفتح على ١ بيحوّل «٥» لـ«١٥»
@@ -1198,15 +1217,16 @@ export default function Purchases() {
 
           {/* Same ladder as the sales screens — the supplier side of the identical question:
               what the goods cost, what we paid now, what we still owe him. */}
-          <Row gutter={16}>
-            <Col xs={24} lg={8}>
-              {/* Same panel the sales invoice uses — the question is identical on both sides.
-                  نزلت هنا عشان السطور تاخد عرض الصفحة: «الصنف ده عندي منه كام» سؤال بيتسأل مرة
-                  كل شوية، مش مع كل سطر، فمكانه جنب الإجماليات مش واكل ربع مساحة الكتابة. */}
-              <ItemStockPanel itemId={panelItemId} products={items}
-                onPickItem={(id) => setPanelItemId(id)} />
-            </Col>
-            <Col xs={24} lg={16}>
+          {/*
+            * الإجماليات لوحدها تحت السطور — من غير لوحة رصيد جنبها.
+            *
+            * كانت اللوحة واخدة تلت العرض وهي فاضية: صندوق كبير مكتوب فيه «اختر فئة أو صنف عشان
+            * تشوف رصيده»، وطالع الصفحة لتحت من غير ما يقول حاجة. وبقت مالهاش طريق أصلاً بعد ما
+            * عمود اسم الصنف اتشال — هو اللي كان بيوجّهها.
+            *
+            * الشاشة اللي العميل شغّال عليها تحت السطور فيها شريط إجماليات وبس، والصفحة كده
+            * بتخلص عند آخر رقم فيها.
+            */}
           <TotalsLadder
             tone="sale"
             inputs={(
@@ -1244,8 +1264,6 @@ export default function Purchases() {
                 color: creditAmount > 0.001 ? '#cf1322' : '#6AB42D' },
             ]}
           />
-            </Col>
-          </Row>
 
           <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
             <Button
