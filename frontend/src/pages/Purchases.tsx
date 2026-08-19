@@ -18,6 +18,7 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
@@ -1181,51 +1182,78 @@ export default function Purchases() {
   );
 
   /**
-   * أعمدة السجل — نفس اللي في الشاشة اللي العميل شغّال عليها.
+   * أعمدة السجل — نفس اللي في الشاشة اللي العميل شغّال عليها، وكل واحد بيتفلتر ويتترتب.
    *
-   * كان فيه ستة أعمدة: مستند، مورد، إجمالي، نقدي، آجل، تاريخ. اللي بيراجع مشتريات الشهر مكانش
-   * يقدر يشوف الفاتورة اتخصم منها كام، ولا الصافي، ولا رقمها عند المورد، ولا على أنهي حساب
-   * اترحّلت — كل ده كان لازم يفتح كل فاتورة لوحدها.
+   * كان فيه ستة أعمدة، والفلترة كلها من شريط فوق الجدول. شريط الفلاتر بيجاوب «هات فواتير المورد
+   * ده» كويس، ومابيجاوبش «هات اللي الباقي عليها فوق الألف» ولا «رتّبهم بالأكبر خصماً» — ودول
+   * أسئلة بتتسأل على السجل كل يوم.
    *
-   * `useTableColumns` بيخلّي الواحد يخفي اللي مش محتاجه ويرتّب الباقي، فالعدد الكبير مش عبء:
-   * اللي عايز ستة أعمدة بيخفي الباقي مرة واحدة وبيفضل مخفي.
+   * فالفلترة نزلت على الأعمدة نفسها: `textColumn` بيدّي قايمة بالقيم الموجودة، `numberColumn`
+   * بيدّي مدى من/إلى، و`dateColumn` بيدّي مدى تواريخ — وكلهم بيترتبوا. والفلاتر بتتجمّع: تقدر
+   * تضيّق على فرع وحساب ومدى مبلغ في نفس الوقت.
+   *
+   * خيارات الفلتر بتتبني من `purchases` كلها مش من المعروض، عشان القايمة ما تضيقش تحت إيد اللي
+   * بيفلتر وتخليه يفتكر إن القيمة مش موجودة أصلاً.
+   *
+   * والترتيب الافتراضي **من الأحدث**: السجل بيتفتح عشان تشوف آخر اللي اتسجّل، مش أول فاتورة
+   * اتكتبت في النظام.
    */
   const listColumns = [
     { title: 'مستند رقم', dataIndex: 'document_number', key: 'document_number',
+      ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
       render: (doc: string) => <Tag color="blue">{doc}</Tag> },
     { title: 'التاريخ', dataIndex: 'purchase_date', key: 'purchase_date',
       // يوم ما البضاعة وصلت. `created_at` يوم ما الصف اتكتب — سؤال تاني، ومحدش بيسأله.
+      ...dateColumn<PurchaseRecord>((r) => r.purchase_date || r.created_at),
+      defaultSortOrder: 'descend' as const,
       render: (v: string | null, r: PurchaseRecord) => fmtDate(v || r.created_at) },
     { title: 'الفاتورة رقم', dataIndex: 'external_document_number',
-      key: 'external_document_number', render: (v: string | null) => v || '-' },
+      key: 'external_document_number',
+      ...textColumn(purchases, (r: PurchaseRecord) => r.external_document_number),
+      render: (v: string | null) => v || '-' },
     { title: 'جهة التعامل', dataIndex: 'supplier_name', key: 'supplier_name',
+      ...textColumn(purchases, (r: PurchaseRecord) => r.supplier_name),
       render: (v: string) => <b>{v}</b> },
     { title: 'الفرع', dataIndex: 'branch_name', key: 'branch_name',
+      ...textColumn(purchases, (r: PurchaseRecord) => r.branch_name),
       render: (v: string | null) => v || '-' },
     { title: 'الحساب الفرعي', dataIndex: 'expense_account_name', key: 'expense_account_name',
+      ...textColumn(purchases, (r: PurchaseRecord) => r.expense_account_name),
       render: (v: string | null) => v || '-' },
-    { title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross',
+    { title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross', align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.gross),
       render: (v: string) => `${fmtMoney(v)} ج.م` },
     { title: 'خصم فاتورة', dataIndex: 'discount_amount', key: 'discount_amount',
+      align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.discount_amount),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
     { title: 'خصم فاتورة %', dataIndex: 'combined_pct', key: 'combined_pct',
+      align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.combined_pct),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
-    { title: 'الضرائب', dataIndex: 'tax_amount', key: 'tax_amount',
+    { title: 'الضرائب', dataIndex: 'tax_amount', key: 'tax_amount', align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.tax_amount),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
-    { title: 'الضرائب %', dataIndex: 'tax_pct', key: 'tax_pct',
+    { title: 'الضرائب %', dataIndex: 'tax_pct', key: 'tax_pct', align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.tax_pct),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
-    { title: 'الصافي', dataIndex: 'net', key: 'net',
+    { title: 'الصافي', dataIndex: 'net', key: 'net', align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.net),
       render: (v: string) => `${fmtMoney(v)} ج.م` },
-    { title: 'الاجمالي', dataIndex: 'total', key: 'total',
+    { title: 'الاجمالي', dataIndex: 'total', key: 'total', align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.total),
       render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong> },
-    { title: 'تم السداد', dataIndex: 'cash_amount', key: 'cash_amount',
+    { title: 'تم السداد', dataIndex: 'cash_amount', key: 'cash_amount', align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.cash_amount),
       render: (val: string) => `${fmtMoney(val)} ج.م` },
-    { title: 'الباقي', dataIndex: 'credit_amount', key: 'credit_amount',
+    { title: 'الباقي', dataIndex: 'credit_amount', key: 'credit_amount', align: 'left' as const,
+      ...numberColumn<PurchaseRecord>((r) => r.credit_amount),
       // الباقي هو اللي لسه على الشركة — أحمر لما يكون فيه رقم، مش لون واحد للكل.
       render: (val: string) => (Number(val)
         ? <b style={{ color: '#cf1322' }}>{fmtMoney(val)} ج.م</b>
         : `${fmtMoney(val)} ج.م`) },
     { title: 'ملاحظات', dataIndex: 'notes', key: 'notes',
+      ...textColumn(purchases, (r: PurchaseRecord) => r.notes),
       render: (v: string | null) => v || '-' },
     {
       title: 'الإجراءات',

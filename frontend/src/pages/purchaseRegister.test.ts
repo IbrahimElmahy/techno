@@ -97,3 +97,33 @@ describe('شريط الأدوات', () => {
     expect(textBranch.slice(0, 600), 'محتاج Enter عشان يشتغل').not.toContain('onPressEnter');
   });
 });
+
+describe('فلترة وترتيب على كل عمود', () => {
+  it('كل عمود بيانات بيتفلتر ويتترتب', () => {
+    // شريط الفلاتر بيجاوب «هات فواتير المورد ده»، ومابيجاوبش «هات اللي الباقي عليها فوق
+    // الألف» — ده سؤال بيتسأل على عمود، فالفلترة نزلت على الأعمدة.
+    const helpers = (columnBlock.match(/\.\.\.(textColumn|numberColumn|dateColumn)/g) || []).length;
+    expect(helpers, 'فيه أعمدة لسه من غير فلتر ولا ترتيب').toBeGreaterThanOrEqual(16);
+  });
+
+  it('الأرقام بتتفلتر بمدى مش بقايمة قيم', () => {
+    // قايمة بكل مبلغ في الجدول مش فلتر — «من كذا لكذا» هو السؤال.
+    for (const field of ['gross', 'total', 'credit_amount', 'net']) {
+      const at = columnBlock.indexOf(`dataIndex: '${field}'`);
+      expect(at, `«${field}» مش في الأعمدة`).toBeGreaterThan(-1);
+      expect(columnBlock.slice(at, at + 220), `«${field}» مافيهوش فلتر مدى`)
+        .toContain('numberColumn');
+    }
+  });
+
+  it('السجل بيفتح على الأحدث', () => {
+    // اللي بيفتح السجل عايز يشوف آخر اللي اتسجّل، مش أول فاتورة في النظام.
+    expect(columnBlock).toMatch(/purchase_date[\s\S]{0,300}defaultSortOrder: 'descend'/);
+  });
+
+  it('خيارات الفلتر بتتبني من الكل مش من المعروض', () => {
+    // لو اتبنت من المفلتر، القايمة بتضيق تحت إيد اللي بيفلتر ويفتكر إن القيمة مش موجودة.
+    expect(columnBlock).toMatch(/textColumn\(purchases,/);
+    expect(columnBlock).not.toMatch(/textColumn\(purchasesFilter/);
+  });
+});
