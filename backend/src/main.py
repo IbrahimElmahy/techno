@@ -217,6 +217,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # (HR-1) «القسم» بقى جدول. نفس شكل ("employee","warehouse_id","BIGINT") اللي عدّى قبل كده:
     # nullable، من غير default، ومن غير FK في نص الـDDL — أي حاجة فيها NOT NULL DEFAULT بتختلف
     # من لهجة للتانية، والفشل هنا بيتبلع عند مستوى info فبيفضل غلط في صمت.
+    # (٨) علامة عكس المردود — عشان التعديل يبقى عكس وكتابة من جديد زي الفاتورة.
+    ("purchase_return", "reversed_at", "DATETIME"),
+    ("purchase_return", "reversal_entry_id", "BIGINT"),
     ("employee", "department_id", "BIGINT"),
     # (035) «محل الشراء» بقى تاجر مختار من قايمة المندوب، وتليفونه بيتسجّل معاه.
     ("inspection", "purchase_shop_phone", "VARCHAR(40)"),

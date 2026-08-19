@@ -148,9 +148,43 @@ export default function PurchaseReturns() {
     } finally { setViewLoading(false); }
   };
 
+  /** المردود اللي بيتعدّل دلوقتي — لسه مرحّل، والعكس هيحصل وقت الحفظ. */
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  /**
+   * فتح مردود مرحّل للتعديل — **من غير ما يتغيّر أي حاجة لحد ما تحفظ**.
+   *
+   * زي فاتورة الشرا بالظبط، ولنفس السبب اللي وقع فيها: لو العكس حصل وقت الفتح، أي مردود
+   * بضاعته اتحركت بعد كده بيبقى مش قابل للفتح — العكس بيرجّع البضاعة للمخزن، ولو المخزن
+   * اتقفل أو الفترة اتقفلت العملية بتقع، ومجرد إنك عايز تبص عليه بيفشل.
+   *
+   * الفتح قراية: الشاشة بتتملّى بفاتورته وبالكميات اللي كانت مترجّعة. والعكس بيحصل لما تدوس
+   * «ترحيل» — القديم يتعكس والجديد يترحّل، مرة واحدة.
+   */
+  const editPosted = async (row: ReturnRow) => {
+    let doc: any = null;
+    try {
+      const res = await api.get(`/api/v1/purchases/returns/${row.id}`);
+      doc = res.data;
+    } catch {
+      message.error('تعذر فتح المردود');
+      return;
+    }
+    setViewing(null);
+    setEditingId(row.id);
+    setReturnDate(doc.return_date ? dayjs(doc.return_date) : dayjs());
+    setNotes(doc.notes || '');
+    const filled: Record<number, number | null> = {};
+    (doc.lines || []).forEach((l: any) => { filled[l.item_id] = Number(l.quantity); });
+    await choosePurchase(doc.purchase_invoice_id);
+    setQty(filled);
+    setCreating(true);
+  };
+
   const openCreate = () => {
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('date');
+    setEditingId(null);
   };
 
   const choosePurchase = async (id: number) => {
@@ -180,12 +214,26 @@ export default function PurchaseReturns() {
     if (!lines.length) { message.warning('اكتب الكمية المرتجعة على صنف واحد على الأقل'); return; }
     setSaving(true);
     try {
+      // المردود اللي اتفتح للتعديل بيتعكس **دلوقتي** مش وقت الفتح — التبديل بيحصل مرة واحدة:
+      // القديم يتعكس والجديد يترحّل. ولو العكس وقع، مافيش مردود جديد بيتكتب فوق القديم.
+      if (editingId !== null) {
+        try {
+          await api.post(`/api/v1/purchases/returns/${editingId}/reverse`);
+        } catch (err: any) {
+          message.error(err?.response?.data?.detail?.message
+            || 'تعذر عكس المردود القديم — التعديل ماتمّش');
+          setSaving(false);
+          return;
+        }
+      }
       await api.post(`/api/v1/purchases/${purchaseId}/returns`, {
         lines,
         return_date: returnDate.format('YYYY-MM-DD'),
         notes: notes || null,
       });
-      message.success('اتسجّل مردود الشراء');
+      message.success(editingId !== null
+        ? 'اتعدّل المردود واترحّل من جديد' : 'اتسجّل مردود الشراء');
+      setEditingId(null);
       setCreating(false);
       load();
     } catch (err: any) {
@@ -254,10 +302,10 @@ export default function PurchaseReturns() {
       title: 'الإجراءات', key: 'actions', width: 190,
       render: (_: any, record: ReturnRow) => (
         <Space size="middle">
-          {/* زي سجل الشرا: «عرض» بيفتح المستند و«طباعة» بتفتح معاينة الورقة — والاتنين
-              بوباب فوق السجل، مش صفحة بتحل محله. */}
+          {/* زي سجل الشرا بالظبط: «عرض» بيفتح التعديل على طول، و«طباعة» بتفتح معاينة
+              الورقة في بوباب فوق السجل. */}
           <Button type="dashed" size="small" icon={<EyeOutlined />}
-            onClick={() => openReturn(record)}>عرض</Button>
+            onClick={() => editPosted(record)}>عرض</Button>
           <Button type="link" size="small" icon={<PrinterOutlined />}
             onClick={() => openReturn(record)}>طباعة</Button>
         </Space>
@@ -544,7 +592,9 @@ export default function PurchaseReturns() {
           <Button type="primary" danger size="large" loading={saving} onClick={submit}>
             ترحيل المردود
           </Button>
-          <Button size="large" onClick={() => setCreating(false)}>إلغاء</Button>
+          {/* الرجوع من غير ترحيل مابيغيّرش حاجة — العكس بيحصل وقت الحفظ. */}
+          <Button size="large"
+            onClick={() => { setCreating(false); setEditingId(null); }}>إلغاء</Button>
         </div>
       </Card>
       )}

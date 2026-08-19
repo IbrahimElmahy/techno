@@ -7,7 +7,7 @@ cash/credit split (research R9).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -182,10 +182,17 @@ def create_purchase(
 
 
 def _already_returned(db: Session, invoice_id: int) -> dict[int, Decimal]:
+    """اترجّع كام من كل صنف على الفاتورة دي — **من غير المردودات المعكوسة**.
+
+    المردود المعكوس بضاعته رجعت المخزن وقيده اتعكس، فعدّه هنا كان هيقفل الكمية على مردود
+    مالوش أثر: «اتشرى ١٠ واترجّع ١٠» والعشرة دول رجعوا تاني — فتحاول ترجّع وتترفض من غير
+    سبب باين.
+    """
     rows = db.execute(
         select(PurchaseReturnLine.item_id, func.coalesce(func.sum(PurchaseReturnLine.quantity), 0))
         .join(PurchaseReturn, PurchaseReturn.id == PurchaseReturnLine.return_id)
-        .where(PurchaseReturn.purchase_invoice_id == invoice_id)
+        .where(PurchaseReturn.purchase_invoice_id == invoice_id,
+               PurchaseReturn.reversed_at.is_(None))
         .group_by(PurchaseReturnLine.item_id)
     ).all()
     return {item_id: Decimal(qty) for item_id, qty in rows}
@@ -273,4 +280,66 @@ def return_purchase(
     audit_service.record(db, action="purchase.return", actor_user_id=actor_user_id,
                          entity_type="purchase_return", entity_id=ret.id,
                          after={"value": str(value)})
+    return ret
+
+
+def reverse_purchase_return(
+    db: Session,
+    *,
+    return_id: int,
+    actor_user_id: int,
+) -> PurchaseReturn:
+    """عكس مردود شراء مرحّل — البضاعة ترجع المخزن واللي على الشركة يرجع زي ما كان.
+
+    المردود المرحّل ماينفعش يتعدّل في مكانه، بنفس السبب اللي في الفاتورة: البضاعة اتحركت
+    والقيد اتكتب، والدفتر مابيتمحاش. فالتعديل = عكس كامل وكتابة من جديد.
+
+    العكس بيعمل حاجتين، والاتنين **إضافة** مش مسح:
+
+    * حركة مخزن داخلة لكل سطر، على نفس المخزن اللي خرج منه. `purchase_return_out` طلّع البضاعة
+      من مخزن بعينه — لو رجعت لمخزن تاني يبقى الرصيدين الاتنين غلط.
+    * قيد مضاد عن طريق `ledger_service.reverse_entry` — مش قيد جديد مكتوب بالإيد. لو اتكتب
+      بالإيد هيبقى فيه نسختين من نفس الحسبة، وأول ما حسبة المردود تتغيّر تفضل واحدة منهم قديمة.
+
+    والصف بيفضل موجود بعلامة، مش بيتمسح: رقم المستند اتصرف والقيد المضاد بيشاور عليه.
+    """
+    ret = db.get(PurchaseReturn, return_id)
+    if ret is None:
+        raise PurchaseError("المردود مش موجود.")
+    if ret.reversed_at is not None:
+        raise PurchaseError("المردود ده اتعكس قبل كده.")
+
+    inv = db.get(PurchaseInvoice, ret.purchase_invoice_id)
+    if inv is None:
+        raise PurchaseError("فاتورة الشراء بتاعت المردود مش موجودة.")
+
+    # نفس المخزن اللي البضاعة خرجت منه، ونفس معامل الوحدة اللي خرجت بيه.
+    received_into = {
+        ln.item_id: (ln.line_location_kind or inv.location_kind,
+                     ln.line_location_id if ln.line_location_id is not None else inv.location_id)
+        for ln in inv.lines
+    }
+    factors = {ln.item_id: to_qty(ln.unit_factor) for ln in inv.lines}
+
+    for line in ret.lines:
+        back_kind, back_loc = received_into.get(
+            line.item_id, (inv.location_kind, inv.location_id))
+        base_qty = to_qty(Decimal(line.quantity) * factors.get(line.item_id, Decimal("1")))
+        stock_service.post_movement(
+            db, item_id=line.item_id, location_kind=back_kind, location_id=back_loc,
+            movement_type="purchase_return_reversal", direction=StockDirection.in_,
+            quantity=base_qty, actor_user_id=actor_user_id,
+            source_doc_type="purchase_return_reversal", source_doc_id=ret.id,
+        )
+
+    if ret.ledger_entry_id:
+        counter = ledger_service.reverse_entry(
+            db, original_id=ret.ledger_entry_id, actor_user_id=actor_user_id)
+        ret.reversal_entry_id = counter.id
+
+    ret.reversed_at = datetime.utcnow()
+    db.flush()
+    audit_service.record(db, action="purchase.return.reverse", actor_user_id=actor_user_id,
+                         entity_type="purchase_return", entity_id=ret.id,
+                         after={"reversed": True})
     return ret

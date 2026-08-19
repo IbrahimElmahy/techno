@@ -221,7 +221,12 @@ def list_purchase_returns(
     came off, which answers «what came back off THIS invoice» and never «what went back to
     suppliers this month».
     """
-    rows = db.scalars(select(PurchaseReturn).order_by(PurchaseReturn.id.desc())).all()
+    # المعكوس مابيظهرش: بضاعته رجعت وقيده اتعكس، فهو مستند في الدفتر ومش حركة في السجل.
+    rows = db.scalars(
+        select(PurchaseReturn)
+        .where(PurchaseReturn.reversed_at.is_(None))
+        .order_by(PurchaseReturn.id.desc())
+    ).all()
     invoices = {
         p.id: p for p in db.scalars(
             select(PurchaseInvoice).where(
@@ -380,6 +385,31 @@ class ReverseIn(BaseModel):
     """«تعديل» ولا «حذف» — الحركة واحدة والنية مختلفة."""
 
     reason: str = "edit"
+
+
+@router.post("/returns/{return_id}/reverse", response_model=dict)
+def reverse_purchase_return(
+    return_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """عكس مردود شراء مرحّل — للتعديل أو للإلغاء.
+
+    زي الفاتورة بالظبط: المردود المرحّل ماينفعش يتعدّل في مكانه لأن البضاعة اتحركت والقيد اتكتب،
+    فالتعديل عكس كامل وكتابة من جديد.
+
+    Declared BEFORE `/{purchase_id}/reverse` on purpose: FastAPI matches in declaration order, and
+    the id route would swallow "returns" and fail parsing it as an int.
+    """
+    try:
+        ret = purchase_service.reverse_purchase_return(
+            db, return_id=return_id, actor_user_id=current.id)
+    except PurchaseError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "reverse_invalid", "message": str(exc)}) from exc
+    db.commit()
+    return {"id": ret.id, "document_number": ret.document_number,
+            "purchase_invoice_id": ret.purchase_invoice_id, "reversed": True}
 
 
 @router.post("/{purchase_id}/reverse", response_model=DocOut,

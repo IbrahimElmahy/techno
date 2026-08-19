@@ -105,6 +105,19 @@ class PurchaseReturn(Base):
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
+    # المردود المعكوس — للتصحيح، مش لحاجة تانية.
+    #
+    # المردود المرحّل ماينفعش يتعدّل في مكانه: البضاعة خرجت من المخزن والقيد اتكتب، والدفتر
+    # مابيتمحاش. فالتعديل = عكس كامل وكتابة من جديد، زي الفاتورة بالظبط.
+    #
+    # والصف بيفضل موجود بعد العكس مش بيتمسح: رقم المستند اتصرف، والقيد المضاد بيشاور عليه،
+    # واللي بيراجع دفتر لازم يلاقي المستندين الاتنين. اللي بيتغيّر إنه **مابيتحسبش**: مابيظهرش
+    # في السجل، ومابيتعدّش في «اترجّع كام من الفاتورة دي» — يعني الكمية بترجع تتاح للمردود
+    # من جديد.
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reversal_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ledger_entry.id"), nullable=True)
+
     lines: Mapped[list[PurchaseReturnLine]] = relationship(cascade="all, save-update")
 
 

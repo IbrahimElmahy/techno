@@ -97,3 +97,35 @@ describe('عرض وطباعة — زي سجل الشرا', () => {
     expect(doc).toMatch(/gross: r\.value,\s*\n\s*net: r\.value,/);
   });
 });
+
+describe('«عرض» بيفتح التعديل — زي الشرا', () => {
+  it('الفتح مابيعكسش — بيملا الشاشة وبس', () => {
+    // نفس العطل اللي وقع في فاتورة الشرا: العكس وقت الفتح بيخلّي المستند مش قابل للفتح
+    // أصلاً لو الحركة اللي وراه مابقتش ممكنة.
+    const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const openCreate'));
+    expect(edit, 'الفتح لسه بيعكس').not.toContain('/reverse');
+    expect(edit).toContain('setEditingId(row.id)');
+    // الكميات اللي كانت مترجّعة بترجع للشاشة — من غيرها التعديل كتابة من أول وجديد.
+    expect(edit).toContain('choosePurchase(doc.purchase_invoice_id)');
+    expect(edit).toContain('setQty(filled)');
+  });
+
+  it('العكس بيحصل وقت الترحيل، ولو وقع مافيش مردود جديد بيتكتب', () => {
+    const submit = src.slice(src.indexOf('const submit = async'), src.indexOf('const columns ='));
+    expect(submit).toContain('if (editingId !== null)');
+    expect(submit).toContain('/reverse');
+    const at = submit.indexOf('تعذر عكس المردود القديم');
+    expect(at).toBeGreaterThan(-1);
+    expect(submit.slice(at, at + 200)).toContain('return;');
+  });
+
+  it('«عرض» بيروح للتعديل و«طباعة» للمعاينة', () => {
+    expect(columnBlock).toContain('onClick={() => editPosted(record)}>عرض');
+    expect(columnBlock).toContain('onClick={() => openReturn(record)}>طباعة');
+  });
+
+  it('مفيش تأكيد قبل العكس', () => {
+    const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const openCreate'));
+    expect(edit).not.toContain('Modal.confirm');
+  });
+});

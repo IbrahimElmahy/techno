@@ -208,12 +208,37 @@ describe('عرض وطباعة', () => {
     expect(open, 'لسه بيفتح صفحة العرض').not.toContain('setDetail(');
   });
 
-  it('التعديل بيحصل من غير سؤال، والعكس لسه بيحصل', () => {
-    // صاحب النظام شاف بوباب «متأكد؟» وقال يشيله. اللي بيحصل تحته مااتغيّرش: الفاتورة المرحّلة
-    // ماتتعدلش في مكانها، فبيتعمل لها عكس كامل وتتفتح من جديد.
-    const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const editPosted') + 900);
-    expect(edit, 'رجع بوباب تأكيد').not.toContain('Modal.confirm');
-    expect(edit, 'العكس نفسه اتشال — ده مش المطلوب').toContain('/reverse');
+  it('الفتح مابيغيّرش حاجة — العكس بيحصل وقت الحفظ', () => {
+    /*
+     * أهم فحص في الملف، وجاي من عطل حقيقي وصل للشاشة:
+     *
+     * لما الفتح كان بيعكس، أي فاتورة أصنافها اتباعت أو اتحوّلت بقت **مش قابلة للفتح**. العكس
+     * بيطلّع البضاعة من المخزن، فالرصيد مايكفي والعملية بتقع — ومجرد إنك عايز تبص على الفاتورة
+     * كان بيفشل برسالة «الرصيد مايكفيش».
+     *
+     * الفتح دلوقتي قراية بس. والعكس في مكانه الصح: وقت الحفظ، اللحظة اللي فعلاً فيها تبديل.
+     */
+    const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const handleSubmit'));
+    expect(edit, 'الفتح لسه بيعكس').not.toContain('/reverse');
+    expect(edit, 'الفتح مش بيعلّم إن دي فاتورة بتتعدّل').toContain('setEditingId(det.id)');
+
+    // والحفظ هو اللي بيعكس، وبس لما تكون فاتورة مفتوحة للتعديل.
+    const submit = src.slice(src.indexOf('const handleSubmit'), src.indexOf('const closeCreate'));
+    expect(submit).toContain('if (editingId !== null)');
+    expect(submit).toContain('/reverse');
+  });
+
+  it('العكس لو وقع، الفاتورة الجديدة مابتترحّلش', () => {
+    // من غير الوقفة دي بتبقى فاتورتين: القديمة زي ما هي والجديدة اتضافت فوقها.
+    const submit = src.slice(src.indexOf('const handleSubmit'), src.indexOf('const closeCreate'));
+    const at = submit.indexOf('تعذر عكس الفاتورة القديمة');
+    expect(at, 'مافيش رسالة لما العكس يقع').toBeGreaterThan(-1);
+    expect(submit.slice(at, at + 200), 'بيكمّل ويرحّل فاتورة تانية').toContain('return;');
+  });
+
+  it('الرجوع من غير حفظ مابيسيبش حالة تعديل معلّقة', () => {
+    const close = src.slice(src.indexOf('const closeCreate'), src.indexOf('const closeCreate') + 600);
+    expect(close).toContain('setEditingId(null)');
   });
 
   it('«طباعة» بتفتح بوباب معاينة مش صفحة', () => {
@@ -224,5 +249,24 @@ describe('عرض وطباعة', () => {
 
   it('الكيبورد بيوصل لنفس مكان الزرار', () => {
     expect(src).toMatch(/onOpen: \(r\) => openRow\(r\)/);
+  });
+});
+
+describe('الضغطة بتوصل مكان', () => {
+  it('فتح فاتورة للتعديل بيفتح شاشة الكتابة فعلاً', () => {
+    /*
+     * عطل وصل للشاشة: العكس اتشال من الفتح، وكان هو اللي — عن طريق `openDetail` — بيرفع
+     * `createVisible`. فلما اتشال، الشاشة كانت بتتملّى في الخلفية والسجل فاضل قدامك: تدوس
+     * «عرض» فتلفّ وماتوديش مكان.
+     */
+    const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const handleSubmit'));
+    expect(edit, 'بيملا الشاشة ومابيفتحهاش').toContain('setCreateVisible(true)');
+  });
+
+  it('اللودر اللي بيلف هو اللي على السجل المعروض', () => {
+    // `detailLoading` بيلوّن شاشة مش معروضة — فالضغطة بتبان كأنها ماحصلتش.
+    const open = src.slice(src.indexOf('const openRow'), src.indexOf('const openPrint'));
+    expect(open).toContain('setListLoading(true)');
+    expect(open, 'بيلوّن شاشة مش معروضة').not.toContain('setDetailLoading');
   });
 });

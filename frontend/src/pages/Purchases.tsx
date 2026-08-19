@@ -222,6 +222,13 @@ export default function Purchases() {
 
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
+  /**
+   * الفاتورة اللي بتتعدّل دلوقتي — لسه مرحّلة، والعكس هيحصل وقت الحفظ.
+   *
+   * `null` معناها «فاتورة جديدة». الرقم معناه «دي فاتورة موجودة اتفتحت للتعديل»، واللي
+   * بيفرّق بينهم هو إن الحفظ بيعكس القديمة الأول.
+   */
+  const [editingId, setEditingId] = useState<number | null>(null);
   /** الفاتورة اللي معروضة في بوباب الطباعة — معاينة، مش صفحة. */
   const [preview, setPreview] = useState<PurchaseDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -575,6 +582,7 @@ export default function Purchases() {
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
     discount_pct: null, warehouse_id: null }]);
           setPurchaseDate(dayjs()); setDetail(null); setDocResult(null);
+          setEditingId(null);
           setNewStep('date'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
@@ -604,27 +612,20 @@ export default function Purchases() {
   ];
 
   /**
-   * تعديل فاتورة شراء مرحّلة — مرتجع كامل، وتفتح تاني بمحتواها.
+   * فتح فاتورة مرحّلة للتعديل — **من غير ما يتغيّر أي حاجة لحد ما تحفظ**.
    *
-   * Same mechanism the sale uses, and for the same reason: the goods are on the shelf and the
-   * ledger is append-only, so there is nothing on the row to overwrite. Through `/reverse` rather
-   * than `/returns`, so the returns register does not count the company's own typing mistakes as
-   * goods sent back to a supplier.
+   * كانت بتتعكس أول ما تتفتح. والعكس بيطلّع البضاعة من المخزن، فلو الأصناف اتباعت أو اتحوّلت
+   * بعد الشرا، الرصيد مايكفيش والعكس بيقع — فالنتيجة إنك **مش قادر تفتح الفاتورة أصلاً**،
+   * ومش عشان فيها غلط، عشان مجرد الفتح كان بيحاول يحرّك مخزون.
+   *
+   * دلوقتي الفتح قراية بس: الشاشة بتتملّى بمحتوى الفاتورة وخلاص. والعكس بيحصل **لما تدوس
+   * حفظ** — وهي اللحظة اللي فعلاً محتاجة تبديل: الفاتورة القديمة تتعكس والجديدة تترحّل.
+   *
+   * يعني لو فتحت وغيّرت رأيك وقفلت، مافيش حاجة اتحركت. ولو الرصيد فعلاً مايكفيش، الرسالة
+   * بتيجي وانت بتحفظ — وهي وقتها بتقول حاجة صح: التبديل ده مش ممكن دلوقتي.
    */
   const editPosted = async (det: PurchaseDetail) => {
-    // من غير تأكيد — اتشال بطلب صاحب النظام بعد ما شافه.
-    //
-    // اللي بيحصل لسه هو هو: الفاتورة المرحّلة ماتتعدلش في مكانها، فبيتعمل لها عكس كامل
-    // وتتفتح من جديد، والمخزون والحساب بيرجعوا زي ما كانوا. الفرق إن ده بيحصل على طول.
-    // وحمايات السيرفر كلها مكانها: الفترة المقفولة بترفض، والعكس بيتسجّل كقيد مضاد مش مسح.
-    try {
-      await api.post(`/api/v1/purchases/${det.id}/reverse`, { reason: 'edit' });
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر عكس الفاتورة');
-      return;
-    }
-    message.success('اتعكست الفاتورة — عدّل ورحّل من جديد');
-
+    setEditingId(det.id);
     // Refill from what the invoice actually held, line by line.
     form.setFieldsValue({
       supplier_id: det.supplier_id,
@@ -650,7 +651,12 @@ export default function Purchases() {
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
     setDetail(null);
-    fetchPurchases();
+    // وبتفتح شاشة الكتابة فعلاً.
+    //
+    // كانت ناقصة: العكس اتشال من الفتح، وكان هو اللي — عن طريق `openDetail` — بيرفع
+    // `createVisible`. فلما اتشال، الشاشة كانت بتتملّى في الخلفية والسجل فاضل قدامك، فالضغطة
+    // على «عرض» بتلف وماتوديش مكان.
+    setCreateVisible(true);
   };
 
   const handleSubmit = async (values: any) => {
@@ -683,6 +689,23 @@ export default function Purchases() {
 
     setSubmitLoading(true);
     try {
+      // الفاتورة اللي اتفتحت للتعديل بتتعكس **دلوقتي** — مش وقت الفتح.
+      //
+      // العكس بيطلّع البضاعة من المخزن. لو حصل وقت الفتح، أي فاتورة أصنافها اتباعت بقت مش
+      // قابلة للفتح أصلاً: الرصيد مايكفي فالعكس بيقع، ومجرد إنك عايز تبص عليها كان بيفشل.
+      //
+      // هنا هو في مكانه: التبديل بيحصل مرة واحدة — القديمة تتعكس والجديدة تترحّل. ولو الرصيد
+      // فعلاً مايكفيش، الرسالة بتيجي وهي بتقول حاجة صح، والفاتورة القديمة بتفضل زي ما هي.
+      if (editingId !== null) {
+        try {
+          await api.post(`/api/v1/purchases/${editingId}/reverse`, { reason: 'edit' });
+        } catch (err: any) {
+          message.error(err?.response?.data?.detail?.message
+            || 'تعذر عكس الفاتورة القديمة — التعديل ماتمّش');
+          setSubmitLoading(false);
+          return;
+        }
+      }
       const payload = {
         supplier_id: values.supplier_id,
         // مخزن المستند بقى مخزن أول سطر. السيرفر لسه محتاج مكان على المستند (٠٣٠)، والسطر
@@ -718,7 +741,9 @@ export default function Purchases() {
 
       const res = await api.post('/api/v1/purchases', payload);
       setDocResult(res.data);
-      message.success('تم تسجيل فاتورة الشراء بنجاح');
+      message.success(editingId !== null
+        ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة الشراء بنجاح');
+      setEditingId(null);
       form.resetFields();
       setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
         discount_pct: null, warehouse_id: null }]);
@@ -830,6 +855,9 @@ export default function Purchases() {
     setDetail(null);
     setDocResult(null);
     setNewStep(null);
+    // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
+    // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
+    setEditingId(null);
   };
 
   const createContent = docResult ? (
@@ -1268,9 +1296,11 @@ export default function Purchases() {
       if (row.parent_id) openPrint({ ...row, id: row.parent_id });
       return;
     }
-    setDetailLoading(true);
+    // `listLoading` مش `detailLoading`: التاني بيلوّن شاشة مش معروضة، فالضغطة كانت بتبان
+    // كأنها ماحصلتش. ده بيلوّن السجل اللي قدام الواحد فعلاً.
+    setListLoading(true);
     const doc = await loadDocument(row.id);
-    setDetailLoading(false);
+    setListLoading(false);
     if (doc) editPosted(doc);
   };
 
@@ -1404,6 +1434,7 @@ export default function Purchases() {
               setPurchaseDate(dayjs());
               setDetail(null);
               setDocResult(null);
+              setEditingId(null);
               setNewStep('party');
             }}>
             تسجيل فاتورة شراء
