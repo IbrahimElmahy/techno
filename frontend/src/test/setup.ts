@@ -32,3 +32,16 @@ if (!(globalThis as any).ResizeObserver) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+
+/**
+ * كل اختبار يبدأ على شاشة فاضية.
+ *
+ * `render` بتلزق المكوّن في `document.body`، والتنضيف التلقائي بتاع testing-library بيتسجّل
+ * بس لما `globals` تكون مفعّلة — وهي مش مفعّلة هنا. من غيره كل اختبار بيرسم فوق اللي قبله،
+ * فـ«عدد السطور في الجدول» بيطلع مجموع كل اللي اترسم في الملف. الاختبار بيقيس التراكم مش
+ * الحاجة اللي بيدور عليها.
+ */
+import { cleanup } from '@testing-library/react';
+import { afterEach } from 'vitest';
+
+afterEach(() => cleanup());

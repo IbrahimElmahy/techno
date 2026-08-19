@@ -23,17 +23,22 @@ describe('شكل الجدول', () => {
 
   it('الأعمدة اللي الفاتورة بتتكتب بيها كلها موجودة', () => {
     const head = src.slice(src.indexOf('<thead>'), src.indexOf('</thead>'));
-    for (const col of ['المخزن', 'الصنف', 'الوحدة', 'الكمية', 'سعر الوحدة',
+    for (const col of ['المخزن', 'الوحدة', 'الكمية', 'سعر الوحدة',
       'اجمالي قبل', 'خصم', 'خصم %', 'الإجمالي']) {
       expect(head, `عمود «${col}» ناقص`).toContain(col);
     }
   });
 
-  it('المخزن أول خانة في السطر — قبل الصنف', () => {
+  it('المخزن أول خانة في السطر', () => {
     // هو أول حاجة بتتحدّد، وبيثبت للسطور اللي بعده لغاية ما يتغيّر.
     const body = src.slice(src.indexOf('<tbody>'), src.indexOf('</tbody>'));
     expect(body.indexOf('مخزن الاستلام')).toBeGreaterThan(-1);
-    expect(body.indexOf('مخزن الاستلام')).toBeLessThan(body.indexOf('اختر الصنف'));
+    expect(body.indexOf('مخزن الاستلام')).toBeLessThan(body.indexOf('data-qty-key'));
+  });
+
+  it('مفيش عمود اسم صنف — اتشال بطلب صاحب النظام', () => {
+    const head = src.slice(src.indexOf('<thead>'), src.indexOf('</thead>'));
+    expect(head, 'رجع عمود الصنف').not.toContain('الصنف');
   });
 
   it('الترويسة بتفضل بانة والفاتورة الطويلة بتتمرّر تحتها', () => {

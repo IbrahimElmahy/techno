@@ -828,12 +828,6 @@ export default function Purchases() {
     addProductById(item.id);
   };
 
-  /** فئة الصنف كنص جاهز للعرض — سطر صغير تحت الاسم بدل ترويسة مجموعة. */
-  const lineCategory = (line: PurchaseItem): string | null => {
-    const cat = (items.find((i: any) => i.id === line.item_id) as any)?.category;
-    return cat ? (categoryLabels[cat] || cat) : null;
-  };
-
   /**
    * Enter معناها «السطر ده خلص» — ننتقل للسطر اللي بعده، وآخر سطر بيفتح بوباب الأصناف.
    *
@@ -1073,7 +1067,6 @@ export default function Purchases() {
                       <tr>
                         <th style={{ width: 34 }}>#</th>
                         <th style={{ minWidth: 150 }}>المخزن</th>
-                        <th style={{ minWidth: 170 }}>الصنف</th>
                         <th style={{ minWidth: 96 }}>الوحدة</th>
                         <th style={{ minWidth: 84 }}>الكمية</th>
                         <th style={{ minWidth: 100 }}>سعر الوحدة</th>
@@ -1103,18 +1096,6 @@ export default function Purchases() {
                                 label: `${w.name} (${w.warehouse_type === 'central'
                                   ? 'مركزي' : 'فرعي'})`,
                               }))} />
-                          </td>
-                          <td>
-                            {/* الضغط على الاسم بيوجّه لوحة المخزون للصنف ده. */}
-                            <b style={{ cursor: 'pointer' }}
-                              onClick={() => setPanelItemId(line.item_id)}>
-                              {line.item_id ? itemName(line.item_id) : 'اختر الصنف'}
-                            </b>
-                            {lineCategory(line) ? (
-                              <div style={{ color: '#8a8a8a', fontSize: 11 }}>
-                                {lineCategory(line)}
-                              </div>
-                            ) : null}
                           </td>
                           <td>
                             <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
@@ -1188,7 +1169,9 @@ export default function Purchases() {
                       */}
                     <tfoot>
                       <tr>
-                        <td colSpan={4} style={{ fontWeight: 700 }}>الإجمالي</td>
+                        {/* تلاتة: الرقم والمخزن والوحدة — عمود «الصنف» اتشال بطلب
+                            صاحب النظام. */}
+                        <td colSpan={3} style={{ fontWeight: 700 }}>الإجمالي</td>
                         <td style={{ fontWeight: 700 }}>
                           {purchaseItems.reduce((n, l) => n + Number(l.quantity || 0), 0)
                             .toLocaleString('ar-EG', { maximumFractionDigits: 3 })}

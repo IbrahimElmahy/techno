@@ -134,13 +134,17 @@ describe('«عرض» بيوصل مكان ومابيغيّرش حاجة', () => {
       .toEqual([]);
   });
 
-  it('بيملا الشاشة بمحتوى الفاتورة', async () => {
+  it('بيملا الشاشة بسطور الفاتورة', async () => {
     draw();
     await screen.findAllByText('PINV-000007');
     // antd بترسم الأعمدة المثبّتة في طبقتين — الزرار اللي بيستقبل الضغط هو بتاع آخر طبقة.
     const shown = screen.getAllByRole('button', { name: /عرض/ });
     await userEvent.click(shown[shown.length - 1]);
-    // سطر الفاتورة بصنفه — مش شاشة فاضية.
-    expect((await screen.findAllByText('صنف الاختبار')).length).toBeGreaterThan(0);
+
+    // عمود اسم الصنف اتشال، فالسطر بيتعرف من كميته وسعره — مش شاشة فاضية.
+    await waitFor(() => {
+      expect(document.querySelectorAll('.entry-grid tbody tr').length).toBe(1);
+    });
+    expect(document.querySelector('input[data-qty-key]')).toHaveValue('10');
   });
 });
