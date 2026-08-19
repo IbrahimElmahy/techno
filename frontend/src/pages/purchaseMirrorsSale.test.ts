@@ -16,6 +16,11 @@
  * - **العرض كان جدول مسطّح.** The sale groups the lines under their category with a header and a
  *   count, which is how somebody checking a long invoice actually reads it.
  *
+ * **فرق واحد مقصود بين الشاشتين (١٩ أغسطس ٢٠٢٦):** العميل طلب إن فاتورة الشرا تبقى جدول إدخال
+ * مضغوط زي اللي هو شغّال عليه — سطر واحد لكل صنف وعنوان أعمدة مرة واحدة فوق — بدل الكروت
+ * المتجمّعة بالفئة. فاتورة البيع لسه بالكروت. الحاجات اللي تحت لسه مشتركة؛ اللي اختلف هو شكل
+ * عرض السطور وحركة Enter، والاتنين متوثّقين في الاختبارات اللي تحت بدل ما يعدّوا في صمت.
+ *
  * Source-shape checks rather than renders: they cost nothing and they fail the moment one screen
  * gains something the other did not — which is the only way two screens stay alike over years.
  */
@@ -32,7 +37,7 @@ const SHARED: [string, RegExp][] = [
   ['منتقي الأطراف بنافذة', /PartyPickerModal/],
   ['منتقي الأصناف', /ProductPickerModal/],
   ['اختيار أكتر من صنف مرة واحدة', /onPickMany/],
-  ['السطور متجمّعة بالفئة', /linesByCategory/],
+  ['الفئة بتبان مع السطر', /categoryLabels/],
   ['شريط الأوامر', /DocumentToolbar/],
   ['سلّم الإجماليات', /TotalsLadder/],
   ['لوحة مخزون الصنف', /ItemStockPanel/],
@@ -60,7 +65,7 @@ describe('إضافة الصنف بنفس الحركة', () => {
     // «فوق» هنا = قبل حلقة عرض السطور في نص الملف. الترتيب ده هو اللي بيخلّي الزرار في
     // نفس المكان مهما طالت الفاتورة.
     const button = buy.indexOf('إضافة صنف للفاتورة');
-    const lines = buy.indexOf('linesByCategory.map');
+    const lines = buy.indexOf('purchaseItems.map((line, idx)');
     expect(button).toBeGreaterThan(-1);
     expect(lines).toBeGreaterThan(-1);
     expect(button).toBeLessThan(lines);
@@ -90,14 +95,18 @@ describe('إضافة الصنف بنفس الحركة', () => {
     }
   });
 
-  it('Enter على الكمية بيرجّع لبوباب الأصناف', () => {
+  it('Enter بيكمّل الفاتورة من غير ماوس', () => {
     // ده اللي بيخلّي الفاتورة كلها تتكتب من الكيبورد: اختار، اكتب كمية، Enter، اختار…
     //
     // النافذة واسعة عن قصد: حقل الكمية في شاشة البيع بينه وبين `setPickerOpen` تعليق طويل
-    // بيشرح ليه `preventDefault` ضرورية. اللي بيهمنا إن الاتنين موجودين في نفس المعالج.
-    for (const [name, src] of [['البيع', sale], ['الشرا', buy]] as const) {
-      expect(/onPressEnter[\s\S]{0,1600}setPickerOpen\(true\)/.test(src), name).toBe(true);
-    }
+    // بيشرح ليه `preventDefault` ضرورية.
+    expect(/onPressEnter[\s\S]{0,1600}setPickerOpen\(true\)/.test(sale), 'البيع').toBe(true);
+
+    // الشرا بقى جدول إدخال بطلب العميل: Enter بينزل للسطر اللي بعده، وآخر سطر بيفتح البوباب.
+    // فالوجهة واحدة — «كمّل من غير ما تسيب الكيبورد» — بس الطريق فيه خطوة زيادة.
+    expect(/onPressEnter[\s\S]{0,200}advanceFrom\(line\.key\)/.test(buy), 'الشرا').toBe(true);
+    const advance = buy.slice(buy.indexOf('const advanceFrom'));
+    expect(advance.slice(0, 400), 'آخر سطر مابيفتحش البوباب').toContain('setPickerOpen(true)');
   });
 });
 

@@ -672,17 +672,24 @@ export default function Purchases() {
     addProductById(item.id);
   };
 
-  /** سطور الفاتورة متجمّعة بالفئة — نفس عرض شاشة البيع. */
-  const linesByCategory = React.useMemo(() => {
-    const groups: { category: string | null; items: PurchaseItem[] }[] = [];
-    purchaseItems.forEach((l) => {
-      const category = (items.find((i: any) => i.id === l.item_id) as any)?.category ?? null;
-      let g = groups.find((x) => x.category === category);
-      if (!g) { g = { category, items: [] }; groups.push(g); }
-      g.items.push(l);
-    });
-    return groups;
-  }, [purchaseItems, items]);
+  /** فئة الصنف كنص جاهز للعرض — سطر صغير تحت الاسم بدل ترويسة مجموعة. */
+  const lineCategory = (line: PurchaseItem): string | null => {
+    const cat = (items.find((i: any) => i.id === line.item_id) as any)?.category;
+    return cat ? (categoryLabels[cat] || cat) : null;
+  };
+
+  /**
+   * Enter معناها «السطر ده خلص» — ننتقل للسطر اللي بعده، وآخر سطر بيفتح بوباب الأصناف.
+   *
+   * الإيد مابتسيبش الكيبورد: اكتب الكمية، Enter، اكتب اللي بعدها، Enter… ولما تخلص السطور
+   * البوباب بيفتح لصنف جديد. من غير كده كل سطر محتاج ماوس عشان توصل للخانة اللي بعدها.
+   */
+  const advanceFrom = (key: string) => {
+    const idx = purchaseItems.findIndex((l) => l.key === key);
+    const next = idx >= 0 ? purchaseItems[idx + 1] : undefined;
+    if (next) { setFocusLineKey(next.key); return; }
+    setPickerOpen(true);
+  };
 
 
 
@@ -835,38 +842,72 @@ export default function Purchases() {
                 إضافة صنف للفاتورة
               </Button>
 
+              {/*
+                * سطور الفاتورة كجدول مضغوط — نفس شكل الشاشة اللي العميل شغّال عليها.
+                *
+                * كانت كروت متجمّعة بالفئة: كل سطر بياخد مساحة كبيرة، وعنوان فئة فوق كل مجموعة،
+                * وفاتورة خمستاشر صنف بتبقى صفحتين تمرير. الجدول بيقول نفس الحاجات في سطر واحد
+                * وبعنوان أعمدة مرة واحدة فوق، فالعين بتقارن الكميات والأسعار رأسياً بدل ما
+                * تدوّر عليها جوّا كل كارت.
+                *
+                * الفئة بقت سطر صغير تحت اسم الصنف بدل ما تكون ترويسة مجموعة — نفس المعلومة من
+                * غير ما تكسر الجدول لمجموعات وتمنع المقارنة الرأسية.
+                *
+                * مفيش عمود باركود، ومفيش بحث بيه — اتشال من النظام بطلب العميل.
+                */}
               {purchaseItems.length === 0 ? (
                 <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
                   style={{ margin: '12px 0' }} />
               ) : (
-                linesByCategory.map((group) => (
-                  <div key={group.category ?? '__none__'}
-                    style={{ border: '1px solid #e6efe3', borderRadius: 10, overflow: 'hidden',
-                             marginBottom: 12 }}>
-                    <div style={{ background: '#f2f9f3', padding: '8px 12px', display: 'flex',
-                                  alignItems: 'center', gap: 8 }}>
-                      <Tag color="green" style={{ fontWeight: 700, margin: 0 }}>
-                        {group.category
-                          ? (categoryLabels[group.category] || group.category)
-                          : 'بدون فئة'}
-                      </Tag>
-                      <span style={{ color: '#8a8a8a', fontSize: 12 }}>
-                        {group.items.length} صنف
-                      </span>
-                    </div>
-
-                    {group.items.map((line) => (
-                      <div key={line.key}
-                        style={{ padding: '4px 12px 6px', borderTop: '1px solid #f0f5ee' }}>
-                        <Row gutter={8} align="middle">
-                          <Col md={5} xs={24}>
+                <div style={{ border: '1px solid #e6efe3', borderRadius: 10,
+                              overflowX: 'auto' }}>
+                  <table className="entry-grid">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 34 }}>#</th>
+                        <th style={{ minWidth: 150 }}>المخزن</th>
+                        <th style={{ minWidth: 170 }}>الصنف</th>
+                        <th style={{ minWidth: 96 }}>الوحدة</th>
+                        <th style={{ minWidth: 84 }}>الكمية</th>
+                        <th style={{ minWidth: 100 }}>سعر الوحدة</th>
+                        <th style={{ minWidth: 78 }}>خصم %</th>
+                        <th style={{ minWidth: 100 }}>الإجمالي</th>
+                        <th style={{ width: 40 }} />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchaseItems.map((line, idx) => (
+                        <tr key={line.key}>
+                          <td style={{ color: '#8a8a8a' }}>{idx + 1}</td>
+                          <td>
+                            {/* المخزن أول عمود عن قصد: هو أول حاجة بتتحدّد في السطر، وبيثبت
+                                للسطور اللي بعده لغاية ما يتغيّر. */}
+                            <Select size="small" style={{ width: '100%' }}
+                              placeholder="مخزن الاستلام"
+                              value={line.warehouse_id ?? undefined}
+                              onChange={(val) => {
+                                handleItemChange(line.key, 'warehouse_id', val ?? null);
+                                setStickyWarehouseId(val ?? null);
+                              }}
+                              options={warehouses.map((w: any) => ({
+                                value: w.id,
+                                label: `${w.name} (${w.warehouse_type === 'central'
+                                  ? 'مركزي' : 'فرعي'})`,
+                              }))} />
+                          </td>
+                          <td>
                             {/* الضغط على الاسم بيوجّه لوحة المخزون للصنف ده. */}
                             <b style={{ cursor: 'pointer' }}
                               onClick={() => setPanelItemId(line.item_id)}>
                               {line.item_id ? itemName(line.item_id) : 'اختر الصنف'}
                             </b>
-                          </Col>
-                          <Col md={3} xs={12}>
+                            {lineCategory(line) ? (
+                              <div style={{ color: '#8a8a8a', fontSize: 11 }}>
+                                {lineCategory(line)}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td>
                             <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
                               value={line.unit ?? '__base__'}
                               onChange={(val) => handleItemChange(
@@ -878,8 +919,8 @@ export default function Purchases() {
                                 </Select.Option>
                               ))}
                             </Select>
-                          </Col>
-                          <Col md={3} xs={8}>
+                          </td>
+                          <td>
                             {/* فاضية معناها «مااتكتبتش». صندوق بيفتح على ١ بيحوّل «٥» لـ«١٥»
                                 لأي حد يكتب من غير ما يمسح الأول. */}
                             <InputNumber size="small" style={{ width: '100%' }} min={0.001}
@@ -888,57 +929,39 @@ export default function Purchases() {
                               data-qty-key={line.key}
                               data-grid-col="qty" keyboard={false}
                               onChange={(val) => handleItemChange(line.key, 'quantity', val ?? null)}
-                              // Enter معناها «السطر ده خلص» — البوباب بيفتح للصنف اللي بعده،
-                              // فالفاتورة كلها: اختار، اكتب كمية، Enter، اختار… من غير ما
-                              // الإيد تسيب الكيبورد.
-                              onPressEnter={(e) => {
-                                e.preventDefault();
-                                if (Number(line.quantity || 0) > 0) setPickerOpen(true);
-                              }} />
-                          </Col>
-                          <Col md={4} xs={8}>
+                              onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+                          </td>
+                          <td>
                             <InputNumber size="small" min={0} step={0.01}
                               style={{ width: '100%' }} placeholder="سعر الوحدة"
                               value={line.unit_price}
+                              data-price-key={line.key}
                               onChange={(val) => handleItemChange(
-                                line.key, 'unit_price', val || 0)} />
-                          </Col>
-                          <Col md={3} xs={8}>
+                                line.key, 'unit_price', val || 0)}
+                              onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+                          </td>
+                          <td>
                             {/* فاضي = مفيش خصم متفق عليه، مش صفر. */}
                             <InputNumber size="small" min={0} max={99.99} step={0.5}
                               style={{ width: '100%' }} placeholder="خصم %"
                               value={line.discount_pct ?? undefined}
+                              data-disc-key={line.key}
                               onChange={(val) => handleItemChange(
-                                line.key, 'discount_pct', val ?? null)} />
-                          </Col>
-                          <Col md={4} xs={12}>
-                            {/* فاضي = مخزن المستند. الفاتورة الواحدة ممكن تتوزّع على أكتر
-                                من مخزن. */}
-                            <Select size="small" style={{ width: '100%' }}
-                              placeholder="مخزن الاستلام"
-                              value={line.warehouse_id ?? undefined}
-                              onChange={(val) => {
-                                handleItemChange(line.key, 'warehouse_id', val ?? null);
-                                // اللي بتختاره هنا بيبقى الافتراضي للسطور الجاية — مش
-                                // بيرجع يعدّل اللي اتكتب قبل كده.
-                                setStickyWarehouseId(val ?? null);
-                              }}
-                              options={warehouses.map((w: any) => ({
-                                value: w.id,
-                                label: `${w.name} (${w.warehouse_type === 'central'
-                                  ? 'مركزي' : 'فرعي'})`,
-                              }))} />
-                          </Col>
-                          <Col md={2} xs={12} style={{ textAlign: 'end' }}>
+                                line.key, 'discount_pct', val ?? null)}
+                              onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+                          </td>
+                          <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {fmtMoney(lineTotal(line))}
+                          </td>
+                          <td>
                             <Button size="small" danger type="text" icon={<DeleteOutlined />}
-                              onClick={() => setPurchaseItems(
-                                (prev) => prev.filter((x) => x.key !== line.key))} />
-                          </Col>
-                        </Row>
-                      </div>
-                    ))}
-                  </div>
-                ))
+                              onClick={() => handleRemoveItem(line.key)} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </Col>
             <Col xs={24} lg={6}>

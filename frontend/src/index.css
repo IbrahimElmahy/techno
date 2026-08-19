@@ -126,6 +126,47 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   box-shadow: inset 2px 0 0 #1677ff;
 }
 /*
+ * جدول إدخال سطور الفاتورة.
+ *
+ * الشاشة اللي العميل شغّال عليها بتدخّل السطور في جدول مضغوط: عنوان أعمدة مرة واحدة فوق، وكل صنف
+ * سطر واحد. اللي كان عندنا كروت متجمّعة بالفئة — كل سطر بياخد مساحة كبيرة، وفاتورة خمستاشر صنف
+ * بتبقى صفحتين تمرير، والكميات والأسعار مالهاش عمود تتقارن فيه رأسياً.
+ *
+ * المقاسات مضبوطة على إن كل خانة صندوق إدخال `size="small"` — الحشو الرأسي صغير عشان يبان أكبر
+ * عدد سطور، والأفقي كفاية إن الأعمدة ما تلزقش في بعض.
+ */
+.entry-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.entry-grid thead th {
+  background: #f2f9f3;
+  padding: 7px 8px;
+  text-align: start;
+  font-weight: 700;
+  color: #4a5a4a;
+  white-space: nowrap;
+  border-bottom: 1px solid #e6efe3;
+  /* الترويسة بتفضل بانة والفاتورة الطويلة بتتمرّر تحتها — العمود من غير اسمه رقم مجهول. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.entry-grid tbody td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #f0f5ee;
+  vertical-align: middle;
+}
+.entry-grid tbody tr:last-child td {
+  border-bottom: none;
+}
+/* السطر اللي المؤشر واقف عليه — نفس منطق `.row-cursor` في جداول العرض. */
+.entry-grid tbody tr:focus-within td {
+  background: #f7fbf6;
+}
+
+/*
  * السطر الملغي — معروض ومش محسوب.
  *
  * A voided coupon, a rejected inspection, a cancelled order: rows worth keeping on screen, because
