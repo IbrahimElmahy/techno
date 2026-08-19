@@ -41,9 +41,10 @@ const KIND_ENDPOINT: Record<PartyKind, string> = {
 };
 
 export default function PartyPickerModal({
-  open, kind, onPick, onCancel, date, onDateChange,
+  open, kind, onPick, onCancel, date, onDateChange, kinds, title,
 }: {
   open: boolean;
+  /** التصنيف اللي البوباب بيفتح عليه. */
   kind: PartyKind;
   onPick: (party: Party) => void;
   onCancel: () => void;
@@ -51,7 +52,19 @@ export default function PartyPickerModal({
    *  is what it still is when a document that already has a date changes its party. */
   date?: Dayjs;
   onDateChange?: (d: Dayjs) => void;
+  /**
+   * التصنيفات اللي ينفع تتنقّل بينها جوّه البوباب — «العملاء» و«الموردين».
+   *
+   * The system this client is migrating from opens a document with one dialog carrying a تصنيف
+   * list, so the person can look in the other book without closing what they started. Omit it and
+   * the picker stays fixed on `kind`, which is right for a screen that only ever has one answer.
+   */
+  kinds?: PartyKind[];
+  title?: string;
 }) {
+  // التصنيف الحالي — بيبدأ من اللي الشاشة فتحت بيه وبيرجعله كل مرة تتفتح.
+  const [activeKind, setActiveKind] = useState<PartyKind>(kind);
+  useEffect(() => { if (open) setActiveKind(kind); }, [open, kind]);
   const [parties, setParties] = useState<Party[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   // A customer must be assigned to a rep and a territory — they are asked for inline so the
@@ -74,11 +87,11 @@ export default function PartyPickerModal({
     setLoading(true);
     try {
       const [pRes, bRes, uRes, tRes] = await Promise.all([
-        api.get(KIND_ENDPOINT[kind]),
+        api.get(KIND_ENDPOINT[activeKind]),
         api.get('/api/v1/branches').catch(() => ({ data: [] })),
-        kind === 'customer' ? api.get('/api/v1/users').catch(() => ({ data: [] }))
+        activeKind === 'customer' ? api.get('/api/v1/users').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
-        kind === 'customer' ? api.get('/api/v1/territories').catch(() => ({ data: [] }))
+        activeKind === 'customer' ? api.get('/api/v1/territories').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
       ]);
       setParties(pRes.data);
@@ -88,7 +101,7 @@ export default function PartyPickerModal({
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (open) { load(); setQuery(''); setCreating(false); } }, [open, kind]);
+  useEffect(() => { if (open) { load(); setQuery(''); setCreating(false); } }, [open, activeKind]);
 
   const visible = useMemo(() => {
     const needle = normalizeAr(query);
@@ -123,13 +136,13 @@ export default function PartyPickerModal({
     setSaving(true);
     try {
       const payload: any = { name: values.name, phone: values.phone || undefined };
-      if (kind === 'customer') {
+      if (activeKind === 'customer') {
         payload.customer_type = values.customer_type || 'تاجر';
         payload.rep_id = values.rep_id;
         payload.territory_id = values.territory_id;
       }
-      const res = await api.post(KIND_ENDPOINT[kind], payload);
-      message.success(`تم إنشاء ${KIND_LABEL[kind]} بنجاح`);
+      const res = await api.post(KIND_ENDPOINT[activeKind], payload);
+      message.success(`تم إنشاء ${KIND_LABEL[activeKind]} بنجاح`);
       onPick({ id: res.data.id, name: res.data.name, phone: res.data.phone ?? null,
                address: res.data.address ?? null, balance: '0' });
       createForm.resetFields();
@@ -142,17 +155,20 @@ export default function PartyPickerModal({
   return (
     <TabModal
       open={open} onCancel={onCancel} width={780} centered destroyOnHidden
-      title={`اختيار ${KIND_LABEL[kind]}`}
-      footer={
-        <Space>
-          {!creating && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>
-              {kind === 'customer' ? 'عميل جديد' : 'مورد جديد'}
+      title={(
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span>{title ?? 'انشاء'}</span>
+          {/* زرار إنشاء لكل تصنيف — في الترويسة زي الشاشة اللي العميل شغّال عليها، مش في
+              الفوتر. الضغط بيفتح الفورم على التصنيف بتاعه على طول. */}
+          {!creating && (kinds ?? [kind]).map((k) => (
+            <Button key={k} size="small" icon={<PlusOutlined />}
+              onClick={() => { setActiveKind(k); setCreating(true); }}>
+              {k === 'customer' ? 'عميل جديد' : 'مورد جديد'}
             </Button>
-          )}
-          <Button onClick={onCancel}>إغلاق</Button>
-        </Space>
-      }
+          ))}
+        </div>
+      )}
+      footer={<Button onClick={onCancel}>إغلاق</Button>}
     >
       {creating ? (
         <Form form={createForm} layout="vertical" onFinish={handleCreate}>
@@ -160,14 +176,14 @@ export default function PartyPickerModal({
             <Col span={12}>
               <Form.Item name="name" label="الاسم"
                 rules={[{ required: true, message: 'الاسم مطلوب' }]}>
-                <Input autoFocus placeholder={`اسم ${KIND_LABEL[kind]}`} />
+                <Input autoFocus placeholder={`اسم ${KIND_LABEL[activeKind]}`} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="phone" label="الهاتف"><Input placeholder="اختياري" /></Form.Item>
             </Col>
           </Row>
-          {kind === 'customer' && (
+          {activeKind === 'customer' && (
             <Row gutter={12}>
               <Col span={8}>
                 <Form.Item name="rep_id" label="المندوب"
@@ -200,68 +216,107 @@ export default function PartyPickerModal({
           </Space>
         </Form>
       ) : (
-        <>
-          <Row gutter={8} style={{ marginBottom: 10 }}>
-            <Col xs={24} md={date ? 8 : 14}>
-              <Input allowClear autoFocus prefix={<SearchOutlined />}
-                placeholder="بحث بالاسم أو الهاتف"
-                value={query} onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={onListKey} />
-            </Col>
-            <Col xs={24} md={date ? 8 : 10}>
-              <Select allowClear style={{ width: '100%' }} placeholder="كل الفروع"
-                value={branchId} onChange={(v) => setBranchId(v)}
-                options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
-            </Col>
-            {date && onDateChange && (
-              <Col xs={24} md={8}>
-                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
-                  value={date} onChange={(v) => v && onDateChange(v)} />
-              </Col>
-            )}
-          </Row>
-          {date && (
-            <div style={{ marginBottom: 8, color: '#8a8a8a', fontSize: 12 }}>
-              التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
-              في نفس اليوم.
-            </div>
-          )}
-
-          <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid #f0f0f0',
-                        borderRadius: 8 }} onKeyDown={onListKey}>
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
-            ) : visible.length === 0 ? (
-              <Empty description="لا توجد نتائج — استخدم زر الإنشاء بالأسفل"
-                style={{ margin: '32px 0' }} />
-            ) : visible.map((p, i) => (
-              <div key={p.id} onClick={() => onPick(p)}
-                ref={(el) => { rowRefs.current[i] = el; }}
-                onMouseEnter={() => setCursor(i)}
-                style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  gap: 8, padding: '10px 14px', cursor: 'pointer',
-                  borderTop: '1px solid #f5f5f5',
-                  background: i === cursor ? '#eaf5e2' : undefined,
-                  boxShadow: i === cursor ? 'inset 2px 0 0 #6AB42D' : undefined,
-                }}>
-                <Space size={12}>
-                  {p.phone && <span style={{ color: '#8a8a8a', fontSize: 12 }}>{p.phone}</span>}
-                  {p.balance != null && Number(p.balance) !== 0 && (
-                    <Tag color={Number(p.balance) > 0 ? 'red' : 'green'}>
-                      {Number(Math.abs(Number(p.balance))).toLocaleString('ar-EG',
-                        { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
-                    </Tag>
-                  )}
-                </Space>
-                <b>{p.name}</b>
+        <Row gutter={12}>
+          {/*
+            * عمود الفلاتر يمين والنتايج شمال — نفس تقسيم الشاشة اللي العميل شغّال عليها.
+            *
+            * كان الفلاتر شريط فوق والقايمة تحته، فالقايمة بتاخد عرض الشاشة كله وارتفاع أقل.
+            * القايمة هنا هي الشغل، فبتاخد المساحة الطولية، والفلاتر بتقعد جنبها ثابتة بدل ما
+            * تاكل من ارتفاعها.
+            */}
+          <Col xs={24} md={8}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>الفرع</div>
+                <Select allowClear style={{ width: '100%' }} placeholder="كل الفروع"
+                  value={branchId} onChange={(v) => setBranchId(v)}
+                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
               </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 6, color: '#8a8a8a', fontSize: 12 }}>
-            {visible.length} من {parties.length} · ↑↓ للتنقل · Enter للاختيار
-          </div>
-        </>
+
+              {date && onDateChange && (
+                <div>
+                  <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>التاريخ</div>
+                  <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                    value={date} onChange={(v) => v && onDateChange(v)} />
+                </div>
+              )}
+
+              <div>
+                <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>البحث</div>
+                <Input allowClear autoFocus prefix={<SearchOutlined />}
+                  placeholder="بالاسم أو الهاتف"
+                  value={query} onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={onListKey} />
+              </div>
+
+              {/* تصنيف — بيتنقّل بين دفتر العملاء ودفتر الموردين من غير ما البوباب يتقفل. */}
+              {(kinds?.length ?? 0) > 1 && (
+                <div>
+                  <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>تصنيف</div>
+                  <div style={{ border: '1px solid #f0f0f0', borderRadius: 8,
+                                overflow: 'hidden' }}>
+                    {(kinds ?? []).map((k) => (
+                      <div key={k} onClick={() => setActiveKind(k)}
+                        style={{
+                          padding: '8px 12px', cursor: 'pointer', textAlign: 'center',
+                          borderTop: '1px solid #f5f5f5',
+                          background: k === activeKind ? '#eaf5e2' : '#fff',
+                          fontWeight: k === activeKind ? 700 : 400,
+                        }}>
+                        {k === 'customer' ? 'العملاء' : 'الموردين'}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {date && (
+                <div style={{ color: '#8a8a8a', fontSize: 12 }}>
+                  التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر
+                  بيقعوا في نفس اليوم.
+                </div>
+              )}
+            </div>
+          </Col>
+
+          <Col xs={24} md={16}>
+            <div style={{ height: 420, overflowY: 'auto', border: '1px solid #f0f0f0',
+                          borderRadius: 8 }} onKeyDown={onListKey}>
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
+              ) : visible.length === 0 ? (
+                <Empty description="لا توجد نتائج — استخدم زر الإنشاء بالأعلى"
+                  style={{ margin: '32px 0' }} />
+              ) : visible.map((party, i) => (
+                <div key={party.id} onClick={() => onPick(party)}
+                  ref={(el) => { rowRefs.current[i] = el; }}
+                  onMouseEnter={() => setCursor(i)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    gap: 8, padding: '10px 14px', cursor: 'pointer',
+                    borderTop: '1px solid #f5f5f5',
+                    background: i === cursor ? '#eaf5e2' : undefined,
+                    boxShadow: i === cursor ? 'inset 2px 0 0 #6AB42D' : undefined,
+                  }}>
+                  <Space size={12}>
+                    {party.phone && (
+                      <span style={{ color: '#8a8a8a', fontSize: 12 }}>{party.phone}</span>)}
+                    {party.balance != null && Number(party.balance) !== 0 && (
+                      <Tag color={Number(party.balance) > 0 ? 'red' : 'green'}>
+                        {Number(Math.abs(Number(party.balance))).toLocaleString('ar-EG',
+                          { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
+                      </Tag>
+                    )}
+                  </Space>
+                  <b>{party.name}</b>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 6, color: '#8a8a8a', fontSize: 12 }}>
+              {visible.length} من {parties.length} · ↑↓ للتنقل · Enter للاختيار
+            </div>
+          </Col>
+        </Row>
       )}
     </TabModal>
   );

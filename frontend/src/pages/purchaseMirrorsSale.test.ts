@@ -129,14 +129,22 @@ describe('نفس تركيب الصفحة', () => {
       expect(src).not.toContain('<Tabs');
     });
 
-  it.each([['البيع', 'Invoices.tsx'], ['الشرا', 'Purchases.tsx']])(
-    'شاشة %s فيها زرار «تسجيل فاتورة» بيبدأ ببوباب التاريخ', (_name, file) => {
-      const src = read(file);
-      expect(src).toContain("setNewStep('date')");
-      // التاريخ الأول، وبعده الطرف — نفس الترتيب في الاتنين.
-      expect(src).toContain("newStep === 'date'");
-      expect(src).toContain("newStep === 'party'");
-    });
+  it('شاشة البيع بتبدأ ببوباب التاريخ وبعده الطرف', () => {
+    const src = read('Invoices.tsx');
+    expect(src).toContain("setNewStep('date')");
+    expect(src).toContain("newStep === 'date'");
+    expect(src).toContain("newStep === 'party'");
+  });
+
+  it('شاشة الشرا بتفتح بباب واحد فيه التاريخ والطرف مع بعض', () => {
+    // العميل صوّر شاشته: بوباب «انشاء» واحد فيه الفرع والتاريخ والتصنيف والبحث والقايمة.
+    // كانوا خطوتين — بوباب بيسأل التاريخ وبعده بوباب بيسأل المورد — وهما نفس القرار.
+    const src = read('Purchases.tsx');
+    expect(src, 'لسه فيه خطوة تاريخ منفصلة').not.toContain("newStep === 'date'");
+    expect(src).toContain("setNewStep('party')");
+    // والتاريخ اتنقل جوّه الباب نفسه.
+    expect(src).toMatch(/date=\{purchaseDate\} onDateChange=/);
+  });
 
   it.each([['البيع', 'Invoices.tsx'], ['الشرا', 'Purchases.tsx']])(
     'شاشة %s بيرجع منها للسجل بزرار رجوع', (_name, file) => {

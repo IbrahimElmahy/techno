@@ -222,10 +222,30 @@ export default function Purchases() {
    * الفاتورة قديمة ومالهاش تاريخ مسجّل. فلتر بيقيس يوم الكتابة بيرمي فاتورة أول الشهر اتسجّلت
    * آخره، واللي بيدوّر عليها بيفتكرها مش موجودة.
    */
-  // الفروع — فلتر في السجل. بتتحمّل مرة مع باقي القوايم؛ الفلترة نفسها في المتصفح.
+  // الفروع — فلتر في السجل وحقل في الفاتورة. بتتحمّل مرة مع باقي القوايم.
   const [branches, setBranches] = useState<any[]>([]);
+  /** حسابات الترحيل — «الحساب» في ترويسة الفاتورة، وهو اللي القيد بينزل عليه. */
+  const [postAccounts, setPostAccounts] = useState<any[]>([]);
+  /** المورد المختار بتفاصيله — العنوان والتليفون والرصيد بيتعرضوا في الترويسة. */
+  const [party, setParty] = useState<Party | null>(null);
+  /**
+   * فرع الترويسة — بيضيّق مخازن السطور، مابيتحفظش على المستند.
+   *
+   * السيرفر مافيهوش عمود فرع على فاتورة الشرا: الفرع بيتعرف من المخزن اللي البضاعة نزلت فيه.
+   * فبدل ما تبقى خانة بتتكتب وتروح في اللا حاجة، بتعمل الحاجة الوحيدة اللي ليها معنى — تقصر
+   * قايمة المخازن على بتاعة الفرع ده، فاللي شغّال على فرع مابيشوفش مخازن غيره.
+   */
+  const [headerBranchId, setHeaderBranchId] = useState<number | undefined>();
+  const lineWarehouses = useMemo(
+    () => (headerBranchId
+      ? warehouses.filter((w: any) => w.branch_id === headerBranchId)
+      : warehouses),
+    [warehouses, headerBranchId],
+  );
   useEffect(() => {
     api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(console.error);
+    api.get('/api/v1/accounts', { params: { postable_only: true, active: true } })
+      .then((r) => setPostAccounts(r.data || [])).catch(console.error);
   }, []);
 
   const purchasesFilter = useListFilter(purchases, {
@@ -610,6 +630,10 @@ export default function Purchases() {
         credit_amount: creditAmount,
         variable_discount_pct: variableDiscount || 0,
         external_document_number: values.external_document_number || null,
+        // «الحساب» — الحساب اللي القيد بينزل عليه. الحقل كان موجود في السيرفر من ٠٣٠ والشاشة
+        // مكانتش بتبعته خالص، فكل فاتورة كانت بتترحّل على الافتراضي مهما كان قصد الكاتب.
+        expense_account_id: values.expense_account_id ?? null,
+        // `branch_id` مش في العقد عن قصد — مفيش عمود ليه على المستند، والفرع بيتعرف من المخزن.
         notes: values.notes || null,
         statement1: values.statement1 || null,
         statement2: values.statement2 || null,
@@ -647,6 +671,9 @@ export default function Purchases() {
    *  the second door and hands over to the page — the same order the sale opens in. */
   const handlePartyPicked = (picked: Party) => {
     setPartyPickerOpen(false);
+    // بيانات المورد بتتعرض على الفاتورة — العنوان والتليفون والرصيد الحالي. كانوا بيتشافوا في
+    // شاشة المورد بس، فاللي بيكتب فاتورة ومحتاج يتأكد إنه المورد الصح كان بيسيب الشاشة.
+    setParty(picked);
     // الباب الأخير بيسلّم للصفحة نفسها — التاريخ، وبعده المورد، وبعده الفاتورة بتفتح.
     if (newStep === 'party') { setNewStep(null); setCreateVisible(true); }
     form.setFieldsValue({ supplier_id: picked.id });
@@ -818,14 +845,58 @@ export default function Purchases() {
           a second. */}
       <DocumentToolbar actions={purchaseToolbar()} />
       <Form form={form} layout="vertical" onFinish={handleSubmit} requiredMark={false}>
+          {/*
+            * ترويسة الفاتورة بترتيب الشاشة اللي العميل شغّال عليها:
+            *
+            *   التاريخ · الفرع · الحساب · مستند رقم
+            *   مورد · الحالي · العنوان · الهاتف
+            *   ملاحظات · بيان ١ · بيان ٢ · بيان ٣
+            *
+            * «الحساب» كان **موجود في السيرفر ومفيش خانة ليه في الشاشة** — `expense_account_id`
+            * متعرّف على المستند من ٠٣٠ وبيسوق القيد، ومحدش كان يقدر يحدّده وهو بيكتب الفاتورة.
+            *
+            * وبيانات المورد (الرصيد والعنوان والتليفون) بتتعرض للقراءة: اللي بيكتب فاتورة
+            * ومحتاج يتأكد إنه المورد الصح كان لازم يسيب الشاشة ويفتح ملفه.
+            */}
           <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="supplier_id"
-                label="المورد"
+            <Col xs={12} md={6}>
+              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                  value={purchaseDate}
+                  onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 8 }}>
+                <Select allowClear placeholder="كل الفروع"
+                  onChange={(v) => setHeaderBranchId(v ?? undefined)}
+                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={7}>
+              {/* الحساب اللي الشرا بيترحّل عليه. فاضي = الحساب الافتراضي بتاع المشتريات. */}
+              <Form.Item name="expense_account_id" label="الحساب" style={{ marginBottom: 8 }}>
+                <Select allowClear showSearch optionFilterProp="label"
+                  placeholder="حساب المشتريات الافتراضي"
+                  options={postAccounts.map((a: any) => ({
+                    value: a.id,
+                    label: a.code ? `${a.code} ${a.name ?? ''}` : (a.name ?? `#${a.id}`) }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={5}>
+              <Form.Item name="external_document_number" label="مستند رقم"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم فاتورة المورد" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item name="supplier_id" label="مورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
-              >
-                {/* The same window the second door opens — searchable, with inline create.
+                style={{ marginBottom: 8 }}>
+                {/* The same window the first door opens — searchable, with inline create.
                     Changing the supplier mid-document goes through the same place it was first
                     chosen, so there is one way to answer «مين». */}
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
@@ -835,28 +906,32 @@ export default function Purchases() {
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
               </Form.Item>
             </Col>
-          </Row>
-
-          {/* حقول المستند اللي السيرفر مستنيها من 030.
-              «المندوب» اتشال بقرار العميل: المندوب بتاع البيع — هو اللي بيبيع وبيتحصّل
-              وبتتحسبله عمولة. الشحنة الواردة بيستلمها أمين المخزن، والمخزن نفسه متسجّل على
-              كل سطر. حقل بيتساب فاضي دايماً هو عمود فاضي في كل تقرير بعد كده. */}
-          <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item name="external_document_number" label="رقم المستند (الورقي)"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="اختياري — رقم فاتورة المورد الورقية" />
+            <Col xs={8} md={4}>
+              <Form.Item label="الحالي" style={{ marginBottom: 8 }}>
+                {/* رصيد المورد قبل الفاتورة دي — للقراءة، مش خانة تتكتب. */}
+                <Input readOnly value={party?.balance != null ? fmtMoney(party.balance) : ''} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={16} md={7}>
+              <Form.Item label="العنوان" style={{ marginBottom: 8 }}>
+                <Input readOnly value={party?.address ?? ''} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={5}>
+              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+                <Input readOnly value={party?.phone ?? ''} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col xs={24} md={6}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" />
               </Form.Item>
             </Col>
-          </Row>
-          <Row gutter={16}>
             {([1, 2, 3] as const).map((n) => (
-              <Col xs={24} md={8} key={n}>
+              <Col xs={24} md={6} key={n}>
                 <Form.Item name={`statement${n}`} label={`بيان ${n}`}
                   style={{ marginBottom: 8 }}>
                   <Input placeholder="اختياري" />
@@ -930,7 +1005,7 @@ export default function Purchases() {
                                 handleItemChange(line.key, 'warehouse_id', val ?? null);
                                 setStickyWarehouseId(val ?? null);
                               }}
-                              options={warehouses.map((w: any) => ({
+                              options={lineWarehouses.map((w: any) => ({
                                 value: w.id,
                                 label: `${w.name} (${w.warehouse_type === 'central'
                                   ? 'مركزي' : 'فرعي'})`,
@@ -1069,19 +1144,22 @@ export default function Purchases() {
                 </Form.Item>
               </>
             )}
+            /* بنفس أسماء الشريط اللي تحت الفاتورة في الشاشة اللي العميل شغّال عليها:
+               اجمالي قبل · خصم فاتورة · خصم فاتورة % · الاجمالي · المدفوع · الباقي.
+               «اجمالي قبل» بيتعرض دايماً دلوقتي — الشريط عنده بيوريه حتى وهو مساوي للإجمالي،
+               لأن اللي بيراجع بيقرا الشريط من فوق لتحت وسطر ناقص بيخلّيه يعدّ. */
             rows={[
-              // The gross only earns a line when a discount actually moved it — otherwise it says
-              // the same number twice and the reader has to work out that nothing happened.
-              { label: 'إجمالي السطور', value: grossTotal.toFixed(2),
-                show: variableDiscount > 0.001 },
-              { label: `خصم الفاتورة ${variableDiscount}%`,
+              { label: 'اجمالي قبل', value: grossTotal.toFixed(2) },
+              { label: 'خصم فاتورة',
                 value: `− ${(grossTotal - invoiceTotal).toFixed(2)}`,
                 color: '#cf1322', show: variableDiscount > 0.001 },
-              { label: 'إجمالي أصناف الفاتورة', value: invoiceTotal.toFixed(2),
+              { label: 'خصم فاتورة %', value: `${variableDiscount}%`,
+                show: variableDiscount > 0.001 },
+              { label: 'الاجمالي', value: invoiceTotal.toFixed(2),
                 strong: true, color: '#6AB42D' },
-              { label: 'المدفوع نقداً', value: `− ${cashAmount.toFixed(2)}`,
+              { label: 'المدفوع', value: `− ${cashAmount.toFixed(2)}`,
                 color: '#6AB42D', show: cashAmount > 0.001 },
-              { label: 'المتبقي آجل على المورد', value: creditAmount.toFixed(2),
+              { label: 'الباقي', value: creditAmount.toFixed(2),
                 big: true, rule: true,
                 color: creditAmount > 0.001 ? '#cf1322' : '#6AB42D' },
             ]}
@@ -1186,7 +1264,7 @@ export default function Purchases() {
               setPurchaseDate(dayjs());
               setDetail(null);
               setDocResult(null);
-              setNewStep('date');
+              setNewStep('party');
             }}>
             تسجيل فاتورة شراء
           </Button>
@@ -1237,8 +1315,19 @@ export default function Purchases() {
    *  sale's flow, because a person who has learned one of these screens has learned both. */
   const doors = (
     <>
+      {/*
+        * باب واحد بيفتح الفاتورة — الفرع والتاريخ والتصنيف والبحث والقايمة، كلهم في بوباب واحد.
+        *
+        * كان خطوتين: بوباب بيسأل التاريخ وبعده بوباب بيسأل المورد. سؤالين هما نفس القرار —
+        * «الفاتورة دي لمين وامتى» — واتنين لازم تقفلهم قبل ما تكتب أول سطر.
+        *
+        * `kinds` بيدّي تصنيف جوّه البوباب، فاللي بيدوّر على اسم ومش لاقيه في الموردين يبص في
+        * العملاء من غير ما يقفل ويفتح تاني.
+        */}
       <PartyPickerModal
         open={partyPickerOpen || newStep === 'party'} kind="supplier"
+        kinds={['supplier', 'customer']}
+        date={purchaseDate} onDateChange={(d) => setPurchaseDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
 
@@ -1262,27 +1351,6 @@ export default function Purchases() {
           for (const id of ids) await addProductById(id);
         }} />
 
-      <TabModal
-        open={newStep === 'date'}
-        title="تاريخ فاتورة الشراء"
-        okText="التالي" cancelText="إلغاء"
-        onCancel={() => setNewStep(null)}
-        onOk={() => setNewStep('party')}
-        destroyOnHidden
-      >
-        <div onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); setNewStep('party'); }
-        }}>
-          <DatePicker
-            style={{ width: '100%' }} size="large" allowClear={false} autoFocus
-            value={purchaseDate} onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())}
-            format="YYYY-MM-DD"
-          />
-        </div>
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
-          ده يوم استلام البضاعة، مش يوم ما اتكتبت الفاتورة.
-        </div>
-      </TabModal>
     </>
   );
 
