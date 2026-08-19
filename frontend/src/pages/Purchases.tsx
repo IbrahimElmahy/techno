@@ -181,6 +181,8 @@ export default function Purchases() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const qtyRefs = useRef<Record<string, any>>({});
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
+  /** السطر اللي آخر صنف نزل فيه — بيتكتب جوّا تحديث الحالة عشان يعرف مين السطر فعلاً. */
+  const landedRef = useRef<string>('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
@@ -324,6 +326,14 @@ export default function Purchases() {
     return () => cancelAnimationFrame(raf);
   }, [focusLineKey, pickerOpen, purchaseItems]);
 
+  // العين تروح للسطر اللي الصنف نزل فيه — بعد ما السطور تستقر، لأن مين هو السطر ده مايتقررش غير
+  // جوّا التحديث نفسه (سطر فاضي اتعبّى؟ صنف مكرر زادت كميته؟ سطر جديد اتضاف؟).
+  useEffect(() => {
+    if (!landedRef.current) return;
+    setFocusLineKey(landedRef.current);
+    landedRef.current = '';
+  }, [purchaseItems]);
+
   /** The categories the picker groups by — taken from what is actually in the list, so a heading
    *  never appears for a category with nothing under it. */
   const itemCategories = useMemo(() => {
@@ -371,15 +381,22 @@ export default function Purchases() {
   };
 
   const handleRemoveItem = (key: string) => {
-    if (purchaseItems.length === 1) {
-      message.warning('يجب إضافة صنف واحد على الأقل للفاتورة');
-      return;
-    }
-    setPurchaseItems(purchaseItems.filter((i) => i.key !== key));
+    // من `prev` زي الباقي — الحذف اللي بيبني من نسخة قديمة بيرمي أي سطر اتضاف بعد آخر رندر.
+    setPurchaseItems((prev) => {
+      if (prev.length === 1) {
+        message.warning('يجب إضافة صنف واحد على الأقل للفاتورة');
+        return prev;
+      }
+      return prev.filter((i) => i.key !== key);
+    });
   };
 
+  // بتحدّث من الحالة الحالية (`prev`) مش من النسخة اللي الدالة اتقفلت عليها.
+  //
+  // القراءة من `purchaseItems` هنا كانت بتكتب فوق أي سطر اتضاف بعد آخر رندر وتشيله — وده كان
+  // بيخلّي الفاتورة مش بتقبل أكتر من صنف. تفاصيل السيناريو فوق `addProductById`.
   const handleItemChange = (key: string, field: keyof PurchaseItem, value: any) => {
-    const updated = purchaseItems.map((item) => {
+    setPurchaseItems((prev) => prev.map((item) => {
       if (item.key === key) {
         let updatedItem = { ...item, [field]: value };
         // Auto-fill price if item changes
@@ -392,8 +409,7 @@ export default function Purchases() {
         return updatedItem;
       }
       return item;
-    });
-    setPurchaseItems(updated);
+    }));
   };
 
   // نفس ترتيب فاتورة البيع: خصم السطر ينزل على سطره، السطور تتجمع، وخصم الفاتورة ينزل على
@@ -604,33 +620,51 @@ export default function Purchases() {
   /** A picked product becomes a line, and the caret lands in its quantity — so the next thing
    *  typed is the number, not a hunt for the box. Same loop as the sale and the return. */
   /** الصنف اللي على الفاتورة بالفعل بتزيد كميته بدل ما يتكرّر سطر — زي شاشة البيع بالظبط. */
+  /**
+   * يضيف صنف للفاتورة — في تحديث واحد بيقرا السطور اللي موجودة فعلاً.
+   *
+   * كانت بتتعمل على مرحلتين: سطر فاضي يتضاف، وبعدين `handleItemChange` تحطّ الصنف جوّاه بـ
+   * `setTimeout`. والتانية كانت بتبني المصفوفة من `purchaseItems` بتاعة الرندر اللي الدالة اتعرّفت فيه —
+   * مفهاش السطر اللي لسه اتضاف — فكانت بتكتب فوقه وتشيله.
+   *
+   * الصنف الأول كان بيعدّي لأنه بينزل في السطر الفاضي الموجود من بدري، فمافيش سطر بيتضاف والنسختين
+   * بيطلعوا واحد. والتاني كان بيختفي. وعشان كده الفاتورة كانت مش بتقبل أكتر من صنف.
+   *
+   * دلوقتي الإضافة والتعبية حاجة واحدة جوّا `setPurchaseItems`، فاللوب اللي بيضيف عشرة أصناف مرة
+   * واحدة بيشتغل برضه — كل دورة بتبني على اللي قبلها مش على اللي كان موجود قبل اللوب.
+   */
   const addProductById = async (itemId: number) => {
     if (!itemId) return;
-    const existing = purchaseItems.find((l) => l.item_id === itemId);
-    if (existing) {
-      setPurchaseItems((prev) => prev.map((l) => (l.key === existing.key
-        ? { ...l, quantity: Number(l.quantity || 0) + 1 } : l)));
-      // العين تتبع الرقم اللي اتحرك، مش سطر جديد.
-      setPanelItemId(itemId);
-      setFocusLineKey(existing.key);
-      return;
-    }
-    // Reuse a blank row rather than leaving an empty line above the real one.
-    const blank = purchaseItems.find((l) => l.item_id === null);
-    const key = blank ? blank.key : `${Date.now()}-${itemId}`;
-    if (!blank) {
-      setPurchaseItems((prev) => [...prev,
-        { key, item_id: null, quantity: null, unit_price: 0, unit: null,
-          // بيرث آخر مخزن اتختار — الشحنة العادية كلها بتنزل مخزن واحد.
-          discount_pct: null, warehouse_id: stickyWarehouseId }]);
-    } else if (blank.warehouse_id === null && stickyWarehouseId !== null) {
-      handleItemChange(blank.key, 'warehouse_id', stickyWarehouseId);
-    }
+    const selected = items.find((i) => i.id === itemId);
+    const price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
+
+    setPurchaseItems((prev) => {
+      const existing = prev.find((l) => l.item_id === itemId);
+      if (existing) {
+        // العين تتبع الرقم اللي اتحرك، مش سطر جديد.
+        landedRef.current = existing.key;
+        return prev.map((l) => (l.key === existing.key
+          ? { ...l, quantity: Number(l.quantity || 0) + 1 } : l));
+      }
+      // Reuse a blank row rather than leaving an empty line above the real one.
+      const blank = prev.find((l) => l.item_id === null);
+      if (blank) {
+        landedRef.current = blank.key;
+        return prev.map((l) => (l.key === blank.key
+          ? { ...l, item_id: itemId, unit_price: price, unit: null,
+              warehouse_id: l.warehouse_id ?? stickyWarehouseId } : l));
+      }
+      const key = `${Date.now()}-${itemId}`;
+      landedRef.current = key;
+      return [...prev, {
+        key, item_id: itemId, quantity: null, unit_price: price, unit: null,
+        // بيرث آخر مخزن اتختار — الشحنة العادية كلها بتنزل مخزن واحد.
+        discount_pct: null, warehouse_id: stickyWarehouseId,
+      }];
+    });
+
     setPanelItemId(itemId);
-    // Through the same handler the dropdown uses, so the purchase price and the unit list are
-    // filled in one place rather than two that can drift.
-    setTimeout(() => handleItemChange(key, 'item_id', itemId), 0);
-    setFocusLineKey(key);
+    fetchUnits(itemId);
   };
 
   const handleProductPicked = (item: any) => {
