@@ -234,23 +234,17 @@ export default function Customers() {
 
   // Permanent delete. The server refuses when the customer has any movement (invoices,
   // receipts, ledger lines…) and tells the user to deactivate instead.
-  const onDelete = (record: CustomerRecord) => {
-    Modal.confirm({
-      title: 'حذف العميل نهائياً',
-      content: `سيتم حذف العميل "${record.name}" نهائياً. لا يمكن الحذف إذا كانت عليه أي حركة — عندها استخدم «إلغاء التفعيل».`,
-      okText: 'حذف نهائي',
-      okButtonProps: { danger: true },
-      cancelText: 'إلغاء',
-      onOk: async () => {
-        try {
-          await api.delete(`/api/v1/customers/${record.id}?hard=true`);
-          message.success('تم حذف العميل');
-          fetchCustomers();
-        } catch (err) {
-          console.error(err);
-        }
-      },
-    });
+  const onDelete = async (record: CustomerRecord) => {
+    // بينفّذ من غير سؤال — التأكيدات اتشالت بطلب صاحب النظام. السيرفر لسه بيرفض
+    // حذف العميل اللي عليه حركة وبيقول استعمل «إلغاء التفعيل»، فالحارس مكانه
+    // وهو شغّال؛ اللي اتشال هو السؤال.
+    try {
+      await api.delete(`/api/v1/customers/${record.id}?hard=true`);
+      message.success('تم حذف العميل');
+      fetchCustomers();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Their seven columns, in their order — `رقم · الفرع · الاسم · الهاتف · مندوب · محافظه ·

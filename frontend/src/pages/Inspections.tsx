@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Input, InputNumber, Modal, Popconfirm, Radio, Row, Select, Space, Statistic, Table, Tag, message,
+  Button, Card, Col, DatePicker, Descriptions, Input, InputNumber, Modal, Radio, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import {
   ReloadOutlined,
   MobileOutlined,

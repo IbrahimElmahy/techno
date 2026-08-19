@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Card, Collapse, Table, Button, Input, InputNumber, Switch, Space, Tag, message, Popconfirm,
-  Form, Tooltip, Select
+  Card, Collapse, Table, Button, Input, InputNumber, Switch, Space, Tag, message, Form, Tooltip, Select,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';

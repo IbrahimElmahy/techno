@@ -478,23 +478,17 @@ export default function Catalog() {
 
   // Permanent delete. The server refuses when the item has any movement, invoice line or
   // recipe reference, and tells the user to deactivate instead.
-  const deleteItem = (record: ItemRecord) => {
-    Modal.confirm({
-      title: 'حذف الصنف نهائياً',
-      content: `سيتم حذف الصنف "${record.name}" نهائياً. لا يمكن الحذف إذا كانت عليه أي حركة أو ظهر في أي فاتورة — عندها استخدم «إلغاء التفعيل».`,
-      okText: 'حذف نهائي',
-      okButtonProps: { danger: true },
-      cancelText: 'إلغاء',
-      onOk: async () => {
-        try {
-          await api.delete(`/api/v1/items/${record.id}?hard=true`);
-          message.success('تم حذف الصنف');
-          fetchItems();
-        } catch (err) {
-          console.error(err);
-        }
-      },
-    });
+  const deleteItem = async (record: ItemRecord) => {
+    // بينفّذ من غير سؤال — التأكيدات اتشالت بطلب صاحب النظام. السيرفر لسه بيرفض
+    // حذف الصنف اللي عليه حركة وبيقول استعمل «إلغاء التفعيل»، فالحارس مكانه
+    // وهو شغّال؛ اللي اتشال هو السؤال.
+    try {
+      await api.delete(`/api/v1/items/${record.id}?hard=true`);
+      message.success('تم حذف الصنف');
+      fetchItems();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const deactivateItem = (record: ItemRecord) => {

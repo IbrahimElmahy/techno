@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, InputNumber, Modal,
-  Popconfirm, Row, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, ReloadOutlined, StopOutlined, ArrowLeftOutlined,
 } from '@ant-design/icons';

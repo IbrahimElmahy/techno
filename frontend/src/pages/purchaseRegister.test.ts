@@ -208,12 +208,12 @@ describe('عرض وطباعة', () => {
     expect(open, 'لسه بيفتح صفحة العرض').not.toContain('setDetail(');
   });
 
-  it('التأكيد قبل العكس فاضل', () => {
-    // الفاتورة المرحّلة ماتتعدلش في مكانها — بيتعمل لها عكس كامل. سطر اتضغط بالغلط في قايمة
-    // مايعكسش مستند في صمت.
+  it('التعديل بيحصل من غير سؤال، والعكس لسه بيحصل', () => {
+    // صاحب النظام شاف بوباب «متأكد؟» وقال يشيله. اللي بيحصل تحته مااتغيّرش: الفاتورة المرحّلة
+    // ماتتعدلش في مكانها، فبيتعمل لها عكس كامل وتتفتح من جديد.
     const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const editPosted') + 900);
-    expect(edit).toContain('Modal.confirm');
-    expect(edit).toContain('/reverse');
+    expect(edit, 'رجع بوباب تأكيد').not.toContain('Modal.confirm');
+    expect(edit, 'العكس نفسه اتشال — ده مش المطلوب').toContain('/reverse');
   });
 
   it('«طباعة» بتفتح بوباب معاينة مش صفحة', () => {

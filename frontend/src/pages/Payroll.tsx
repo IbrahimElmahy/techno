@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, InputNumber, Popconfirm, Row, Select,
-  Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, InputNumber, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import {
   CheckCircleOutlined, DollarOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined,
   RollbackOutlined, SolutionOutlined,

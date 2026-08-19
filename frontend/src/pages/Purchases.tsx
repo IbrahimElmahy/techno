@@ -612,17 +612,11 @@ export default function Purchases() {
    * goods sent back to a supplier.
    */
   const editPosted = async (det: PurchaseDetail) => {
-    const ok = await new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: `تعديل ${det.document_number}؟`,
-        content: 'الفاتورة المرحّلة ماتتعدلش في مكانها: هيتعمل لها مرتجع كامل وتتفتح من جديد '
-          + 'للتعديل، وترحّل تاني لما تحفظ. المخزون والحساب بيرجعوا زي ما كانوا قبلها.',
-        okText: 'اعكسها وافتحها', cancelText: 'سيبها زي ما هي',
-        okButtonProps: { danger: true },
-        onOk: () => resolve(true), onCancel: () => resolve(false),
-      });
-    });
-    if (!ok) return;
+    // من غير تأكيد — اتشال بطلب صاحب النظام بعد ما شافه.
+    //
+    // اللي بيحصل لسه هو هو: الفاتورة المرحّلة ماتتعدلش في مكانها، فبيتعمل لها عكس كامل
+    // وتتفتح من جديد، والمخزون والحساب بيرجعوا زي ما كانوا. الفرق إن ده بيحصل على طول.
+    // وحمايات السيرفر كلها مكانها: الفترة المقفولة بترفض، والعكس بيتسجّل كقيد مضاد مش مسح.
     try {
       await api.post(`/api/v1/purchases/${det.id}/reverse`, { reason: 'edit' });
     } catch (err: any) {

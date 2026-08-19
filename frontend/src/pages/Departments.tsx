@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Input, Popconfirm, Row, Select, Space, Table, Tag, message,
+  Alert, Button, Card, Col, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import { ApartmentOutlined, PlusOutlined, ReloadOutlined, ImportOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Empty, Form, Input, InputNumber, Popconfirm, Row, Select,
-  Space, Switch, Tag, Tooltip, message,
+  Alert, Button, Card, Col, Empty, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Tooltip, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SettingOutlined,
   ThunderboltOutlined, SearchOutlined, SwapOutlined,

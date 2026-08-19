@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Input, InputNumber, Popconfirm, Row, Select, Space, Table,
-  Tabs, Tag, message
+  Button, Card, Col, DatePicker, Input, InputNumber, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';

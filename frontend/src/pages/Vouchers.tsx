@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card, Tabs, Table, Form, Segmented, Select, InputNumber, DatePicker, Input, Button, Space,
-  Tag, Statistic, Row, Col, Popconfirm, message, Descriptions, Alert
+  Card, Tabs, Table, Form, Segmented, Select, InputNumber, DatePicker, Input, Button, Space, Tag, Statistic, Row, Col, message, Descriptions, Alert,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import {
   DollarOutlined,
   ExportOutlined,

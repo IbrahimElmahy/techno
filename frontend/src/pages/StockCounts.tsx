@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, DatePicker, Form, Input, InputNumber, Popconfirm, Segmented, Select,
-  Space, Statistic, Table, Tag, message
+  Alert, Button, Card, DatePicker, Form, Input, InputNumber, Segmented, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined , ArrowRightOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';

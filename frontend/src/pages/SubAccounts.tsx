@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Collapse, Empty, Form, Input, Popconfirm, Row, Select, Skeleton, Space,
-  Table, Tag,
-  Tooltip, message
+  Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Table, Tag, Tooltip, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined,
   EyeOutlined, EyeInvisibleOutlined,

@@ -191,23 +191,17 @@ export default function Suppliers() {
   };
 
   // Permanent delete. The server refuses when the supplier has any movement.
-  const onDelete = (record: SupplierRecord) => {
-    Modal.confirm({
-      title: 'حذف المورد نهائياً',
-      content: `سيتم حذف المورد "${record.name}" نهائياً. لا يمكن الحذف إذا كانت عليه أي حركة — عندها استخدم «إلغاء التفعيل».`,
-      okText: 'حذف نهائي',
-      okButtonProps: { danger: true },
-      cancelText: 'إلغاء',
-      onOk: async () => {
-        try {
-          await api.delete(`/api/v1/suppliers/${record.id}?hard=true`);
-          message.success('تم حذف المورد');
-          fetchSuppliers();
-        } catch (err) {
-          console.error(err);
-        }
-      },
-    });
+  const onDelete = async (record: SupplierRecord) => {
+    // بينفّذ من غير سؤال — التأكيدات اتشالت بطلب صاحب النظام. السيرفر لسه بيرفض
+    // حذف المورد اللي عليه حركة وبيقول استعمل «إلغاء التفعيل»، فالحارس مكانه
+    // وهو شغّال؛ اللي اتشال هو السؤال.
+    try {
+      await api.delete(`/api/v1/suppliers/${record.id}?hard=true`);
+      message.success('تم حذف المورد');
+      fetchSuppliers();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Their six columns, in their order — `رقم · الفرع · الاسم · الهاتف · محافظه · مدينة` — plus

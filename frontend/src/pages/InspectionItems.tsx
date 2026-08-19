@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Card, Table, Button, Space, InputNumber, Input, Form, Tag, Switch, Popconfirm, message
+  Card, Table, Button, Space, InputNumber, Input, Form, Tag, Switch, message,
 } from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import { PlusOutlined, EditOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
