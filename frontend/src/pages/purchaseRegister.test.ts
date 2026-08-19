@@ -199,3 +199,30 @@ describe('شريط الفلاتر صف واحد', () => {
     expect(toolbar).toMatch(/const expanded = showMore \|\| hiddenActive/);
   });
 });
+
+describe('عرض وطباعة', () => {
+  it('«عرض» بيروح للتعديل على طول مش لصفحة عرض', () => {
+    // اللي بيضغط سطر في السجل تسعة من عشرة عايز يعدّل — الصفحة اللي في النص خطوة بتتعدّى.
+    const open = src.slice(src.indexOf('const openRow'), src.indexOf('const openPrint'));
+    expect(open).toContain('editPosted(doc)');
+    expect(open, 'لسه بيفتح صفحة العرض').not.toContain('setDetail(');
+  });
+
+  it('التأكيد قبل العكس فاضل', () => {
+    // الفاتورة المرحّلة ماتتعدلش في مكانها — بيتعمل لها عكس كامل. سطر اتضغط بالغلط في قايمة
+    // مايعكسش مستند في صمت.
+    const edit = src.slice(src.indexOf('const editPosted'), src.indexOf('const editPosted') + 900);
+    expect(edit).toContain('Modal.confirm');
+    expect(edit).toContain('/reverse');
+  });
+
+  it('«طباعة» بتفتح بوباب معاينة مش صفحة', () => {
+    expect(src).toMatch(/const openPrint = async/);
+    expect(src).toMatch(/open=\{!!preview\}/);
+    expect(src).toContain('printInvoice(doc, printOpts)');
+  });
+
+  it('الكيبورد بيوصل لنفس مكان الزرار', () => {
+    expect(src).toMatch(/onOpen: \(r\) => openRow\(r\)/);
+  });
+});

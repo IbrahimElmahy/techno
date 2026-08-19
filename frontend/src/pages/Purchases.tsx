@@ -13,7 +13,8 @@ import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ItemStockPanel from '../components/ItemStockPanel';
 import TotalsLadder from '../components/TotalsLadder';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter } from '../components/InvoiceDocument';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
+  from '../components/InvoiceDocument';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
@@ -221,6 +222,9 @@ export default function Purchases() {
 
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
+  /** الفاتورة اللي معروضة في بوباب الطباعة — معاينة، مش صفحة. */
+  const [preview, setPreview] = useState<PurchaseDetail | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   /**
    * فلاتر السجل — نفس اللي في الشاشة اللي العميل شغّال عليها.
@@ -345,6 +349,18 @@ export default function Purchases() {
    * It used to open in a modal over the list: a second shape for the same document, so looking at
    * yesterday's invoice landed somewhere that looked nothing like where it was typed.
    */
+  /** بيجيب المستند من السيرفر — الطريق الوحيد لتفاصيل فاتورة. */
+  const loadDocument = async (id: number): Promise<PurchaseDetail | null> => {
+    try {
+      const res = await api.get(`/api/v1/purchases/${id}`);
+      return res.data;
+    } catch (err) {
+      console.error(err);
+      message.error('تعذر تحميل الفاتورة');
+      return null;
+    }
+  };
+
   const openDetail = async (record: PurchaseRecord) => {
     setCreateVisible(true);
     setDetail(null);
@@ -361,7 +377,11 @@ export default function Purchases() {
 
   // السطر يفتح الفاتورة — بالماوس وبالكيبورد، ونفس الدالة للاتنين.
   const listKb = useTableKeyboard<PurchaseRecord>({
-    rows: purchasesFilter.filtered, rowKey: (r) => r.id, onOpen: openDetail,
+    // نفس وجهة زرار «عرض» — الكيبورد والماوس مايوصلوش لمكانين مختلفين من نفس السطر.
+    // والمفتاح شايل النوع: فاتورة ومرتجع ممكن يكون ليهم نفس الـid.
+    // `openRow` معرّفة تحت — بتتنادى داخل دالة عشان الترتيب مايفرقش.
+    rows: purchasesFilter.filtered, rowKey: (r) => `${r.kind}-${r.id}`,
+    onOpen: (r) => openRow(r),
   });
 
   // Same document shape as the sales invoice — one look, one print path for both sides.
@@ -1237,14 +1257,35 @@ export default function Purchases() {
     </Card>
   );
 
-  /** فتح سطر من السجل — المرتجع بيوصّل لفاتورته، والفاتورة لنفسها. */
-  const openRow = (row: PurchaseRecord) => {
-    if (row.kind === 'return' && row.parent_id) {
-      const parent = purchases.find(
-        (x) => x.kind === 'purchase' && x.id === row.parent_id);
-      if (parent) { openDetail(parent); return; }
+  /**
+   * «عرض» بيفتح الفاتورة للتعديل على طول — صفحة واحدة مش اتنين.
+   *
+   * كان بيفتح صفحة عرض مقفولة، وفيها زرار «تعديل الفاتورة» بيفتح صفحة تانية. اللي بيضغط على
+   * سطر في السجل تسعة من عشرة بيكون عايز يعدّل، فالصفحة اللي في النص كانت خطوة بتتعدّى.
+   *
+   * التأكيد اللي جوّه `editPosted` فاضل، وده مش صفحة تالتة: الفاتورة المرحّلة ماتتعدلش في
+   * مكانها — بيتعمل لها عكس كامل وتتفتح من جديد. حاجة بتغيّر المخزون والدفاتر لازم حد يقول
+   * «أيوة» قبلها، والسطر اللي اتضغط بالغلط في قايمة مايعكسش مستند في صمت.
+   *
+   * والمرتجع مالوش شاشة تعديل هنا، فبيفتح **معاينة** فاتورته بدل ما يودّي لمكان مايعملش حاجة.
+   */
+  const openRow = async (row: PurchaseRecord) => {
+    if (row.kind === 'return') {
+      if (row.parent_id) openPrint({ ...row, id: row.parent_id });
+      return;
     }
-    openDetail(row);
+    setDetailLoading(true);
+    const doc = await loadDocument(row.id);
+    setDetailLoading(false);
+    if (doc) editPosted(doc);
+  };
+
+  /** بوباب بيعرض الفاتورة زي ما هتتطبع — ومنه الطباعة. */
+  const openPrint = async (row: PurchaseRecord) => {
+    setPreviewLoading(true);
+    const doc = await loadDocument(row.id);
+    setPreviewLoading(false);
+    if (doc) setPreview(doc);
   };
 
   /**
@@ -1334,12 +1375,14 @@ export default function Purchases() {
       key: 'actions',
       render: (_: any, record: PurchaseRecord) => (
         <Space size="middle">
-          {/* المرتجع بيفتح الفاتورة اللي طالع منها — شاشة الفاتورة بتعرض مرتجعاتها تحتها،
-              فده بيوصل للمستند وللي وراه مع بعض بدل ما السطر مايفتحش حاجة. */}
           <Button type="dashed" icon={<EyeOutlined />} onClick={() => openRow(record)}>
             عرض
           </Button>
-          <Button type="link" icon={<PrinterOutlined />} onClick={() => openRow(record)}>
+          {/* الطباعة بتفتح معاينة في بوباب — الورقة بتتشاف قبل ما تطلع من الطابعة، ومن غير
+              ما اللي بيطبع يسيب السجل. */}
+          <Button type="link" icon={<PrinterOutlined />}
+            onClick={() => openPrint(record.kind === 'return' && record.parent_id
+              ? { ...record, id: record.parent_id } : record)}>
             طباعة
           </Button>
         </Space>
@@ -1497,6 +1540,34 @@ export default function Purchases() {
         date={purchaseDate} onDateChange={(d) => setPurchaseDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
+
+      {/*
+        * معاينة الفاتورة قبل الطباعة — في بوباب، مش صفحة.
+        *
+        * زرار الطباعة كان بيفتح صفحة العرض وسايب اللي بيطبع يدوّر على زرار الطباعة جوّاها،
+        * وبعدين يرجع للسجل. الورقة اللي هتطلع بتتشاف هنا، والطباعة من نفس المكان، والسجل
+        * فاضل تحت البوباب زي ما هو.
+        */}
+      <TabModal
+        open={!!preview} onCancel={() => setPreview(null)} width={900} centered
+        destroyOnHidden
+        title={preview ? `فاتورة شراء ${preview.document_number}` : 'معاينة'}
+        footer={(
+          <Space>
+            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+            <Button type="primary" icon={<PrinterOutlined />}
+              onClick={() => {
+                const doc = purchaseDoc(preview);
+                if (doc) printInvoice(doc, printOpts);
+              }}>
+              طباعة
+            </Button>
+            <Button onClick={() => setPreview(null)}>إغلاق</Button>
+          </Space>
+        )}
+      >
+        {preview ? <InvoiceDocument doc={purchaseDoc(preview)!} /> : null}
+      </TabModal>
 
       <ProductPickerModal
         open={pickerOpen}
