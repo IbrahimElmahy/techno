@@ -69,3 +69,31 @@ describe('توزيع الصفحة', () => {
     expect(summary).toContain('cols.apply(columns)');
   });
 });
+
+describe('عرض وطباعة — زي سجل الشرا', () => {
+  it('المستند بيتفتح في بوباب مش صفحة بتحل محل السجل', () => {
+    expect(src).toMatch(/<TabModal\s+open=\{!!viewing\}/);
+    expect(src, 'لسه بيحل محل السجل').not.toMatch(/\{viewing && \(\s*<Card/);
+  });
+
+  it('فيه عمود إجراءات فيه عرض وطباعة', () => {
+    expect(columnBlock).toContain("title: 'الإجراءات'");
+    expect(columnBlock).toContain('عرض');
+    expect(columnBlock).toContain('طباعة');
+  });
+
+  it('المرتجع ليه ورقة مطبوعة بنفس قالب الفاتورة', () => {
+    // القالب واحد للاتنين عشان الورقتين يطلعوا من نفس المطبعة.
+    expect(src).toMatch(/const returnDoc = \(r: any\): InvoiceDoc \| null/);
+    expect(src).toContain('<InvoiceDocument doc={returnDoc(viewing)!} />');
+    expect(src).toContain('invoiceFooter(returnDoc(viewing)');
+  });
+
+  it('الورقة مافيهاش نقدي ولا آجل', () => {
+    // المرتجع بيقلّل اللي على الشركة — مش بيتقبض ولا بيتصرف على الورقة دي.
+    const doc = src.slice(src.indexOf('const returnDoc'), src.indexOf('const cols ='));
+    expect(doc).toMatch(/cash: 0,\s*\n\s*credit: 0,/);
+    // ومفيش خصم ولا ضرايب، فالإجمالي والصافي واحد.
+    expect(doc).toMatch(/gross: r\.value,\s*\n\s*net: r\.value,/);
+  });
+});

@@ -4,7 +4,7 @@ import {
   Space, Table, Tag, message
 } from 'antd';
 import {
-  PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowLeftOutlined,
+  PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowLeftOutlined, EyeOutlined, PrinterOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -12,6 +12,8 @@ import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter }
+  from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
@@ -248,7 +250,56 @@ export default function PurchaseReturns() {
       ...textColumn(rows, (r: ReturnRow) => r.notes),
       render: (v: string | null) => v || '-',
     },
+    {
+      title: 'الإجراءات', key: 'actions', width: 190,
+      render: (_: any, record: ReturnRow) => (
+        <Space size="middle">
+          {/* زي سجل الشرا: «عرض» بيفتح المستند و«طباعة» بتفتح معاينة الورقة — والاتنين
+              بوباب فوق السجل، مش صفحة بتحل محله. */}
+          <Button type="dashed" size="small" icon={<EyeOutlined />}
+            onClick={() => openReturn(record)}>عرض</Button>
+          <Button type="link" size="small" icon={<PrinterOutlined />}
+            onClick={() => openReturn(record)}>طباعة</Button>
+        </Space>
+      ),
+    },
   ];
+
+  /**
+   * المرتجع بشكل المستند المطبوع — نفس قالب الفاتورة.
+   *
+   * كان مالوش ورقة: اللي عايز يبعت للمورد كشف باللي رجعله كان بيصوّر الشاشة. القالب واحد
+   * للاتنين عشان الورقتين يطلعوا من نفس المطبعة — ترويسة الشركة والتذييل والخطوط مايفرقوش
+   * بين مستند وتاني.
+   *
+   * المرتجع مافيهوش خصم ولا ضرايب، فالإجمالي والصافي واحد. و«نقدي/آجل» أصفار: المرتجع
+   * بيقلّل اللي على الشركة، مش بيتقبض ولا بيتصرف على الورقة دي.
+   */
+  const returnDoc = (r: any): InvoiceDoc | null => {
+    if (!r) return null;
+    return {
+      kind: 'purchase',
+      document_number: r.document_number,
+      date: r.return_date || String(r.created_at || '').slice(0, 10),
+      partyLabel: 'المورد',
+      partyName: r.supplier_name || '-',
+      lines: (r.lines || []).map((l: any) => ({
+        name: l.item_name || itemName(l.item_id),
+        quantity: l.quantity,
+        unit: l.unit ?? null,
+        unit_price: l.unit_price ?? 0,
+        line_total: l.line_total ?? 0,
+      })),
+      gross: r.value,
+      net: r.value,
+      cash: 0,
+      credit: 0,
+      extraMeta: [
+        ['فاتورة الشراء', r.purchase_document_number || '-'],
+        ...(r.notes ? ([['ملاحظات', r.notes]] as [string, string][]) : []),
+      ],
+    };
+  };
 
   const cols = useHiddenColumns('purchase-returns-list', ['id']);
 
@@ -502,51 +553,19 @@ export default function PurchaseReturns() {
           It moved goods back to the supplier and wrote a ledger entry, and there is no edit
           endpoint for one: the way to undo it is to buy the goods again, which is a real event
           with its own paper rather than a quiet rewrite of this one. */}
-      {viewing && (
-      <Card title={(
-        <Space>
-          <Button type="text" icon={<ArrowLeftOutlined />}
-            onClick={() => setViewing(null)}>رجوع</Button>
-          <span>{`مردود شراء ${viewing.document_number}`}</span>
-        </Space>
-      )}>
-        {viewing && (
-          <>
-            <Descriptions size="small" column={2} bordered style={{ marginBottom: 12 }}>
-              <Descriptions.Item label="التاريخ">
-                {viewing.return_date || String(viewing.created_at || '').slice(0, 10) || '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="جهة التعامل">{viewing.supplier_name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="فاتورة الشراء">
-                <DocRef kind="purchase" id={viewing.purchase_invoice_id}
-                  label={viewing.purchase_document_number} />
-              </Descriptions.Item>
-              <Descriptions.Item label="القيمة">
-                <strong style={{ color: '#cf4b1a' }}>{money(viewing.value)} ج.م</strong>
-              </Descriptions.Item>
-              {viewing.notes && (
-                <Descriptions.Item label="ملاحظات" span={2}>{viewing.notes}</Descriptions.Item>
-              )}
-            </Descriptions>
-            <Table
-              size="small" pagination={false} rowKey="item_id" loading={viewLoading}
-              dataSource={viewing.lines || []}
-              locale={{ emptyText: 'مفيش سطور متسجّلة على المردود ده' }}
-              columns={[
-                { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
-                  render: (v: string | null, r: any) => v || itemName(r.item_id) },
-                { title: 'الكمية', dataIndex: 'quantity', width: 120,
-                  render: (v: string) => <b>{Number(v)}</b> },
-              ]}
-            />
-          </>
-        )}
-
-        <div style={{ marginTop: 16, textAlign: 'left' }}>
-          <Button size="large" onClick={() => setViewing(null)}>إغلاق</Button>
-        </div>
-      </Card>
-      )}
+      {/*
+        * المستند في بوباب — عرض ومعاينة طباعة في نفس الحتة، زي سجل الشرا بالظبط.
+        *
+        * كان بيحل محل السجل: تفتح مردود، السجل يختفي، وترجع تدوّر على السطر اللي كنت واقف
+        * عليه. البوباب بيسيب السجل تحته زي ما هو.
+        */}
+      <TabModal
+        open={!!viewing} onCancel={() => setViewing(null)} width={900} centered destroyOnHidden
+        title={viewing ? `مردود شراء ${viewing.document_number}` : 'معاينة'}
+        footer={invoiceFooter(returnDoc(viewing), () => setViewing(null))}
+      >
+        {viewing ? <InvoiceDocument doc={returnDoc(viewing)!} /> : null}
+      </TabModal>
     </div>
   );
 }

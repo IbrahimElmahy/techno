@@ -1415,16 +1415,12 @@ export default function Invoices() {
   const stepFromDraft = (index: number) => {
     const target = invoices[index];
     if (!target) return;
-    const typed = lines.filter((l) => l.item_id !== null).length;
-    const go = () => { closeCreate(); openDetail(target); };
-    if (typed === 0) { go(); return; }
-    Modal.confirm({
-      title: 'سيبان الفاتورة دي؟',
-      content: `الفاتورة اللي بتكتبها فيها ${typed} صنف ولسه ماتحفظتش. لو مشيت دلوقتي هتضيع.`,
-      okText: 'سيبها وامشي', cancelText: 'ارجع للفاتورة',
-      okButtonProps: { danger: true },
-      onOk: go,
-    });
+    // بيمشي على طول — التأكيدات اتشالت من النظام بطلب صاحبه، ودي منهم.
+    //
+    // كانت بتسأل لما يكون في المستند سطور اتكتبت ولسه ماتحفظتش. اللي بيدوس «التالي» أو
+    // «السابق» وهو في نص كتابة بيسيب اللي كتبه، وده بقى قراره من غير وقفة.
+    closeCreate();
+    openDetail(target);
   };
 
   /**

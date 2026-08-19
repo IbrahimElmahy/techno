@@ -436,16 +436,12 @@ export default function Returns() {
   const stepFromDraft = (step: number) => {
     const target = neighbour(step);
     if (!target) return;
-    const typed = lines.filter((l) => l.item_id !== null).length;
-    const go = () => { closeCreate(); openDetail(target); };
-    if (typed === 0) { go(); return; }
-    Modal.confirm({
-      title: 'سيبان المرتجع ده؟',
-      content: `المرتجع اللي بتكتبه فيه ${typed} صنف ولسه ماتحفظش. لو مشيت دلوقتي هيضيع.`,
-      okText: 'سيبه وامشي', cancelText: 'ارجع للمرتجع',
-      okButtonProps: { danger: true },
-      onOk: go,
-    });
+    // بيمشي على طول — التأكيدات اتشالت من النظام بطلب صاحبه، ودي منهم.
+    //
+    // كانت بتسأل لما يكون في المستند سطور اتكتبت ولسه ماتحفظتش. اللي بيدوس «التالي» أو
+    // «السابق» وهو في نص كتابة بيسيب اللي كتبه، وده بقى قراره من غير وقفة.
+    closeCreate();
+    openDetail(target);
   };
 
   const returnToolbar = (): ToolbarAction[] => {

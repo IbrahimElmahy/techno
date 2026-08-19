@@ -25,16 +25,15 @@ function tsxFiles(dir: string): { name: string; path: string }[] {
 const files = [...tsxFiles('pages'), ...tsxFiles('components')];
 
 /**
- * الاستثناءات — وكل واحد ليه سبب مكتوب:
+ * الاستثناءان الوحيدان، وكل واحد ليه سبب:
  *
- * - `AppLayout` بيعرض إن فيه نسخة أحدث. ده عرض مش تحذير، ومابيغيّرش حاجة في الداتا.
+ * - `AppLayout` بيعرض إن فيه نسخة أحدث للتحميل. ده عرض مش تحذير، ومابيغيّرش حاجة في الداتا.
  * - `TabModal` بيذكر `Modal.confirm` في تعليق بيشرح ليه مش بيتأثر بالتبويبات — نص مش نداء.
- * - `Invoices` و`Returns` بيسألوا قبل ما تسيب فاتورة **لسه ماتحفظتش وفيها سطور اتكتبت**. ده
- *   نوع تاني: بيحمي كتابة اللي قدام الشاشة من إنها تضيع، مش بيحمي الداتا منه. صاحب النظام
- *   طلب نفس النوع ده بنفسه في التطبيق. لو قال يشيله كمان، بيتشال من هنا.
+ *
+ * سؤال «سايب فاتورة لسه ماتحفظتش» اتشال هو كمان: صاحب النظام قال يشيل الكل، والنوع ده منهم.
  */
 const ALLOWED = ['AppLayout.tsx', 'TabModal.tsx'];
-const UNSAVED_WORK = ['Invoices.tsx', 'Returns.tsx'];
+const UNSAVED_WORK: string[] = [];
 
 describe('مفيش تأكيدات', () => {
   it('مفيش Modal.confirm على فعل بيغيّر داتا', () => {
@@ -70,6 +69,13 @@ describe('مفيش تأكيدات', () => {
 });
 
 describe('الحراس مكانهم', () => {
+  it('سيبان مستند نص كتابته بيمشي على طول', () => {
+    for (const file of ['Invoices.tsx', 'Returns.tsx']) {
+      const src = read(join(SRC, 'pages', file));
+      expect(src, `«${file}» لسه بيسأل قبل ما يسيب`).not.toContain('Modal.confirm');
+    }
+  });
+
   it('الحذف النهائي لسه بينادي السيرفر اللي بيرفضه لو عليه حركة', () => {
     for (const [file, path] of [['Catalog.tsx', '/api/v1/items/'],
       ['Customers.tsx', '/api/v1/customers/'], ['Suppliers.tsx', '/api/v1/suppliers/']] as const) {
