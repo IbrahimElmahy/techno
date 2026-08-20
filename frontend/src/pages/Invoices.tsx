@@ -1683,38 +1683,35 @@ export default function Invoices() {
             * حساب من حسابات العميل. وبيبان بس لما يكون عنده أكتر من حساب؛ اللي عنده واحد
             * مابيتسألش سؤال إجابته واحدة.
             */}
-              {/* نوع الفاتورة. Shown only when the customer HAS more than one line, because for
-                  everybody else it is a question with a single possible answer. Left empty rather
-                  than pre-picked: choosing for him is choosing which balance the invoice moves. */}
-              {families.length > 1 && (
-            <div style={{
-              marginBottom: 8, padding: '6px 12px', borderRadius: 10,
-              background: '#f6faf3', border: '1px solid #e6efe3',
-            }}>
-                  {/* «اختار» وبس. الشرح الطويل كان بيقول حاجة الاختيار نفسه بيقولها:
-                      الأسماء والأرصدة قدام الواحد، وهو عارف حساباته. */}
-                  <div style={{ fontSize: 12, color: '#3a4a3a', fontWeight: 700,
-                                marginBottom: 4 }}>
-                    اختار
-                  </div>
-                  <Segmented
-                    value={invoiceFamily ?? ''}
-                    onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
-                    options={families.map((a) => ({
-                      value: a.family as string,
-                      label: (
-                        <span>
-                          {a.family}
-                          <span style={{ color: '#6b6b6b', marginInlineStart: 6, fontSize: 12 }}>
-                            ({money(Number(a.balance || 0))})
-                          </span>
-                        </span>
-                      ),
-                    }))}
-                  />
-              {/* التحذير اللي كان تحت الاختيار اتشال بطلب صاحب النظام: «اختار» فوق الأزرار
-                  والأزرار فاضية — الطلب واضح من غير سطر أحمر بيكرّره. ولو حد بعت من غير
-                  اختيار، السيرفر لسه بيرفض ويقول السبب. */}
+          {/* نوع الفاتورة — زرارين بعرض الصفحة، من غير عنوان فوقهم.
+              *
+              * كان فوقهم سطر مكتوب فيه «اختار»؛ كلمة بتوصف الزرار اللي جنبها، والزرار
+              * الفاضي بيقول نفس الكلام. وكانوا صغيرين على جنب الشاشة، والاختيار ده هو اللي
+              * بيقرّر الفاتورة بتترحّل على أنهي حساب من حسابات العميل — يعني أهم قرار في
+              * الترويسة كان أصغر حاجة فيها. بقوا زرارين كبار مقسومين على العرض.
+              *
+              * وبيبانوا بس لما يكون عنده أكتر من حساب؛ اللي عنده واحد مابيتسألش سؤال
+              * إجابته واحدة. وبيبتدوا فاضيين — الاختيار عنه هو اختيار أنهي رصيد يتحرّك. */}
+          {families.length > 1 && (
+            <div style={{ marginBottom: 10 }}>
+              <Segmented
+                block
+                size="large"
+                value={invoiceFamily ?? ''}
+                onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
+                options={families.map((a) => ({
+                  value: a.family as string,
+                  label: (
+                    <span style={{ fontWeight: 700 }}>
+                      {a.family}
+                      <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
+                                     fontWeight: 400 }}>
+                        ({money(Number(a.balance || 0))})
+                      </span>
+                    </span>
+                  ),
+                }))}
+              />
             </div>
           )}
 

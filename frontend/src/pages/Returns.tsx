@@ -653,34 +653,29 @@ export default function Returns() {
                 the customer HAS more than one line, because for everybody else it is a question
                 with a single possible answer. Left empty rather than pre-picked, because choosing
                 for him is choosing which debt the refund comes off. */}
+            {/* نوع المرتجع — نفس زرارين فاتورة البيع بالظبط: بعرض الصفحة، من غير عنوان
+                فوقهم، وفاضيين لحد ما يتقال على أنهي حساب المرتجع بيرجّع. */}
             {families.length > 1 && (
-              <Row style={{ marginBottom: 12 }}>
-                <Col xs={24}>
-                  {/* «اختار» وبس — نفس اختصار فاتورة البيع. الأسماء والأرصدة قدام الواحد. */}
-                  <div style={{ fontSize: 12, color: '#3a4a3a', fontWeight: 700,
-                                marginBottom: 4 }}>
-                    اختار
-                  </div>
-                  <Segmented
-                    value={returnFamily ?? ''}
-                    onChange={(v: string | number) => setReturnFamily(String(v) || null)}
-                    options={families.map((a) => ({
-                      value: a.family as string,
-                      label: (
-                        <span>
-                          {a.family}
-                          <span style={{ color: '#6b6b6b', marginInlineStart: 6, fontSize: 12 }}>
-                            ({money(Number(a.balance || 0))})
-                          </span>
+              <div style={{ marginBottom: 10 }}>
+                <Segmented
+                  block
+                  size="large"
+                  value={returnFamily ?? ''}
+                  onChange={(v: string | number) => setReturnFamily(String(v) || null)}
+                  options={families.map((a) => ({
+                    value: a.family as string,
+                    label: (
+                      <span style={{ fontWeight: 700 }}>
+                        {a.family}
+                        <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
+                                       fontWeight: 400 }}>
+                          ({money(Number(a.balance || 0))})
                         </span>
-                      ),
-                    }))}
-                  />
-              {/* التحذير اللي كان تحت الاختيار اتشال بطلب صاحب النظام: «اختار» فوق الأزرار
-                  والأزرار فاضية — الطلب واضح من غير سطر أحمر بيكرّره. ولو حد بعت من غير
-                  اختيار، السيرفر لسه بيرفض ويقول السبب. */}
-                </Col>
-              </Row>
+                      </span>
+                    ),
+                  }))}
+                />
+              </div>
             )}
 
             {/* (031) The document fields, the same set and the same order as the sale. They have
