@@ -51,6 +51,10 @@ class TradeOrder(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
+    # الإجمالي قبل خصم المستند — عشان الورقة تقدر تعرض السُلّم كامل زي الفاتورة، مش الصافي بس.
+    gross: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    # خصم على إجمالي الورقة، زيادة على خصم كل سطر. نفس اسم الحقل اللي على الفاتورة والمردود.
+    variable_discount_pct: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     total: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
@@ -77,6 +81,12 @@ class TradeOrderLine(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     unit_price: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    # (008) الوحدة اللي السعر متقال بيها — نفس سطر الفاتورة بالظبط. `None` = الوحدة الأساسية.
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_factor: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    # (027) خصم السطر. الورقة اللي بتتسعّر عليها بتتسعّر بخصوماتها، وإلا الرقم اللي اتعرض
+    # على العميل مش هو الرقم اللي في الورقة.
+    discount_pct: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(240), nullable=True)
 

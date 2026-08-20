@@ -15,7 +15,7 @@ const src = readFileSync(join(__dirname, 'Orders.tsx'), 'utf8');
 
 describe('الصفحة بتقول هي شيت تسعير', () => {
   it('العنوان وتنبيه الشاشة بيسموها كده', () => {
-    expect(src).toMatch(/شيت التسعير/);
+    expect(src).toMatch(/title="شيت تسعير"/);
     expect(src).toMatch(/شيت تسعير — مش بيحرّك مخزون ولا خزينة/);
   });
 

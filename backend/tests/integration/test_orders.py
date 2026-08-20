@@ -59,14 +59,21 @@ def test_an_order_moves_no_stock(client, inv_world, login):
     assert Decimal(on_hand["on_hand"]) == Decimal("0.000")
 
 
-def test_a_purchase_order_needs_a_supplier(client, inv_world, login):
+def test_a_pricing_sheet_needs_no_party(client, inv_world, login):
+    """الطرف مش مطلوب — الورقة دي بتسعّر، مش بتتكتب على حد.
+
+    كانت بترفض من غير مورد. حد بيسعّر أصناف عشان يعرف يشتري بكام لسه مش عارف من مين،
+    وإجبار طرف كان بيخلّيه يخترع واحد عشان يعدّي الشاشة — وده بيدخل داتا غلط أوحش من
+    إنها ناقصة. الفاتورة نفسها لسه بتطلب مورد زي ما هي.
+    """
     admin = login("admin")
     item = _product(client, admin, "للشراء")
 
-    missing = client.post("/api/v1/orders", headers=admin, json={
+    bare = client.post("/api/v1/orders", headers=admin, json={
         "kind": "purchase",
         "lines": [{"item_id": item["id"], "quantity": "10", "unit_price": "60"}]})
-    assert missing.status_code == 422
+    assert bare.status_code == 201, bare.text
+    assert bare.json()["supplier_id"] is None
 
     sup = _supplier(client, admin)
     ok = client.post("/api/v1/orders", headers=admin, json={

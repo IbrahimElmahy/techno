@@ -34,6 +34,11 @@ class OrderLineIn(BaseModel):
     item_id: int
     quantity: Decimal
     unit_price: Decimal = Decimal("0")
+    # (008) الوحدة اللي السعر متقال بيها — `None` يعني الأساسية، زي سطر الفاتورة بالظبط.
+    unit: str | None = None
+    unit_factor: Decimal | None = None
+    # (027) خصم السطر بالمية. الورقة اللي العميل شافها بخصوماتها، مش من غيرها.
+    discount_pct: Decimal | None = None
     notes: str | None = None
 
 
@@ -45,6 +50,8 @@ class OrderIn(BaseModel):
     due_date: date | None = None
     warehouse_id: int | None = None
     branch_id: int | None = None
+    # خصم على إجمالي الورقة، زيادة على خصم كل سطر — نفس الفاتورة.
+    variable_discount_pct: Decimal = Decimal("0")
     notes: str | None = None
     lines: list[OrderLineIn]
 
@@ -55,6 +62,9 @@ class OrderLineOut(BaseModel):
     item_name: str | None = None
     quantity: Decimal
     unit_price: Decimal
+    unit: str | None = None
+    unit_factor: Decimal | None = None
+    discount_pct: Decimal | None = None
     line_total: Decimal
     notes: str | None = None
 
@@ -69,6 +79,8 @@ class OrderOut(BaseModel):
     order_date: date | None
     due_date: date | None
     warehouse_id: int | None
+    gross: Decimal = Decimal("0")
+    variable_discount_pct: Decimal = Decimal("0")
     total: Decimal
     notes: str | None
     converted_invoice_id: int | None
@@ -89,13 +101,16 @@ def _out(db: Session, o: TradeOrder) -> OrderOut:
     return OrderOut(
         id=o.id, document_number=o.document_number, kind=o.kind.value, status=o.status.value,
         customer_id=o.customer_id, supplier_id=o.supplier_id, order_date=o.order_date,
-        due_date=o.due_date, warehouse_id=o.warehouse_id, total=o.total, notes=o.notes,
+        due_date=o.due_date, warehouse_id=o.warehouse_id,
+        gross=o.gross or ZERO, variable_discount_pct=o.variable_discount_pct or ZERO,
+        total=o.total, notes=o.notes,
         converted_invoice_id=o.converted_invoice_id, converted_at=o.converted_at,
         created_at=o.created_at,
         lines=[OrderLineOut(
             id=ln.id, item_id=ln.item_id, item_name=names.get(ln.item_id),
-            quantity=ln.quantity, unit_price=ln.unit_price, line_total=ln.line_total,
-            notes=ln.notes) for ln in o.lines],
+            quantity=ln.quantity, unit_price=ln.unit_price, unit=ln.unit,
+            unit_factor=ln.unit_factor, discount_pct=ln.discount_pct,
+            line_total=ln.line_total, notes=ln.notes) for ln in o.lines],
     )
 
 
@@ -113,10 +128,14 @@ def create_order(
                                   "message": "نوع الطلب غير صحيح."}) from exc
     if not body.lines:
         raise HTTPException(422, {"code": "validation", "message": "لازم سطر واحد على الأقل."})
-    if kind == OrderKind.sale and not body.customer_id:
-        raise HTTPException(422, {"code": "validation", "message": "اختر العميل."})
-    if kind == OrderKind.purchase and not body.supplier_id:
-        raise HTTPException(422, {"code": "validation", "message": "اختر المورد."})
+    # الطرف مش مطلوب — بطلب صاحب النظام.
+    #
+    # ده شيت تسعير: حد بيسعّر أصناف عشان يعرض السعر أو يراجعه، من غير ما يبقى عارف
+    # لسه هيعرضه على مين. لما البيع يتأكد، الفاتورة هي اللي بتتكتب على العميل وبتتربط
+    # بالورقة دي. إجبار طرف كان بيخلّي اللي عايز يسعّر يخترع عميل عشان يعدّي الشاشة —
+    # وده بيدخل داتا غلط أوحش من إنها ناقصة.
+    #
+    # الأعمدة nullable من الأصل، والفاتورة نفسها لسه بتطلب عميل زي ما هي.
 
     n = db.scalar(select(func.count()).select_from(TradeOrder).where(
         TradeOrder.kind == kind)) or 0
@@ -124,12 +143,24 @@ def create_order(
         document_number=f"{_PREFIX[kind]}-{n + 1:06d}", kind=kind,
         customer_id=body.customer_id, supplier_id=body.supplier_id,
         order_date=body.order_date, due_date=body.due_date, warehouse_id=body.warehouse_id,
-        branch_id=body.branch_id, notes=body.notes, total=ZERO, actor_user_id=current.id,
+        branch_id=body.branch_id, notes=body.notes,
+        gross=ZERO, variable_discount_pct=to_money(body.variable_discount_pct or 0),
+        total=ZERO, actor_user_id=current.id,
     )
     db.add(order)
     db.flush()
 
-    total = ZERO
+    # نفس حساب الفاتورة بالحرف: خصم السطر على سطره، وخصم الورقة على المجموع بعده.
+    #
+    # ضرب النسبتين في بعض (بدل ما تتجمعوا) هو اللي بيخلّي «١٠٪ على السطر و٥٪ على الورقة»
+    # تطلع نفس الرقم اللي الفاتورة هتطلعه لما الورقة دي تتحوّل — ولو الرقمين اختلفوا،
+    # العميل بيبقى شاف سعر والفاتورة جاتله بسعر تاني.
+    doc_pct = to_money(body.variable_discount_pct or 0)
+    if doc_pct < ZERO or doc_pct >= to_money(100):
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "خصم الورقة لازم يكون بين صفر و٩٩٫٩٩."})
+    gross = ZERO
+    net = ZERO
     for raw in body.lines:
         if db.get(Item, raw.item_id) is None:
             raise HTTPException(422, {"code": "validation", "message": "صنف غير موجود."})
@@ -137,12 +168,21 @@ def create_order(
         if quantity <= to_qty(0):
             raise HTTPException(422, {"code": "validation",
                                       "message": "الكمية لازم تكون أكبر من صفر."})
-        line_total = to_money(quantity * to_money(raw.unit_price))
-        total = to_money(total + line_total)
+        line_pct = to_money(raw.discount_pct or 0)
+        if line_pct < ZERO or line_pct >= to_money(100):
+            raise HTTPException(422, {"code": "validation",
+                                      "message": "خصم السطر لازم يكون بين صفر و٩٩٫٩٩."})
+        before = to_money(quantity * to_money(raw.unit_price))
+        line_total = to_money(before * (to_money(100) - line_pct) / to_money(100))
+        gross = to_money(gross + before)
+        net = to_money(net + line_total)
         db.add(TradeOrderLine(
             order_id=order.id, item_id=raw.item_id, quantity=quantity,
-            unit_price=to_money(raw.unit_price), line_total=line_total, notes=raw.notes))
-    order.total = total
+            unit_price=to_money(raw.unit_price), unit=raw.unit,
+            unit_factor=to_qty(raw.unit_factor) if raw.unit_factor is not None else None,
+            discount_pct=line_pct, line_total=line_total, notes=raw.notes))
+    order.gross = gross
+    order.total = to_money(net * (to_money(100) - doc_pct) / to_money(100))
     db.flush()
     out = _out(db, order)
     db.commit()

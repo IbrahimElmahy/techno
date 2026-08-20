@@ -102,7 +102,7 @@ export const NAVIGATION: NavGroup[] = [
       },
       { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردود مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
       { key: '/reservations', label: 'الحجوزات', roles: SALES, a5: '/reservations/create' },
-      { key: '/orders?kind=sale', label: 'طلبات بيع', roles: R(SALES), a5: '/saleorders/create' },
+      { key: '/orders?kind=sale', label: 'شيت تسعير بيع', roles: R(SALES), a5: '/saleorders/create' },
       {
         key: 'grp-orders-reports',
         label: 'تقارير الطلبات والحجوزات',
@@ -151,7 +151,7 @@ export const NAVIGATION: NavGroup[] = [
         ],
       },
       { key: '/trade-reports?view=purchase-return-items', label: 'تقارير مردود مشتريات', roles: R(BUYING), a5: '/purchasesreturns/itemsearch' },
-      { key: '/orders?kind=purchase', label: 'طلبات شراء', roles: R(BUYING), a5: '/purchaseorders/create' },
+      { key: '/orders?kind=purchase', label: 'شيت تسعير شرا', roles: R(BUYING), a5: '/purchaseorders/create' },
     ],
   },
 
