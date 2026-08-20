@@ -620,7 +620,9 @@ export default function Returns() {
           {/* Same eleven verbs in the same eleven places as the sale — a return is the sale read
               backwards, and the hand should not have to relearn the row for it. */}
           <DocumentToolbar actions={returnToolbar()} />
-          <Form form={createForm} layout="vertical" onFinish={handleSubmit}>
+          {/* نفس ضغط باقي شاشات المستندات — `doc-form` معرّف في `index.css`. */}
+          <Form form={createForm} layout="vertical" size="small" className="doc-form"
+            onFinish={handleSubmit}>
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item label="العميل" required style={{ marginBottom: 8 }}>
@@ -802,8 +804,8 @@ export default function Returns() {
                 <Row gutter={16}>
                 <Col xs={24} lg={18}>
                 <Button data-shortcut="F2"
-                  type="primary" danger size="large" icon={<PlusOutlined />} block
-                  style={{ marginBottom: 14, height: 46 }}
+                  type="primary" danger icon={<PlusOutlined />} block
+                  style={{ marginBottom: 10, height: 38 }}
                   onClick={() => setPickerOpen(true)}
                 >
                   إضافة صنف للمرتجع
@@ -1015,10 +1017,10 @@ export default function Returns() {
             <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Space>
-                  <Button type="primary" danger size="large" htmlType="submit">
+                  <Button type="primary" danger htmlType="submit">
                     تسجيل وحفظ مرتجع المبيعات
                   </Button>
-                  <Button size="large" onClick={closeCreate}>إلغاء</Button>
+                  <Button onClick={closeCreate}>إلغاء</Button>
                 </Space>
               </div>
             </Form.Item>

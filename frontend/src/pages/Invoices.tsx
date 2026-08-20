@@ -1733,7 +1733,7 @@ export default function Invoices() {
           {/* (030) The party's standing at a glance — what he owes, and how to reach him. */}
           {party && (
             <Row gutter={12} style={{
-              marginBottom: 14, padding: '10px 14px', borderRadius: 10,
+              marginBottom: 8, padding: '6px 12px', borderRadius: 10,
               background: '#f6faf3', border: '1px solid #e6efe3',
             }}>
               <Col xs={12} md={6}>
@@ -1829,8 +1829,8 @@ export default function Invoices() {
           {/* One button, one window. As two inline dropdowns this cost a click to open, a
               scroll to find and a click to choose — twice per line, all day. */}
           <Button data-shortcut="F2"
-            type="primary" size="large" icon={<PlusOutlined />} block
-            style={{ marginBottom: 14, height: 46 }}
+            type="primary" icon={<PlusOutlined />} block
+            style={{ marginBottom: 10, height: 38 }}
             onClick={() => setPickerOpen(true)}
           >
             إضافة صنف للفاتورة
@@ -2085,10 +2085,10 @@ export default function Invoices() {
             {/* Aligned to the physical left of the page (flex-end under RTL). */}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Space>
-                <Button type="primary" size="large" htmlType="submit">
+                <Button type="primary" htmlType="submit">
                   تسجيل وحفظ فاتورة البيع
                 </Button>
-                <Button size="large" onClick={closeCreate}>إلغاء</Button>
+                <Button onClick={closeCreate}>إلغاء</Button>
               </Space>
             </div>
           </Form.Item>

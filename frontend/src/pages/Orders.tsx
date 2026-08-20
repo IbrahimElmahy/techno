@@ -411,8 +411,8 @@ export default function Orders() {
           background: '#f6faf3', border: '1px solid #e6efe3',
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
         }}>
-          <Button type="primary" size="large" loading={saving} onClick={submit}>حفظ الطلب</Button>
-          <Button size="large" onClick={() => setCreating(false)}>إلغاء</Button>
+          <Button type="primary" loading={saving} onClick={submit}>حفظ الطلب</Button>
+          <Button onClick={() => setCreating(false)}>إلغاء</Button>
         </div>
       </Card>
       )}
@@ -490,7 +490,7 @@ export default function Orders() {
         )}
 
         <div style={{ marginTop: 16, textAlign: 'left' }}>
-          <Button size="large" onClick={() => setDetail(null)}>إغلاق</Button>
+          <Button onClick={() => setDetail(null)}>إغلاق</Button>
         </div>
       </Card>
       )}

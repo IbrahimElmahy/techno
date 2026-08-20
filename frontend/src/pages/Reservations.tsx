@@ -404,8 +404,8 @@ export default function Reservations() {
           background: '#f6faf3', border: '1px solid #e6efe3',
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
         }}>
-          <Button type="primary" size="large" loading={saving} onClick={submit}>تسجيل الحجز</Button>
-          <Button size="large" onClick={() => setCreating(false)}>إلغاء</Button>
+          <Button type="primary" loading={saving} onClick={submit}>تسجيل الحجز</Button>
+          <Button onClick={() => setCreating(false)}>إلغاء</Button>
         </div>
       </Card>
       )}
@@ -469,7 +469,7 @@ export default function Reservations() {
         )}
 
         <div style={{ marginTop: 16, textAlign: 'left' }}>
-          <Button size="large" onClick={() => setViewing(null)}>إغلاق</Button>
+          <Button onClick={() => setViewing(null)}>إغلاق</Button>
         </div>
       </Card>
       )}
