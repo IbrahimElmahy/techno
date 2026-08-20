@@ -1680,36 +1680,24 @@ export default function Invoices() {
             ))}
           </div>
 
-          {/* (030) The party's standing at a glance — what he owes, and how to reach him. */}
-          {party && (
-            <Row gutter={12} style={{
-              marginBottom: 8, padding: '6px 12px', borderRadius: 10,
-              background: '#f6faf3', border: '1px solid #e6efe3',
-            }}>
-              <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#6b6b6b' }}>العميل</div>
-                <b>{party.name}</b>
-              </Col>
-              <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#6b6b6b' }}>الحالي (رصيده)</div>
-                <b style={{ color: Number(customerBalance ?? 0) > 0 ? '#cf1322' : '#6AB42D' }}>
-                  {money(customerBalance ?? 0)} ج.م
-                </b>
-              </Col>
-              <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#6b6b6b' }}>الهاتف</div>
-                <b>{party.phone || '-'}</b>
-              </Col>
-              <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#6b6b6b' }}>العنوان</div>
-                <b>{party.address || '-'}</b>
-              </Col>
-
+          {/*
+            * شريط بيانات العميل (الاسم · رصيده · الهاتف · العنوان) اتشال بطلب صاحب النظام.
+            *
+            * نفس السبب اللي اتشالوا بيه من الترويسة: البيانات دي متسجّلة في النظام أصلاً
+            * وبتطلع على الورقة المطبوعة لما تتطلب، وعرضها هنا كان بياخد صف كامل فوق السطور.
+            *
+            * **«نوع الفاتورة» فضل** — ده مش عرض، ده اختيار بيقرّر الفاتورة بتترحّل على أنهي
+            * حساب من حسابات العميل. وبيبان بس لما يكون عنده أكتر من حساب؛ اللي عنده واحد
+            * مابيتسألش سؤال إجابته واحدة.
+            */}
               {/* نوع الفاتورة. Shown only when the customer HAS more than one line, because for
                   everybody else it is a question with a single possible answer. Left empty rather
                   than pre-picked: choosing for him is choosing which balance the invoice moves. */}
               {families.length > 1 && (
-                <Col xs={24} style={{ marginTop: 10 }}>
+            <div style={{
+              marginBottom: 8, padding: '6px 12px', borderRadius: 10,
+              background: '#f6faf3', border: '1px solid #e6efe3',
+            }}>
                   <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 4 }}>
                     نوع الفاتورة — بتترحّل على أنهي حساب؟
                   </div>
@@ -1728,14 +1716,12 @@ export default function Invoices() {
                       ),
                     }))}
                   />
-                  {!invoiceFamily && (
-                    <div style={{ color: '#cf4b1a', fontSize: 12, marginTop: 4 }}>
-                      اختار النوع الأول — الفاتورة هتترحّل على الحساب ده.
-                    </div>
-                  )}
-                </Col>
+              {!invoiceFamily && (
+                <div style={{ color: '#cf4b1a', fontSize: 12, marginTop: 4 }}>
+                  اختار النوع الأول — الفاتورة هتترحّل على الحساب ده.
+                </div>
               )}
-            </Row>
+            </div>
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
