@@ -34,12 +34,12 @@ function describe(before: any, after: any): React.ReactNode {
   const a = after || {};
   const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])];
   const changed = keys.filter((k) => String(b[k] ?? '') !== String(a[k] ?? ''));
-  if (!changed.length) return <span style={{ color: '#bbb' }}>-</span>;
+  if (!changed.length) return <span style={{ color: '#8c8c8c' }}>-</span>;
   return (
     <span>
       {changed.map((k) => (
         <span key={k} style={{ marginInlineEnd: 10 }}>
-          <span style={{ color: '#8a8a8a' }}>{k}: </span>
+          <span style={{ color: '#6b6b6b' }}>{k}: </span>
           {b[k] !== undefined && <span style={{ textDecoration: 'line-through' }}>{String(b[k])}</span>}
           {b[k] !== undefined && a[k] !== undefined && ' ← '}
           {a[k] !== undefined && <b>{String(a[k])}</b>}
@@ -93,7 +93,7 @@ export default function DocumentAuditModal({
             { title: 'المستخدم', dataIndex: 'actor_user_id', width: 140,
               render: (id: number | null) => (id
                 ? (userNames?.[id] || `#${id}`)
-                : <span style={{ color: '#bbb' }}>-</span>) },
+                : <span style={{ color: '#8c8c8c' }}>-</span>) },
             { title: 'اللي اتغيّر', key: 'change',
               render: (_: any, r: any) => describe(r.before, r.after) },
           ]}

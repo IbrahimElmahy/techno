@@ -210,7 +210,7 @@ export default function PartyPickerModal({
         <Col xs={24} md={8}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
-              <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>الفرع</div>
+              <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 2 }}>الفرع</div>
               <Select allowClear style={{ width: '100%' }} placeholder="كل الفروع"
                 value={branchId} onChange={(v) => setBranchId(v)}
                 options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
@@ -218,14 +218,14 @@ export default function PartyPickerModal({
 
             {date && onDateChange && (
               <div>
-                <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>التاريخ</div>
+                <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 2 }}>التاريخ</div>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
                   value={date} onChange={(v) => v && onDateChange(v)} />
               </div>
             )}
 
             <div>
-              <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>البحث</div>
+              <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 2 }}>البحث</div>
               <Input allowClear autoFocus prefix={<SearchOutlined />}
                 placeholder="بالاسم أو الهاتف"
                 value={query} onChange={(e) => setQuery(e.target.value)}
@@ -235,7 +235,7 @@ export default function PartyPickerModal({
             {/* تصنيف — بيتنقّل بين دفتر العملاء ودفتر الموردين من غير ما البوباب يتقفل. */}
             {(kinds?.length ?? 0) > 1 && (
               <div>
-                <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 2 }}>تصنيف</div>
+                <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 2 }}>تصنيف</div>
                 <div style={{ border: '1px solid #f0f0f0', borderRadius: 8,
                               overflow: 'hidden' }}>
                   {(kinds ?? []).map((k) => (
@@ -254,7 +254,7 @@ export default function PartyPickerModal({
             )}
 
             {date && (
-              <div style={{ color: '#8a8a8a', fontSize: 12 }}>
+              <div style={{ color: '#6b6b6b', fontSize: 12 }}>
                 التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر
                 بيقعوا في نفس اليوم.
               </div>
@@ -283,7 +283,7 @@ export default function PartyPickerModal({
                 }}>
                 <Space size={12}>
                   {party.phone && (
-                    <span style={{ color: '#8a8a8a', fontSize: 12 }}>{party.phone}</span>)}
+                    <span style={{ color: '#6b6b6b', fontSize: 12 }}>{party.phone}</span>)}
                   {party.balance != null && Number(party.balance) !== 0 && (
                     <Tag color={Number(party.balance) > 0 ? 'red' : 'green'}>
                       {Number(Math.abs(Number(party.balance))).toLocaleString('ar-EG',
@@ -295,7 +295,7 @@ export default function PartyPickerModal({
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 6, color: '#8a8a8a', fontSize: 12 }}>
+          <div style={{ marginTop: 6, color: '#6b6b6b', fontSize: 12 }}>
             {visible.length} من {parties.length} · ↑↓ للتنقل · Enter للاختيار
           </div>
         </Col>

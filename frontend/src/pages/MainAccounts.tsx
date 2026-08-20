@@ -180,7 +180,7 @@ export default function MainAccounts() {
       width: 140,
       render: (a: string | null) => (a && APPEARS_IN_LABEL[a]
         ? <Tag color="geekblue">{APPEARS_IN_LABEL[a]}</Tag>
-        : <span style={{ color: '#bbb' }}>حسب الطبيعة</span>),
+        : <span style={{ color: '#8c8c8c' }}>حسب الطبيعة</span>),
     },
     // Ours: a group's balance is the sum of what rolls into it, which is the number somebody
     // opened this screen to read.

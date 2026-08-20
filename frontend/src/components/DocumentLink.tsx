@@ -102,7 +102,7 @@ export function DocRef({ kind, id, label, onNavigate }: {
   onNavigate?: () => void;
 }) {
   const open = useOpenDocument();
-  if (!label) return <span style={{ color: '#bbb' }}>-</span>;
+  if (!label) return <span style={{ color: '#8c8c8c' }}>-</span>;
   // Without an id there is nothing to open, so it stays plain text rather than a link that lands
   // on a list and leaves the reader to search for what they just clicked.
   if (!id) return <Tag>{label}</Tag>;

@@ -167,7 +167,7 @@ export default function Stocktake() {
       render: (n: string) => <b>{n}</b> },
     { title: 'الفئة', dataIndex: 'category', width: 150,
       ...textColumn(rows, (r: Row) => r.category),
-      render: (c: string | null) => c || <span style={{ color: '#bbb' }}>بدون فئة</span> },
+      render: (c: string | null) => c || <span style={{ color: '#8c8c8c' }}>بدون فئة</span> },
     { title: 'الوحدة', dataIndex: 'unit_of_measure',
       ...textColumn(rows, (r: Row) => r.unit_of_measure),
       render: (u: string) => u || '-' },
@@ -205,7 +205,7 @@ export default function Stocktake() {
         }),
       render: (_: any, r: Row) => {
         const d = diffOf(r);
-        if (d === null) return <span style={{ color: '#bbb' }}>—</span>;
+        if (d === null) return <span style={{ color: '#8c8c8c' }}>—</span>;
         if (d === 0) return <Tag color="green">مطابق</Tag>;
         // Only a real difference is a link. One that opens an empty log teaches people the
         // link is broken, and then they stop using the one that works.

@@ -56,6 +56,21 @@ export default function App() {
           colorWarning: '#F5A11D',       // Accent orange
           fontFamily: 'Cairo, sans-serif',
           borderRadius: 6,
+          /*
+           * وضوح الخط — في التوكن مش في CSS بس.
+           *
+           * antd بتبني ألوانها ومقاساتها من التوكنز دي وبتحقنها في كل مكوّن، حتى اللي مالوش
+           * كلاس أقدر أمسكه من `index.css`. فالتغيير هنا بيوصل للبوبابات والتنبيهات والقوايم
+           * المنسدلة كمان، مش للجداول والفورمات بس.
+           *
+           * ١٤ بدل ١٣: فرق بيكسل واحد، وهو الفرق بين رقم بتقراه ورقم بتتأكد منه.
+           * و`colorText` أغمق من الافتراضي `rgba(0,0,0,0.88)`، و`colorTextSecondary` كان
+           * `0.65` — رمادي فاتح على أبيض، وهو اللي كان بيخلّي العناوين تبان باهتة.
+           */
+          fontSize: 14,
+          colorText: '#1f1f1f',
+          colorTextSecondary: '#4a4a4a',
+          colorTextDescription: '#5c5c5c',
         },
       }}
     >

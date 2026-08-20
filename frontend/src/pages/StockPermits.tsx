@@ -288,7 +288,7 @@ export default function StockPermits() {
           optionFilterProp="label" placeholder="اختر المخزن"
           value={warehouseId} onChange={setWarehouseId}
           options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           {kind === 'issue'
             ? 'الأصناف اللي هتظهر بعد كده هي المتاح في المخزن ده بس.'
             : 'البضاعة هتدخل على المخزن ده.'}
@@ -340,7 +340,7 @@ export default function StockPermits() {
                 <span>
                   {it?.name ?? `صنف #${v}`}
                   {kind === 'issue' && available[v] !== undefined && (
-                    <span style={{ color: '#8a8a8a' }}>{` — متاح ${qty(available[v])}`}</span>
+                    <span style={{ color: '#6b6b6b' }}>{` — متاح ${qty(available[v])}`}</span>
                   )}
                 </span>
               );
@@ -423,12 +423,12 @@ export default function StockPermits() {
       }}>
         <Space size={32} wrap>
           <span>
-            <span style={{ color: '#8a8a8a', fontSize: 12 }}>عدد الأصناف: </span>
+            <span style={{ color: '#6b6b6b', fontSize: 12 }}>عدد الأصناف: </span>
             <b>{lines.length}</b>
           </span>
           {kind !== 'issue' && (
             <span>
-              <span style={{ color: '#8a8a8a', fontSize: 12 }}>إجمالي التكلفة: </span>
+              <span style={{ color: '#6b6b6b', fontSize: 12 }}>إجمالي التكلفة: </span>
               <b style={{ color: '#6AB42D', fontSize: 18 }}>{money(draftTotal)}</b>
             </span>
           )}
@@ -495,11 +495,11 @@ export default function StockPermits() {
       }}>
         <Space size={32} wrap>
           <span>
-            <span style={{ color: '#8a8a8a', fontSize: 12 }}>عدد الأصناف: </span>
+            <span style={{ color: '#6b6b6b', fontSize: 12 }}>عدد الأصناف: </span>
             <b>{detail.lines.length}</b>
           </span>
           <span>
-            <span style={{ color: '#8a8a8a', fontSize: 12 }}>إجمالي التكلفة: </span>
+            <span style={{ color: '#6b6b6b', fontSize: 12 }}>إجمالي التكلفة: </span>
             <b style={{ color: '#6AB42D', fontSize: 18 }}>{money(detail.total_cost)}</b>
           </span>
         </Space>

@@ -108,7 +108,7 @@ export default function TotalsLadder({
             {shownNotes.length > 0 && (
               <div style={{
                 display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, paddingTop: 8,
-                borderTop: `1px dashed ${t.rule}`, fontSize: 12, color: '#8a8a8a',
+                borderTop: `1px dashed ${t.rule}`, fontSize: 12, color: '#6b6b6b',
               }}>
                 {shownNotes.map((n, i) => <span key={i}>{n}</span>)}
               </div>

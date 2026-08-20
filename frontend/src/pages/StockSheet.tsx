@@ -203,13 +203,13 @@ export default function StockSheet() {
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 120,
       ...textColumn(source, (r: any) => r.code),
       render: (v: string | null) => (v
-        ? <Tag style={{ direction: 'ltr' }}>{v}</Tag> : <span style={{ color: '#bbb' }}>-</span>) },
+        ? <Tag style={{ direction: 'ltr' }}>{v}</Tag> : <span style={{ color: '#8c8c8c' }}>-</span>) },
     { title: 'الصنف', dataIndex: 'name', key: 'name', ellipsis: true,
       ...textColumn(source, (r: any) => r.name),
       render: (v: string) => <b>{v}</b> },
     { title: 'الفئة', dataIndex: 'category', key: 'category', width: 160,
       ...textColumn(source, (r: any) => r.category),
-      render: (v: string | null) => v || <span style={{ color: '#bbb' }}>بدون فئة</span> },
+      render: (v: string | null) => v || <span style={{ color: '#8c8c8c' }}>بدون فئة</span> },
     { title: 'الوحدة', dataIndex: 'unit_of_measure', key: 'unit', width: 100,
       ...textColumn(source, (r: any) => r.unit_of_measure),
       render: (v: string | null) => v || '-' },
@@ -257,7 +257,7 @@ export default function StockSheet() {
         }),
       render: (_: any, r: any) => {
         const d = diffOf(r);
-        if (d === null) return <span style={{ color: '#bbb' }}>—</span>;
+        if (d === null) return <span style={{ color: '#8c8c8c' }}>—</span>;
         if (d === 0) return <Tag color="green">مطابق</Tag>;
         // Only a real difference is a link, the same rule جرد حتى تاريخ uses: a link that opens an
         // empty log teaches people the link is broken, and then they stop using the one that works.

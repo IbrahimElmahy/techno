@@ -32,7 +32,7 @@ export default function PrintOptionsMenu({
           background: '#fff', padding: 12, borderRadius: 8,
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: '60vh', overflowY: 'auto',
         }}>
-          <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 8 }}>
             اللي بيتطبع على الفاتورة
           </div>
           <Space direction="vertical">

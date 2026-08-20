@@ -254,7 +254,7 @@ export default function CustomerProfile() {
     { title: 'البيان', dataIndex: 'description', key: 'desc' },
     { title: 'الرصيد قبل', dataIndex: 'balance_before', key: 'bb',
       render: (v: string) => (
-        <span style={{ color: '#8a8a8a' }}>{money(v)}</span>) },
+        <span style={{ color: '#6b6b6b' }}>{money(v)}</span>) },
     { title: 'مدين', dataIndex: 'debit', key: 'dr',
       render: (v: string) => money(v) },
     { title: 'دائن', dataIndex: 'credit', key: 'cr',
@@ -315,7 +315,7 @@ export default function CustomerProfile() {
                       // Empty, not zero: «مفيش نسبة متفق عليها للخط ده» is a different fact from
                       // «اتفقنا على صفر», and the column has to be able to say either.
                       render: (v: string | null) => (v === null || v === undefined
-                        ? <span style={{ color: '#bbb' }}>—</span> : `${Number(v)}%`) },
+                        ? <span style={{ color: '#8c8c8c' }}>—</span> : `${Number(v)}%`) },
                     { title: 'الرصيد', dataIndex: 'balance', align: 'left' as const,
                       render: (v: string) => {
                         const n = Number(v || 0);

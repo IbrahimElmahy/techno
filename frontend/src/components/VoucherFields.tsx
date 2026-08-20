@@ -173,7 +173,7 @@ export function ExpenseAccountField({
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                 <span>{o.label}</span>
-                <span style={{ color: '#8a8a8a', fontSize: 12 }}>{money(o.spent)} ج.م</span>
+                <span style={{ color: '#6b6b6b', fontSize: 12 }}>{money(o.spent)} ج.م</span>
               </div>
             );
           }}
@@ -213,7 +213,7 @@ export function ExpenseAccountField({
             rules={[{ required: true, message: 'اكتب اسم الحساب' }]}>
             <Input placeholder="مثال: بنزين وانتقالات" />
           </Form.Item>
-          <div style={{ color: '#8a8a8a', fontSize: 12 }}>
+          <div style={{ color: '#6b6b6b', fontSize: 12 }}>
             بيتعمل كحساب مصروف يقبل الترحيل، فيبان في القايمة على طول.
             وتقدر تعدّله أو تخفيه بعد كده من «اداره الانشاءات ← الحسابات الفرعيه».
           </div>

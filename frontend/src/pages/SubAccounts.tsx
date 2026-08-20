@@ -380,7 +380,7 @@ export default function SubAccounts() {
                 <Tag>{s.items.length}</Tag>
                 {/* The two numbers that decide whether this section is the one you want, on the
                     bar — so the section does not have to be opened to find out. */}
-                <span style={{ color: '#8a8a8a', fontSize: 12 }}>الإجمالي {egp(s.total)}</span>
+                <span style={{ color: '#6b6b6b', fontSize: 12 }}>الإجمالي {egp(s.total)}</span>
                 {s.hidden > 0 && <Tag color="red">{s.hidden} مخفي</Tag>}
               </Space>
             ),

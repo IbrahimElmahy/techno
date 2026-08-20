@@ -157,7 +157,7 @@ export default function Reservations() {
   const columns = [
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 70,
-      render: (v: number) => <span style={{ color: '#8a8a8a' }}>{v}</span>,
+      render: (v: number) => <span style={{ color: '#6b6b6b' }}>{v}</span>,
     },
     {
       title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', width: 105,
@@ -197,11 +197,11 @@ export default function Reservations() {
       title: 'ينتهي في', dataIndex: 'expires_on', key: 'expires_on', width: 145,
       render: (v: string, r: Row) => {
         const days = dayjs(v).diff(dayjs(), 'day');
-        if (r.status !== 'active') return <span style={{ color: '#bbb' }}>{v}</span>;
+        if (r.status !== 'active') return <span style={{ color: '#8c8c8c' }}>{v}</span>;
         return (
           <span>
             <Tag color={days < 0 ? 'default' : days <= 2 ? 'volcano' : 'blue'}>{v}</Tag>
-            <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+            <span style={{ fontSize: 12, color: '#6b6b6b' }}>
               {days < 0 ? 'انتهى' : `باقي ${days} يوم`}
             </span>
           </span>
@@ -460,10 +460,10 @@ export default function Reservations() {
             <Descriptions.Item label="الفاتورة">
               {viewing.sales_invoice_id
                 ? <DocRef kind="invoice" id={viewing.sales_invoice_id} label={null} />
-                : <span style={{ color: '#bbb' }}>-</span>}
+                : <span style={{ color: '#8c8c8c' }}>-</span>}
             </Descriptions.Item>
             <Descriptions.Item label="ملاحظات" span={2}>
-              {viewing.notes || <span style={{ color: '#bbb' }}>-</span>}
+              {viewing.notes || <span style={{ color: '#8c8c8c' }}>-</span>}
             </Descriptions.Item>
           </Descriptions>
         )}

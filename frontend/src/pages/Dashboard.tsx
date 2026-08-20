@@ -103,7 +103,7 @@ export default function Dashboard() {
     <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
       <Col>
         <h2 style={{ margin: 0 }}>فحص النظام</h2>
-        <span style={{ color: '#8a8a8a', fontSize: 13 }}>
+        <span style={{ color: '#6b6b6b', fontSize: 13 }}>
           كل حاجة فيها خلل — المنتجات والأرصدة والفواتير والحسابات
         </span>
       </Col>
@@ -141,7 +141,7 @@ export default function Dashboard() {
           <div style={{ textAlign: 'center', padding: '48px 0' }}>
             <CheckCircleFilled style={{ fontSize: 56, color: '#6AB42D' }} />
             <h3 style={{ marginTop: 16, marginBottom: 4 }}>مفيش حاجة غلط</h3>
-            <div style={{ color: '#8a8a8a' }}>
+            <div style={{ color: '#6b6b6b' }}>
               كل الفحوصات عدّت: مفيش رصيد سالب، ولا قيد مش متوازن، ولا فاتورة ناقصة تكلفة.
             </div>
           </div>
@@ -168,7 +168,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}>
                       {n} <span style={{ fontSize: 14, fontWeight: 500 }}>{s.label}</span>
                     </div>
-                    <div style={{ color: '#8a8a8a', fontSize: 12 }}>{s.note}</div>
+                    <div style={{ color: '#6b6b6b', fontSize: 12 }}>{s.note}</div>
                   </div>
                 </Space>
               </Card>
@@ -216,14 +216,14 @@ export default function Dashboard() {
                       <List.Item style={{ paddingInline: 0 }}>
                         <Space size={8} wrap>
                           <span style={{ fontWeight: 500 }}>{sample.label}</span>
-                          <span style={{ color: '#8a8a8a', fontSize: 12 }}>{sample.detail}</span>
+                          <span style={{ color: '#6b6b6b', fontSize: 12 }}>{sample.detail}</span>
                         </Space>
                       </List.Item>
                     )}
                   />
                 )}
                 {issue.count > issue.samples.length && (
-                  <div style={{ color: '#8a8a8a', fontSize: 12, marginTop: 4 }}>
+                  <div style={{ color: '#6b6b6b', fontSize: 12, marginTop: 4 }}>
                     {/* Never let a truncated list read as the whole list. */}
                     و{issue.count - issue.samples.length} غيرهم — افتح الصفحة تشوفهم كلهم
                   </div>

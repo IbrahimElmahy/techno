@@ -203,7 +203,7 @@ export default function SupplierProfile() {
     { title: 'البيان', dataIndex: 'description', key: 'desc' },
     { title: 'الرصيد قبل', dataIndex: 'balance_before', key: 'bb',
       render: (v: string) => (
-        <span style={{ color: '#8a8a8a' }}>{money(v)}</span>) },
+        <span style={{ color: '#6b6b6b' }}>{money(v)}</span>) },
     { title: 'مدين', dataIndex: 'debit', key: 'dr',
       render: (v: string) => money(v) },
     { title: 'دائن', dataIndex: 'credit', key: 'cr',

@@ -378,7 +378,7 @@ export default function StockCounts() {
                 { value: 'spot', label: 'عينة' },
               ]}
             />
-            <div style={{ color: '#8a8a8a', fontSize: 12, marginTop: 6 }}>
+            <div style={{ color: '#6b6b6b', fontSize: 12, marginTop: 6 }}>
               {kind === 'full' && 'كل صنف ليه رصيد في المخزن — الجردة اللي بتتقفل عندها الأرفف.'}
               {kind === 'cycle' && 'دفعة بالتناوب، الأقدم عدّاً الأول — بتغطي المخزن مع الوقت من غير ما الشغل يقف.'}
               {kind === 'spot' && 'الأصناف اللي تحددها بس — حتى لو الدفاتر بتقول إنها خلصت.'}
@@ -483,7 +483,7 @@ export default function StockCounts() {
                   options={categories.map((c) => ({ value: c, label: c }))} />
               )}
               {draftLines.length !== allLines.length && (
-                <span style={{ color: '#8a8a8a', fontSize: 12 }}>
+                <span style={{ color: '#6b6b6b', fontSize: 12 }}>
                   معروض {draftLines.length} من {allLines.length}
                 </span>
               )}
@@ -563,7 +563,7 @@ export default function StockCounts() {
                       onChange={(v) => setEntered((p) => ({ ...p, [ln.id]: v as number | null }))}
                     />
                   ) : (ln.counted_quantity === null
-                    ? <span style={{ color: '#bbb' }}>مش متعدود</span>
+                    ? <span style={{ color: '#8c8c8c' }}>مش متعدود</span>
                     : qty(ln.counted_quantity))),
                 },
                 {
@@ -574,7 +574,7 @@ export default function StockCounts() {
                   render: (_: any, ln: Line) => {
                     const v = diffValue(ln);
                     if (v === null || Math.abs(v) < 0.005) {
-                      return <span style={{ color: '#bbb' }}>-</span>;
+                      return <span style={{ color: '#8c8c8c' }}>-</span>;
                     }
                     return (
                       <b style={{ color: v < 0 ? '#cf1322' : '#6AB42D' }}>
@@ -601,7 +601,7 @@ export default function StockCounts() {
                   render: (_: any, ln: Line) => {
                     const d = isDraft ? diffOf(ln)
                       : (ln.difference === null ? null : Number(ln.difference));
-                    if (d === null) return <span style={{ color: '#bbb' }}>-</span>;
+                    if (d === null) return <span style={{ color: '#8c8c8c' }}>-</span>;
                     if (d === 0) return <Tag color="green">مطابق</Tag>;
                     return (
                       <b style={{ color: d < 0 ? '#cf1322' : '#6AB42D' }}>

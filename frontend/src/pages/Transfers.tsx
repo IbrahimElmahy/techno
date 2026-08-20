@@ -672,7 +672,7 @@ export default function Transfers() {
           value={source ?? undefined}
           onChange={(v) => { onSourceChange(v); }}
           options={locationOptions} />
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           البضاعة بتطلع من هنا — والرصيد المتاح بيتحمّل على أساسه.
         </div>
       </TabModal>
@@ -690,7 +690,7 @@ export default function Transfers() {
           placeholder="اختر المخزن أو العهدة الوجهة" optionFilterProp="label"
           value={dest ?? undefined} onChange={(v) => setDest(v)}
           options={locationOptions.filter((o: any) => o.value !== source)} />
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           المصدر مستبعد من القايمة — تحويل لنفس المكان مش تحويل.
         </div>
       </TabModal>
@@ -1022,11 +1022,11 @@ export default function Transfers() {
           }}>
             <Space size={32} wrap>
               <span>
-                <span style={{ color: '#8a8a8a', fontSize: 12 }}>عدد الأصناف: </span>
+                <span style={{ color: '#6b6b6b', fontSize: 12 }}>عدد الأصناف: </span>
                 <b>{editing ? docLines(editing).length : lines.length}</b>
               </span>
               <span>
-                <span style={{ color: '#8a8a8a', fontSize: 12 }}>إجمالي الكميات: </span>
+                <span style={{ color: '#6b6b6b', fontSize: 12 }}>إجمالي الكميات: </span>
                 <b style={{ color: '#6AB42D', fontSize: 18 }}>
                   {qty(editing
                     ? docLines(editing).reduce(

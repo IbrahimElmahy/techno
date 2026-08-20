@@ -157,7 +157,7 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
                 render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
               { title: 'البيان', dataIndex: 'description' },
               { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left' as const,
-                render: (v: string) => <span style={{ color: '#8a8a8a' }}>{fmt(v)}</span> },
+                render: (v: string) => <span style={{ color: '#6b6b6b' }}>{fmt(v)}</span> },
               { title: 'وارد', dataIndex: 'debit', align: 'left' as const,
                 render: (v: string) => (Number(v) ? fmt(v) : '-') },
               { title: 'منصرف', dataIndex: 'credit', align: 'left' as const,

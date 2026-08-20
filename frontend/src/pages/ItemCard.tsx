@@ -200,7 +200,7 @@ export default function ItemCard() {
         <b style={{ color: '#cf1322' }}>{qty(v)}</b>) : '-') },
     { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
       ...numberColumn<CardRow>((r) => r.balance_before),
-      render: (v: string) => <span style={{ color: '#8a8a8a' }}>{qty(v)}</span> },
+      render: (v: string) => <span style={{ color: '#6b6b6b' }}>{qty(v)}</span> },
     { title: 'الرصيد بعد', dataIndex: 'balance_after', align: 'left',
       ...numberColumn<CardRow>((r) => r.balance_after),
       render: (v: string) => <b>{qty(v)}</b> },
@@ -212,16 +212,16 @@ export default function ItemCard() {
     { title: 'بالوحدة', dataIndex: 'quantity_in_unit', align: 'left', width: 120,
       ...numberColumn<CardRow>((r) => r.quantity_in_unit),
       render: (v: string | null, r: CardRow) => (v
-        ? <span>{qty(v)} <span style={{ color: '#8a8a8a' }}>{r.unit}</span></span>
+        ? <span>{qty(v)} <span style={{ color: '#6b6b6b' }}>{r.unit}</span></span>
         // Empty when the trading unit IS the piece — repeating «٥ قطعة / ٥» on every
         // loose-sold row is noise, not information.
-        : <span style={{ color: '#bbb' }}>-</span>) },
+        : <span style={{ color: '#8c8c8c' }}>-</span>) },
     // Their card carries the party, the price and the total on every row. None of it was
     // missing data — a sale line has always known all three — so «منصرف ٥» used to mean
     // opening the sales screen to find out who took them and for how much.
     { title: 'جهه التعامل', dataIndex: 'party', ellipsis: true,
       ...textColumn(cardRows, (r: CardRow) => r.party),
-      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
+      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
     { title: 'السعر', dataIndex: 'unit_price', align: 'left',
       ...numberColumn<CardRow>((r) => r.unit_price),
       render: (v: string | null) => (v ? money(v) : '-') },
@@ -232,20 +232,20 @@ export default function ItemCard() {
       ...numberColumn<CardRow>((r) => r.discount_pct),
       render: (v: string | null) => (Number(v)
         ? <Tag color="gold">{`${Number(v)}%`}</Tag>
-        : <span style={{ color: '#bbb' }}>-</span>) },
+        : <span style={{ color: '#8c8c8c' }}>-</span>) },
     // The line's share of the document VAT — its share of the gross, which is the same
     // proportional rule the return already uses to decide how much tax to refund.
     { title: 'ض.م', dataIndex: 'tax_amount', align: 'left', width: 110,
       ...numberColumn<CardRow>((r) => r.tax_amount),
       render: (v: string | null) => (Number(v)
-        ? money(v) : <span style={{ color: '#bbb' }}>-</span>) },
+        ? money(v) : <span style={{ color: '#8c8c8c' }}>-</span>) },
     // Which lot went out. FEFO chose it at the moment of sale; the card reads that back
     // rather than leaving a recall to guess.
     { title: 'انتهاء', dataIndex: 'expiry_date', width: 120,
       ...dateColumn<CardRow>((r) => r.expiry_date),
       render: (v: string | null) => (v
         ? <Tag color={dayjs(v).isBefore(dayjs()) ? 'red' : 'orange'}>{v}</Tag>
-        : <span style={{ color: '#bbb' }}>-</span>) },
+        : <span style={{ color: '#8c8c8c' }}>-</span>) },
     { title: 'المستند', dataIndex: 'source_doc_id',
       ...textColumn(cardRows, (r: CardRow) => r.document_number),
       // Reading a card is asking «الحركة دي جات منين؟» — so the row opens its document

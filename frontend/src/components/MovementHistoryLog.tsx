@@ -111,7 +111,7 @@ export default function MovementHistoryLog({
       key: String(r.movement_id ?? i),
       label: (
         <Space size={8} wrap>
-          <span style={{ color: '#8a8a8a', fontSize: 12 }}>
+          <span style={{ color: '#6b6b6b', fontSize: 12 }}>
             {r.date ? String(r.date).slice(0, 10) : '-'}
           </span>
           <Tag color={r.direction === 'in' ? 'green' : 'red'}>
@@ -120,7 +120,7 @@ export default function MovementHistoryLog({
           {inQ
             ? <b style={{ color: '#6AB42D' }}>+{qty(inQ)}</b>
             : <b style={{ color: '#cf1322' }}>−{qty(outQ)}</b>}
-          <span style={{ color: '#8a8a8a', fontSize: 12 }}>
+          <span style={{ color: '#6b6b6b', fontSize: 12 }}>
             الرصيد بعدها <b style={{ color: '#16241c' }}>{qty(r.balance_after)}</b>
           </span>
           {r.document_number && <Tag>{r.document_number}</Tag>}
@@ -129,10 +129,10 @@ export default function MovementHistoryLog({
       children: (
         <Descriptions size="small" column={2} bordered>
           <Descriptions.Item label="المستند">
-            {r.document_number || <span style={{ color: '#bbb' }}>-</span>}
+            {r.document_number || <span style={{ color: '#8c8c8c' }}>-</span>}
           </Descriptions.Item>
           <Descriptions.Item label="جهة التعامل">
-            {r.party || <span style={{ color: '#bbb' }}>-</span>}
+            {r.party || <span style={{ color: '#8c8c8c' }}>-</span>}
           </Descriptions.Item>
           <Descriptions.Item label="الموقع">{r.location || '-'}</Descriptions.Item>
           <Descriptions.Item label="التاريخ">
@@ -161,7 +161,7 @@ export default function MovementHistoryLog({
             onChange={(v) => setRange(v as any)}
             placeholder={['من تاريخ', 'إلى تاريخ']}
           />
-          <span style={{ color: '#8a8a8a', fontSize: 12 }}>
+          <span style={{ color: '#6b6b6b', fontSize: 12 }}>
             {rows.length} حركة
           </span>
         </Space>

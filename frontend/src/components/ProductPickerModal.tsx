@@ -177,7 +177,7 @@ export default function ProductPickerModal({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginTop: 10, gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+        <span style={{ fontSize: 12, color: '#6b6b6b' }}>
           اكتب للبحث · ↑↓ للتنقل · Enter {bulk ? 'للتحديد' : 'للإضافة'}
         </span>
         {onPickMany && (

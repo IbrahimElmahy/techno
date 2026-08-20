@@ -1107,7 +1107,7 @@ export default function Purchases() {
                     <tbody>
                       {purchaseItems.map((line, idx) => (
                         <tr key={line.key}>
-                          <td style={{ color: '#8a8a8a' }}>{idx + 1}</td>
+                          <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
                           <td>
                             {/* المخزن أول عمود عن قصد: هو أول حاجة بتتحدّد في السطر، وبيثبت
                                 للسطور اللي بعده لغاية ما يتغيّر. */}

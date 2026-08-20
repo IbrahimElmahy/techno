@@ -157,7 +157,7 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: '60vh', overflowY: 'auto',
           minWidth: 220,
         }}>
-          <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 8 }}>
             الأعمدة الظاهرة{onMove ? ' وترتيبها' : ''}
           </div>
           <Space direction="vertical" style={{ width: '100%' }}>

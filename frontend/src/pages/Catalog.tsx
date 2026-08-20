@@ -682,7 +682,7 @@ export default function Catalog() {
       render: (v: string | null) => {
         const n = Number(v || 0);
         return (
-          <b style={{ color: n > 0 ? '#3f8600' : n < 0 ? '#cf1322' : '#999' }}>
+          <b style={{ color: n > 0 ? '#3f8600' : n < 0 ? '#cf1322' : '#6b6b6b' }}>
             {n.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
           </b>
         );

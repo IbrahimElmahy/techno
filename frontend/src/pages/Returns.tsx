@@ -604,7 +604,7 @@ export default function Returns() {
             format="YYYY-MM-DD"
           />
         </div>
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           ده يوم رجوع البضاعة، مش يوم ما اتكتب السند — والقيد المحاسبي بياخد نفس اليوم.
         </div>
       </TabModal>
@@ -654,7 +654,7 @@ export default function Returns() {
             {families.length > 1 && (
               <Row style={{ marginBottom: 12 }}>
                 <Col xs={24}>
-                  <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 4 }}>
+                  <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 4 }}>
                     نوع المرتجع — بيرجّع على أنهي حساب؟
                   </div>
                   <Segmented
@@ -665,7 +665,7 @@ export default function Returns() {
                       label: (
                         <span>
                           {a.family}
-                          <span style={{ color: '#8a8a8a', marginInlineStart: 6, fontSize: 12 }}>
+                          <span style={{ color: '#6b6b6b', marginInlineStart: 6, fontSize: 12 }}>
                             ({money(Number(a.balance || 0))})
                           </span>
                         </span>
@@ -717,7 +717,7 @@ export default function Returns() {
                     onClick={() => setCouponRows((r) => [...r, { key: String(Date.now()) }])}>
                     إضافة
                   </Button>
-                  <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+                  <span style={{ fontSize: 12, color: '#6b6b6b' }}>
                     {!issuedBooks.length
                       ? 'العميل ده مااستلمش كوبونات، فمفيش حاجة ترجع.'
                       : couponRows.length === 0
@@ -765,7 +765,7 @@ export default function Returns() {
                             ? { ...x, count: (v as number) ?? undefined } : x)))} />
                       </Col>
                       <Col xs={12} md={4}>
-                        <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+                        <span style={{ fontSize: 12, color: '#6b6b6b' }}>
                           {book?.serial_from ? `${book.serial_from}–${book.serial_to}` : '—'}
                         </span>
                       </Col>
@@ -840,10 +840,10 @@ export default function Returns() {
                         <Tag color="volcano" style={{ fontWeight: 700, margin: 0 }}>
                           {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                         </Tag>
-                        <span style={{ color: '#8a8a8a', fontSize: 12 }}>{group.items.length} صنف</span>
+                        <span style={{ color: '#6b6b6b', fontSize: 12 }}>{group.items.length} صنف</span>
                       </div>
 
-                      <Row gutter={8} style={{ padding: '6px 12px 0', color: '#8a8a8a', fontSize: 12 }}>
+                      <Row gutter={8} style={{ padding: '6px 12px 0', color: '#6b6b6b', fontSize: 12 }}>
                         <Col md={5}>الصنف</Col>
                         <Col md={3}>المخزن</Col>
                         <Col md={3}>آخر سعر شراء</Col>
@@ -1064,7 +1064,7 @@ export default function Returns() {
   const columns = [
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 80,
-      render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
+      render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
     },
     {
       // The day the goods came back, falling back to when the row was written for returns
@@ -1085,7 +1085,7 @@ export default function Returns() {
       // cannot follow leaves that answered only halfway.
       render: (v: string | null, r: ReturnRecord) => (v
         ? <DocRef kind="invoice" id={r.sales_invoice_id} label={v} />
-        : <span style={{ color: '#bbb' }}>مستقل</span>),
+        : <span style={{ color: '#8c8c8c' }}>مستقل</span>),
     },
     {
       title: 'جهه التعامل', dataIndex: 'customer_id', key: 'customer_id', ellipsis: true,
@@ -1131,17 +1131,17 @@ export default function Returns() {
       title: 'مندوب', dataIndex: 'rep_id', key: 'rep_id', width: 150, ellipsis: true,
       render: (v: number | null) => {
         const rep = reps.find((r) => r.id === v);
-        return rep ? (rep.full_name || rep.username) : <span style={{ color: '#bbb' }}>-</span>;
+        return rep ? (rep.full_name || rep.username) : <span style={{ color: '#8c8c8c' }}>-</span>;
       },
     },
     {
       title: 'مستند رقم', dataIndex: 'external_document_number', key: 'external_document_number',
       width: 130,
-      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span>,
+      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span>,
     },
     {
       title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true,
-      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span>,
+      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span>,
     },
     {
       title: 'تم السداد', dataIndex: 'cash_refund', key: 'cash_refund', width: 110,

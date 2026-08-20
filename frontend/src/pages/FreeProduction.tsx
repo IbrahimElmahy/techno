@@ -184,7 +184,7 @@ export default function FreeProduction() {
   const columns = [
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 70,
-      render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
+      render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
     },
     {
       title: 'التاريخ', dataIndex: 'production_date', key: 'production_date', width: 105,

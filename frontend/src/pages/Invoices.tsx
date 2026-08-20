@@ -1227,7 +1227,7 @@ export default function Invoices() {
       dataIndex: 'id',
       key: 'id',
       width: 80,
-      render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
+      render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
     },
     {
       title: 'التاريخ',
@@ -1259,7 +1259,7 @@ export default function Invoices() {
       width: 150,
       ellipsis: true,
       render: (id: number | null) => {
-        if (!id) return <span style={{ color: '#bbb' }}>الافتراضي</span>;
+        if (!id) return <span style={{ color: '#8c8c8c' }}>الافتراضي</span>;
         const a = postingAccounts.find((x: any) => x.id === id);
         return a ? (a.name || a.code || `#${id}`) : `#${id}`;
       },
@@ -1581,7 +1581,7 @@ export default function Invoices() {
                 onClick={() => setCouponRows((r) => [...r, { key: String(Date.now()) }])}>
                 إضافة نوع
               </Button>
-              <span style={{ fontSize: 12, color: '#8a8a8a' }}>
+              <span style={{ fontSize: 12, color: '#6b6b6b' }}>
                 {couponRows.length === 0
                   ? 'سيبها فاضية لو الفاتورة من غير كوبونات.'
                   : `الإجمالي: ${couponRows.reduce(
@@ -1629,21 +1629,21 @@ export default function Invoices() {
               background: '#f6faf3', border: '1px solid #e6efe3',
             }}>
               <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#8a8a8a' }}>العميل</div>
+                <div style={{ fontSize: 12, color: '#6b6b6b' }}>العميل</div>
                 <b>{party.name}</b>
               </Col>
               <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#8a8a8a' }}>الحالي (رصيده)</div>
+                <div style={{ fontSize: 12, color: '#6b6b6b' }}>الحالي (رصيده)</div>
                 <b style={{ color: Number(customerBalance ?? 0) > 0 ? '#cf1322' : '#6AB42D' }}>
                   {money(customerBalance ?? 0)} ج.م
                 </b>
               </Col>
               <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#8a8a8a' }}>الهاتف</div>
+                <div style={{ fontSize: 12, color: '#6b6b6b' }}>الهاتف</div>
                 <b>{party.phone || '-'}</b>
               </Col>
               <Col xs={12} md={6}>
-                <div style={{ fontSize: 12, color: '#8a8a8a' }}>العنوان</div>
+                <div style={{ fontSize: 12, color: '#6b6b6b' }}>العنوان</div>
                 <b>{party.address || '-'}</b>
               </Col>
 
@@ -1652,7 +1652,7 @@ export default function Invoices() {
                   than pre-picked: choosing for him is choosing which balance the invoice moves. */}
               {families.length > 1 && (
                 <Col xs={24} style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 12, color: '#8a8a8a', marginBottom: 4 }}>
+                  <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 4 }}>
                     نوع الفاتورة — بتترحّل على أنهي حساب؟
                   </div>
                   <Segmented
@@ -1663,7 +1663,7 @@ export default function Invoices() {
                       label: (
                         <span>
                           {a.family}
-                          <span style={{ color: '#8a8a8a', marginInlineStart: 6, fontSize: 12 }}>
+                          <span style={{ color: '#6b6b6b', marginInlineStart: 6, fontSize: 12 }}>
                             ({money(Number(a.balance || 0))})
                           </span>
                         </span>
@@ -1764,11 +1764,11 @@ export default function Invoices() {
                   <Tag color="green" style={{ fontWeight: 700, margin: 0 }}>
                     {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                   </Tag>
-                  <span style={{ color: '#8a8a8a', fontSize: 12 }}>{group.items.length} صنف</span>
+                  <span style={{ color: '#6b6b6b', fontSize: 12 }}>{group.items.length} صنف</span>
                 </div>
 
                 {/* Column headers. */}
-                <Row gutter={8} style={{ padding: '6px 12px 0', color: '#8a8a8a', fontSize: 12 }}>
+                <Row gutter={8} style={{ padding: '6px 12px 0', color: '#6b6b6b', fontSize: 12 }}>
                   <Col md={4}>المنتج</Col>
                   {showCol('warehouse') && <Col md={3}>المخزن</Col>}
                   {showCol('category') && <Col md={2}>الفئة</Col>}
@@ -2283,7 +2283,7 @@ export default function Invoices() {
             format="YYYY-MM-DD"
           />
         </div>
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
           في نفس اليوم.
         </div>

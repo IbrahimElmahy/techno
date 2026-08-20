@@ -194,9 +194,9 @@ export default function Departments() {
       ) },
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 100 },
     { title: 'المدير', dataIndex: 'manager_name', key: 'manager_name',
-      render: (v: string | null) => v || <span style={{ color: '#999' }}>—</span> },
+      render: (v: string | null) => v || <span style={{ color: '#6b6b6b' }}>—</span> },
     { title: 'عدد الموظفين', dataIndex: 'employee_count', key: 'employee_count', width: 120,
-      render: (v: number) => (v ? <Tag color="blue">{v}</Tag> : <span style={{ color: '#999' }}>—</span>) },
+      render: (v: number) => (v ? <Tag color="blue">{v}</Tag> : <span style={{ color: '#6b6b6b' }}>—</span>) },
     { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true },
     { title: '', key: 'actions', width: 150, render: (_: any, r) => (
       <Space size="small">

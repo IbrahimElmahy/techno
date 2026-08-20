@@ -256,7 +256,7 @@ export default function PurchaseReturns() {
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 80,
       ...numberColumn<ReturnRow>((r) => r.id),
-      render: (id: number) => <span style={{ color: '#8a8a8a' }}>{id}</span>,
+      render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
     },
     {
       // The day the goods went back, falling back to when the row was typed for returns recorded
@@ -265,7 +265,7 @@ export default function PurchaseReturns() {
       ...dateColumn<ReturnRow>((r) => r.return_date || r.created_at),
       defaultSortOrder: 'descend' as const,
       render: (v: string | null, r: ReturnRow) => (v ? String(v).slice(0, 10) : (
-        <span style={{ color: '#8a8a8a' }} title="مردود قديم — التاريخ ده يوم التسجيل">
+        <span style={{ color: '#6b6b6b' }} title="مردود قديم — التاريخ ده يوم التسجيل">
           {r.created_at ? `${String(r.created_at).slice(0, 10)}*` : '-'}
         </span>
       )),

@@ -649,11 +649,11 @@ function CustomerMergeCard() {
                 // merge, so the id goes beside the name; two customers can share one.
                 { title: 'الحساب اللي هيفضل', key: 'keep',
                   render: (_: any, r: any) => (r.keep
-                    ? <span>{r.keep.name} <span style={{ color: '#8a8a8a' }}>#{r.keep.id}</span></span>
+                    ? <span>{r.keep.name} <span style={{ color: '#6b6b6b' }}>#{r.keep.id}</span></span>
                     : '-') },
                 { title: 'اللي هيندمج فيه', key: 'merge',
                   render: (_: any, r: any) => (r.merge
-                    ? <span>{r.merge.name} <span style={{ color: '#8a8a8a' }}>#{r.merge.id}</span></span>
+                    ? <span>{r.merge.name} <span style={{ color: '#6b6b6b' }}>#{r.merge.id}</span></span>
                     : '-') },
                 { title: 'المندوب', dataIndex: 'same_rep', width: 130,
                   render: (v: boolean) => (v

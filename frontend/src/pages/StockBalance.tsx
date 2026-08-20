@@ -181,7 +181,7 @@ export default function StockBalance() {
         dataIndex: 'quantity', align: 'center' as const, width: 120,
         render: (v: string) => (
           <span style={{ fontWeight: Number(v) ? 700 : 400,
-                         color: Number(v) > 0 ? '#6AB42D' : Number(v) < 0 ? '#cf1322' : '#999' }}>
+                         color: Number(v) > 0 ? '#6AB42D' : Number(v) < 0 ? '#cf1322' : '#6b6b6b' }}>
             {qty(v)}
           </span>
         ),
@@ -232,7 +232,7 @@ export default function StockBalance() {
               </div>
             ))}
             {categories.length === 0 && (
-              <div style={{ padding: 12, color: '#8a8a8a', fontSize: 12 }}>لا توجد فئات مطابقة</div>
+              <div style={{ padding: 12, color: '#6b6b6b', fontSize: 12 }}>لا توجد فئات مطابقة</div>
             )}
           </div>
         </Col>
@@ -263,12 +263,12 @@ export default function StockBalance() {
                   background: selectedId === p.id ? '#eef7e8' : undefined,
                   borderInlineStart: selectedId === p.id ? '3px solid #6AB42D' : '3px solid transparent',
                 }}>
-                <span style={{ color: '#8a8a8a', fontSize: 12, direction: 'ltr' }}>{p.code || '-'}</span>
+                <span style={{ color: '#6b6b6b', fontSize: 12, direction: 'ltr' }}>{p.code || '-'}</span>
                 <span style={{ fontWeight: selectedId === p.id ? 700 : 400 }}>{p.name}</span>
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 6, color: '#8a8a8a', fontSize: 12 }}>
+          <div style={{ marginTop: 6, color: '#6b6b6b', fontSize: 12 }}>
             {visibleItems.length} من {products.length} صنف
           </div>
         </Col>

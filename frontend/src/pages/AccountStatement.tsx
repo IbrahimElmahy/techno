@@ -241,13 +241,13 @@ export default function AccountStatement() {
     // entry has none and says so rather than borrowing one.
     { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
       ...textColumn(lines, (l: StatementLine) => l.rep_name),
-      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
+      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
     { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
       ...textColumn(lines, (l: StatementLine) => l.cost_center_name),
-      render: (v: string | null) => v ?? <span style={{ color: '#bbb' }}>-</span> },
+      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
     { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
       ...numberColumn<StatementLine>((l) => l.balance_before),
-      render: (v: string) => <span style={{ color: '#8a8a8a' }}>{money(v)}</span> },
+      render: (v: string) => <span style={{ color: '#6b6b6b' }}>{money(v)}</span> },
     { title: 'مدين', dataIndex: 'debit', align: 'left',
       ...numberColumn<StatementLine>((l) => l.debit),
       render: (v: string) => (Number(v) ? money(v) : '-') },
@@ -265,7 +265,7 @@ export default function AccountStatement() {
         <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
           label={l.doc_number || undefined}
           allowEdit={l.doc_kind === 'invoice'} />
-      ) : <span style={{ color: '#bbb' }}>قيد يدوي</span>) },
+      ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
