@@ -144,3 +144,15 @@ describe('نفس باب الشرا', () => {
     expect(src).toMatch(/!supplierFilter \|\| p\.supplier_id === supplierFilter/);
   });
 });
+
+describe('نفس كثافة الشرا', () => {
+  it('الفورم مضغوط بنفس الكلاس', () => {
+    expect(src).toContain('className="doc-form"');
+    expect(src).toMatch(/<Form layout="vertical" size="small"/);
+  });
+
+  it('مفيش زراير كبيرة بتاكل ارتفاع', () => {
+    // زرارين `large` في آخر الشاشة كانوا بياخدوا ارتفاع سطرين.
+    expect(src, 'لسه فيه زرار كبير').not.toContain('size="large"');
+  });
+});

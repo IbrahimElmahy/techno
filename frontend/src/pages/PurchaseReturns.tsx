@@ -503,7 +503,8 @@ export default function PurchaseReturns() {
           description="اختار الفاتورة الأول، وبعدها اكتب الكمية الراجعة قدام كل صنف. السعر بيتاخد من الفاتورة نفسها."
         />
 
-        <Form layout="vertical">
+        {/* نفس الضغط اللي في فاتورة الشرا — `doc-form` معرّف في `index.css`. */}
+        <Form layout="vertical" size="small" className="doc-form">
           <Form.Item label="تاريخ المردود">
             <DatePicker style={{ width: '100%' }} value={returnDate}
               onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
@@ -599,11 +600,11 @@ export default function PurchaseReturns() {
           background: '#fdf6f3', border: '1px solid #f3e0d8',
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
         }}>
-          <Button type="primary" danger size="large" loading={saving} onClick={submit}>
+          <Button type="primary" danger loading={saving} onClick={submit}>
             ترحيل المردود
           </Button>
           {/* الرجوع من غير ترحيل مابيغيّرش حاجة — العكس بيحصل وقت الحفظ. */}
-          <Button size="large"
+          <Button
             onClick={() => { setCreating(false); setEditingId(null);
               setSupplierFilter(null); }}>إلغاء</Button>
         </div>
