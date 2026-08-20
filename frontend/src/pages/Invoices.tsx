@@ -148,6 +148,25 @@ export function couponCount(from?: string | null, to?: string | null): number | 
   return b.n - a.n + 1;
 }
 
+/** الكوبونات المصروفة مع الفاتورة — صف لكل نوع، مش صف واحد للكل.
+ *
+ * كان مدى واحد بيسجّل إن كوبونات اتسلّمت من غير ما يقول أنهي كوبونات: مية دهبي وخمسين
+ * فضي بينهم خانتين. المدى فضل على كل صف لأنه هو اللي تطبيق المرتجعات بيراجع عليه الرقم
+ * الراجع؛ والنوع هو اللي بيخلّي الدفاتر تقدر تقول اتصرف إيه. */
+interface CouponRow {
+  key: string;
+  coupon_type_id?: number;
+  count?: number;
+  serial_from?: string;
+  serial_to?: string;
+}
+
+/** صف فاضي جديد. بيتعمل واحد من دول أول ما الفاتورة تتفتح، عشان الخانات تبقى قدام
+ *  الواحد على طول من غير ما يدوس «إضافة» الأول. */
+function blankCoupon(): CouponRow {
+  return { key: `c${Date.now()}${Math.random().toString(36).slice(2, 7)}` };
+}
+
 export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
@@ -226,9 +245,7 @@ export default function Invoices() {
   // product they picked, or a line they clicked — so the panel answers the question they are
   // asking right now without them having to ask it twice.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
-  /** الكوبونات المصروفة مع الفاتورة — a row per KIND, because a counter handing out a hundred
-   *  gold and fifty silver was previously given one range to put both in and had to choose which
-   *  of the two to record. */
+
   /**
    * اعدادات الأعمدة لسطور الفاتورة.
    *
@@ -249,10 +266,7 @@ export default function Invoices() {
   const lineCols = useHiddenColumns('invoice-lines');
   const showCol = (key: string) => !lineCols.hidden.includes(key);
 
-  const [couponRows, setCouponRows] = useState<
-    { key: string; coupon_type_id?: number; count?: number; serial_from?: string;
-      serial_to?: string }[]
-  >([]);
+  const [couponRows, setCouponRows] = useState<CouponRow[]>(() => [blankCoupon()]);
   const [couponTypes, setCouponTypes] = useState<{ id: number; name: string }[]>([]);
   // The day the sale happened, asked for before the form opens. It is not always today — a rep
   // comes back from a round, a branch catches up on a backlog — and it dates the ledger entry
@@ -485,7 +499,7 @@ export default function Invoices() {
     setFamilyAccounts([]);
     setInvoiceFamily(null);
     setCustomerCoupons([]);
-    setCouponRows([]);
+    setCouponRows([blankCoupon()]);
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
@@ -1620,26 +1634,19 @@ export default function Invoices() {
             ))}
           </Row>
 
-          {/* الكوبونات المصروفة — one row per kind, added and removed freely.
-              It used to be a single range, which recorded THAT coupons were handed over and never
-              WHICH: a hundred gold and fifty silver had one pair of boxes between them. The serial
-              range stays on each row because that is what the returns app checks a returned serial
-              against; the kind is what lets the books say what was given. */}
+          {/* الكوبونات المصروفة — صف لكل نوع، والخانات قدام الواحد على طول.
+              *
+              * كان فوقهم عنوان «الكوبونات المصروفة» وزرار «إضافة نوع»، والخانات نفسها
+              * مابتظهرش غير لما يدوس الزرار. يعني اللي بيسلّم كوبونات مع كل فاتورة كان
+              * لازم يدوس زرار الأول كل مرة عشان يوصل لخانة. دلوقتي في صف فاضي مستني، وزرار
+              * الإضافة جنب الخانات لمّا يكون عنده أكتر من نوع يسلّمه.
+              *
+              * الخانات بتشرح نفسها بالكلام اللي جواها (نوع الكوبون · العدد · من رقم · إلى
+              * رقم)، فالعنوان اللي فوقهم كان بيقول اللي هما بيقولوه.
+              *
+              * والمدى فضل على كل صف لأنه هو اللي تطبيق المرتجعات بيراجع عليه الرقم الراجع. */}
           <div style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span style={{ fontWeight: 600 }}>الكوبونات المصروفة</span>
-              <Button size="small" icon={<PlusOutlined />}
-                onClick={() => setCouponRows((r) => [...r, { key: String(Date.now()) }])}>
-                إضافة نوع
-              </Button>
-              <span style={{ fontSize: 12, color: '#6b6b6b' }}>
-                {couponRows.length === 0
-                  ? 'سيبها فاضية لو الفاتورة من غير كوبونات.'
-                  : `الإجمالي: ${couponRows.reduce(
-                    (t, r) => t + (couponCount(r.serial_from, r.serial_to) ?? 0), 0)} كوبون`}
-              </span>
-            </div>
-            {couponRows.map((row) => (
+            {couponRows.map((row, i) => (
               <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
                 <Col xs={24} md={7}>
                   <Select allowClear showSearch style={{ width: '100%' }}
@@ -1666,11 +1673,28 @@ export default function Invoices() {
                       ? { ...x, serial_to: e.target.value } : x)))} />
                 </Col>
                 <Col xs={24} md={3}>
-                  <Button type="text" danger icon={<DeleteOutlined />}
-                    onClick={() => setCouponRows((rs) => rs.filter((x) => x.key !== row.key))} />
+                  {/* زرار الإضافة على آخر صف بس — على كل صف كان هيبقى نفس الزرار مكرر
+                      بيعمل نفس الحاجة. */}
+                  {i === couponRows.length - 1 && (
+                    <Button size="small" icon={<PlusOutlined />} title="نوع كوبون تاني"
+                      onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
+                  )}
+                  {/* المسح على آخر صف فاضي بيفضّي الخانات مايشيلهاش — الخانات المفروض
+                      تفضل قدام الواحد. */}
+                  <Button type="text" danger icon={<DeleteOutlined />} title="امسح الصف"
+                    onClick={() => setCouponRows((rs) => (rs.length === 1
+                      ? [blankCoupon()]
+                      : rs.filter((x) => x.key !== row.key)))} />
                 </Col>
               </Row>
             ))}
+            {/* الإجمالي بيبان لما يبقى فيه كوبونات فعلاً — رقم بيتقارن بالدفتر اللي في إيده. */}
+            {couponRows.some((r) => couponCount(r.serial_from, r.serial_to)) && (
+              <div style={{ fontSize: 12, color: '#4a4a4a' }}>
+                الإجمالي: {couponRows.reduce(
+                  (t, r) => t + (couponCount(r.serial_from, r.serial_to) ?? 0), 0)} كوبون
+              </div>
+            )}
           </div>
 
           {/*
