@@ -75,3 +75,39 @@ describe('choosing a party', () => {
     expect(missing, 'exempted screens that no longer exist').toEqual([]);
   });
 });
+
+describe('فورم إنشاء طرف جديد', () => {
+  const src = readFileSync(join(__dirname, 'PartyPickerModal.tsx'), 'utf8');
+  const form = src.slice(src.indexOf('<Form form={createForm}'), src.indexOf('حفظ واختيار'));
+
+  it.each([
+    'الفرع', 'الاسم', 'البريد الالكترونى', 'الرقم الضريبي',
+    'السجل التجاري', 'العنوان', 'الهاتف',
+  ])('فيه حقل «%s»', (label) => {
+    expect(form, `حقل «${label}» ناقص`).toContain(label);
+  });
+
+  it.each(['مندوب', 'السعر الافتراضي', 'خصم %', 'ض.م %'])(
+    'العميل بس فيه «%s»', (label) => {
+      expect(form).toContain(label);
+    });
+
+  it('كل حقل في الفورم بيتبعت فعلاً', () => {
+    // حقل بيتكتب فيه ومابيتبعتش أوحش من حقل مش موجود: اللي كتبه فاكر إنه اتسجّل.
+    const payload = src.slice(src.indexOf('const payload: any = {'),
+      src.indexOf('const res = await api.post'));
+    for (const key of ['branch_id', 'email', 'tax_number', 'commercial_register',
+      'address', 'phone', 'default_price_tier', 'discount_pct', 'vat_pct']) {
+      expect(payload, `«${key}» في الفورم ومابيتبعتش`).toContain(key);
+    }
+  });
+
+  it('المنطقة بتتسأل — السيرفر بيطلبها على العميل', () => {
+    // من غيرها الحفظ بيترفض، فالسؤال هنا أحسن من فورم بيقع عند الحفظ.
+    expect(form).toContain('name="territory_id"');
+  });
+
+  it('التصنيفات جاية من قايمة الإعدادات مش مكتوبة في الكود', () => {
+    expect(src).toContain("useLookup('customer_type')");
+  });
+});

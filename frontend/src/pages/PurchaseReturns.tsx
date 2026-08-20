@@ -15,6 +15,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter }
   from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
+import PartyPickerModal from '../components/PartyPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
@@ -71,7 +72,9 @@ export default function PurchaseReturns() {
   const [creating, setCreating] = useState(false);
   // The date is asked first, the way the sale and the sales return ask it — the day the goods
   // went back is a fact about the goods, not about when somebody got to the screen.
-  const [newStep, setNewStep] = useState<null | 'date'>(null);
+  const [newStep, setNewStep] = useState<null | 'party'>(null);
+  /** المورد اللي اتختار من الباب — بيضيّق فواتير الشرا اللي بيتختار منها. */
+  const [supplierFilter, setSupplierFilter] = useState<number | null>(null);
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
   const [notes, setNotes] = useState('');
   const [purchaseId, setPurchaseId] = useState<number | undefined>();
@@ -183,8 +186,8 @@ export default function PurchaseReturns() {
 
   const openCreate = () => {
     setPurchaseId(undefined); setDetail(null); setQty({});
-    setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('date');
-    setEditingId(null);
+    setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
+    setEditingId(null); setSupplierFilter(null);
   };
 
   const choosePurchase = async (id: number) => {
@@ -466,22 +469,25 @@ export default function PurchaseReturns() {
       </Card>
       )}
 
-      {/* The date door. Declared beside the form, not inside it, so opening the form cannot
-          unmount the door that opened it. */}
-      <TabModal
-        open={newStep === 'date'}
-        title="تاريخ مردود الشراء"
-        okText="التالي" cancelText="إلغاء"
-        onCancel={() => setNewStep(null)}
-        onOk={() => { setNewStep(null); setCreating(true); }}
-        destroyOnHidden
-      >
-        <DatePicker style={{ width: '100%' }} size="large" autoFocus
-          value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
-        <div style={{ marginTop: 10, color: '#8a8a8a', fontSize: 13 }}>
-          اليوم اللي البضاعة رجعت فيه للمورد — مش يوم ما اتكتب في النظام.
-        </div>
-      </TabModal>
+      {/*
+        * نفس الباب اللي بيفتح فاتورة الشرا — الفرع والتاريخ والتصنيف والبحث والقايمة في بوباب
+        * واحد اسمه «انشاء».
+        *
+        * كان بوباب بيسأل التاريخ وبس، وبعده الشاشة بتفتح وتسيبك تدوّر على الفاتورة في قايمة.
+        * والمردود بيبدأ من مورد قبل ما يبدأ من فاتورة: اللي بيمسك بضاعة راجعة عارف مين المورد،
+        * وبيدوّر على أنهي فاتورة منه.
+        *
+        * فاختيار المورد هنا بيضيّق فواتير الخطوة اللي بعدها عليه — بدل قايمة بكل فواتير الشركة.
+        */}
+      <PartyPickerModal
+        open={newStep === 'party'} kind="supplier" kinds={['supplier', 'customer']}
+        date={returnDate} onDateChange={(d) => setReturnDate(d)}
+        onPick={(picked) => {
+          setNewStep(null);
+          setSupplierFilter(picked.id);
+          setCreating(true);
+        }}
+        onCancel={() => setNewStep(null)} />
 
       {creating && (
       <Card title={(
@@ -510,14 +516,18 @@ export default function PurchaseReturns() {
             <Select
               showSearch optionFilterProp="label" value={purchaseId} onChange={choosePurchase}
               placeholder="اختر فاتورة الشراء"
-              options={purchases.map((p) => {
+              // المورد اللي اتختار من الباب بيضيّق القايمة عليه — بدل كل فواتير الشركة.
+              // ولو محدش اتختار (دخلت من مكان تاني) القايمة بتفضل كاملة.
+              options={purchases
+                .filter((p: any) => !supplierFilter || p.supplier_id === supplierFilter)
+                .map((p) => {
                 const back = returnedByPurchase[p.id] || 0;
                 return {
                   value: p.id,
                   label: `${p.document_number} — ${p.supplier_name ?? ''} — ${money(p.total)} ج.م`
                     + (back ? ` (رجع منها ${money(back)})` : ''),
                 };
-              })}
+                })}
             />
           </Form.Item>
         </Form>
@@ -594,7 +604,8 @@ export default function PurchaseReturns() {
           </Button>
           {/* الرجوع من غير ترحيل مابيغيّرش حاجة — العكس بيحصل وقت الحفظ. */}
           <Button size="large"
-            onClick={() => { setCreating(false); setEditingId(null); }}>إلغاء</Button>
+            onClick={() => { setCreating(false); setEditingId(null);
+              setSupplierFilter(null); }}>إلغاء</Button>
         </div>
       </Card>
       )}

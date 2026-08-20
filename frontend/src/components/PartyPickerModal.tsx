@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Col, DatePicker, Empty, Form, Input, Row, Select, Space, Spin, Tag, message
+  Button, Col, DatePicker, Empty, Form, Input, InputNumber, Row, Select, Space,
+  Spin, Tag, message
 } from 'antd';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { normalizeAr } from './ListToolbar';
+import { useLookup } from '../hooks/useLookup';
 import { TabModal } from './TabModal';
 
 /**
@@ -35,6 +37,15 @@ export interface Party {
 }
 
 const KIND_LABEL: Record<PartyKind, string> = { customer: 'العميل', supplier: 'المورد' };
+
+/** شرايح السعر — نفس القايمة اللي في `useLookup` عشان الأسماء ما تتفرّقش. */
+const PRICE_TIERS = [
+  { value: 'commercial', label: 'تجاري' },
+  { value: 'semi_commercial', label: 'نصف تجاري' },
+  { value: 'wholesale', label: 'جملة' },
+  { value: 'semi_wholesale', label: 'نصف جملة' },
+  { value: 'consumer', label: 'مستهلك' },
+];
 const KIND_ENDPOINT: Record<PartyKind, string> = {
   customer: '/api/v1/customers',
   supplier: '/api/v1/suppliers',
@@ -71,7 +82,9 @@ export default function PartyPickerModal({
   // quick-create stays a genuine shortcut rather than a form that fails on submit.
   const [reps, setReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
-  const [customerTypes, setCustomerTypes] = useState<{ value: string; label: string }[]>([]);
+  /** تصنيفات العملاء من قايمة الإعدادات — كانت حالة معرّفة ومفيش حاجة بتملاها، فالقايمة
+   *  كانت بتفضل فاضية والفورم بيقع على قايمة مكتوبة في الكود. */
+  const { options: customerTypes } = useLookup('customer_type');
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [branchId, setBranchId] = useState<number | undefined>();
@@ -135,11 +148,26 @@ export default function PartyPickerModal({
   const handleCreate = async (values: any) => {
     setSaving(true);
     try {
-      const payload: any = { name: values.name, phone: values.phone || undefined };
+      // كل الحقول اللي في الفورم بتتبعت. الفاضي بيتبعت `undefined` مش `''` — الفرق إن
+      // «مااتكتبش» بيفضل NULL في الداتا بدل نص فاضي، وده اللي بيخلّي التقارير تعرف تفرّق.
+      const payload: any = {
+        name: values.name,
+        phone: values.phone || undefined,
+        branch_id: values.branch_id ?? undefined,
+        email: values.email || undefined,
+        tax_number: values.tax_number || undefined,
+        commercial_register: values.commercial_register || undefined,
+        address: values.address || undefined,
+      };
       if (activeKind === 'customer') {
         payload.customer_type = values.customer_type || 'تاجر';
         payload.rep_id = values.rep_id;
         payload.territory_id = values.territory_id;
+        payload.default_price_tier = values.default_price_tier || undefined;
+        // فاضي معناه «مافيش اتفاق»، وصفر معناه «فيه اتفاق وهو صفر». التفرقة دي هي سبب إن
+        // العمودين دول بيقبلوا NULL أصلاً.
+        payload.discount_pct = values.discount_pct ?? undefined;
+        payload.vat_pct = values.vat_pct ?? undefined;
       }
       const res = await api.post(KIND_ENDPOINT[activeKind], payload);
       message.success(`تم إنشاء ${KIND_LABEL[activeKind]} بنجاح`);
@@ -171,45 +199,120 @@ export default function PartyPickerModal({
       footer={<Button onClick={onCancel}>إغلاق</Button>}
     >
       {creating ? (
-        <Form form={createForm} layout="vertical" onFinish={handleCreate}>
+        <Form form={createForm} layout="vertical" onFinish={handleCreate}
+          requiredMark={false}>
+          {/*
+            * فورم الإنشاء بنفس حقول وترتيب الشاشة اللي العميل شغّال عليها.
+            *
+            * كان فيه الاسم والهاتف والمندوب وبس. وباقي الحقول — الفرع، الإيميل، الرقم الضريبي،
+            * السجل التجاري، العنوان، السعر الافتراضي، الخصم، ض.م — كانت **موجودة في السيرفر من
+            * زمان** ومفيش طريق يوصلها من هنا: تعمل العميل من جوّه الفاتورة، وبعدين تسيب شغلك
+            * وتفتح شاشة العملاء عشان تكمّل بياناته.
+            *
+            * العميل تلات حقول في الصف والمورد تلاتة كمان — نفس التقسيم اللي في شاشته.
+            */}
           <Row gutter={12}>
-            <Col span={12}>
+            {activeKind === 'customer' ? (
+              <>
+                <Col xs={24} md={8}>
+                  <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 10 }}>
+                    <Select allowClear placeholder="الفرع"
+                      options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="rep_id" label="مندوب"
+                    rules={[{ required: true, message: 'المندوب مطلوب' }]}
+                    style={{ marginBottom: 10 }}>
+                    <Select showSearch optionFilterProp="label" placeholder="اختر المندوب"
+                      options={reps.map((r: any) => ({
+                        value: r.id, label: r.full_name || r.username }))} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="default_price_tier" label="السعر الافتراضي"
+                    style={{ marginBottom: 10 }}>
+                    <Select allowClear placeholder="مستهلك" options={PRICE_TIERS} />
+                  </Form.Item>
+                </Col>
+              </>
+            ) : (
+              <Col xs={24} md={8}>
+                <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 10 }}>
+                  <Select allowClear placeholder="الفرع"
+                    options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+                </Form.Item>
+              </Col>
+            )}
+
+            <Col xs={24} md={8}>
               <Form.Item name="name" label="الاسم"
-                rules={[{ required: true, message: 'الاسم مطلوب' }]}>
+                rules={[{ required: true, message: 'الاسم مطلوب' }]}
+                style={{ marginBottom: 10 }}>
                 <Input autoFocus placeholder={`اسم ${KIND_LABEL[activeKind]}`} />
               </Form.Item>
             </Col>
-            <Col span={12}>
-              <Form.Item name="phone" label="الهاتف"><Input placeholder="اختياري" /></Form.Item>
+            <Col xs={24} md={8}>
+              <Form.Item name="email" label="البريد الالكترونى" style={{ marginBottom: 10 }}>
+                <Input placeholder="اختياري" />
+              </Form.Item>
             </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="tax_number" label="الرقم الضريبي" style={{ marginBottom: 10 }}>
+                <Input placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="commercial_register" label="السجل التجاري"
+                style={{ marginBottom: 10 }}>
+                <Input placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="address" label="العنوان" style={{ marginBottom: 10 }}>
+                <Input placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="phone" label="الهاتف" style={{ marginBottom: 10 }}>
+                <Input placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+
+            {activeKind === 'customer' && (
+              <>
+                <Col xs={24} md={8}>
+                  {/* فاضي = مافيش اتفاق؛ صفر = فيه اتفاق وهو صفر. */}
+                  <Form.Item name="discount_pct" label="خصم %" style={{ marginBottom: 10 }}>
+                    <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.5}
+                      placeholder="—" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="vat_pct" label="ض.م %" style={{ marginBottom: 10 }}>
+                    <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.5}
+                      placeholder="—" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  {/* المنطقة مش في شاشته، بس السيرفر عندنا بيطلبها على العميل — من غيرها
+                      الحفظ بيترفض، فبتتسأل هنا بدل ما الفورم يقع عند الحفظ. */}
+                  <Form.Item name="territory_id" label="المنطقة"
+                    rules={[{ required: true, message: 'المنطقة مطلوبة' }]}
+                    style={{ marginBottom: 10 }}>
+                    <Select showSearch optionFilterProp="label" placeholder="اختر المنطقة"
+                      options={territories.map((t: any) => ({ value: t.id, label: t.name }))} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item name="customer_type" label="التصنيف" style={{ marginBottom: 10 }}>
+                    <Select allowClear placeholder="تاجر"
+                      options={customerTypes} />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
           </Row>
-          {activeKind === 'customer' && (
-            <Row gutter={12}>
-              <Col span={8}>
-                <Form.Item name="rep_id" label="المندوب"
-                  rules={[{ required: true, message: 'المندوب مطلوب' }]}>
-                  <Select showSearch optionFilterProp="label" placeholder="اختر المندوب"
-                    options={reps.map((r: any) => ({
-                      value: r.id, label: r.full_name || r.username }))} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item name="territory_id" label="المنطقة"
-                  rules={[{ required: true, message: 'المنطقة مطلوبة' }]}>
-                  <Select showSearch optionFilterProp="label" placeholder="اختر المنطقة"
-                    options={territories.map((t: any) => ({ value: t.id, label: t.name }))} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item name="customer_type" label="نوع العميل" initialValue="تاجر">
-                  <Select options={(customerTypes.length ? customerTypes : [
-                    { value: 'تاجر', label: 'تاجر' },
-                    { value: 'مستهلك', label: 'مستهلك' },
-                  ])} />
-                </Form.Item>
-              </Col>
-            </Row>
-          )}
           <Space>
             <Button type="primary" htmlType="submit" loading={saving}>حفظ واختيار</Button>
             <Button onClick={() => setCreating(false)}>رجوع للقائمة</Button>

@@ -129,3 +129,18 @@ describe('«عرض» بيفتح التعديل — زي الشرا', () => {
     expect(edit).not.toContain('Modal.confirm');
   });
 });
+
+describe('نفس باب الشرا', () => {
+  it('بيفتح ببوباب «انشاء» — فرع وتاريخ وتصنيف وقايمة', () => {
+    // كان بوباب بيسأل التاريخ وبس، وبعده الشاشة بتسيبك تدوّر في قايمة بكل فواتير الشركة.
+    expect(src).toContain('<PartyPickerModal');
+    expect(src).toMatch(/open=\{newStep === 'party'\}/);
+    expect(src).toMatch(/kinds=\{\['supplier', 'customer'\]\}/);
+    expect(src, 'لسه فيه خطوة تاريخ منفصلة').not.toContain("newStep === 'date'");
+  });
+
+  it('المورد اللي اتختار بيضيّق فواتير الخطوة اللي بعده', () => {
+    // المردود بيبدأ من مورد قبل ما يبدأ من فاتورة.
+    expect(src).toMatch(/!supplierFilter \|\| p\.supplier_id === supplierFilter/);
+  });
+});
