@@ -78,7 +78,8 @@ describe('choosing a party', () => {
 
 describe('فورم إنشاء طرف جديد', () => {
   const src = readFileSync(join(__dirname, 'PartyPickerModal.tsx'), 'utf8');
-  const form = src.slice(src.indexOf('<Form form={createForm}'), src.indexOf('حفظ واختيار'));
+  // الفورم بقى في بوباب لوحده تحت بوباب الاختيار — فبيتقص من أوله لآخر الملف.
+  const form = src.slice(src.indexOf('<Form form={createForm}'));
 
   it.each([
     'الفرع', 'الاسم', 'البريد الالكترونى', 'الرقم الضريبي',
@@ -109,5 +110,27 @@ describe('فورم إنشاء طرف جديد', () => {
 
   it('التصنيفات جاية من قايمة الإعدادات مش مكتوبة في الكود', () => {
     expect(src).toContain("useLookup('customer_type')");
+  });
+});
+
+describe('الإنشاء بوباب فوق البوباب', () => {
+  const src = readFileSync(join(__dirname, 'PartyPickerModal.tsx'), 'utf8');
+
+  it('الفورم في نافذة لوحده — مش بديل عن القايمة', () => {
+    // كان بيحل محل القايمة جوّه نفس النافذة: تدوس «عميل جديد» فالقايمة تختفي، وترجع تلاقي
+    // البحث اللي كنت كاتبه اتمسح.
+    expect((src.match(/<TabModal/g) || []).length, 'لسه نافذة واحدة').toBe(2);
+    expect(src).toMatch(/open=\{creating\}/);
+    expect(src, 'لسه بيبدّل بين الفورم والقايمة').not.toMatch(/\{creating \? \(/);
+  });
+
+  it('عنوان النافذة بيقول اللي بتعمله', () => {
+    expect(src).toMatch(/title=\{activeKind === 'customer' \? 'عميل جديد' : 'مورد جديد'\}/);
+  });
+
+  it('القايمة اللي تحت بتفضل مرسومة', () => {
+    // النافذة اللي فوق بتسيب اللي تحتها زي ما هو، فالرجوع بيرجّع لنفس المكان.
+    const picker = src.slice(src.indexOf('open={open}'), src.indexOf('open={creating}'));
+    expect(picker).toContain('visible.map');
   });
 });
