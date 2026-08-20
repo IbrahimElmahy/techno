@@ -225,18 +225,50 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
  * كثيفة بتبقى شاشة مش مقروءة، واللي بيكتب فاتورة بيقرا أرقام مايتحملش يقراها غلط. فالأسماء
  * بقت أصغر شوية **وأغمق** — الوضوح جاي من التباين مش من الحجم — والخانات نفسها فضلت بخطها.
  */
+/*
+ * اسم الحقل مدمج في إطار الخانة — بيوفّر سطر كامل لكل حقل.
+ *
+ * الفورم الرأسي بيحط الاسم فوق الخانة على سطر لوحده. على ترويسة فيها تمن حقول، ده تمن سطور
+ * رايحة في أسماء، والسطور — اللي هي الشغل — بتنزل تحت.
+ *
+ * الاسم بقى واقف على خط الإطار نفسه: `absolute` فوق الحافة، وبخلفية بيضا بتقطع الخط تحته
+ * فيبان كأنه محفور فيه. ده اللي بيوفّر السطر، والخانة بتفضل بحجمها ومقروءة.
+ *
+ * `padding-top` على العنصر عشان الاسم مايتقصّش ولا يركب على اللي فوقه — الاسم طالع برّه
+ * الخانة، فمحتاج مكان فوقها يقعد فيه.
+ */
 .doc-form .ant-form-item {
-  margin-bottom: 8px;
+  position: relative;
+  margin-bottom: 10px;
+  padding-top: 7px;
 }
 .doc-form .ant-form-item-label {
-  padding-bottom: 1px;
-  line-height: 1.2;
+  position: absolute;
+  top: 0;
+  inset-inline-start: auto;
+  inset-inline-end: 9px;
+  z-index: 2;
+  padding: 0;
+  line-height: 1;
+  pointer-events: none;
 }
 .doc-form .ant-form-item-label > label {
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 700;
   color: #3a4a3a;
   height: auto;
+  line-height: 1;
+  /* الخلفية هي اللي بتقطع خط الإطار تحت الاسم — من غيرها الخط بيعدّي في نص الحروف. */
+  background: #fff;
+  padding: 0 5px;
+}
+/* antd بتحط نقطتين بعد اسم الحقل — مالهمش لازمة والاسم واقف على الإطار. */
+.doc-form .ant-form-item-label > label::after {
+  display: none;
+}
+/* الحقل المطلوب: النجمة جنب الاسم مش قبله بمسافة. */
+.doc-form .ant-form-item-label > label.ant-form-item-required::before {
+  margin-inline-end: 2px;
 }
 /* الخانة نفسها بتفضل مقروءة — الضغط جه من فوقها وتحتها. */
 .doc-form .ant-input,

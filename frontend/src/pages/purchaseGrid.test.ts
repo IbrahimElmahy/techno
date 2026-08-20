@@ -124,7 +124,8 @@ describe('كثافة الشاشة', () => {
      */
     expect(src).toContain('className="doc-form"');
     const block = css.slice(css.indexOf('.doc-form .ant-form-item'), css.indexOf('.entry-grid {'));
-    expect(block).toContain('margin-bottom: 8px');
+    // الاسم بقى واقف على إطار الخانة بدل سطر لوحده — بيوفّر سطر لكل حقل.
+    expect(block).toContain('position: absolute');
     // خانة الإدخال نفسها مش أصغر من ١٣ — الوضوح شرط مش رفاهية.
     // الخانة مش أصغر من ١٤ — الوضوح شرط مش رفاهية.
     expect(block).toMatch(/font-size: 14px/);
