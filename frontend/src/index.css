@@ -245,11 +245,13 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .doc-form .ant-form-item-label {
   position: absolute;
   top: 0;
-  inset-inline-start: auto;
-  inset-inline-end: 9px;
+  /* على اليمين — بداية السطر في RTL، وهي اللي العين بتبدأ منها. */
+  inset-inline-start: 9px;
+  inset-inline-end: auto;
   z-index: 2;
   padding: 0;
   line-height: 1;
+  text-align: start;
   pointer-events: none;
 }
 .doc-form .ant-form-item-label > label {
