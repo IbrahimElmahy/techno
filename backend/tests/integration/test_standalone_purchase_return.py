@@ -136,3 +136,55 @@ def test_the_invoice_bound_return_still_works(client, stocked):
     assert res.status_code == 201, res.text
     row = client.get("/api/v1/purchases/returns", headers=h).json()[0]
     assert row["purchase_invoice_id"] == invoice["id"]
+
+
+def test_the_return_carries_the_same_document_fields_as_an_invoice(client, stocked):
+    """المردود نسخة من الفاتورة بالعكس — فبيشيل نفس حقول المستند.
+
+    كانت الترويسة تاريخ وملاحظات وبس: اللي بيكتب مردود مالوش مكان يكتب فيه رقم إشعار المورد،
+    ولا يقول القيد بينزل على أنهي حساب، ولا يسجّل البيانات التلاتة اللي كل مستند تاني بيسجّلها.
+    والتقارير اللي بتقرا الحقول دي كانت بتلاقيها فاضية على المردودات وحدها.
+    """
+    res = _return(client, stocked,
+                  external_document_number="CN-7788",
+                  statement1="بيان واحد", statement2="بيان اتنين", statement3="بيان تلاتة")
+    assert res.status_code == 201, res.text
+
+    row = client.get("/api/v1/purchases/returns", headers=stocked["h"]).json()[0]
+    assert row["external_document_number"] == "CN-7788"
+    assert row["statement1"] == "بيان واحد"
+    assert row["statement3"] == "بيان تلاتة"
+
+
+def test_the_line_discount_lands_on_its_own_line(client, stocked):
+    """خصم السطر بينزل على سطره — نفس ترتيب الفاتورة."""
+    res = _return(client, stocked, lines=[
+        {"item_id": stocked["item"]["id"], "quantity": "2", "unit_price": "100",
+         "discount_pct": "10"}])
+    assert res.status_code == 201, res.text
+    row = client.get("/api/v1/purchases/returns", headers=stocked["h"]).json()[0]
+    # ٢ × ١٠٠ = ٢٠٠، ناقص ١٠٪ = ١٨٠.
+    assert Decimal(row["value"]) == Decimal("180.00")
+
+
+def test_the_document_discount_lands_on_the_total(client, stocked):
+    """وخصم المستند بينزل على المجموع بعد خصم كل سطر — نفس الترتيب بالظبط."""
+    res = _return(client, stocked, variable_discount_pct="25", lines=[
+        {"item_id": stocked["item"]["id"], "quantity": "2", "unit_price": "100"}])
+    assert res.status_code == 201, res.text
+    row = client.get("/api/v1/purchases/returns", headers=stocked["h"]).json()[0]
+    assert Decimal(row["gross"]) == Decimal("200.00")
+    assert Decimal(row["combined_pct"]) == Decimal("25.00")
+    assert Decimal(row["value"]) == Decimal("150.00")
+
+
+def test_each_line_can_leave_its_own_warehouse(client, stocked):
+    """الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن، والمردود لازم يرجّع كل صنف من مخزنه."""
+    res = _return(client, stocked, lines=[
+        {"item_id": stocked["item"]["id"], "quantity": "2", "unit_price": "100",
+         "warehouse_id": stocked["branch_wh"]}])
+    assert res.status_code == 201, res.text
+    created = res.json()
+    got = client.get(f"/api/v1/purchases/returns/{created['id']}",
+                     headers=stocked["h"]).json()
+    assert got["lines"][0]["warehouse_id"] == stocked["branch_wh"]

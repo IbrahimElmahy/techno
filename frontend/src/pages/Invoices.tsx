@@ -168,6 +168,12 @@ export default function Invoices() {
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
   // Only to NAME the branch on the printed head — the customer carries its id.
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  /** حسابات الترحيل — «الحساب» في ترويسة الفاتورة، وهو اللي القيد بينزل عليه. */
+  const [postAccounts, setPostAccounts] = useState<any[]>([]);
+  useEffect(() => {
+    api.get('/api/v1/accounts', { params: { postable_only: true, active: true } })
+      .then((r) => setPostAccounts(r.data || [])).catch(console.error);
+  }, []);
   const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -395,6 +401,62 @@ export default function Invoices() {
     });
     return groups;
   }, [lines]);
+
+  /**
+   * خصم السطر كنسبة واحدة — الثابت بتاع الصنف زائد اللي اتكتب، بحد ٩٩٫٩٩.
+   *
+   * الجدول بيعرض النسبة دي وقيمتها بالجنيه في عمودين، زي فاتورة الشرا: «١٠٪» مابتقولش
+   * كام اتخصم، والمراجعة بتحصل بالجنيه.
+   */
+  const lineDiscountPct = (l: SaleLineItem) =>
+    Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
+
+  /**
+   * الكمية بعد ما الحارس يقيسها على المتاح.
+   *
+   * مكتوبة مرة عشان الخروج من الخانة وEnter يقيسوا نفس القياس. لو اتكتبت مرتين، أول تعديل
+   * على واحدة منهم بيخلّي الطريقين بيقيسوا حاجتين مختلفتين — واللي بيكمّل بالكيبورد مش
+   * بيخرج من الخانة أصلاً، فطريقه هو اللي كان هيفضل من غير حراسة.
+   */
+  const checkedQuantity = (l: SaleLineItem) => guardQuantity({
+    value: l.quantity,
+    // من غير مخزن مافيش «متاح» — والحارس بيفرّق بين «مش معروف» وصفر.
+    available: l.warehouse_id
+      ? availableFor(l.item_id, l.unit, l.warehouse_id) : undefined,
+    itemName: l.item_id ? productName(l.item_id) : null,
+  }, null);
+
+  /** صافي السطر — نفس `lineTotal`، باسم بيقول إنه اللي بيتعرض في العمود الأخير. */
+  const saleLineNet = (l: SaleLineItem) => lineTotal(l);
+
+  /**
+   * خيارات الوحدة — وفيها **دايماً** خيار الوحدة الأساسية.
+   *
+   * `__base__` قيمة داخلية بتتخزّن `null` على السطر، وantd لما تلاقي قيمة مالهاش خيار مطابق
+   * بتعرض القيمة نفسها — فبتكتب مفتاح إنجليزي في خانة عربية لحد ما وحدات الصنف توصل.
+   */
+  const saleUnitOptions = (itemId: number | null) => {
+    const units = unitsCache[itemId || 0] || [];
+    const base = units.find((u) => u.is_base);
+    return [
+      { value: '__base__', label: base?.name || 'الأساسية' },
+      ...units.filter((u) => !u.is_base)
+        .map((u) => ({ value: u.name, label: `${u.name} (×${u.factor})` })),
+    ];
+  };
+
+  /**
+   * Enter معناها «السطر ده خلص» — ننتقل للسطر اللي بعده، وآخر سطر بيفتح بوباب الأصناف.
+   *
+   * نفس حركة فاتورة الشرا: الإيد مابتسيبش الكيبورد — كمية، Enter، كمية، Enter — ولما تخلص
+   * السطور البوباب بيفتح لصنف جديد.
+   */
+  const advanceFrom = (key: string) => {
+    const idx = lines.findIndex((l) => l.key === key);
+    const next = idx >= 0 ? lines[idx + 1] : undefined;
+    if (next) { setFocusLineKey(next.key); return; }
+    setPickerOpen(true);
+  };
 
   // A line's amount AFTER its own (fixed + variable) discount.
   const lineTotal = (l: SaleLineItem) => {
@@ -1002,7 +1064,7 @@ export default function Invoices() {
    *  a step to the neighbouring document, in the order the list is currently showing. */
   const viewToolbar = (): ToolbarAction[] => [
     { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-      onClick: () => { setDetailVisible(false); setInvoiceDate(dayjs()); setNewStep('date'); } },
+      onClick: () => { setDetailVisible(false); setInvoiceDate(dayjs()); setNewStep('party'); } },
     { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
       disabled: !canEditInvoice,
       onClick: () => { if (viewInvoice) { setDetailVisible(false); handleEditInvoice(viewInvoice); } } },
@@ -1435,7 +1497,7 @@ export default function Invoices() {
     const lineCount = lines.filter((l) => l.item_id !== null).length;
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => { closeCreate(); setInvoiceDate(dayjs()); setNewStep('date'); } },
+        onClick: () => { closeCreate(); setInvoiceDate(dayjs()); setNewStep('party'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
         // The open document IS the editable one; on a saved invoice this is «reverse and reopen».
         disabled: true },
@@ -1487,29 +1549,38 @@ export default function Invoices() {
           }
         >
         <DocumentToolbar actions={docToolbar()} />
-        <Form form={createForm} layout="vertical" onFinish={handleCreateSubmit} requiredMark={false}>
+        {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — نفس فاتورة الشرا. */}
+        <Form form={createForm} layout="vertical" size="small" className="doc-form"
+          onFinish={handleCreateSubmit} requiredMark={false}>
+          {/*
+            * ترويسة الفاتورة بنفس ترتيب فاتورة الشرا — الشاشتين نفس المستند من الناحيتين:
+            *
+            *   التاريخ · الفرع · مندوب · الحساب · مستند رقم
+            *   عميل · الحالي · العنوان · الهاتف
+            *   ملاحظات · بيان ١ · بيان ٢ · بيان ٣
+            *
+            * «مندوب» موجود هنا ومش موجود في الشرا، وده فرق حقيقي: المندوب بيبيع وبيتحصّل
+            * وبتتحسبله عمولة؛ الشحنة الواردة بيستلمها أمين المخزن.
+            *
+            * وبيانات العميل (الرصيد والعنوان والتليفون) بتتعرض للقراءة — اللي بيكتب فاتورة
+            * ومحتاج يتأكد إنه العميل الصح كان لازم يسيب الشاشة ويفتح ملفه.
+            */}
           <Row gutter={16}>
-            <Col span={12}>
-              {/* Picked from a searchable modal that can also create the customer on the spot,
-                  so a new walk-in never costs the half-entered invoice. */}
-              <Form.Item
-                name="customer_id"
-                label="العميل المشتري"
-                rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
-                style={{ marginBottom: 8 }}
-              >
-                <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
-                  placeholder="اضغط لاختيار العميل"
-                  onClick={() => setPartyPickerOpen(true)}
-                  options={customers.map((c) => ({
-                    value: c.id,
-                    label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
-                  }))} />
+            <Col xs={12} md={5}>
+              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                  value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={5}>
+              <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 8 }}>
+                <Select allowClear placeholder="كل الفروع"
+                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={5}>
               {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
-              <Form.Item name="rep_id" label="المندوب">
+              <Form.Item name="rep_id" label="مندوب" style={{ marginBottom: 8 }}>
                 <Select allowClear showSearch placeholder="من العميل"
                   optionFilterProp="label"
                   onChange={(v) => {
@@ -1522,47 +1593,84 @@ export default function Invoices() {
                   options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col xs={12} md={5}>
+              <Form.Item name="revenue_account_id" label="الحساب" style={{ marginBottom: 8 }}>
+                <Select allowClear showSearch optionFilterProp="label"
+                  placeholder="حساب المبيعات الافتراضي"
+                  options={postAccounts.map((a: any) => ({
+                    value: a.id,
+                    label: a.code ? `${a.code} ${a.name ?? ''}` : (a.name ?? `#${a.id}`) }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={4}>
+              <Form.Item name="external_document_number" label="مستند رقم"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم فاتورة العميل" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              {/* Picked from a searchable modal that can also create the customer on the spot,
+                  so a new walk-in never costs the half-entered invoice. */}
+              <Form.Item
+                name="customer_id"
+                label="عميل"
+                rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
+                style={{ marginBottom: 8 }}
+              >
+                <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
+                  placeholder="اضغط لاختيار العميل"
+                  onClick={() => setPartyPickerOpen(true)}
+                  options={customers.map((c) => ({
+                    value: c.id,
+                    label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
+                  }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={8} md={4}>
+              <Form.Item label="الحالي" style={{ marginBottom: 8 }}>
+                <Input readOnly
+                  value={party?.balance != null ? money(party.balance) : ''} />
+              </Form.Item>
+            </Col>
+            <Col xs={16} md={6}>
+              <Form.Item label="العنوان" style={{ marginBottom: 8 }}>
+                <Input readOnly value={party?.address ?? ''} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={3}>
+              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+                <Input readOnly value={party?.phone ?? ''} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={3}>
               <Form.Item
                 name="warehouse_id"
-                label="مستودع الصرف والتسليم"
+                label="المخزن"
                 rules={[{ required: true, message: 'يرجى اختيار مستودع الصرف!' }]}
+                style={{ marginBottom: 8 }}
               >
                 <Select placeholder="من المندوب" onChange={onWarehouseChange}>
                   {warehouses.map((w) => (
-                    <Select.Option key={w.id} value={w.id}>
-                      {w.name}
-                    </Select.Option>
+                    <Select.Option key={w.id} value={w.id}>{w.name}</Select.Option>
                   ))}
                 </Select>
               </Form.Item>
             </Col>
           </Row>
 
-          {/* (030) The paper trail: the customer's own invoice number and any free note. */}
           <Row gutter={16}>
-            <Col xs={24} md={8}>
-              <Form.Item name="external_document_number" label="رقم المستند (الورقي)"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="اختياري — رقم فاتورة العميل الورقية" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={16}>
+            <Col xs={24} md={6}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" />
               </Form.Item>
             </Col>
-          </Row>
-
-          {/* البيانات الثلاثة — the same three the return has carried since 030. The columns and
-              the API have always been here and this form never filled them, so a سياسة أو شرط
-              typed on the paper invoice had nowhere to live: the drift ran the other way from
-              نوع الفاتورة, and each screen was missing something the other had. */}
-          <Row gutter={12}>
             {[0, 1, 2].map((i) => (
-              <Col xs={24} md={8} key={i}>
-                <Form.Item name={`statement${i + 1}`}
-                  label={`بيان ${['أول', 'تاني', 'تالت'][i]}`} style={{ marginBottom: 8 }}>
+              <Col xs={24} md={6} key={i}>
+                <Form.Item name={`statement${i + 1}`} label={`بيان ${i + 1}`}
+                  style={{ marginBottom: 8 }}>
                   <Input placeholder="اختياري" />
                 </Form.Item>
               </Col>
@@ -1751,198 +1859,149 @@ export default function Invoices() {
             }}
           />
 
+          {/*
+            * سطور الفاتورة كجدول مضغوط — نفس جدول فاتورة الشرا بالظبط.
+            *
+            * كانت كروت متجمّعة بالفئة: كل سطر بياخد مساحة كبيرة، وترويسة فئة فوق كل مجموعة،
+            * وفاتورة خمستاشر صنف بتبقى صفحتين تمرير. وأهم من المساحة إن الكميات والأسعار
+            * مكانش ليها عمود تتقارن فيه رأسياً — واللي بيراجع فاتورة طويلة بيقارن رأسياً.
+            *
+            * الشاشتين بقوا نفس المستند من الناحيتين، فاللي اتعلّم إيده على واحدة اتعلّم التانية.
+            */}
           {lines.length === 0 ? (
-            <Empty description="اختر الفئة ثم المنتجات لإضافتها للفاتورة" style={{ margin: '12px 0' }} />
+            <Empty description="اختر الفئة ثم المنتجات لإضافتها للفاتورة"
+              style={{ margin: '12px 0' }} />
           ) : (
-            linesByCategory.map((group) => (
-              <div key={group.category ?? '__none__'}
-                style={{ border: '1px solid #e6efe3', borderRadius: 10, overflow: 'hidden',
-                         marginBottom: 12 }}>
-                {/* Category header. */}
-                <div style={{ background: '#f2f9f3', padding: '8px 12px', display: 'flex',
-                              alignItems: 'center', gap: 8 }}>
-                  <Tag color="green" style={{ fontWeight: 700, margin: 0 }}>
-                    {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
-                  </Tag>
-                  <span style={{ color: '#6b6b6b', fontSize: 12 }}>{group.items.length} صنف</span>
-                </div>
-
-                {/* Column headers. */}
-                <Row gutter={8} style={{ padding: '6px 12px 0', color: '#6b6b6b', fontSize: 12 }}>
-                  <Col md={4}>المنتج</Col>
-                  {showCol('warehouse') && <Col md={3}>المخزن</Col>}
-                  {showCol('category') && <Col md={2}>الفئة</Col>}
-                  {showCol('tier') && <Col md={2}>فئة السعر</Col>}
-                  <Col md={2}>الكمية</Col>
-                  {showCol('unit_price') && <Col md={2}>سعر الوحدة</Col>}
-                  {showCol('fixed_discount') && <Col md={2}>خصم ثابت %</Col>}
-                  {showCol('variable_discount') && <Col md={2}>خصم متغير %</Col>}
-                  <Col md={2} style={{ textAlign: 'center' }}>الإجمالي</Col>
-                  {showCol('points') && <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>}
-                  <Col md={1} />
-                </Row>
-
-                {group.items.map((line) => {
-                  const serialized = line.item_id
-                    && products.find((p) => p.id === line.item_id)?.is_serialized;
-                  return (
-                    <div key={line.key}
-                      style={{ padding: '4px 12px 6px', borderTop: '1px solid #f0f5ee' }}>
-                      <Row gutter={8} align="middle">
-                        <Col md={4} xs={24}>
-                          {/* Click the name to point the stock panel at this line's item. */}
-                          <b style={{ cursor: 'pointer' }}
-                            onClick={() => setPanelItemId(line.item_id as number)}>
-                            {productName(line.item_id as number)}
-                          </b>
-                          {/* Stock never goes negative — show the ceiling right where it binds,
-                              for THIS line's warehouse. */}
-                          <span style={{
-                            marginInlineStart: 8, fontSize: 12,
-                            color: availableFor(line.item_id, line.unit, lineWarehouse(line)) > 0
-                              ? '#6AB42D' : '#cf1322',
-                          }}>
-                            (المتاح: {availableFor(line.item_id, line.unit, lineWarehouse(line))
-                              .toLocaleString('ar-EG', { maximumFractionDigits: 3 })})
-                          </span>
-                        </Col>
-                        {showCol('warehouse') && (
-                        <Col md={3} xs={12}>
-                          {/* (030) Each line may be served from a different warehouse. */}
-                          <Select size="small" style={{ width: '100%' }}
-                            value={lineWarehouse(line) ?? undefined}
-                            placeholder="المخزن"
-                            onChange={(val) => handleLineChange(line.key, 'warehouse_id', val)}
-                            options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-                        </Col>
-                        )}
-                        {showCol('category') && (
-                        <Col md={2} xs={12}>
-                          {/* The category the item is sold out of — read from the item itself, so
-                              it always matches the catalogue rather than being typed per line. */}
-                          <Tag color="green" style={{ margin: 0, width: '100%',
-                            textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {lineCategory(line) || '—'}
-                          </Tag>
-                        </Col>
-                        )}
-                        {showCol('tier') && (
-                        <Col md={2} xs={12}>
-                          <Select size="small" style={{ width: '100%' }} value={line.tier ?? undefined}
-                            onChange={(val) => handleLineChange(line.key, 'tier', val)}>
-                            {Object.entries(TIER_LABELS).map(([k, l]) => (
-                              <Select.Option key={k} value={k}>{l}</Select.Option>
-                            ))}
-                          </Select>
-                        </Col>
-                        )}
-                        <Col md={2} xs={8}>
-                          {/* 0.001, not 1. Quantities are stored to three decimals and the item
-                              catalogue has units with factors — نص متر, ٢٫٥ كيلو. The return
-                              screen and the transfer already allow those, so a floor of 1 here
-                              meant a thing could be given back and moved between stores in a
-                              fraction and never sold in one. */}
-                          {/* No `max`. It looks like protection and behaves like a silent
-                              rewrite: ask for 50 out of a store holding 8 and the box shows 8
-                              with nothing said, so the invoice disagrees with the person who
-                              typed it. The guard refuses instead, on blur and on Enter, and says
-                              what is actually there. */}
-                          <InputNumber size="small" style={{ width: '100%' }}
-                            ref={(el) => { qtyRefs.current[line.key] = el; }}
-                            data-qty-key={line.key}
-                            data-grid-col="qty" keyboard={false}
-                            onBlur={() => handleLineChange(line.key, 'quantity',
-                              guardQuantity(lineQuantityCheck(line), null))}
-                            status={Number(line.quantity || 0)
-                              > availableFor(line.item_id, line.unit, lineWarehouse(line))
-                              ? 'error' : undefined}
-                            placeholder="الكمية"
-                            value={line.quantity ?? undefined}
-                            // Clearing it leaves it EMPTY rather than snapping back to 1 — the
-                            // box has to be blankable for «type over it» to mean anything.
-                            onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
-                            // Enter means «this line is done» — straight back to the picker for
-                            // the next product, so a whole invoice is: pick, type a quantity,
-                            // Enter, pick, type, Enter, without ever leaving the keyboard.
-                            //
-                            // preventDefault is what makes the loop hold: the global «Enter moves
-                            // to the next field» listens on the window and would otherwise run
-                            // after this and drag the caret off to the next input, so the picker
-                            // opened onto a cursor that had already wandered.
-                            onPressEnter={(e) => {
-                              e.preventDefault();
-                              const kept = guardQuantity(lineQuantityCheck(line), null);
-                              handleLineChange(line.key, 'quantity', kept);
-                              // Only move on when the line is actually usable. Opening the picker
-                              // over a refused quantity walks away from the thing being corrected.
-                              if (kept !== null) setPickerOpen(true);
-                            }} />
-                        </Col>
-                        {showCol('unit_price') && (
-                        <Col md={2} xs={8}>
-                          <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-                            value={line.unit_price}
-                            onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
-                        </Col>
-                        )}
-                        {showCol('fixed_discount') && (
-                        <Col md={2} xs={8}>
-                          {/* Prefilled from the item's own discount, but editable — the
-                              salesman on the counter is the one who knows when it does not
-                              apply. Combined with the variable discount it is still capped
-                              below 100%, because a line can never be given away twice. */}
-                          <InputNumber size="small" min={0} max={100} step={0.5}
-                            style={{ width: '100%' }} value={line.fixed_discount}
-                            onChange={(val) => handleLineChange(
-                              line.key, 'fixed_discount', val || 0)} />
-                        </Col>
-                        )}
-                        {showCol('variable_discount') && (
-                        <Col md={2} xs={8}>
-                          <InputNumber size="small" min={0} max={100} step={0.5} style={{ width: '100%' }}
-                            placeholder="0"
-                            value={line.variable_discount ?? undefined}
-                            onChange={(val) => handleLineChange(line.key, 'variable_discount', val ?? null)} />
-                        </Col>
-                        )}
-                        <Col md={2} xs={12} style={{ textAlign: 'center' }}>
-                          <b style={{ color: '#6AB42D' }}>{lineTotal(line).toFixed(2)}</b>
-                        </Col>
-                        {showCol('points') && (
-                        <Col md={2} xs={12} style={{ textAlign: 'center' }}>
-                          <span style={{ color: '#F5A11D', fontWeight: 600 }}>
-                            {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
-                          </span>
-                        </Col>
-                        )}
-                        <Col md={1} xs={4} style={{ textAlign: 'center' }}>
-                          <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                            onClick={() => handleRemoveLine(line.key)} />
-                        </Col>
-                      </Row>
-                      {serialized && (
-                        <Input size="small" style={{ marginTop: 6 }}
-                          placeholder="أرقام تسلسلية مفصولة بمسافة/فاصلة (يجب أن يساوي عددها الكمية)"
-                          value={line.serials}
-                          onChange={(e) => handleLineChange(line.key, 'serials', e.target.value)} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))
+            <div style={{ border: '1px solid #e6efe3', borderRadius: 10, overflowX: 'auto' }}>
+              <table className="entry-grid">
+                <thead>
+                  <tr>
+                    <th style={{ width: 34 }}>#</th>
+                    <th style={{ minWidth: 150 }}>المخزن</th>
+                    <th style={{ minWidth: 170 }}>الصنف</th>
+                    <th style={{ minWidth: 96 }}>الوحدة</th>
+                    <th style={{ minWidth: 84 }}>الكمية</th>
+                    <th style={{ minWidth: 100 }}>سعر الوحدة</th>
+                    <th style={{ minWidth: 100 }}>اجمالي قبل</th>
+                    <th style={{ minWidth: 90 }}>خصم</th>
+                    <th style={{ minWidth: 78 }}>خصم %</th>
+                    <th style={{ minWidth: 100 }}>الإجمالي</th>
+                    <th style={{ width: 40 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((line, idx) => (
+                    <tr key={line.key}>
+                      <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
+                      <td>
+                        {/* مخزن السطر — الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن. */}
+                        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+                          value={line.warehouse_id ?? undefined}
+                          onChange={(v) => handleLineChange(line.key, 'warehouse_id', v ?? null)}
+                          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+                      </td>
+                      <td>
+                        <b style={{ cursor: 'pointer' }}
+                          onClick={() => setPanelItemId(line.item_id)}>
+                          {line.item_id ? productName(line.item_id) : 'اختر الصنف'}
+                        </b>
+                      </td>
+                      <td>
+                        <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+                          value={line.unit ?? '__base__'}
+                          onChange={(v) => handleLineChange(
+                            line.key, 'unit', v === '__base__' ? null : v)}
+                          options={saleUnitOptions(line.item_id)} />
+                      </td>
+                      <td>
+                        <InputNumber size="small" style={{ width: '100%' }} min={0.001}
+                          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
+                          placeholder="الكمية" value={line.quantity ?? undefined}
+                          // المسح بيسيبها فاضية بدل ما ترجع لرقم — من غير كده «اكتب فوقها»
+                          // مالهاش معنى.
+                          onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
+                          onBlur={() => handleLineChange(
+                            line.key, 'quantity', checkedQuantity(line))}
+                          // والحارس على Enter كمان مش على الخروج بس: اللي بيكمّل بالكيبورد
+                          // مابيخرجش من الخانة أصلاً، فكان بيعدّي من غير ما حد يقيس المتاح.
+                          onPressEnter={(e) => {
+                            e.preventDefault();
+                            handleLineChange(line.key, 'quantity', checkedQuantity(line));
+                            advanceFrom(line.key);
+                          }} />
+                      </td>
+                      <td>
+                        <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+                          placeholder="السعر" value={line.unit_price}
+                          onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
+                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {money(Number(line.quantity || 0) * (line.unit_price || 0))}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {/* «١٠٪» مابتقولش كام اتخصم — والمراجعة بتحصل بالجنيه. */}
+                        {lineDiscountPct(line)
+                          ? money(Number(line.quantity || 0) * (line.unit_price || 0)
+                              * (lineDiscountPct(line) / 100))
+                          : '-'}
+                      </td>
+                      <td>
+                        <InputNumber size="small" min={0} max={99.99} step={0.5}
+                          style={{ width: '100%' }} placeholder="خصم %"
+                          value={line.variable_discount ?? undefined}
+                          onChange={(v) => handleLineChange(
+                            line.key, 'variable_discount', (v as number) ?? null)}
+                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+                      </td>
+                      <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {money(saleLineNet(line))}
+                      </td>
+                      <td>
+                        <Button size="small" danger type="text" icon={<DeleteOutlined />}
+                          onClick={() => handleRemoveLine(line.key)} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={4} style={{ fontWeight: 700 }}>الإجمالي</td>
+                    <td style={{ fontWeight: 700 }}>
+                      {lines.reduce((n, l) => n + Number(l.quantity || 0), 0)
+                        .toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                    </td>
+                    <td />
+                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {money(lines.reduce(
+                        (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0))}
+                    </td>
+                    <td colSpan={2} />
+                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {money(lines.reduce((n, l) => n + saleLineNet(l), 0))}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           )}
 
           </Col>
-          <Col xs={24} lg={6}>
-            <ItemStockPanel
-              itemId={panelItemId}
-              category={activeCategory}
-              products={products}
-              onPickItem={(id) => setPanelItemId(id)}
-            />
-          </Col>
           </Row>
+
+          {/* لوحة الرصيد نزلت هنا: «الصنف ده عندي منه كام» سؤال بيتسأل مرة كل شوية، مش مع
+              كل سطر، فمكانه جنب الإجماليات مش واكل ربع مساحة الكتابة. */}
+          <Row gutter={16}>
+            <Col xs={24} lg={8}>
+              <ItemStockPanel
+                itemId={panelItemId}
+                category={activeCategory}
+                products={products}
+                onPickItem={(id) => setPanelItemId(id)}
+              />
+            </Col>
+            <Col xs={24} lg={16}>
 
           {/* Totals + payment — see TotalsLadder for why this is one ladder and not a strip. */}
           {(() => {
@@ -2019,6 +2078,8 @@ export default function Invoices() {
               />
             );
           })()}
+            </Col>
+          </Row>
 
           <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
             {/* Aligned to the physical left of the page (flex-end under RTL). */}
@@ -2064,7 +2125,7 @@ export default function Invoices() {
             />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" icon={<PlusOutlined />}
-              onClick={() => { setInvoiceDate(dayjs()); setNewStep('date'); }}>
+              onClick={() => { setInvoiceDate(dayjs()); setNewStep('party'); }}>
               تسجيل فاتورة بيع
             </Button>
           </Space>
@@ -2255,39 +2316,22 @@ export default function Invoices() {
         )}
       </TabModal>
 
-      {/* The one step that opens a document: who it is for, and when. It lives in BOTH views —
-          the create view renders its own copy for changing the party mid-invoice — and only one
-          of the two is ever mounted, because the create view returns early. */}
+      {/*
+        * باب واحد بيفتح الفاتورة — الفرع والتاريخ والتصنيف والبحث والقايمة في نافذة واحدة.
+        *
+        * كان خطوتين: نافذة بتسأل التاريخ وبعدها نافذة بتسأل العميل. سؤالين هما نفس القرار —
+        * «الفاتورة دي لمين وامتى» — واتنين لازم تقفلهم قبل ما تكتب أول سطر.
+        *
+        * نفس اللي اتعمل في فاتورة الشرا، عشان اللي اتعلّم إيده على واحدة مايتعلّمش من الأول
+        * على التانية. و`kinds` بيدّي تصنيف جوّه الباب، فاللي بيدوّر على اسم ومش لاقيه في
+        * العملاء بيبص في الموردين من غير ما يقفل ويفتح تاني.
+        */}
       <PartyPickerModal
         open={partyPickerOpen || newStep === 'party'} kind="customer"
+        kinds={['customer', 'supplier']}
+        date={invoiceDate} onDateChange={(d) => setInvoiceDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
-
-      {/* الباب الأول: التاريخ. It lands on the ledger entry as well as the invoice, so it is
-          settled before anything is priced rather than after. */}
-      <TabModal
-        open={newStep === 'date'}
-        title="تاريخ الفاتورة"
-        okText="التالي"
-        cancelText="إلغاء"
-        onCancel={() => setNewStep(null)}
-        onOk={() => setNewStep('party')}
-        destroyOnHidden
-      >
-        {/* Enter on the date is «done, next» — the DatePicker has no onPressEnter of its own,
-            so the key is caught on the wrapper. */}
-        <div onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); setNewStep('party'); } }}>
-          <DatePicker
-            style={{ width: '100%' }} size="large" allowClear={false} autoFocus
-            value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())}
-            format="YYYY-MM-DD"
-          />
-        </div>
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-          التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر بيقعوا
-          في نفس اليوم.
-        </div>
-      </TabModal>
 
     </div>
   );

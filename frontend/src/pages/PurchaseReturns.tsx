@@ -3,7 +3,7 @@ import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import {
-  PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowLeftOutlined, EyeOutlined, PrinterOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, UndoOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -14,7 +14,9 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter }
   from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
-import PartyPickerModal from '../components/PartyPickerModal';
+import PartyPickerModal, { Party } from '../components/PartyPickerModal';
+import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import TotalsLadder from '../components/TotalsLadder';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
@@ -73,6 +75,24 @@ export default function PurchaseReturns() {
   // The date is asked first, the way the sale and the sales return ask it — the day the goods
   // went back is a fact about the goods, not about when somebody got to the screen.
   const [newStep, setNewStep] = useState<null | 'party'>(null);
+  /** حقول المستند — نفس اللي على فاتورة الشرا بالظبط. */
+  const [branchId, setBranchId] = useState<number | null>(null);
+  const [branches, setBranches] = useState<any[]>([]);
+  const [postAccounts, setPostAccounts] = useState<any[]>([]);
+  const [expenseAccountId, setExpenseAccountId] = useState<number | null>(null);
+  const [externalNumber, setExternalNumber] = useState('');
+  const [statements, setStatements] = useState<string[]>(['', '', '']);
+  const [variableDiscount, setVariableDiscount] = useState(0);
+  /** المورد المختار بتفاصيله — الرصيد والعنوان والتليفون بيتعرضوا في الترويسة. */
+  const [party, setParty] = useState<Party | null>(null);
+  const [partyPickerOpen, setPartyPickerOpen] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(console.error);
+    api.get('/api/v1/accounts', { params: { postable_only: true, active: true } })
+      .then((r) => setPostAccounts(r.data || [])).catch(console.error);
+  }, []);
+
   /** المورد اللي المردود راجع له. */
   const [supplierFilter, setSupplierFilter] = useState<number | null>(null);
   /** المخزن اللي البضاعة بتخرج منه — مفيش فاتورة تقول منين، فالمستند بيتسأل. */
@@ -87,6 +107,10 @@ export default function PurchaseReturns() {
     item_id: number;
     quantity: number | null;
     unit_price: number;
+    // نفس ما على سطر الفاتورة.
+    discount_pct: number | null;
+    unit: string | null;
+    warehouse_id: number | null;
   }
   const [returnLines, setReturnLines] = useState<ReturnLineDraft[]>([]);
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
@@ -204,7 +228,9 @@ export default function PurchaseReturns() {
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
     setEditingId(null); setSupplierFilter(null);
-    setReturnLines([]); setWarehouseId(null);
+    setReturnLines([]); setWarehouseId(null); setParty(null);
+    setExternalNumber(''); setStatements(['', '', '']);
+    setVariableDiscount(0); setExpenseAccountId(null); setBranchId(null);
   };
 
   const choosePurchase = async (id: number) => {
@@ -217,6 +243,65 @@ export default function PurchaseReturns() {
       setDetail(null);
     }
   };
+
+  /**
+   * شريط الأوامر — نفس صف الأفعال اللي على فاتورة الشرا.
+   *
+   * المستند نسخة منها بالعكس، فاللي اتعلّم إيده على واحد مايتعلّمش من الأول على التاني.
+   * والأفعال اللي مالهاش معنى على المردود بتفضل ظاهرة ومقفولة، مش بتختفي: صف أفعال بيتغيّر
+   * طوله من شاشة لشاشة بيخلّي الإيد تدوّر على الزرار كل مرة.
+   */
+  const returnToolbar = (): ToolbarAction[] => {
+    const typed = returnLines.filter((l) => l.item_id && Number(l.quantity || 0) > 0).length;
+    return [
+      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+        onClick: () => openCreate() },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
+        onClick: () => setReturnLines([]) },
+      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
+        disabled: typed === 0, onClick: () => submit() },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />, disabled: true },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+        disabled: typed === 0, onClick: () => setReturnLines([]) },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => load() },
+    ];
+  };
+
+  /** وحدات الأصناف — نفس المحرك اللي في الفاتورة. */
+  const [unitsCache, setUnitsCache] = useState<Record<number, any[]>>({});
+  const fetchUnits = async (itemId: number) => {
+    if (unitsCache[itemId]) return;
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/units`);
+      setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({
+        name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
+    } catch { /* الوحدات مش معروفة — الخيار الأساسي لوحده كفاية */ }
+  };
+  /** فيها **دايماً** خيار الوحدة الأساسية — من غيره antd بتعرض المفتاح الداخلي للمستخدم. */
+  const unitOptions = (itemId: number | null) => {
+    const units = unitsCache[itemId || 0] || [];
+    const base = units.find((u: any) => u.is_base);
+    return [
+      { value: '__base__', label: base?.name || 'الأساسية' },
+      ...units.filter((u: any) => !u.is_base)
+        .map((u: any) => ({ value: u.name, label: `${u.name} (×${u.factor})` })),
+    ];
+  };
+
+  /**
+   * صافي السطر — نفس ترتيب الفاتورة: خصم السطر بينزل على سطره، والسطور بتتجمع، وخصم
+   * المستند بينزل على المجموع مرة واحدة.
+   */
+  const lineNet = (l: ReturnLineDraft) => {
+    const before = Number(l.quantity || 0) * (l.unit_price || 0);
+    return before * (1 - (l.discount_pct ?? 0) / 100);
+  };
+  const grossTotal = returnLines.reduce((n, l) => n + lineNet(l), 0);
 
   /** قيمة المردود — من السطور اللي اتكتبت، مش من فاتورة. */
   /**
@@ -265,14 +350,16 @@ export default function PurchaseReturns() {
       }
       return [...prev, {
         key: `${Date.now()}-${itemId}`, item_id: itemId, quantity: null, unit_price: price,
+        discount_pct: null, unit: null, warehouse_id: warehouseId,
       }];
     });
     if (warehouseId) fetchOnHand(itemId, warehouseId);
+    fetchUnits(itemId);
   };
 
   const draftValue = useMemo(
-    () => returnLines.reduce((sum, l) => sum + Number(l.quantity || 0) * (l.unit_price || 0), 0),
-    [returnLines],
+    () => grossTotal * (1 - (variableDiscount || 0) / 100),
+    [grossTotal, variableDiscount],
   );
 
   const submit = async () => {
@@ -284,6 +371,9 @@ export default function PurchaseReturns() {
         item_id: l.item_id,
         quantity: String(l.quantity),
         unit_price: String(l.unit_price || 0),
+        discount_pct: l.discount_pct == null ? null : String(l.discount_pct),
+        unit: l.unit,
+        warehouse_id: l.warehouse_id ?? warehouseId,
       }));
     if (!lines.length) { message.warning('اكتب الكمية المرتجعة على صنف واحد على الأقل'); return; }
     setSaving(true);
@@ -307,6 +397,13 @@ export default function PurchaseReturns() {
         lines,
         return_date: returnDate.format('YYYY-MM-DD'),
         notes: notes || null,
+        // نفس حقول مستند الفاتورة.
+        expense_account_id: expenseAccountId ?? null,
+        variable_discount_pct: variableDiscount || 0,
+        external_document_number: externalNumber || null,
+        statement1: statements[0] || null,
+        statement2: statements[1] || null,
+        statement3: statements[2] || null,
       });
       message.success(editingId !== null
         ? 'اتعدّل المردود واترحّل من جديد' : 'اتسجّل مردود الشراء');
@@ -568,14 +665,18 @@ export default function PurchaseReturns() {
         onPickMany={(ids) => { setPickerOpen(false); ids.forEach(addReturnLine); }} />
 
       <PartyPickerModal
-        open={newStep === 'party'} kind="supplier" kinds={['supplier', 'customer']}
+        open={newStep === 'party' || partyPickerOpen} kind="supplier"
+        kinds={['supplier', 'customer']}
         date={returnDate} onDateChange={(d) => setReturnDate(d)}
         onPick={(picked) => {
           setNewStep(null);
+          setPartyPickerOpen(false);
           setSupplierFilter(picked.id);
+          // بيانات المورد بتتعرض على المستند — الرصيد والعنوان والتليفون.
+          setParty(picked);
           setCreating(true);
         }}
-        onCancel={() => setNewStep(null)} />
+        onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
 
       {creating && (
       <Card title={(
@@ -586,48 +687,96 @@ export default function PurchaseReturns() {
         </Space>
       )}>
         {/*
-          * المردود بقى مستند مستقل: أصناف راجعة لمورد، من غير فاتورة.
+          * المستند ده **نسخة من فاتورة الشرا بالعكس**.
           *
-          * كان لازم تختار فاتورة الأول وبعدين تكتب الكمية قدام كل صنف فيها. يعني اللي بيرجّع
-          * لازم يدوّر على الفاتورة الأصلية، وبضاعة اتجمّعت من فواتير كتير ماكانش ينفع ترجع في
-          * مستند واحد.
+          * نفس شريط الأوامر، ونفس الترويسة بنفس الترتيب — التاريخ · الفرع · الحساب · مستند رقم //
+          * مورد · الحالي · العنوان · الهاتف // ملاحظات · بيان ١ · بيان ٢ · بيان ٣ — ونفس جدول
+          * السطور، ونفس سلّم الأرقام تحت.
           *
-          * والسعر بيتكتب مش بيتقرا: البضاعة بترجع بالسعر المتفق عليه دلوقتي، مش لازم يكون سعر
-          * شرائها.
+          * اللي بالعكس حاجتين بس، وهما اللي بيخلّوه مردود: البضاعة **بتخرج** من المخزن بدل ما
+          * تدخله، واللي على الشركة للمورد **بينقص** بدل ما يزيد.
+          *
+          * اللي بيكتب الاتنين هو نفس الشخص في نفس اليوم؛ شاشتين بشكلين لنفس المستند بتكلّفه
+          * إعادة تعلّم كل مرة يبدّل.
           */}
+        <DocumentToolbar actions={returnToolbar()} />
+
         <Form layout="vertical" size="small" className="doc-form">
-          <Row gutter={12}>
+          <Row gutter={16}>
             <Col xs={12} md={6}>
-              <Form.Item label="التاريخ">
-                <DatePicker style={{ width: '100%' }} allowClear={false} value={returnDate}
-                  onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
+              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                  value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item label="المورد" required>
-                <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
+              <Form.Item label="الفرع" style={{ marginBottom: 8 }}>
+                <Select allowClear placeholder="كل الفروع" value={branchId ?? undefined}
+                  onChange={(v) => setBranchId(v ?? null)}
+                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={7}>
+              <Form.Item label="الحساب" style={{ marginBottom: 8 }}>
+                <Select allowClear showSearch optionFilterProp="label"
+                  placeholder="حساب المشتريات الافتراضي" value={expenseAccountId ?? undefined}
+                  onChange={(v) => setExpenseAccountId(v ?? null)}
+                  options={postAccounts.map((a: any) => ({
+                    value: a.id,
+                    label: a.code ? `${a.code} ${a.name ?? ''}` : (a.name ?? `#${a.id}`) }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={5}>
+              <Form.Item label="مستند رقم" style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم إشعار المورد" value={externalNumber}
+                  onChange={(e) => setExternalNumber(e.target.value)} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item label="مورد" required style={{ marginBottom: 8 }}>
+                <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                   placeholder="اضغط لاختيار المورد" value={supplierFilter ?? undefined}
-                  onChange={(v) => setSupplierFilter(v ?? null)}
+                  onClick={() => setPartyPickerOpen(true)}
                   options={suppliers} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
-              <Form.Item label="المخزن" required>
-                {/* البضاعة بتخرج من هنا. مفيش فاتورة تقول منين، فالمستند بيتسأل. */}
-                <Select style={{ width: '100%' }} placeholder="المخزن اللي البضاعة راجعة منه"
-                  value={warehouseId ?? undefined} onChange={(v) => setWarehouseId(v ?? null)}
-                  options={warehouses.map((w: any) => ({
-                    value: w.id,
-                    label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
-                  }))} />
+            <Col xs={8} md={4}>
+              <Form.Item label="الحالي" style={{ marginBottom: 8 }}>
+                <Input readOnly value={party?.balance != null ? money(party.balance) : ''} />
               </Form.Item>
             </Col>
+            <Col xs={16} md={7}>
+              <Form.Item label="العنوان" style={{ marginBottom: 8 }}>
+                <Input readOnly value={party?.address ?? ''} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={5}>
+              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+                <Input readOnly value={party?.phone ?? ''} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col xs={24} md={6}>
-              <Form.Item label="ملاحظات">
+              <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
                   value={notes} onChange={(e) => setNotes(e.target.value)} />
               </Form.Item>
             </Col>
+            {([1, 2, 3] as const).map((n) => (
+              <Col xs={24} md={6} key={n}>
+                <Form.Item label={`بيان ${n}`} style={{ marginBottom: 8 }}>
+                  <Input placeholder="اختياري" value={statements[n - 1]}
+                    onChange={(e) => setStatements((prev) => {
+                      const next = [...prev]; next[n - 1] = e.target.value; return next;
+                    })} />
+                </Form.Item>
+              </Col>
+            ))}
           </Row>
         </Form>
 
@@ -645,12 +794,17 @@ export default function PurchaseReturns() {
           <div style={{ border: '1px solid #f3e0d8', borderRadius: 10, overflowX: 'auto' }}>
             <table className="entry-grid">
               <thead>
+                {/* نفس أعمدة جدول الفاتورة بالظبط — من غير عمود اسم الصنف اللي اتشال منها. */}
                 <tr>
                   <th style={{ width: 34 }}>#</th>
-                  <th style={{ minWidth: 180 }}>الصنف</th>
-                  <th style={{ minWidth: 90 }}>الكمية</th>
-                  <th style={{ minWidth: 110 }}>سعر الوحدة</th>
-                  <th style={{ minWidth: 110 }}>الإجمالي</th>
+                  <th style={{ minWidth: 150 }}>المخزن</th>
+                  <th style={{ minWidth: 96 }}>الوحدة</th>
+                  <th style={{ minWidth: 84 }}>الكمية</th>
+                  <th style={{ minWidth: 100 }}>سعر الوحدة</th>
+                  <th style={{ minWidth: 100 }}>اجمالي قبل</th>
+                  <th style={{ minWidth: 90 }}>خصم</th>
+                  <th style={{ minWidth: 78 }}>خصم %</th>
+                  <th style={{ minWidth: 100 }}>الإجمالي</th>
                   <th style={{ width: 40 }} />
                 </tr>
               </thead>
@@ -658,7 +812,26 @@ export default function PurchaseReturns() {
                 {returnLines.map((line, idx) => (
                   <tr key={line.key}>
                     <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
-                    <td><b>{itemName(line.item_id)}</b></td>
+                    <td>
+                      {/* مخزن السطر — الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن، والمردود
+                          لازم يقدر يطلّع كل صنف من مخزنه. */}
+                      <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+                        value={line.warehouse_id ?? warehouseId ?? undefined}
+                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+                          l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)))}
+                        options={warehouses.map((w: any) => ({
+                          value: w.id,
+                          label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
+                        }))} />
+                    </td>
+                    <td>
+                      <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+                        value={line.unit ?? '__base__'}
+                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+                          l.key === line.key
+                            ? { ...l, unit: v === '__base__' ? null : v } : l)))}
+                        options={unitOptions(line.item_id)} />
+                    </td>
                     <td>
                       <InputNumber size="small" style={{ width: '100%' }} min={0.001}
                         data-grid-col="qty" keyboard={false}
@@ -679,8 +852,27 @@ export default function PurchaseReturns() {
                         onChange={(v) => setReturnLines((prev) => prev.map((l) => (
                           l.key === line.key ? { ...l, unit_price: (v as number) || 0 } : l)))} />
                     </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {money(Number(line.quantity || 0) * (line.unit_price || 0))}
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {/* «١٠٪» مابتقولش كام اتخصم — والمراجعة بتحصل بالجنيه. */}
+                      {line.discount_pct
+                        ? money(Number(line.quantity || 0) * (line.unit_price || 0)
+                            * (line.discount_pct / 100))
+                        : '-'}
+                    </td>
+                    <td>
+                      {/* فاضي = مفيش خصم متفق عليه، مش صفر. */}
+                      <InputNumber size="small" min={0} max={99.99} step={0.5}
+                        style={{ width: '100%' }} placeholder="خصم %"
+                        value={line.discount_pct ?? undefined}
+                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+                          l.key === line.key
+                            ? { ...l, discount_pct: (v as number) ?? null } : l)))} />
+                    </td>
                     <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                      {money(Number(line.quantity || 0) * (line.unit_price || 0))} ج.م
+                      {money(lineNet(line))}
                     </td>
                     <td>
                       <Button size="small" danger type="text" icon={<DeleteOutlined />}
@@ -692,13 +884,18 @@ export default function PurchaseReturns() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={2} style={{ fontWeight: 700 }}>الإجمالي</td>
+                  <td colSpan={3} style={{ fontWeight: 700 }}>الإجمالي</td>
                   <td style={{ fontWeight: 700 }}>
                     {returnLines.reduce((n, l) => n + Number(l.quantity || 0), 0)}
                   </td>
                   <td />
                   <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {money(draftValue)} ج.م
+                    {money(returnLines.reduce(
+                      (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0))}
+                  </td>
+                  <td colSpan={2} />
+                  <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    {money(grossTotal)}
                   </td>
                   <td />
                 </tr>
@@ -706,6 +903,33 @@ export default function PurchaseReturns() {
             </table>
           </div>
         )}
+
+        <Divider style={{ margin: '10px 0' }} />
+
+        {/* نفس سلّم الفاتورة وبنفس الأسماء — اللي بالعكس إن ده بينقص من اللي على الشركة. */}
+        <TotalsLadder
+          tone="sale"
+          inputs={(
+            <Form layout="vertical" size="small" className="doc-form">
+              <Form.Item label="خصم على المردود %" style={{ marginBottom: 0 }}
+                help="بينزل على مجموع السطور بعد خصم كل سطر — زي فاتورة الشرا">
+                <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
+                  addonAfter="%" value={variableDiscount}
+                  onChange={(v) => setVariableDiscount((v as number) || 0)} />
+              </Form.Item>
+            </Form>
+          )}
+          rows={[
+            { label: 'اجمالي قبل', value: grossTotal.toFixed(2) },
+            { label: 'خصم المردود',
+              value: `\u2212 ${(grossTotal - draftValue).toFixed(2)}`,
+              color: '#cf1322', show: variableDiscount > 0.001 },
+            { label: 'خصم المردود %', value: `${variableDiscount}%`,
+              show: variableDiscount > 0.001 },
+            { label: 'قيمة المردود', value: draftValue.toFixed(2),
+              big: true, rule: true, color: '#cf4b1a' },
+          ]}
+        />
 
         <div style={{
           marginTop: 16, padding: 16, borderRadius: 10,

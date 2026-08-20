@@ -98,12 +98,25 @@ describe('بتتطبّق على الشاشات اللي البضاعة بتطل�
   });
 
   it('بيتأكد لما تخلص كتابة، مش مع كل رقم', () => {
-    // Typing «50» passes through «5». A dialog that fires mid-number is a dialog people learn to
-    // dismiss without reading, which costs more than it saves.
+    /*
+     * Typing «50» passes through «5». A dialog that fires mid-number is a dialog people learn to
+     * dismiss without reading, which costs more than it saves.
+     *
+     * والطريقين لازم يتحرسوا: الخروج من الخانة **و**Enter. اللي بيكمّل الفاتورة بالكيبورد
+     * مابيخرجش من الخانة أصلاً، فطريقه هو اللي بيفضل من غير حراسة لو اتنسي.
+     *
+     * الحراسة تعدّي سواء بنداء مباشر لـ`guardQuantity` أو بدالة مسمّاة بتناديه — المهم إن
+     * المسار يوصل لحارس، مش إن الاسم يتكتب في المكان.
+     */
+    const GUARD = /(guardQuantity|checkedQuantity)/;
     for (const f of ['pages/Invoices.tsx', 'pages/Transfers.tsx', 'pages/StockPermits.tsx']) {
       const src = read(f);
-      expect(src, f).toMatch(/onBlur=\{[\s\S]{0,200}guardQuantity/);
-      expect(src, f).toMatch(/onPressEnter=\{[\s\S]{0,400}guardQuantity/);
+      expect(src, f).toContain('guardQuantity');
+      const blur = src.slice(src.indexOf('onBlur={'), src.indexOf('onBlur={') + 260);
+      expect(blur, `${f}: الخروج من الخانة مش محروس`).toMatch(GUARD);
+      const at = src.indexOf('onPressEnter={');
+      expect(at, `${f}: مافيش Enter على خانة كمية`).toBeGreaterThan(-1);
+      expect(src.slice(at, at + 400), `${f}: Enter مش محروس`).toMatch(GUARD);
     }
   });
 });

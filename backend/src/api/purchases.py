@@ -142,11 +142,11 @@ class PurchaseDetailOut(PurchaseListOut):
 
 
 class PurchaseReturnListOut(BaseModel):
-    """A purchase return as its own row, for the standalone مردودات شراء register.
+    """صف المردود في السجل — **بنفس أعمدة الفاتورة**.
 
-    A purchase return is a leaner document than a sales return: no discount, no tax, no cash
-    settlement — goods go back to the supplier and what we owe them drops by the value. So this
-    carries the value and the purchase it came off, and nothing invented to fill a column.
+    كان مستند أنحف: قيمة وفاتورة أصل وخلاص. بقى نسخة من الفاتورة بالعكس، فبيشيل نفس الحقول —
+    رقم إشعار المورد، حساب الترحيل، قبل الخصم ونسبته، والبيانات التلاتة — عشان السجل يعرضهم
+    بنفس الأسماء والتقارير تلاقيهم مليانين زي أي مستند تاني.
     """
     id: int
     document_number: str
@@ -161,6 +161,13 @@ class PurchaseReturnListOut(BaseModel):
     # storing a date that came back from nothing, so the screen could write it and never see it.
     return_date: date | None = None
     notes: str | None = None
+    external_document_number: str | None = None
+    expense_account_id: int | None = None
+    gross: Decimal = Decimal("0")
+    combined_pct: Decimal = Decimal("0")
+    statement1: str | None = None
+    statement2: str | None = None
+    statement3: str | None = None
 
 
 @router.get("", response_model=list[PurchaseListOut])
@@ -251,6 +258,10 @@ def list_purchase_returns(
             return_date=r.return_date, notes=r.notes,
             supplier_id=sup_id, supplier_name=names.get(sup_id) if sup_id else None,
             value=r.value, created_at=str(r.created_at),
+            external_document_number=r.external_document_number,
+            expense_account_id=r.expense_account_id,
+            gross=r.gross or 0, combined_pct=r.combined_pct or 0,
+            statement1=r.statement1, statement2=r.statement2, statement3=r.statement3,
         ))
     return out
 
@@ -263,6 +274,10 @@ class PurchaseReturnLineOut(BaseModel):
     # عشان الورقة المطبوعة تعرف تحط قيمة على السطر بدل كمية بلا سعر.
     unit_price: Decimal = Decimal("0")
     line_total: Decimal = Decimal("0")
+    # نفس ما على سطر الفاتورة — الشاشة بتعيد بناء السطر منهم لما المردود يتفتح للتعديل.
+    discount_pct: Decimal | None = None
+    unit: str | None = None
+    warehouse_id: int | None = None
 
 
 class PurchaseReturnDetailOut(PurchaseReturnListOut):
@@ -302,10 +317,16 @@ def get_purchase_return(
         supplier_id=supplier.id if supplier else None,
         supplier_name=supplier.name if supplier else None,
         value=r.value, created_at=str(r.created_at),
+        external_document_number=r.external_document_number,
+        expense_account_id=r.expense_account_id,
+        gross=r.gross or 0, combined_pct=r.combined_pct or 0,
+        statement1=r.statement1, statement2=r.statement2, statement3=r.statement3,
         lines=[
             PurchaseReturnLineOut(
                 item_id=ln.item_id, item_name=names.get(ln.item_id), quantity=ln.quantity,
-                unit_price=ln.unit_price or 0, line_total=ln.line_total or 0)
+                unit_price=ln.unit_price or 0, line_total=ln.line_total or 0,
+                discount_pct=ln.discount_pct, unit=ln.unit,
+                warehouse_id=ln.line_location_id)
             for ln in r.lines
         ],
     )
@@ -397,18 +418,32 @@ class ReverseIn(BaseModel):
 
 
 class StandaloneReturnLineIn(BaseModel):
+    """سطر المردود = سطر الفاتورة بالظبط."""
+
     item_id: int
     quantity: Decimal
     unit_price: Decimal = Decimal("0")
+    discount_pct: Decimal | None = None
+    unit: str | None = None
+    # مخزن السطر. فاضي يعني مخزن المستند — الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن،
+    # والمردود اللي بيرجّعها لازم يقدر يطلّع كل صنف من مخزنه.
+    warehouse_id: int | None = None
 
 
 class StandaloneReturnIn(BaseModel):
+    """ترويسة المردود = ترويسة الفاتورة بالظبط."""
+
     supplier_id: int
     location: LocationIn
     lines: list[StandaloneReturnLineIn]
     return_date: date | None = None
     notes: str | None = None
     expense_account_id: int | None = None
+    variable_discount_pct: Decimal = Decimal("0")
+    external_document_number: str | None = None
+    statement1: str | None = None
+    statement2: str | None = None
+    statement3: str | None = None
 
 
 @router.post("/returns", response_model=DocOut, status_code=status.HTTP_201_CREATED)
@@ -430,10 +465,19 @@ def create_standalone_purchase_return(
             db, supplier_id=body.supplier_id,
             origin_location_kind=body.location.location_kind,
             origin_location_id=body.location.location_id,
-            lines=[(ln.item_id, ln.quantity, ln.unit_price) for ln in body.lines],
+            lines=[{
+                "item_id": ln.item_id, "quantity": ln.quantity, "unit_price": ln.unit_price,
+                "discount_pct": ln.discount_pct, "unit": ln.unit,
+                "location_kind": LocationKind.warehouse if ln.warehouse_id else None,
+                "location_id": ln.warehouse_id,
+            } for ln in body.lines],
             actor_role=current.role, actor_user_id=current.id,
             return_date=body.return_date, notes=body.notes,
             expense_account_id=body.expense_account_id,
+            variable_discount_pct=body.variable_discount_pct,
+            external_document_number=body.external_document_number,
+            statement1=body.statement1, statement2=body.statement2,
+            statement3=body.statement3,
         )
     except (PurchaseError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,

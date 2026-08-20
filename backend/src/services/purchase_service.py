@@ -358,49 +358,69 @@ def create_standalone_purchase_return(
     supplier_id: int,
     origin_location_kind: LocationKind,
     origin_location_id: int,
-    lines: list[tuple[int, Decimal, Decimal]],  # (item_id, quantity, unit_price)
+    lines: list[dict],
     actor_role: RoleName,
     actor_user_id: int,
     return_date: date | None = None,
     notes: str | None = None,
     expense_account_id: int | None = None,
+    variable_discount_pct: Decimal = ZERO,
+    external_document_number: str | None = None,
+    statement1: str | None = None,
+    statement2: str | None = None,
+    statement3: str | None = None,
 ) -> PurchaseReturn:
-    """مردود شرا مستقل — أصناف راجعة لمورد، من غير ما يتعلّق بفاتورة بعينها.
+    """مردود شرا مستقل — **نسخة من فاتورة الشرا بالعكس**.
 
-    الشركة بترجّع بضاعة لمورد من غير ما تكون عارفة — أو مهتمة — بأنهي فاتورة جابتها. ربط كل
-    مردود بفاتورة كان معناه إن اللي بيرجّع لازم يدوّر على الفاتورة الأصلية الأول، وإن بضاعة
-    اتجمّعت من فواتير كتير ماينفعش ترجع في مستند واحد.
+    نفس المستند بالظبط: نفس الترويسة (تاريخ، فرع، حساب، رقم مستند، مورد، ملاحظات، تلات بيانات)،
+    ونفس السطر (مخزن، وحدة، كمية، سعر، خصم سطر)، ونفس سلّم الأرقام (قبل الخصم → خصم المستند →
+    الصافي). اللي بالعكس حاجتين بس، وهما اللي بيخلّوه مردود:
 
-    نفس بناء المردود المربوط، وبنفس الأثر: البضاعة بتخرج من المخزن، وحساب المشتريات بيتقفل
-    بالقيمة، واللي على الشركة للمورد بينقص.
+    * **البضاعة بتخرج** من المخزن بدل ما تدخله.
+    * **اللي على الشركة للمورد بينقص** بدل ما يزيد.
 
-    **السعر بيتكتب مش بيتقرا.** المردود المربوط بياخد سعر السطر من فاتورته؛ المستقل مالوش
-    فاتورة يقرا منها، والبضاعة بترجع بالسعر المتفق عليه دلوقتي مش لازم يكون سعر شرائها.
+    الشركة بترجّع بضاعة لمورد من غير ما تكون عارفة أنهي فاتورة جابتها، فمفيش فاتورة أصل تتقرا
+    منها الأسعار: السعر بيتكتب على السطر زي ما بيتكتب على الفاتورة بالظبط.
 
-    **والكمية مش محدودة بحاجة غير الرصيد.** مفيش فاتورة تقول «اتشرى كام»، فالحد الوحيد إن
-    البضاعة تكون موجودة فعلاً — و`stock_service` بيرفض لو مش موجودة.
+    والحد الوحيد على الكمية هو الرصيد — `stock_service` بيرفض اللي مش موجود.
     """
     if not lines:
         raise PurchaseError("المردود لازم يكون فيه صنف واحد على الأقل.")
+    variable = Decimal(variable_discount_pct or 0)
+    if variable < ZERO or variable >= Decimal("100"):
+        raise PurchaseError("خصم المستند لازم يكون من صفر لأقل من ١٠٠٪.")
 
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
         raise PurchaseError("المورد مش موجود.")
 
-    value = ZERO
-    built: list[tuple[int, Decimal, Decimal, Decimal, Decimal]] = []
-    for item_id, qty, unit_price in lines:
-        item = db.get(Item, item_id)
+    gross = ZERO
+    built: list[dict] = []
+    for ln in lines:
+        item = db.get(Item, ln["item_id"])
         if item is None:
             raise PurchaseError("الصنف مش موجود.")
-        qty = Decimal(qty)
+        qty = Decimal(ln["quantity"])
         if qty <= ZERO:
             raise PurchaseError("الكمية لازم تكون أكبر من صفر.")
-        price = to_money(unit_price)
-        line_total = to_money(qty * price)
-        value += line_total
-        built.append((item_id, qty, price, line_total, to_qty(Decimal("1"))))
-    value = to_money(value)
+        unit = ln.get("unit")
+        # نفس الدالة اللي الفاتورة بتستعملها — معامل الوحدة لازم يكون واحد في الاتنين.
+        factor = uom_service.resolve_factor(db, item, unit) if unit else Decimal("1")
+        price = to_money(ln.get("unit_price") or 0)
+        disc = ln.get("discount_pct")
+        disc = Decimal(disc) if disc is not None else None
+        before = to_money(qty * price)
+        line_total = to_money(before * (Decimal("1") - (disc or ZERO) / Decimal("100")))
+        gross += line_total
+        built.append({
+            "item_id": item.id, "quantity": qty, "unit": unit, "factor": to_qty(factor),
+            "unit_price": price, "discount_pct": disc, "line_total": line_total,
+            "location_kind": ln.get("location_kind") or origin_location_kind,
+            "location_id": ln.get("location_id") or origin_location_id,
+        })
+
+    gross = to_money(gross)
+    value = to_money(gross * (Decimal("1") - variable / Decimal("100")))
 
     ret = PurchaseReturn(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
@@ -408,26 +428,34 @@ def create_standalone_purchase_return(
         supplier_id=supplier_id,
         origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id,
-        value=value, ledger_entry_id=None, actor_user_id=actor_user_id,
+        gross=gross, variable_discount_pct=variable, combined_pct=variable, value=value,
+        ledger_entry_id=None, actor_user_id=actor_user_id,
         return_date=return_date or date.today(), notes=notes,
+        expense_account_id=expense_account_id,
+        external_document_number=external_document_number,
+        statement1=statement1, statement2=statement2, statement3=statement3,
     )
     db.add(ret)
     db.flush()
 
-    for item_id, qty, price, line_total, _factor in built:
+    for b in built:
         stock_service.post_movement(
-            db, item_id=item_id, location_kind=origin_location_kind,
-            location_id=origin_location_id, movement_type="purchase_return_out",
-            direction=StockDirection.out, quantity=to_qty(qty),
+            db, item_id=b["item_id"], location_kind=b["location_kind"],
+            location_id=b["location_id"], movement_type="purchase_return_out",
+            direction=StockDirection.out, quantity=to_qty(b["quantity"] * b["factor"]),
             actor_user_id=actor_user_id, source_doc_type="purchase_return",
             source_doc_id=ret.id,
         )
         ret.lines.append(PurchaseReturnLine(
-            item_id=item_id, quantity=qty, unit_price=price, line_total=line_total))
+            item_id=b["item_id"], quantity=b["quantity"], unit_price=b["unit_price"],
+            discount_pct=b["discount_pct"], unit=b["unit"], unit_factor=b["factor"],
+            line_location_kind=b["location_kind"], line_location_id=b["location_id"],
+            line_total=b["line_total"]))
 
-    # القيد: حساب المشتريات بياخد دائن بالقيمة، وحساب المورد بياخد مدين — يعني اللي على
-    # الشركة له بينقص. مفيش استرداد نقدي هنا: المردود المستقل مالوش فاتورة يعرف منها اتدفع
-    # كام نقدي، والفلوس الراجعة نقداً بتتسجّل بسند صرف مستقل لما تحصل فعلاً.
+    # القيد: حساب المشتريات دائن بالقيمة، وحساب المورد مدين — يعني اللي على الشركة له بينقص.
+    #
+    # مفيش استرداد نقدي على المستند: المردود المستقل مالوش فاتورة يعرف منها اتدفع كام نقدي،
+    # والفلوس الراجعة نقداً بتتسجّل بسند صرف لما تحصل فعلاً.
     expense_acc = (db.get(Account, expense_account_id) if expense_account_id
                    else account_resolver.purchases_expense_account(db))
     if expense_acc is None:

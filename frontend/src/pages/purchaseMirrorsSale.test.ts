@@ -110,18 +110,14 @@ describe('إضافة الصنف بنفس الحركة', () => {
     }
   });
 
-  it('Enter بيكمّل الفاتورة من غير ماوس', () => {
-    // ده اللي بيخلّي الفاتورة كلها تتكتب من الكيبورد: اختار، اكتب كمية، Enter، اختار…
-    //
-    // النافذة واسعة عن قصد: حقل الكمية في شاشة البيع بينه وبين `setPickerOpen` تعليق طويل
-    // بيشرح ليه `preventDefault` ضرورية.
-    expect(/onPressEnter[\s\S]{0,1600}setPickerOpen\(true\)/.test(sale), 'البيع').toBe(true);
-
-    // الشرا بقى جدول إدخال بطلب العميل: Enter بينزل للسطر اللي بعده، وآخر سطر بيفتح البوباب.
-    // فالوجهة واحدة — «كمّل من غير ما تسيب الكيبورد» — بس الطريق فيه خطوة زيادة.
-    expect(/onPressEnter[\s\S]{0,200}advanceFrom\(line\.key\)/.test(buy), 'الشرا').toBe(true);
-    const advance = buy.slice(buy.indexOf('const advanceFrom'));
-    expect(advance.slice(0, 400), 'آخر سطر مابيفتحش البوباب').toContain('setPickerOpen(true)');
+  it('Enter بيكمّل المستند من غير ماوس — في الاتنين', () => {
+    // اختار، اكتب كمية، Enter، اكتب اللي بعدها… ولما تخلص السطور البوباب بيفتح لصنف جديد.
+    for (const [name, src] of [['البيع', sale], ['الشرا', buy]] as const) {
+      expect(/onPressEnter[\s\S]{0,400}advanceFrom\(line\.key\)/.test(src), name).toBe(true);
+      const advance = src.slice(src.indexOf('const advanceFrom'));
+      expect(advance.slice(0, 500), `${name}: آخر سطر مابيفتحش البوباب`)
+        .toContain('setPickerOpen(true)');
+    }
   });
 });
 
@@ -144,22 +140,16 @@ describe('نفس تركيب الصفحة', () => {
       expect(src).not.toContain('<Tabs');
     });
 
-  it('شاشة البيع بتبدأ ببوباب التاريخ وبعده الطرف', () => {
-    const src = read('Invoices.tsx');
-    expect(src).toContain("setNewStep('date')");
-    expect(src).toContain("newStep === 'date'");
-    expect(src).toContain("newStep === 'party'");
-  });
-
-  it('شاشة الشرا بتفتح بباب واحد فيه التاريخ والطرف مع بعض', () => {
-    // العميل صوّر شاشته: بوباب «انشاء» واحد فيه الفرع والتاريخ والتصنيف والبحث والقايمة.
-    // كانوا خطوتين — بوباب بيسأل التاريخ وبعده بوباب بيسأل المورد — وهما نفس القرار.
-    const src = read('Purchases.tsx');
-    expect(src, 'لسه فيه خطوة تاريخ منفصلة').not.toContain("newStep === 'date'");
-    expect(src).toContain("setNewStep('party')");
-    // والتاريخ اتنقل جوّه الباب نفسه.
-    expect(src).toMatch(/date=\{purchaseDate\} onDateChange=/);
-  });
+  it.each([['البيع', 'Invoices.tsx', 'invoiceDate'], ['الشرا', 'Purchases.tsx', 'purchaseDate']])(
+    'شاشة %s بتفتح بباب واحد فيه التاريخ والطرف مع بعض', (_name, file, dateVar) => {
+      // بوباب «انشاء» واحد فيه الفرع والتاريخ والتصنيف والبحث والقايمة. كانوا خطوتين —
+      // نافذة بتسأل التاريخ وبعدها نافذة بتسأل الطرف — وهما نفس القرار.
+      const src = read(file);
+      expect(src, 'لسه فيه خطوة تاريخ منفصلة').not.toContain("newStep === 'date'");
+      expect(src).toContain("setNewStep('party')");
+      // والتاريخ اتنقل جوّه الباب نفسه.
+      expect(src).toContain(`date={${dateVar}} onDateChange=`);
+    });
 
   it.each([['البيع', 'Invoices.tsx'], ['الشرا', 'Purchases.tsx']])(
     'شاشة %s بيرجع منها للسجل بزرار رجوع', (_name, file) => {

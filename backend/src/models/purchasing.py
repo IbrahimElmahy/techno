@@ -107,6 +107,20 @@ class PurchaseReturn(Base):
     origin_location_kind: Mapped[LocationKind | None] = mapped_column(
         Enum(LocationKind), nullable=True)
     origin_location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # نفس حقول مستند الفاتورة — المردود نسخة منها بالعكس، فالورقتين بيتكتبوا بنفس الإيد.
+    #
+    # كانت الترويسة: تاريخ وملاحظات وبس. يعني اللي بيكتب مردود مالوش مكان يكتب فيه رقم إشعار
+    # المورد، ولا يقول القيد بينزل على أنهي حساب، ولا يسجّل البيانات التلاتة اللي كل مستند تاني
+    # في النظام بيسجّلها. والتقارير اللي بتقرا الحقول دي كانت بتلاقيها فاضية على المردودات وحدها.
+    expense_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
+    external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # سلّم الأرقام زي الفاتورة: قبل الخصم، نسبة الخصم، وبعده. `value` هو الصافي.
+    gross: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    variable_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
+    combined_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
     value: Mapped[object] = mapped_column(MONEY, nullable=False)
     # The day the goods actually went back — not the day the row was typed. `created_at` is when
     # somebody sat at the screen, and goods returned on Thursday and entered on Sunday would land
@@ -146,4 +160,14 @@ class PurchaseReturnLine(Base):
     # سعر السطر. المردود المربوط بفاتورة بياخده من سطرها؛ المستقل بيتكتب فيه — البضاعة بترجع
     # بالسعر المتفق عليه دلوقتي، مش لازم يكون سعر شرائها.
     unit_price: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    # نفس ما على سطر الفاتورة: خصم السطر، والوحدة ومعاملها، ومخزن السطر.
+    #
+    # مخزن السطر مش تفصيلة: الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن، والمردود اللي
+    # بيرجّعها لازم يقدر يطلّع كل صنف من المخزن اللي فيه فعلاً.
+    discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    line_location_kind: Mapped[LocationKind | None] = mapped_column(
+        Enum(LocationKind), nullable=True)
+    line_location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)

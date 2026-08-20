@@ -134,7 +134,7 @@ describe('نفس باب الشرا', () => {
   it('بيفتح ببوباب «انشاء» — فرع وتاريخ وتصنيف وقايمة', () => {
     // كان بوباب بيسأل التاريخ وبس، وبعده الشاشة بتسيبك تدوّر في قايمة بكل فواتير الشركة.
     expect(src).toContain('<PartyPickerModal');
-    expect(src).toMatch(/open=\{newStep === 'party'\}/);
+    expect(src).toMatch(/open=\{newStep === 'party' \|\| partyPickerOpen\}/);
     expect(src).toMatch(/kinds=\{\['supplier', 'customer'\]\}/);
     expect(src, 'لسه فيه خطوة تاريخ منفصلة').not.toContain("newStep === 'date'");
   });
@@ -173,5 +173,55 @@ describe('نفس كثافة الشرا', () => {
   it('مفيش زراير كبيرة بتاكل ارتفاع', () => {
     // زرارين `large` في آخر الشاشة كانوا بياخدوا ارتفاع سطرين.
     expect(src, 'لسه فيه زرار كبير').not.toContain('size="large"');
+  });
+});
+
+describe('المردود نسخة من فاتورة الشرا بالعكس', () => {
+  const buy = readFileSync(join(__dirname, 'Purchases.tsx'), 'utf8');
+
+  it.each([
+    'شريط الأوامر', 'DocumentToolbar',
+  ])('فيه %s', (_label, _x) => {
+    expect(src).toContain('DocumentToolbar');
+  });
+
+  it('نفس ترويسة الفاتورة بنفس الترتيب', () => {
+    // التاريخ · الفرع · الحساب · مستند رقم // مورد · الحالي · العنوان · الهاتف //
+    // ملاحظات · بيان ١ · بيان ٢ · بيان ٣
+    for (const label of ['التاريخ', 'الفرع', 'الحساب', 'مستند رقم',
+      'مورد', 'الحالي', 'العنوان', 'الهاتف', 'ملاحظات']) {
+      expect(src, `حقل «${label}» ناقص`).toContain(label);
+      expect(buy, `حقل «${label}» مش في الفاتورة أصلاً`).toContain(label);
+    }
+    expect(src).toContain('`بيان ${n}`');
+  });
+
+  it('نفس أعمدة جدول السطور', () => {
+    const head = src.slice(src.indexOf('<thead>'), src.indexOf('</thead>'));
+    for (const col of ['المخزن', 'الوحدة', 'الكمية', 'سعر الوحدة',
+      'اجمالي قبل', 'خصم', 'خصم %', 'الإجمالي']) {
+      expect(head, `عمود «${col}» ناقص`).toContain(col);
+    }
+  });
+
+  it('نفس سلّم الأرقام — خصم السطر على سطره وخصم المستند على المجموع', () => {
+    expect(src).toContain('<TotalsLadder');
+    const net = src.slice(src.indexOf('const lineNet'), src.indexOf('const grossTotal'));
+    expect(net).toContain('(l.discount_pct ?? 0) / 100');
+    expect(src).toMatch(/grossTotal \* \(1 - \(variableDiscount \|\| 0\) \/ 100\)/);
+  });
+
+  it('بيبعت نفس حقول مستند الفاتورة', () => {
+    const submit = src.slice(src.indexOf('const submit = async'), src.indexOf('const columns ='));
+    for (const key of ['expense_account_id', 'variable_discount_pct',
+      'external_document_number', 'statement1', 'discount_pct', 'unit', 'warehouse_id']) {
+      expect(submit, `«${key}» مش بيتبعت`).toContain(key);
+    }
+  });
+
+  it('اللي بالعكس هو اللي بيفرّق: البضاعة بتخرج', () => {
+    // المستند نسخة، والفرق الوحيد في الاتجاه — والحارس بيقيس المتاح للخروج.
+    expect(src).toContain('guardQuantity({');
+    expect(src).toContain('available: warehouseId ? onHand[l.item_id] : undefined');
   });
 });
