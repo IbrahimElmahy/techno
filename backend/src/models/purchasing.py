@@ -89,9 +89,24 @@ class PurchaseReturn(Base):
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
-    purchase_invoice_id: Mapped[int] = mapped_column(
-        ForeignKey("purchase_invoice.id"), nullable=False
+    # المردود المستقل — أصناف راجعة لمورد، من غير ما يتعلّق بفاتورة بعينها.
+    #
+    # الشركة بترجّع بضاعة لمورد من غير ما تكون عارفة — أو مهتمة — بأنهي فاتورة جابتها. البضاعة
+    # في المخزن، والمورد معروف، والقيمة متفق عليها. ربط كل مردود بفاتورة كان معناه إن اللي
+    # بيرجّع لازم يدوّر على الفاتورة الأصلية الأول، وإن بضاعة اتجمّعت من فواتير كتير ماينفعش
+    # ترجع في مستند واحد.
+    #
+    # `purchase_invoice_id` بقى اختياري: لو موجود، المردود بيتقيّد بكميات الفاتورة دي (زي ما كان)؛
+    # ولو فاضي، ده مردود مستقل بيقف على نفسه. ده نفس اللي مرتجع البيع عمله في ٠٢٨.
+    purchase_invoice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("purchase_invoice.id"), nullable=True
     )
+    # المورد — كان بيتقرا من الفاتورة. المردود المستقل مالوش فاتورة، فبيشيله بنفسه.
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("supplier.id"), nullable=True)
+    # المخزن اللي البضاعة خرجت منه. الفاتورة كانت بتقول ده؛ المستقل بيتسأل عنه.
+    origin_location_kind: Mapped[LocationKind | None] = mapped_column(
+        Enum(LocationKind), nullable=True)
+    origin_location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     value: Mapped[object] = mapped_column(MONEY, nullable=False)
     # The day the goods actually went back — not the day the row was typed. `created_at` is when
     # somebody sat at the screen, and goods returned on Thursday and entered on Sunday would land
@@ -128,3 +143,7 @@ class PurchaseReturnLine(Base):
     return_id: Mapped[int] = mapped_column(ForeignKey("purchase_return.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
+    # سعر السطر. المردود المربوط بفاتورة بياخده من سطرها؛ المستقل بيتكتب فيه — البضاعة بترجع
+    # بالسعر المتفق عليه دلوقتي، مش لازم يكون سعر شرائها.
+    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    line_total: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)

@@ -17,7 +17,7 @@ from src.services import numbering
 
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item
-from src.models.ledger import Direction
+from src.models.ledger import Account, Direction
 from src.models.purchasing import (
     PurchaseInvoice,
     PurchaseInvoiceLine,
@@ -309,21 +309,28 @@ def reverse_purchase_return(
     if ret.reversed_at is not None:
         raise PurchaseError("المردود ده اتعكس قبل كده.")
 
-    inv = db.get(PurchaseInvoice, ret.purchase_invoice_id)
-    if inv is None:
+    inv = db.get(PurchaseInvoice, ret.purchase_invoice_id) if ret.purchase_invoice_id else None
+    if ret.purchase_invoice_id and inv is None:
         raise PurchaseError("فاتورة الشراء بتاعت المردود مش موجودة.")
 
-    # نفس المخزن اللي البضاعة خرجت منه، ونفس معامل الوحدة اللي خرجت بيه.
+    # البضاعة بترجع للمكان اللي خرجت منه.
+    #
+    # المردود المربوط بفاتورة خرج من مخازن سطورها — كل سطر من مخزنه. والمستقل خرج من مخزن
+    # واحد مكتوب عليه. الحالتين بيرجّعوا لنفس المكان بالظبط: رجوع لمخزن تاني بيخلّي الرصيدين
+    # الاتنين غلط.
     received_into = {
         ln.item_id: (ln.line_location_kind or inv.location_kind,
                      ln.line_location_id if ln.line_location_id is not None else inv.location_id)
         for ln in inv.lines
-    }
-    factors = {ln.item_id: to_qty(ln.unit_factor) for ln in inv.lines}
+    } if inv else {}
+    factors = {ln.item_id: to_qty(ln.unit_factor) for ln in inv.lines} if inv else {}
+    fallback = ((inv.location_kind, inv.location_id) if inv
+                else (ret.origin_location_kind, ret.origin_location_id))
+    if fallback[0] is None or fallback[1] is None:
+        raise PurchaseError("المردود ده مالوش مخزن مسجّل — مايتعكسش.")
 
     for line in ret.lines:
-        back_kind, back_loc = received_into.get(
-            line.item_id, (inv.location_kind, inv.location_id))
+        back_kind, back_loc = received_into.get(line.item_id, fallback)
         base_qty = to_qty(Decimal(line.quantity) * factors.get(line.item_id, Decimal("1")))
         stock_service.post_movement(
             db, item_id=line.item_id, location_kind=back_kind, location_id=back_loc,
@@ -342,4 +349,106 @@ def reverse_purchase_return(
     audit_service.record(db, action="purchase.return.reverse", actor_user_id=actor_user_id,
                          entity_type="purchase_return", entity_id=ret.id,
                          after={"reversed": True})
+    return ret
+
+
+def create_standalone_purchase_return(
+    db: Session,
+    *,
+    supplier_id: int,
+    origin_location_kind: LocationKind,
+    origin_location_id: int,
+    lines: list[tuple[int, Decimal, Decimal]],  # (item_id, quantity, unit_price)
+    actor_role: RoleName,
+    actor_user_id: int,
+    return_date: date | None = None,
+    notes: str | None = None,
+    expense_account_id: int | None = None,
+) -> PurchaseReturn:
+    """مردود شرا مستقل — أصناف راجعة لمورد، من غير ما يتعلّق بفاتورة بعينها.
+
+    الشركة بترجّع بضاعة لمورد من غير ما تكون عارفة — أو مهتمة — بأنهي فاتورة جابتها. ربط كل
+    مردود بفاتورة كان معناه إن اللي بيرجّع لازم يدوّر على الفاتورة الأصلية الأول، وإن بضاعة
+    اتجمّعت من فواتير كتير ماينفعش ترجع في مستند واحد.
+
+    نفس بناء المردود المربوط، وبنفس الأثر: البضاعة بتخرج من المخزن، وحساب المشتريات بيتقفل
+    بالقيمة، واللي على الشركة للمورد بينقص.
+
+    **السعر بيتكتب مش بيتقرا.** المردود المربوط بياخد سعر السطر من فاتورته؛ المستقل مالوش
+    فاتورة يقرا منها، والبضاعة بترجع بالسعر المتفق عليه دلوقتي مش لازم يكون سعر شرائها.
+
+    **والكمية مش محدودة بحاجة غير الرصيد.** مفيش فاتورة تقول «اتشرى كام»، فالحد الوحيد إن
+    البضاعة تكون موجودة فعلاً — و`stock_service` بيرفض لو مش موجودة.
+    """
+    if not lines:
+        raise PurchaseError("المردود لازم يكون فيه صنف واحد على الأقل.")
+
+    supplier = db.get(Supplier, supplier_id)
+    if supplier is None:
+        raise PurchaseError("المورد مش موجود.")
+
+    value = ZERO
+    built: list[tuple[int, Decimal, Decimal, Decimal, Decimal]] = []
+    for item_id, qty, unit_price in lines:
+        item = db.get(Item, item_id)
+        if item is None:
+            raise PurchaseError("الصنف مش موجود.")
+        qty = Decimal(qty)
+        if qty <= ZERO:
+            raise PurchaseError("الكمية لازم تكون أكبر من صفر.")
+        price = to_money(unit_price)
+        line_total = to_money(qty * price)
+        value += line_total
+        built.append((item_id, qty, price, line_total, to_qty(Decimal("1"))))
+    value = to_money(value)
+
+    ret = PurchaseReturn(
+        document_number=_doc_number(db, PurchaseReturn, "PRET"),
+        purchase_invoice_id=None,
+        supplier_id=supplier_id,
+        origin_location_kind=origin_location_kind,
+        origin_location_id=origin_location_id,
+        value=value, ledger_entry_id=None, actor_user_id=actor_user_id,
+        return_date=return_date or date.today(), notes=notes,
+    )
+    db.add(ret)
+    db.flush()
+
+    for item_id, qty, price, line_total, _factor in built:
+        stock_service.post_movement(
+            db, item_id=item_id, location_kind=origin_location_kind,
+            location_id=origin_location_id, movement_type="purchase_return_out",
+            direction=StockDirection.out, quantity=to_qty(qty),
+            actor_user_id=actor_user_id, source_doc_type="purchase_return",
+            source_doc_id=ret.id,
+        )
+        ret.lines.append(PurchaseReturnLine(
+            item_id=item_id, quantity=qty, unit_price=price, line_total=line_total))
+
+    # القيد: حساب المشتريات بياخد دائن بالقيمة، وحساب المورد بياخد مدين — يعني اللي على
+    # الشركة له بينقص. مفيش استرداد نقدي هنا: المردود المستقل مالوش فاتورة يعرف منها اتدفع
+    # كام نقدي، والفلوس الراجعة نقداً بتتسجّل بسند صرف مستقل لما تحصل فعلاً.
+    expense_acc = (db.get(Account, expense_account_id) if expense_account_id
+                   else account_resolver.purchases_expense_account(db))
+    if expense_acc is None:
+        raise PurchaseError("حساب المشتريات مش موجود.")
+    supplier_acc = db.scalar(
+        select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id)
+    )
+    if supplier_acc is None:
+        raise PurchaseError("المورد ده مالوش حساب.")
+
+    entry = ledger_service.post_entry(
+        db, entry_type="purchase_return", actor_user_id=actor_user_id,
+        lines=[
+            LineInput(expense_acc.id, Direction.credit, value),
+            LineInput(supplier_acc.account_id, Direction.debit, value),
+        ],
+        description=f"Standalone purchase return {ret.document_number}",
+    )
+    ret.ledger_entry_id = entry.id
+    db.flush()
+    audit_service.record(db, action="purchase.return.standalone", actor_user_id=actor_user_id,
+                         entity_type="purchase_return", entity_id=ret.id,
+                         after={"value": str(value), "supplier_id": supplier_id})
     return ret

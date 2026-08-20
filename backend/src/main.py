@@ -217,6 +217,12 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # (HR-1) «القسم» بقى جدول. نفس شكل ("employee","warehouse_id","BIGINT") اللي عدّى قبل كده:
     # nullable، من غير default، ومن غير FK في نص الـDDL — أي حاجة فيها NOT NULL DEFAULT بتختلف
     # من لهجة للتانية، والفشل هنا بيتبلع عند مستوى info فبيفضل غلط في صمت.
+    # المردود المستقل — أصناف راجعة لمورد من غير فاتورة.
+    ("purchase_return", "supplier_id", "BIGINT"),
+    ("purchase_return", "origin_location_kind", "VARCHAR(20)"),
+    ("purchase_return", "origin_location_id", "BIGINT"),
+    ("purchase_return_line", "unit_price", "DECIMAL(18,2)"),
+    ("purchase_return_line", "line_total", "DECIMAL(18,2)"),
     # (٨) علامة عكس المردود — عشان التعديل يبقى عكس وكتابة من جديد زي الفاتورة.
     ("purchase_return", "reversed_at", "DATETIME"),
     ("purchase_return", "reversal_entry_id", "BIGINT"),

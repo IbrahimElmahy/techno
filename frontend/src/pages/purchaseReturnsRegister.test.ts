@@ -139,9 +139,28 @@ describe('نفس باب الشرا', () => {
     expect(src, 'لسه فيه خطوة تاريخ منفصلة').not.toContain("newStep === 'date'");
   });
 
-  it('المورد اللي اتختار بيضيّق فواتير الخطوة اللي بعده', () => {
-    // المردود بيبدأ من مورد قبل ما يبدأ من فاتورة.
-    expect(src).toMatch(/!supplierFilter \|\| p\.supplier_id === supplierFilter/);
+  it('المردود مستند مستقل — مفيش فاتورة في المسار', () => {
+    // الشركة بترجّع بضاعة لمورد من غير ما تكون عارفة أنهي فاتورة جابتها، وبضاعة اتجمّعت من
+    // فواتير كتير لازم ترجع في مستند واحد.
+    expect(src).toContain("api.post('/api/v1/purchases/returns'");
+    expect(src, 'لسه بيرجّع من فاتورة بعينها')
+      .not.toContain('/api/v1/purchases/${purchaseId}/returns');
+  });
+
+  it('المستند بيسأل عن المخزن — مفيش فاتورة تقول منين', () => {
+    expect(src).toContain('setWarehouseId');
+    expect(src).toMatch(/location: \{ location_kind: 'warehouse', location_id: warehouseId \}/);
+  });
+
+  it('السعر بيتكتب على السطر', () => {
+    // البضاعة بترجع بالسعر المتفق عليه دلوقتي، مش لازم يكون سعر شرائها.
+    expect(src).toContain('unit_price: String(l.unit_price || 0)');
+  });
+
+  it('الكمية محروسة بالرصيد', () => {
+    // مفيش فاتورة تقول «اتشرى كام»، فالحد الوحيد هو اللي موجود في المخزن.
+    expect(src).toContain('guardQuantity({');
+    expect(src).toContain('available: warehouseId ? onHand[l.item_id] : undefined');
   });
 });
 

@@ -150,8 +150,9 @@ class PurchaseReturnListOut(BaseModel):
     """
     id: int
     document_number: str
-    purchase_invoice_id: int
-    purchase_document_number: str | None
+    # اختياري: المردود المستقل مالوش فاتورة.
+    purchase_invoice_id: int | None = None
+    purchase_document_number: str | None = None
     supplier_id: int | None
     supplier_name: str | None
     value: Decimal
@@ -238,8 +239,9 @@ def list_purchase_returns(
 
     out = []
     for r in rows:
-        inv = invoices.get(r.purchase_invoice_id)
-        sup_id = inv.supplier_id if inv else None
+        inv = invoices.get(r.purchase_invoice_id) if r.purchase_invoice_id else None
+        # المردود المستقل شايل مورده بنفسه؛ المربوط بياخده من فاتورته.
+        sup_id = r.supplier_id if r.supplier_id else (inv.supplier_id if inv else None)
         if supplier_id is not None and sup_id != supplier_id:
             continue
         out.append(PurchaseReturnListOut(
@@ -257,6 +259,10 @@ class PurchaseReturnLineOut(BaseModel):
     item_id: int
     item_name: str | None
     quantity: Decimal
+    # المردود المستقل بيتكتب فيه السعر؛ المربوط بياخده من سطر فاتورته. الاتنين بيرجّعوه
+    # عشان الورقة المطبوعة تعرف تحط قيمة على السطر بدل كمية بلا سعر.
+    unit_price: Decimal = Decimal("0")
+    line_total: Decimal = Decimal("0")
 
 
 class PurchaseReturnDetailOut(PurchaseReturnListOut):
@@ -279,8 +285,10 @@ def get_purchase_return(
     r = db.get(PurchaseReturn, return_id)
     if r is None:
         raise HTTPException(404, {"code": "not_found", "message": "Purchase return not found"})
-    inv = db.get(PurchaseInvoice, r.purchase_invoice_id)
-    supplier = db.get(Supplier, inv.supplier_id) if inv else None
+    inv = db.get(PurchaseInvoice, r.purchase_invoice_id) if r.purchase_invoice_id else None
+    # المردود المستقل شايل مورده بنفسه؛ المربوط بياخده من فاتورته.
+    sup_id = r.supplier_id if r.supplier_id else (inv.supplier_id if inv else None)
+    supplier = db.get(Supplier, sup_id) if sup_id else None
     names = {
         i.id: i.name for i in db.scalars(
             select(Item).where(Item.id.in_({ln.item_id for ln in r.lines}))
@@ -296,7 +304,8 @@ def get_purchase_return(
         value=r.value, created_at=str(r.created_at),
         lines=[
             PurchaseReturnLineOut(
-                item_id=ln.item_id, item_name=names.get(ln.item_id), quantity=ln.quantity)
+                item_id=ln.item_id, item_name=names.get(ln.item_id), quantity=ln.quantity,
+                unit_price=ln.unit_price or 0, line_total=ln.line_total or 0)
             for ln in r.lines
         ],
     )
@@ -385,6 +394,52 @@ class ReverseIn(BaseModel):
     """«تعديل» ولا «حذف» — الحركة واحدة والنية مختلفة."""
 
     reason: str = "edit"
+
+
+class StandaloneReturnLineIn(BaseModel):
+    item_id: int
+    quantity: Decimal
+    unit_price: Decimal = Decimal("0")
+
+
+class StandaloneReturnIn(BaseModel):
+    supplier_id: int
+    location: LocationIn
+    lines: list[StandaloneReturnLineIn]
+    return_date: date | None = None
+    notes: str | None = None
+    expense_account_id: int | None = None
+
+
+@router.post("/returns", response_model=DocOut, status_code=status.HTTP_201_CREATED)
+def create_standalone_purchase_return(
+    body: StandaloneReturnIn,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> DocOut:
+    """مردود شرا مستقل — أصناف راجعة لمورد من غير فاتورة.
+
+    Declared BEFORE `/{purchase_id}/returns` so the id route does not swallow it.
+
+    المردود المربوط بفاتورة لسه موجود على `/{purchase_id}/returns`: هو اللي بيتقيّد بكميات
+    الفاتورة، وهو الصح لما تكون البضاعة راجعة من شحنة بعينها. ده للحالة التانية — بضاعة
+    اتجمّعت أو الفاتورة مش مهمة.
+    """
+    try:
+        ret = purchase_service.create_standalone_purchase_return(
+            db, supplier_id=body.supplier_id,
+            origin_location_kind=body.location.location_kind,
+            origin_location_id=body.location.location_id,
+            lines=[(ln.item_id, ln.quantity, ln.unit_price) for ln in body.lines],
+            actor_role=current.role, actor_user_id=current.id,
+            return_date=body.return_date, notes=body.notes,
+            expense_account_id=body.expense_account_id,
+        )
+    except (PurchaseError, StockError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "return_invalid", "message": str(exc)}) from exc
+    db.commit()
+    return DocOut(id=ret.id, document_number=ret.document_number)
 
 
 @router.post("/returns/{return_id}/reverse", response_model=dict)

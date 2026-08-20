@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, DatePicker, Descriptions, Divider, Form, Input, InputNumber, Select,
-  Space, Table, Tag, message
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import {
   PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowLeftOutlined, EyeOutlined, PrinterOutlined,
@@ -16,6 +15,7 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter }
   from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal from '../components/PartyPickerModal';
+import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
@@ -73,8 +73,22 @@ export default function PurchaseReturns() {
   // The date is asked first, the way the sale and the sales return ask it — the day the goods
   // went back is a fact about the goods, not about when somebody got to the screen.
   const [newStep, setNewStep] = useState<null | 'party'>(null);
-  /** المورد اللي اتختار من الباب — بيضيّق فواتير الشرا اللي بيتختار منها. */
+  /** المورد اللي المردود راجع له. */
   const [supplierFilter, setSupplierFilter] = useState<number | null>(null);
+  /** المخزن اللي البضاعة بتخرج منه — مفيش فاتورة تقول منين، فالمستند بيتسأل. */
+  const [warehouseId, setWarehouseId] = useState<number | null>(null);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  /** سطور المردود — أصناف بكمياتها وأسعارها، زي سطور الفاتورة. */
+  interface ReturnLineDraft {
+    key: string;
+    item_id: number;
+    quantity: number | null;
+    unit_price: number;
+  }
+  const [returnLines, setReturnLines] = useState<ReturnLineDraft[]>([]);
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
   const [notes, setNotes] = useState('');
   const [purchaseId, setPurchaseId] = useState<number | undefined>();
@@ -90,12 +104,14 @@ export default function PurchaseReturns() {
   const load = async () => {
     setLoading(true);
     try {
-      const [r, p, i] = await Promise.all([
+      const [r, p, i, w] = await Promise.all([
         api.get('/api/v1/purchases/returns'),
         api.get('/api/v1/purchases'),
         api.get('/api/v1/items'),
+        api.get('/api/v1/warehouses').catch(() => ({ data: [] })),
       ]);
       setRows(r.data || []); setPurchases(p.data || []); setItems(i.data || []);
+      setWarehouses(w.data || []);
     } catch {
       message.error('تعذر تحميل مردودات الشراء');
     } finally { setLoading(false); }
@@ -188,6 +204,7 @@ export default function PurchaseReturns() {
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
     setEditingId(null); setSupplierFilter(null);
+    setReturnLines([]); setWarehouseId(null);
   };
 
   const choosePurchase = async (id: number) => {
@@ -201,19 +218,73 @@ export default function PurchaseReturns() {
     }
   };
 
-  const draftValue = useMemo(() => {
-    if (!detail) return 0;
-    return (detail.lines as PurchaseLine[]).reduce((sum, ln) => {
-      const q = qty[ln.item_id];
-      return sum + (q ? q * Number(ln.unit_price || 0) : 0);
-    }, 0);
-  }, [detail, qty]);
+  /** قيمة المردود — من السطور اللي اتكتبت، مش من فاتورة. */
+  /**
+   * رصيد كل صنف في المخزن المختار — عشان الكمية تتحرس قبل ما السيرفر يرفضها.
+   *
+   * المردود المستقل مالوش فاتورة تقول «اتشرى كام»، فالحد الوحيد هو اللي موجود فعلاً. السيرفر
+   * بيرفض الزيادة برضه، بس الرفض هناك بييجي بعد ما الواحد كتب المستند كله — والحارس هنا
+   * بيقولها عند الخانة.
+   */
+  const [onHand, setOnHand] = useState<Record<number, number>>({});
+  const fetchOnHand = async (itemId: number, wh: number) => {
+    try {
+      const res = await api.get('/api/v1/stock/on-hand', { params: {
+        item_id: itemId, location_kind: 'warehouse', location_id: wh } });
+      setOnHand((prev) => ({ ...prev, [itemId]: Number(res.data?.on_hand ?? 0) }));
+    } catch { /* الرصيد مش معروف — الحارس بيسيب الكمية والسيرفر بيقرر */ }
+  };
+  // تغيير المخزن بيغيّر كل الأرصدة — اللي كان متاح في مخزن مش متاح في التاني.
+  useEffect(() => {
+    if (!warehouseId) { setOnHand({}); return; }
+    returnLines.forEach((l) => { if (l.item_id) fetchOnHand(l.item_id, warehouseId); });
+  }, [warehouseId]);
+
+  /** فئات الأصناف اللي البوباب بيجمّع بيها — من اللي في القايمة فعلاً. */
+  const itemCategories = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach((i: any) => { if (i.category) set.add(i.category); });
+    return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
+  }, [items]);
+
+  /**
+   * إضافة صنف للمردود — الصنف اللي موجود بتزيد كميته بدل ما يتكرّر سطر.
+   *
+   * كل التحديث من `prev`: اللي بيختار عشر أصناف مرة واحدة بيعمل عشر إضافات ورا بعض، ولو
+   * واحدة قرت نسخة قديمة من السطور بتكتب فوق اللي قبلها.
+   */
+  const addReturnLine = (itemId: number) => {
+    if (!itemId) return;
+    const product = items.find((i: any) => i.id === itemId) as any;
+    const price = product?.purchase_price ? parseFloat(product.purchase_price) : 0;
+    setReturnLines((prev) => {
+      const existing = prev.find((l) => l.item_id === itemId);
+      if (existing) {
+        return prev.map((l) => (l.key === existing.key
+          ? { ...l, quantity: Number(l.quantity || 0) + 1 } : l));
+      }
+      return [...prev, {
+        key: `${Date.now()}-${itemId}`, item_id: itemId, quantity: null, unit_price: price,
+      }];
+    });
+    if (warehouseId) fetchOnHand(itemId, warehouseId);
+  };
+
+  const draftValue = useMemo(
+    () => returnLines.reduce((sum, l) => sum + Number(l.quantity || 0) * (l.unit_price || 0), 0),
+    [returnLines],
+  );
 
   const submit = async () => {
-    if (!purchaseId) { message.warning('اختر فاتورة الشراء الأول'); return; }
-    const lines = Object.entries(qty)
-      .filter(([, q]) => q && Number(q) > 0)
-      .map(([itemId, q]) => ({ item_id: Number(itemId), quantity: String(q) }));
+    if (!supplierFilter) { message.warning('اختار المورد الأول'); return; }
+    if (!warehouseId) { message.warning('اختار المخزن اللي البضاعة راجعة منه'); return; }
+    const lines = returnLines
+      .filter((l) => l.item_id && Number(l.quantity || 0) > 0)
+      .map((l) => ({
+        item_id: l.item_id,
+        quantity: String(l.quantity),
+        unit_price: String(l.unit_price || 0),
+      }));
     if (!lines.length) { message.warning('اكتب الكمية المرتجعة على صنف واحد على الأقل'); return; }
     setSaving(true);
     try {
@@ -229,7 +300,10 @@ export default function PurchaseReturns() {
           return;
         }
       }
-      await api.post(`/api/v1/purchases/${purchaseId}/returns`, {
+      // مستند مستقل — مفيش فاتورة في المسار.
+      await api.post('/api/v1/purchases/returns', {
+        supplier_id: supplierFilter,
+        location: { location_kind: 'warehouse', location_id: warehouseId },
         lines,
         return_date: returnDate.format('YYYY-MM-DD'),
         notes: notes || null,
@@ -237,6 +311,7 @@ export default function PurchaseReturns() {
       message.success(editingId !== null
         ? 'اتعدّل المردود واترحّل من جديد' : 'اتسجّل مردود الشراء');
       setEditingId(null);
+      setReturnLines([]);
       setCreating(false);
       load();
     } catch (err: any) {
@@ -479,6 +554,19 @@ export default function PurchaseReturns() {
         *
         * فاختيار المورد هنا بيضيّق فواتير الخطوة اللي بعدها عليه — بدل قايمة بكل فواتير الشركة.
         */}
+      {/* بوباب اختيار الصنف — نفس اللي في فاتورة الشرا، فاللي اتعلّم واحد اتعلّم الاتنين. */}
+      <ProductPickerModal
+        open={pickerOpen}
+        title="اختر الصنف الراجع"
+        categories={itemCategories}
+        categoryLabels={{}}
+        products={items as any}
+        activeCategory={activeCategory}
+        onCategoryChange={setActiveCategory}
+        onCancel={() => setPickerOpen(false)}
+        onPick={(id) => { setPickerOpen(false); addReturnLine(id); }}
+        onPickMany={(ids) => { setPickerOpen(false); ids.forEach(addReturnLine); }} />
+
       <PartyPickerModal
         open={newStep === 'party'} kind="supplier" kinds={['supplier', 'customer']}
         date={returnDate} onDateChange={(d) => setReturnDate(d)}
@@ -497,102 +585,126 @@ export default function PurchaseReturns() {
           <span>تسجيل مردود شراء</span>
         </Space>
       )}>
-        <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
-          message="المردود بيتعمل على فاتورة شراء"
-          description="اختار الفاتورة الأول، وبعدها اكتب الكمية الراجعة قدام كل صنف. السعر بيتاخد من الفاتورة نفسها."
-        />
-
-        {/* نفس الضغط اللي في فاتورة الشرا — `doc-form` معرّف في `index.css`. */}
+        {/*
+          * المردود بقى مستند مستقل: أصناف راجعة لمورد، من غير فاتورة.
+          *
+          * كان لازم تختار فاتورة الأول وبعدين تكتب الكمية قدام كل صنف فيها. يعني اللي بيرجّع
+          * لازم يدوّر على الفاتورة الأصلية، وبضاعة اتجمّعت من فواتير كتير ماكانش ينفع ترجع في
+          * مستند واحد.
+          *
+          * والسعر بيتكتب مش بيتقرا: البضاعة بترجع بالسعر المتفق عليه دلوقتي، مش لازم يكون سعر
+          * شرائها.
+          */}
         <Form layout="vertical" size="small" className="doc-form">
-          <Form.Item label="تاريخ المردود">
-            <DatePicker style={{ width: '100%' }} value={returnDate}
-              onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
-          </Form.Item>
-          <Form.Item label="ملاحظات">
-            <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
-              value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </Form.Item>
-          <Form.Item label="فاتورة الشراء" required>
-            <Select
-              showSearch optionFilterProp="label" value={purchaseId} onChange={choosePurchase}
-              placeholder="اختر فاتورة الشراء"
-              // المورد اللي اتختار من الباب بيضيّق القايمة عليه — بدل كل فواتير الشركة.
-              // ولو محدش اتختار (دخلت من مكان تاني) القايمة بتفضل كاملة.
-              options={purchases
-                .filter((p: any) => !supplierFilter || p.supplier_id === supplierFilter)
-                .map((p) => {
-                const back = returnedByPurchase[p.id] || 0;
-                return {
-                  value: p.id,
-                  label: `${p.document_number} — ${p.supplier_name ?? ''} — ${money(p.total)} ج.م`
-                    + (back ? ` (رجع منها ${money(back)})` : ''),
-                };
-                })}
-            />
-          </Form.Item>
+          <Row gutter={12}>
+            <Col xs={12} md={6}>
+              <Form.Item label="التاريخ">
+                <DatePicker style={{ width: '100%' }} allowClear={false} value={returnDate}
+                  onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item label="المورد" required>
+                <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
+                  placeholder="اضغط لاختيار المورد" value={supplierFilter ?? undefined}
+                  onChange={(v) => setSupplierFilter(v ?? null)}
+                  options={suppliers} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item label="المخزن" required>
+                {/* البضاعة بتخرج من هنا. مفيش فاتورة تقول منين، فالمستند بيتسأل. */}
+                <Select style={{ width: '100%' }} placeholder="المخزن اللي البضاعة راجعة منه"
+                  value={warehouseId ?? undefined} onChange={(v) => setWarehouseId(v ?? null)}
+                  options={warehouses.map((w: any) => ({
+                    value: w.id,
+                    label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
+                  }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={6}>
+              <Form.Item label="ملاحظات">
+                <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
+                  value={notes} onChange={(e) => setNotes(e.target.value)} />
+              </Form.Item>
+            </Col>
+          </Row>
         </Form>
 
-        {detail && (
-          <>
-            <Divider orientation="right" style={{ marginTop: 4 }}>أصناف الفاتورة</Divider>
-            <Table
-              size="small" pagination={false} rowKey="item_id"
-              dataSource={detail.lines as PurchaseLine[]}
-              columns={[
-                { title: 'الصنف', dataIndex: 'item_id', render: (id: number) => itemName(id) },
-                {
-                  title: 'المشترى', dataIndex: 'quantity', width: 100,
-                  render: (q: string) => Number(q),
-                },
-                {
-                  title: 'سعر الوحدة', dataIndex: 'unit_price', width: 120, align: 'left' as const,
-                  render: (v: string) => `${money(v)} ج.م`,
-                },
-                {
-                  title: 'الكمية الراجعة', width: 150,
-                  // Capped by what was actually purchased — but refused, not clamped. `max`
-                  // rewrote the number in silence, so somebody returning 50 of a line that only
-                  // bought 8 saw «8» appear and never learned why.
-                  render: (_: any, ln: PurchaseLine) => (
-                    <InputNumber
-                      data-grid-col="qty" keyboard={false}
-                      style={{ width: '100%' }}
-                      value={qty[ln.item_id] ?? null}
-                      placeholder="—"
-                      onChange={(v) => setQty((p) => ({ ...p, [ln.item_id]: v as number | null }))}
-                      onBlur={() => setQty((p) => ({
-                        ...p,
-                        [ln.item_id]: guardQuantity({
-                          value: p[ln.item_id],
-                          available: Number(ln.quantity),
-                          itemName: itemName(ln.item_id),
-                        }, null),
-                      }))}
-                    />
-                  ),
-                },
-              ]}
-              summary={() => (
-                <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={3}>
-                    <strong>قيمة المردود</strong>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={1}>
-                    <strong style={{ color: '#cf4b1a' }}>{money(draftValue)} ج.م</strong>
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              )}
-            />
-            {Object.values(qty).some((q) => q) && (
-              <Button
-                type="link" danger icon={<DeleteOutlined />} style={{ marginTop: 8 }}
-                onClick={() => setQty({})}
-              >
-                تفريغ الكميات
-              </Button>
-            )}
-          </>
+        <Divider orientation="right" style={{ marginTop: 4 }}>أصناف المردود</Divider>
+
+        <Button type="primary" danger icon={<PlusOutlined />} block
+          style={{ marginBottom: 10, height: 38 }}
+          onClick={() => setPickerOpen(true)}>
+          إضافة صنف للمردود
+        </Button>
+
+        {returnLines.length === 0 ? (
+          <Empty description="اختار الأصناف الراجعة" style={{ margin: '12px 0' }} />
+        ) : (
+          <div style={{ border: '1px solid #f3e0d8', borderRadius: 10, overflowX: 'auto' }}>
+            <table className="entry-grid">
+              <thead>
+                <tr>
+                  <th style={{ width: 34 }}>#</th>
+                  <th style={{ minWidth: 180 }}>الصنف</th>
+                  <th style={{ minWidth: 90 }}>الكمية</th>
+                  <th style={{ minWidth: 110 }}>سعر الوحدة</th>
+                  <th style={{ minWidth: 110 }}>الإجمالي</th>
+                  <th style={{ width: 40 }} />
+                </tr>
+              </thead>
+              <tbody>
+                {returnLines.map((line, idx) => (
+                  <tr key={line.key}>
+                    <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
+                    <td><b>{itemName(line.item_id)}</b></td>
+                    <td>
+                      <InputNumber size="small" style={{ width: '100%' }} min={0.001}
+                        data-grid-col="qty" keyboard={false}
+                        placeholder="الكمية" value={line.quantity ?? undefined}
+                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+                          l.key === line.key ? { ...l, quantity: v as number | null } : l)))}
+                        // المتاح بيتقاس عند الخانة، مش بعد ما المستند كله يتكتب.
+                        onBlur={() => setReturnLines((prev) => prev.map((l) => (
+                          l.key === line.key ? { ...l, quantity: guardQuantity({
+                            value: l.quantity,
+                            available: warehouseId ? onHand[l.item_id] : undefined,
+                            itemName: itemName(l.item_id),
+                          }, null) } : l)))} />
+                    </td>
+                    <td>
+                      <InputNumber size="small" style={{ width: '100%' }} min={0} step={0.01}
+                        placeholder="السعر" value={line.unit_price}
+                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+                          l.key === line.key ? { ...l, unit_price: (v as number) || 0 } : l)))} />
+                    </td>
+                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      {money(Number(line.quantity || 0) * (line.unit_price || 0))} ج.م
+                    </td>
+                    <td>
+                      <Button size="small" danger type="text" icon={<DeleteOutlined />}
+                        onClick={() => setReturnLines((prev) =>
+                          prev.filter((l) => l.key !== line.key))} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={2} style={{ fontWeight: 700 }}>الإجمالي</td>
+                  <td style={{ fontWeight: 700 }}>
+                    {returnLines.reduce((n, l) => n + Number(l.quantity || 0), 0)}
+                  </td>
+                  <td />
+                  <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    {money(draftValue)} ج.م
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         )}
 
         <div style={{
