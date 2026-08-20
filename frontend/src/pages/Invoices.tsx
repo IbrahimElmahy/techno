@@ -19,7 +19,6 @@ import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
-import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { guardQuantity } from '../components/quantityGuard';
@@ -168,12 +167,6 @@ export default function Invoices() {
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
   // Only to NAME the branch on the printed head — the customer carries its id.
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
-  /** حسابات الترحيل — «الحساب» في ترويسة الفاتورة، وهو اللي القيد بينزل عليه. */
-  const [postAccounts, setPostAccounts] = useState<any[]>([]);
-  useEffect(() => {
-    api.get('/api/v1/accounts', { params: { postable_only: true, active: true } })
-      .then((r) => setPostAccounts(r.data || [])).catch(console.error);
-  }, []);
   const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
 
@@ -506,6 +499,9 @@ export default function Invoices() {
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(Date.now().toString(), tier);
+    // السطر بيبدأ على مخزن المستند — المخزن اتشال من الترويسة، فلو السطر فتح فاضي
+    // مافيش حاجة تقول للحارس المتاح كام.
+    l.warehouse_id = docWarehouseId;
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null);
@@ -741,10 +737,12 @@ export default function Invoices() {
     // chose on purpose.
     if (c?.rep_id) {
       createForm.setFieldsValue({ rep_id: c.rep_id });
+      // مخزن المندوب بقى المخزن الافتراضي للسطور — الترويسة مافيهاش خانة مخزن، والسطر
+      // بيبدأ عليه ويتغيّر لو حبيت.
       const store = storeOfRep(c.rep_id);
-      if (store && !createForm.getFieldValue('warehouse_id')) {
-        createForm.setFieldsValue({ warehouse_id: store });
-        onWarehouseChange(store);
+      if (store && !docWarehouseId) {
+        setDocWarehouseId(store);
+        loadWarehouseStock(store);
       }
     }
     setSelectedCustomerId(customerId);
@@ -836,9 +834,11 @@ export default function Invoices() {
         // Who sold it. Recorded on the document so a commission report and a rep's own list of
         // invoices do not have to re-derive it from whoever owns the customer today.
         rep_id: values.rep_id ?? null,
+        // مخزن المستند بقى مخزن أول سطر — المخزن اتشال من الترويسة وبقى على السطر. السيرفر
+        // لسه محتاج مكان على المستند، والسطر اللي اتصرف من مخزن تاني شايل مخزنه بنفسه.
         origin: {
           location_kind: 'warehouse',
-          location_id: values.warehouse_id,
+          location_id: validLines[0]?.warehouse_id ?? docWarehouseId,
         },
         variable_discount_pct: discountPct,
         cash_amount: cashAmount,
@@ -1553,17 +1553,18 @@ export default function Invoices() {
         <Form form={createForm} layout="vertical" size="small" className="doc-form"
           onFinish={handleCreateSubmit} requiredMark={false}>
           {/*
-            * ترويسة الفاتورة بنفس ترتيب فاتورة الشرا — الشاشتين نفس المستند من الناحيتين:
+            * ترويسة المستند — التاريخ · مندوب · مستند رقم · عميل، وبعدها الملاحظات والبيانات.
             *
-            *   التاريخ · الفرع · مندوب · الحساب · مستند رقم
-            *   عميل · الحالي · العنوان · الهاتف
-            *   ملاحظات · بيان ١ · بيان ٢ · بيان ٣
+            * اللي اتشال بطلب صاحب النظام: **الفرع** و**الحساب** و**الحالي** و**العنوان**
+            * و**الهاتف** و**المخزن**.
             *
-            * «مندوب» موجود هنا ومش موجود في الشرا، وده فرق حقيقي: المندوب بيبيع وبيتحصّل
-            * وبتتحسبله عمولة؛ الشحنة الواردة بيستلمها أمين المخزن.
+            * بيانات العميل (الرصيد والعنوان والتليفون) متسجّلة في النظام أصلاً وبتطلع على
+            * الورقة المطبوعة لما تتطلب — فعرضها على الشاشة بياكل صف كامل عشان يقول حاجة
+            * الواحد مش بيقراها وهو بيكتب.
             *
-            * وبيانات العميل (الرصيد والعنوان والتليفون) بتتعرض للقراءة — اللي بيكتب فاتورة
-            * ومحتاج يتأكد إنه العميل الصح كان لازم يسيب الشاشة ويفتح ملفه.
+            * و**المخزن اتشال من الترويسة لأنه بقى على السطر**: كل صنف بيتصرف من مخزنه، ومخزن
+            * المستند بيتاخد من أول سطر. سؤال واحد في مكان واحد أحسن من نفس السؤال مرتين
+            * وإجابتين ممكن يختلفوا.
             */}
           <Row gutter={16}>
             <Col xs={12} md={5}>
@@ -1572,45 +1573,24 @@ export default function Invoices() {
                   value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
-              <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 8 }}>
-                <Select allowClear placeholder="كل الفروع"
-                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={5}>
+            <Col xs={12} md={6}>
               {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
               <Form.Item name="rep_id" label="مندوب" style={{ marginBottom: 8 }}>
                 <Select allowClear showSearch placeholder="من العميل"
                   optionFilterProp="label"
                   onChange={(v) => {
                     const store = storeOfRep(v as number);
-                    if (store) {
-                      createForm.setFieldsValue({ warehouse_id: store });
-                      onWarehouseChange(store);
-                    }
+                    if (store) setDocWarehouseId(store);
                   }}
                   options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
-              <Form.Item name="revenue_account_id" label="الحساب" style={{ marginBottom: 8 }}>
-                <Select allowClear showSearch optionFilterProp="label"
-                  placeholder="حساب المبيعات الافتراضي"
-                  options={postAccounts.map((a: any) => ({
-                    value: a.id,
-                    label: a.code ? `${a.code} ${a.name ?? ''}` : (a.name ?? `#${a.id}`) }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={4}>
+            <Col xs={24} md={5}>
               <Form.Item name="external_document_number" label="مستند رقم"
                 style={{ marginBottom: 8 }}>
                 <Input placeholder="رقم فاتورة العميل" />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
             <Col xs={24} md={8}>
               {/* Picked from a searchable modal that can also create the customer on the spot,
                   so a new walk-in never costs the half-entered invoice. */}
@@ -1627,36 +1607,6 @@ export default function Invoices() {
                     value: c.id,
                     label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
                   }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={8} md={4}>
-              <Form.Item label="الحالي" style={{ marginBottom: 8 }}>
-                <Input readOnly
-                  value={party?.balance != null ? money(party.balance) : ''} />
-              </Form.Item>
-            </Col>
-            <Col xs={16} md={6}>
-              <Form.Item label="العنوان" style={{ marginBottom: 8 }}>
-                <Input readOnly value={party?.address ?? ''} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={3}>
-              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
-                <Input readOnly value={party?.phone ?? ''} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={3}>
-              <Form.Item
-                name="warehouse_id"
-                label="المخزن"
-                rules={[{ required: true, message: 'يرجى اختيار مستودع الصرف!' }]}
-                style={{ marginBottom: 8 }}
-              >
-                <Select placeholder="من المندوب" onChange={onWarehouseChange}>
-                  {warehouses.map((w) => (
-                    <Select.Option key={w.id} value={w.id}>{w.name}</Select.Option>
-                  ))}
-                </Select>
               </Form.Item>
             </Col>
           </Row>
@@ -1990,19 +1940,13 @@ export default function Invoices() {
           </Col>
           </Row>
 
-          {/* لوحة الرصيد نزلت هنا: «الصنف ده عندي منه كام» سؤال بيتسأل مرة كل شوية، مش مع
-              كل سطر، فمكانه جنب الإجماليات مش واكل ربع مساحة الكتابة. */}
-          <Row gutter={16}>
-            <Col xs={24} lg={8}>
-              <ItemStockPanel
-                itemId={panelItemId}
-                category={activeCategory}
-                products={products}
-                onPickItem={(id) => setPanelItemId(id)}
-              />
-            </Col>
-            <Col xs={24} lg={16}>
-
+          {/*
+            * لوحة «رصيد الصنف في المخازن» اتشالت بطلب صاحب النظام — زي ما اتشالت من فاتورة الشرا.
+            *
+            * كانت صندوق كبير مكتوب فيه «اختر فئة أو صنف عشان تشوف رصيده» وطالع الصفحة لتحت من
+            * غير ما يقول حاجة. ورصيد الصنف بيتشاف جوّه بوباب اختيار الصنف — وهو المكان اللي
+            * السؤال بيتسأل فيه فعلاً وانت بتقول هاخد منه كام.
+            */}
           {/* Totals + payment — see TotalsLadder for why this is one ladder and not a strip. */}
           {(() => {
             const invoiceDiscount = grossTotal - netTotal;
@@ -2078,8 +2022,6 @@ export default function Invoices() {
               />
             );
           })()}
-            </Col>
-          </Row>
 
           <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
             {/* Aligned to the physical left of the page (flex-end under RTL). */}

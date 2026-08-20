@@ -249,8 +249,6 @@ export default function Purchases() {
    */
   // الفروع — فلتر في السجل وحقل في الفاتورة. بتتحمّل مرة مع باقي القوايم.
   const [branches, setBranches] = useState<any[]>([]);
-  /** حسابات الترحيل — «الحساب» في ترويسة الفاتورة، وهو اللي القيد بينزل عليه. */
-  const [postAccounts, setPostAccounts] = useState<any[]>([]);
   /** المورد المختار بتفاصيله — العنوان والتليفون والرصيد بيتعرضوا في الترويسة. */
   const [party, setParty] = useState<Party | null>(null);
   /**
@@ -260,17 +258,10 @@ export default function Purchases() {
    * فبدل ما تبقى خانة بتتكتب وتروح في اللا حاجة، بتعمل الحاجة الوحيدة اللي ليها معنى — تقصر
    * قايمة المخازن على بتاعة الفرع ده، فاللي شغّال على فرع مابيشوفش مخازن غيره.
    */
-  const [headerBranchId, setHeaderBranchId] = useState<number | undefined>();
-  const lineWarehouses = useMemo(
-    () => (headerBranchId
-      ? warehouses.filter((w: any) => w.branch_id === headerBranchId)
-      : warehouses),
-    [warehouses, headerBranchId],
-  );
+  // خانة الفرع اتشالت من الترويسة، فقايمة مخازن السطر بقت كل المخازن.
+  const lineWarehouses = warehouses;
   useEffect(() => {
     api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(console.error);
-    api.get('/api/v1/accounts', { params: { postable_only: true, active: true } })
-      .then((r) => setPostAccounts(r.data || [])).catch(console.error);
   }, []);
 
   const purchasesFilter = useListFilter(purchases, {
@@ -745,7 +736,8 @@ export default function Purchases() {
         external_document_number: values.external_document_number || null,
         // «الحساب» — الحساب اللي القيد بينزل عليه. الحقل كان موجود في السيرفر من ٠٣٠ والشاشة
         // مكانتش بتبعته خالص، فكل فاتورة كانت بتترحّل على الافتراضي مهما كان قصد الكاتب.
-        expense_account_id: values.expense_account_id ?? null,
+        // خانة «الحساب» اتشالت من الترويسة — القيد بينزل على حساب المشتريات الافتراضي.
+        expense_account_id: null,
         // `branch_id` مش في العقد عن قصد — مفيش عمود ليه على المستند، والفرع بيتعرف من المخزن.
         notes: values.notes || null,
         statement1: values.statement1 || null,
@@ -960,20 +952,18 @@ export default function Purchases() {
       <Form form={form} layout="vertical" size="small" className="doc-form"
         onFinish={handleSubmit} requiredMark={false}>
           {/*
-            * ترويسة الفاتورة بترتيب الشاشة اللي العميل شغّال عليها:
+            * ترويسة المستند — التاريخ · مستند رقم · مورد، وبعدها الملاحظات والبيانات.
             *
-            *   التاريخ · الفرع · الحساب · مستند رقم
-            *   مورد · الحالي · العنوان · الهاتف
-            *   ملاحظات · بيان ١ · بيان ٢ · بيان ٣
+            * اللي اتشال بطلب صاحب النظام: **الفرع** و**الحساب** و**الحالي** و**العنوان**
+            * و**الهاتف**. بيانات المورد متسجّلة في النظام أصلاً وبتطلع على الورقة المطبوعة
+            * لما تتطلب — فعرضها على الشاشة بياكل صف كامل عشان يقول حاجة الواحد مش بيقراها
+            * وهو بيكتب.
             *
-            * «الحساب» كان **موجود في السيرفر ومفيش خانة ليه في الشاشة** — `expense_account_id`
-            * متعرّف على المستند من ٠٣٠ وبيسوق القيد، ومحدش كان يقدر يحدّده وهو بيكتب الفاتورة.
-            *
-            * وبيانات المورد (الرصيد والعنوان والتليفون) بتتعرض للقراءة: اللي بيكتب فاتورة
-            * ومحتاج يتأكد إنه المورد الصح كان لازم يسيب الشاشة ويفتح ملفه.
+            * و**المخزن مالوش خانة في الترويسة** لأنه على السطر: كل صنف بيدخل مخزنه، ومخزن
+            * المستند بيتاخد من أول سطر.
             */}
           <Row gutter={16}>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={5}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
                   value={purchaseDate}
@@ -981,31 +971,11 @@ export default function Purchases() {
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 8 }}>
-                <Select allowClear placeholder="كل الفروع"
-                  onChange={(v) => setHeaderBranchId(v ?? undefined)}
-                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={7}>
-              {/* الحساب اللي الشرا بيترحّل عليه. فاضي = الحساب الافتراضي بتاع المشتريات. */}
-              <Form.Item name="expense_account_id" label="الحساب" style={{ marginBottom: 8 }}>
-                <Select allowClear showSearch optionFilterProp="label"
-                  placeholder="حساب المشتريات الافتراضي"
-                  options={postAccounts.map((a: any) => ({
-                    value: a.id,
-                    label: a.code ? `${a.code} ${a.name ?? ''}` : (a.name ?? `#${a.id}`) }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={5}>
               <Form.Item name="external_document_number" label="مستند رقم"
                 style={{ marginBottom: 8 }}>
                 <Input placeholder="رقم فاتورة المورد" />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item name="supplier_id" label="مورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
@@ -1018,22 +988,6 @@ export default function Purchases() {
                   onClick={() => setPartyPickerOpen(true)}
                   options={suppliers.map((sp) => ({
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={8} md={4}>
-              <Form.Item label="الحالي" style={{ marginBottom: 8 }}>
-                {/* رصيد المورد قبل الفاتورة دي — للقراءة، مش خانة تتكتب. */}
-                <Input readOnly value={party?.balance != null ? fmtMoney(party.balance) : ''} />
-              </Form.Item>
-            </Col>
-            <Col xs={16} md={7}>
-              <Form.Item label="العنوان" style={{ marginBottom: 8 }}>
-                <Input readOnly value={party?.address ?? ''} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={5}>
-              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
-                <Input readOnly value={party?.phone ?? ''} />
               </Form.Item>
             </Col>
           </Row>
