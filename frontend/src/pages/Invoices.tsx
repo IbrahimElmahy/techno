@@ -1553,18 +1553,11 @@ export default function Invoices() {
         <Form form={createForm} layout="vertical" size="small" className="doc-form"
           onFinish={handleCreateSubmit} requiredMark={false}>
           {/*
-            * ترويسة المستند — التاريخ · مندوب · مستند رقم · عميل، وبعدها الملاحظات والبيانات.
+            * ترويسة المستند: **التاريخ ← العميل ← المندوب ← المستند** — بترتيب ما بيتسأل.
             *
-            * اللي اتشال بطلب صاحب النظام: **الفرع** و**الحساب** و**الحالي** و**العنوان**
-            * و**الهاتف** و**المخزن**.
-            *
-            * بيانات العميل (الرصيد والعنوان والتليفون) متسجّلة في النظام أصلاً وبتطلع على
-            * الورقة المطبوعة لما تتطلب — فعرضها على الشاشة بياكل صف كامل عشان يقول حاجة
-            * الواحد مش بيقراها وهو بيكتب.
-            *
-            * و**المخزن اتشال من الترويسة لأنه بقى على السطر**: كل صنف بيتصرف من مخزنه، ومخزن
-            * المستند بيتاخد من أول سطر. سؤال واحد في مكان واحد أحسن من نفس السؤال مرتين
-            * وإجابتين ممكن يختلفوا.
+            * الفاتورة بتبدأ بيوم وطرف، وبعدين مين بيبيعله، وآخر حاجة رقم ورقته. الترتيب ده
+            * هو اللي الإيد بتمشي عليه، والقفز بين خانات مش مترتبة بترتيب السؤال هو اللي
+            * بيخلّي الواحد يرجع لورا كل شوية.
             */}
           <Row gutter={16}>
             <Col xs={12} md={5}>
@@ -1573,30 +1566,12 @@ export default function Invoices() {
                   value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
-              {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
-              <Form.Item name="rep_id" label="مندوب" style={{ marginBottom: 8 }}>
-                <Select allowClear showSearch placeholder="من العميل"
-                  optionFilterProp="label"
-                  onChange={(v) => {
-                    const store = storeOfRep(v as number);
-                    if (store) setDocWarehouseId(store);
-                  }}
-                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={5}>
-              <Form.Item name="external_document_number" label="مستند رقم"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم فاتورة العميل" />
-              </Form.Item>
-            </Col>
             <Col xs={24} md={8}>
               {/* Picked from a searchable modal that can also create the customer on the spot,
                   so a new walk-in never costs the half-entered invoice. */}
               <Form.Item
                 name="customer_id"
-                label="عميل"
+                label="العميل"
                 rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
                 style={{ marginBottom: 8 }}
               >
@@ -1607,6 +1582,24 @@ export default function Invoices() {
                     value: c.id,
                     label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
                   }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
+              <Form.Item name="rep_id" label="المندوب" style={{ marginBottom: 8 }}>
+                <Select allowClear showSearch placeholder="من العميل"
+                  optionFilterProp="label"
+                  onChange={(v) => {
+                    const store = storeOfRep(v as number);
+                    if (store) setDocWarehouseId(store);
+                  }}
+                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={5}>
+              <Form.Item name="external_document_number" label="المستند"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم فاتورة العميل" />
               </Form.Item>
             </Col>
           </Row>
@@ -1698,8 +1691,11 @@ export default function Invoices() {
               marginBottom: 8, padding: '6px 12px', borderRadius: 10,
               background: '#f6faf3', border: '1px solid #e6efe3',
             }}>
-                  <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 4 }}>
-                    نوع الفاتورة — بتترحّل على أنهي حساب؟
+                  {/* «اختار» وبس. الشرح الطويل كان بيقول حاجة الاختيار نفسه بيقولها:
+                      الأسماء والأرصدة قدام الواحد، وهو عارف حساباته. */}
+                  <div style={{ fontSize: 12, color: '#3a4a3a', fontWeight: 700,
+                                marginBottom: 4 }}>
+                    اختار
                   </div>
                   <Segmented
                     value={invoiceFamily ?? ''}
@@ -1716,11 +1712,9 @@ export default function Invoices() {
                       ),
                     }))}
                   />
-              {!invoiceFamily && (
-                <div style={{ color: '#cf4b1a', fontSize: 12, marginTop: 4 }}>
-                  اختار النوع الأول — الفاتورة هتترحّل على الحساب ده.
-                </div>
-              )}
+              {/* التحذير اللي كان تحت الاختيار اتشال بطلب صاحب النظام: «اختار» فوق الأزرار
+                  والأزرار فاضية — الطلب واضح من غير سطر أحمر بيكرّره. ولو حد بعت من غير
+                  اختيار، السيرفر لسه بيرفض ويقول السبب. */}
             </div>
           )}
 
@@ -1730,10 +1724,9 @@ export default function Invoices() {
                 shoves whatever sits beside it off the edge — the الأعمدة button ended up at
                 `left: -29`, with only the gear peeking past the screen and its label clipped.
                 `flexShrink: 0` on the button then keeps it whole when the row gets tight. */}
-            <Divider orientation="right"
-              style={{ fontWeight: 700, flex: 1, minWidth: 0 }}>
-              المنتجات المباعة
-            </Divider>
+            {/* الفاصل من غير عنوان — «المنتجات المباعة» فوق جدول أعمدته مكتوبة بيقول حاجة
+                الجدول بيقولها. */}
+            <Divider style={{ flex: 1, minWidth: 0, margin: 0 }} />
             {/* Each person turns off the columns they never read. الصنف · الكمية · الإجمالي are
                 locked — a line without them is not a line anybody can check. */}
             <ColumnSettings

@@ -952,15 +952,8 @@ export default function Purchases() {
       <Form form={form} layout="vertical" size="small" className="doc-form"
         onFinish={handleSubmit} requiredMark={false}>
           {/*
-            * ترويسة المستند — التاريخ · مستند رقم · مورد، وبعدها الملاحظات والبيانات.
-            *
-            * اللي اتشال بطلب صاحب النظام: **الفرع** و**الحساب** و**الحالي** و**العنوان**
-            * و**الهاتف**. بيانات المورد متسجّلة في النظام أصلاً وبتطلع على الورقة المطبوعة
-            * لما تتطلب — فعرضها على الشاشة بياكل صف كامل عشان يقول حاجة الواحد مش بيقراها
-            * وهو بيكتب.
-            *
-            * و**المخزن مالوش خانة في الترويسة** لأنه على السطر: كل صنف بيدخل مخزنه، ومخزن
-            * المستند بيتاخد من أول سطر.
+            * ترويسة المستند: **التاريخ ← المورد ← المستند** — نفس ترتيب فاتورة البيع، من غير
+            * «المندوب»: المندوب بيبيع وبيتحصّل، والشحنة الواردة بيستلمها أمين المخزن.
             */}
           <Row gutter={16}>
             <Col xs={12} md={5}>
@@ -970,14 +963,8 @@ export default function Purchases() {
                   onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
-              <Form.Item name="external_document_number" label="مستند رقم"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم فاتورة المورد" />
-              </Form.Item>
-            </Col>
             <Col xs={24} md={8}>
-              <Form.Item name="supplier_id" label="مورد"
+              <Form.Item name="supplier_id" label="المورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
                 style={{ marginBottom: 8 }}>
                 {/* The same window the first door opens — searchable, with inline create.
@@ -988,6 +975,12 @@ export default function Purchases() {
                   onClick={() => setPartyPickerOpen(true)}
                   options={suppliers.map((sp) => ({
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={5}>
+              <Form.Item name="external_document_number" label="المستند"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم فاتورة المورد" />
               </Form.Item>
             </Col>
           </Row>

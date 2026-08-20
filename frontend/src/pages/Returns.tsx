@@ -656,8 +656,10 @@ export default function Returns() {
             {families.length > 1 && (
               <Row style={{ marginBottom: 12 }}>
                 <Col xs={24}>
-                  <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 4 }}>
-                    نوع المرتجع — بيرجّع على أنهي حساب؟
+                  {/* «اختار» وبس — نفس اختصار فاتورة البيع. الأسماء والأرصدة قدام الواحد. */}
+                  <div style={{ fontSize: 12, color: '#3a4a3a', fontWeight: 700,
+                                marginBottom: 4 }}>
+                    اختار
                   </div>
                   <Segmented
                     value={returnFamily ?? ''}
@@ -674,11 +676,9 @@ export default function Returns() {
                       ),
                     }))}
                   />
-                  {!returnFamily && (
-                    <div style={{ color: '#cf4b1a', fontSize: 12, marginTop: 4 }}>
-                      اختار النوع الأول — المرتجع هيقلّل الحساب ده.
-                    </div>
-                  )}
+              {/* التحذير اللي كان تحت الاختيار اتشال بطلب صاحب النظام: «اختار» فوق الأزرار
+                  والأزرار فاضية — الطلب واضح من غير سطر أحمر بيكرّره. ولو حد بعت من غير
+                  اختيار، السيرفر لسه بيرفض ويقول السبب. */}
                 </Col>
               </Row>
             )}

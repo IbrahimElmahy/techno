@@ -65,9 +65,10 @@ describe('نوع المستند — أبيض / بولي', () => {
   });
 
   it('ومابيتحطش اختيار افتراضي لما فيه اتنين', () => {
-    // Choosing for him is choosing which balance moves — so it stays empty and says so.
-    expect(ret).toMatch(/اختار النوع الأول/);
-    expect(sale).toMatch(/اختار النوع الأول/);
+    // Choosing for him is choosing which balance moves, so both screens start empty. The red
+    // line that used to say so was removed on request — the empty buttons say it.
+    expect(ret).toMatch(/setReturnFamily\(named\.length === 1 \? named\[0\]\.family : null\)/);
+    expect(sale).toMatch(/setInvoiceFamily\(named\.length === 1 \? named\[0\]\.family : null\)/);
   });
 
   it('المديونيتين والإجمالي على المستندين', () => {

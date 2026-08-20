@@ -271,14 +271,23 @@ export default function AppLayout() {
         </div>
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
+        {/*
+          * شريط واحد فوق: المستندات المفتوحة + المستخدم + ارتفاع الصف.
+          *
+          * كانوا شريطين فوق بعض — واحد فيه اسم المستخدم بس، وتحته شريط التبويبات — يعني
+          * ٩٦ بكسل من طول الشاشة بتروح في حاجة مش داتا. دلوقتي شريط واحد بارتفاع ٤٤:
+          * التبويبات في النص وهي أكتر حاجة الإيد بتوصلها، والمستخدم على جنب.
+          */}
         <Header
           style={{
             flexShrink: 0,
+            height: 44,
+            lineHeight: '44px',
             padding: 0,
             background: colorBgContainer,
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'center',
+            gap: 8,
             boxShadow: '0 1px 4px rgba(0,21,41,0.08)',
             zIndex: 9,
           }}
@@ -287,29 +296,8 @@ export default function AppLayout() {
             type="text"
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed(!collapsed)}
-            style={{
-              fontSize: '16px',
-              width: 64,
-              height: 64,
-            }}
+            style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
           />
-          <div style={{ paddingLeft: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
-            {/* ارتفاع الصف — في الهيدر عشان يبان إنه على النظام كله، مش إعداد شاشة واحدة. */}
-            <RowDensityControl />
-            <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
-              <Space style={{ cursor: 'pointer' }}>
-                <Avatar style={{ backgroundColor: '#6AB42D' }} icon={<UserOutlined />} />
-                <span className="ant-avatar-string">{user?.name}</span>
-              </Space>
-            </Dropdown>
-          </div>
-        </Header>
-        {/* minHeight:0 lets this flex child actually shrink, so the box below can scroll
-            instead of stretching the page. */}
-        <Content style={{
-          margin: '12px 24px 0', display: 'flex', flexDirection: 'column',
-          minHeight: 0, overflow: 'hidden',
-        }}>
           {/* Chrome-style tab strip — one tab per open section, each keeps its page mounted. */}
           <Tabs
             hideAdd
@@ -318,22 +306,42 @@ export default function AppLayout() {
             activeKey={activeId || undefined}
             onChange={activateTab}
             onEdit={(key, action) => { if (action === 'remove') closeTab(key as string); }}
-            style={{ flexShrink: 0 }}
+            style={{ flex: 1, minWidth: 0, alignSelf: 'flex-end' }}
+            tabBarStyle={{ margin: 0, borderBottom: 'none' }}
             items={tabs.map((t) => ({
               key: t.id,
               label: t.title,
               closable: tabs.length > 1,
             }))}
           />
+          <div style={{
+            paddingLeft: 16, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
+          }}>
+            {/* ارتفاع الصف — في الهيدر عشان يبان إنه على النظام كله، مش إعداد شاشة واحدة. */}
+            <RowDensityControl />
+            <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
+              <Space size={6} style={{ cursor: 'pointer' }}>
+                <Avatar size={26} style={{ backgroundColor: '#6AB42D' }} icon={<UserOutlined />} />
+                <span className="ant-avatar-string">{user?.name}</span>
+              </Space>
+            </Dropdown>
+          </div>
+        </Header>
+        {/* minHeight:0 lets this flex child actually shrink, so the box below can scroll
+            instead of stretching the page. */}
+        <Content style={{
+          margin: '10px 16px 0', display: 'flex', flexDirection: 'column',
+          minHeight: 0, overflow: 'hidden',
+        }}>
           <div
             style={{
-              padding: 24,
+              padding: 16,
               background: colorBgContainer,
               borderRadius: borderRadiusLG,
               flex: 1,
               minHeight: 0,
               overflowY: 'auto',
-              marginBottom: 16,
+              marginBottom: 10,
             }}
           >
             <TabWorkspace />
