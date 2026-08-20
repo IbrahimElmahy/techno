@@ -126,18 +126,19 @@ describe('كثافة الشاشة', () => {
     const block = css.slice(css.indexOf('.doc-form .ant-form-item'), css.indexOf('.entry-grid {'));
     expect(block).toContain('margin-bottom: 8px');
     // خانة الإدخال نفسها مش أصغر من ١٣ — الوضوح شرط مش رفاهية.
-    expect(block).toMatch(/font-size: 13\.5px/);
+    // الخانة مش أصغر من ١٤ — الوضوح شرط مش رفاهية.
+    expect(block).toMatch(/font-size: 14px/);
   });
 
   it('اسم الحقل بيتوضّح بالتباين مش بالحجم', () => {
     const label = css.slice(css.indexOf('.doc-form .ant-form-item-label > label'));
-    expect(label.slice(0, 200)).toContain('font-weight: 600');
-    expect(label.slice(0, 200)).toContain('color: #4a5a4a');
+    expect(label.slice(0, 200)).toContain('font-weight: 700');
+    expect(label.slice(0, 200)).toContain('color: #3a4a3a');
   });
 
-  it('جدول السطور خطه أكبر من ١٣', () => {
+  it('جدول السطور خطه ١٤', () => {
     // كميات وأسعار — الغلط في قراءتها بيتكلّف.
     const grid = css.slice(css.indexOf('.entry-grid {'));
-    expect(grid.slice(0, 300)).toContain('font-size: 13.5px');
+    expect(grid.slice(0, 300)).toContain('font-size: 14px');
   });
 });

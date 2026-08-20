@@ -28,12 +28,12 @@ describe('الأساس', () => {
   it('الوزن ٥٠٠ مش ٤٠٠', () => {
     // Cairo عند ٤٠٠ أرفع من اللاتيني على نفس الرقم.
     const base = css.slice(css.indexOf('html,\nbody,\n#root {'));
-    expect(base.slice(0, 500)).toContain('font-weight: 500');
+    expect(base.slice(0, 500)).toContain('font-weight: 600');
   });
 
   it('لون النص أغمق من #333', () => {
     const base = css.slice(css.indexOf('html,\nbody,\n#root {'));
-    expect(base.slice(0, 500)).toContain('color: #1f1f1f');
+    expect(base.slice(0, 500)).toContain('color: #141414');
   });
 
   it('التنعيم مفعّل', () => {
@@ -44,9 +44,9 @@ describe('الأساس', () => {
 
   it('التوكنز بتاعت antd متظبطة كمان مش الـCSS بس', () => {
     // antd بتحقن ألوانها في مكوّنات مالهاش كلاس ينفع يتمسك من `index.css`.
-    expect(app).toContain('fontSize: 14');
-    expect(app).toContain("colorText: '#1f1f1f'");
-    expect(app).toContain("colorTextSecondary: '#4a4a4a'");
+    expect(app).toContain('fontSize: 15');
+    expect(app).toContain("colorText: '#141414'");
+    expect(app).toContain("colorTextSecondary: '#303030'");
   });
 });
 
@@ -61,7 +61,28 @@ describe('مفيش رمادي تحت حد القراءة', () => {
 
   it('عناوين الأعمدة وأسماء الحقول مغمّقة', () => {
     const block = css.slice(css.indexOf('.ant-table-thead > tr > th,'));
-    expect(block.slice(0, 300)).toContain('#4a4a4a');
-    expect(block.slice(0, 300)).toContain('font-weight: 600');
+    expect(block.slice(0, 300)).toContain('#303030');
+    expect(block.slice(0, 300)).toContain('font-weight: 700');
+  });
+});
+
+describe('الخط متحزّم مش متحمّل', () => {
+  it('مفيش أي طلب خط من الإنترنت في الواجهة', () => {
+    /*
+     * ده على الأرجح كان السبب الحقيقي في «مش واضح».
+     *
+     * الخط كان بيتحمّل من Google Fonts بـ`@import`. تطبيق الديسكتوب من غير نت — أو أول رسمة
+     * قبل ما الطلب يرجع — بيقع على خط بديل، والعربي في الخط البديل بيبان رفيع ومشوّه.
+     * وزيادة الوزن مابتصلّحش ده، لأن الوزن اللي بتطلبه أصلاً مش موجود.
+     */
+    expect(css, 'الخط لسه بيتحمّل من الإنترنت').not.toContain('fonts.googleapis.com');
+    expect(css).toContain("@import '@fontsource-variable/cairo'");
+
+    const html = readFileSync(join(SRC, '..', 'index.html'), 'utf8');
+    expect(html, 'لسه فيه رابط خط في الـHTML').not.toContain('fonts.googleapis.com');
+  });
+
+  it('ارتفاع السطر مريح — العربي فيه نقط وذيول', () => {
+    expect(css.slice(0, 2000)).toContain('line-height: 1.6');
   });
 });

@@ -67,10 +67,13 @@ export default function App() {
            * و`colorText` أغمق من الافتراضي `rgba(0,0,0,0.88)`، و`colorTextSecondary` كان
            * `0.65` — رمادي فاتح على أبيض، وهو اللي كان بيخلّي العناوين تبان باهتة.
            */
-          fontSize: 14,
-          colorText: '#1f1f1f',
-          colorTextSecondary: '#4a4a4a',
-          colorTextDescription: '#5c5c5c',
+          fontSize: 15,
+          colorText: '#141414',
+          colorTextSecondary: '#303030',
+          colorTextDescription: '#4a4a4a',
+          // ارتفاع السطر — الحروف العربية ليها نقط وذيول، والسطر الضيق
+          // بيخلّيها تتلزق في اللي فوقها وتحتها.
+          lineHeight: 1.6,
         },
       }}
     >
