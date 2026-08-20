@@ -14,7 +14,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter }
   from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
-import PartyPickerModal, { Party } from '../components/PartyPickerModal';
+import PartyPickerModal from '../components/PartyPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -75,23 +75,15 @@ export default function PurchaseReturns() {
   // The date is asked first, the way the sale and the sales return ask it — the day the goods
   // went back is a fact about the goods, not about when somebody got to the screen.
   const [newStep, setNewStep] = useState<null | 'party'>(null);
-  /** حقول المستند — نفس اللي على فاتورة الشرا بالظبط. */
-  const [branchId, setBranchId] = useState<number | null>(null);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [postAccounts, setPostAccounts] = useState<any[]>([]);
-  const [expenseAccountId, setExpenseAccountId] = useState<number | null>(null);
+  /** حقول المستند — نفس اللي على فاتورة الشرا بالظبط.
+   *
+   * الفرع وحساب الترحيل اتشالوا مع خاناتهم: الفرع بيتعرف من المخزن، وحساب المشتريات بياخد
+   * الافتراضي من السيرفر. وقايمتين كانوا بيتجابوا من السيرفر مع كل فتحة شاشة عشان خانتين
+   * محدش كان بيغيّرهم — القايمتين اتشالوا معاهم. */
   const [externalNumber, setExternalNumber] = useState('');
   const [statements, setStatements] = useState<string[]>(['', '', '']);
   const [variableDiscount, setVariableDiscount] = useState(0);
-  /** المورد المختار بتفاصيله — الرصيد والعنوان والتليفون بيتعرضوا في الترويسة. */
-  const [party, setParty] = useState<Party | null>(null);
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
-
-  useEffect(() => {
-    api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(console.error);
-    api.get('/api/v1/accounts', { params: { postable_only: true, active: true } })
-      .then((r) => setPostAccounts(r.data || [])).catch(console.error);
-  }, []);
 
   /** المورد اللي المردود راجع له. */
   const [supplierFilter, setSupplierFilter] = useState<number | null>(null);
@@ -228,9 +220,9 @@ export default function PurchaseReturns() {
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
     setEditingId(null); setSupplierFilter(null);
-    setReturnLines([]); setWarehouseId(null); setParty(null);
+    setReturnLines([]); setWarehouseId(null);
     setExternalNumber(''); setStatements(['', '', '']);
-    setVariableDiscount(0); setExpenseAccountId(null); setBranchId(null);
+    setVariableDiscount(0);
   };
 
   const choosePurchase = async (id: number) => {
@@ -398,7 +390,9 @@ export default function PurchaseReturns() {
         return_date: returnDate.format('YYYY-MM-DD'),
         notes: notes || null,
         // نفس حقول مستند الفاتورة.
-        expense_account_id: expenseAccountId ?? null,
+        // الافتراضي بتاع السيرفر — نفس فاتورة الشرا. الخانة اتشالت من الترويسة، ومحدش
+        // كان بيغيّرها في المية مرة اللي بتتكتب في اليوم.
+        expense_account_id: null,
         variable_discount_pct: variableDiscount || 0,
         external_document_number: externalNumber || null,
         statement1: statements[0] || null,
@@ -672,8 +666,6 @@ export default function PurchaseReturns() {
           setNewStep(null);
           setPartyPickerOpen(false);
           setSupplierFilter(picked.id);
-          // بيانات المورد بتتعرض على المستند — الرصيد والعنوان والتليفون.
-          setParty(picked);
           setCreating(true);
         }}
         onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
@@ -702,60 +694,34 @@ export default function PurchaseReturns() {
         <DocumentToolbar actions={returnToolbar()} />
 
         <Form layout="vertical" size="small" className="doc-form">
+          {/*
+            * ترويسة المستند: **التاريخ ← المورد ← المستند** — نفس فاتورة الشرا بالظبط، لأن
+            * المردود هو الفاتورة بالعكس.
+            *
+            * **الفرع · الحساب · الحالي · العنوان · الهاتف اتشالوا** — بنفس السبب اللي اتشالوا
+            * بيه من فاتورة الشرا: بيانات المورد متسجّلة في النظام أصلاً وبتطلع على الورقة
+            * المطبوعة لما تتطلب، والفرع بيتعرف من المخزن، وحساب المشتريات بياخد الافتراضي
+            * من السيرفر زي الفاتورة. صفّين كاملين كانوا بيتاخدوا في حاجة مش داتا.
+            */}
           <Row gutter={16}>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={5}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
                   value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
-              <Form.Item label="الفرع" style={{ marginBottom: 8 }}>
-                <Select allowClear placeholder="كل الفروع" value={branchId ?? undefined}
-                  onChange={(v) => setBranchId(v ?? null)}
-                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={7}>
-              <Form.Item label="الحساب" style={{ marginBottom: 8 }}>
-                <Select allowClear showSearch optionFilterProp="label"
-                  placeholder="حساب المشتريات الافتراضي" value={expenseAccountId ?? undefined}
-                  onChange={(v) => setExpenseAccountId(v ?? null)}
-                  options={postAccounts.map((a: any) => ({
-                    value: a.id,
-                    label: a.code ? `${a.code} ${a.name ?? ''}` : (a.name ?? `#${a.id}`) }))} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={5}>
-              <Form.Item label="مستند رقم" style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم إشعار المورد" value={externalNumber}
-                  onChange={(e) => setExternalNumber(e.target.value)} />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item label="مورد" required style={{ marginBottom: 8 }}>
+              <Form.Item label="المورد" required style={{ marginBottom: 8 }}>
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                   placeholder="اضغط لاختيار المورد" value={supplierFilter ?? undefined}
                   onClick={() => setPartyPickerOpen(true)}
                   options={suppliers} />
               </Form.Item>
             </Col>
-            <Col xs={8} md={4}>
-              <Form.Item label="الحالي" style={{ marginBottom: 8 }}>
-                <Input readOnly value={party?.balance != null ? money(party.balance) : ''} />
-              </Form.Item>
-            </Col>
-            <Col xs={16} md={7}>
-              <Form.Item label="العنوان" style={{ marginBottom: 8 }}>
-                <Input readOnly value={party?.address ?? ''} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={5}>
-              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
-                <Input readOnly value={party?.phone ?? ''} />
+            <Col xs={12} md={5}>
+              <Form.Item label="المستند" style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم إشعار المورد" value={externalNumber}
+                  onChange={(e) => setExternalNumber(e.target.value)} />
               </Form.Item>
             </Col>
           </Row>
@@ -780,7 +746,8 @@ export default function PurchaseReturns() {
           </Row>
         </Form>
 
-        <Divider orientation="right" style={{ marginTop: 4 }}>أصناف المردود</Divider>
+        {/* فاصل من غير عنوان — الجدول اللي تحته أعمدته مكتوبة. */}
+        <Divider style={{ margin: '10px 0' }} />
 
         <Button type="primary" danger icon={<PlusOutlined />} block
           style={{ marginBottom: 10, height: 38 }}

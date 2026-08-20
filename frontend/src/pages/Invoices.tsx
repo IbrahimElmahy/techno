@@ -1645,12 +1645,19 @@ export default function Invoices() {
               * رقم)، فالعنوان اللي فوقهم كان بيقول اللي هما بيقولوه.
               *
               * والمدى فضل على كل صف لأنه هو اللي تطبيق المرتجعات بيراجع عليه الرقم الراجع. */}
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginTop: 14, marginBottom: 12 }}>
+            <Row gutter={8} className="mini-head">
+              <Col xs={24} md={7}>الكوبون</Col>
+              <Col xs={8} md={4}>العدد</Col>
+              <Col xs={8} md={5}>من رقم</Col>
+              <Col xs={8} md={5}>إلى رقم</Col>
+              <Col xs={24} md={3} />
+            </Row>
             {couponRows.map((row, i) => (
               <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
                 <Col xs={24} md={7}>
                   <Select allowClear showSearch style={{ width: '100%' }}
-                    placeholder="نوع الكوبون" optionFilterProp="label"
+                    optionFilterProp="label"
                     value={row.coupon_type_id}
                     onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                       ? { ...x, coupon_type_id: v as number } : x)))}
@@ -1659,16 +1666,16 @@ export default function Invoices() {
                 <Col xs={8} md={4}>
                   {/* Derived from the range, never typed. Read-only rather than hidden: the
                       number is what the person is checking against the book in their hand. */}
-                  <InputNumber style={{ width: '100%' }} placeholder="العدد" disabled
+                  <InputNumber style={{ width: '100%' }} disabled
                     value={couponCount(row.serial_from, row.serial_to) ?? undefined} />
                 </Col>
                 <Col xs={8} md={5}>
-                  <Input placeholder="من رقم" value={row.serial_from || ''}
+                  <Input value={row.serial_from || ''}
                     onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                       ? { ...x, serial_from: e.target.value } : x)))} />
                 </Col>
                 <Col xs={8} md={5}>
-                  <Input placeholder="إلى رقم" value={row.serial_to || ''}
+                  <Input value={row.serial_to || ''}
                     onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                       ? { ...x, serial_to: e.target.value } : x)))} />
                 </Col>

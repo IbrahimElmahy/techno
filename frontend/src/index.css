@@ -408,3 +408,21 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .tab-dialog-away {
   display: none !important;
 }
+
+/*
+ * ترويسة صف من الخانات — أسامي الأعمدة فوقها، زي جدول السطور بالظبط.
+ *
+ * الخانات اللي جوّا صف (الكوبونات مثلاً) كانت بتشرح نفسها بالكلام الرمادي اللي جواها،
+ * واللي بيختفي أول ما حد يكتب. يبقى بعد ما يملا التالت وهو في الرابع، مافيش على الشاشة
+ * حاجة بتقول كل خانة دي كانت بتسأل عن إيه. الاسم فوق الخانة بيفضل مكتوب.
+ *
+ * نفس شكل ترويسة `.entry-grid` عشان الاتنين يتقروا بنفس الطريقة.
+ */
+.mini-head {
+  font-size: 12px;
+  font-weight: 700;
+  color: #3a4a3a;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #e6e6e6;
+  margin-bottom: 6px;
+}

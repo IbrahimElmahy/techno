@@ -85,6 +85,21 @@ interface Filters {
 const money = (v: any) =>
   Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** صف كوبونات راجعة — دفتر من دفاتر العميل، والعدد الراجع منه. */
+interface CouponRow {
+  key: string;
+  invoice_id?: number;
+  coupon_type_id?: number | null;
+  count?: number;
+  serial_from?: string;
+  serial_to?: string;
+}
+
+/** صف فاضي جديد — واحد بيبقى مستني على طول، زي فاتورة البيع. */
+function blankCoupon(): CouponRow {
+  return { key: `c${Date.now()}${Math.random().toString(36).slice(2, 7)}` };
+}
+
 export default function Returns() {
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
@@ -138,9 +153,7 @@ export default function Returns() {
    *  Validating after the fact would mean telling him at the end of the document that half of it
    *  cannot be saved, while he is still at the counter. */
   const [issuedBooks, setIssuedBooks] = useState<any[]>([]);
-  const [couponRows, setCouponRows] = useState<
-    { key: string; invoice_id?: number; coupon_type_id?: number | null; count?: number;
-      serial_from?: string; serial_to?: string }[]>([]);
+  const [couponRows, setCouponRows] = useState<CouponRow[]>(() => [blankCoupon()]);
   const [createForm] = Form.useForm();
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [lines, setLines] = useState<ReturnLineItem[]>([]);
@@ -266,7 +279,7 @@ export default function Returns() {
     // The document fields go back to blank with everything else — a paper number left over from
     // the last return would be written onto the next one without anybody typing it.
     setRepId(null); setExternalDocNumber(''); setDocNotes(''); setStatements(['', '', '']);
-    setCouponRows([]); setIssuedBooks([]);
+    setCouponRows([blankCoupon()]); setIssuedBooks([]);
     setReturnDate(dayjs());
     createForm.resetFields();
   };
@@ -304,10 +317,10 @@ export default function Returns() {
     // never had one.
     const remembered = (c as any)?.default_return_warehouse_id ?? null;
     const store = remembered ?? storeOfRep((c as any)?.rep_id);
-    if (store && !createForm.getFieldValue('warehouse_id')) {
-      createForm.setFieldsValue({ warehouse_id: store });
-      setDocWarehouseId(store);
-    }
+    // مافيش خانة مخزن في الترويسة خلاص — ده بقى الافتراضي اللي السطر الجديد بيبتدي بيه بس.
+    // `prev ?? store` مش `!docWarehouseId` — القيمة اللي في الكلوجر ممكن تكون قديمة، والصيغة
+    // الدالية بتقرا اللي في إيد React دلوقتي.
+    if (store) setDocWarehouseId((prev) => prev ?? store);
     // A different customer means different purchase prices — start the lines fresh.
     setLines([]); setLastInfo({}); setActiveCategory(null);
     setCustomerBalance(null);
@@ -325,7 +338,7 @@ export default function Returns() {
       .catch((err) => { console.error(err); setFamilyAccounts([]); setCustomerBalance(null); });
     // What he was actually given. A different customer holds different books, so the rows go
     // with him rather than surviving into somebody else's return.
-    setCouponRows([]);
+    setCouponRows([blankCoupon()]);
     api.get(`/api/v1/coupon-receipts/issued-to/${cId}`)
       .then((res) => setIssuedBooks(res.data || []))
       .catch(() => setIssuedBooks([]));
@@ -485,7 +498,12 @@ export default function Returns() {
         try {
           const res = await api.post('/api/v1/sales/returns', {
             customer_id: customerId,
-            origin: { location_kind: 'warehouse', location_id: values.warehouse_id },
+            // المخزن من السطر. الترويسة مابقاش فيها خانة مخزن، والـ`origin` بقى أول مخزن
+            // مسمّى في السطور — وكل سطر بيرجع لمخزنه هو على أي حال.
+            origin: {
+              location_kind: 'warehouse',
+              location_id: valid[0]?.warehouse_id ?? docWarehouseId,
+            },
             variable_discount_pct: discountPct,
             cash_refund: cash,
             credit_reduction: creditReduction,
@@ -623,8 +641,24 @@ export default function Returns() {
           {/* نفس ضغط باقي شاشات المستندات — `doc-form` معرّف في `index.css`. */}
           <Form form={createForm} layout="vertical" size="small" className="doc-form"
             onFinish={handleSubmit}>
+            {/*
+              * ترويسة المستند: **التاريخ ← العميل ← المندوب ← المستند** — نفس ترتيب فاتورة
+              * البيع بالظبط، لأن المرتجع هو الفاتورة مقروءة بالعكس والإيد المفروض ماتتعلّمش
+              * الشاشة من الأول عشانه.
+              *
+              * **«مستودع استلام المرتجع» اتشال من الترويسة.** المخزن بقى على السطر نفسه من
+              * (030) — كل صنف بيرجع لمخزنه — والخانة اللي فوق كانت بتسأل نفس السؤال مرة تانية
+              * وتخلّي حد يفتكر إن المرتجع كله داخل مكان واحد. الافتراضي للسطور لسه بيتحط من
+              * مخزن المندوب أو آخر مخزن العميل رجّع ليه، بس من غير ما ياخد خانة في الترويسة.
+              */}
             <Row gutter={16}>
-              <Col span={12}>
+              <Col xs={12} md={5}>
+                <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+                  <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                    value={returnDate} onChange={(v) => setReturnDate(v || dayjs())} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
                 <Form.Item label="العميل" required style={{ marginBottom: 8 }}>
                   {/* The same picker the second door opens — a searchable window with inline
                       create, not a plain dropdown. Changing the party mid-return goes through
@@ -636,17 +670,39 @@ export default function Returns() {
                     options={customers.map((c: any) => ({ value: c.id, label: c.name }))} />
                 </Form.Item>
               </Col>
-              <Col span={12}>
-                <Form.Item name="warehouse_id" label="مستودع استلام المرتجع (الافتراضي للسطور)"
-                  rules={[{ required: true, message: 'يرجى اختيار المستودع!' }]}>
-                  <Select placeholder="اختر المستودع الذي ترجع إليه البضاعة"
-                    onChange={(v) => setDocWarehouseId(v as number)}>
-                    {warehouses.map((w) => (
-                      <Select.Option key={w.id} value={w.id}>{w.name}</Select.Option>
-                    ))}
-                  </Select>
+              <Col xs={12} md={6}>
+                <Form.Item label="المندوب" style={{ marginBottom: 8 }}>
+                  <Select allowClear showSearch optionFilterProp="label" placeholder="بدون مندوب"
+                    value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
+                    options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} />
                 </Form.Item>
               </Col>
+              <Col xs={12} md={5}>
+                <Form.Item label="المستند" style={{ marginBottom: 8 }}>
+                  <Input placeholder="رقم ورقة العميل" value={externalDocNumber}
+                    onChange={(e) => setExternalDocNumber(e.target.value)} />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={16}>
+              <Col xs={24} md={6}>
+                <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
+                  <Input placeholder="اختياري" value={docNotes}
+                    onChange={(e) => setDocNotes(e.target.value)} />
+                </Form.Item>
+              </Col>
+              {[0, 1, 2].map((i) => (
+                <Col xs={24} md={6} key={i}>
+                  <Form.Item label={`بيان ${i + 1}`} style={{ marginBottom: 8 }}>
+                    <Input placeholder="اختياري" value={statements[i]} onChange={(e) => {
+                      const next = [...statements] as [string, string, string];
+                      next[i] = e.target.value;
+                      setStatements(next);
+                    }} />
+                  </Form.Item>
+                </Col>
+              ))}
             </Row>
 
             {/* نوع المرتجع — the mirror of نوع الفاتورة, and shown under the same rule: only when
@@ -678,51 +734,23 @@ export default function Returns() {
               </div>
             )}
 
-            {/* (031) The document fields, the same set and the same order as the sale. They have
-                been columns on `sales_return` since 030 with nothing able to fill them. */}
-            <Row gutter={12}>
-              <Col span={6}>
-                <Form.Item label="مندوب" style={{ marginBottom: 12 }}>
-                  <Select allowClear showSearch optionFilterProp="label" placeholder="بدون مندوب"
-                    value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
-                    options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} />
-                </Form.Item>
-              </Col>
-              <Col span={6}>
-                <Form.Item label="مستند رقم" style={{ marginBottom: 12 }}
-                  help="ورقة العميل — بتتسجّل جنب رقمنا، مش بدله">
-                  <Input value={externalDocNumber}
-                    onChange={(e) => setExternalDocNumber(e.target.value)} />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="ملاحظات" style={{ marginBottom: 12 }}>
-                  <Input value={docNotes} onChange={(e) => setDocNotes(e.target.value)} />
-                </Form.Item>
-              </Col>
-            </Row>
-
-            {/* الكوبونات الراجعة — bound to what this customer was actually handed.
-                The sale offers free boxes because it is CREATING books; a return is receiving
-                them back, and a coupon nobody issued to him is not his to return. Each row picks
-                one of his books, and the count cannot exceed what is still out on it. */}
-            {customerId && (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontWeight: 600 }}>الكوبونات الراجعة</span>
-                  <Button size="small" icon={<PlusOutlined />} disabled={!issuedBooks.length}
-                    onClick={() => setCouponRows((r) => [...r, { key: String(Date.now()) }])}>
-                    إضافة
-                  </Button>
-                  <span style={{ fontSize: 12, color: '#6b6b6b' }}>
-                    {!issuedBooks.length
-                      ? 'العميل ده مااستلمش كوبونات، فمفيش حاجة ترجع.'
-                      : couponRows.length === 0
-                        ? `عنده ${issuedBooks.length} دفتر — سيبها فاضية لو مفيش كوبونات راجعة.`
-                        : `الإجمالي: ${couponRows.reduce((t, r) => t + Number(r.count || 0), 0)} كوبون`}
-                  </span>
-                </div>
-                {couponRows.map((row) => {
+            {/* الكوبونات الراجعة — أسامي الأعمدة فوق الخانات، ومربوطة باللي العميل استلمه.
+                *
+                * فاتورة البيع بتدّي خانات فاضية لأنها **بتنشئ** دفاتر؛ المرتجع بيستلمها راجعة،
+                * وكوبون محدش صرفه له مش بتاعه يرجّعه. فكل صف بيختار دفتر من دفاتره، والعدد
+                * مايزيدش عن اللي لسه بره عليه.
+                *
+                * وبيبان بس لو عنده دفاتر أصلاً — الصف الفاضي للّي مااستلمش حاجة بيسأله سؤال
+                * إجابته مافيش. */}
+            {customerId && issuedBooks.length > 0 && (
+              <div style={{ marginTop: 14, marginBottom: 12 }}>
+                <Row gutter={8} className="mini-head">
+                  <Col xs={24} md={12}>الدفتر اللي اتصرف له</Col>
+                  <Col xs={12} md={5}>العدد الراجع</Col>
+                  <Col xs={12} md={4}>الأرقام</Col>
+                  <Col xs={24} md={3} />
+                </Row>
+                {couponRows.map((row, i) => {
                   const book = issuedBooks.find((b: any) => (
                     b.invoice_id === row.invoice_id
                     && (b.coupon_type_id ?? null) === (row.coupon_type_id ?? null)));
@@ -730,7 +758,6 @@ export default function Returns() {
                     <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
                       <Col xs={24} md={12}>
                         <Select showSearch style={{ width: '100%' }} optionFilterProp="label"
-                          placeholder="اختر الدفتر اللي اتصرف له"
                           value={book ? `${row.invoice_id}:${row.coupon_type_id ?? ''}` : undefined}
                           onChange={(v) => {
                             const [inv, type] = String(v).split(':');
@@ -755,42 +782,43 @@ export default function Returns() {
                           }))} />
                       </Col>
                       <Col xs={12} md={5}>
-                        <InputNumber style={{ width: '100%' }} min={1} placeholder="العدد الراجع"
+                        <InputNumber style={{ width: '100%' }} min={1}
                           max={book?.remaining}
                           value={row.count}
                           onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                             ? { ...x, count: (v as number) ?? undefined } : x)))} />
                       </Col>
                       <Col xs={12} md={4}>
-                        <span style={{ fontSize: 12, color: '#6b6b6b' }}>
+                        <span style={{ fontSize: 12, color: '#4a4a4a' }}>
                           {book?.serial_from ? `${book.serial_from}–${book.serial_to}` : '—'}
                         </span>
                       </Col>
                       <Col xs={24} md={3}>
-                        <Button type="text" danger icon={<DeleteOutlined />}
-                          onClick={() => setCouponRows((rs) => rs.filter((x) => x.key !== row.key))} />
+                        {/* زرار الإضافة على آخر صف بس — نفس فاتورة البيع. */}
+                        {i === couponRows.length - 1 && (
+                          <Button size="small" icon={<PlusOutlined />} title="دفتر تاني"
+                            onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
+                        )}
+                        {/* المسح على آخر صف بيفضّيه مايشيلهوش — الخانات بتفضل قدام الواحد. */}
+                        <Button type="text" danger icon={<DeleteOutlined />} title="امسح الصف"
+                          onClick={() => setCouponRows((rs) => (rs.length === 1
+                            ? [blankCoupon()]
+                            : rs.filter((x) => x.key !== row.key)))} />
                       </Col>
                     </Row>
                   );
                 })}
+                {couponRows.some((r) => Number(r.count || 0) > 0) && (
+                  <div style={{ fontSize: 12, color: '#4a4a4a' }}>
+                    الإجمالي: {couponRows.reduce((t, r) => t + Number(r.count || 0), 0)} كوبون
+                  </div>
+                )}
               </div>
             )}
 
-            <Row gutter={12}>
-              {[0, 1, 2].map((i) => (
-                <Col span={8} key={i}>
-                  <Form.Item label={`بيان ${['أول', 'تاني', 'تالت'][i]}`} style={{ marginBottom: 12 }}>
-                    <Input value={statements[i]} onChange={(e) => {
-                      const next = [...statements] as [string, string, string];
-                      next[i] = e.target.value;
-                      setStatements(next);
-                    }} />
-                  </Form.Item>
-                </Col>
-              ))}
-            </Row>
-
-            <Divider orientation="right" style={{ fontWeight: 700 }}>الأصناف المرتجعة</Divider>
+            {/* فاصل من غير عنوان — «الأصناف المرتجعة» فوق جدول أعمدته مكتوبة، زي «المنتجات
+                المباعة» في فاتورة البيع اللي اتشالت. */}
+            <Divider style={{ margin: '10px 0' }} />
 
             {!customerId ? (
               <Empty description="اختر العميل أولاً لعرض آخر أسعار الشراء تلقائياً" style={{ margin: '12px 0' }} />

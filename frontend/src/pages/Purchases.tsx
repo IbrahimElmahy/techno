@@ -1001,7 +1001,8 @@ export default function Purchases() {
             ))}
           </Row>
 
-          <Divider orientation="right">أصناف الفاتورة</Divider>
+          {/* فاصل من غير عنوان — الجدول اللي تحته أعمدته مكتوبة. */}
+          <Divider style={{ margin: '10px 0' }} />
 
           <Row gutter={16}>
             <Col xs={24}>
