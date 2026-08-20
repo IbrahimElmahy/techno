@@ -112,3 +112,32 @@ describe('خانة الوحدة', () => {
     expect(edit).toContain('fetchUnits(id as number)');
   });
 });
+
+describe('كثافة الشاشة', () => {
+  const css = readFileSync(join(__dirname, '..', 'index.css'), 'utf8');
+
+  it('الفورم مضغوط بالمسافات مش بتصغير الخط', () => {
+    /*
+     * تصغير الخط عشان يدخل صف زيادة هو إزاي شاشة كثيفة بتبقى شاشة مش مقروءة — واللي بيكتب
+     * فاتورة بيقرا أرقام مايتحملش يقراها غلط. فالضغط جه من الحشو والهوامش، والخانات فضلت
+     * بخطها.
+     */
+    expect(src).toContain('className="doc-form"');
+    const block = css.slice(css.indexOf('.doc-form .ant-form-item'), css.indexOf('.entry-grid {'));
+    expect(block).toContain('margin-bottom: 8px');
+    // خانة الإدخال نفسها مش أصغر من ١٣ — الوضوح شرط مش رفاهية.
+    expect(block).toMatch(/font-size: 13\.5px/);
+  });
+
+  it('اسم الحقل بيتوضّح بالتباين مش بالحجم', () => {
+    const label = css.slice(css.indexOf('.doc-form .ant-form-item-label > label'));
+    expect(label.slice(0, 200)).toContain('font-weight: 600');
+    expect(label.slice(0, 200)).toContain('color: #4a5a4a');
+  });
+
+  it('جدول السطور خطه أكبر من ١٣', () => {
+    // كميات وأسعار — الغلط في قراءتها بيتكلّف.
+    const grid = css.slice(css.indexOf('.entry-grid {'));
+    expect(grid.slice(0, 300)).toContain('font-size: 13.5px');
+  });
+});

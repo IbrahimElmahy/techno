@@ -126,6 +126,56 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   box-shadow: inset 2px 0 0 #1677ff;
 }
 /*
+ * حشو الكروت — أقل، عشان الداتا تاخد المساحة.
+ *
+ * antd بتدي الكارت ٢٤ بيكسل حشو من كل ناحية. على شاشة كارتها هو الصفحة كلها، ده ٤٨ بيكسل
+ * رايحين من العرض و٤٨ من الطول قبل ما أول حرف يترسم. اتنقص للنص تقريباً: لسه بيفصل المحتوى
+ * عن حافة الكارت، من غير ما ياكل صف بيانات.
+ */
+.ant-card > .ant-card-body {
+  padding: 14px 16px;
+}
+.ant-card > .ant-card-head {
+  padding: 0 16px;
+  min-height: 46px;
+}
+
+/*
+ * شاشة مستند مضغوطة — مساحة أقل وكلام أوضح.
+ *
+ * الفورم الرأسي بيحط اسم الحقل فوق الخانة، وده بياكل ضعف الارتفاع. على شاشة فيها اتناشر حقل
+ * في الترويسة، النتيجة إن السطور — اللي هي الشغل — بتبتدي بعد نص الشاشة.
+ *
+ * الضغط هنا كله في **المسافات**، مش في حجم الخط: تصغير الخط عشان يدخل صف زيادة هو إزاي شاشة
+ * كثيفة بتبقى شاشة مش مقروءة، واللي بيكتب فاتورة بيقرا أرقام مايتحملش يقراها غلط. فالأسماء
+ * بقت أصغر شوية **وأغمق** — الوضوح جاي من التباين مش من الحجم — والخانات نفسها فضلت بخطها.
+ */
+.doc-form .ant-form-item {
+  margin-bottom: 8px;
+}
+.doc-form .ant-form-item-label {
+  padding-bottom: 1px;
+  line-height: 1.2;
+}
+.doc-form .ant-form-item-label > label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4a5a4a;
+  height: auto;
+}
+/* الخانة نفسها بتفضل مقروءة — الضغط جه من فوقها وتحتها. */
+.doc-form .ant-input,
+.doc-form .ant-input-number-input,
+.doc-form .ant-select-selector,
+.doc-form .ant-picker-input > input {
+  font-size: 13.5px;
+}
+/* الفاصل بين أقسام المستند كان بياخد سطر كامل فاضي من فوقه ومن تحته. */
+.doc-form .ant-divider-horizontal {
+  margin: 10px 0;
+}
+
+/*
  * جدول إدخال سطور الفاتورة.
  *
  * الشاشة اللي العميل شغّال عليها بتدخّل السطور في جدول مضغوط: عنوان أعمدة مرة واحدة فوق، وكل صنف
@@ -138,7 +188,9 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .entry-grid {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  /* أكبر من ١٣ عن قصد: دي أرقام كميات وأسعار، والغلط في قراءتها بيتكلّف. */
+  font-size: 13.5px;
+  color: #262626;
 }
 .entry-grid thead th {
   background: #f2f9f3;
@@ -154,7 +206,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   z-index: 2;
 }
 .entry-grid tbody td {
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-bottom: 1px solid #f0f5ee;
   vertical-align: middle;
 }

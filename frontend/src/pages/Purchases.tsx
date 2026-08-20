@@ -956,7 +956,9 @@ export default function Purchases() {
           job from the other side, and a hand that has learned one row should not have to learn
           a second. */}
       <DocumentToolbar actions={purchaseToolbar()} />
-      <Form form={form} layout="vertical" onFinish={handleSubmit} requiredMark={false}>
+      {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — التعريف في `index.css`. */}
+      <Form form={form} layout="vertical" size="small" className="doc-form"
+        onFinish={handleSubmit} requiredMark={false}>
           {/*
             * ترويسة الفاتورة بترتيب الشاشة اللي العميل شغّال عليها:
             *
@@ -1061,8 +1063,8 @@ export default function Purchases() {
                   fifteen lines is a scroll to find and a click to choose, twice per line, all day.
                   Above the lines it is always in the same place. */}
               <Button data-shortcut="F2"
-                type="primary" size="large" icon={<PlusOutlined />} block
-                style={{ marginBottom: 14, height: 46 }}
+                type="primary" icon={<PlusOutlined />} block
+                style={{ marginBottom: 10, height: 38 }}
                 onClick={() => setPickerOpen(true)}
               >
                 إضافة صنف للفاتورة

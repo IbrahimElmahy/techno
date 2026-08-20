@@ -65,7 +65,7 @@ export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] 
   return (
     <div
       style={{
-        display: 'flex', flexWrap: 'wrap', gap: 4, padding: '6px 8px', marginBottom: 12,
+        display: 'flex', flexWrap: 'wrap', gap: 4, padding: '4px 6px', marginBottom: 8,
         background: '#f6faf3', border: '1px solid #e2ede0', borderRadius: 8,
       }}
     >
@@ -81,7 +81,7 @@ export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] 
               onClick={a.onClick}
               style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                minWidth: 62, padding: '6px 8px', border: '1px solid transparent',
+                minWidth: 58, padding: '3px 8px', border: '1px solid transparent',
                 borderRadius: 6, background: 'transparent',
                 cursor: dim ? 'default' : 'pointer',
                 color: dim ? '#bfbfbf' : (a.danger ? '#cf1322' : '#2f4f2f'),
@@ -98,8 +98,8 @@ export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] 
                 e.currentTarget.style.borderColor = 'transparent';
               }}
             >
-              <span style={{ fontSize: 18, display: 'block' }}>{a.icon}</span>
-              <span style={{ fontSize: 12 }}>{a.label}</span>
+              <span style={{ fontSize: 16, display: 'block', lineHeight: 1.2 }}>{a.icon}</span>
+              <span style={{ fontSize: 11.5, fontWeight: 600 }}>{a.label}</span>
             </button>
           </Tooltip>
         );
