@@ -24,6 +24,10 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import { money } from '../utils/money';
+
+/** الاسم القديم في الشاشة دي — نفس الدالة. */
+const fmtMoney = money;
 
 interface Supplier {
   id: number;
@@ -125,8 +129,6 @@ interface PurchaseDetail extends PurchaseRecord {
   returns: PurchaseDetailReturn[];
 }
 
-const fmtMoney = (v: string | number) =>
-  Number(v).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const fmtDate = (v: string) => {
   if (!v) return '-';
@@ -1215,17 +1217,17 @@ export default function Purchases() {
                «اجمالي قبل» بيتعرض دايماً دلوقتي — الشريط عنده بيوريه حتى وهو مساوي للإجمالي،
                لأن اللي بيراجع بيقرا الشريط من فوق لتحت وسطر ناقص بيخلّيه يعدّ. */
             rows={[
-              { label: 'اجمالي قبل', value: grossTotal.toFixed(2) },
+              { label: 'اجمالي قبل', value: money(grossTotal) },
               { label: 'خصم فاتورة',
-                value: `− ${(grossTotal - invoiceTotal).toFixed(2)}`,
+                value: `− ${money(grossTotal - invoiceTotal)}`,
                 color: '#cf1322', show: variableDiscount > 0.001 },
               { label: 'خصم فاتورة %', value: `${variableDiscount}%`,
                 show: variableDiscount > 0.001 },
-              { label: 'الاجمالي', value: invoiceTotal.toFixed(2),
+              { label: 'الاجمالي', value: money(invoiceTotal),
                 strong: true, color: '#6AB42D' },
-              { label: 'المدفوع', value: `− ${cashAmount.toFixed(2)}`,
+              { label: 'المدفوع', value: `− ${money(cashAmount)}`,
                 color: '#6AB42D', show: cashAmount > 0.001 },
-              { label: 'الباقي', value: creditAmount.toFixed(2),
+              { label: 'الباقي', value: money(creditAmount),
                 big: true, rule: true,
                 color: creditAmount > 0.001 ? '#cf1322' : '#6AB42D' },
             ]}

@@ -16,6 +16,7 @@ import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import { money } from '../utils/money';
 
 // The five negotiated tiers plus the published list price, in the order and wording their form
 // uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
@@ -668,7 +669,7 @@ export default function Catalog() {
       // cannot be sold to a walk-in when it can.
       render: (_: any, r: ItemRecord) => {
         const price = r.consumer_price ?? r.sale_price;
-        return price ? `${parseFloat(price).toFixed(2)} ج.م` : '-';
+        return price ? `${money(price)} ج.م` : '-';
       },
     },
     // ---- ours, kept after theirs ----
@@ -729,7 +730,7 @@ export default function Catalog() {
       </span>
       <span>
         <span style={{ color: '#888' }}>سعر الشراء المرجعي: </span>
-        {record.purchase_price ? `${parseFloat(record.purchase_price).toFixed(2)} ج.م` : '—'}
+        {record.purchase_price ? `${money(record.purchase_price)} ج.م` : '—'}
       </span>
       {record.kind === 'product' && (
         <span>

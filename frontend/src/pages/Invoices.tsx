@@ -25,6 +25,7 @@ import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import { money } from '../utils/money';
 
 interface InvoiceRecord {
   id: number;
@@ -56,8 +57,6 @@ interface RepEmployee {
   user_id: number | null;
 }
 
-const money = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const TIER_LABELS: Record<string, string> = {
   commercial: 'تجاري',
@@ -1329,7 +1328,7 @@ export default function Invoices() {
       key: 'gross',
       width: 120,
       align: 'left' as const,
-      render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
+      render: (val: string) => `${money(val)} ج.م`,
     },
     {
       title: 'خصم',
@@ -1340,7 +1339,7 @@ export default function Invoices() {
       // with them, which is what a stored third copy eventually does.
       render: (_: any, r: InvoiceRecord) => {
         const cut = Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100);
-        return `${cut.toFixed(2)} ج.م`;
+        return `${money(cut)} ج.م`;
       },
     },
     {
@@ -1356,7 +1355,7 @@ export default function Invoices() {
       key: 'net',
       width: 110,
       align: 'left' as const,
-      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{parseFloat(val).toFixed(2)} ج.م</strong>,
+      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{money(val)} ج.م</strong>,
     },
     {
       title: 'تم السداد',
@@ -1364,7 +1363,7 @@ export default function Invoices() {
       key: 'cash_amount',
       width: 100,
       align: 'left' as const,
-      render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
+      render: (val: string) => `${money(val)} ج.م`,
     },
     {
       title: 'الباقى',
@@ -1374,7 +1373,7 @@ export default function Invoices() {
       align: 'left' as const,
       render: (val: string) => {
         const n = parseFloat(val);
-        return <span style={{ color: n > 0 ? '#cf1322' : undefined }}>{n.toFixed(2)} ج.م</span>;
+        return <span style={{ color: n > 0 ? '#cf1322' : undefined }}>{money(n)} ج.م</span>;
       },
     },
     {
@@ -1926,11 +1925,11 @@ export default function Invoices() {
                   </>
                 )}
                 rows={[
-                  { label: 'إجمالي الأصناف', value: grossTotal.toFixed(2) },
+                  { label: 'إجمالي الأصناف', value: money(grossTotal) },
                   { label: `خصم الفاتورة (${discountPct}%)`,
-                    value: `− ${invoiceDiscount.toFixed(2)}`, color: '#cf1322',
+                    value: `− ${money(invoiceDiscount)}`, color: '#cf1322',
                     show: invoiceDiscount > 0.001 },
-                  { label: 'صافي الفاتورة', value: netTotal.toFixed(2),
+                  { label: 'صافي الفاتورة', value: money(netTotal),
                     strong: true, color: '#6AB42D', rule: true },
                   // One line per product family, the chosen one tinted, then the whole debt.
                   // Three similar numbers in a column with nothing marking which one this invoice
@@ -2155,9 +2154,9 @@ export default function Invoices() {
               locale={{ emptyText: 'لا يوجد مرتجعات على هذه الفاتورة' }}
               columns={[
                 { title: 'سند المرتجع', dataIndex: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
-                { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
-                { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
-                { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${parseFloat(v).toFixed(2)} ج.م` },
+                { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${money(v)} ج.م` },
+                { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${money(v)} ج.م` },
+                { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${money(v)} ج.م` },
               ]}
             />
 

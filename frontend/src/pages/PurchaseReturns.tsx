@@ -21,6 +21,7 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
+import { money } from '../utils/money';
 
 /**
  * مردودات شراء — goods going back to the supplier, as a register of its own.
@@ -56,10 +57,6 @@ interface ReturnRow {
 interface PurchaseLine {
   item_id: number; quantity: string; unit_price: string; line_total: string; unit: string | null;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 export default function PurchaseReturns() {
   const [rows, setRows] = useState<ReturnRow[]>([]);
@@ -887,13 +884,13 @@ export default function PurchaseReturns() {
             </Form>
           )}
           rows={[
-            { label: 'اجمالي قبل', value: grossTotal.toFixed(2) },
+            { label: 'اجمالي قبل', value: money(grossTotal) },
             { label: 'خصم المردود',
-              value: `\u2212 ${(grossTotal - draftValue).toFixed(2)}`,
+              value: `\u2212 ${money(grossTotal - draftValue)}`,
               color: '#cf1322', show: variableDiscount > 0.001 },
             { label: 'خصم المردود %', value: `${variableDiscount}%`,
               show: variableDiscount > 0.001 },
-            { label: 'قيمة المردود', value: draftValue.toFixed(2),
+            { label: 'قيمة المردود', value: money(draftValue),
               big: true, rule: true, color: '#cf4b1a' },
           ]}
         />

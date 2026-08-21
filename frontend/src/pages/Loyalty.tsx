@@ -11,6 +11,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { TabModal } from '../components/TabModal';
+import { money } from '../utils/money';
 
 interface CouponType {
   id: number;
@@ -233,7 +234,7 @@ export default function Loyalty() {
           <div style={{ direction: 'rtl', marginTop: 16 }}>
             <p>تم استهلاك النقاط وتوليد كوبون خصم جديد:</p>
             <p><strong>كود الكوبون: </strong> <Tag color="purple" style={{ fontSize: 16, padding: '4px 8px' }}>{generated.serial}</Tag></p>
-            <p><strong>قيمة الكوبون: </strong> {parseFloat(generated.value).toFixed(2)} ج.م</p>
+            <p><strong>قيمة الكوبون: </strong> {money(generated.value)} ج.م</p>
           </div>
         ),
         okText: 'موافق',
@@ -320,7 +321,7 @@ export default function Loyalty() {
       dataIndex: 'value',
       key: 'value',
       ...numberColumn<CouponType>((r) => r.value),
-      render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
+      render: (val: string) => `${money(val)} ج.م`,
     },
     {
       title: 'حالة العرض',
@@ -378,7 +379,7 @@ export default function Loyalty() {
       dataIndex: 'value',
       key: 'value',
       ...numberColumn<any>((r) => r.value),
-      render: (val: string) => `${parseFloat(val).toFixed(2)} ج.م`,
+      render: (val: string) => `${money(val)} ج.م`,
     },
     {
       title: 'النقاط المستهلكة',
@@ -657,7 +658,7 @@ export default function Loyalty() {
                 .filter((t) => t.active)
                 .map((t) => (
                   <Select.Option key={t.id} value={t.id}>
-                    {t.name} (يكلف {t.point_cost} نقطة - يعطي {parseFloat(t.value).toFixed(2)} ج.م)
+                    {t.name} (يكلف {t.point_cost} نقطة - يعطي {money(t.value)} ج.م)
                   </Select.Option>
                 ))}
             </Select>

@@ -26,6 +26,7 @@ import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import { guardQuantity } from '../components/quantityGuard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import { money } from '../utils/money';
 
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
@@ -82,8 +83,6 @@ interface Filters {
   q?: string; customer_id?: number; date_from?: string; date_to?: string;
 }
 
-const money = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** صف كوبونات راجعة — دفتر من دفاتر العميل، والعدد الراجع منه. */
 interface CouponRow {
@@ -952,7 +951,7 @@ export default function Returns() {
                                 </span>
                               </Col>
                               <Col md={3} xs={12} style={{ textAlign: 'center' }}>
-                                <b style={{ color: '#cf4b1a' }}>{lineTotal(line).toFixed(2)}</b>
+                                <b style={{ color: '#cf4b1a' }}>{money(lineTotal(line))}</b>
                               </Col>
                               <Col md={1} xs={4} style={{ textAlign: 'center' }}>
                                 <Button type="text" size="small" danger icon={<DeleteOutlined />}
@@ -998,11 +997,11 @@ export default function Returns() {
                     </>
                   )}
                   rows={[
-                    { label: 'إجمالي الأصناف المرتجعة', value: grossTotal.toFixed(2) },
+                    { label: 'إجمالي الأصناف المرتجعة', value: money(grossTotal) },
                     { label: `خصم المرتجع (${discountPct}%)`,
-                      value: `− ${returnDiscount.toFixed(2)}`, color: '#cf1322',
+                      value: `− ${money(returnDiscount)}`, color: '#cf1322',
                       show: returnDiscount > 0.001 },
-                    { label: 'صافي المرتجع', value: netTotal.toFixed(2),
+                    { label: 'صافي المرتجع', value: money(netTotal),
                       strong: true, color: '#cf4b1a', rule: true },
                     // One line per product family, the chosen one tinted, then the whole debt —
                     // the same column the sale shows, so the two documents read alike.
