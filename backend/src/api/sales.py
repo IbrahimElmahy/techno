@@ -408,8 +408,14 @@ def list_standalone_returns(
     current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """List standalone sales returns (customer-based), newest first."""
-    stmt = select(SalesReturn).where(SalesReturn.customer_id.isnot(None))
+    """List standalone sales returns (customer-based), newest first.
+
+    والمعكوس مابيظهرش — زي سجل مردودات الشرا بالظبط. السند اللي اتعكس أثره اتشال بالكامل:
+    البضاعة خرجت تاني والقيد اتعكس، فعرضه في سجل بيتجمع بيخلّي مجموع المرتجعات يعدّ حاجة
+    مالهاش وجود. الصف نفسه بيفضل في الداتا برقمه وقيده المضاد لأي مراجعة.
+    """
+    stmt = select(SalesReturn).where(
+        SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
     if current.rep_id is not None:
         stmt = stmt.where(SalesReturn.customer_id.in_(
             select(Customer.id).where(Customer.rep_id == current.rep_id)
@@ -475,6 +481,31 @@ def create_standalone_return(
                             {"code": "no_negative_stock", "message": str(exc)})
     db.commit()
     return _standalone_return_out(ret)
+
+
+@router.post("/returns/{return_id}/reverse", response_model=dict)
+def reverse_sales_return_endpoint(
+    return_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """عكس مرتجع مبيعات مرحّل.
+
+    المرتجع المرحّل ماينفعش يتعدّل في مكانه — البضاعة رجعت المخزن والقيد اتكتب — فالتعديل
+    والحذف الاتنين معناهم نفس الحركة: عكس كامل. والفرق بينهم هو اللي بيحصل بعده.
+
+    مُعلن قبل `/returns/{return_id}` عشان المسار الحرفي يكسب. ونفس ترتيب مردود الشرا
+    بالظبط، لأن الشاشتين نسخة من بعض والسيرفر المفروض يبقى كده كمان.
+    """
+    try:
+        ret = sales_service.reverse_sales_return(
+            db, return_id=return_id, actor_user_id=current.id)
+    except SalesError as exc:
+        raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
+    db.commit()
+    return {"id": ret.id, "document_number": ret.document_number,
+            "reversed_at": ret.reversed_at.isoformat() if ret.reversed_at else None,
+            "reversal_entry_id": ret.reversal_entry_id}
 
 
 @router.get("/returns/{return_id}", response_model=dict)

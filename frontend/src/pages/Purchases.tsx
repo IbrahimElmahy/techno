@@ -206,7 +206,7 @@ export default function Purchases() {
   // The sale opens as a run of doors — التاريخ, then the party, then the page. The purchase is the
   // same document from the other side, so it opens the same way. No coupons and no points: those
   // are things a SALE hands out, and a purchase has neither to give.
-  const [newStep, setNewStep] = useState<null | 'date' | 'party'>(null);
+  const [newStep, setNewStep] = useState<null | 'party'>(null);
   const [purchaseDate, setPurchaseDate] = useState<Dayjs>(dayjs());
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   // The picker window, so a line is added by typing rather than by hunting a dropdown — the same
@@ -599,7 +599,9 @@ export default function Purchases() {
     discount_pct: null, warehouse_id: null }]);
           setPurchaseDate(dayjs()); setDetail(null); setDocResult(null);
           setEditingId(null);
-          setNewStep('date'); } },
+          // 'party' مش 'date': مافيش بوباب تاريخ في الشاشة دي أصلاً، فـ«جديد» كان بيسيب
+          // الحالة على خطوة محدش بيرسمها — يعني الزرار مكانش بيفتح حاجة.
+          setNewStep('party'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setPurchaseItems([

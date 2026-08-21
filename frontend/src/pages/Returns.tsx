@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select,
+  Space, Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
+// التأكيدات اتشالت من النظام — الشيم بينفّذ من غير ما يسأل (`components/noConfirm`).
+import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
   FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,
@@ -134,7 +137,7 @@ export default function Returns() {
   const [returnFamily, setReturnFamily] = useState<string | null>(null);
   const families = familyAccounts.filter((a) => a.family);
 
-  const [newStep, setNewStep] = useState<null | 'date' | 'party'>(null);
+  const [newStep, setNewStep] = useState<null | 'party'>(null);
   // Also opened from inside the document to change the party mid-return, exactly as the sale does.
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
@@ -461,7 +464,7 @@ export default function Returns() {
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => { createForm.resetFields(); setLines([]);
-          setReturnDate(dayjs()); setNewStep('date'); } },
+          setReturnDate(dayjs()); setNewStep('party'); } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setLines([]) },
@@ -568,6 +571,74 @@ export default function Returns() {
     };
   };
 
+  /**
+   * عكس مرتجع مرحّل — للتعديل أو للإلغاء.
+   *
+   * المرتجع المرحّل ماينفعش يتعدّل في مكانه، بنفس السبب اللي في الفاتورة بالظبط: البضاعة
+   * رجعت المخزن والقيد اتكتب، والدفتر مابيتمحاش. فالحذف عكس، والتعديل عكس وكتابة من جديد.
+   */
+  const reverseReturn = async (record: ReturnRecord) => {
+    try {
+      await api.post(`/api/v1/sales/returns/${record.id}/reverse`);
+      return true;
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر عكس المرتجع');
+      return false;
+    }
+  };
+
+  const handleDeleteReturn = async (record: ReturnRecord) => {
+    if (!(await reverseReturn(record))) return;
+    message.success('اتعكس المرتجع بالكامل');
+    fetchReturns();
+  };
+
+  /**
+   * «تعديل» — بيعكس السند ويفتح محتواه من جديد للتصحيح، زي «تعديل الفاتورة» بالحرف.
+   *
+   * والعكس بيحصل **دلوقتي**، مش وقت الحفظ: على عكس الفاتورة اللي عكسها بيطلّع بضاعة من
+   * المخزن (فبيتأجّل لحد ما يبقى فيه بديل يترحّل)، عكس المرتجع بيطلّع البضاعة اللي رجعت.
+   * لو الكمية دي اتباعت تاني في الوقت ده، العكس بيقع — والرسالة بتيجي وهي بتقول حاجة صح،
+   * والسند القديم بيفضل زي ما هو.
+   */
+  const handleEditReturn = async (record: ReturnRecord) => {
+    let det: any;
+    try {
+      det = (await api.get(`/api/v1/sales/returns/${record.id}`)).data;
+    } catch {
+      message.error('تعذر قراءة المرتجع');
+      return;
+    }
+    if (!(await reverseReturn(record))) return;
+    message.success('اتعكس المرتجع — عدّل وارحّل من جديد');
+    fetchReturns();
+
+    setCreateVisible(true);
+    setDetailVisible(false);
+    if (det.customer_id) {
+      createForm.setFieldsValue({ customer_id: det.customer_id });
+      onCustomerChange(det.customer_id);
+    }
+    setReturnDate(det.return_date ? dayjs(det.return_date) : dayjs());
+    setRepId(det.rep_id ?? null);
+    setExternalDocNumber(det.external_document_number || '');
+    setDocNotes(det.notes || '');
+    setStatements([det.statement1 || '', det.statement2 || '', det.statement3 || '']);
+    setDiscountPct(0);
+    setCashRefund(Number(det.cash_refund) || 0);
+    setLines((det.lines || []).map((l: any, i: number) => ({
+      key: `${Date.now()}-${i}`,
+      category: products.find((pr: any) => pr.id === l.item_id)?.category ?? null,
+      item_id: l.item_id,
+      quantity: Number(l.quantity) || null,
+      unit_price: Number(l.unit_price) || 0,
+      discount: Number(l.discount_pct) || 0,
+      warehouse_id: l.warehouse_id ?? null,
+    })));
+    const first = (det.lines || [])[0];
+    if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
+  };
+
   const openDetail = async (record: ReturnRecord) => {
     try {
       const res = await api.get(`/api/v1/sales/returns/${record.id}`);
@@ -601,30 +672,19 @@ export default function Returns() {
     <>
       <PartyPickerModal
         open={partyPickerOpen || newStep === 'party'} kind="customer"
+        // التاريخ جوّه الشباك — نفس فاتورة البيع: يوم رجوع البضاعة، مش يوم ما اتكتب السند،
+        // والقيد بياخد نفس اليوم.
+        date={returnDate} onDateChange={(d) => setReturnDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
 
-      <TabModal
-        open={newStep === 'date'}
-        title="تاريخ المرتجع"
-        okText="التالي" cancelText="إلغاء"
-        onCancel={() => setNewStep(null)}
-        onOk={() => setNewStep('party')}
-        destroyOnHidden
-      >
-        <div onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); setNewStep('party'); }
-        }}>
-          <DatePicker
-            style={{ width: '100%' }} size="large" allowClear={false} autoFocus
-            value={returnDate} onChange={(v) => setReturnDate(v || dayjs())}
-            format="YYYY-MM-DD"
-          />
-        </div>
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-          ده يوم رجوع البضاعة، مش يوم ما اتكتب السند — والقيد المحاسبي بياخد نفس اليوم.
-        </div>
-      </TabModal>
+      {/*
+        * باب «تاريخ المرتجع» المستقل اتشال — الإنشاء بقى نفس فاتورة البيع من أول خطوة.
+        *
+        * الفاتورة بتفتح على شباك الطرف على طول، والتاريخ جوّاه وفي الترويسة. المرتجع كان
+        * بيسأل التاريخ في بوباب لوحده الأول وبعدين يسأل عن العميل — خطوة زيادة على شاشة
+        * المفروض إنها نسخة من الفاتورة، وسؤال ليه إجابة جاهزة (النهارده) في تسعة من عشرة.
+        */}
     </>
   );
 
@@ -1175,6 +1235,34 @@ export default function Returns() {
       title: 'الباقى', dataIndex: 'credit_reduction', key: 'credit_reduction', width: 110,
       align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
     },
+    {
+      // نفس التلات أفعال اللي على سطر سجل الفواتير، بنفس الأيقونات وفي نفس الترتيب —
+      // السجل ده كان بيتفتح منه وبس، فالسند اللي اتكتب غلط مكانش ليه أي طريق.
+      title: '', key: 'actions', width: 110, fixed: 'left' as const,
+      render: (_: any, record: ReturnRecord) => (
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          {/* بيحمّل السطور الأول وبعدين يطبع — سطر السجل لوحده مافيهوش تفاصيل. */}
+          <Tooltip title="طباعة">
+            <Button type="text" icon={<PrinterOutlined />}
+              onClick={async () => { await openDetail(record); }} />
+          </Tooltip>
+          <Tooltip title="تعديل">
+            <Button type="text" icon={<EditOutlined />}
+              onClick={() => handleEditReturn(record)} />
+          </Tooltip>
+          <Popconfirm
+            title="حذف المرتجع؟"
+            description="السند المرحّل بيتعكس مش بيتمسح — البضاعة تخرج تاني والقيد يترجّع، والمستندين يفضلوا في الدفاتر."
+            okText="عكس المرتجع" cancelText="إلغاء"
+            onConfirm={() => handleDeleteReturn(record)}
+          >
+            <Tooltip title="حذف">
+              <Button type="text" danger icon={<DeleteOutlined />} />
+            </Tooltip>
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ];
 
   return (
@@ -1200,7 +1288,7 @@ export default function Returns() {
             <Button type="primary" danger icon={<PlusOutlined />}
               // Through the same doors as the toolbar's «جديد» and as the sale: التاريخ first.
               // Two ways into one document that open differently is how a habit stops transferring.
-              onClick={() => { setReturnDate(dayjs()); setNewStep('date'); }}>
+              onClick={() => { setReturnDate(dayjs()); setNewStep('party'); }}>
               تسجيل مرتجع بيع
             </Button>
           </Space>
@@ -1262,8 +1350,9 @@ export default function Returns() {
             <DocumentToolbar actions={[
               { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
                 onClick: () => { setDetailVisible(false); setReturnDate(dayjs());
-                  setNewStep('date'); } },
-              { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+                  setNewStep('party'); } },
+              { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+                onClick: () => handleEditReturn(viewReturn as any) },
               { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: true },
               { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
               { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
@@ -1275,7 +1364,9 @@ export default function Returns() {
                 disabled: !neighbour(-1),
                 onClick: () => { const p = neighbour(-1); if (p) openDetail(p); } },
               { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />,
-                danger: true, disabled: true },
+                danger: true,
+                onClick: () => { setDetailVisible(false);
+                  handleDeleteReturn(viewReturn as any); } },
               { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
                 onClick: () => printInvoice(returnDoc(viewReturn)!, printOpts) },
               { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },

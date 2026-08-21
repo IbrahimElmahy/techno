@@ -226,6 +226,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("purchase_return", "gross", "DECIMAL(18,2)"),
     ("purchase_return", "variable_discount_pct", "DECIMAL(9,4)"),
     ("purchase_return", "combined_pct", "DECIMAL(9,4)"),
+    # (032) مرتجع المبيعات بقى يتعكس زي مردود الشرا.
+    ("sales_return", "reversed_at", "DATETIME"),
+    ("sales_return", "reversal_entry_id", "BIGINT"),
     # شيت التسعير بقى نسخة من فاتورة البيع: وحدة وخصم على السطر، وخصم على الورقة كلها.
     ("trade_order", "gross", "DECIMAL(18,2)"),
     ("trade_order", "variable_discount_pct", "DECIMAL(18,2)"),

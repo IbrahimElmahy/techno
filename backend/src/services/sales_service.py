@@ -7,7 +7,7 @@ original invoice's cash/credit split (research R9).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -454,13 +454,85 @@ def create_sale(
 
 
 def _already_returned(db: Session, invoice_id: int) -> dict[int, Decimal]:
+    """الكمية اللي رجعت فعلاً من كل صنف على الفاتورة دي.
+
+    **المرتجع المعكوس مابيتحسبش.** ده مش تفصيلة: من غير الشرط ده، مرتجع اتعمل بالغلط
+    واتعكس بيفضل قافل الكمية بتاعته للأبد — الصنف رجع للمخزن وقت العكس، وبرضه النظام
+    بيقول إنه مرجّع ويرفض إنه يترجّع تاني. نفس الشرط بالحرف في `purchase_service`.
+    """
     rows = db.execute(
         select(SalesReturnLine.item_id, func.coalesce(func.sum(SalesReturnLine.quantity), 0))
         .join(SalesReturn, SalesReturn.id == SalesReturnLine.return_id)
-        .where(SalesReturn.sales_invoice_id == invoice_id)
+        .where(SalesReturn.sales_invoice_id == invoice_id,
+               SalesReturn.reversed_at.is_(None))
         .group_by(SalesReturnLine.item_id)
     ).all()
     return {item_id: Decimal(qty) for item_id, qty in rows}
+
+
+def reverse_sales_return(
+    db: Session,
+    *,
+    return_id: int,
+    actor_user_id: int,
+) -> SalesReturn:
+    """عكس مرتجع مبيعات مرحّل — البضاعة تخرج تاني واللي على العميل يرجع زي ما كان.
+
+    نسخة بالحرف من `purchase_service.reverse_purchase_return`، بالعكس: هناك المردود طلّع
+    بضاعة فالعكس بيرجّعها، وهنا المرتجع دخّل بضاعة فالعكس بيطلّعها.
+
+    والعكس **إضافة** مش مسح، في الحتّتين:
+
+    * حركة مخزن خارجة لكل سطر، من نفس المخزن اللي دخلته. `sale_return_in` دخّل البضاعة
+      لمخزن بعينه — لو خرجت من مخزن تاني يبقى الرصيدين الاتنين غلط.
+    * قيد مضاد عن طريق `ledger_service.reverse_entry`، مش قيد جديد مكتوب بالإيد: لو اتكتب
+      بالإيد يبقى فيه نسختين من نفس الحسبة، وأول ما حسبة المرتجع تتغيّر تفضل واحدة قديمة.
+
+    والصف بيفضل موجود بعلامة `reversed_at` — ودي هي اللي بتفكّ الكمية عشان الصنف يقدر
+    يترجّع من جديد (شوف `_already_returned`).
+    """
+    ret = db.get(SalesReturn, return_id)
+    if ret is None:
+        raise SalesError("المرتجع مش موجود.")
+    if ret.reversed_at is not None:
+        raise SalesError("المرتجع ده اتعكس قبل كده.")
+
+    inv = db.get(SalesInvoice, ret.sales_invoice_id) if ret.sales_invoice_id else None
+    if ret.sales_invoice_id and inv is None:
+        raise SalesError("فاتورة البيع بتاعت المرتجع مش موجودة.")
+
+    # معامل الوحدة: السطر المستقل شايله بنفسه، والمربوط بفاتورة بيتاخد من سطر الفاتورة —
+    # لأن الكمية على السطر متسجّلة بوحدة البيع مش بالوحدة الأساسية، والمخزن بيتحرك بالأساسية.
+    factors = {ln.item_id: to_qty(ln.unit_factor) for ln in inv.lines} if inv else {}
+
+    for line in ret.lines:
+        out_kind = line.location_kind
+        out_loc = line.location_id
+        if out_kind is None or out_loc is None:
+            out_kind, out_loc = ret.origin_location_kind, ret.origin_location_id
+        if out_kind is None or out_loc is None:
+            raise SalesError("المرتجع ده مالوش مخزن مسجّل — مايتعكسش.")
+        factor = (to_qty(line.unit_factor) if getattr(line, "unit_factor", None) is not None
+                  else factors.get(line.item_id, Decimal("1")))
+        base_qty = to_qty(Decimal(line.quantity) * factor)
+        stock_service.post_movement(
+            db, item_id=line.item_id, location_kind=out_kind, location_id=out_loc,
+            movement_type="sale_return_reversal", direction=StockDirection.out,
+            quantity=base_qty, actor_user_id=actor_user_id,
+            source_doc_type="sale_return_reversal", source_doc_id=ret.id,
+        )
+
+    if ret.ledger_entry_id:
+        counter = ledger_service.reverse_entry(
+            db, original_id=ret.ledger_entry_id, actor_user_id=actor_user_id)
+        ret.reversal_entry_id = counter.id
+
+    ret.reversed_at = datetime.utcnow()
+    db.flush()
+    audit_service.record(db, action="sale.return.reverse", actor_user_id=actor_user_id,
+                         entity_type="sales_return", entity_id=ret.id,
+                         after={"reversed": True})
+    return ret
 
 
 def sold_lots(db: Session, invoice_id: int, item_id: int) -> dict:

@@ -179,6 +179,11 @@ class SalesReturn(Base):
     return_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
+    # (032) المرتجع المرحّل بيتعكس، مابيتمسحش — نفس مردود الشرا بالظبط. الصف بيفضل موجود
+    # بعلامة: رقم السند اتصرف، والقيد المضاد بيشاور عليه، واللي بيراجع بيشوف الحكاية كلها.
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reversal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),
+                                                          nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
