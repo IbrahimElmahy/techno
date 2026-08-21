@@ -39,6 +39,8 @@ interface Account {
   code: string | null;
   name: string | null;
   parent_id: number | null;
+  /** نوع الحساب — بيه بنعرف حسابات العملاء والموردين والخزن من غير ما نلفّ الشجرة. */
+  account_type?: string | null;
   is_postable: boolean;
   active: boolean;
   owner_name?: string | null;
@@ -55,6 +57,12 @@ const accLabel = (a: Account) =>
  * screen shows is derived, not stored. A picker offering only real rows could therefore never
  * express «تحصيل نقدي», so the groups sit at the top of the list as first-class choices.
  */
+/**
+ * الأنواع اللي حساباتها ورقة تحت مجموعة، مش عناوين بذاتها: حساب لكل عميل، ولكل مورد،
+ * ولكل مندوب، ولكل خزينة. دول مايبانوش في «الحسابات الرئيسية» مهما كان `parent_id` فاضي.
+ */
+const OWNED_TYPES = ['customer_receivable', 'supplier_payable', 'custody', 'treasury'];
+
 const GROUPS: { value: string; label: string }[] = [
   { value: 'customer_receivable', label: 'العملاء' },
   { value: 'supplier_payable', label: 'الموردين' },
@@ -117,10 +125,10 @@ function SideFields({
       {() => {
         const main: string | undefined = form.getFieldValue(`${side}_main`);
         const subs = subsOf(main);
-        const isGroup = !!main?.startsWith('g:');
+        // المجموعة بقى ليها فرعي كمان — العملاء اللي تحتها. فالقفل بقى على حاجة واحدة
+        // بس: مافيش حاجة جوّه الرئيسي أصلاً.
         const why = !main ? 'اختار الحساب الرئيسي الأول'
-          : isGroup ? 'المجموعة بتتحدّد وقت عمل السند'
-            : subs.length === 0 ? 'الحساب ده مافيهوش حسابات فرعية' : null;
+          : subs.length === 0 ? 'الحساب ده مافيهوش حسابات فرعية' : null;
         return (
           <>
             <Form.Item name={`${side}_main`} label={title}
@@ -306,13 +314,20 @@ export default function VoucherKeys() {
   }, [accounts]);
 
   /**
-   * الحسابات الرئيسية — اللي مالهاش أب.
+   * الحسابات الرئيسية.
    *
-   * والمجموعات الأربعة معاهم في نفس القايمة: «العملاء» في بعض التركيبات مالهاش عنوان في
-   * الشجرة أصلاً — حسابات متفرقة بنفس النوع — فلو شيلناها من هنا يبقى فيه ربط مايتعملش.
+   * **حساب العميل مش حساب رئيسي، حتى لو مالوش أب.** أول ما عميل يتعمل بيتفتحله حساب
+   * و`parent_id` بتاعه بيفضل فاضي؛ مابياخدش أب إلا لما تسوية الشجرة تشتغل وتحطّه تحت
+   * «الذمم المدينة». يعني أي عميل اتعمل بعد آخر مرة اتسوّت فيها الشجرة بيبقى بلا أب —
+   * ولو قسّمنا على `parent_id` بس، ٢٣٣ عميل بيطلعوا في قايمة الحسابات الرئيسية.
+   *
+   * والسيرفر عارف كده وبيتعامل معاه (`chart_service.effective_parent_id`)، بس اللي
+   * بيتبعت في الـAPI هو العمود الخام. فبنستنّى من الرئيسية أي حساب نوعه بيقول إنه ورقة
+   * تحت مجموعة — عميل أو مورد أو عهدة أو خزينة — ونسيب المجموعة نفسها هي اللي في القايمة.
    */
   const mainOptions = useMemo(() => {
-    const roots = accounts.filter((a) => a.parent_id == null);
+    const roots = accounts.filter((a) => a.parent_id == null
+      && !OWNED_TYPES.includes(a.account_type || ''));
     return [
       { label: 'حسابات رئيسية', options: roots.map((a) => ({
         value: `a:${a.id}`, label: accLabel(a) })) },
@@ -328,7 +343,16 @@ export default function VoucherKeys() {
    * بيدوّر على عميل بعينه عايزه في القايمة مش عايز ينزل درجة درجة.
    */
   const subsOf = useCallback((mainValue?: string) => {
-    if (!mainValue || !mainValue.startsWith('a:')) return [];
+    if (!mainValue) return [];
+    // المجموعة حسابها الفرعي هو حسابات نوعها — العملاء تحت «العملاء»، والخزن تحت
+    // «الخزينة والبنوك». دي اللي بتخلّي المجموعة تتفتح على اللي جوّاها فعلاً بدل ما
+    // تبقى اختيار مقفول.
+    if (mainValue.startsWith('g:')) {
+      const t = mainValue.slice(2);
+      return accounts.filter((a) => (a.account_type || '') === t)
+        .map((a) => ({ value: a.id, label: accLabel(a) }));
+    }
+    if (!mainValue.startsWith('a:')) return [];
     const out: Account[] = [];
     const walk = (id: number) => (childrenBy.get(id) ?? []).forEach((c) => {
       out.push(c);
@@ -336,7 +360,7 @@ export default function VoucherKeys() {
     });
     walk(Number(mainValue.slice(2)));
     return out.map((a) => ({ value: a.id, label: accLabel(a) }));
-  }, [childrenBy]);
+  }, [childrenBy, accounts]);
 
   /** الرئيسي اللي الحساب ده واقع تحته — عشان مفتاح قديم يتفتح على نفس الخطوتين. */
   const rootOf = useCallback((accountId: number): number => {
