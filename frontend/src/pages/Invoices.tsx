@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import {
-  PlusOutlined, RollbackOutlined, FileTextOutlined, PrinterOutlined, DeleteOutlined,
+  PlusOutlined, PrinterOutlined, DeleteOutlined,
   EditOutlined,
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
@@ -12,7 +12,6 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
-import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
@@ -191,9 +190,6 @@ export default function Invoices() {
 
   // Drawers
   const [createVisible, setCreateVisible] = useState(false);
-  const [returnVisible, setReturnVisible] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRecord | null>(null);
-  const [invoiceDetail, setInvoiceDetail] = useState<InvoiceDetail | null>(null);
 
   // Standalone invoice detail/view (separate from the return wizard)
   // Each user hides the columns they never read; the choice is theirs alone and per screen.
@@ -214,7 +210,6 @@ export default function Invoices() {
 
   // Forms
   const [createForm] = Form.useForm();
-  const [returnForm] = Form.useForm();
 
   // Create invoice dynamic lines
   const blankLine = (key: string, tier: string | null = null): SaleLineItem => ({
@@ -315,7 +310,6 @@ export default function Invoices() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   // Return quantities tracking
-  const [returnQtys, setReturnQtys] = useState<Record<number, number>>({});
 
   // Filtering happens on the server so it covers ALL invoices, not just the loaded page.
   const fetchInvoices = async (override?: InvoiceFilters) => {
@@ -909,19 +903,6 @@ export default function Invoices() {
     }
   };
 
-  // Process returns wizard
-  const openReturnWizard = async (record: InvoiceRecord) => {
-    setSelectedInvoice(record);
-    setReturnQtys({});
-    try {
-      const res = await api.get(`/api/v1/sales/${record.id}`);
-      setInvoiceDetail(res.data);
-      setReturnVisible(true);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   /**
    * حذف الفاتورة — a posted invoice is reversed, never erased.
    *
@@ -976,9 +957,11 @@ export default function Invoices() {
    * protects the books is that the reversal is a posting with its own document — undoing it is
    * reading the register, not hunting for something that was overwritten.
    *
-   * An invoice that has ALREADY been returned in full is refused here rather than at the server:
-   * the reversal has nothing left to give back, and the failure used to arrive as «Cumulative
-   * return exceeds sold quantity» — in English, naming no invoice and no way forward.
+   * **والفاتورة اللي اترجّعت بالكامل بتتفتح برضه.** كانت بتقف على بوباب بيقول «مفيش حاجة
+   * تتعكس» ويسيب الواحد في طريق مقفول. دلوقتي بتعدّي: قيمتها راجعة كلها أصلاً، يعني أثرها
+   * على الدفاتر صفر — فمفيش حاجة تتعكس، والصح إن الشاشة تروح على طول للخطوة اللي بعدها
+   * وتفتح فاتورة جديدة بنفس سطورها. ده بالظبط «احذفها واعمل واحدة تانية» بلغة دفتر
+   * مابيتمسحش منه: القديمة اتصفّرت خلاص، فاللي فاضل هو كتابة اللي محلّها.
    */
   const handleEditInvoice = async (record: InvoiceRecord) => {
     let det: any;
@@ -991,25 +974,23 @@ export default function Invoices() {
 
     // Read from `/returns` rather than off the detail: the sale's detail payload carries no
     // returns (the purchase's does), so `det.returns` would have been permanently empty and this
-    // guard would have looked present while never once firing.
+    // check would have looked present while never once firing.
     let returned = 0;
     try {
       const rets = (await api.get(`/api/v1/sales/${record.id}/returns`)).data || [];
       returned = rets.reduce((t: number, r: any) => t + Number(r.value ?? r.net ?? 0), 0);
     } catch { /* unreadable returns must not block an edit that would have worked */ }
-    if (returned > 0 && Math.abs(returned - Number(det.net || 0)) < 0.01) {
-      Modal.warning({
-        title: `${record.document_number} اترجّعت بالكامل`,
-        content: 'الفاتورة دي اتعملها مرتجع بكل قيمتها، فمفيش حاجة تتعكس عشان تتفتح للتعديل. '
-          + 'لو محتاج تسجّل بيع جديد، اعمل فاتورة جديدة.',
-        okText: 'تمام',
-      });
-      return;
+    const alreadyVoid = returned > 0 && Math.abs(returned - Number(det.net || 0)) < 0.01;
+
+    // العكس بيحصل بس لما يكون فيه حاجة تتعكس. الفاتورة المرجّعة بالكامل لو اتعكست تاني
+    // كان هيرجع منها كمية اترجّعت خلاص — والسيرفر بيرفض بـ«Cumulative return exceeds sold
+    // quantity»، بالإنجليزي، من غير ما يقول أنهي فاتورة ولا الطريق منين.
+    if (!alreadyVoid) {
+      if (!(await reverseInvoice(record, 'edit'))) return;
+      message.success('اتعكست الفاتورة — عدّل وارحّل من جديد');
+    } else {
+      message.info(`${record.document_number} كانت مرجّعة بالكامل — دي فاتورة جديدة بنفس سطورها`);
     }
-
-    if (!(await reverseInvoice(record, 'edit'))) return;
-
-    message.success('اتعكست الفاتورة — عدّل وارحّل من جديد');
     fetchInvoices();
 
     // Refill the form from what the invoice actually held, line by line.
@@ -1248,38 +1229,6 @@ export default function Invoices() {
     };
   };
 
-  const handleReturnSubmit = () => {
-    if (!selectedInvoice || !invoiceDetail) return;
-    const linesToReturn = Object.entries(returnQtys)
-      .filter(([_, qty]) => qty > 0)
-      .map(([itemId, qty]) => ({
-        item_id: parseInt(itemId, 10),
-        quantity: qty,
-      }));
-
-    if (linesToReturn.length === 0) {
-      message.warning('يرجى تحديد كميات مرتجعة أكبر من الصفر للأصناف المعنية');
-      return;
-    }
-
-    showReversalConfirm({
-      title: 'تأكيد إرجاع أصناف الفاتورة',
-      content: `هل أنت متأكد من حفظ مرتجعات الفاتورة "${selectedInvoice.document_number}"؟ سيتم توليد سند مرتجع وعكس الرصيد المالي المقابل للعميل فوراً.`,
-      onOk: async () => {
-        try {
-          const res = await api.post(`/api/v1/sales/${selectedInvoice.id}/returns`, {
-            lines: linesToReturn,
-          });
-          message.success(`تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
-          setReturnVisible(false);
-          fetchInvoices();
-        } catch (err) {
-          console.error(err);
-        }
-      },
-    });
-  };
-
   // Their invoice list, in their order:
   //   `رقم · التاريخ · نوع · مستند رقم · الفاتورة رقم · الحساب الفرعي · جهه التعامل · مندوب ·
   //    اجمالي قبل · خصم · خصم% · ض.م · ض.م % · الاجمالي · الصافى · تم السداد · الباقى ·
@@ -1448,10 +1397,10 @@ export default function Invoices() {
             <Button type="text" icon={<PrinterOutlined />}
               onClick={async () => { await openDetail(record); }} />
           </Tooltip>
-          <Tooltip title="إرجاع الفاتورة">
-            <Button type="text" icon={<RollbackOutlined />}
-              onClick={() => openReturnWizard(record)} />
-          </Tooltip>
+          {/* «إرجاع الفاتورة» اتشال من هنا بطلب صاحب النظام: المرتجع بيتعمل من شاشة مردود
+              المبيعات وبس. كان في مكانين بيعملوا نفس الحاجة بشكلين مختلفين — بوباب سريع
+              جنب السطر، وشاشة مستند كاملة — واللي بيتعمل من هنا كان بيطلع سند ناقص:
+              من غير مندوب ولا بيان ولا خصم ولا مخزن استلام. مدخل واحد يعني سند واحد كامل. */}
           {/* No Popconfirm here: `handleEditInvoice` asks for itself, so the question is put once
               wherever editing is reached from — this button, the toolbar, or a document link on
               another screen. Two confirmations for one action teach people to click through both. */}
@@ -2173,53 +2122,7 @@ export default function Invoices() {
         />
       </Card>
 
-      {/* Return Invoice Drawer */}
-      <TabModal footer={null} centered
-        title={`مرتجع مبيعات للفاتورة: ${selectedInvoice?.document_number || ''}`}
-        width={500}
-        onCancel={() => setReturnVisible(false)}
-        open={returnVisible}
-        destroyOnHidden
-      >
-        <div style={{ marginBottom: 20 }}>
-          <p>يرجى إدخال الكميات المراد إرجاعها من كل صنف مباع. سيتم حساب قيمة المرتجعات المالية تلقائياً بالخلفية وعكس قيد اليومية المقابل.</p>
-        </div>
-
-        {invoiceDetail?.lines.map((line) => {
-          const prod = products.find((p) => p.id === line.item_id);
-          return (
-            <div key={line.item_id} style={{ marginBottom: 20, padding: 12, border: '1px solid #f0f0f0', borderRadius: 8 }}>
-              <h4>{prod ? prod.name : `منتج #${line.item_id}`}</h4>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <span>الكمية المشتراة بالفاتورة: </span>
-                  <strong>{line.quantity} وحدات</strong>
-                </Col>
-                <Col span={12}>
-                  <Form.Item label="الكمية المرتجعة" style={{ marginBottom: 0 }}>
-                    <InputNumber
-                      min={0}
-                      max={parseFloat(line.quantity)}
-                      value={returnQtys[line.item_id] || 0}
-                      onChange={(val) => setReturnQtys({ ...returnQtys, [line.item_id]: val || 0 })}
-                      style={{ width: '100%' }}
-                    />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </div>
-          );
-        })}
-
-        <div style={{ marginTop: 30 }}>
-          <Space>
-            <Button type="primary" danger onClick={handleReturnSubmit}>
-              تأكيد وحفظ المرتجع
-            </Button>
-            <Button onClick={() => setReturnVisible(false)}>إلغاء</Button>
-          </Space>
-        </div>
-      </TabModal>
+      {/* بوباب المرتجع السريع اتشال مع زراره — مكانه شاشة مردود المبيعات. */}
 
       {/* Invoice detail / view */}
       <TabModal centered

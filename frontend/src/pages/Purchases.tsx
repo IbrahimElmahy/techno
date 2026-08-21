@@ -712,14 +712,26 @@ export default function Purchases() {
       //
       // هنا هو في مكانه: التبديل بيحصل مرة واحدة — القديمة تتعكس والجديدة تترحّل. ولو الرصيد
       // فعلاً مايكفيش، الرسالة بتيجي وهي بتقول حاجة صح، والفاتورة القديمة بتفضل زي ما هي.
+      //
+      // **والفاتورة اللي اترجّعت بالكامل بتعدّي.** لو المردودات أكلت قيمتها كلها، مفيش
+      // حاجة فاضلة تتعكس — أثرها على الدفاتر صفر أصلاً — والسيرفر بيرفض العكس برسالة
+      // إنجليزي («Cumulative return exceeds…») مش بتقول أنهي فاتورة ولا الطريق منين.
+      // في الحالة دي بنعدّي على العكس ونرحّل الجديدة وخلاص: ده «احذفها واعمل واحدة تانية»
+      // بلغة دفتر مابيتمسحش منه. أي فشل تاني لسه بيوقف — الرصيد اللي مايكفيش غلط حقيقي.
+      let voided = false;
       if (editingId !== null) {
         try {
           await api.post(`/api/v1/purchases/${editingId}/reverse`, { reason: 'edit' });
         } catch (err: any) {
-          message.error(err?.response?.data?.detail?.message
-            || 'تعذر عكس الفاتورة القديمة — التعديل ماتمّش');
-          setSubmitLoading(false);
-          return;
+          const detail = err?.response?.data?.detail;
+          const text = String(detail?.message || detail || '');
+          if (/Cumulative return|بالكامل|exceeds sold/i.test(text)) {
+            voided = true;
+          } else {
+            message.error(text || 'تعذر عكس الفاتورة القديمة — التعديل ماتمّش');
+            setSubmitLoading(false);
+            return;
+          }
         }
       }
       const payload = {
@@ -758,8 +770,12 @@ export default function Purchases() {
 
       const res = await api.post('/api/v1/purchases', payload);
       setDocResult(res.data);
-      message.success(editingId !== null
-        ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة الشراء بنجاح');
+      if (voided) {
+        message.info('الفاتورة القديمة كانت مرجّعة بالكامل — دي فاتورة جديدة بنفس سطورها');
+      } else {
+        message.success(editingId !== null
+          ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة الشراء بنجاح');
+      }
       setEditingId(null);
       form.resetFields();
       setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
