@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
+from src.services import rep_store_service
 from src.models.catalog import Item, StockBatchMovement
 from src.models.customer import Customer
 from src.models.sales import SalesInvoice
@@ -43,11 +44,15 @@ class LocationStockRow(BaseModel):
 
 
 def _assert_readable(db: Session, current: CurrentUser, kind: LocationKind, location_id: int) -> None:
-    """A Sales Rep may only read their OWN custody's stock."""
+    """المندوب بيقرا رصيد مكانه هو بس — عهدته أو مخزنه.
+
+    كانت العهدة وحدها. المندوب اللي بضاعته على مخزن متسجّل عليه مكانش يقدر يقرا رصيده،
+    فالتطبيق بتاعه بيوريه صفر وهو واقف جنب بضاعة موجودة. القاعدة نفسها ما اتوسّعتش —
+    لسه مكانه هو بس — اللي اتوسّع هو **نوع** المكان اللي ممكن يبقى بتاعه.
+    """
     if current.rep_id is None:
         return
-    own = db.scalar(select(Custody).where(Custody.rep_id == current.rep_id))
-    if kind != LocationKind.custody or own is None or own.id != location_id:
+    if not rep_store_service.is_own_store(db, current.rep_id, kind, location_id):
         raise HTTPException(403, {"code": "forbidden", "message": "Not your stock location"})
 
 

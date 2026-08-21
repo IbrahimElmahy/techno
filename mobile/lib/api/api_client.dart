@@ -211,7 +211,10 @@ class ApiClient {
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
 
-    await LocalDb.instance.setKv('custody_id', body['custody_id'].toString());
+    // نوع المكان ورقمه. المندوب ممكن يكون على عهدة أو على مخزن متسجّل عليه، والاتنين
+    // بيتبعتوا مختلفين وقت الترحيل — فالجهاز بيحفظ اللي السيرفر قاله مش بيفترض.
+    await LocalDb.instance.setKv('store_kind', '${body['store_kind'] ?? 'custody'}');
+    await LocalDb.instance.setKv('store_id', '${body['store_id']}');
     await LocalDb.instance.replaceCustomers([
       for (final c in (body['customers'] as List))
         CustomerRef(
@@ -250,9 +253,10 @@ class ApiClient {
   Future<int> pushSaleInvoices() async {
     final pending = await LocalDb.instance.saleInvoices(synced: false);
     var sent = 0;
-    final custodyId = int.tryParse(await LocalDb.instance.getKv('custody_id') ?? '');
-    if (custodyId == null && pending.isNotEmpty) {
-      throw ApiException(0, 'اسحب البيانات الأول — العهدة مش معروفة على الجهاز.');
+    final storeId = int.tryParse(await LocalDb.instance.getKv('store_id') ?? '');
+    final storeKind = await LocalDb.instance.getKv('store_kind') ?? 'custody';
+    if (storeId == null && pending.isNotEmpty) {
+      throw ApiException(0, 'اسحب البيانات الأول — مخزنك مش معروف على الجهاز.');
     }
     for (final inv in pending) {
       final lines = await LocalDb.instance
@@ -262,7 +266,7 @@ class ApiClient {
               headers: await _headers(),
               body: jsonEncode({
                 'customer_id': inv['customer_id'],
-                'origin': {'location_kind': 'custody', 'location_id': custodyId},
+                'origin': {'location_kind': storeKind, 'location_id': storeId},
                 'variable_discount_pct': '0',
                 'cash_amount': '${inv['cash_amount']}',
                 'credit_amount': '${inv['credit_amount']}',

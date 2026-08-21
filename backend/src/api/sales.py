@@ -29,6 +29,7 @@ from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.warehouse import Custody
 from src.services import coupon_receipt_service, sales_service
+from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
 from src.services.stock_service import StockError
@@ -229,9 +230,17 @@ def _rep_scope_check(db: Session, current: CurrentUser, customer_id: int, origin
     cust = db.get(Customer, customer_id)
     if cust is None or cust.rep_id != current.rep_id:
         raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
-    own = db.scalar(select(Custody).where(Custody.rep_id == current.rep_id))
-    if origin.location_kind != LocationKind.custody or own is None or own.id != origin.location_id:
-        raise HTTPException(403, {"code": "forbidden", "message": "Must sell from your own custody"})
+    store = rep_store(db, current.rep_id)
+    if store is None:
+        raise HTTPException(403, {
+            "code": "forbidden",
+            "message": "مالكش عهدة ولا مخزن مسجّل — كلّم المخزن قبل ما تبيع."})
+    # مكانه هو بالظبط. الشرط لسه بيرفض البيع من مخزن حد تاني — اللي اتوسّع هو **نوع**
+    # المكان اللي ممكن يبقى بتاعه، مش مين صاحبه.
+    if (origin.location_kind, origin.location_id) != store:
+        raise HTTPException(403, {
+            "code": "forbidden",
+            "message": "لازم تبيع من مخزنك انت."})
 
 
 @router.get("/rep-bundle", response_model=dict)
@@ -253,9 +262,12 @@ def rep_bundle(
     """
     if current.rep_id is None:
         raise HTTPException(403, {"code": "forbidden", "message": "الشاشة دي للمناديب."})
-    custody = db.scalar(select(Custody).where(Custody.rep_id == current.rep_id))
-    if custody is None:
-        raise HTTPException(404, {"code": "not_found", "message": "مالكش عهدة مفتوحة."})
+    # نفس الدالة اللي البيع بيتقاس عليها — مش نسخة تانية من نفس القاعدة هنا.
+    store = rep_store(db, current.rep_id)
+    if store is None:
+        raise HTTPException(404, {
+            "code": "not_found", "message": "مالكش عهدة ولا مخزن مسجّل."})
+    store_kind, store_id = store
 
     # عملاء المندوب هو بس — نفس الشرط اللي في كل مكان تاني، مش نسخة تانية منه هنا.
     customers = db.scalars(
@@ -272,8 +284,8 @@ def rep_bundle(
         select(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
                Item.sale_price, func.coalesce(func.sum(signed), 0).label("qty"))
         .join(StockMovement, StockMovement.item_id == Item.id)
-        .where(StockMovement.location_kind == LocationKind.custody,
-               StockMovement.location_id == custody.id)
+        .where(StockMovement.location_kind == store_kind,
+               StockMovement.location_id == store_id)
         .group_by(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
                   Item.sale_price)
         .order_by(Item.name)
@@ -291,7 +303,12 @@ def rep_bundle(
 
     return {
         "rep_id": current.rep_id,
-        "custody_id": custody.id,
+        # التطبيق بيبعت المكان ده زي ما هو وقت الترحيل، فبينزل بنوعه مش برقمه بس:
+        # مندوب على عهدة ومندوب على مخزن بيبعتوا `location_kind` مختلف.
+        "store_kind": store_kind.value,
+        "store_id": store_id,
+        # الاسم القديم فاضل للنسخ اللي لسه ما اتحدّثتش من التطبيق.
+        "custody_id": store_id if store_kind == LocationKind.custody else None,
         "customers": [
             {
                 "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,
