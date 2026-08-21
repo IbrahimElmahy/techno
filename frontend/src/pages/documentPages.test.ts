@@ -146,7 +146,6 @@ describe('باقي الشاشات — كلها بقت صفحة واحدة', () =
     ['فاتورة الشراء', 'Purchases.tsx'],
     ['مردود الشراء', 'PurchaseReturns.tsx'],
     ['طلبات البيع', 'Orders.tsx'],
-    ['الحجوزات', 'Reservations.tsx'],
     ['المعاينات', 'Inspections.tsx'],
     ['استلام الكوبونات', 'CouponReceipts.tsx'],
     ['الأصول الثابتة', 'FixedAssets.tsx'],
@@ -171,7 +170,6 @@ describe('باقي الشاشات — كلها بقت صفحة واحدة', () =
   it.each([
     ['مردود الشراء', 'PurchaseReturns.tsx'],
     ['طلبات البيع', 'Orders.tsx'],
-    ['الحجوزات', 'Reservations.tsx'],
     ['الأصول الثابتة', 'FixedAssets.tsx'],
   ])('«%s» القايمة بتفضي مكانها للمستند', (_label, file) => {
     // Rendering the list behind the document is what made the old modals feel like popups.

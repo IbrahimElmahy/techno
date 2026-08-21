@@ -139,6 +139,12 @@ export default function Orders() {
     ? customers.find((c) => c.id === o.customer_id)?.name
     : suppliers.find((s) => s.id === o.supplier_id)?.name) || '-';
 
+  /** إجمالي السطر قبل خصمه — الرقم اللي المراجعة بتبص عليه. */
+  const lineGross = (l: DraftLine) => Number(l.quantity || 0) * Number(l.unit_price || 0);
+  /** وبعد خصمه. خصم الورقة بيتحسب على المجموع، مش هنا. */
+  const lineNet = (l: DraftLine) => lineGross(l)
+    * (1 - Math.min(99.99, Number(l.discount_pct || 0)) / 100);
+
   /** قبل خصم الورقة، وبعده — نفس سُلّم الفاتورة. */
   const grossTotal = lines.reduce((sum, l) => sum + lineGross(l), 0);
   const netBeforeDoc = lines.reduce((sum, l) => sum + lineNet(l), 0);
@@ -175,12 +181,6 @@ export default function Orders() {
   const unitFactor = (l: DraftLine) => (l.unit
     ? (unitsCache[l.item_id || 0] || []).find((u) => u.name === l.unit)?.factor ?? 1
     : 1);
-
-  /** إجمالي السطر قبل خصمه — الرقم اللي المراجعة بتبص عليه. */
-  const lineGross = (l: DraftLine) => Number(l.quantity || 0) * Number(l.unit_price || 0);
-  /** وبعد خصمه. خصم الورقة بيتحسب على المجموع، مش هنا. */
-  const lineNet = (l: DraftLine) => lineGross(l)
-    * (1 - Math.min(99.99, Number(l.discount_pct || 0)) / 100);
 
   /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف — نفس فاتورة البيع. */
   const advanceFrom = (key: number) => {
