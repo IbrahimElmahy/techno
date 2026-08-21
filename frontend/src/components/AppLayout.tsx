@@ -17,6 +17,7 @@ import {
   ShoppingCartOutlined,
   BuildOutlined,
   AppstoreOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
 import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
@@ -59,6 +60,8 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'grp-production': <BuildOutlined />,
   'grp-settings': <SettingOutlined />,
   'grp-extra': <MobileOutlined />,
+  // شاشة مستقلة في الشريط، مش قسم — ليها أيقونتها زي أي مدخل.
+  '/voucher-keys': <KeyOutlined />,
 };
 
 export default function AppLayout() {

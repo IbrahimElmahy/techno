@@ -58,7 +58,14 @@ const LOYALTY = ['system_admin', 'after_sales_staff', 'viewer'];
  *  onto a 403 is worse than no entry — it reads as a broken screen. Mirrors `rbac.py:_PAYROLL_ALL`. */
 const SALARY = ['system_admin', 'accountant'];
 
-export const NAVIGATION: NavGroup[] = [
+/**
+ * الشريط الجانبي بيقبل شاشة مستقلة، مش أقسام وبس.
+ *
+ * «مفاتيح خاصة» كانت جوّه «اداره الحسابات ← سندات»: دوستين قبل ما تشوفها، وهي حاجة
+ * بتتفتح كل يوم. الشاشة اللي بتتفتح كل يوم مالهاش لازمة تكون جوّه قايمة.
+ */
+export const NAVIGATION: (NavGroup | NavScreen)[] = [
+  { key: '/voucher-keys', label: 'مفاتيح خاصة', roles: R(BOOKS) },
   // ١) اداره الانشاءات — master data. Theirs lists all twelve as separate screens; ours had four of
   // them buried inside two combined screens, which is why someone arriving from a5 could not find
   // «المخازن» or «الحسابات الفرعيه» at all.
@@ -232,8 +239,6 @@ export const NAVIGATION: NavGroup[] = [
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
-          // مفاتيح خاصة — ربط بين حسابين رئيسيين، والسند بيتعمل بضغطة.
-          { key: '/voucher-keys', label: 'مفاتيح خاصة', roles: R(BOOKS) },
         ],
       },
       {
