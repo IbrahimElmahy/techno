@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Drawer, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select,
+  Space, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -122,6 +123,20 @@ export default function Orders() {
       setSuppliers(s.data || []);
     }).catch(console.error);
   }, []);
+
+  /**
+   * الشاشة مخصّصة لنوع واحد — بيع أو شرا — واللي بيحدّده هو المدخل اللي اتفتحت منه.
+   *
+   * كانت شاشة واحدة بزرارين وقايمة فيها الاتنين ومبدّل نوع جوّه المستند. النتيجة إن اللي
+   * داخل من «شيت تسعير بيع» يقدر يعمل تسعيرة شرا من غير ما ياخد باله، ويشوف في السجل
+   * أوراق مالهاش علاقة باللي هو فيه. المدخلين في القايمة مختلفين أصلاً، فالشاشة تبقى
+   * مختلفة معاهم.
+   *
+   * `kind` جاي من `?kind=` بتاع التبويب، يعني تبويبين مفتوحين في نفس الوقت كل واحد على
+   * نوعه من غير ما يبوّظوا على بعض.
+   */
+  const kindLabel = kind === 'sale' ? 'بيع' : 'شرا';
+  const sheetName = `تسعيرة ${kindLabel}`;
 
   const filter = useListFilter(orders, {
     // «طلب بيع» and «طلب شراء» are two screens in their menu. The kind belongs on the list, not
@@ -329,9 +344,8 @@ export default function Orders() {
   const columns: ColumnsType<Order> = [
     { title: 'رقم الطلب', dataIndex: 'document_number',
       render: (v: string) => <Tag>{v}</Tag> },
-    { title: 'النوع', dataIndex: 'kind',
-      render: (k: Kind) => (k === 'sale'
-        ? <Tag color="green">بيع</Tag> : <Tag color="purple">شراء</Tag>) },
+    // عمود «النوع» اتشال — كل سطر في القايمة دي نفس النوع، فالعمود كان بيكرّر اسم الشاشة
+    // في كل صف من غير ما يقول حاجة جديدة.
     { title: 'الطرف', render: (_: any, r: Order) => partyName(r) },
     { title: 'التاريخ', dataIndex: 'order_date',
       render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
@@ -360,17 +374,15 @@ export default function Orders() {
     <>
     {!docOpen && (
     <Card
-      title="شيت تسعير"
+      title={`شيت تسعير ${kindLabel}`}
       extra={(
         <Space>
           {tableCols.control}
-          {/* من غير `data-shortcut` هنا: F2 على «إضافة صنف» جوّه الشيت، ونفس المفتاح على
-              زرارين في شاشة واحدة معناه إن اللي بيضغطه مش عارف هيحصل إيه — نفس ترتيب فاتورة
-              البيع بالظبط. */}
+          {/* زرار واحد بنوع الشاشة. من غير `data-shortcut` هنا: F2 على «إضافة صنف» جوّه
+              الشيت، ونفس المفتاح على زرارين في شاشة واحدة معناه إن اللي بيضغطه مش عارف
+              هيحصل إيه — نفس ترتيب فاتورة البيع بالظبط. */}
           <Button type="primary" icon={<PlusOutlined />}
-            onClick={() => startNew('sale')}>تسعيرة بيع</Button>
-          <Button icon={<PlusOutlined />}
-            onClick={() => startNew('purchase')}>تسعيرة شراء</Button>
+            onClick={() => startNew(kind)}>{sheetName}</Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
       )}
@@ -388,8 +400,8 @@ export default function Orders() {
         showDateRange range={filter.range} onRangeChange={filter.setRange}
         onReset={filter.reset} total={orders.length} shown={filter.filtered.length}
         filters={[
-          { key: 'kind', placeholder: 'النوع', options: [
-            { value: 'sale', label: 'تسعيرة بيع' }, { value: 'purchase', label: 'تسعيرة شراء' }] },
+          // فلتر «النوع» اتشال: القايمة كلها نوع واحد أصلاً، وفلتر إجابته واحدة بياخد
+          // مساحة ويورّي إن فيه اختيار مالهوش وجود.
           { key: 'status', placeholder: 'الحالة', options: [
             { value: 'open', label: 'مفتوح' },
             { value: 'converted', label: 'اتحوّل' },
@@ -425,7 +437,7 @@ export default function Orders() {
         <Space>
           <Button type="text" icon={<ArrowLeftOutlined />}
             onClick={() => setCreating(false)}>رجوع</Button>
-          <span>{kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'}</span>
+          <span>{sheetName}</span>
         </Space>
       )}>
         {/*
@@ -442,20 +454,8 @@ export default function Orders() {
         <DocumentToolbar actions={sheetToolbar()} />
 
         <Form layout="vertical" size="small" className="doc-form" requiredMark={false}>
-          {/* النوع بيغيّر السعر اللي السطر بيفتح عليه — سعر البيع ولا سعر الشرا — فالسطور
-              بتتفضّى معاه، لأن سطر اتسعّر بيع مش نفسه لو اتقرا شرا. */}
-          <Segmented
-            block
-            size="large"
-            value={kind}
-            onChange={(v) => { setKind(v as Kind); setLines([]); }}
-            // السطور بتتفضّى مع النوع: سطر اتسعّر بسعر البيع مش هو نفسه لو اتقرا شرا.
-            style={{ marginBottom: 10 }}
-            options={[
-              { value: 'sale', label: <span style={{ fontWeight: 700 }}>تسعيرة بيع</span> },
-              { value: 'purchase', label: <span style={{ fontWeight: 700 }}>تسعيرة شراء</span> },
-            ]}
-          />
+          {/* مبدّل «بيع / شرا» اتشال من هنا: الورقة بتتفتح من مدخل نوعه معروف، وتغييره
+            في نص الكتابة كان بيفضّي السطور اللي اتكتبت — تراجع كامل من غير ما حد يطلبه. */}
 
           {/* ترويسة الورقة: التاريخ ← السعر ساري لحد ← ملاحظات. مفيش عميل ولا مخزن — الورقة
               دي مش بتتكتب على حد ولا بتخرج من مكان. */}
