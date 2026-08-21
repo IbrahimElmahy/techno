@@ -426,3 +426,32 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-bottom: 1px solid #e6e6e6;
   margin-bottom: 6px;
 }
+
+/*
+ * خانات سُلّم الإجماليات — استثناء من قاعدة «الاسم جنب الخانة».
+ *
+ * القاعدة دي بتوفّر سطور لما الصف يكون بعرض الصفحة. عمود السُلّم ضيق، واسم طويل زي
+ * «المبلغ المدفوع نقداً» مع خانته على سطر واحد مابيوسعش — فكان الاسم بينزل تحت الخانة
+ * ويقع جنب سطر الشرح، والاتنين يتقروا جملة واحدة مالهاش معنى.
+ *
+ * فهنا الاسم فوق الخانة، وسطر الشرح تحتها، وكل واحد فيهم لوحده.
+ */
+.doc-form .ladder-inputs .ant-form-item-row {
+  flex-flow: column nowrap;
+  align-items: stretch;
+  gap: 0;
+}
+.doc-form .ladder-inputs .ant-form-item-label {
+  min-width: 0;
+  white-space: normal;
+  text-align: start;
+  padding-bottom: 2px;
+}
+/* سطر الشرح تحت الخانة — أصغر وأفتح، عشان يبان إنه شرح مش اسم حقل تاني. */
+.doc-form .ladder-inputs .ant-form-item-explain,
+.doc-form .ladder-inputs .ant-form-item-extra {
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6b6b6b;
+  padding-top: 2px;
+}

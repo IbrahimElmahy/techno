@@ -70,7 +70,16 @@ export default function TotalsLadder({
       background: t.bg, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16,
     }}>
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 340 }}>{inputs}</div>
+        {/*
+          * خانات السُلّم — أسماؤها فوقها، مش جنبها.
+          *
+          * باقي المستند اسم الحقل جنب الخانة عشان يوفّر سطور، وده صح هناك: الصف عرضه عرض
+          * الصفحة. هنا العمود ضيق (٢٤٠–٣٤٠ بكسل)، واسم زي «المبلغ المدفوع نقداً» مع الخانة
+          * على سطر واحد مابيوسعش — فكان بينزل تحت الخانة ويلتزق بسطر الشرح، ويطلعوا جملة
+          * واحدة مالهاش معنى: «المبلغ المدفوع نقداً ممكن يزيد عن الفاتورة».
+          */}
+        <div className="ladder-inputs"
+          style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 340 }}>{inputs}</div>
 
         <div style={{ flex: '1 1 320px', minWidth: 280 }}>
           <div style={{ maxWidth: 460, marginInlineStart: 'auto' }}>
