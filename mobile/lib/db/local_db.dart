@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 9, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 10, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -30,6 +30,13 @@ class LocalDb {
       }
       if (from < 8) {
         try { await d.execute(_attachmentTable); } catch (_) {}
+      }
+      if (from < 10) {
+        // v10: البيع من العربية — أصناف العهدة بأسعارها، وطابور الفواتير وسطورها.
+        for (final ddl in [_saleItemTable, _saleInvoiceTable, _saleLineTable]) {
+          try { await d.execute(ddl); } catch (_) {}
+        }
+        try { await d.execute('ALTER TABLE customer ADD COLUMN price_tier TEXT'); } catch (_) {}
       }
       if (from < 9) {
         // v9: تليفون محل الشراء — «محل الشراء» بقى تاجر مختار من قايمة المندوب.
@@ -75,8 +82,8 @@ class LocalDb {
           document_number TEXT,
           created_at TEXT NOT NULL
         )''');
-      await d.execute(
-          'CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, address TEXT)');
+      await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, '
+          'address TEXT, price_tier TEXT)');
       await d.execute(
           'CREATE TABLE insp_item_type(id INTEGER PRIMARY KEY, name TEXT, points REAL)');
       await d.execute('''
@@ -93,6 +100,9 @@ class LocalDb {
           'CREATE TABLE lookup(category TEXT, value TEXT, label TEXT, sort INTEGER, '
           'PRIMARY KEY(category, value))');
       await d.execute('CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)');
+      await d.execute(_saleItemTable);
+      await d.execute(_saleInvoiceTable);
+      await d.execute(_saleLineTable);
     });
     return _db!;
   }
@@ -154,8 +164,10 @@ class LocalDb {
       await tx.delete('customer');
       final batch = tx.batch();
       for (final c in customers) {
-        batch.insert('customer',
-            {'id': c.id, 'name': c.name, 'phone': c.phone, 'address': c.address});
+        batch.insert('customer', {
+          'id': c.id, 'name': c.name, 'phone': c.phone, 'address': c.address,
+          'price_tier': c.priceTier,
+        });
       }
       await batch.commit(noResult: true);
     });
@@ -175,6 +187,7 @@ class LocalDb {
         name: r['name'] as String,
         phone: r['phone'] as String?,
         address: r['address'] as String?,
+        priceTier: r['price_tier'] as String?,
       );
 
   // --- inspection point-items catalog (أصناف المعاينة) ---
@@ -428,12 +441,121 @@ class LocalDb {
   Future<void> deleteCouponReceipt(int localId) async {
     await (await db).delete('coupon_receipt', where: 'local_id = ?', whereArgs: [localId]);
   }
+
+  // --- البيع من العربية ---------------------------------------------------------------
+
+  /// بتحطّ أصناف العهدة مكان اللي قبلها. الرصيد صورة من لحظة السحب، فبيتبدّل كله مش يتجمّع.
+  Future<void> replaceSaleItems(List<SaleItem> items) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('sale_item');
+      final batch = tx.batch();
+      for (final it in items) {
+        batch.insert('sale_item', it.toRow());
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<SaleItem>> saleItems({String query = ''}) async {
+    final d = await db;
+    final rows = await d.query('sale_item',
+        where: query.trim().isEmpty ? null : 'name LIKE ?',
+        whereArgs: query.trim().isEmpty ? null : ['%${query.trim()}%'],
+        orderBy: 'name');
+    return [for (final r in rows) SaleItem.fromRow(r)];
+  }
+
+  /// الرصيد المتاح للصنف ده دلوقتي = اللي في الكاش **ناقص** اللي اتباع لسه ما اترفعش.
+  ///
+  /// من غير الطرح ده، مندوب معاه خمسة يقدر يكتب تلات فواتير بخمسة كل واحدة وهو من غير
+  /// شبكة، ويكتشف عند المزامنة إن اتنين منهم اترفضوا — بعد ما يكون سلّم البضاعة وقال
+  /// للعملاء إن الفواتير اتعملت. الحساب اللي في إيده لازم يبقى صادق وهو في الشارع.
+  Future<double> availableForSale(int itemId) async {
+    final d = await db;
+    final cached = await d.query('sale_item',
+        columns: ['on_hand'], where: 'item_id = ?', whereArgs: [itemId]);
+    final onHand = cached.isEmpty ? 0.0 : (cached.first['on_hand'] as num).toDouble();
+    final sold = await d.rawQuery(
+        'SELECT COALESCE(SUM(l.quantity), 0) AS q FROM sale_invoice_line l '
+        'JOIN sale_invoice i ON i.local_id = l.invoice_local_id '
+        'WHERE l.item_id = ? AND i.synced = 0',
+        [itemId]);
+    return onHand - ((sold.first['q'] as num?)?.toDouble() ?? 0);
+  }
+
+  /// بتحفظ فاتورة وسطورها في معاملة واحدة — فاتورة من غير سطور مش فاتورة.
+  Future<int> saveSaleInvoice({
+    required String clientUuid,
+    required int customerId,
+    required String customerName,
+    required String invoiceDate,
+    required double cashAmount,
+    required double creditAmount,
+    required double total,
+    String? notes,
+    required List<SaleDraftLine> lines,
+  }) async {
+    final d = await db;
+    return d.transaction<int>((tx) async {
+      final id = await tx.insert('sale_invoice', {
+        'client_uuid': clientUuid,
+        'customer_id': customerId,
+        'customer_name': customerName,
+        'invoice_date': invoiceDate,
+        'cash_amount': cashAmount,
+        'credit_amount': creditAmount,
+        'total': total,
+        'notes': notes,
+        'synced': 0,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      final batch = tx.batch();
+      for (final l in lines) {
+        batch.insert('sale_invoice_line', l.toRow(id));
+      }
+      await batch.commit(noResult: true);
+      return id;
+    });
+  }
+
+  Future<List<Map<String, Object?>>> saleInvoices({bool? synced}) async {
+    final d = await db;
+    return d.query('sale_invoice',
+        where: synced == null ? null : 'synced = ?',
+        whereArgs: synced == null ? null : [synced ? 1 : 0],
+        orderBy: 'local_id DESC');
+  }
+
+  Future<List<SaleDraftLine>> saleInvoiceLines(int invoiceLocalId) async {
+    final d = await db;
+    final rows = await d.query('sale_invoice_line',
+        where: 'invoice_local_id = ?', whereArgs: [invoiceLocalId], orderBy: 'id');
+    return [for (final r in rows) SaleDraftLine.fromRow(r)];
+  }
+
+  Future<int> pendingSalesCount() async {
+    final d = await db;
+    final r = await d.rawQuery('SELECT COUNT(*) AS c FROM sale_invoice WHERE synced = 0');
+    return (r.first['c'] as int?) ?? 0;
+  }
+
+  Future<void> markSaleSynced(String clientUuid, String documentNumber) async {
+    final d = await db;
+    await d.update('sale_invoice', {'synced': 1, 'document_number': documentNumber},
+        where: 'client_uuid = ?', whereArgs: [clientUuid]);
+  }
+
+  /// بتشيل فاتورة لسه ما اترفعتش — اللي اترفعت مابتتشالش من هنا، دي بقت في الدفاتر.
+  Future<void> deleteUnsyncedSale(int localId) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('sale_invoice_line', where: 'invoice_local_id = ?', whereArgs: [localId]);
+      await tx.delete('sale_invoice', where: 'local_id = ? AND synced = 0', whereArgs: [localId]);
+    });
+  }
 }
 
-/// المرفقات المربوطة بزيارة — بتتخزن على الجهاز وبتتزامن بعد الزيارة نفسها.
-///
-/// Keyed by the visit's `client_uuid`, not its row id: the visit is created offline and only gets
-/// a server id later, so the uuid is the one name that is true from the moment it is written.
 const _attachmentTable = '''
   CREATE TABLE attachment(
     local_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -470,3 +592,53 @@ const _couponReceiptTable = '''
     document_number TEXT,
     created_at TEXT NOT NULL
   )''';
+
+// ------------------------------------------------------------------ البيع من العربية
+
+/// أصناف العهدة — كاش مش دفتر.
+///
+/// الرصيد اللي فيها صورة من لحظة السحب، والحقيقة في السيرفر. عشان كده مافيش `synced`
+/// عليها: مافيش حاجة اتكتبت هنا عشان تروح لحد.
+const _saleItemTable = '''
+CREATE TABLE sale_item(
+  item_id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  unit TEXT,
+  on_hand REAL NOT NULL DEFAULT 0,
+  base_price REAL,
+  default_discount_pct REAL NOT NULL DEFAULT 0,
+  tier_prices TEXT
+)''';
+
+/// فاتورة اتكتبت على الجهاز.
+///
+/// `client_uuid` بيتولد مرة واحدة وقت الحفظ ومابيتغيّرش مهما اتعادت المزامنة — هو اللي
+/// بيخلّي السيرفر يعرف إن دي نفس الفاتورة مش واحدة جديدة، فالمندوب اللي شبكته قطعت في نص
+/// الرفع يقدر يعيد من غير ما العميل يتباعله مرتين.
+const _saleInvoiceTable = '''
+CREATE TABLE sale_invoice(
+  local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_uuid TEXT UNIQUE NOT NULL,
+  customer_id INTEGER NOT NULL,
+  customer_name TEXT NOT NULL,
+  invoice_date TEXT NOT NULL,
+  cash_amount REAL NOT NULL DEFAULT 0,
+  credit_amount REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL DEFAULT 0,
+  notes TEXT,
+  synced INTEGER NOT NULL DEFAULT 0,
+  document_number TEXT,
+  created_at TEXT NOT NULL
+)''';
+
+const _saleLineTable = '''
+CREATE TABLE sale_invoice_line(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_local_id INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  item_name TEXT NOT NULL,
+  quantity REAL NOT NULL,
+  unit_price REAL NOT NULL DEFAULT 0,
+  discount_pct REAL NOT NULL DEFAULT 0,
+  line_total REAL NOT NULL DEFAULT 0
+)''';

@@ -194,6 +194,107 @@ class ApiClient {
         ?? 'jpeg';
   }
 
+  // ------------------------------------------------------------ البيع من العربية
+
+  /// بتسحب كل اللي المندوب محتاجه عشان يبيع من غير شبكة — نداء واحد.
+  ///
+  /// عملاءه، واللي في عربيته بأرصدته وأسعاره. نداء واحد مش تلاتة عن قصد: المندوب اللي
+  /// شبكته بتقطع كان هيقف في نص السحب ويفضل بنص بيانات — عملاء من غير أصناف، أو أصناف
+  /// من غير أرصدة. يا يوصل كله يا ما يتغيّرش حاجة.
+  Future<void> pullSalesBundle() async {
+    final r = await http
+        .get(await _uri('/sales/rep-bundle'), headers: await _headers())
+        .timeout(const Duration(seconds: 60));
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 403) throw ApiException(403, 'الشاشة دي للمناديب.');
+    if (r.statusCode == 404) throw ApiException(404, 'مالكش عهدة مفتوحة — كلّم المخزن.');
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+
+    await LocalDb.instance.setKv('custody_id', body['custody_id'].toString());
+    await LocalDb.instance.replaceCustomers([
+      for (final c in (body['customers'] as List))
+        CustomerRef(
+          id: c['id'] as int,
+          name: c['name'] as String,
+          phone: c['phone'] as String?,
+          address: c['address'] as String?,
+          priceTier: c['price_tier'] as String?,
+        )
+    ]);
+    await LocalDb.instance.replaceSaleItems([
+      for (final i in (body['items'] as List))
+        SaleItem(
+          itemId: i['item_id'] as int,
+          name: i['name'] as String,
+          unit: i['unit'] as String?,
+          onHand: double.tryParse('${i['on_hand']}') ?? 0,
+          basePrice: double.tryParse('${i['base_price']}'),
+          defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
+          tierPrices: {
+            for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
+              e.key.toString(): double.tryParse('${e.value}') ?? 0
+          },
+        )
+    ]);
+    await LocalDb.instance.setKv('last_sales_pull', DateTime.now().toIso8601String());
+  }
+
+  /// بترفع الفواتير اللي على الجهاز. بترجّع عدد اللي طلع.
+  ///
+  /// كل فاتورة بتروح بـ`client_uuid` بتاعها، فالفاتورة اللي وصلت قبل ما الاتصال يقطع
+  /// بيعرفها السيرفر ويرجّعها زي ما هي بدل ما يكتبها تاني. يعني إعادة الرفع آمنة.
+  ///
+  /// وواحدة واحدة مش دفعة: الفاتورة اللي بتترفض (البضاعة مش موجودة، العميل اتنقل لمندوب
+  /// تاني) لازم تتقال لصاحبها بسببها، ودفعة واحدة كانت هتوقّف الباقي معاها.
+  Future<int> pushSaleInvoices() async {
+    final pending = await LocalDb.instance.saleInvoices(synced: false);
+    var sent = 0;
+    final custodyId = int.tryParse(await LocalDb.instance.getKv('custody_id') ?? '');
+    if (custodyId == null && pending.isNotEmpty) {
+      throw ApiException(0, 'اسحب البيانات الأول — العهدة مش معروفة على الجهاز.');
+    }
+    for (final inv in pending) {
+      final lines = await LocalDb.instance
+          .saleInvoiceLines(inv['local_id'] as int);
+      final r = await http
+          .post(await _uri('/sales'),
+              headers: await _headers(),
+              body: jsonEncode({
+                'customer_id': inv['customer_id'],
+                'origin': {'location_kind': 'custody', 'location_id': custodyId},
+                'variable_discount_pct': '0',
+                'cash_amount': '${inv['cash_amount']}',
+                'credit_amount': '${inv['credit_amount']}',
+                'invoice_date': inv['invoice_date'],
+                'notes': inv['notes'],
+                'client_uuid': inv['client_uuid'],
+                'lines': [
+                  for (final l in lines)
+                    {
+                      'item_id': l.itemId,
+                      'quantity': '${l.quantity}',
+                      'unit_price': '${l.unitPrice}',
+                      'discount_pct': '${l.discountPct}',
+                    }
+                ],
+              }))
+          .timeout(const Duration(seconds: 90));
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode == 200 || r.statusCode == 201) {
+        final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+        await LocalDb.instance.markSaleSynced(
+            inv['client_uuid'] as String, body['document_number'] as String);
+        sent++;
+        continue;
+      }
+      // فاتورة اترفضت مالهاش لازمة تفضل تحاول لوحدها في الخلفية — السبب لازم يوصل للمندوب.
+      throw ApiException(r.statusCode,
+          'فاتورة ${inv['customer_name']}: ${_error(r)}');
+    }
+    return sent;
+  }
+
   // ------------------------------------------------------------ coupon receipts
 
   /// Check one coupon before it is accepted, so the rep learns it is bad while the customer is

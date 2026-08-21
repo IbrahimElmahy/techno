@@ -5,6 +5,8 @@ import '../db/local_db.dart';
 import '../theme.dart';
 import 'login_screen.dart';
 import 'coupon_receipt_screen.dart';
+import 'sale_invoice_screen.dart';
+import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
 import 'review_screen.dart';
 import 'sync_screen.dart';
@@ -20,6 +22,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _username = '';
   int _pending = 0;
+  /// فواتير لسه على الجهاز — بتبان في نفس مكان المعاينات المستنية.
+  int _pendingSales = 0;
 
   @override
   void initState() {
@@ -30,10 +34,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _refresh() async {
     final u = await LocalDb.instance.getKv('username') ?? '';
     final p = await LocalDb.instance.pendingCount();
+    final ps = await LocalDb.instance.pendingSalesCount();
     if (mounted) {
       setState(() {
         _username = u;
         _pending = p;
+        _pendingSales = ps;
       });
     }
   }
@@ -145,6 +151,33 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   const SizedBox(height: 8),
+                  // البيع فوق: ده اللي بيتعمل كل يوم، والمعاينة بتحصل لما تحصل.
+                  _BigAction(
+                    icon: Icons.receipt_long_outlined,
+                    color: AppColors.success,
+                    title: 'فاتورة بيع',
+                    subtitle: 'بيع لعملائك من اللي في العربية',
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const SaleInvoiceScreen()));
+                      _refresh();
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.receipt_outlined,
+                    color: AppColors.primary,
+                    title: 'فواتيري',
+                    subtitle: _pendingSales > 0
+                        ? '$_pendingSales فاتورة لسه ما اترفعتش'
+                        : 'الفواتير المسجلة على الجهاز',
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const SalesReviewScreen()));
+                      _refresh();
+                    },
+                  ),
+                  const SizedBox(height: 14),
                   _BigAction(
                     icon: Icons.assignment_add,
                     color: AppColors.primary,

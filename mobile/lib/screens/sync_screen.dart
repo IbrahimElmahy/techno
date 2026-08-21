@@ -30,7 +30,8 @@ class _SyncScreenState extends State<SyncScreen> {
   Future<void> _refresh() async {
     // Both queues are "work waiting to go up" as far as the rep is concerned.
     final p = await LocalDb.instance.pendingCount() +
-        await LocalDb.instance.pendingCouponReceiptCount();
+        await LocalDb.instance.pendingCouponReceiptCount() +
+        await LocalDb.instance.pendingSalesCount();
     final ls = await LocalDb.instance.getKv('last_sync');
     final lp = await LocalDb.instance.getKv('last_pull');
     _serverCtrl.text = await ApiClient.instance.baseUrl();
@@ -52,11 +53,20 @@ class _SyncScreenState extends State<SyncScreen> {
     try {
       final pushed = await ApiClient.instance.pushInspections();
       final coupons = await ApiClient.instance.pushCouponReceipts();
+      // الفواتير قبل السحب: الرفع بيخصم من العهدة على السيرفر، والسحب اللي بعده بيجيب
+      // الرصيد بعد الخصم. العكس كان هيرجّع أرقام قديمة على طول.
+      final invoices = await ApiClient.instance.pushSaleInvoices();
       await ApiClient.instance.pullReferenceData();
+      // حزمة البيع بتتسحب مع الباقي — عملاء المندوب وأصناف عربيته بأسعارهم. بتتبلع لو
+      // المستخدم مش مندوب أصلاً (مافيش عهدة)، عشان مزامنة الإدارة ماتفشلش من غير سبب.
+      try {
+        await ApiClient.instance.pullSalesBundle();
+      } catch (_) {/* مش مندوب، أو مالوش عهدة — باقي المزامنة تمّت */}
       setState(() {
         final parts = <String>[
           if (pushed > 0) 'اترفعت $pushed معاينة',
           if (coupons > 0) 'اترفع $coupons استلام كوبونات',
+          if (invoices > 0) 'اترفعت $invoices فاتورة',
         ];
         _status = parts.isEmpty
             ? 'مفيش حاجة جديدة — واتحدثت الأصناف والقوائم ✔'

@@ -28,7 +28,10 @@ class CustomerRef {
   final String name;
   final String? phone;
   final String? address;
-  const CustomerRef({required this.id, required this.name, this.phone, this.address});
+  /// فئة سعر العميل — هي اللي بتقرّر بكام الصنف يتباع له، فبتنزل معاه في حزمة البيع.
+  final String? priceTier;
+  const CustomerRef(
+      {required this.id, required this.name, this.phone, this.address, this.priceTier});
 }
 
 class LookupOption {
@@ -138,4 +141,98 @@ class Inspection {
             }
         ],
       };
+}
+
+// ------------------------------------------------------------------ البيع من العربية
+
+/// صنف في عهدة المندوب — بسعره ورصيده، زي ما نزلوا في حزمة البيع.
+///
+/// الأسعار نازلة بالفئات لأن السعر بيتحدّد بفئة العميل، والجهاز لازم يحسب **نفس** الرقم
+/// اللي السيرفر هيحسبه: الورقة اللي في إيد العميل والقيد في الدفتر مايختلفوش.
+class SaleItem {
+  final int itemId;
+  final String name;
+  final String? unit;
+  final double onHand;
+  final double? basePrice;
+  final double defaultDiscountPct;
+  final Map<String, double> tierPrices;
+
+  const SaleItem({
+    required this.itemId,
+    required this.name,
+    this.unit,
+    this.onHand = 0,
+    this.basePrice,
+    this.defaultDiscountPct = 0,
+    this.tierPrices = const {},
+  });
+
+  /// سعر الصنف لعميل فئته دي — وبيرجع للسعر الأساسي لو الفئة مالهاش سعر خاص.
+  double priceFor(String? tier) =>
+      (tier != null ? tierPrices[tier] : null) ?? basePrice ?? 0;
+
+  Map<String, Object?> toRow() => {
+        'item_id': itemId,
+        'name': name,
+        'unit': unit,
+        'on_hand': onHand,
+        'base_price': basePrice,
+        'default_discount_pct': defaultDiscountPct,
+        // الفئات بتتخزّن نص «فئة=سعر» مفصولين بفاصلة — عمود واحد بدل جدول تاني لحاجة
+        // بتتقرا كلها مع الصنف ومابتتسألش لوحدها أبداً.
+        'tier_prices': tierPrices.entries.map((e) => '${e.key}=${e.value}').join(','),
+      };
+
+  static SaleItem fromRow(Map<String, Object?> r) => SaleItem(
+        itemId: r['item_id'] as int,
+        name: r['name'] as String,
+        unit: r['unit'] as String?,
+        onHand: (r['on_hand'] as num?)?.toDouble() ?? 0,
+        basePrice: (r['base_price'] as num?)?.toDouble(),
+        defaultDiscountPct: (r['default_discount_pct'] as num?)?.toDouble() ?? 0,
+        tierPrices: {
+          for (final part in ((r['tier_prices'] as String?) ?? '').split(','))
+            if (part.contains('=')) part.split('=')[0]: double.tryParse(part.split('=')[1]) ?? 0
+        },
+      );
+}
+
+/// سطر في فاتورة على الجهاز.
+class SaleDraftLine {
+  final int itemId;
+  final String itemName;
+  double quantity;
+  double unitPrice;
+  double discountPct;
+
+  SaleDraftLine({
+    required this.itemId,
+    required this.itemName,
+    this.quantity = 1,
+    this.unitPrice = 0,
+    this.discountPct = 0,
+  });
+
+  /// قبل الخصم، وبعده. نفس حساب الشاشة الكبيرة: خصم السطر على سطره.
+  double get gross => quantity * unitPrice;
+  double get net => gross * (1 - (discountPct.clamp(0, 99.99)) / 100);
+
+  Map<String, Object?> toRow(int invoiceLocalId) => {
+        'invoice_local_id': invoiceLocalId,
+        'item_id': itemId,
+        'item_name': itemName,
+        'quantity': quantity,
+        'unit_price': unitPrice,
+        'discount_pct': discountPct,
+        'line_total': net,
+      };
+
+  static SaleDraftLine fromRow(Map<String, Object?> r) => SaleDraftLine(
+        itemId: r['item_id'] as int,
+        itemName: r['item_name'] as String,
+        quantity: (r['quantity'] as num?)?.toDouble() ?? 0,
+        unitPrice: (r['unit_price'] as num?)?.toDouble() ?? 0,
+        discountPct: (r['discount_pct'] as num?)?.toDouble() ?? 0,
+      );
 }
