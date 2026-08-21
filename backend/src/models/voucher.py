@@ -33,6 +33,11 @@ class Voucher(Base):
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
+    # (033) رقم الجهاز — نفس فكرة الفاتورة بالظبط: المندوب بيحصّل وهو من غير شبكة، ولو
+    # الاتصال قطع بعد ما السند اتكتب وقبل ما الرد يوصل، إعادة الرفع كانت هتقيّد التحصيل
+    # مرتين وتنقص مديونية العميل بالضعف. الرقم بيتولد على الجهاز مرة، والـUNIQUE بيمنع التاني.
+    client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True,
+                                                    index=True)
     kind: Mapped[VoucherKind] = mapped_column(
         Enum(VoucherKind, native_enum=False, length=16), nullable=False, index=True
     )

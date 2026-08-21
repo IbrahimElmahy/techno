@@ -17,7 +17,7 @@ from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
 from src.models.role import RoleName
 from src.models.treasury import TreasuryKind
-from src.models.voucher import VoucherKind
+from src.models.voucher import Voucher, VoucherKind
 from src.services import (
     document_resolver,
     ledger_service,
@@ -44,6 +44,9 @@ class ReceiptIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
+    # (033) رقم الجهاز — بيخلّي إعادة الرفع من تطبيق المندوب ترجّع نفس السند بدل ما تقيّد
+    # التحصيل مرتين وتنقص مديونية العميل بالضعف.
+    client_uuid: str | None = None
 
 
 class PaymentIn(BaseModel):
@@ -275,13 +278,19 @@ def create_receipt(
     db: Session = Depends(get_db),
 ) -> VoucherOut:
     """سند قبض — تحصيل من عميل (المندوب يحصّل في عهدته، المكتب في الخزينة)."""
+    # السند اللي اتكتب خلاص بيرجع زي ما هو — نفس حماية الفاتورة.
+    if body.client_uuid:
+        seen = db.scalar(select(Voucher).where(Voucher.client_uuid == body.client_uuid))
+        if seen is not None:
+            return _out(seen)
     try:
         v = voucher_service.create_receipt(
             db, customer_id=body.customer_id, amount=body.amount, actor_user_id=current.id,
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
-            family=body.family, on_total=body.on_total)
+            family=body.family, on_total=body.on_total,
+            client_uuid=body.client_uuid)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()

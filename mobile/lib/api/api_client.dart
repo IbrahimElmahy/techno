@@ -299,6 +299,52 @@ class ApiClient {
     return sent;
   }
 
+  /// بترفع التحصيلات اللي على الجهاز.
+  ///
+  /// كل واحد بـ`client_uuid` بتاعه — التحصيل اللي وصل قبل ما الاتصال يقطع بيرجع زي ما هو
+  /// بدل ما يتقيّد تاني وينقّص مديونية العميل بالضعف.
+  Future<int> pushReceipts() async {
+    final pending = await LocalDb.instance.receipts(synced: false);
+    var sent = 0;
+    for (final row in pending) {
+      final r = await http
+          .post(await _uri('/vouchers/receipts'),
+              headers: await _headers(),
+              body: jsonEncode({
+                'customer_id': row['customer_id'],
+                'amount': '${row['amount']}',
+                'voucher_date': row['receipt_date'],
+                'description': row['notes'],
+                // على إجمالي المديونية: المندوب في الشارع مش بيعرف العميل مدين على أنهي
+                // خط منتجات، والسيرفر بيوزّع بالنسبة بدل ما يخمّن خط واحد.
+                'on_total': true,
+                'client_uuid': row['client_uuid'],
+              }))
+          .timeout(const Duration(seconds: 60));
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode == 200 || r.statusCode == 201) {
+        final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+        await LocalDb.instance.markReceiptSynced(
+            row['client_uuid'] as String, body['document_number'] as String);
+        sent++;
+        continue;
+      }
+      throw ApiException(r.statusCode, 'تحصيل ${row['customer_name']}: ${_error(r)}');
+    }
+    return sent;
+  }
+
+  /// ملف العميل — رصيده وحركته. ده **بيحتاج شبكة**: الحركة بتتغيّر من المكتب ومن مناديب
+  /// تانيين، ورقم قديم متخزّن على الجهاز أوحش من «مافيش شبكة» لأن الواحد بيصدّقه.
+  Future<Map<String, dynamic>> customerProfile(int customerId) async {
+    final r = await http
+        .get(await _uri('/customers/$customerId/profile'), headers: await _headers())
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
   // ------------------------------------------------------------ coupon receipts
 
   /// Check one coupon before it is accepted, so the rep learns it is bad while the customer is

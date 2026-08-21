@@ -6,6 +6,10 @@ import '../theme.dart';
 import 'login_screen.dart';
 import 'coupon_receipt_screen.dart';
 import 'sale_invoice_screen.dart';
+import 'collect_cash_screen.dart';
+import 'customer_profile_screen.dart';
+import 'day_summary_screen.dart';
+import 'my_stock_screen.dart';
 import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
 import 'review_screen.dart';
@@ -176,6 +180,45 @@ class _HomeScreenState extends State<HomeScreen> {
                           MaterialPageRoute(builder: (_) => const SalesReviewScreen()));
                       _refresh();
                     },
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.payments_outlined,
+                    color: AppColors.accent,
+                    title: 'تحصيل من عميل',
+                    subtitle: 'سند قبض — بيتحفظ ويترفع زي الفاتورة',
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const CollectCashScreen()));
+                      _refresh();
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.local_shipping_outlined,
+                    color: AppColors.primary,
+                    title: 'بضاعتي',
+                    subtitle: 'اللي في العربية دلوقتي بكمياته',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const MyStockScreen())),
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.account_balance_wallet_outlined,
+                    color: AppColors.success,
+                    title: 'حساب عميل',
+                    subtitle: 'رصيده وآخر حركته — محتاج شبكة',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const CustomerProfileScreen())),
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.insights_outlined,
+                    color: AppColors.accent,
+                    title: 'ملخّص اليوم',
+                    subtitle: 'بعت بكام وحصّلت كام',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const DaySummaryScreen())),
                   ),
                   const SizedBox(height: 14),
                   _BigAction(

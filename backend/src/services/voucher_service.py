@@ -141,6 +141,8 @@ def _create(
     # المديونية» credits every line in proportion. One entry, several credit lines: the collection
     # happened once and the ledger should show it once.
     credit_split: list[tuple[int, Decimal]] | None = None,
+    # (033) رقم الجهاز — بيتخزّن زي ما هو، والـUNIQUE عليه هي اللي بتمنع التكرار.
+    client_uuid: str | None = None,
 ) -> Voucher:
     voucher = Voucher(
         document_number=_doc_number(db, kind), kind=kind, amount=amount,
@@ -150,6 +152,7 @@ def _create(
         voucher_date=voucher_date or date.today(), payment_method=payment_method,
         reference=reference, description=description, ledger_entry_id=None,
         reverses_id=reverses_id, actor_user_id=actor_user_id, family=family,
+        client_uuid=client_uuid,
     )
     db.add(voucher)
     db.flush()
@@ -197,7 +200,7 @@ def create_receipt(
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None, family: str | None = None,
-    on_total: bool = False,
+    on_total: bool = False, client_uuid: str | None = None,
 ) -> Voucher:
     """سند قبض — تحصيل من عميل. النقدية تدخل الخزينة المختارة أو عهدة المندوب المحصِّل.
 
@@ -228,6 +231,7 @@ def create_receipt(
             customer_id=customer_id, treasury_id=safe_id,
             credit_split=[(a.account_id, v) for a, v in parts],
             family=None,        # None on the voucher means «على الإجمالي», same as the argument
+            client_uuid=client_uuid,
         )
 
     party = _customer_account(db, customer_id, family)
@@ -239,6 +243,7 @@ def create_receipt(
         payment_method=payment_method, entry_type="receipt",
         statement="تحصيل من عميل" + (f" — {family}" if family else ""),
         customer_id=customer_id, treasury_id=safe_id, family=family,
+        client_uuid=client_uuid,
     )
 
 

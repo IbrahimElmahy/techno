@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 10, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 11, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -30,6 +30,10 @@ class LocalDb {
       }
       if (from < 8) {
         try { await d.execute(_attachmentTable); } catch (_) {}
+      }
+      if (from < 11) {
+        // v11: التحصيل من العربية — سند قبض بيتكتب في الشارع ويترفع بعدين.
+        try { await d.execute(_receiptTable); } catch (_) {}
       }
       if (from < 10) {
         // v10: البيع من العربية — أصناف العهدة بأسعارها، وطابور الفواتير وسطورها.
@@ -103,6 +107,7 @@ class LocalDb {
       await d.execute(_saleItemTable);
       await d.execute(_saleInvoiceTable);
       await d.execute(_saleLineTable);
+      await d.execute(_receiptTable);
     });
     return _db!;
   }
@@ -546,6 +551,77 @@ class LocalDb {
         where: 'client_uuid = ?', whereArgs: [clientUuid]);
   }
 
+  // --- التحصيل ------------------------------------------------------------------------
+
+  Future<int> saveReceipt({
+    required String clientUuid,
+    required int customerId,
+    required String customerName,
+    required double amount,
+    required String receiptDate,
+    String? notes,
+  }) async {
+    final d = await db;
+    return d.insert('sale_receipt', {
+      'client_uuid': clientUuid,
+      'customer_id': customerId,
+      'customer_name': customerName,
+      'amount': amount,
+      'receipt_date': receiptDate,
+      'notes': notes,
+      'synced': 0,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<List<Map<String, Object?>>> receipts({bool? synced}) async {
+    final d = await db;
+    return d.query('sale_receipt',
+        where: synced == null ? null : 'synced = ?',
+        whereArgs: synced == null ? null : [synced ? 1 : 0],
+        orderBy: 'local_id DESC');
+  }
+
+  Future<int> pendingReceiptsCount() async {
+    final d = await db;
+    final r = await d.rawQuery('SELECT COUNT(*) AS c FROM sale_receipt WHERE synced = 0');
+    return (r.first['c'] as int?) ?? 0;
+  }
+
+  Future<void> markReceiptSynced(String clientUuid, String documentNumber) async {
+    final d = await db;
+    await d.update('sale_receipt', {'synced': 1, 'document_number': documentNumber},
+        where: 'client_uuid = ?', whereArgs: [clientUuid]);
+  }
+
+  Future<void> deleteUnsyncedReceipt(int localId) async {
+    final d = await db;
+    await d.delete('sale_receipt', where: 'local_id = ? AND synced = 0', whereArgs: [localId]);
+  }
+
+  /// ملخّص اليوم من على الجهاز — بيع وتحصيل وعدد الفواتير.
+  ///
+  /// بيتحسب من اللي على الجهاز مش من السيرفر، عشان يشتغل في الشارع. ودي هي الإجابة على
+  /// السؤال اللي المندوب بيسأله لنفسه آخر اليوم قبل ما يورّد.
+  Future<Map<String, double>> dayTotals(String isoDate) async {
+    final d = await db;
+    final sold = await d.rawQuery(
+        'SELECT COALESCE(SUM(total),0) AS t, COUNT(*) AS c FROM sale_invoice '
+        'WHERE invoice_date = ?', [isoDate]);
+    final cash = await d.rawQuery(
+        'SELECT COALESCE(SUM(cash_amount),0) AS t FROM sale_invoice WHERE invoice_date = ?',
+        [isoDate]);
+    final got = await d.rawQuery(
+        'SELECT COALESCE(SUM(amount),0) AS t FROM sale_receipt WHERE receipt_date = ?',
+        [isoDate]);
+    return {
+      'sales': (sold.first['t'] as num?)?.toDouble() ?? 0,
+      'invoices': ((sold.first['c'] as int?) ?? 0).toDouble(),
+      'cash_on_invoices': (cash.first['t'] as num?)?.toDouble() ?? 0,
+      'collected': (got.first['t'] as num?)?.toDouble() ?? 0,
+    };
+  }
+
   /// بتشيل فاتورة لسه ما اترفعتش — اللي اترفعت مابتتشالش من هنا، دي بقت في الدفاتر.
   Future<void> deleteUnsyncedSale(int localId) async {
     final d = await db;
@@ -641,4 +717,22 @@ CREATE TABLE sale_invoice_line(
   unit_price REAL NOT NULL DEFAULT 0,
   discount_pct REAL NOT NULL DEFAULT 0,
   line_total REAL NOT NULL DEFAULT 0
+)''';
+
+/// تحصيل من عميل اتكتب على الجهاز.
+///
+/// `client_uuid` هنا مش رفاهية: لو الاتصال قطع بعد ما السند اتكتب على السيرفر وقبل ما
+/// الرد يوصل، إعادة الرفع كانت هتقيّد التحصيل مرتين — ومديونية العميل تنقص بالضعف.
+const _receiptTable = '''
+CREATE TABLE sale_receipt(
+  local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_uuid TEXT UNIQUE NOT NULL,
+  customer_id INTEGER NOT NULL,
+  customer_name TEXT NOT NULL,
+  amount REAL NOT NULL,
+  receipt_date TEXT NOT NULL,
+  notes TEXT,
+  synced INTEGER NOT NULL DEFAULT 0,
+  document_number TEXT,
+  created_at TEXT NOT NULL
 )''';
