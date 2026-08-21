@@ -139,6 +139,25 @@ export default function Orders() {
     ? customers.find((c) => c.id === o.customer_id)?.name
     : suppliers.find((s) => s.id === o.supplier_id)?.name) || '-';
 
+  /**
+   * سعر الصنف المخزّن — سعر البيع للتسعيرة البيع، وسعر الشرا لتسعيرة الشرا.
+   *
+   * الحقل اسمه `sale_price`، وكان مكتوب هنا `sale_price_1` — اسم مالوش وجود لا في الـAPI
+   * ولا في أي شاشة تانية. يعني سطر تسعيرة البيع كان بيفتح بسعر فاضي **من أول يوم**، وكل
+   * واحد بيكتب السعر بإيده وهو متخزّن على الصنف أصلاً.
+   */
+  const storedPrice = (itemId?: number) => {
+    const it = items.find((i) => i.id === itemId);
+    const raw = kind === 'sale' ? it?.sale_price : it?.purchase_price;
+    return Number(raw) || 0;
+  };
+
+  /** الخصم المخزّن على الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر. */
+  const storedDiscount = (itemId?: number) => {
+    const it = items.find((i) => i.id === itemId);
+    return Number(it?.default_discount_pct) || 0;
+  };
+
   /** إجمالي السطر قبل خصمه — الرقم اللي المراجعة بتبص عليه. */
   const lineGross = (l: DraftLine) => Number(l.quantity || 0) * Number(l.unit_price || 0);
   /** وبعد خصمه. خصم الورقة بيتحسب على المجموع، مش هنا. */
@@ -218,12 +237,11 @@ export default function Orders() {
   const addItem = (itemId: number) => {
     setPickerOpen(false);
     const key = (lines[lines.length - 1]?.key ?? 0) + 1;
-    const it = items.find((i) => i.id === itemId);
     // An order is a price quoted in advance, so the line opens on the item's own price rather
-    // than empty — the person is confirming a number, not inventing one.
+    // than empty — the person is confirming a number, not inventing one. والخصم كمان.
     setLines((prev) => [...prev, { key, item_id: itemId,
-      unit_price: Number(kind === 'sale' ? it?.sale_price_1 : it?.purchase_price) || undefined,
-      unit: null, discount_pct: 0 }]);
+      unit_price: storedPrice(itemId),
+      unit: null, discount_pct: storedDiscount(itemId) }]);
     setFocusLineKey(key);
     void fetchUnits(itemId);
   };
@@ -431,6 +449,7 @@ export default function Orders() {
             size="large"
             value={kind}
             onChange={(v) => { setKind(v as Kind); setLines([]); }}
+            // السطور بتتفضّى مع النوع: سطر اتسعّر بسعر البيع مش هو نفسه لو اتقرا شرا.
             style={{ marginBottom: 10 }}
             options={[
               { value: 'sale', label: <span style={{ fontWeight: 700 }}>تسعيرة بيع</span> },
@@ -503,8 +522,16 @@ export default function Orders() {
                       <td>
                         <Select size="small" style={{ width: '100%' }}
                           value={line.unit ?? '__base__'}
-                          onChange={(v) => setLines((prev) => prev.map((l) => (l.key === line.key
-                            ? { ...l, unit: v === '__base__' ? null : v } : l)))}
+                          onChange={(v) => setLines((prev) => prev.map((l) => {
+                            if (l.key !== line.key) return l;
+                            const unit = v === '__base__' ? null : v;
+                            // السعر بيتضرب في معامل الوحدة — نفس حساب الفاتورة (٠٠٧+٠٠٨).
+                            // من غير كده اختيار «كرتونة» بيسيب سعر القطعة، والورقة تطلع
+                            // بسعر مالوش علاقة باللي مكتوب جنبه.
+                            const factor = (unitsCache[l.item_id || 0] || [])
+                              .find((u) => u.name === unit)?.factor ?? 1;
+                            return { ...l, unit, unit_price: storedPrice(l.item_id) * factor };
+                          }))}
                           options={unitOptions(line.item_id)} />
                       </td>
                       <td>
