@@ -356,7 +356,7 @@ export const HOME_SCREEN: NavScreen = {
 export const EXTRA_SECTIONS: NavGroup[] = [
   {
     key: 'grp-extra',
-    label: 'إضافات تكنو ثيرم',
+    label: 'خدمات ما بعد البيع',
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
       { key: '/loyalty', label: 'خدمة ما بعد البيع والنقاط', roles: ['system_admin', 'after_sales_staff'] },
