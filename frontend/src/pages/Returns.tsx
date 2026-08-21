@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Modal, Row,
-  Segmented, Select, Space, Statistic, Table, Tag, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
   FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,

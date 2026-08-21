@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, InputNumber, Row, Select, Space,
-  Statistic, Table, Tabs, Tag, Tree, message, Radio
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, Tree, message, Radio,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
   ReloadOutlined, SearchOutlined,

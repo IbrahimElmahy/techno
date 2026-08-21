@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Button, Form, Input, InputNumber, Select, Tag, message
+  Button, Form, Input, Select, Tag, message,
 } from 'antd';
+import { InputNumber } from './NumberInput';
 import { PlusOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { TabModal } from './TabModal';

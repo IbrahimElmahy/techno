@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Row, Col,
-  InputNumber, Divider, Empty,
+  Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Row, Col, Divider, Empty,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import {
   FileExcelOutlined, ReloadOutlined, BuildOutlined, DatabaseOutlined,
   DeleteOutlined, HourglassOutlined, ShoppingOutlined,

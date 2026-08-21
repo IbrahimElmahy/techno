@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, InputNumber, Row, Select, Space, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import {
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, UndoOutlined,
 } from '@ant-design/icons';

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Input, InputNumber, Row, Select, Space, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   CalendarOutlined, CheckOutlined, CloseOutlined, DownloadOutlined, PlusOutlined,

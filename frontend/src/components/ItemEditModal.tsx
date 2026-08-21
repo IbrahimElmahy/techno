@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Form, Input, InputNumber, Select, Switch, Divider, Row, Col, Spin, message
+  Form, Input, Select, Switch, Divider, Row, Col, Spin, message,
 } from 'antd';
+import { InputNumber } from './NumberInput';
 import { api } from '../api/client';
 import { useLookup } from '../hooks/useLookup';
 import { TabModal } from './TabModal';

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, InputNumber, Row, Select, Statistic, Table, Tag,
-  message,
+  Alert, Button, Card, Col, DatePicker, Row, Select, Statistic, Table, Tag, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';

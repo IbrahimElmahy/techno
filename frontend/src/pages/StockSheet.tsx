@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, InputNumber, Row, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, Row, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';

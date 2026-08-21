@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Col, Input, InputNumber, Row, Select, Space, Table, Typography, message } from 'antd';
+import {
+  Button, Col, Input, Row, Select, Space, Table, Typography, message,
+} from 'antd';
+import { InputNumber } from './NumberInput';
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 

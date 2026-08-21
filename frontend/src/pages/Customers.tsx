@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Checkbox, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space,
-  Statistic, Table, Tag, Tooltip, message,
+  Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import {
   UserAddOutlined, PlusOutlined, MinusCircleOutlined, EyeOutlined, StopOutlined,
   SearchOutlined, ClearOutlined, DeleteOutlined,

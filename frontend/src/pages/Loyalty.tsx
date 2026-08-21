@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Card, Col, Divider, Form, Input, InputNumber, Modal, Row, Select, Space, Table, Tabs, Tag, message,
+  Button, Card, Col, Divider, Form, Input, Modal, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Divider, Form, Input, InputNumber, Row, Select, Space,
-  Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Divider, Form, Input, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import { BuildOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';

@@ -145,6 +145,8 @@ describe('«عرض» بيوصل مكان ومابيغيّرش حاجة', () => {
     await waitFor(() => {
       expect(document.querySelectorAll('.entry-grid tbody tr').length).toBe(1);
     });
-    expect(document.querySelector('input[data-qty-key]')).toHaveValue('10');
+    // «١٠» مش «10»: خانات الأرقام بتعرض عربي (`components/NumberInput`)، وبتقرا اللاتيني
+    // اللي بيتكتب عليها عادي. اللي بيتقاس هنا إن الكمية وصلت، وهي وصلت.
+    expect(document.querySelector('input[data-qty-key]')).toHaveValue('١٠');
   });
 });

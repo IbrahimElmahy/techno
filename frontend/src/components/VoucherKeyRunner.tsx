@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, DatePicker, Descriptions, Form, Input, InputNumber, Select,
-  Space, Spin, Steps, Tag, Tooltip, message,
+  Alert, Button, Card, DatePicker, Descriptions, Form, Input, Select, Space, Spin, Steps, Tag, Tooltip, message,
 } from 'antd';
+import { InputNumber } from './NumberInput';
 import { ThunderboltOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';

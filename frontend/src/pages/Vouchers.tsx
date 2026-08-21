@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card, Tabs, Table, Form, Segmented, Select, InputNumber, DatePicker, Input, Button, Space, Tag, Statistic, Row, Col, message, Descriptions, Alert,
+  Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Statistic, Row, Col, message, Descriptions, Alert,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   DollarOutlined,

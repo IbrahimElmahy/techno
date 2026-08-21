@@ -1,5 +1,8 @@
 import React from 'react';
-import { Button, DatePicker, InputNumber, Space } from 'antd';
+import {
+  Button, DatePicker, Space,
+} from 'antd';
+import { InputNumber } from './NumberInput';
 import dayjs from 'dayjs';
 import { normalizeAr } from './ListToolbar';
 

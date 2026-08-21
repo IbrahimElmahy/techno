@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, InputNumber, Modal, Row,
-  Segmented, Select,
-  Space, Statistic, Table, Tag, Tooltip, message,
+  Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
+import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined,
   EditOutlined, StopOutlined, SearchOutlined, ClearOutlined, AppstoreOutlined,

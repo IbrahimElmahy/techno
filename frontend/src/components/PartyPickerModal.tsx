@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Col, DatePicker, Empty, Form, Input, InputNumber, Row, Select, Space,
-  Spin, Tag, message
+  Button, Col, DatePicker, Empty, Form, Input, Row, Select, Space, Spin, Tag, message,
 } from 'antd';
+import { InputNumber } from './NumberInput';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
