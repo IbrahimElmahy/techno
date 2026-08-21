@@ -23,6 +23,7 @@ import {
 } from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
 import RowDensityControl from './RowDensity';
+import FullscreenToggle from './FullscreenToggle';
 import Logo from './Logo';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
@@ -319,6 +320,8 @@ export default function AppLayout() {
           }}>
             {/* ارتفاع الصف — في الهيدر عشان يبان إنه على النظام كله، مش إعداد شاشة واحدة. */}
             <RowDensityControl />
+            {/* وملء الشاشة جنبه: الاتنين بيجاوبوا نفس السؤال — «وريني سطور أكتر». */}
+            <FullscreenToggle />
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
               <Space size={6} style={{ cursor: 'pointer' }}>
                 <Avatar size={26} style={{ backgroundColor: '#6AB42D' }} icon={<UserOutlined />} />
