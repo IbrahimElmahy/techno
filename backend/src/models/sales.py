@@ -48,6 +48,17 @@ class SalesInvoice(Base):
     # entry date too — a document dated one day and posted on another would make every statement
     # disagree with the paper.
     invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    # (033) رقم الجهاز للفاتورة — بيمنع إنها تتكتب مرتين.
+    #
+    # تطبيق المندوب بيكتب الفاتورة وهو من غير شبكة وبيرفعها بعدين. لو الاتصال قطع **بعد** ما
+    # السيرفر كتبها وقبل ما الرد يوصل، الجهاز بيفضل شايفها مش مرفوعة ويعيد الرفع — والعميل
+    # يتباعله مرتين والبضاعة تخرج مرتين. الرقم ده بيتولد على الجهاز مرة واحدة ومابيتغيّرش،
+    # والـUNIQUE عليه بتخلّي المحاولة التانية ترجع نفس الفاتورة بدل ما تعمل واحدة تانية.
+    #
+    # نفس الحماية اللي في المعاينات واستلام الكوبونات — والفواتير كانت هي الناقصة، وهي أخطر
+    # الاتنين لأنها بتحرّك مخزون وفلوس.
+    client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True,
+                                                    index=True)
     # Denormalised totals of the invoice's expense lines, so a report does not have to join in
     # order to explain a figure the reader can already see on the document.
     expenses_billed: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)

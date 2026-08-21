@@ -224,6 +224,8 @@ def create_sale(
     invoice_date=None,
     # مصروفات الفاتورة: [{account_id, kind: billed|operating, amount, description}]
     expenses: list[dict] | None = None,
+    # (033) رقم الجهاز — بيتخزّن زي ما هو، والـUNIQUE عليه هي اللي بتمنع التكرار.
+    client_uuid: str | None = None,
 ) -> SalesInvoice:
     if not lines:
         raise SalesError("الفاتورة لازم يكون فيها صنف واحد على الأقل.")
@@ -336,6 +338,7 @@ def create_sale(
         coupon_serial_to=(coupon_serial_to or None),
         coupon_count=_coupon_count(coupon_serial_from, coupon_serial_to, coupon_count),
         invoice_date=invoice_date,
+        client_uuid=client_uuid,
     )
     db.add(invoice)
     db.flush()

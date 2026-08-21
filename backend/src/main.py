@@ -226,6 +226,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("purchase_return", "gross", "DECIMAL(18,2)"),
     ("purchase_return", "variable_discount_pct", "DECIMAL(9,4)"),
     ("purchase_return", "combined_pct", "DECIMAL(9,4)"),
+    # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
+    ("sales_invoice", "client_uuid", "VARCHAR(64)"),
     # (032) مرتجع المبيعات بقى يتعكس زي مردود الشرا.
     ("sales_return", "reversed_at", "DATETIME"),
     ("sales_return", "reversal_entry_id", "BIGINT"),

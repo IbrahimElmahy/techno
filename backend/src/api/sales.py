@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from datetime import date
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
@@ -22,11 +22,11 @@ from src.auth.rbac import (
 )
 from src.core import clock
 from src.core.db import get_db
-from src.models.catalog import PriceTier
+from src.models.catalog import Item, ItemPrice, PriceTier
 from src.models.customer import Customer
 from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
-from src.models.stock import LocationKind
+from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.warehouse import Custody
 from src.services import coupon_receipt_service, sales_service
 from src.services.coupon_receipt_service import CouponReceiptError
@@ -102,6 +102,8 @@ class SaleCreate(BaseModel):
     expenses: list[InvoiceExpenseIn] = []
     # (031) أبيض ولا بولي — which of the customer's accounts this invoice posts to.
     family: str | None = None
+    # (033) رقم الجهاز — بيخلّي إعادة الرفع ترجّع نفس الفاتورة بدل ما تكتب واحدة تانية.
+    client_uuid: str | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -232,12 +234,102 @@ def _rep_scope_check(db: Session, current: CurrentUser, customer_id: int, origin
         raise HTTPException(403, {"code": "forbidden", "message": "Must sell from your own custody"})
 
 
+@router.get("/rep-bundle", response_model=dict)
+def rep_bundle(
+    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """كل اللي المندوب محتاجه عشان يبيع وهو من غير شبكة — في نداء واحد.
+
+    التطبيق بيشتغل offline: بيسحب مرة وهو في مكان فيه شبكة، وبعدها بيكتب فواتير في الشارع.
+    اللي بيحتاجه تلات حاجات مربوطة ببعض — عهدته، وعملاءه، واللي في العربية بسعره — ولو كل
+    واحدة فيهم نداء لوحدها، المندوب اللي شبكته بتقطع بيقف في نص السحب ويفضل بنص بيانات:
+    عملاء من غير أصناف، أو أصناف من غير أرصدة. نداء واحد يا بيوصل يا لأ.
+
+    **والأرصدة والأسعار جاية من نفس المكان اللي البيع بيتحسب منه.** العهدة بترجع بالكمية
+    المشتقّة من الحركات مش برقم متخزّن، والسعر بيرجع بكل الفئات عشان الجهاز يحسب نفس الرقم
+    اللي السيرفر هيحسبه للعميل ده — الورقة اللي في إيد العميل والقيد في الدفتر لازم يقولوا
+    نفس الرقم.
+    """
+    if current.rep_id is None:
+        raise HTTPException(403, {"code": "forbidden", "message": "الشاشة دي للمناديب."})
+    custody = db.scalar(select(Custody).where(Custody.rep_id == current.rep_id))
+    if custody is None:
+        raise HTTPException(404, {"code": "not_found", "message": "مالكش عهدة مفتوحة."})
+
+    # عملاء المندوب هو بس — نفس الشرط اللي في كل مكان تاني، مش نسخة تانية منه هنا.
+    customers = db.scalars(
+        select(Customer).where(Customer.rep_id == current.rep_id, Customer.active.is_(True))
+        .order_by(Customer.name)
+    ).all()
+
+    # اللي في العربية دلوقتي: مجموع الداخل ناقص الخارج على العهدة دي.
+    signed = case(
+        (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+        else_=-StockMovement.quantity,
+    )
+    held = db.execute(
+        select(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
+               Item.sale_price, func.coalesce(func.sum(signed), 0).label("qty"))
+        .join(StockMovement, StockMovement.item_id == Item.id)
+        .where(StockMovement.location_kind == LocationKind.custody,
+               StockMovement.location_id == custody.id)
+        .group_by(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
+                  Item.sale_price)
+        .order_by(Item.name)
+    ).all()
+    on_hand = {r[0]: Decimal(str(r[5] or 0)) for r in held}
+    live = [r for r in held if on_hand[r[0]] > 0]
+
+    # أسعار الفئات للأصناف اللي معاه بس — استعلام واحد، مش واحد لكل صنف.
+    tiers: dict[int, dict[str, str]] = {}
+    if live:
+        for row in db.scalars(
+            select(ItemPrice).where(ItemPrice.item_id.in_([r[0] for r in live]))
+        ).all():
+            tiers.setdefault(row.item_id, {})[row.tier.value] = str(row.price)
+
+    return {
+        "rep_id": current.rep_id,
+        "custody_id": custody.id,
+        "customers": [
+            {
+                "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,
+                # الفئة بتقرّر السعر، فلازم تنزل مع العميل عشان الجهاز يسعّر زي السيرفر.
+                "price_tier": c.default_price_tier.value if c.default_price_tier else None,
+            }
+            for c in customers
+        ],
+        "items": [
+            {
+                "item_id": r[0], "name": r[1], "unit": r[2],
+                "default_discount_pct": str(r[3]) if r[3] is not None else None,
+                "base_price": str(r[4]) if r[4] is not None else None,
+                "on_hand": str(on_hand[r[0]]),
+                "tier_prices": tiers.get(r[0], {}),
+            }
+            for r in live
+        ],
+    }
+
+
 @router.post("", response_model=SalesInvoiceOut, status_code=status.HTTP_201_CREATED)
 def create_sale(
     body: SaleCreate,
     current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
     db: Session = Depends(get_db),
 ) -> SalesInvoiceOut:
+    # الفاتورة اللي اتكتبت خلاص بترجع زي ما هي — مابتتكتبش تاني.
+    #
+    # ده اللي بيخلّي تطبيق المندوب يقدر يعيد الرفع من غير خوف: الجهاز مابيعرفش الفرق بين
+    # «السيرفر ماستلمش» و«استلم والرد ضاع»، فبيعيد المحاولة. من غير الشرط ده، الإعادة
+    # بتكتب فاتورة تانية بنفس البضاعة على نفس العميل.
+    if body.client_uuid:
+        seen = db.scalar(select(SalesInvoice).where(
+            SalesInvoice.client_uuid == body.client_uuid))
+        if seen is not None:
+            return _inv_out(seen, db)
+
     _rep_scope_check(db, current, body.customer_id, body.origin)
     can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
     try:
@@ -257,6 +349,7 @@ def create_sale(
             invoice_date=body.invoice_date,
             expenses=[e.model_dump() for e in body.expenses],
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
+            client_uuid=body.client_uuid,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "sale_invalid", "message": str(exc)})
