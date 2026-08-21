@@ -1063,6 +1063,12 @@ export default function Purchases() {
                       <tr>
                         <th style={{ width: 34 }}>#</th>
                         <th style={{ minWidth: 150 }}>المخزن</th>
+                        {/* عمود الصنف رجع.
+                            اتشال قبل كده بطلب صاحب النظام، والنتيجة إن الفاتورة بقت سطور
+                            كمية وسعر من غير ما حد يعرف كل سطر بتاع إيه — والمراجعة كلها
+                            بتبدأ من «ده صنف إيه». وفاتورة البيع عمرها ما شالته، فالشاشتين
+                            كانوا بيتقروا بطريقتين. */}
+                        <th style={{ minWidth: 170 }}>الصنف</th>
                         <th style={{ minWidth: 96 }}>الوحدة</th>
                         <th style={{ minWidth: 84 }}>الكمية</th>
                         <th style={{ minWidth: 100 }}>سعر الوحدة</th>
@@ -1092,6 +1098,9 @@ export default function Purchases() {
                                 label: `${w.name} (${w.warehouse_type === 'central'
                                   ? 'مركزي' : 'فرعي'})`,
                               }))} />
+                          </td>
+                          <td>
+                            <b>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b>
                           </td>
                           <td>
                             <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
@@ -1159,9 +1168,10 @@ export default function Purchases() {
                       */}
                     <tfoot>
                       <tr>
-                        {/* تلاتة: الرقم والمخزن والوحدة — عمود «الصنف» اتشال بطلب
-                            صاحب النظام. */}
-                        <td colSpan={3} style={{ fontWeight: 700 }}>الإجمالي</td>
+                        {/* أربعة: الرقم والمخزن والصنف والوحدة — لحد عمود الكمية.
+                            الرقم ده لازم يتغيّر مع أي عمود بيتزوّد أو بيتشال قبل الكمية،
+                            وإلا صف الإجماليات بيزحلق ويطلع الإجمالي تحت عمود تاني. */}
+                        <td colSpan={4} style={{ fontWeight: 700 }}>الإجمالي</td>
                         <td style={{ fontWeight: 700 }}>
                           {purchaseItems.reduce((n, l) => n + Number(l.quantity || 0), 0)
                             .toLocaleString('ar-EG', { maximumFractionDigits: 3 })}

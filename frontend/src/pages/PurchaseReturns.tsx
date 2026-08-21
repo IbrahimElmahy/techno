@@ -763,6 +763,9 @@ export default function PurchaseReturns() {
                 <tr>
                   <th style={{ width: 34 }}>#</th>
                   <th style={{ minWidth: 150 }}>المخزن</th>
+                  {/* عمود الصنف — رجع مع فاتورة الشرا. سطر من غير اسم صنف هو كمية وسعر
+                      محدش عارف بتوع إيه، والمراجعة كلها بتبدأ من «ده صنف إيه». */}
+                  <th style={{ minWidth: 170 }}>الصنف</th>
                   <th style={{ minWidth: 96 }}>الوحدة</th>
                   <th style={{ minWidth: 84 }}>الكمية</th>
                   <th style={{ minWidth: 100 }}>سعر الوحدة</th>
@@ -788,6 +791,9 @@ export default function PurchaseReturns() {
                           value: w.id,
                           label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
                         }))} />
+                    </td>
+                    <td>
+                      <b>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b>
                     </td>
                     <td>
                       <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
@@ -849,7 +855,9 @@ export default function PurchaseReturns() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={3} style={{ fontWeight: 700 }}>الإجمالي</td>
+                  {/* أربعة: الرقم والمخزن والصنف والوحدة — لحد عمود الكمية. لازم يتغيّر
+                      مع أي عمود بيتزوّد قبلها، وإلا الصف بيزحلق. */}
+                  <td colSpan={4} style={{ fontWeight: 700 }}>الإجمالي</td>
                   <td style={{ fontWeight: 700 }}>
                     {returnLines.reduce((n, l) => n + Number(l.quantity || 0), 0)}
                   </td>
