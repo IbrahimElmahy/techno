@@ -6,6 +6,7 @@ import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
+import 'invoice_print_screen.dart';
 import 'sale_item_picker_screen.dart';
 
 /// فاتورة بيع من العربية.
@@ -128,7 +129,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // بيخلّي السيرفر يعرف الفاتورة دي لو الرفع اتعاد بعد انقطاع.
       final uuid = 'inv-${DateTime.now().microsecondsSinceEpoch}-'
           '${Random().nextInt(1 << 32).toRadixString(16)}';
-      await LocalDb.instance.saveSaleInvoice(
+      final localId = await LocalDb.instance.saveSaleInvoice(
         clientUuid: uuid,
         customerId: _customer!.id,
         customerName: _customer!.name,
@@ -151,6 +152,18 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         content: Text(pushed ? 'الفاتورة اترفعت ✔' : 'الفاتورة اتحفظت — هترفع مع المزامنة'),
         backgroundColor: AppColors.success,
       ));
+      // الطباعة على طول بعد الحفظ: المندوب لسه واقف عند العميل، والورقة دي سببها.
+      // الصف بيتقرا من القاعدة عشان الورقة تشيل رقم المستند لو الرفع نجح دلوقتي.
+      final rows = await LocalDb.instance.saleInvoices();
+      final saved = rows.firstWhere((r) => r['local_id'] == localId, orElse: () => {});
+      if (!mounted) return;
+      if (saved.isNotEmpty) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => InvoicePrintScreen(invoice: saved)),
+        );
+      }
+      if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) _say('تعذّر الحفظ: $e');

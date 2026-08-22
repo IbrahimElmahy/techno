@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
+import 'invoice_print_screen.dart';
 
 /// فواتير الجهاز — اللي راحت واللي لسه.
 ///
@@ -135,16 +136,33 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                       trailing: Text('${l.net.toStringAsFixed(2)} ج.م',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
-                  if (!synced)
-                    Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: TextButton.icon(
-                        onPressed: () => _delete(r),
-                        icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                        label: const Text('امسح الفاتورة دي',
-                            style: TextStyle(color: AppColors.danger)),
-                      ),
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // الطباعة متاحة للمسودّة كمان: المندوب بيسيب ورقة عند العميل وهو
+                        // في الشارع، والفاتورة ساعتها لسه في الطابور. الورقة نفسها بتقول
+                        // إنها مسودّة بدل ما تدّعي رقم مالوش وجود.
+                        TextButton.icon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => InvoicePrintScreen(invoice: r)),
+                          ),
+                          icon: const Icon(Icons.print_outlined),
+                          label: const Text('طباعة / PDF'),
+                        ),
+                        if (!synced)
+                          TextButton.icon(
+                            onPressed: () => _delete(r),
+                            icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                            label: const Text('امسح',
+                                style: TextStyle(color: AppColors.danger)),
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               );
             },
