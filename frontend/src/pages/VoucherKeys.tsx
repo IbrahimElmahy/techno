@@ -444,8 +444,12 @@ export default function VoucherKeys() {
                     okText="شيله" cancelText="سيبه"
                     onConfirm={() => remove(k)}
                   >
-                    <Button size="small" danger icon={<DeleteOutlined />}
-                      onClick={(e) => e.stopPropagation()} />
+                    {/* من غير `stopPropagation` هنا — وده اللي كان بيمنع الحذف أصلاً.
+                        شيم `Popconfirm` (بعد ما التأكيدات اتشالت) بيلفّ اللي جوّاه في
+                        `<span onClick>`؛ فالزرار اللي بيوقّف الحدث عنده كان بيمنعه يوصل
+                        للشيم، والدوسة تروح في السكوت. الشيم نفسه بيوقّف الحدث قبل ما
+                        ينفّذ، فسطر الكارت اللي تحته مابيشتغلش. */}
+                    <Button size="small" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
                 </Space>
               )}
