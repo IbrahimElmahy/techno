@@ -39,6 +39,10 @@ from src.models.ledger import Account, LedgerLine
 from src.models.sales import SalesInvoice, SalesInvoiceLine
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.treasury import Treasury
+from src.models.employee import Employee
+from src.models.role import Role, RoleName
+from src.models.user import User
+from src.models.warehouse import Custody
 
 ZERO = Decimal("0")
 
@@ -502,6 +506,58 @@ def check_late_orders(db: Session, *, now: datetime | None = None) -> Issue | No
 
 # ---------------------------------------------------------------------------
 
+def check_reps_without_store(db: Session) -> Issue | None:
+    """مندوب مالوش مخزن ولا عهدة — مايقدرش يبيع أصلاً.
+
+    البيع من تطبيق المندوب بيخرج بضاعة من مكانه هو، وبيقيّد الفلوس اللي حصّلها في عهدته.
+    المندوب اللي ناقصه واحد من الاتنين مش «ناقص إعداد»: هو واقف عند العميل والتطبيق بيقوله
+    لأ، وهو مش اللي يقدر يصلّحها.
+
+    ودي حاجة بتتكتشف في أوحش وقت — أول يوم شغل بالتطبيق — لأن مافيش شاشة بتسأل عنها. عشان
+    كده بتتقال هنا، قبل ما مندوب ينزل بيها الشارع.
+    """
+    reps = db.scalars(
+        select(User).where(User.role_id.in_(
+            select(Role.id).where(Role.name == RoleName.sales_rep)))
+    ).all()
+    if not reps:
+        return None
+
+    custody_reps = {c.rep_id for c in db.scalars(select(Custody)).all() if c.rep_id}
+    stores = {
+        e.user_id: e.warehouse_id
+        for e in db.scalars(select(Employee).where(Employee.user_id.isnot(None))).all()
+    }
+
+    rows = []
+    for r in reps:
+        if not getattr(r, "active", True):
+            continue
+        has_store = stores.get(r.id) is not None
+        has_custody = r.id in custody_reps
+        if has_store and has_custody:
+            continue
+        missing = []
+        if not has_store and not has_custody:
+            missing.append("مافيش مخزن ولا عهدة — مايقدرش يبيع")
+        elif not has_custody:
+            # البضاعة ليها مكان، والفلوس لأ — التحصيل هو اللي هيقع.
+            missing.append("مافيش عهدة — التحصيل مالوش مكان يتقيّد فيه")
+        else:
+            # عنده عهدة وبس: بيبيع منها، بس لو الشركة بتجهّزه بمخزن يبقى ناقص.
+            continue
+        rows.append({"label": r.username, "detail": " · ".join(missing)})
+
+    if not rows:
+        return None
+    return Issue(
+        key="rep_no_store", title="مناديب ناقصهم مخزن أو عهدة", group="المناديب",
+        severity="high", count=len(rows),
+        hint="المندوب بيبيع من مكانه وبيحصّل في عهدته — الناقص بيقف قدام العميل.",
+        link="/employees", samples=rows[:SAMPLE],
+    )
+
+
 def run_all(db: Session, *, now: datetime | None = None) -> dict:
     """كل الفحوصات — والصفحة الفاضية إجابة برضه."""
     on_hand = _on_hand_by_location(db)
@@ -522,6 +578,7 @@ def run_all(db: Session, *, now: datetime | None = None) -> dict:
         check_overdue_cheques(db, now=now),
         check_expired_reservations(db, now=now),
         check_late_orders(db, now=now),
+        check_reps_without_store(db),
     ]
     issues = [i for i in found if i is not None]
     issues.sort(key=lambda i: (SEVERITY_ORDER.get(i.severity, 9), -i.count))
