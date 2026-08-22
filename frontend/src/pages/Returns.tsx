@@ -61,6 +61,8 @@ interface ReturnRecord {
 interface Customer { id: number; name: string; phone?: string | null; }
 interface Product {
   id: number; name: string; sale_price: string | null; is_serialized: boolean; category: string | null;
+  /** خصم الصنف — المرتجع بيفتح عليه زي الفاتورة، عشان البضاعة ترجع بنفس اللي اتباعت بيه. */
+  default_discount_pct?: string | null;
 }
 interface Warehouse { id: number; name: string; }
 
@@ -78,7 +80,10 @@ interface ReturnLineItem {
    *  for anybody who types over it without clearing first. */
   quantity: number | null;
   unit_price: number;
-  discount: number;   // per-line discount %
+  /** الخصم المتغيّر — بتاع المرتجع ده. */
+  discount: number;
+  /** والثابت — بيجي من الصنف/العميل زي فاتورة البيع. الاتنين بيتجمعوا وقت الإرسال. */
+  fixed_discount: number;
   warehouse_id: number | null;   // (030) this line comes back into its own warehouse
 }
 
@@ -257,8 +262,11 @@ export default function Returns() {
     return groups;
   }, [lines]);
 
+  /** الاتنين مع بعض — الثابت والمتغيّر، زي فاتورة البيع بالظبط. */
+  const lineDiscountPct = (l: ReturnLineItem) =>
+    Math.min(99.99, (l.fixed_discount || 0) + (l.discount || 0));
   const lineTotal = (l: ReturnLineItem) =>
-    Number(l.quantity || 0) * l.unit_price * (1 - Math.min(99.99, l.discount || 0) / 100);
+    Number(l.quantity || 0) * l.unit_price * (1 - lineDiscountPct(l) / 100);
   const linePoints = (l: ReturnLineItem) =>
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
@@ -387,7 +395,11 @@ export default function Returns() {
       const key = Date.now().toString();
       setLines((prev) => [...prev, {
         key, category: prod?.category ?? null, item_id: itemId,
-        quantity: null, unit_price: price, discount: 0, warehouse_id: null,
+        quantity: null, unit_price: price, discount: 0,
+        // الثابت من الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر.
+        fixed_discount: prod?.default_discount_pct
+          ? parseFloat(prod.default_discount_pct) : 0,
+        warehouse_id: null,
       }]);
       setFocusLineKey(key);
     }
@@ -527,7 +539,8 @@ export default function Returns() {
               .map((r) => ({ serial_from: r.serial_from, serial_to: r.serial_to, count: r.count })),
             lines: valid.map((l) => ({
               item_id: l.item_id, quantity: Number(l.quantity || 0), unit_price: l.unit_price,
-              discount_pct: l.discount || 0,
+              // الاتنين بيتجمعوا — سطر المرتجع في السيرفر بيشيل خصم واحد.
+              discount_pct: lineDiscountPct(l),
               // (030) only when the line differs from the document's warehouse
               warehouse_id: l.warehouse_id ?? undefined,
             })),
@@ -931,12 +944,13 @@ export default function Returns() {
                       </div>
 
                       <Row gutter={8} style={{ padding: '6px 12px 0', color: '#6b6b6b', fontSize: 12 }}>
-                        <Col md={5}>الصنف</Col>
+                        <Col md={4}>الصنف</Col>
                         <Col md={3}>المخزن</Col>
-                        <Col md={3}>آخر سعر شراء</Col>
+                        <Col md={2}>آخر سعر شراء</Col>
                         <Col md={2}>الكمية</Col>
                         <Col md={3}>سعر الإرجاع</Col>
-                        <Col md={2}>خصم %</Col>
+                        <Col md={2}>خصم متغير %</Col>
+                        <Col md={2}>خصم ثابت %</Col>
                         <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
                         <Col md={3} style={{ textAlign: 'center' }}>الإجمالي</Col>
                         <Col md={1} />
@@ -954,7 +968,12 @@ export default function Returns() {
                                 <Select size="small" style={{ width: '100%' }}
                                   placeholder="المخزن"
                                   value={line.warehouse_id ?? docWarehouseId ?? undefined}
-                                  onChange={(val) => handleLineChange(line.key, 'warehouse_id', val)}
+                                  onChange={(val) => {
+                                    handleLineChange(line.key, 'warehouse_id', val);
+                                    // وبيثبت للسطور الجاية — اللي بيغيّر مخزن سطر غالباً
+                                    // بيقول «باقي المرتجع راجع هنا»، مش بيصلّح سطر واحد.
+                                    if (val != null) setDocWarehouseId(val as number);
+                                  }}
                                   options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
                               </Col>
                               <Col md={3} xs={12}>
@@ -1004,9 +1023,20 @@ export default function Returns() {
                                   onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
                               </Col>
                               <Col md={2} xs={8}>
-                                <InputNumber size="small" min={0} max={100} step={0.5} style={{ width: '100%' }}
+                                {/* المتغيّر — اللي بيتفاوض عليه على المرتجع ده. */}
+                                <InputNumber size="small" min={0} max={99.99} step={0.5}
+                                  style={{ width: '100%' }} placeholder="متغير"
                                   value={line.discount}
                                   onChange={(val) => handleLineChange(line.key, 'discount', val || 0)} />
+                              </Col>
+                              <Col md={2} xs={8}>
+                                {/* الثابت — نفس اللي البضاعة اتباعت بيه. بيبتدي من الصنف
+                                    وبيتعدّل، عشان المرتجع يرجّع بنفس الخصم اللي اتباع بيه. */}
+                                <InputNumber size="small" min={0} max={99.99} step={0.5}
+                                  style={{ width: '100%' }} placeholder="ثابت"
+                                  value={line.fixed_discount}
+                                  onChange={(val) => handleLineChange(
+                                    line.key, 'fixed_discount', val || 0)} />
                               </Col>
                               <Col md={2} xs={12} style={{ textAlign: 'center' }}>
                                 <span style={{ color: '#F5A11D', fontWeight: 600 }}>

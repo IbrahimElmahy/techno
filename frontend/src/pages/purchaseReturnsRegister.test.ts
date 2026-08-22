@@ -197,7 +197,7 @@ describe('المردود نسخة من فاتورة الشرا بالعكس', ()
   it('نفس أعمدة جدول السطور', () => {
     const head = src.slice(src.indexOf('<thead>'), src.indexOf('</thead>'));
     for (const col of ['المخزن', 'الوحدة', 'الكمية', 'سعر الوحدة',
-      'اجمالي قبل', 'خصم', 'خصم %', 'الإجمالي']) {
+      'اجمالي قبل', 'خصم متغير %', 'خصم ثابت %', 'الإجمالي']) {
       expect(head, `عمود «${col}» ناقص`).toContain(col);
     }
   });
@@ -205,7 +205,9 @@ describe('المردود نسخة من فاتورة الشرا بالعكس', ()
   it('نفس سلّم الأرقام — خصم السطر على سطره وخصم المستند على المجموع', () => {
     expect(src).toContain('<TotalsLadder');
     const net = src.slice(src.indexOf('const lineNet'), src.indexOf('const grossTotal'));
-    expect(net).toContain('(l.discount_pct ?? 0) / 100');
+    // الخصم بقى اتنين — متغيّر وثابت — وبيتجمعوا على السطر قبل ما يتخصموا منه.
+    expect(net).toContain('(l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0)');
+    expect(net).toContain('1 - disc / 100');
     expect(src).toMatch(/grossTotal \* \(1 - \(variableDiscount \|\| 0\) \/ 100\)/);
   });
 

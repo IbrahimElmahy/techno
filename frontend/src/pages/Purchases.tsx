@@ -61,7 +61,10 @@ interface PurchaseItem {
   /** خصم السطر. null = مفيش خصم متفق عليه — مش صفر.
    *  Stored on the line rather than taken off the price, so «اتفقنا على عشرة في المية» can be read
    *  back off the document instead of being inferred from a number that looks odd. */
+  /** الخصم المتغيّر — اللي اتفق عليه في الصفقة دي. */
   discount_pct: number | null;
+  /** والثابت — اللي عليه اتفاق دايم مع المورد. الاتنين بيتجمعوا وقت الإرسال، زي البيع. */
+  fixed_discount_pct: number | null;
   /** المخزن اللي السطر ده بيتستلم فيه. null = مخزن المستند.
    *  One purchase can be split across stores — the server has carried this since 030 and the
    *  screen simply never offered it. */
@@ -172,7 +175,7 @@ export default function Purchases() {
   const [form] = Form.useForm();
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([
     { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, warehouse_id: null },
+    discount_pct: null, fixed_discount_pct: null, warehouse_id: null },
   ]);
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
 
@@ -479,7 +482,7 @@ export default function Purchases() {
     setPurchaseItems([
       ...purchaseItems,
       { key: newKey, item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, warehouse_id: null },
+    discount_pct: null, fixed_discount_pct: null, warehouse_id: null },
     ]);
     if (focusIt) setFocusRowKey(newKey);
   };
@@ -570,7 +573,7 @@ export default function Purchases() {
   // اللي بيحسبه الحسبة النهائية، فلو اختلفوا الفاتورة بتترفض بدل ما تعدّي بالرقم الغلط.
   const lineTotal = (it: PurchaseItem) => {
     const before = Number(it.quantity || 0) * (it.unit_price || 0);
-    const disc = it.discount_pct ?? 0;
+    const disc = Math.min(99.99, (it.discount_pct ?? 0) + (it.fixed_discount_pct ?? 0));
     return before * (1 - disc / 100);
   };
 
@@ -596,7 +599,7 @@ export default function Purchases() {
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => { form.resetFields(); setPurchaseItems([
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, warehouse_id: null }]);
+    discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
           setPurchaseDate(dayjs()); setDetail(null); setDocResult(null);
           setEditingId(null);
           // 'party' مش 'date': مافيش بوباب تاريخ في الشاشة دي أصلاً، فـ«جديد» كان بيسيب
@@ -606,7 +609,7 @@ export default function Purchases() {
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setPurchaseItems([
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, warehouse_id: null }]) },
+    discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0, onClick: () => form.submit() },
       { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
@@ -616,7 +619,7 @@ export default function Purchases() {
         disabled: typed === 0,
         onClick: () => setPurchaseItems([
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, warehouse_id: null }]) },
+    discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
       { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
       { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
@@ -659,7 +662,10 @@ export default function Purchases() {
       unit: l.unit ?? null,
       // The discount is a fact about the deal, so reopening has to bring it back — rebuilding the
       // line without it would quietly re-price the invoice on save.
+      // بيرجع كله في «المتغيّر»: اللي اتخزّن رقم واحد، والتخمين إن جزء منه ثابت
+      // كان هيقول على المورد اتفاق ماقالهوش.
       discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
+      fixed_discount_pct: null,
       warehouse_id: l.line_location_id ?? det.location_id ?? null,
     })));
     // الفاتورة اللي بتتفتح للتعديل بتيجي بمخزنها — فالسطر الجاي يبدأ عليه مش على فاضي.
@@ -765,7 +771,8 @@ export default function Purchases() {
           quantity: Number(l.quantity || 0),
           unit_price: l.unit_price,
           unit: l.unit,
-          discount_pct: l.discount_pct,
+          // الاتنين بيتجمعوا — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
+          discount_pct: (l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0) || null,
           warehouse_id: l.warehouse_id,
         })),
         // The day the goods were received, taken from the first door — not the day this row was
@@ -784,7 +791,7 @@ export default function Purchases() {
       setEditingId(null);
       form.resetFields();
       setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-        discount_pct: null, warehouse_id: null }]);
+        discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
       setCashAmount(0);
       setCreditAmount(0);
       fetchPurchases();
@@ -852,6 +859,7 @@ export default function Purchases() {
       landedRef.current = key;
       return [...prev, {
         key, item_id: itemId, quantity: null, unit_price: price, unit: null,
+        fixed_discount_pct: null,
         // بيرث آخر مخزن اتختار — الشحنة العادية كلها بتنزل مخزن واحد.
         discount_pct: null, warehouse_id: stickyWarehouseId,
       }];
@@ -1073,8 +1081,10 @@ export default function Purchases() {
                         <th style={{ minWidth: 84 }}>الكمية</th>
                         <th style={{ minWidth: 100 }}>سعر الوحدة</th>
                         <th style={{ minWidth: 100 }}>اجمالي قبل</th>
-                        <th style={{ minWidth: 90 }}>خصم</th>
-                        <th style={{ minWidth: 78 }}>خصم %</th>
+                        {/* المتغيّر الأول والثابت بعده — نفس ترتيب فاتورة البيع، وبنفس
+                            السبب: اللي بيتغيّر كل مستند قبل اللي بيتغيّر مرة كل شوية. */}
+                        <th style={{ minWidth: 84 }}>خصم متغير %</th>
+                        <th style={{ minWidth: 84 }}>خصم ثابت %</th>
                         <th style={{ minWidth: 100 }}>الإجمالي</th>
                         <th style={{ width: 40 }} />
                       </tr>
@@ -1133,21 +1143,25 @@ export default function Purchases() {
                             {/* قبل الخصم — الكمية × السعر. مشتق، فمفيش رقمين يختلفوا. */}
                             {fmtMoney(Number(line.quantity || 0) * (line.unit_price || 0))}
                           </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            {/* «١٠٪» مابتقولش كام اتخصم — والمشتري بيراجع بالجنيه. */}
-                            {line.discount_pct
-                              ? fmtMoney(Number(line.quantity || 0) * (line.unit_price || 0)
-                                  * (line.discount_pct / 100))
-                              : '-'}
-                          </td>
                           <td>
-                            {/* فاضي = مفيش خصم متفق عليه، مش صفر. */}
+                            {/* المتغيّر — بتاع الصفقة دي. فاضي = مفيش خصم متفق عليه، مش صفر. */}
                             <InputNumber size="small" min={0} max={99.99} step={0.5}
-                              style={{ width: '100%' }} placeholder="خصم %"
+                              style={{ width: '100%' }} placeholder="متغير"
                               value={line.discount_pct ?? undefined}
                               data-disc-key={line.key}
                               onChange={(val) => handleItemChange(
                                 line.key, 'discount_pct', val ?? null)}
+                              onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+                          </td>
+                          <td>
+                            {/* الثابت — الاتفاق الدايم مع المورد. بيبتدي فاضي لأن مافيش
+                                خصم شرا متسجّل على الصنف في النظام؛ اللي بيعرفه بيكتبه،
+                                وبيفضل مفصول عن خصم الصفقة عشان المراجعة تعرف مين خصم كام. */}
+                            <InputNumber size="small" min={0} max={99.99} step={0.5}
+                              style={{ width: '100%' }} placeholder="ثابت"
+                              value={line.fixed_discount_pct ?? undefined}
+                              onChange={(val) => handleItemChange(
+                                line.key, 'fixed_discount_pct', val ?? null)}
                               onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
                           </td>
                           <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
@@ -1412,7 +1426,7 @@ export default function Purchases() {
             onClick={() => {
               form.resetFields();
               setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0,
-                unit: null, discount_pct: null, warehouse_id: null }]);
+                unit: null, discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
               setPurchaseDate(dayjs());
               setDetail(null);
               setDocResult(null);

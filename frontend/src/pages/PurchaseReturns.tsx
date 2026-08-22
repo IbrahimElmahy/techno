@@ -98,7 +98,10 @@ export default function PurchaseReturns() {
     quantity: number | null;
     unit_price: number;
     // نفس ما على سطر الفاتورة.
+    /** الخصم المتغيّر — بتاع المستند ده. */
     discount_pct: number | null;
+    /** والثابت — الاتفاق الدايم. الاتنين بيتجمعوا وقت الإرسال، زي البيع والشرا. */
+    fixed_discount_pct: number | null;
     unit: string | null;
     warehouse_id: number | null;
   }
@@ -289,7 +292,8 @@ export default function PurchaseReturns() {
    */
   const lineNet = (l: ReturnLineDraft) => {
     const before = Number(l.quantity || 0) * (l.unit_price || 0);
-    return before * (1 - (l.discount_pct ?? 0) / 100);
+    const disc = Math.min(99.99, (l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0));
+    return before * (1 - disc / 100);
   };
   const grossTotal = returnLines.reduce((n, l) => n + lineNet(l), 0);
 
@@ -340,7 +344,8 @@ export default function PurchaseReturns() {
       }
       return [...prev, {
         key: `${Date.now()}-${itemId}`, item_id: itemId, quantity: null, unit_price: price,
-        discount_pct: null, unit: null, warehouse_id: warehouseId,
+        discount_pct: null, fixed_discount_pct: null, unit: null,
+        warehouse_id: warehouseId,
       }];
     });
     if (warehouseId) fetchOnHand(itemId, warehouseId);
@@ -361,7 +366,8 @@ export default function PurchaseReturns() {
         item_id: l.item_id,
         quantity: String(l.quantity),
         unit_price: String(l.unit_price || 0),
-        discount_pct: l.discount_pct == null ? null : String(l.discount_pct),
+        // الاتنين بيتجمعوا — سطر المردود في السيرفر بيشيل خصم واحد.
+        discount_pct: ((l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0)) || null,
         unit: l.unit,
         warehouse_id: l.warehouse_id ?? warehouseId,
       }));
@@ -770,8 +776,9 @@ export default function PurchaseReturns() {
                   <th style={{ minWidth: 84 }}>الكمية</th>
                   <th style={{ minWidth: 100 }}>سعر الوحدة</th>
                   <th style={{ minWidth: 100 }}>اجمالي قبل</th>
-                  <th style={{ minWidth: 90 }}>خصم</th>
-                  <th style={{ minWidth: 78 }}>خصم %</th>
+                  {/* المتغيّر الأول والثابت بعده — نفس ترتيب البيع والشرا. */}
+                  <th style={{ minWidth: 84 }}>خصم متغير %</th>
+                  <th style={{ minWidth: 84 }}>خصم ثابت %</th>
                   <th style={{ minWidth: 100 }}>الإجمالي</th>
                   <th style={{ width: 40 }} />
                 </tr>
@@ -785,8 +792,12 @@ export default function PurchaseReturns() {
                           لازم يقدر يطلّع كل صنف من مخزنه. */}
                       <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
                         value={line.warehouse_id ?? warehouseId ?? undefined}
-                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
-                          l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)))}
+                        onChange={(v) => {
+                          setReturnLines((prev) => prev.map((l) => (
+                            l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
+                          // وبيثبت للسطور الجاية — نفس فاتورة البيع والشرا.
+                          if (v != null) setWarehouseId(v as number);
+                        }}
                         options={warehouses.map((w: any) => ({
                           value: w.id,
                           label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
@@ -826,21 +837,24 @@ export default function PurchaseReturns() {
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {money(Number(line.quantity || 0) * (line.unit_price || 0))}
                     </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {/* «١٠٪» مابتقولش كام اتخصم — والمراجعة بتحصل بالجنيه. */}
-                      {line.discount_pct
-                        ? money(Number(line.quantity || 0) * (line.unit_price || 0)
-                            * (line.discount_pct / 100))
-                        : '-'}
-                    </td>
                     <td>
-                      {/* فاضي = مفيش خصم متفق عليه، مش صفر. */}
+                      {/* المتغيّر. فاضي = مفيش خصم متفق عليه، مش صفر. */}
                       <InputNumber size="small" min={0} max={99.99} step={0.5}
-                        style={{ width: '100%' }} placeholder="خصم %"
+                        style={{ width: '100%' }} placeholder="متغير"
                         value={line.discount_pct ?? undefined}
                         onChange={(v) => setReturnLines((prev) => prev.map((l) => (
                           l.key === line.key
                             ? { ...l, discount_pct: (v as number) ?? null } : l)))} />
+                    </td>
+                    <td>
+                      {/* الثابت — بيتكتب زي ما اتكتب على فاتورة الشرا اللي البضاعة راجعة
+                          منها، عشان المردود يطلع بنفس الخصم اللي البضاعة اتشرت بيه. */}
+                      <InputNumber size="small" min={0} max={99.99} step={0.5}
+                        style={{ width: '100%' }} placeholder="ثابت"
+                        value={line.fixed_discount_pct ?? undefined}
+                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+                          l.key === line.key
+                            ? { ...l, fixed_discount_pct: (v as number) ?? null } : l)))} />
                     </td>
                     <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
                       {money(lineNet(line))}
