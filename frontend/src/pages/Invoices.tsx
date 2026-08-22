@@ -40,6 +40,13 @@ interface InvoiceRecord {
   ledger_entry_id: number;
 }
 
+/** أسعار صنف واحد بفئاته وخصوماته. */
+interface ItemPrices {
+  base: number | null;
+  tiers: Record<string, number>;
+  discounts: Record<string, number>;
+}
+
 interface Customer {
   id: number;
   name: string;
@@ -220,7 +227,14 @@ export default function Invoices() {
   });
   const [lines, setLines] = useState<SaleLineItem[]>([]);
   // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
-  const [pricesCache, setPricesCache] = useState<Record<number, { base: number | null; tiers: Record<string, number> }>>({});
+  /**
+   * أسعار الصنف — وخصوماته كمان.
+   *
+   * `discounts` مش زيادة: خصم الصنف في النظام ده متسجّل **لكل فئة سعر** (شاشة الأصناف
+   * فيها عمود خصم جنب كل فئة). الكاش كان بياخد السعر ويرمي الخصم، فالخصم اللي حد قعد
+   * كتبه في الشاشة دي مكانش بيوصل الفاتورة لا عرضاً ولا حساباً.
+   */
+  const [pricesCache, setPricesCache] = useState<Record<number, ItemPrices>>({});
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
   const [customerTier, setCustomerTier] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
@@ -435,11 +449,17 @@ export default function Invoices() {
    * الخصم صريح في كل سطر، السيرفر مكانش بيوصله دوره أصلاً — فالعميل اللي متسجّل عليه
    * خصم خاص كان بياخد خصم الصنف وخلاص، والخصم اللي حد قعد سجّله عليه مابيتحسبش ولا مرة.
    */
-  const defaultFixedDiscount = (itemId: number | null): number => {
+  const defaultFixedDiscount = (itemId: number | null, fresh?: ItemPrices): number => {
+    // ١) خصم العميل نفسه — اتسجّل على الشخص، فهو أخص من أي حاجة على الصنف.
     const cust = customers.find((c) => c.id === selectedCustomerId);
     if (cust?.discount_pct != null && cust.discount_pct !== '') {
       return parseFloat(cust.discount_pct) || 0;
     }
+    // ٢) خصم فئة السعر بتاعته — «تاجر» مابياخدش زي «مستهلك»، وده مكتوب جنب سعر الفئة.
+    const tier = customerTier;
+    const cached = fresh ?? (itemId ? pricesCache[itemId] : undefined);
+    if (tier && cached?.discounts?.[tier]) return cached.discounts[tier];
+    // ٣) وأخيراً خصم الصنف العام.
     const prod = products.find((p) => p.id === itemId);
     return prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
   };
@@ -569,15 +589,15 @@ export default function Invoices() {
   };
 
   const addProductByIdWith = async (itemId: number, warehouseId: number) => {
-    await fetchPrices(itemId);
+    const fresh = await fetchPrices(itemId);
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(Date.now().toString(), tier);
     l.warehouse_id = await warehouseHolding(itemId, warehouseId);
     l.category = prod?.category ?? null;
     l.item_id = itemId;
-    l.unit_price = resolvePrice(itemId, tier, null);
-    l.fixed_discount = defaultFixedDiscount(itemId);
+    l.unit_price = resolvePrice(itemId, tier, null, fresh);
+    l.fixed_discount = defaultFixedDiscount(itemId, fresh);
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
       setLines((prev) => prev.map((x) => (x.key === existing.key
@@ -600,7 +620,7 @@ export default function Invoices() {
       setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
       return;
     }
-    await fetchPrices(itemId);
+    const fresh = await fetchPrices(itemId);
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(Date.now().toString(), tier);
@@ -609,8 +629,8 @@ export default function Invoices() {
     l.warehouse_id = await warehouseHolding(itemId, docWarehouseId);
     l.category = prod?.category ?? null;
     l.item_id = itemId;
-    l.unit_price = resolvePrice(itemId, tier, null);
-    l.fixed_discount = defaultFixedDiscount(itemId);
+    l.unit_price = resolvePrice(itemId, tier, null, fresh);
+    l.fixed_discount = defaultFixedDiscount(itemId, fresh);
     // If the same product is already on the invoice, just bump its quantity.
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
@@ -636,8 +656,10 @@ export default function Invoices() {
   };
 
   // Resolve a line's price = base-tier price × unit factor (matches the backend, 007+008).
-  const resolvePrice = (itemId: number, tier: string | null, unit: string | null): number => {
-    const c = pricesCache[itemId];
+  const resolvePrice = (itemId: number, tier: string | null, unit: string | null,
+                        fresh?: ItemPrices): number => {
+    // `fresh` هي اللي لسه راجعة من السيرفر — بتكسب الكاش لأن الكاش لسه ما اتحدّثش.
+    const c = fresh ?? pricesCache[itemId];
     let base: number;
     if (!c) {
       const prod = products.find((p) => p.id === itemId);
@@ -648,13 +670,33 @@ export default function Invoices() {
     return base * unitFactor(itemId, unit);
   };
 
-  const fetchPrices = async (itemId: number) => {
+  /**
+   * بتجيب أسعار الصنف **وبترجّعها**.
+   *
+   * الرجوع ده مش رفاهية: `setPricesCache` مابيغيّرش الكاش في نفس اللفّة، واللي بينده
+   * `fetchPrices` محتاج الأسعار **حالاً** عشان يسعّر السطر اللي بيضيفه. فأول إضافة لصنف
+   * كانت بتقرا كاش فاضي — السعر بيرجع لسعر الصنف الأساسي بدل سعر فئة العميل، والخصم
+   * بيطلع صفر. وبيتظبطوا لوحدهم لو الصنف اتضاف تاني، وده اللي بيخلّي المشكلة تبان
+   * «بتحصل أحياناً».
+   */
+  const fetchPrices = async (itemId: number): Promise<ItemPrices | undefined> => {
+    let fresh: ItemPrices | undefined = pricesCache[itemId];
     if (!pricesCache[itemId]) {
       try {
         const res = await api.get(`/api/v1/items/${itemId}/prices`);
         const tiers: Record<string, number> = {};
-        (res.data.tiers || []).forEach((t: any) => { tiers[t.tier] = parseFloat(t.price); });
-        setPricesCache((prev) => ({ ...prev, [itemId]: { base: res.data.base_sale_price ? parseFloat(res.data.base_sale_price) : null, tiers } }));
+        const discounts: Record<string, number> = {};
+        (res.data.tiers || []).forEach((t: any) => {
+          tiers[t.tier] = parseFloat(t.price);
+          discounts[t.tier] = parseFloat(t.discount_pct ?? 0) || 0;
+        });
+        const entry: ItemPrices = {
+          base: res.data.base_sale_price ? parseFloat(res.data.base_sale_price) : null,
+          tiers,
+          discounts,
+        };
+        setPricesCache((prev) => ({ ...prev, [itemId]: entry }));
+        fresh = entry;
       } catch (err) { console.error(err); }
     }
     if (!unitsCache[itemId]) {
@@ -663,10 +705,11 @@ export default function Invoices() {
         setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({ name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
       } catch (err) { console.error(err); }
     }
+    return fresh;
   };
 
   const handleLineChange = async (key: string, field: keyof SaleLineItem, value: any) => {
-    if (field === 'item_id' && value) await fetchPrices(value);
+    const fresh = field === 'item_id' && value ? await fetchPrices(value) : undefined;
     // (030) A line moved to another warehouse needs THAT warehouse's stock to cap against.
     if (field === 'warehouse_id' && value) await loadWarehouseStock(value);
 
@@ -716,7 +759,7 @@ export default function Invoices() {
           updated.unit_price = resolvePrice(value, updated.tier, null);
           // The item's own fixed discount is applied automatically.
           const prod = products.find((p) => p.id === value);
-          updated.fixed_discount = defaultFixedDiscount(value as number);
+          updated.fixed_discount = defaultFixedDiscount(value as number, fresh);
         } else if ((field === 'tier' || field === 'unit') && l.item_id) {
           updated.unit_price = resolvePrice(l.item_id, updated.tier, updated.unit);
         }
