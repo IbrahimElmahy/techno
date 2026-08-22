@@ -127,11 +127,12 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
             pw.Table(
               border: pw.TableBorder.all(width: 0.5),
               columnWidths: {
-                0: const pw.FlexColumnWidth(4),
-                1: const pw.FlexColumnWidth(1.4),
-                2: const pw.FlexColumnWidth(1.8),
-                3: const pw.FlexColumnWidth(1.4),
-                4: const pw.FlexColumnWidth(2),
+                0: const pw.FlexColumnWidth(3.6),
+                1: const pw.FlexColumnWidth(1.2),
+                2: const pw.FlexColumnWidth(1.6),
+                3: const pw.FlexColumnWidth(1.2),
+                4: const pw.FlexColumnWidth(1.2),
+                5: const pw.FlexColumnWidth(1.8),
               },
               children: [
                 pw.TableRow(
@@ -140,7 +141,10 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     _cell('الصنف', bold: true),
                     _cell('الكمية', bold: true),
                     _cell('السعر', bold: true),
-                    _cell('خصم %', bold: true),
+                    // الخصمين منفصلين على الورقة كمان: العميل بيشوف خصم الشركة وخصم
+                    // المندوب، والمراجعة بتعرف مين خصم كام.
+                    _cell('خصم ثابت', bold: true),
+                    _cell('خصم إضافي', bold: true),
                     _cell('الإجمالي', bold: true),
                   ],
                 ),
@@ -149,7 +153,10 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     _cell(l.itemName),
                     _cell(_trim(l.quantity)),
                     _cell(_money(l.unitPrice)),
-                    _cell(l.discountPct > 0 ? _trim(l.discountPct) : '—'),
+                    _cell(l.fixedDiscountPct > 0 ? '${_trim(l.fixedDiscountPct)}%' : '—'),
+                    _cell(l.variableDiscountPct > 0
+                        ? '${_trim(l.variableDiscountPct)}%'
+                        : '—'),
                     _cell(_money(l.net)),
                   ]),
               ],

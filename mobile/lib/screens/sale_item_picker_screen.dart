@@ -17,7 +17,12 @@ class SaleItemPickerScreen extends StatefulWidget {
   /// الأصناف اللي على الفاتورة دلوقتي — عشان المتاح يتحسب وهي في الحسبان.
   final Map<int, double> alreadyOnInvoice;
 
-  const SaleItemPickerScreen({super.key, this.alreadyOnInvoice = const {}});
+  /// فئة سعر العميل — بتحدّد السعر اللي بيتعرض جنب الصنف. لو لسه مااتحددش عميل،
+  /// بيتعرض السعر الأساسي، وبيتظبط لوحده أول ما العميل يتحدّد.
+  final String? priceTier;
+
+  const SaleItemPickerScreen(
+      {super.key, this.alreadyOnInvoice = const {}, this.priceTier});
 
   @override
   State<SaleItemPickerScreen> createState() => _SaleItemPickerScreenState();
@@ -102,9 +107,16 @@ class _SaleItemPickerScreenState extends State<SaleItemPickerScreen> {
                         style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: out ? Colors.black38 : null)),
+                    // السعر والخصم الثابت جنب الصنف — الاختيار بيتعمل على أساسهم، ومن
+                    // غيرهم المندوب بيضيف الصنف عشان يشوف بكام وبعدين يشيله.
                     subtitle: Text(out
                         ? 'خلص من العربية'
-                        : 'المتاح: ${_qty(free)}${it.unit != null ? ' ${it.unit}' : ''}'),
+                        : [
+                            'المتاح: ${_qty(free)}${it.unit != null ? ' ${it.unit}' : ''}',
+                            'السعر: ${_money(it.priceFor(widget.priceTier))}',
+                            if (it.defaultDiscountPct > 0)
+                              'خصم ثابت: ${_qty(it.defaultDiscountPct)}%',
+                          ].join(' · ')),
                     trailing: out
                         ? const Chip(
                             label: Text('خلص'),
@@ -127,3 +139,5 @@ String _qty(double v) {
   final s = v.toStringAsFixed(3);
   return s.replaceFirst(RegExp(r'\.?0+$'), '');
 }
+
+String _money(double v) => v.toStringAsFixed(2);

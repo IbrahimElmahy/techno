@@ -131,8 +131,12 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                     ListTile(
                       dense: true,
                       title: Text(l.itemName),
-                      subtitle: Text('${_trim(l.quantity)} × ${l.unitPrice.toStringAsFixed(2)}'
-                          '${l.discountPct > 0 ? ' — خصم ${_trim(l.discountPct)}%' : ''}'),
+                      subtitle: Text([
+                        '${_trim(l.quantity)} × ${l.unitPrice.toStringAsFixed(2)}',
+                        if (l.fixedDiscountPct > 0) 'ثابت ${_trim(l.fixedDiscountPct)}%',
+                        if (l.variableDiscountPct > 0)
+                          'إضافي ${_trim(l.variableDiscountPct)}%',
+                      ].join(' — ')),
                       trailing: Text('${l.net.toStringAsFixed(2)} ج.م',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),

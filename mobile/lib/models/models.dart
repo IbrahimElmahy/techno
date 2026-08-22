@@ -199,24 +199,39 @@ class SaleItem {
 }
 
 /// سطر في فاتورة على الجهاز.
+///
+/// **الخصم اتنين مش واحد**، زي الشاشة الكبيرة بالظبط:
+///
+/// * **الثابت** — بتاع الصنف نفسه، نازل معاه من النظام. ده سعر الشركة، والمندوب بيشوفه
+///   مش بيخترعه.
+/// * **المتغيّر** — اللي المندوب بيزوّده عند العميل. ده اللي بيتفاوض عليه.
+///
+/// خلطهم في رقم واحد بيخلّي اللي بيراجع الفاتورة مايعرفش الشركة خصمت كام والمندوب زوّد
+/// كام — وده بالظبط السؤال اللي بيتسأل لما رقم يبان كبير.
 class SaleDraftLine {
   final int itemId;
   final String itemName;
   double quantity;
   double unitPrice;
-  double discountPct;
+  double fixedDiscountPct;
+  double variableDiscountPct;
 
   SaleDraftLine({
     required this.itemId,
     required this.itemName,
     this.quantity = 1,
     this.unitPrice = 0,
-    this.discountPct = 0,
+    this.fixedDiscountPct = 0,
+    this.variableDiscountPct = 0,
   });
 
-  /// قبل الخصم، وبعده. نفس حساب الشاشة الكبيرة: خصم السطر على سطره.
+  /// الاتنين مع بعض — وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده بيشيل خصم واحد.
+  /// و`99.99` سقف مقصود: خصم ١٠٠٪ معناه سطر بصفر، ودي حاجة تتعمل بمسح السطر مش بخصم.
+  double get discountPct =>
+      (fixedDiscountPct + variableDiscountPct).clamp(0, 99.99).toDouble();
+
   double get gross => quantity * unitPrice;
-  double get net => gross * (1 - (discountPct.clamp(0, 99.99)) / 100);
+  double get net => gross * (1 - discountPct / 100);
 
   Map<String, Object?> toRow(int invoiceLocalId) => {
         'invoice_local_id': invoiceLocalId,
@@ -224,15 +239,25 @@ class SaleDraftLine {
         'item_name': itemName,
         'quantity': quantity,
         'unit_price': unitPrice,
+        // المجموع بيتخزّن كمان عشان أي قراءة قديمة تفضل شغالة.
         'discount_pct': discountPct,
+        'fixed_discount_pct': fixedDiscountPct,
+        'variable_discount_pct': variableDiscountPct,
         'line_total': net,
       };
 
-  static SaleDraftLine fromRow(Map<String, Object?> r) => SaleDraftLine(
-        itemId: r['item_id'] as int,
-        itemName: r['item_name'] as String,
-        quantity: (r['quantity'] as num?)?.toDouble() ?? 0,
-        unitPrice: (r['unit_price'] as num?)?.toDouble() ?? 0,
-        discountPct: (r['discount_pct'] as num?)?.toDouble() ?? 0,
-      );
+  static SaleDraftLine fromRow(Map<String, Object?> r) {
+    final fixed = (r['fixed_discount_pct'] as num?)?.toDouble();
+    final variable = (r['variable_discount_pct'] as num?)?.toDouble();
+    return SaleDraftLine(
+      itemId: r['item_id'] as int,
+      itemName: r['item_name'] as String,
+      quantity: (r['quantity'] as num?)?.toDouble() ?? 0,
+      unitPrice: (r['unit_price'] as num?)?.toDouble() ?? 0,
+      // السطور اللي اتكتبت قبل ما الخصم ينقسم بيتقروا كأن كله ثابت — ده اللي كان
+      // معروف عنه وقتها، والتخمين إنه متغيّر كان هيقول على الشركة حاجة ماقالتهاش.
+      fixedDiscountPct: fixed ?? (r['discount_pct'] as num?)?.toDouble() ?? 0,
+      variableDiscountPct: variable ?? 0,
+    );
+  }
 }

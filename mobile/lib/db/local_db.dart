@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 11, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 12, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -30,6 +30,12 @@ class LocalDb {
       }
       if (from < 8) {
         try { await d.execute(_attachmentTable); } catch (_) {}
+      }
+      if (from < 12) {
+        // v12: الخصم اتقسم — ثابت (من الصنف) ومتغيّر (من المندوب).
+        for (final col in ['fixed_discount_pct REAL', 'variable_discount_pct REAL']) {
+          try { await d.execute('ALTER TABLE sale_invoice_line ADD COLUMN $col'); } catch (_) {}
+        }
       }
       if (from < 11) {
         // v11: التحصيل من العربية — سند قبض بيتكتب في الشارع ويترفع بعدين.
@@ -716,6 +722,8 @@ CREATE TABLE sale_invoice_line(
   quantity REAL NOT NULL,
   unit_price REAL NOT NULL DEFAULT 0,
   discount_pct REAL NOT NULL DEFAULT 0,
+  fixed_discount_pct REAL NOT NULL DEFAULT 0,
+  variable_discount_pct REAL NOT NULL DEFAULT 0,
   line_total REAL NOT NULL DEFAULT 0
 )''';
 

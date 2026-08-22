@@ -68,20 +68,27 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     setState(() {
       for (final l in _lines) {
         final it = byId[l.itemId];
-        if (it != null) l.unitPrice = it.priceFor(_customer!.priceTier);
+        if (it != null) {
+          l.unitPrice = it.priceFor(_customer!.priceTier);
+          // الخصم الثابت بيتبع الصنف برضه — بس المتغيّر بتاع المندوب مابيتلمسش.
+          l.fixedDiscountPct = it.defaultDiscountPct;
+        }
       }
     });
   }
 
+  /// **الأصناف بتتفتح من غير ما العميل يتحدّد.**
+  ///
+  /// كانت بتقول «اختار العميل الأول» وتقفل الباب. والسعر فعلاً بيعتمد على فئة العميل —
+  /// بس ده مش سبب يمنعه يشوف اللي معاه: المندوب بيبص على العربية وهو بيتكلّم، والعميل
+  /// أحياناً بيتحدّد بعد ما يشوف الموجود. فالسعر بيتعرض بالأساسي، وأول ما العميل يتحدّد
+  /// السطور بتتسعّر من جديد على فئته (`_repriceAll`).
   Future<void> _addItem() async {
-    if (_customer == null) {
-      _say('اختار العميل الأول — سعر الصنف بيتحدّد بفئته.');
-      return;
-    }
     final onInvoice = {for (final l in _lines) l.itemId: l.quantity};
     final picked = await Navigator.push<SaleItem>(
       context,
-      MaterialPageRoute(builder: (_) => SaleItemPickerScreen(alreadyOnInvoice: onInvoice)),
+      MaterialPageRoute(builder: (_) => SaleItemPickerScreen(
+          alreadyOnInvoice: onInvoice, priceTier: _customer?.priceTier)),
     );
     if (picked == null) return;
     final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
@@ -94,8 +101,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           itemName: picked.name,
           quantity: 1,
           // السعر والخصم من الصنف — الواحد بيراجع رقم، مش بيخترعه.
-          unitPrice: picked.priceFor(_customer!.priceTier),
-          discountPct: picked.defaultDiscountPct,
+          unitPrice: picked.priceFor(_customer?.priceTier),
+          // الثابت من الصنف، والمتغيّر بيبتدي صفر — ده اللي المندوب بيزوّده بإيده.
+          fixedDiscountPct: picked.defaultDiscountPct,
+          variableDiscountPct: 0,
         ));
       }
     });
@@ -141,11 +150,20 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         lines: _lines,
       );
       if (!mounted) return;
-      // بنحاول نرفعها على طول — لو في شبكة بتروح دلوقتي، ولو مافيش بتفضل في الطابور
-      // ومحدش بيقف مستني. الفشل هنا مش غلط: الفاتورة محفوظة.
+      // محاولة رفع سريعة — بسقف ٨ ثواني.
+      //
+      // الفاتورة محفوظة خلاص، والرفع ده مكسب زيادة: لو الشبكة موجودة بيجيب رقم المستند
+      // فيطلع على الورقة. ولو مافيش شبكة، `SocketException` بترجع على طول ومحدش بيستنى.
+      //
+      // **والسقف مقصود.** الرفع العادي مهلته ٩٠ ثانية عشان الشبكة الضعيفة تعدّي؛ لكن هنا
+      // المندوب واقف بيتفرّج على «بيحفظ…» والعميل مستني الورقة. شبكة زفت مش سبب يوقّفه —
+      // الطابور بيرفع في المزامنة على مهله.
       var pushed = false;
       try {
-        pushed = (await ApiClient.instance.pushSaleInvoices()) > 0;
+        pushed = await ApiClient.instance
+                .pushSaleInvoices()
+                .timeout(const Duration(seconds: 8), onTimeout: () => 0) >
+            0;
       } catch (_) {/* الطابور بيحاول تاني في شاشة المزامنة */}
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -290,12 +308,37 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     onChanged: (v) => setState(() => l.unitPrice = v),
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: _numField(
+                    label: 'خصم ثابت %',
+                    value: l.fixedDiscountPct,
+                    onChanged: (v) => setState(() => l.fixedDiscountPct = v),
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: _numField(
-                    label: 'خصم %',
-                    value: l.discountPct,
-                    onChanged: (v) => setState(() => l.discountPct = v),
+                    label: 'خصم إضافي %',
+                    value: l.variableDiscountPct,
+                    onChanged: (v) => setState(() => l.variableDiscountPct = v),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('إجمالي الخصم',
+                          style: TextStyle(fontSize: 11, color: Colors.black54)),
+                      Text('${_trim(l.discountPct)}%',
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w800)),
+                    ],
                   ),
                 ),
               ],
