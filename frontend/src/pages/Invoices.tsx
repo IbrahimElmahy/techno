@@ -44,6 +44,8 @@ interface Customer {
   id: number;
   name: string;
   default_price_tier: string | null;
+  /** خصم العميل نفسه — بيسبق خصم الصنف. شوف `defaultFixedDiscount`. */
+  discount_pct: string | null;
   // Every customer has exactly one rep, required since 001. It is the first link in the chain
   // that lets choosing a customer fill in who is selling and which store the goods leave from.
   rep_id: number;
@@ -421,6 +423,27 @@ export default function Invoices() {
    * الجدول بيعرض النسبة دي وقيمتها بالجنيه في عمودين، زي فاتورة الشرا: «١٠٪» مابتقولش
    * كام اتخصم، والمراجعة بتحصل بالجنيه.
    */
+  /**
+   * الخصم الثابت اللي السطر بيفتح عليه.
+   *
+   * **خصم العميل بيسبق خصم الصنف** — ودي مش تفضيلة، دي نفس الأولوية اللي السيرفر
+   * بيحسب بيها لما السطر ييجي من غير خصم (`sales_service`):
+   *
+   *     خصم السطر  ←  خصم العميل  ←  خصم الصنف
+   *
+   * والشاشة كانت بتاخد خصم الصنف على طول وتتجاهل خصم العميل. وعشان الشاشة **بتبعت**
+   * الخصم صريح في كل سطر، السيرفر مكانش بيوصله دوره أصلاً — فالعميل اللي متسجّل عليه
+   * خصم خاص كان بياخد خصم الصنف وخلاص، والخصم اللي حد قعد سجّله عليه مابيتحسبش ولا مرة.
+   */
+  const defaultFixedDiscount = (itemId: number | null): number => {
+    const cust = customers.find((c) => c.id === selectedCustomerId);
+    if (cust?.discount_pct != null && cust.discount_pct !== '') {
+      return parseFloat(cust.discount_pct) || 0;
+    }
+    const prod = products.find((p) => p.id === itemId);
+    return prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
+  };
+
   const lineDiscountPct = (l: SaleLineItem) =>
     Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
 
@@ -554,7 +577,7 @@ export default function Invoices() {
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null);
-    l.fixed_discount = prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
+    l.fixed_discount = defaultFixedDiscount(itemId);
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
       setLines((prev) => prev.map((x) => (x.key === existing.key
@@ -587,7 +610,7 @@ export default function Invoices() {
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null);
-    l.fixed_discount = prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
+    l.fixed_discount = defaultFixedDiscount(itemId);
     // If the same product is already on the invoice, just bump its quantity.
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
@@ -693,8 +716,7 @@ export default function Invoices() {
           updated.unit_price = resolvePrice(value, updated.tier, null);
           // The item's own fixed discount is applied automatically.
           const prod = products.find((p) => p.id === value);
-          updated.fixed_discount = prod?.default_discount_pct
-            ? parseFloat(prod.default_discount_pct) : 0;
+          updated.fixed_discount = defaultFixedDiscount(value as number);
         } else if ((field === 'tier' || field === 'unit') && l.item_id) {
           updated.unit_price = resolvePrice(l.item_id, updated.tier, updated.unit);
         }
