@@ -32,16 +32,6 @@ interface Props {
   title?: string;
   /** Quantity available for an item, when the caller knows it — shown beside the name. */
   availableFor?: (itemId: number) => number | null;
-  /**
-   * يمنع اختيار الصنف اللي مافيش منه حاجة في المكان المختار.
-   *
-   * البيع بيرفض السطر ده على أي حال — المخزون مابينزلش تحت الصفر — فالسماح باختياره
-   * معناه إن الواحد يضيفه ويكتب كمية ويتقاله «الكمية غير متاحة» بعد تلات خطوات. المنع
-   * من الأول بيقول نفس الحاجة قبل ما يتعب فيها.
-   *
-   * الشرا مابيمنعش: هو بيدخّل بضاعة مش بيطلّعها، والصفر عنده حالة عادية.
-   */
-  blockUnavailable?: boolean;
 }
 
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
@@ -49,7 +39,6 @@ const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFraction
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor,
-  blockUnavailable = false,
 }: Props) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -154,9 +143,9 @@ export default function ProductPickerModal({
                 description={query ? 'مافيش صنف بالاسم ده' : 'مافيش أصناف'} />
             ) : visible.map((p, i) => {
               const available = availableFor ? availableFor(p.id) : null;
-              // مقفول بس لما المتاح **معروف** إنه صفر. `null` معناها «مش عارفين» — ودي
-              // مش نفس «مافيش»، والقفل عليها كان هيمنع بيع بضاعة موجودة.
-              const out = blockUnavailable && available !== null && available <= 0;
+              // الصفر بيتقال، مابيمنعش. الصنف اللي مش في المكان ده بيبقى غالباً في مكان
+              // تاني، والشاشة اللي بتنده الشباك هي اللي بتقرّر تعمل بيه إيه.
+              const out = false;
               return (
                 <div key={p.id}
                   ref={(el) => { rowRefs.current[i] = el; }}

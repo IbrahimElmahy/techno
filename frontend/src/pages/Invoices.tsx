@@ -520,12 +520,37 @@ export default function Invoices() {
    * بعده على طول، هتقرا `docWarehouseId` القديمة (null) وتنزل السطر من غير مخزن، وهي دي
    * المشكلة اللي بنحلها أصلاً.
    */
+  /**
+   * أنهي مخزن ينزل عليه السطر.
+   *
+   * مخزن الفاتورة هو الافتراضي — طالما الصنف موجود فيه. لو مش موجود، بندوّر على مخزن
+   * تاني فيه منه حاجة ونحط السطر عليه ونقول.
+   *
+   * ليه: الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن (٠٣٠)، والصنف اللي مش في العربية
+   * بيبقى في المخزن الرئيسي. المنع كان بيوقّف بيع بضاعة موجودة، والسكوت كان بينزّل السطر
+   * على مخزن فاضي وبيقول «المتاح ٠» عن حاجة في الدور اللي تحت.
+   */
+  const warehouseHolding = async (itemId: number, preferred: number): Promise<number> => {
+    if (availableFor(itemId, null, preferred) > 0) return preferred;
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/balance`);
+      const spot = (res.data?.locations || []).find((x: any) => (
+        x.kind === 'warehouse' && Number(x.quantity) > 0));
+      if (spot) {
+        message.info(`${productName(itemId)}: مش في المخزن المختار — نزل على «${spot.name}»`);
+        await loadWarehouseStock(spot.id);
+        return spot.id;
+      }
+    } catch { /* مش عارفين — بننزّله على مخزن الفاتورة زي ما هو */ }
+    return preferred;
+  };
+
   const addProductByIdWith = async (itemId: number, warehouseId: number) => {
     await fetchPrices(itemId);
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(Date.now().toString(), tier);
-    l.warehouse_id = warehouseId;
+    l.warehouse_id = await warehouseHolding(itemId, warehouseId);
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null);
@@ -556,9 +581,9 @@ export default function Invoices() {
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(Date.now().toString(), tier);
-    // السطر بيبدأ على مخزن المستند — المخزن اتشال من الترويسة، فلو السطر فتح فاضي
-    // مافيش حاجة تقول للحارس المتاح كام.
-    l.warehouse_id = docWarehouseId;
+    // السطر بيبدأ على مخزن المستند — إلا لو الصنف مش موجود فيه، ساعتها بينزل على
+    // المخزن اللي فيه الصنف فعلاً.
+    l.warehouse_id = await warehouseHolding(itemId, docWarehouseId);
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null);
@@ -1798,11 +1823,11 @@ export default function Invoices() {
             products={products}
             activeCategory={activeCategory}
             onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
-            // المتاح «مش معروف» لحد ما المخزن يتحدّد — `null` مش صفر، عشان القفل
-            // مايمنعش أصناف موجودة قبل ما حد يقول من أنهي مخزن.
+            // المتاح بيتعرض ومابيمنعش. جُرّب المنع وطلع غلط: الصنف اللي مش في المخزن
+            // المختار بيبقى غالباً في مخزن تاني، والمنع كان بيوقّف البيع بدل ما يوجّهه.
+            // اللي بيحصل دلوقتي إن السطر بينزل على المخزن اللي فيه الصنف فعلاً.
             availableFor={(id) => (docWarehouseId === null
               ? null : availableFor(id, null, docWarehouseId))}
-            blockUnavailable
             onCancel={() => setPickerOpen(false)}
             onPick={(id) => {
               setPickerOpen(false);
