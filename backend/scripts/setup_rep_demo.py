@@ -43,6 +43,12 @@ ADMIN_PASS = os.environ.get("TECHNO_ADMIN_PASS")
 REP_USER = os.environ.get("REP_USER", "reptest")
 REP_PASS = os.environ.get("REP_PASS", "rep12345")
 REP_NAME = os.environ.get("REP_NAME", "مندوب تجربة")
+# مخزن موجود بالاسم — لو مااتحطش، بيتعمل مخزن جديد باسم «عربية {الاسم}».
+#
+# البضاعة اللي المندوب بيبيع منها لازم تبقى في مكان لوحدها عشان «المتاح في عربيتي» يبقى
+# رقم صادق. حطّه على المخزن المركزي وهيشوف مخزن الشركة كله كأنه معاه في العربية — فلو
+# سمّيت مخزن هنا، سمّي عربية مش مخزن الشركة.
+REP_WAREHOUSE = os.environ.get("REP_WAREHOUSE")
 
 _token: str | None = None
 
@@ -112,16 +118,28 @@ def main() -> None:
     # 2) المخزن + كارت الموظف -----------------------------------------------------
     st, whs = call("GET", "/warehouses")
     need(st, whs, "قراءة المخازن")
-    wh_name = f"عربية {REP_NAME}"
-    wh = next((w for w in whs if w["name"] == wh_name), None)
-    if wh is None:
-        # مركزي عن قصد: الفرعي بيطلب `branch_id`، والمندوب مش لازم يكون على فرع.
-        st, wh = call("POST", "/warehouses",
-                      {"name": wh_name, "warehouse_type": "central"})
-        need(st, wh, "إنشاء مخزن المندوب")
-        print(f"✔ المخزن اتعمل: {wh_name}")
+    if REP_WAREHOUSE:
+        # مخزن اسمه اتقال — بنستعمله زي ما هو ومابنعملش حاجة. والاسم بيتقارن بعد شيل
+        # المسافات الزيادة، لأن اللي بيتكتب في متغيّر بيئة بيجيله مسافة في الآخر بسهولة.
+        wanted = REP_WAREHOUSE.strip()
+        wh = next((w for w in whs if (w["name"] or "").strip() == wanted), None)
+        if wh is None:
+            print(f"✖ مافيش مخزن اسمه «{wanted}». الموجود:")
+            for w in whs:
+                print(f"    - {w['name']}")
+            sys.exit(1)
+        print(f"• المخزن المختار: {wh['name']}")
     else:
-        print(f"• المخزن موجود: {wh_name}")
+        wh_name = f"عربية {REP_NAME}"
+        wh = next((w for w in whs if w["name"] == wh_name), None)
+        if wh is None:
+            # مركزي عن قصد: الفرعي بيطلب `branch_id`، والمندوب مش لازم يكون على فرع.
+            st, wh = call("POST", "/warehouses",
+                          {"name": wh_name, "warehouse_type": "central"})
+            need(st, wh, "إنشاء مخزن المندوب")
+            print(f"✔ المخزن اتعمل: {wh_name}")
+        else:
+            print(f"• المخزن موجود: {wh_name}")
     wh_id = wh["id"]
 
     st, emps = call("GET", "/employees")
@@ -178,6 +196,16 @@ def main() -> None:
         st, sup = call("POST", "/suppliers", {"name": "مورد تجربة"})
         need(st, sup, "إنشاء مورد")
 
+    if REP_WAREHOUSE:
+        # المخزن اللي اتسمّى غالباً فيه بضاعته خلاص — إضافة فاتورة شرا فوقه بتزوّد أرقام
+        # محدش طلبها. بنتأكد بس إن فيه حاجة، ولو فاضي بندخّل.
+        st, held = call("GET", "/stock/by-location",
+                        {"location_kind": "warehouse", "location_id": wh_id})
+        if st == 200 and held:
+            print(f"• في {len(held)} صنف في المخزن ده خلاص — مادخّلناش بضاعة")
+            _final_check()
+            return
+
     lines = [{"item_id": i["id"], "quantity": "20",
               "unit_price": str(i.get("purchase_price") or "50")} for i in sellable]
     total = sum(20 * float(i.get("purchase_price") or 50) for i in sellable)
@@ -190,7 +218,12 @@ def main() -> None:
     else:
         print("! البضاعة مادخلتش — ادخلها بإذن إضافة من شاشة المخازن")
 
-    # التأكيد الأخير: نشوف اللي التطبيق نفسه هيشوفه ----------------------------------
+    _final_check()
+
+
+def _final_check() -> None:
+    """نسجّل دخول بالمندوب ونشوف اللي التطبيق هيشوفه — أصدق من إن كل خطوة قالت تمام."""
+    global _token
     st, tok = call("POST", "/auth/login",
                    {"username": REP_USER, "password": REP_PASS, "client": "mobile"})
     if st == 200:
