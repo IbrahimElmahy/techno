@@ -303,6 +303,18 @@ export default function Invoices() {
   const [party, setParty] = useState<Party | null>(null);
   // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
+  /**
+   * الصنف اللي مستني المخزن يتحدّد قبل ما ينزل السطر.
+   *
+   * كل سطر بيقيس المتاح على مخزنه، ومن غير مخزن الإجابة بتطلع صفر — «مافيش حاجة متاحة من
+   * مكان مش محدّد» صح كحسبة وغلط كجملة. النتيجة إن الفاتورة كانت بتفتح وكل الكميات صفر
+   * والبضاعة موجودة، والواحد يفضل يبص على أرقام مالهاش معنى.
+   *
+   * فالمخزن بيتسأل **مرة واحدة**، أول صنف، وبيثبت لباقي سطور الفاتورة. اللي عايز يوزّع
+   * الفاتورة على أكتر من مخزن بيغيّر مخزن السطر من عموده زي ما هو.
+   */
+  const [pendingItems, setPendingItems] = useState<number[]>([]);
+  const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
@@ -501,8 +513,45 @@ export default function Invoices() {
   };
 
   // Type a product name → it's added to the invoice immediately (POS-style, fastest path).
+  /**
+   * نفس `addProductById` بمخزن **صريح**.
+   *
+   * ضروري لأن `setDocWarehouseId` مابيغيّرش القيمة في نفس اللفّة — لو ندهنا الدالة العادية
+   * بعده على طول، هتقرا `docWarehouseId` القديمة (null) وتنزل السطر من غير مخزن، وهي دي
+   * المشكلة اللي بنحلها أصلاً.
+   */
+  const addProductByIdWith = async (itemId: number, warehouseId: number) => {
+    await fetchPrices(itemId);
+    const prod = products.find((p) => p.id === itemId);
+    const tier = customerTier || 'consumer';
+    const l = blankLine(Date.now().toString(), tier);
+    l.warehouse_id = warehouseId;
+    l.category = prod?.category ?? null;
+    l.item_id = itemId;
+    l.unit_price = resolvePrice(itemId, tier, null);
+    l.fixed_discount = prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
+    const existing = lines.find((x) => x.item_id === itemId);
+    if (existing) {
+      setLines((prev) => prev.map((x) => (x.key === existing.key
+        ? { ...x, quantity: Number(x.quantity || 0) + 1 } : x)));
+      setFocusLineKey(existing.key);
+    } else {
+      setLines((prev) => [...prev, l]);
+      setFocusLineKey(l.key);
+    }
+  };
+
   const addProductById = async (itemId: number) => {
     if (!itemId) return;
+    // مافيش مخزن للفاتورة لسه؟ نسأل مرة واحدة قبل ما السطر ينزل. السطر اللي بينزل من غير
+    // مخزن بيقول «المتاح ٠» عن بضاعة موجودة، وده أسوأ من إننا نسأل سؤال واحد.
+    if (docWarehouseId === null) {
+      // بيتجمّعوا مش بيتبدّلوا: «اختار كذا صنف مرة واحدة» بينده الدالة دي لكل صنف، فلو
+      // كل واحد مسح اللي قبله كان هينزل صنف واحد بس والباقي يضيع في السكوت.
+      setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
+      setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
+      return;
+    }
     await fetchPrices(itemId);
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
@@ -2121,6 +2170,45 @@ export default function Invoices() {
           })}
         />
       </Card>
+
+      {/*
+        * «الفاتورة دي من أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
+        *
+        * مش خانة في الترويسة عن قصد: الترويسة اتشالت منها خانة المخزن بطلب صاحب النظام،
+        * والسؤال هنا بيتسأل في اللحظة اللي محتاجينه فيها فعلاً — أول ما حد يضيف صنف.
+        */}
+      <TabModal
+        open={pendingItems.length > 0}
+        title={pendingItems.length > 1
+          ? `الأصناف دي (${pendingItems.length}) من أنهي مخزن؟`
+          : 'الفاتورة دي من أنهي مخزن؟'}
+        okText="تمام" cancelText="إلغاء"
+        okButtonProps={{ disabled: pendingWarehouse === null }}
+        onCancel={() => setPendingItems([])}
+        onOk={async () => {
+          const wh = pendingWarehouse;
+          const items = pendingItems;
+          if (wh === null || items.length === 0) return;
+          setPendingItems([]);
+          setDocWarehouseId(wh);
+          await loadWarehouseStock(wh);
+          // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها، فلو اتنفّذوا مع بعض
+          // كل واحد فيهم هيشوف القايمة زي ما كانت قبل أي إضافة.
+          for (const id of items) await addProductByIdWith(id, wh);
+        }}
+        destroyOnHidden
+      >
+        <Select
+          style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+          placeholder="اختار المخزن"
+          value={pendingWarehouse ?? undefined}
+          onChange={(v) => setPendingWarehouse(v as number)}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+        />
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+          هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+        </div>
+      </TabModal>
 
       {/* بوباب المرتجع السريع اتشال مع زراره — مكانه شاشة مردود المبيعات. */}
 
