@@ -1798,7 +1798,11 @@ export default function Invoices() {
             products={products}
             activeCategory={activeCategory}
             onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
-            availableFor={(id) => availableFor(id, null, docWarehouseId)}
+            // المتاح «مش معروف» لحد ما المخزن يتحدّد — `null` مش صفر، عشان القفل
+            // مايمنعش أصناف موجودة قبل ما حد يقول من أنهي مخزن.
+            availableFor={(id) => (docWarehouseId === null
+              ? null : availableFor(id, null, docWarehouseId))}
+            blockUnavailable
             onCancel={() => setPickerOpen(false)}
             onPick={(id) => {
               setPickerOpen(false);
@@ -1841,6 +1845,9 @@ export default function Invoices() {
                     <th style={{ minWidth: 90 }}>خصم</th>
                     <th style={{ minWidth: 78 }}>خصم %</th>
                     <th style={{ minWidth: 100 }}>الإجمالي</th>
+                    {/* النقاط رجعت للجدول. اتشالت وقت ما السطور اتحوّلت من كروت لجدول،
+                        ومحدش واخد باله — والعميل بيسأل «جبت كام نقطة؟» وهو واقف. */}
+                    <th style={{ minWidth: 84 }}>النقاط</th>
                     <th style={{ width: 40 }} />
                   </tr>
                 </thead>
@@ -1912,6 +1919,12 @@ export default function Invoices() {
                       <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
                         {money(saleLineNet(line))}
                       </td>
+                      <td style={{ whiteSpace: 'nowrap', color: '#b26a00' }}>
+                        {linePoints(line)
+                          ? linePoints(line).toLocaleString('ar-EG',
+                              { maximumFractionDigits: 3 })
+                          : '-'}
+                      </td>
                       <td>
                         <Button size="small" danger type="text" icon={<DeleteOutlined />}
                           onClick={() => handleRemoveLine(line.key)} />
@@ -1934,6 +1947,11 @@ export default function Invoices() {
                     <td colSpan={2} />
                     <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
                       {money(lines.reduce((n, l) => n + saleLineNet(l), 0))}
+                    </td>
+                    {/* إجمالي نقاط الفاتورة — نفس الرقم اللي في سُلّم الإجماليات، بس هنا
+                        تحت عموده مباشرة عشان يتقارن بالسطور اللي فوقه. */}
+                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap', color: '#b26a00' }}>
+                      {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
                     </td>
                     <td />
                   </tr>

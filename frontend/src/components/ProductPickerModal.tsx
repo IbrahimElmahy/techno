@@ -32,6 +32,16 @@ interface Props {
   title?: string;
   /** Quantity available for an item, when the caller knows it — shown beside the name. */
   availableFor?: (itemId: number) => number | null;
+  /**
+   * يمنع اختيار الصنف اللي مافيش منه حاجة في المكان المختار.
+   *
+   * البيع بيرفض السطر ده على أي حال — المخزون مابينزلش تحت الصفر — فالسماح باختياره
+   * معناه إن الواحد يضيفه ويكتب كمية ويتقاله «الكمية غير متاحة» بعد تلات خطوات. المنع
+   * من الأول بيقول نفس الحاجة قبل ما يتعب فيها.
+   *
+   * الشرا مابيمنعش: هو بيدخّل بضاعة مش بيطلّعها، والصفر عنده حالة عادية.
+   */
+  blockUnavailable?: boolean;
 }
 
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
@@ -39,6 +49,7 @@ const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFraction
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor,
+  blockUnavailable = false,
 }: Props) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -143,16 +154,24 @@ export default function ProductPickerModal({
                 description={query ? 'مافيش صنف بالاسم ده' : 'مافيش أصناف'} />
             ) : visible.map((p, i) => {
               const available = availableFor ? availableFor(p.id) : null;
+              // مقفول بس لما المتاح **معروف** إنه صفر. `null` معناها «مش عارفين» — ودي
+              // مش نفس «مافيش»، والقفل عليها كان هيمنع بيع بضاعة موجودة.
+              const out = blockUnavailable && available !== null && available <= 0;
               return (
                 <div key={p.id}
                   ref={(el) => { rowRefs.current[i] = el; }}
-                  onClick={() => (bulk ? toggle(p.id) : onPick(p.id))}
+                  onClick={() => {
+                    if (out) return;
+                    return bulk ? toggle(p.id) : onPick(p.id);
+                  }}
                   onMouseEnter={() => setCursor(i)}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '9px 12px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
-                    background: i === cursor ? '#eaf5e2' : '#fff',
-                    border: `1px solid ${i === cursor ? '#6AB42D' : '#f0f0f0'}`,
+                    padding: '9px 12px', borderRadius: 6, marginBottom: 4,
+                    cursor: out ? 'not-allowed' : 'pointer',
+                    opacity: out ? 0.55 : 1,
+                    background: out ? '#fafafa' : (i === cursor ? '#eaf5e2' : '#fff'),
+                    border: `1px solid ${out ? '#eee' : (i === cursor ? '#6AB42D' : '#f0f0f0')}`,
                   }}>
                   <span>
                     {bulk && (
@@ -165,7 +184,7 @@ export default function ProductPickerModal({
                   </span>
                   {available !== null && (
                     <span style={{ color: available > 0 ? '#6AB42D' : '#cf1322', fontSize: 13 }}>
-                      المتاح: {qty(available)}
+                      {out ? 'مش موجود في المخزن ده' : `المتاح: ${qty(available)}`}
                     </span>
                   )}
                 </div>

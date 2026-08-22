@@ -262,6 +262,9 @@ export default function Returns() {
   const linePoints = (l: ReturnLineItem) =>
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
+  /** إجمالي النقاط اللي بترجع مع البضاعة — بيتحسب من السطور زي إجمالي الفلوس. */
+  const totalReturnPoints = lines.reduce((sum, l) => sum + linePoints(l), 0);
+
   const grossTotal = lines.reduce((s, l) => s + lineTotal(l), 0);
   const netTotal = grossTotal * (1 - discountPct / 100);
   const totalPoints = lines.reduce((s, l) => s + linePoints(l), 0);
@@ -1063,6 +1066,12 @@ export default function Returns() {
                       show: returnDiscount > 0.001 },
                     { label: 'صافي المرتجع', value: money(netTotal),
                       strong: true, color: '#cf4b1a', rule: true },
+                    // النقاط المستردّة — النقاط اللي هتترفع من رصيد العميل مقابل البضاعة
+                    // الراجعة. السطور بتوري نقاط كل صنف، وده مجموعهم؛ والعميل بيسأل عنه
+                    // زي ما بيسأل عن الفلوس بالظبط.
+                    { label: 'النقاط المستردّة', value: totalReturnPoints
+                        .toLocaleString('ar-EG', { maximumFractionDigits: 3 }),
+                      color: '#b26a00', show: totalReturnPoints > 0 },
                     // One line per product family, the chosen one tinted, then the whole debt —
                     // the same column the sale shows, so the two documents read alike.
                     ...families.map((a) => ({
