@@ -1816,6 +1816,45 @@ export default function Invoices() {
             إضافة صنف للفاتورة
           </Button>
 
+          {/*
+            * «الفاتورة دي من أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
+            *
+            * مش خانة في الترويسة عن قصد: الترويسة اتشالت منها خانة المخزن بطلب صاحب النظام،
+            * والسؤال هنا بيتسأل في اللحظة اللي محتاجينه فيها فعلاً — أول ما حد يضيف صنف.
+            */}
+          <TabModal
+            open={pendingItems.length > 0}
+            title={pendingItems.length > 1
+              ? `الأصناف دي (${pendingItems.length}) من أنهي مخزن؟`
+              : 'الفاتورة دي من أنهي مخزن؟'}
+            okText="تمام" cancelText="إلغاء"
+            okButtonProps={{ disabled: pendingWarehouse === null }}
+            onCancel={() => setPendingItems([])}
+            onOk={async () => {
+              const wh = pendingWarehouse;
+              const items = pendingItems;
+              if (wh === null || items.length === 0) return;
+              setPendingItems([]);
+              setDocWarehouseId(wh);
+              await loadWarehouseStock(wh);
+              // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها، فلو اتنفّذوا مع بعض
+              // كل واحد فيهم هيشوف القايمة زي ما كانت قبل أي إضافة.
+              for (const id of items) await addProductByIdWith(id, wh);
+            }}
+            destroyOnHidden
+          >
+            <Select
+              style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+              placeholder="اختار المخزن"
+              value={pendingWarehouse ?? undefined}
+              onChange={(v) => setPendingWarehouse(v as number)}
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+            />
+            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+              هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+            </div>
+          </TabModal>
+
           <ProductPickerModal
             open={pickerOpen}
             categories={productCategories}
@@ -2213,45 +2252,6 @@ export default function Invoices() {
           })}
         />
       </Card>
-
-      {/*
-        * «الفاتورة دي من أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
-        *
-        * مش خانة في الترويسة عن قصد: الترويسة اتشالت منها خانة المخزن بطلب صاحب النظام،
-        * والسؤال هنا بيتسأل في اللحظة اللي محتاجينه فيها فعلاً — أول ما حد يضيف صنف.
-        */}
-      <TabModal
-        open={pendingItems.length > 0}
-        title={pendingItems.length > 1
-          ? `الأصناف دي (${pendingItems.length}) من أنهي مخزن؟`
-          : 'الفاتورة دي من أنهي مخزن؟'}
-        okText="تمام" cancelText="إلغاء"
-        okButtonProps={{ disabled: pendingWarehouse === null }}
-        onCancel={() => setPendingItems([])}
-        onOk={async () => {
-          const wh = pendingWarehouse;
-          const items = pendingItems;
-          if (wh === null || items.length === 0) return;
-          setPendingItems([]);
-          setDocWarehouseId(wh);
-          await loadWarehouseStock(wh);
-          // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها، فلو اتنفّذوا مع بعض
-          // كل واحد فيهم هيشوف القايمة زي ما كانت قبل أي إضافة.
-          for (const id of items) await addProductByIdWith(id, wh);
-        }}
-        destroyOnHidden
-      >
-        <Select
-          style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
-          placeholder="اختار المخزن"
-          value={pendingWarehouse ?? undefined}
-          onChange={(v) => setPendingWarehouse(v as number)}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-        />
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-          هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
-        </div>
-      </TabModal>
 
       {/* بوباب المرتجع السريع اتشال مع زراره — مكانه شاشة مردود المبيعات. */}
 
