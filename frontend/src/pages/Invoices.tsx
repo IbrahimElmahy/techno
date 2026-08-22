@@ -1906,8 +1906,10 @@ export default function Invoices() {
                     <th style={{ minWidth: 84 }}>الكمية</th>
                     <th style={{ minWidth: 100 }}>سعر الوحدة</th>
                     <th style={{ minWidth: 100 }}>اجمالي قبل</th>
-                    <th style={{ minWidth: 90 }}>خصم</th>
-                    <th style={{ minWidth: 78 }}>خصم %</th>
+                    {/* المتغيّر الأول والثابت بعده — بترتيب اللي بيتغيّر كل فاتورة قبل
+                        اللي بيتغيّر مرة كل شوية. والاتنين نسبة، والاتنين بيتكتبوا. */}
+                    <th style={{ minWidth: 84 }}>خصم متغير %</th>
+                    <th style={{ minWidth: 84 }}>خصم ثابت %</th>
                     <th style={{ minWidth: 100 }}>الإجمالي</th>
                     {/* النقاط رجعت للجدول. اتشالت وقت ما السطور اتحوّلت من كروت لجدول،
                         ومحدش واخد باله — والعميل بيسأل «جبت كام نقطة؟» وهو واقف. */}
@@ -1920,10 +1922,17 @@ export default function Invoices() {
                     <tr key={line.key}>
                       <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
                       <td>
-                        {/* مخزن السطر — الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن. */}
+                        {/* مخزن السطر — الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن.
+                            **والتغيير هنا بيثبت للأصناف الجاية.** اللي بيغيّر مخزن سطر
+                            غالباً بيقول «باقي الفاتورة من هنا»، مش بيصلّح سطر واحد؛
+                            وإجباره يغيّره في كل سطر بعده هو نفس الشغل مكرر. السطور اللي
+                            اتكتبت مابتتلمسش — دي حاجة قالها بإيده. */}
                         <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
                           value={line.warehouse_id ?? undefined}
-                          onChange={(v) => handleLineChange(line.key, 'warehouse_id', v ?? null)}
+                          onChange={(v) => {
+                            handleLineChange(line.key, 'warehouse_id', v ?? null);
+                            if (v != null) setDocWarehouseId(v as number);
+                          }}
                           options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
                       </td>
                       <td>
@@ -1965,19 +1974,26 @@ export default function Invoices() {
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {money(Number(line.quantity || 0) * (line.unit_price || 0))}
                       </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        {/* «١٠٪» مابتقولش كام اتخصم — والمراجعة بتحصل بالجنيه. */}
-                        {lineDiscountPct(line)
-                          ? money(Number(line.quantity || 0) * (line.unit_price || 0)
-                              * (lineDiscountPct(line) / 100))
-                          : '-'}
-                      </td>
                       <td>
+                        {/* المتغيّر — اللي بيتفاوض عليه في الفاتورة دي. */}
                         <InputNumber size="small" min={0} max={99.99} step={0.5}
-                          style={{ width: '100%' }} placeholder="خصم %"
+                          style={{ width: '100%' }} placeholder="متغير"
                           value={line.variable_discount ?? undefined}
                           onChange={(v) => handleLineChange(
                             line.key, 'variable_discount', (v as number) ?? null)}
+                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+                      </td>
+                      <td>
+                        {/* الثابت — بيبتدي من الصنف، **وبيتعدّل**.
+                            كان بيتعرض بالجنيه وقفل. وفي عملاء بياخدوا ثابت أقل أو أكتر
+                            من اللي على الصنف، فاللي كان بيحصل إن الفرق ده بيتحطّ في
+                            المتغيّر — والفاتورة تقول إن البايع خصم حاجة والشركة خصمت
+                            حاجة تانية، وده اللي المراجعة بتدوّر عليه. */}
+                        <InputNumber size="small" min={0} max={99.99} step={0.5}
+                          style={{ width: '100%' }} placeholder="ثابت"
+                          value={line.fixed_discount ?? undefined}
+                          onChange={(v) => handleLineChange(
+                            line.key, 'fixed_discount', (v as number) ?? 0)}
                           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
                       </td>
                       <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
