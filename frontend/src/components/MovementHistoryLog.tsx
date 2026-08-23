@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Collapse, DatePicker, Descriptions, Empty, Space, Spin, Tag } from 'antd';
+import { Button, Card, Collapse, DatePicker, Descriptions, Empty, Space, Spin, Tag } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
@@ -155,20 +155,46 @@ export default function MovementHistoryLog({
         title={`سجل عمليات — ${target.itemName || `صنف #${target.itemId}`}`}
         extra={<Button type="text" icon={<CloseOutlined />} onClick={onClose}>إغلاق</Button>}
       >
-        <Space style={{ marginBottom: 12 }} wrap>
+        {/*
+          * شريط الفترة.
+          *
+          * **المدد الجاهزة مش زينة.** أكتر حاجة بتتعمل في السجل ده هي **توسيع** الفترة:
+          * الواحد بيفتحه على فترة الجرد، مايلاقيش سبب الفرق فيها، فبيوسّع. وده كان معناه
+          * فتح التقويم مرتين والعدّ بالشهور بالإيد في كل مرة — دلوقتي دوسة واحدة.
+          *
+          * و«كل الحركات» موجودة عن قصد: الفرق اللي مش في الفترة بيبقى قبلها، والتاريخ
+          * اللي بيتكتب بالإيد للسنة اللي فاتت هو أكتر مكان بيتكتب فيه غلط.
+          */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+          marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+          background: '#fafafa', border: '1px solid #f0f0f0',
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#3a4a3a' }}>الفترة</span>
           <DatePicker.RangePicker
-            value={range as any} allowClear
+            value={range as any} allowClear format="YYYY-MM-DD"
             onChange={(v) => setRange(v as any)}
             placeholder={['من تاريخ', 'إلى تاريخ']}
+            style={{ minWidth: 260 }}
+            presets={[
+              { label: 'آخر شهر', value: [dayjs().subtract(1, 'month'), dayjs()] },
+              { label: 'آخر ٣ شهور', value: [dayjs().subtract(3, 'month'), dayjs()] },
+              { label: 'آخر سنة', value: [dayjs().subtract(1, 'year'), dayjs()] },
+            ]}
           />
-          <span style={{ color: '#6b6b6b', fontSize: 12 }}>
+          {(range?.[0] || range?.[1]) && (
+            <Button size="small" type="link" onClick={() => setRange(null)}>
+              كل الحركات
+            </Button>
+          )}
+          <span style={{ marginInlineStart: 'auto', fontSize: 12, color: '#4a4a4a' }}>
             {rows.length} حركة
           </span>
-        </Space>
+        </div>
 
-        <Alert type="info" showIcon style={{ marginBottom: 12 }}
-          message="اضغط على أي حركة تشوف تفاصيلها تحتها"
-          description="كل حركة والرصيد قبلها وبعدها — الفرق بيتفسّر من هنا مش من الرقم لوحده." />
+        {/* سطر «اضغط على أي حركة تشوف تفاصيلها تحتها» اتشال بطلب صاحب النظام.
+            كان بيشرح حاجة السجل نفسه بيقولها: الصفوف بتتفتح لما تتضغط، واللي بيفتحها
+            مرة عمره ما هيحتاج يتقاله تاني. */}
 
         {loading ? <Spin /> : items.length
           ? <Collapse accordion items={items} />

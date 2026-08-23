@@ -502,7 +502,7 @@ export default function StockCounts() {
                       dateTo: sheet?.count_date ?? null,
                     }}
                     onClose={() => toggleLine(r.id)}
-                  />
+            />
                 ),
               }}
               size="small" rowKey="id" dataSource={draftLines}
