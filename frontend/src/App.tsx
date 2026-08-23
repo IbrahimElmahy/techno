@@ -1,6 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { ConfigProvider, Spin } from 'antd';
 import arEG from 'antd/locale/ar_EG';
+
+/**
+ * ترويسة أيام التقويم بالمختصر.
+ *
+ * `ar_EG` بتاعة antd بتبعت أسماء الأيام **كاملة** في `shortWeekDays` — «الأحد» و«الأربعاء»
+ * في خانة معمولة لحرفين. النتيجة إن الأسماء بتتلزق في بعض وترويسة التقويم بتبقى صف
+ * مقروء بالعافية، في كل خانة تاريخ في النظام.
+ *
+ * والاختصارات دي مش اختراع: `dayjs` بتاعة العربي نفسها فيها `weekdaysMin` بنفس الحروف.
+ * الفرق إن antd مابتقراهاش منها.
+ */
+const AR_LOCALE: typeof arEG = {
+  ...arEG,
+  DatePicker: {
+    ...arEG.DatePicker!,
+    lang: {
+      ...arEG.DatePicker!.lang,
+      shortWeekDays: ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'],
+    },
+  },
+};
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './components/AuthProvider';
 import RouteGuard from './components/RouteGuard';
@@ -48,7 +69,7 @@ export default function App() {
   return (
     <ConfigProvider
       direction="rtl"
-      locale={arEG}
+      locale={AR_LOCALE}
       theme={{
         token: {
           colorPrimary: '#6AB42D',       // Primary green

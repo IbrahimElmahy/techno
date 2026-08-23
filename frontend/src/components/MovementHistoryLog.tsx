@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Collapse, DatePicker, Descriptions, Empty, Segmented, Space, Spin, Tag,
+  Button, Card, Collapse, DatePicker, Descriptions, Empty, Select, Space, Spin, Tag,
 } from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -168,21 +168,23 @@ export default function MovementHistoryLog({
         extra={<Button type="text" icon={<CloseOutlined />} onClick={onClose}>إغلاق</Button>}
       >
         {/*
-          * شريط الفترة — أزرار، مش تقويم مدى.
+          * فلتر واحد للفترة.
           *
-          * `RangePicker` بيفتح شهرين جنب بعض في بوباب كبير، وفي العربي أسماء الأيام
-          * بتتلزق في بعض وبتبقى مقروءة بالعافية. وده ثمن كبير لحاجة إجابتها في تسعة من
-          * عشرة واحدة من أربعة: كله، شهر، تلاتة، سنة.
+          * كان تقويم مدى بيفتح شهرين في بوباب كبير، وبعدين بقى أزرار ومعاها خانتين
+          * تاريخ لما تختار «مخصص» — يعني تلات حاجات على الشاشة لسؤال واحد.
           *
-          * فالأربعة بقوا أزرار بدوسة واحدة، والتقويم فضل لـ«مخصص» بس — وساعتها خانتين
-          * منفصلتين، كل واحدة بتفتح شهر واحد، وده بوباب أصغر وبيتقرا صح.
+          * دلوقتي خانة واحدة: القايمة فيها المدد الجاهزة، و«فترة محددة» بتفتح خانتين
+          * جوّه نفس الإطار — فاللي بيبص على الشريط بيشوف حاجة واحدة اسمها «الفترة»،
+          * مش تلاتة لازم يفهم علاقتهم ببعض.
           */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-          marginBottom: 12,
+          marginBottom: 12, padding: '6px 10px', borderRadius: 8,
+          background: '#fafafa', border: '1px solid #f0f0f0',
         }}>
-          <Segmented
+          <Select
             size="small"
+            style={{ minWidth: 130 }}
             value={preset}
             onChange={(v) => {
               const key = v as Preset;
@@ -193,24 +195,24 @@ export default function MovementHistoryLog({
             }}
             options={[
               { value: 'all', label: 'كل الحركات' },
-              { value: 'm1', label: 'شهر' },
-              { value: 'm3', label: '٣ شهور' },
-              { value: 'm12', label: 'سنة' },
-              { value: 'custom', label: 'مخصص' },
+              { value: 'm1', label: 'آخر شهر' },
+              { value: 'm3', label: 'آخر ٣ شهور' },
+              { value: 'm12', label: 'آخر سنة' },
+              { value: 'custom', label: 'فترة محددة' },
             ]}
           />
 
           {preset === 'custom' && (
             <>
               <DatePicker
-                size="small" format="YYYY-MM-DD" placeholder="من"
-                value={range?.[0] ?? null} style={{ width: 130 }}
+                size="small" format="YYYY-MM-DD" placeholder="من" allowClear={false}
+                value={range?.[0] ?? null} style={{ width: 128 }}
                 onChange={(v) => setRange([v, range?.[1] ?? null])}
               />
               <span style={{ color: '#8c8c8c' }}>←</span>
               <DatePicker
-                size="small" format="YYYY-MM-DD" placeholder="إلى"
-                value={range?.[1] ?? null} style={{ width: 130 }}
+                size="small" format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
+                value={range?.[1] ?? null} style={{ width: 128 }}
                 onChange={(v) => setRange([range?.[0] ?? null, v])}
               />
             </>
