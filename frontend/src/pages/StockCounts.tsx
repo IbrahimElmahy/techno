@@ -502,6 +502,8 @@ export default function StockCounts() {
                       dateTo: sheet?.count_date ?? null,
                     }}
                     onClose={() => toggleLine(r.id)}
+                    // الفترة بتتحدّد فوق الورقة مرة واحدة — مش في كل صنف.
+                    periodFilter={false}
             />
                 ),
               }}

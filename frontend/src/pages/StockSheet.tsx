@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Row, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
+import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
@@ -83,6 +84,10 @@ const TITLES: Record<string, string> = {
   count: 'جرد المخازن',
   general: 'جرد عام المخازن',
 };
+
+/** فترات سجل الحركات الجاهزة — واحدة للورقة كلها. */
+type LogPreset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
+const LOG_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
 
 export default function StockSheet() {
   const [search] = useSearchParams();
@@ -177,7 +182,22 @@ export default function StockSheet() {
 
   const openHistory = (r: any) => toggleRow(rowKey(r));
 
+  /**
+   * فترة السجل — **واحدة للورقة كلها**.
+   *
+   * كل صنف كان بيفتح سجله بفلتر فترة خاص بيه. يعني اللي بيراجع عشرين صنف بيظبط نفس
+   * التاريخ عشرين مرة، والأخطر إنه يقارن صنف على آخر شهر بصنف على السنة كلها من غير ما
+   * ياخد باله — الأرقام جنب بعض والفترة مختلفة.
+   *
+   * فبقت فوق مرة واحدة، والسجلات كلها بتتبعها.
+   */
+  const [logPreset, setLogPreset] = useState<LogPreset>('all');
+  const [logFrom, setLogFrom] = useState<Dayjs | null>(null);
+  const [logTo, setLogTo] = useState<Dayjs | null>(null);
+
   const historyTarget = (r: any) => ({
+    dateFrom: logFrom ? logFrom.format('YYYY-MM-DD') : null,
+    dateTo: logTo ? logTo.format('YYYY-MM-DD') : null,
     itemId: r.item_id, itemName: r.name,
     // Scoped to the store when the sheet is showing stores, and to the item as a whole when it is
     // summing them — the log has to answer the question the row was asking.
@@ -306,6 +326,37 @@ export default function StockSheet() {
       title={TITLES[view]}
       extra={(
         <Space>
+          {/* فترة سجل الحركات — بتتحدّد هنا مرة وبتتطبّق على كل صنف يتفتح تحته. */}
+          <Select
+            size="small" style={{ minWidth: 130 }} value={logPreset}
+            onChange={(v) => {
+              const key = v as LogPreset;
+              setLogPreset(key);
+              if (key === 'all') { setLogFrom(null); setLogTo(null); return; }
+              if (key === 'custom') {
+                setLogFrom(logFrom ?? dayjs().subtract(1, 'month'));
+                setLogTo(logTo ?? dayjs());
+                return;
+              }
+              setLogFrom(dayjs().subtract(LOG_MONTHS[key], 'month'));
+              setLogTo(dayjs());
+            }}
+            options={[
+              { value: 'all', label: 'كل الحركات' },
+              { value: 'm1', label: 'آخر شهر' },
+              { value: 'm3', label: 'آخر ٣ شهور' },
+              { value: 'm12', label: 'آخر سنة' },
+              { value: 'custom', label: 'فترة محددة' },
+            ]}
+          />
+          {logPreset === 'custom' && (
+            <>
+              <DatePicker size="small" format="YYYY-MM-DD" placeholder="من" allowClear={false}
+                style={{ width: 128 }} value={logFrom} onChange={setLogFrom} />
+              <DatePicker size="small" format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
+                style={{ width: 128 }} value={logTo} onChange={setLogTo} />
+            </>
+          )}
           <ColumnSettings
             choices={columns.map((c: any) => ({
               key: String(c.key), title: typeof c.title === 'string' ? c.title : '',
@@ -354,6 +405,8 @@ export default function StockSheet() {
           expandedRowRender: (r: any) => (
             <MovementHistoryLog
               target={historyTarget(r)}
+              // الفترة بتتحدّد فوق الورقة مرة واحدة — مش في كل صنف.
+              periodFilter={false}
               onClose={() => toggleRow(rowKey(r))}
             />
           ),

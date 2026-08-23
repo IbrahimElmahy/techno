@@ -65,8 +65,20 @@ const MOVEMENT_LABELS: Record<string, string> = {
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function MovementHistoryLog({
-  target, onClose,
-}: { target: MovementHistoryTarget | null; onClose: () => void }) {
+  target, onClose, periodFilter = true,
+}: {
+  target: MovementHistoryTarget | null;
+  onClose: () => void;
+  /**
+   * يوري فلتر الفترة جوّه السجل.
+   *
+   * بيتقفل في الشاشات اللي عندها فلتر فترة **للورقة كلها** (الجرد وكشوفه): هناك
+   * الفترة بتتحدّد مرة فوق وبتتطبّق على كل الأصناف، وفلتر جوّه كل صنف معناه إن
+   * الواحد يظبط نفس التاريخ عشرين مرة — ويقارن أرقام مالهاش نفس الفترة من غير
+   * ما ياخد باله.
+   */
+  periodFilter?: boolean;
+}) {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   /**
@@ -168,54 +180,66 @@ export default function MovementHistoryLog({
         extra={<Button type="text" icon={<CloseOutlined />} onClick={onClose}>إغلاق</Button>}
       >
         {/*
-          * فلتر واحد للفترة.
+          * الفترة.
           *
-          * كان تقويم مدى بيفتح شهرين في بوباب كبير، وبعدين بقى أزرار ومعاها خانتين
-          * تاريخ لما تختار «مخصص» — يعني تلات حاجات على الشاشة لسؤال واحد.
-          *
-          * دلوقتي خانة واحدة: القايمة فيها المدد الجاهزة، و«فترة محددة» بتفتح خانتين
-          * جوّه نفس الإطار — فاللي بيبص على الشريط بيشوف حاجة واحدة اسمها «الفترة»،
-          * مش تلاتة لازم يفهم علاقتهم ببعض.
+          * لما الشاشة اللي فوق عندها فلتر فترة للورقة كلها، السجل مابيعرضش واحد تاني —
+          * بيعرض اللي هي قالته وخلاص. فلتر لكل صنف معناه إن الواحد يظبط نفس التاريخ في
+          * كل صنف يفتحه، ويقارن أرقام مالهاش نفس الفترة من غير ما ياخد باله.
           */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
           marginBottom: 12, padding: '6px 10px', borderRadius: 8,
           background: '#fafafa', border: '1px solid #f0f0f0',
         }}>
-          <Select
-            size="small"
-            style={{ minWidth: 130 }}
-            value={preset}
-            onChange={(v) => {
-              const key = v as Preset;
-              setPreset(key);
-              if (key === 'all') setRange(null);
-              else if (key === 'custom') setRange(range ?? [dayjs().subtract(1, 'month'), dayjs()]);
-              else setRange([dayjs().subtract(PRESET_MONTHS[key], 'month'), dayjs()]);
-            }}
-            options={[
-              { value: 'all', label: 'كل الحركات' },
-              { value: 'm1', label: 'آخر شهر' },
-              { value: 'm3', label: 'آخر ٣ شهور' },
-              { value: 'm12', label: 'آخر سنة' },
-              { value: 'custom', label: 'فترة محددة' },
-            ]}
-          />
-
-          {preset === 'custom' && (
+          {periodFilter ? (
             <>
-              <DatePicker
-                size="small" format="YYYY-MM-DD" placeholder="من" allowClear={false}
-                value={range?.[0] ?? null} style={{ width: 128 }}
-                onChange={(v) => setRange([v, range?.[1] ?? null])}
+              <Select
+                size="small"
+                style={{ minWidth: 130 }}
+                value={preset}
+                onChange={(v) => {
+                  const key = v as Preset;
+                  setPreset(key);
+                  if (key === 'all') setRange(null);
+                  else if (key === 'custom') {
+                    setRange(range ?? [dayjs().subtract(1, 'month'), dayjs()]);
+                  } else setRange([dayjs().subtract(PRESET_MONTHS[key], 'month'), dayjs()]);
+                }}
+                options={[
+                  { value: 'all', label: 'كل الحركات' },
+                  { value: 'm1', label: 'آخر شهر' },
+                  { value: 'm3', label: 'آخر ٣ شهور' },
+                  { value: 'm12', label: 'آخر سنة' },
+                  { value: 'custom', label: 'فترة محددة' },
+                ]}
               />
-              <span style={{ color: '#8c8c8c' }}>←</span>
-              <DatePicker
-                size="small" format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
-                value={range?.[1] ?? null} style={{ width: 128 }}
-                onChange={(v) => setRange([range?.[0] ?? null, v])}
-              />
+              {preset === 'custom' && (
+                <>
+                  <DatePicker
+                    size="small" format="YYYY-MM-DD" placeholder="من" allowClear={false}
+                    value={range?.[0] ?? null} style={{ width: 128 }}
+                    onChange={(v) => setRange([v, range?.[1] ?? null])}
+                  />
+                  <span style={{ color: '#8c8c8c' }}>←</span>
+                  <DatePicker
+                    size="small" format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
+                    value={range?.[1] ?? null} style={{ width: 128 }}
+                    onChange={(v) => setRange([range?.[0] ?? null, v])}
+                  />
+                </>
+              )}
             </>
+          ) : (
+            // الفترة بتتقال، مابتتسألش: اللي بيقرا لازم يعرف الأرقام دي بتاعة إمتى.
+            <span style={{ fontSize: 12, color: '#4a4a4a' }}>
+              الفترة:{' '}
+              <b>
+                {range?.[0] ? range[0]!.format('YYYY-MM-DD') : 'من الأول'}
+                {' ← '}
+                {range?.[1] ? range[1]!.format('YYYY-MM-DD') : 'النهارده'}
+              </b>
+              {' '}— بتتغيّر من فوق الورقة
+            </span>
           )}
 
           <span style={{ marginInlineStart: 'auto', fontSize: 12, color: '#4a4a4a' }}>

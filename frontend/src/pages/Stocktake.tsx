@@ -310,6 +310,8 @@ export default function Stocktake() {
                 dateTo: asOf.format('YYYY-MM-DD'),
               }}
               onClose={() => toggleRow(rowKeyOf(r))}
+              // الفترة بتتحدّد فوق الورقة مرة واحدة — مش في كل صنف.
+              periodFilter={false}
             />
           ),
         }}
