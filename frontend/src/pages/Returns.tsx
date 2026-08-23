@@ -14,7 +14,6 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
-import ItemStockPanel from '../components/ItemStockPanel';
 import ProductPickerModal from '../components/ProductPickerModal';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import TotalsLadder from '../components/TotalsLadder';
@@ -180,6 +179,18 @@ export default function Returns() {
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
   // The document's warehouse — the default each line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
+  /**
+   * الأصناف اللي مستنية المخزن يتحدّد قبل ما تنزل — نفس بوباب فاتورة البيع.
+   *
+   * السؤال هنا «البضاعة دي راجعة لفين»، وهو سؤال لازم يتسأل: المرتجع بيدخّل بضاعة على
+   * مخزن بعينه، ولو السطر نزل من غير مخزن بيبقى فيه بضاعة داخلة مكان محدش قاله.
+   *
+   * وبيتسأل **مرة واحدة** وبيثبت لباقي السطور، واللي عايز يوزّع بيغيّر مخزن السطر من
+   * عموده. والأصناف بتتجمّع في طابور لأن «اختار كذا صنف مرة واحدة» بينده الإضافة لكل
+   * صنف — لو كل واحد مسح اللي قبله كان هينزل صنف واحد والباقي يضيع في السكوت.
+   */
+  const [pendingItems, setPendingItems] = useState<number[]>([]);
+  const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
   // The customer's purchase history per item — drives the last-price autofill + the info popover.
   const [lastInfo, setLastInfo] = useState<Record<number, LastInfo>>({});
 
@@ -380,6 +391,23 @@ export default function Returns() {
       message.warning('الأصناف ذات الأرقام التسلسلية تُرتجع من فاتورتها الأصلية.');
       return;
     }
+    // مافيش مخزن للمرتجع لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
+    if (docWarehouseId === null) {
+      setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
+      setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
+      return;
+    }
+    await addProductByIdWith(itemId, docWarehouseId);
+  };
+
+  /**
+   * نفس الإضافة بمخزن **صريح**.
+   *
+   * ضروري لأن `setDocWarehouseId` مابيغيّرش القيمة في نفس اللفّة: الندهة اللي بعده على
+   * طول بتقرا `null` وتنزّل السطر من غير مخزن — وهي دي المشكلة اللي البوباب اتعمل عشانها.
+   */
+  const addProductByIdWith = async (itemId: number, warehouseId: number) => {
+    const prod = products.find((p) => p.id === itemId);
     const info = await fetchLastInfo(itemId);
     // Auto-select the last price the customer paid; fall back to the product's list price.
     const price = info.last_price != null
@@ -399,7 +427,7 @@ export default function Returns() {
         // الثابت من الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر.
         fixed_discount: prod?.default_discount_pct
           ? parseFloat(prod.default_discount_pct) : 0,
-        warehouse_id: null,
+        warehouse_id: warehouseId,
       }]);
       setFocusLineKey(key);
     }
@@ -686,6 +714,44 @@ export default function Returns() {
    *  the page behind it, leaving a dialog on screen that no state could close. */
   const doors = (
     <>
+      {/*
+        * «البضاعة راجعة لأنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
+        *
+        * محطوط في `doors` عن قصد: شاشة الإنشاء `return` مبكّر، والبوباب اللي بيعيش في فرع
+        * القايمة بيتشال أول ما الصفحة اللي وراه تتفتح — والسؤال يفضل مستني إجابة محدش
+        * بيرسمها. ودي وقعة حصلت في فاتورة البيع بالظبط.
+        */}
+      <TabModal
+        open={pendingItems.length > 0}
+        title={pendingItems.length > 1
+          ? `الأصناف دي (${pendingItems.length}) راجعة لأنهي مخزن؟`
+          : 'البضاعة راجعة لأنهي مخزن؟'}
+        okText="تمام" cancelText="إلغاء"
+        okButtonProps={{ disabled: pendingWarehouse === null }}
+        onCancel={() => setPendingItems([])}
+        onOk={async () => {
+          const wh = pendingWarehouse;
+          const items = pendingItems;
+          if (wh === null || items.length === 0) return;
+          setPendingItems([]);
+          setDocWarehouseId(wh);
+          // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها.
+          for (const id of items) await addProductByIdWith(id, wh);
+        }}
+        destroyOnHidden
+      >
+        <Select
+          style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+          placeholder="اختار المخزن"
+          value={pendingWarehouse ?? undefined}
+          onChange={(v) => setPendingWarehouse(v as number)}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+        />
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+          هيثبت لكل أصناف المرتجع. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+        </div>
+      </TabModal>
+
       <PartyPickerModal
         open={partyPickerOpen || newStep === 'party'} kind="customer"
         // التاريخ جوّه الشباك — نفس فاتورة البيع: يوم رجوع البضاعة، مش يوم ما اتكتب السند،
@@ -900,7 +966,7 @@ export default function Returns() {
             ) : (
               <>
                 <Row gutter={16}>
-                <Col xs={24} lg={18}>
+                <Col xs={24}>
                 <Button data-shortcut="F2"
                   type="primary" danger icon={<PlusOutlined />} block
                   style={{ marginBottom: 10, height: 38 }}
@@ -962,7 +1028,7 @@ export default function Returns() {
                         return (
                           <div key={line.key} style={{ padding: '4px 12px 6px', borderTop: '1px solid #f5efec' }}>
                             <Row gutter={8} align="middle">
-                              <Col md={5} xs={24}><b>{productName(line.item_id as number)}</b></Col>
+                              <Col md={4} xs={24}><b>{productName(line.item_id as number)}</b></Col>
                               <Col md={3} xs={12}>
                                 {/* (030) Goods may come back into a different warehouse per line. */}
                                 <Select size="small" style={{ width: '100%' }}
@@ -976,7 +1042,7 @@ export default function Returns() {
                                   }}
                                   options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
                               </Col>
-                              <Col md={3} xs={12}>
+                              <Col md={2} xs={12}>
                                 {last != null ? (
                                   <Tag color="green" style={{ cursor: 'pointer' }}
                                     onClick={() => setHistModal({
@@ -1057,10 +1123,10 @@ export default function Returns() {
                     </div>
                   ))
                 )}
-                </Col>
-                <Col xs={24} lg={6}>
-                  <ItemStockPanel itemId={panelItemId} category={activeCategory}
-                    products={products} onPickItem={(id) => setPanelItemId(id)} />
+                {/* لوحة «رصيد الصنف في المخازن» اتشالت بطلب صاحب النظام — نفس اللي
+                    اتعمل في فاتورة البيع. كانت واخدة ربع الشاشة عشان تقول أرقام المرتجع
+                    مش بيتاخد قرار على أساسها: البضاعة راجعة، والسؤال هو راجعة لفين —
+                    وده بقى بوباب بيتسأل مرة وبيثبت. */}
                 </Col>
                 </Row>
               </>
