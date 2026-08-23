@@ -3,6 +3,7 @@ import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
+import { advanceFrom } from '../components/lineKeyboard';
 import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowLeftOutlined,
@@ -95,6 +96,11 @@ export default function StockPermits() {
   const [newStep, setNewStep] = useState<null | 'warehouse'>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
+  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف —
+   *  انظر `lineKeyboard`. كان بيفتح الشباك على طول، فاللي عنده سطور مكتوبة
+   *  كان لازم يرجع للماوس عشان يوصل لأي سطر منهم. */
+  const advance = advanceFrom(lines, setFocusLineKey, () => setPickerOpen(true));
+
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -370,7 +376,7 @@ export default function StockPermits() {
                   }, null);
                   setLines((prev) => prev.map((l) => (l.key === r.key
                     ? { ...l, quantity: kept as number } : l)));
-                  if (kept !== null) setPickerOpen(true);
+                  advance(r.key)
                 }}
                 onChange={(q) => setLines((prev) => prev.map((l) => (l.key === r.key
                   ? { ...l, quantity: q as number } : l)))}

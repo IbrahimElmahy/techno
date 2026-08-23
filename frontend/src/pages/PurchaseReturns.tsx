@@ -3,6 +3,7 @@ import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
+import { advanceFrom, useQtyFocus } from '../components/lineKeyboard';
 import {
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, UndoOutlined,
 } from '@ant-design/icons';
@@ -87,6 +88,19 @@ export default function PurchaseReturns() {
   const [supplierFilter, setSupplierFilter] = useState<number | null>(null);
   /** المخزن اللي البضاعة بتخرج منه — مفيش فاتورة تقول منين، فالمستند بيتسأل. */
   const [warehouseId, setWarehouseId] = useState<number | null>(null);
+  /** الأصناف المستنية المخزن — نفس بوباب البيع والشرا والمرتجع. السؤال هنا «البضاعة
+   *  خارجة من أنهي مخزن»، والسطر اللي نزل من غير مخزن بيبقى بضاعة خارجة من مكان محدش
+   *  قاله. وبيتجمّعوا في طابور عشان اختيار كذا صنف مرة واحدة مايضيّعش غير الأخير. */
+  /**
+   * السطر اللي المؤشر رايح لخانة كميته.
+   *
+   * الشاشة دي كانت الوحيدة اللي مالهاش الحركة دي خالص: تختار صنف، والمؤشر يفضل مكانه،
+   * فالإيد بتروح للماوس عشان تدوس على خانة الكمية — في كل سطر. باقي شاشات المستندات
+   * بتحط المؤشر في الكمية على طول.
+   */
+  const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
+  const [pendingItems, setPendingItems] = useState<number[]>([]);
+  const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -334,21 +348,43 @@ export default function PurchaseReturns() {
    */
   const addReturnLine = (itemId: number) => {
     if (!itemId) return;
+    // مافيش مخزن للمردود لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
+    if (warehouseId === null) {
+      setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
+      setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
+      return;
+    }
+    addReturnLineWith(itemId, warehouseId);
+  };
+
+  useQtyFocus(focusLineKey, setFocusLineKey, pickerOpen, returnLines);
+  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف. */
+  const advance = advanceFrom(returnLines, setFocusLineKey, () => setPickerOpen(true));
+
+  /** نفس الإضافة بمخزن **صريح** — `setWarehouseId` مابيغيّرش القيمة في نفس اللفّة. */
+  const addReturnLineWith = (itemId: number, wh: number) => {
     const product = items.find((i: any) => i.id === itemId) as any;
     const price = product?.purchase_price ? parseFloat(product.purchase_price) : 0;
+    // المفتاح بيتحسب هنا مش جوّه `setState` — عشان التركيز يروح للسطر ده بالظبط.
+    // لو اتحسب جوّه، الكود اللي بره مايعرفوش، والمؤشر بيدوّر على سطر مالوش وجود.
+    const key = `${Date.now()}-${itemId}`;
+    let landed = key;
     setReturnLines((prev) => {
       const existing = prev.find((l) => l.item_id === itemId);
       if (existing) {
+        // العين تتبع الرقم اللي اتحرّك، مش سطر جديد.
+        landed = existing.key;
         return prev.map((l) => (l.key === existing.key
           ? { ...l, quantity: Number(l.quantity || 0) + 1 } : l));
       }
       return [...prev, {
-        key: `${Date.now()}-${itemId}`, item_id: itemId, quantity: null, unit_price: price,
+        key, item_id: itemId, quantity: null, unit_price: price,
         discount_pct: null, fixed_discount_pct: null, unit: null,
-        warehouse_id: warehouseId,
+        warehouse_id: wh,
       }];
     });
-    if (warehouseId) fetchOnHand(itemId, warehouseId);
+    setFocusLineKey(landed);
+    fetchOnHand(itemId, wh);
     fetchUnits(itemId);
   };
 
@@ -650,6 +686,38 @@ export default function PurchaseReturns() {
         * فاختيار المورد هنا بيضيّق فواتير الخطوة اللي بعدها عليه — بدل قايمة بكل فواتير الشركة.
         */}
       {/* بوباب اختيار الصنف — نفس اللي في فاتورة الشرا، فاللي اتعلّم واحد اتعلّم الاتنين. */}
+      {/* «البضاعة خارجة من أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده. محطوط مع
+          باقي الأبواب اللي بترسم في الفرعين. */}
+      <TabModal
+        open={pendingItems.length > 0}
+        title={pendingItems.length > 1
+          ? `الأصناف دي (${pendingItems.length}) خارجة من أنهي مخزن؟`
+          : 'البضاعة خارجة من أنهي مخزن؟'}
+        okText="تمام" cancelText="إلغاء"
+        okButtonProps={{ disabled: pendingWarehouse === null }}
+        onCancel={() => setPendingItems([])}
+        onOk={() => {
+          const wh = pendingWarehouse;
+          const queued = pendingItems;
+          if (wh === null || queued.length === 0) return;
+          setPendingItems([]);
+          setWarehouseId(wh);
+          for (const id of queued) addReturnLineWith(id, wh);
+        }}
+        destroyOnHidden
+      >
+        <Select
+          style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+          placeholder="اختار المخزن"
+          value={pendingWarehouse ?? undefined}
+          onChange={(v) => setPendingWarehouse(v as number)}
+          options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))}
+        />
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+          هيثبت لكل أصناف المردود. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+        </div>
+      </TabModal>
+
       <ProductPickerModal
         open={pickerOpen}
         title="اختر الصنف الراجع"
@@ -816,8 +884,9 @@ export default function PurchaseReturns() {
                     </td>
                     <td>
                       <InputNumber size="small" style={{ width: '100%' }} min={0.001}
-                        data-grid-col="qty" keyboard={false}
+                        data-qty-key={line.key} data-grid-col="qty" keyboard={false}
                         placeholder="الكمية" value={line.quantity ?? undefined}
+                        onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
                         onChange={(v) => setReturnLines((prev) => prev.map((l) => (
                           l.key === line.key ? { ...l, quantity: v as number | null } : l)))}
                         // المتاح بيتقاس عند الخانة، مش بعد ما المستند كله يتكتب.
@@ -830,6 +899,7 @@ export default function PurchaseReturns() {
                     </td>
                     <td>
                       <InputNumber size="small" style={{ width: '100%' }} min={0} step={0.01}
+                        onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
                         placeholder="السعر" value={line.unit_price}
                         onChange={(v) => setReturnLines((prev) => prev.map((l) => (
                           l.key === line.key ? { ...l, unit_price: (v as number) || 0 } : l)))} />

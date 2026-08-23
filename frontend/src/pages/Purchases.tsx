@@ -159,6 +159,18 @@ export default function Purchases() {
    * that gets found out at the stocktake.
    */
   const [stickyWarehouseId, setStickyWarehouseId] = useState<number | null>(null);
+  /**
+   * الأصناف المستنية المخزن — نفس بوباب فاتورة البيع والمرتجع.
+   *
+   * السؤال هنا «البضاعة دي داخلة أنهي مخزن»، ولازم يتسأل: الشرا بيدخّل بضاعة على مخزن
+   * بعينه، والسطر اللي نزل من غير مخزن بيبقى شحنة داخلة مكان محدش قاله. كان بيتحل بإن
+   * الواحد يفتح قايمة المخزن في كل سطر — دلوقتي سؤال واحد بيثبت لكل الشحنة.
+   *
+   * وبيتجمّعوا في طابور لأن «اختار كذا صنف مرة واحدة» بينده الإضافة لكل صنف: لو كل واحد
+   * مسح اللي قبله كان هينزل صنف واحد والباقي يضيع في السكوت.
+   */
+  const [pendingItems, setPendingItems] = useState<number[]>([]);
+  const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
   const [items, setItems] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -836,6 +848,22 @@ export default function Purchases() {
    */
   const addProductById = async (itemId: number) => {
     if (!itemId) return;
+    // مافيش مخزن للشحنة لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
+    if (stickyWarehouseId === null) {
+      setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
+      setPendingWarehouse((prev) => prev ?? lineWarehouses[0]?.id ?? null);
+      return;
+    }
+    await addProductByIdWith(itemId, stickyWarehouseId);
+  };
+
+  /**
+   * نفس الإضافة بمخزن **صريح**.
+   *
+   * `setStickyWarehouseId` مابيغيّرش القيمة في نفس اللفّة، فالندهة اللي بعده على طول
+   * بتقرا `null` وتنزّل السطر من غير مخزن — وهي المشكلة اللي البوباب اتعمل عشانها.
+   */
+  const addProductByIdWith = async (itemId: number, warehouseId: number) => {
     const selected = items.find((i) => i.id === itemId);
     const price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
 
@@ -853,15 +881,15 @@ export default function Purchases() {
         landedRef.current = blank.key;
         return prev.map((l) => (l.key === blank.key
           ? { ...l, item_id: itemId, unit_price: price, unit: null,
-              warehouse_id: l.warehouse_id ?? stickyWarehouseId } : l));
+              warehouse_id: l.warehouse_id ?? warehouseId } : l));
       }
       const key = `${Date.now()}-${itemId}`;
       landedRef.current = key;
       return [...prev, {
         key, item_id: itemId, quantity: null, unit_price: price, unit: null,
         fixed_discount_pct: null,
-        // بيرث آخر مخزن اتختار — الشحنة العادية كلها بتنزل مخزن واحد.
-        discount_pct: null, warehouse_id: stickyWarehouseId,
+        // بيرث المخزن اللي اتسأل عنه — الشحنة العادية كلها بتنزل مخزن واحد.
+        discount_pct: null, warehouse_id: warehouseId,
       }];
     });
 
@@ -1588,6 +1616,44 @@ export default function Purchases() {
         )}
       >
         {preview ? <InvoiceDocument doc={purchaseDoc(preview)!} /> : null}
+      </TabModal>
+
+      {/*
+        * «الشحنة دي داخلة أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
+        *
+        * محطوط هنا مع باقي الأبواب عن قصد: الجزء ده بيترسم في الفرعين (القايمة والمستند)،
+        * والبوباب اللي بيعيش في فرع واحد بيتشال أول ما التاني يتفتح — والسؤال يفضل مستني
+        * إجابة محدش بيرسمها.
+        */}
+      <TabModal
+        open={pendingItems.length > 0}
+        title={pendingItems.length > 1
+          ? `الأصناف دي (${pendingItems.length}) داخلة أنهي مخزن؟`
+          : 'الشحنة دي داخلة أنهي مخزن؟'}
+        okText="تمام" cancelText="إلغاء"
+        okButtonProps={{ disabled: pendingWarehouse === null }}
+        onCancel={() => setPendingItems([])}
+        onOk={async () => {
+          const wh = pendingWarehouse;
+          const queued = pendingItems;
+          if (wh === null || queued.length === 0) return;
+          setPendingItems([]);
+          setStickyWarehouseId(wh);
+          // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها.
+          for (const id of queued) await addProductByIdWith(id, wh);
+        }}
+        destroyOnHidden
+      >
+        <Select
+          style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+          placeholder="اختار المخزن"
+          value={pendingWarehouse ?? undefined}
+          onChange={(v) => setPendingWarehouse(v as number)}
+          options={lineWarehouses.map((w: any) => ({ value: w.id, label: w.name }))}
+        />
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+          هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+        </div>
       </TabModal>
 
       <ProductPickerModal

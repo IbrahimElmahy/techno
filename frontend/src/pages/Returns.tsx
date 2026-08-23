@@ -4,6 +4,7 @@ import {
   Space, Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
+import { advanceFrom } from '../components/lineKeyboard';
 // التأكيدات اتشالت من النظام — الشيم بينفّذ من غير ما يسأل (`components/noConfirm`).
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -163,6 +164,7 @@ export default function Returns() {
   const [createForm] = Form.useForm();
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [lines, setLines] = useState<ReturnLineItem[]>([]);
+
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   // The item the side stock panel is showing — on a return it answers "where should this go
   // back to", which is the same question the invoice asks in reverse.
@@ -173,6 +175,11 @@ export default function Returns() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const qtyRefs = useRef<Record<string, any>>({});
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
+  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف —
+   *  انظر `lineKeyboard`. كان بيفتح الشباك على طول، فاللي عنده سطور مكتوبة
+   *  كان لازم يرجع للماوس عشان يوصل لأي سطر منهم. */
+  const advance = advanceFrom(lines, setFocusLineKey, () => setPickerOpen(true));
+
   const [cashRefund, setCashRefund] = useState<number>(0);
   const [creditReduction, setCreditReduction] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
@@ -1080,7 +1087,7 @@ export default function Returns() {
                                       itemName: products.find((p) => p.id === line.item_id)?.name,
                                     }, null);
                                     handleLineChange(line.key, 'quantity', kept);
-                                    if (kept !== null) setPickerOpen(true);
+                                    advance(line.key)
                                   }} />
                               </Col>
                               <Col md={3} xs={8}>

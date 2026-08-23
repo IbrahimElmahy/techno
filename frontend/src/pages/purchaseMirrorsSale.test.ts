@@ -194,7 +194,10 @@ describe('مخزن الاستلام', () => {
 
   it('السطر الجديد بيرث آخر مخزن اتختار', () => {
     expect(buy).toContain('stickyWarehouseId');
-    expect(/warehouse_id: stickyWarehouseId/.test(buy)).toBe(true);
+    // المخزن بيتمرّر **صريح** للإضافة بدل ما تقراه من الحالة: `setState` مابيغيّرش
+    // القيمة في نفس اللفّة، فالسطر اللي بينزل بعد ما البوباب يتقفل كان هيقرا `null`.
+    expect(buy).toContain('const addProductByIdWith = async (itemId: number, warehouseId: number)');
+    expect(/warehouse_id: warehouseId/.test(buy)).toBe(true);
   });
 
   it('تغيير المخزن على سطر بيثبّت الجديد للسطور الجاية', () => {

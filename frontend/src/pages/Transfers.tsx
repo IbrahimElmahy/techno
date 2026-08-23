@@ -14,6 +14,7 @@ import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
+import { advanceFrom } from '../components/lineKeyboard';
 import { printTransfer } from '../components/TransferDocument';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -133,6 +134,9 @@ export default function Transfers() {
   const [stockLoading, setStockLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [lines, setLines] = useState<TransferLine[]>([]);
+  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف — انظر `lineKeyboard`. */
+  const advance = advanceFrom(lines, setFocusLineKey, () => setPickerOpen(true));
+
   const [submitting, setSubmitting] = useState(false);
 
   /**
@@ -1000,7 +1004,10 @@ export default function Transfers() {
                           { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
                           null);
                         setLineQty(r.key, kept as number);
-                        if (kept !== null) setPickerOpen(true);
+                        // Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح الشباك — كان بيفتح
+                        // الشباك على طول، فاللي عنده خمس سطور مكتوبة كان لازم يرجع للماوس
+                        // عشان يوصل للسطر التاني.
+                        if (kept !== null) advance(r.key);
                       }}
                       onChange={(val) => setLineQty(r.key, Number(val))} />
                   ) },
