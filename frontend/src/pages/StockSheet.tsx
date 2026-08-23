@@ -319,15 +319,9 @@ export default function StockSheet() {
         </Space>
       )}
     >
-      <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message="الورقة دي للعدّ والمراجعة — العدد الفعلي اللي بتكتبه هنا مابيتحفظش"
-        description={'بتحسب الفرق وبتوريك الحركات وراه. تسوية الفرق في المخزون بتتعمل من «دورة الجرد»، '
-          + 'اللي عندها المستند والرصيد المجمّد والترحيل.'
-          // The method belongs beside «قيمة المخزون», which is the only figure it explains. It is
-          // not a cost column and does not read as one.
-          + (costingMethod
-            ? ` قيمة المخزون بطريقة «${METHOD_LABELS[costingMethod] || costingMethod}».` : '')} />
-
+      {/* التنبيه اللي كان هنا اتشال بطلب صاحب النظام.
+          كان بيقول إن الورقة للعدّ والمراجعة وإن التسوية بتتعمل من «دورة الجرد» —
+          تلات سطور فوق ورقة بتتقرا كل يوم، بتتقال مرة وتتقرا مية. */}
       {/* نفس الكروت اللي فوق «جرد حتى تاريخ»، عشان التلات شاشات تتقرا بنفس العين. */}
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={8}>

@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Collapse, DatePicker, Descriptions, Empty, Space, Spin, Tag } from 'antd';
+import {
+  Button, Card, Collapse, DatePicker, Descriptions, Empty, Segmented, Space, Spin, Tag,
+} from 'antd';
 import { CloseOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+
+/** فترات السجل الجاهزة. `custom` بتفتح خانتين تاريخ، و`all` بتشيل الفلتر. */
+type Preset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
+const PRESET_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
 import { api } from '../api/client';
 
 /**
@@ -72,16 +78,22 @@ export default function MovementHistoryLog({
    * make the log a dead end.
    */
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  /** الزرار المختار. بيبتدي «كل الحركات» لأن السجل بيتفتح على كل اللي حصل. */
+  const [preset, setPreset] = useState<Preset>('all');
   const box = useRef<HTMLDivElement>(null);
 
   // A new target resets the range to whatever that caller asked for — carrying the previous
   // item's dates over would silently answer a different question than the one just clicked.
   useEffect(() => {
     if (!target) return;
-    setRange([
+    const asked = target.dateFrom || target.dateTo;
+    setRange(asked ? [
       target.dateFrom ? dayjs(target.dateFrom) : null,
       target.dateTo ? dayjs(target.dateTo) : null,
-    ]);
+    ] : null);
+    // والزرار بيتحط على «مخصص» لما الشاشة اللي نادت بتقول فترة بعينها — من غير كده كان
+    // هيفضل واقف على «كل الحركات» والقايمة متفلترة، والزرار يكدب على اللي تحته.
+    setPreset(asked ? 'custom' : 'all');
   }, [target]);
 
   useEffect(() => {
@@ -156,37 +168,54 @@ export default function MovementHistoryLog({
         extra={<Button type="text" icon={<CloseOutlined />} onClick={onClose}>إغلاق</Button>}
       >
         {/*
-          * شريط الفترة.
+          * شريط الفترة — أزرار، مش تقويم مدى.
           *
-          * **المدد الجاهزة مش زينة.** أكتر حاجة بتتعمل في السجل ده هي **توسيع** الفترة:
-          * الواحد بيفتحه على فترة الجرد، مايلاقيش سبب الفرق فيها، فبيوسّع. وده كان معناه
-          * فتح التقويم مرتين والعدّ بالشهور بالإيد في كل مرة — دلوقتي دوسة واحدة.
+          * `RangePicker` بيفتح شهرين جنب بعض في بوباب كبير، وفي العربي أسماء الأيام
+          * بتتلزق في بعض وبتبقى مقروءة بالعافية. وده ثمن كبير لحاجة إجابتها في تسعة من
+          * عشرة واحدة من أربعة: كله، شهر، تلاتة، سنة.
           *
-          * و«كل الحركات» موجودة عن قصد: الفرق اللي مش في الفترة بيبقى قبلها، والتاريخ
-          * اللي بيتكتب بالإيد للسنة اللي فاتت هو أكتر مكان بيتكتب فيه غلط.
+          * فالأربعة بقوا أزرار بدوسة واحدة، والتقويم فضل لـ«مخصص» بس — وساعتها خانتين
+          * منفصلتين، كل واحدة بتفتح شهر واحد، وده بوباب أصغر وبيتقرا صح.
           */}
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-          marginBottom: 12, padding: '8px 12px', borderRadius: 8,
-          background: '#fafafa', border: '1px solid #f0f0f0',
+          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          marginBottom: 12,
         }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#3a4a3a' }}>الفترة</span>
-          <DatePicker.RangePicker
-            value={range as any} allowClear format="YYYY-MM-DD"
-            onChange={(v) => setRange(v as any)}
-            placeholder={['من تاريخ', 'إلى تاريخ']}
-            style={{ minWidth: 260 }}
-            presets={[
-              { label: 'آخر شهر', value: [dayjs().subtract(1, 'month'), dayjs()] },
-              { label: 'آخر ٣ شهور', value: [dayjs().subtract(3, 'month'), dayjs()] },
-              { label: 'آخر سنة', value: [dayjs().subtract(1, 'year'), dayjs()] },
+          <Segmented
+            size="small"
+            value={preset}
+            onChange={(v) => {
+              const key = v as Preset;
+              setPreset(key);
+              if (key === 'all') setRange(null);
+              else if (key === 'custom') setRange(range ?? [dayjs().subtract(1, 'month'), dayjs()]);
+              else setRange([dayjs().subtract(PRESET_MONTHS[key], 'month'), dayjs()]);
+            }}
+            options={[
+              { value: 'all', label: 'كل الحركات' },
+              { value: 'm1', label: 'شهر' },
+              { value: 'm3', label: '٣ شهور' },
+              { value: 'm12', label: 'سنة' },
+              { value: 'custom', label: 'مخصص' },
             ]}
           />
-          {(range?.[0] || range?.[1]) && (
-            <Button size="small" type="link" onClick={() => setRange(null)}>
-              كل الحركات
-            </Button>
+
+          {preset === 'custom' && (
+            <>
+              <DatePicker
+                size="small" format="YYYY-MM-DD" placeholder="من"
+                value={range?.[0] ?? null} style={{ width: 130 }}
+                onChange={(v) => setRange([v, range?.[1] ?? null])}
+              />
+              <span style={{ color: '#8c8c8c' }}>←</span>
+              <DatePicker
+                size="small" format="YYYY-MM-DD" placeholder="إلى"
+                value={range?.[1] ?? null} style={{ width: 130 }}
+                onChange={(v) => setRange([range?.[0] ?? null, v])}
+              />
+            </>
           )}
+
           <span style={{ marginInlineStart: 'auto', fontSize: 12, color: '#4a4a4a' }}>
             {rows.length} حركة
           </span>
