@@ -66,6 +66,8 @@ export default function PurchaseReturns() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [highlight, setHighlight] = useState<number | null>(null);
   const pendingDoc = useRef<number | null>(null);
+  /** الرابط طالب تعديل مش عرض — بيتقرا مع `pendingDoc` في نفس اللحظة. */
+  const pendingEdit = useRef(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
@@ -151,8 +153,14 @@ export default function PurchaseReturns() {
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
+    // `?edit=` بيفتح المردود للتعديل، و`?doc=` للعرض — الشاشة عندها الاتنين.
     const doc = searchParams.get('doc');
-    if (doc) { pendingDoc.current = Number(doc); setSearchParams({}, { replace: true }); }
+    const edit = searchParams.get('edit');
+    if (doc || edit) {
+      pendingDoc.current = Number(doc || edit);
+      pendingEdit.current = !!edit;
+      setSearchParams({}, { replace: true });
+    }
     const wanted = pendingDoc.current;
     if (!wanted || !rows.length) return;
     pendingDoc.current = null;
@@ -161,7 +169,10 @@ export default function PurchaseReturns() {
       // Marked AND opened. The mark says where on the page it is; the document says what is in it.
       setHighlight(wanted);
       setTimeout(() => setHighlight(null), 4000);
-      openReturn(target);
+      const wantsEdit = pendingEdit.current;
+      pendingEdit.current = false;
+      if (wantsEdit) editPosted(target);
+      else openReturn(target);
     } else {
       message.warning(`مردود الشراء رقم ${wanted} مش في القائمة`);
     }

@@ -350,14 +350,24 @@ export default function Purchases() {
     }
   };
 
+  /**
+   * `?doc=` بيفتح للعرض، و`?edit=` بيفتح للتعديل.
+   *
+   * الشاشة دي عندها تعديل فعلاً (`editPosted`)، بس الروابط اللي جاية من كشف الحساب
+   * والتقارير كانت بتفتحها للعرض بس — فاللي بيدوس على رقم فاتورة عشان يصلّحها كان
+   * بيوصل لشاشة بتفرّجه عليها. الفرق بين الاتنين هو نية اللي ضغط، والرابط هو اللي
+   * بيقولها.
+   */
   useEffect(() => {
-    const docId = searchParams.get('doc');
+    const docId = searchParams.get('doc') || searchParams.get('edit');
+    const wantsEdit = !!searchParams.get('edit');
     if (!docId || handledIntent.current === docId) return;
     const target = purchases.find((p) => p.id === Number(docId));
     if (!target) return;
     handledIntent.current = docId;
     setSearchParams({}, { replace: true });
-    openDetail(target);
+    if (wantsEdit) openRow(target);
+    else openDetail(target);
   }, [searchParams, purchases]);
 
   /**

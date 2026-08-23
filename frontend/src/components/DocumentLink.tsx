@@ -50,9 +50,14 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
   }
 }
 
-/** Kinds whose screen can reopen the document for editing. The rest can only be looked at, and
- *  sending a reader to a non-existent edit screen would be worse than the view they wanted. */
-const EDITABLE = new Set<DocKind>(['invoice']);
+/**
+ * المستندات اللي شاشتها بتفتحها للتعديل.
+ *
+ * كانت فاتورة البيع وحدها. والتلاتة التانية بقى ليهم تعديل فعلاً — المرتجع والشرا
+ * ومردوده — والقايمة دي فضلت زي ما هي، فالرابط اللي جاي من كشف الحساب كان بيفتحهم
+ * للفرجة وبس. اللي بيدوس على رقم مستند عشان يصلّحه لازم يوصل لمكان يقدر يصلّح فيه.
+ */
+const EDITABLE = new Set<DocKind>(['invoice', 'return', 'purchase', 'purchase_return']);
 
 /**
  * «افتح المستند ده» — the single answer to where a document opens.

@@ -119,6 +119,8 @@ export default function Returns() {
   // read the id, so «افتح المستند» landed on the list and left the reader to find the row again.
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingDoc = useRef<number | null>(null);
+  /** الرابط طالب تعديل مش عرض. مع `pendingDoc` لأن الاتنين بيتقروا في نفس اللحظة. */
+  const pendingEdit = useRef(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -699,9 +701,12 @@ export default function Returns() {
   };
 
   useEffect(() => {
+    // `?edit=` بيفتح السند للتعديل، و`?doc=` بيفتحه للعرض. الشاشة عندها الاتنين.
     const doc = searchParams.get('doc');
-    if (doc) {
-      pendingDoc.current = Number(doc);
+    const edit = searchParams.get('edit');
+    if (doc || edit) {
+      pendingDoc.current = Number(doc || edit);
+      pendingEdit.current = !!edit;
       // Cleared at once so a refresh, or coming back to this tab later, cannot replay it.
       setSearchParams({}, { replace: true });
     }
@@ -710,7 +715,12 @@ export default function Returns() {
     // Consuming the ref is the once-only guard.
     pendingDoc.current = null;
     const target = returns.find((r) => r.id === wanted);
-    if (target) openDetail(target);
+    if (target) {
+      const wantsEdit = pendingEdit.current;
+      pendingEdit.current = false;
+      if (wantsEdit) handleEditReturn(target);
+      else openDetail(target);
+    }
     // Saying so beats a silent no-op, which reads as a broken link.
     else message.warning(`المرتجع رقم ${wanted} مش في القائمة`);
   }, [searchParams, returns]);

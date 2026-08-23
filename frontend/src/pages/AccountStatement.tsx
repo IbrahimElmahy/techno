@@ -264,7 +264,9 @@ export default function AccountStatement() {
       render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
         <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
           label={l.doc_number || undefined}
-          allowEdit={l.doc_kind === 'invoice'} />
+          // كل المستندات اللي شاشتها بتعدّل — `DocumentLink` هي اللي بتعرف مين فيهم،
+          // فالقايمة موجودة في مكان واحد بدل ما كل شاشة تفتكرها.
+          allowEdit />
       ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
   ];
 
