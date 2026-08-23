@@ -117,6 +117,7 @@ export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {
 export default function ListToolbar({
   query, onQueryChange, searchPlaceholder = 'بحث...', filters = [], values = {}, onValueChange,
   showDateRange = false, range, onRangeChange, onReset, total, shown, searchSpan = 6,
+  extra,
 }: {
   query: string;
   onQueryChange: (v: string) => void;
@@ -132,6 +133,14 @@ export default function ListToolbar({
   total?: number;
   shown?: number;
   searchSpan?: number;
+  /**
+   * حاجة الشاشة عايزة تحطها جنب مربع البحث.
+   *
+   * الفلاتر العامة بتتعرّف بـ`filters` وبتتبني هنا؛ ودي للحاجات اللي مش «فلتر على عمود» —
+   * زي فترة سجل الحركات في كشوف الجرد، اللي بتتحدّد للورقة كلها. كانت فوق في ترويسة
+   * الكارت، بعيد عن الفلاتر اللي شغّالة معاها.
+   */
+  extra?: React.ReactNode;
 }) {
   const searchRef = useRef<any>(null);
   // F3 belongs to the search box, and the search box lives here — so declaring it once here gives
@@ -182,54 +191,66 @@ export default function ListToolbar({
 
   return (
     <>
-      <Row gutter={[8, 8]} style={{ marginBottom: expanded ? 8 : 12 }} align="middle">
-        <Col xs={24} md={searchSpan}>
+      {/*
+        * الشريط صف مرن، مش أعمدة بمقاسات ثابتة.
+        *
+        * كان `Row`/`Col` بأنصبة من ٢٤: البحث ٦، وكل فلتر ٥، والمسح ٢… والمجموع بيعدّي
+        * الـ٢٤ أول ما شاشة تزوّد فلتر أو تحطّ حاجة جنب البحث، فالعناصر بتتلفّ لسطر تاني
+        * وتالت وتبقى عامودين فوق بعض بدل صف واحد.
+        *
+        * الـflex بيحلّها من غير حسابات: كل عنصر بياخد قدّه، والبحث بيمطّ على الفاضي،
+        * واللف بيحصل لما مايبقاش فيه مكان فعلاً — مش لما رقم يعدّي ٢٤.
+        */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+        marginBottom: expanded ? 8 : 12,
+      }}>
+        {/* البحث بيمطّ، وباقي العناصر بتاخد قدّها. `searchSpan` بقى أقل عرض بدل نصيب
+            من ٢٤ — الشاشات اللي بتبعته بتقول «سيبله مساحة أكبر»، وده اللي بيحصل. */}
+        <div style={{ flex: `1 1 ${Math.max(200, (searchSpan ?? 6) * 26)}px`, minWidth: 180 }}>
           <Input
             allowClear
             ref={searchRef}
             value={query}
             placeholder={searchPlaceholder}
             prefix={<SearchOutlined />}
-            onChange={(e) => onQueryChange(e.target.value)}
+          onChange={(e) => onQueryChange(e.target.value)}
           />
-        </Col>
+        </div>
+
+        {extra}
 
         {primary.map((f) => (
-          <Col xs={12} md={f.span ?? 5} key={f.key}>{control(f)}</Col>
+          <div style={{ flex: '0 1 190px', minWidth: 150 }} key={f.key}>{control(f)}</div>
         ))}
 
         {showDateRange && (
-          <Col xs={24} md={6}>
+          <div style={{ flex: '0 1 250px', minWidth: 210 }}>
             <DatePicker.RangePicker
               style={{ width: '100%' }}
               value={range ?? null}
               onChange={(v) => onRangeChange?.(v as [Dayjs, Dayjs] | null)}
             />
-          </Col>
+          </div>
         )}
 
         {advanced.length > 0 && (
-          <Col xs={12} md={3}>
-            <Button type="link" style={{ padding: 0 }}
-              icon={expanded ? <UpOutlined /> : <DownOutlined />}
-              onClick={() => setShowMore((v) => !v)}>
-              فلاتر أكثر
-            </Button>
-          </Col>
+          <Button type="link" style={{ padding: 0, flex: '0 0 auto' }}
+            icon={expanded ? <UpOutlined /> : <DownOutlined />}
+            onClick={() => setShowMore((v) => !v)}>
+            فلاتر أكثر
+          </Button>
         )}
 
-        <Col xs={12} md={2}>
-          <Button icon={<ClearOutlined />} onClick={onReset} block />
-        </Col>
+        <Button icon={<ClearOutlined />} onClick={onReset} style={{ flex: '0 0 auto' }} />
 
         {total !== undefined && (
-          <Col xs={12} md={2} style={{ textAlign: 'center' }}>
-            <Tag color={shown !== undefined && shown < total ? 'orange' : 'default'}>
-              {shown !== undefined && shown < total ? `${shown}/${total}` : `${total}`}
-            </Tag>
-          </Col>
+          <Tag style={{ flex: '0 0 auto', marginInlineEnd: 0 }}
+            color={shown !== undefined && shown < total ? 'orange' : 'default'}>
+            {shown !== undefined && shown < total ? `${shown}/${total}` : `${total}`}
+          </Tag>
         )}
-      </Row>
+      </div>
 
       {expanded && advanced.length > 0 && (
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }} align="middle">

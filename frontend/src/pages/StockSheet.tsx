@@ -326,37 +326,6 @@ export default function StockSheet() {
       title={TITLES[view]}
       extra={(
         <Space>
-          {/* فترة سجل الحركات — بتتحدّد هنا مرة وبتتطبّق على كل صنف يتفتح تحته. */}
-          <Select
-            size="small" style={{ minWidth: 130 }} value={logPreset}
-            onChange={(v) => {
-              const key = v as LogPreset;
-              setLogPreset(key);
-              if (key === 'all') { setLogFrom(null); setLogTo(null); return; }
-              if (key === 'custom') {
-                setLogFrom(logFrom ?? dayjs().subtract(1, 'month'));
-                setLogTo(logTo ?? dayjs());
-                return;
-              }
-              setLogFrom(dayjs().subtract(LOG_MONTHS[key], 'month'));
-              setLogTo(dayjs());
-            }}
-            options={[
-              { value: 'all', label: 'كل الحركات' },
-              { value: 'm1', label: 'آخر شهر' },
-              { value: 'm3', label: 'آخر ٣ شهور' },
-              { value: 'm12', label: 'آخر سنة' },
-              { value: 'custom', label: 'فترة محددة' },
-            ]}
-          />
-          {logPreset === 'custom' && (
-            <>
-              <DatePicker size="small" format="YYYY-MM-DD" placeholder="من" allowClear={false}
-                style={{ width: 128 }} value={logFrom} onChange={setLogFrom} />
-              <DatePicker size="small" format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
-                style={{ width: 128 }} value={logTo} onChange={setLogTo} />
-            </>
-          )}
           <ColumnSettings
             choices={columns.map((c: any) => ({
               key: String(c.key), title: typeof c.title === 'string' ? c.title : '',
@@ -395,6 +364,41 @@ export default function StockSheet() {
         values={filter.values} onValueChange={filter.setValue}
         onReset={filter.reset}
         total={source.length} shown={shown.length}
+        extra={(
+          <Space size={6} style={{ flex: '0 0 auto' }}>
+            {/* فترة سجل الحركات — بتتحدّد هنا مرة وبتتطبّق على كل صنف يتفتح تحته. */}
+            <Select
+              size="small" style={{ minWidth: 130 }} value={logPreset}
+              onChange={(v) => {
+                const key = v as LogPreset;
+                setLogPreset(key);
+                if (key === 'all') { setLogFrom(null); setLogTo(null); return; }
+                if (key === 'custom') {
+                  setLogFrom(logFrom ?? dayjs().subtract(1, 'month'));
+                  setLogTo(logTo ?? dayjs());
+                  return;
+                }
+                setLogFrom(dayjs().subtract(LOG_MONTHS[key], 'month'));
+                setLogTo(dayjs());
+              }}
+              options={[
+                { value: 'all', label: 'كل الحركات' },
+                { value: 'm1', label: 'آخر شهر' },
+                { value: 'm3', label: 'آخر ٣ شهور' },
+                { value: 'm12', label: 'آخر سنة' },
+                { value: 'custom', label: 'فترة محددة' },
+              ]}
+            />
+            {logPreset === 'custom' && (
+              <>
+                <DatePicker size="small" format="YYYY-MM-DD" placeholder="من" allowClear={false}
+                  style={{ width: 128 }} value={logFrom} onChange={setLogFrom} />
+                <DatePicker size="small" format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
+                  style={{ width: 128 }} value={logTo} onChange={setLogTo} />
+              </>
+            )}
+          </Space>
+        )}
       />
 
       <Table

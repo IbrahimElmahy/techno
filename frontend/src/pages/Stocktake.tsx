@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
@@ -236,33 +236,7 @@ export default function Stocktake() {
         </>
       )}
     >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={10}>
-          {/* «إلى» is the day the balance is read at; «من» opens the movement log on the period.
-              Two dates because a difference is a question about a stretch of time, not a day. */}
-          <DatePicker.RangePicker
-            style={{ width: '100%' }} allowClear={false}
-            value={[dateFrom, asOf] as any}
-            onChange={(v: any) => {
-              if (!v || !v[0] || !v[1]) return;
-              setDateFrom(v[0]);
-              setAsOf(v[1]);
-            }}
-            placeholder={['من تاريخ', 'الرصيد حتى']}
-          />
-        </Col>
-        <Col xs={24} md={8}>
-          <Select
-            allowClear style={{ width: '100%' }} placeholder="كل المخازن"
-            value={warehouseId} onChange={setWarehouseId}
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-          />
-        </Col>
-      </Row>
-
-      <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message="الشاشة دي للمراجعة — العدد الفعلي اللي بتكتبه هنا مابيتحفظش"
-        description="بتحسب الفرق وبتوريك الحركات وراه. تسوية الفرق في المخزون بتتعمل من «جرد المخازن»، اللي عنده المستند والرصيد المجمّد والترحيل." />
+      {/* التنبيه اللي كان هنا اتشال بطلب صاحب النظام — نفس اللي اتشال من كشف الجرد. */}
 
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
@@ -292,7 +266,30 @@ export default function Stocktake() {
       <ListToolbar
         searchPlaceholder="بحث بالصنف أو الكود أو الموقع"
         query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
-        total={rows.length} shown={filter.filtered.length} searchSpan={10}
+        total={rows.length} shown={filter.filtered.length} searchSpan={8}
+        // الفترة والمخزن جنب البحث — دول اللي بيحدّدوا الورقة اللي بتتقرا، وكانوا في
+        // صف لوحدهم فوق بعيد عن باقي الفلاتر اللي شغّالة معاهم.
+        extra={(
+          <Space size={6} wrap style={{ flex: '0 0 auto' }}>
+            {/* «إلى» is the day the balance is read at; «من» opens the movement log on the period.
+                Two dates because a difference is a question about a stretch of time, not a day. */}
+            <DatePicker.RangePicker
+              style={{ width: '100%' }} allowClear={false}
+              value={[dateFrom, asOf] as any}
+              onChange={(v: any) => {
+                if (!v || !v[0] || !v[1]) return;
+                setDateFrom(v[0]);
+                setAsOf(v[1]);
+              }}
+              placeholder={['من تاريخ', 'الرصيد حتى']}
+            />
+            <Select
+              allowClear style={{ width: '100%' }} placeholder="كل المخازن"
+              value={warehouseId} onChange={setWarehouseId}
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+            />
+          </Space>
+        )}
       />
 
       <Table<Row>
