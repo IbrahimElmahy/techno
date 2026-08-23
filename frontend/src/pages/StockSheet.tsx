@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
-import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined, DownloadOutlined, PrinterOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -13,6 +13,7 @@ import { textColumn, numberColumn, choiceColumn } from '../components/gridColumn
 import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
+import { printReport, type PrintColumn } from '../print/reportSheet';
 
 /**
  * جرد المخازن · جرد عام المخازن — صفوف وأعمدة، وخلاص.
@@ -191,6 +192,14 @@ export default function StockSheet() {
    *
    * فبقت فوق مرة واحدة، والسجلات كلها بتتبعها.
    */
+  /**
+   * الصفوف المحدّدة — للتصدير والطباعة.
+   *
+   * الورقة بتتقرا على مرات: الواحد بيفلتر، وبيلاقي عشرين صنف محتاجين مراجعة، وعايز
+   * يطبعهم هما بس. من غير تحديد كان لازم يفلتر تاني بحاجة بتجمعهم — ودي حاجة مش
+   * موجودة دايماً؛ «العشرين اللي شكّيت فيهم» مش فلتر.
+   */
+  const [picked, setPicked] = useState<React.Key[]>([]);
   const [logPreset, setLogPreset] = useState<LogPreset>('all');
   const [logFrom, setLogFrom] = useState<Dayjs | null>(null);
   const [logTo, setLogTo] = useState<Dayjs | null>(null);
@@ -301,24 +310,73 @@ export default function StockSheet() {
   });
 
   /** Exported straight from what is on screen — filters, order and all. */
+  /**
+   * اللي بيتصدّر أو بيتطبع: **المحدّد لو فيه تحديد، وإلا اللي الفلتر مطلّعه**.
+   *
+   * الترتيب ده مش اختيار: التحديد أخص من الفلتر — اللي وقف وحدّد صفوف بإيده قال حاجة
+   * أوضح من اللي كتبه في خانة البحث. وتجاهله ساعتها معناه ورقة فيها صفوف محدّش طلبها.
+   */
+  /**
+   * قيمة خانة في التصدير والطباعة.
+   *
+   * «العدد الفعلي» و«الفرق» محسوبين ومالهمش `dataIndex` يتقرا منه — ولولا ده كانوا
+   * هيطلعوا عمودين فاضيين بعناوين، وهي أسوأ من إنهم مايطلعوش.
+   */
+  const cell = (c: any, r: any) => {
+    if (c.key === 'actual') return actual[rowKey(r)] ?? '';
+    if (c.key === 'diff') {
+      const d = diffOf(r);
+      return d === null ? '' : d === 0 ? 'مطابق' : d > 0 ? `عجز ${d}` : `زيادة ${Math.abs(d)}`;
+    }
+    return r[c.dataIndex] ?? '';
+  };
+
+  const forOutput = () => (picked.length
+    ? shown.filter((r: any) => picked.includes(rowKey(r)))
+    : shown);
+
   const exportCsv = () => {
-    if (!shown.length) { message.info('مفيش صفوف للتصدير'); return; }
+    const data = forOutput();
+    if (!data.length) { message.info('مفيش صفوف للتصدير'); return; }
     const visible = cols.apply(columns) as any[];
-    // العدد الفعلي والفرق محسوبين، مالهمش `dataIndex` يتقرا منه — ولولا ده كانوا هيتصدّروا
-    // عمودين فاضيين بعناوين، وهي أسوأ من إنهم مايتصدّروش.
-    const cell = (c: any, r: any) => {
-      if (c.key === 'actual') return actual[rowKey(r)] ?? '';
-      if (c.key === 'diff') {
-        const d = diffOf(r);
-        return d === null ? '' : d === 0 ? 'مطابق' : d > 0 ? `عجز ${d}` : `زيادة ${Math.abs(d)}`;
-      }
-      return r[c.dataIndex] ?? '';
-    };
     const csvCols: CsvColumn<any>[] = visible.map((c) => ({
       title: String(c.title ?? ''),
       value: (r: any) => cell(c, r),
     }));
-    writeCsv(view === 'general' ? 'general-stock' : 'stock-sheet', csvCols, shown);
+    writeCsv(view === 'general' ? 'general-stock' : 'stock-sheet', csvCols, data);
+  };
+
+  /**
+   * طباعة الورقة — بنفس قاعدة التصدير: المحدّد، وإلا المفلتر.
+   *
+   * والفلاتر بتتكتب في ترويسة الورقة. ورقة مطبوعة من غير الفلاتر اللي طلّعتها بتبقى
+   * أرقام مالهاش سياق بعد أسبوع — ومحدش هيفتكر كان مفلتر على إيه.
+   */
+  const printIt = () => {
+    const data = forOutput();
+    if (!data.length) { message.info('مفيش صفوف للطباعة'); return; }
+    const visible = cols.apply(columns) as any[];
+    const printCols: PrintColumn<any>[] = visible.map((c) => ({
+      title: String(c.title ?? ''),
+      value: (r: any) => cell(c, r),
+      numeric: c.key === 'quantity' || c.key === 'actual' || c.key === 'diff',
+    }));
+    printReport(
+      {
+        title: TITLES[view],
+        date: dayjs().format('YYYY/MM/DD'),
+        meta: [
+          ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
+          ...(picked.length
+            ? [['المطبوع', `${picked.length} صنف محدّد`] as [string, string]]
+            : [['المطبوع', 'كل اللي في الفلتر'] as [string, string]]),
+          ['فترة السجل', logFrom || logTo
+            ? `${logFrom ? logFrom.format('YYYY/MM/DD') : '—'} ← ${logTo ? logTo.format('YYYY/MM/DD') : '—'}`
+            : 'كل الحركات'],
+        ],
+      },
+      printCols, data,
+    );
   };
 
   return (
@@ -334,7 +392,12 @@ export default function StockSheet() {
             hidden={cols.hidden} onChange={cols.setHidden}
             order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
           />
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}>تصدير</Button>
+          <Button icon={<PrinterOutlined />} onClick={printIt}>
+            {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
+          </Button>
+          <Button icon={<DownloadOutlined />} onClick={exportCsv}>
+            {picked.length ? `تصدير (${picked.length})` : 'تصدير'}
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </Space>
       )}
@@ -416,6 +479,13 @@ export default function StockSheet() {
           ),
         }}
         {...kb.tableProps}
+        // التحديد للتصدير والطباعة — والعدد بيبان على الزرارين فوق عشان اللي حدّد
+        // يعرف إنه هيطبع المحدّد مش الكل.
+        rowSelection={{
+          selectedRowKeys: picked,
+          onChange: (keys) => setPicked(keys),
+          preserveSelectedRowKeys: true,
+        }}
         rowKey={rowKey}
         size="small"
         loading={loading}

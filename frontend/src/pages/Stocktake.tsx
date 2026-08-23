@@ -53,6 +53,8 @@ export default function Stocktake() {
    * The «من» date is what the movement log opens on: «إيه اللي حصل في الفترة دي» is the question a
    * difference raises, and reciting the item's whole life instead is not an answer to it.
    */
+  /** الصفوف المحدّدة — للتصدير والطباعة. اللي وقف وحدّد بإيده قال حاجة أوضح من الفلتر. */
+  const [picked, setPicked] = useState<React.Key[]>([]);
   const [dateFrom, setDateFrom] = useState<Dayjs>(dayjs().startOf('month'));
   const [asOf, setAsOf] = useState<Dayjs>(dayjs());
   /**
@@ -114,8 +116,14 @@ export default function Stocktake() {
 
   const filter = useListFilter(rows, { search: (r) => [r.code, r.name, r.category, r.location] });
 
+  /** المحدّد لو فيه تحديد، وإلا اللي الفلتر مطلّعه — التحديد أخص من الفلتر. */
+  const forOutput = () => (picked.length
+    ? filter.filtered.filter((r: any) => picked.includes(rowKeyOf(r)))
+    : filter.filtered);
+
   const exportCsv = () => {
-    if (!rows.length) { message.info('لا توجد أرصدة للتصدير'); return; }
+    const data = forOutput();
+    if (!data.length) { message.info('لا توجد أرصدة للتصدير'); return; }
     // The export follows the columns. A file whose headings say «تكلفة الوحدة» over a column of
     // counted quantities is worse than no export — it is read once, believed, and filed.
     const cols: CsvColumn<any>[] = [
@@ -128,10 +136,12 @@ export default function Stocktake() {
       { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)] },
       { title: 'الفرق', value: (r) => diffOf(r) },
     ];
-    writeCsv(`stocktake-${asOf.format('YYYY-MM-DD')}`, cols, filter.filtered);
+    writeCsv(`stocktake-${asOf.format('YYYY-MM-DD')}`, cols, data);
   };
 
   const printIt = () => {
+    const data = forOutput();
+    if (!data.length) { message.info('مفيش صفوف للطباعة'); return; }
     const cols: PrintColumn<any>[] = [
       { title: 'الكود', value: 'code' },
       { title: 'الصنف', value: 'name' },
@@ -142,8 +152,14 @@ export default function Stocktake() {
     ];
     printReport(
       { title: 'جرد حق تاريخ', date: asOf.format('YYYY/MM/DD'),
-        meta: [['حتى تاريخ', asOf.format('YYYY/MM/DD')]] },
-      cols, filter.filtered,
+        meta: [
+          ['حتى تاريخ', asOf.format('YYYY/MM/DD')],
+          // الفلاتر بتتكتب على الورقة: أرقام من غير سياقها بتبقى مالهاش معنى بعد أسبوع.
+          ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
+          [picked.length ? 'المطبوع' : 'المطبوع',
+            picked.length ? `${picked.length} صنف محدّد` : 'كل اللي في الفلتر'],
+        ] },
+      cols, data,
     );
   };
 
@@ -228,10 +244,15 @@ export default function Stocktake() {
       extra={(
         <>
           {tableCols.control}
+          {/* العدد على الزرار عشان اللي حدّد صفوف يعرف إنه هيطلّع المحدّد مش الكل. */}
           <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!rows.length}
-            style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
+            style={{ marginInlineEnd: 8 }}>
+            {picked.length ? `تصدير (${picked.length})` : 'تصدير CSV'}
+          </Button>
           <Button icon={<PrinterOutlined />} onClick={printIt}
-            style={{ marginInlineEnd: 8 }}>طباعة</Button>
+            style={{ marginInlineEnd: 8 }}>
+            {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </>
       )}
@@ -294,6 +315,11 @@ export default function Stocktake() {
 
       <Table<Row>
         {...kb.tableProps}
+        rowSelection={{
+          selectedRowKeys: picked,
+          onChange: (keys) => setPicked(keys),
+          preserveSelectedRowKeys: true,
+        }}
         rowKey={rowKeyOf} size="small" loading={loading}
         // السجل بيتفتح تحت السطر بتاعه، وأكتر من سطر بيفضلوا مفتوحين مع بعض.
         expandable={{
