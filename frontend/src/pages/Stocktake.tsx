@@ -14,6 +14,9 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import {
+  LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
+} from '../print/itemLogSheet';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -121,7 +124,23 @@ export default function Stocktake() {
     ? filter.filtered.filter((r: any) => picked.includes(rowKeyOf(r)))
     : filter.filtered);
 
-  const exportCsv = () => {
+  /** سجل كل صنف في اللي هيطلع — أو `null` لو العدد أكبر من الحد. كل صنف = نداء. */
+  const withLogs = async (data: any[]) => {
+    if (data.length > LOG_LIMIT) {
+      message.info(`السجل بيتطلع لحد ${LOG_LIMIT} صنف — حدّد الأصناف اللي عايز سجلها.`);
+      return null;
+    }
+    return Promise.all(data.map(async (r: any) => ({
+      row: r,
+      name: `${r.name}${r.location ? ` — ${r.location}` : ''}`,
+      log: await fetchLog(
+        { itemId: r.item_id, itemName: r.name },
+        dateFrom.format('YYYY-MM-DD'), asOf.format('YYYY-MM-DD'),
+      ),
+    })));
+  };
+
+  const exportCsv = async () => {
     const data = forOutput();
     if (!data.length) { message.info('لا توجد أرصدة للتصدير'); return; }
     // The export follows the columns. A file whose headings say «تكلفة الوحدة» over a column of
@@ -136,10 +155,21 @@ export default function Stocktake() {
       { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)] },
       { title: 'الفرق', value: (r) => diffOf(r) },
     ];
-    writeCsv(`stocktake-${asOf.format('YYYY-MM-DD')}`, cols, data);
+    const name = `stocktake-${asOf.format('YYYY-MM-DD')}`;
+    // الصنف وسجله في ملف واحد؛ ولو العدد كبير، الورقة وحدها — والسبب اتقال.
+    const entries = await withLogs(data);
+    if (entries) exportItemsWithLogs(name, cols, entries);
+    else writeCsv(name, cols, data);
   };
 
-  const printIt = () => {
+  /**
+   * طباعة الورقة — **الصنف وسجله**، قسم لكل صنف فيه رصيده وتحته حركاته في الفترة.
+   *
+   * زرار واحد مش اتنين: الورقة اللي بتقول «رصيده كذا» من غير «وليه كذا» بترجّع اللي
+   * بيراجع للشاشة لكل صنف. واللي بيتطبع هو المحدّد لو فيه تحديد، وإلا اللي الفلتر
+   * مطلّعه — ولو العدد أكبر من الحد، بتطلع من غير سجل والسبب بيتقال.
+   */
+  const printIt = async () => {
     const data = forOutput();
     if (!data.length) { message.info('مفيش صفوف للطباعة'); return; }
     const cols: PrintColumn<any>[] = [
@@ -150,16 +180,24 @@ export default function Stocktake() {
       { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)], numeric: true },
       { title: 'الفرق', value: (r) => diffOf(r), numeric: true },
     ];
-    printReport(
-      { title: 'جرد حق تاريخ', date: asOf.format('YYYY/MM/DD'),
-        meta: [
-          ['حتى تاريخ', asOf.format('YYYY/MM/DD')],
-          // الفلاتر بتتكتب على الورقة: أرقام من غير سياقها بتبقى مالهاش معنى بعد أسبوع.
-          ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
-          [picked.length ? 'المطبوع' : 'المطبوع',
-            picked.length ? `${picked.length} صنف محدّد` : 'كل اللي في الفلتر'],
-        ] },
-      cols, data,
+    const entries = await withLogs(data);
+    if (!entries) {
+      // العدد أكبر من الحد — الورقة بتطلع من غير سجل بدل ما الطباعة تقف.
+      printReport(
+        { title: 'جرد حق تاريخ', date: asOf.format('YYYY/MM/DD'),
+          meta: [
+            ['حتى تاريخ', asOf.format('YYYY/MM/DD')],
+            ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
+            ['المطبوع', picked.length ? `${picked.length} صنف محدّد` : 'كل اللي في الفلتر'],
+          ] },
+        cols, data,
+      );
+      return;
+    }
+    printItemsWithLogs(
+      { title: 'جرد حق تاريخ — بالسجل', date: asOf.format('YYYY/MM/DD'),
+        meta: [['الفترة', `${dateFrom.format('YYYY/MM/DD')} ← ${asOf.format('YYYY/MM/DD')}`]] },
+      cols, entries,
     );
   };
 
@@ -253,6 +291,7 @@ export default function Stocktake() {
             style={{ marginInlineEnd: 8 }}>
             {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
           </Button>
+
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         </>
       )}

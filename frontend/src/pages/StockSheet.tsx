@@ -14,6 +14,9 @@ import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import {
+  LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
+} from '../print/itemLogSheet';
 
 /**
  * جرد المخازن · جرد عام المخازن — صفوف وأعمدة، وخلاص.
@@ -335,7 +338,36 @@ export default function StockSheet() {
     ? shown.filter((r: any) => picked.includes(rowKey(r)))
     : shown);
 
-  const exportCsv = () => {
+  /**
+   * بيجيب سجل كل صنف في اللي هيطلع — أو بيرجّع `null` لو العدد أكبر من الحد.
+   *
+   * كل صنف = نداء على السيرفر. ورقة بأربعميت صنف معناها أربعميت نداء ودقايق انتظار على
+   * حاجة اتطلبت بضغطة، فاللي عايز السجل بيحدّد الأصناف — والفرق بيتقال، مابيحصلش في
+   * السكوت.
+   */
+  const withLogs = async (data: any[]) => {
+    if (data.length > LOG_LIMIT) {
+      message.info(`السجل بيتطلع لحد ${LOG_LIMIT} صنف — حدّد الأصناف اللي عايز سجلها.`);
+      return null;
+    }
+    const from = logFrom ? logFrom.format('YYYY-MM-DD') : null;
+    const to = logTo ? logTo.format('YYYY-MM-DD') : null;
+    return Promise.all(data.map(async (r) => ({
+      row: r,
+      name: `${r.name}${r.location ? ` — ${r.location}` : ''}`,
+      log: await fetchLog(
+        {
+          itemId: r.item_id,
+          itemName: r.name,
+          locationKind: general ? null : r.location_kind,
+          locationId: general ? null : r.location_id,
+        },
+        from, to,
+      ),
+    })));
+  };
+
+  const exportCsv = async () => {
     const data = forOutput();
     if (!data.length) { message.info('مفيش صفوف للتصدير'); return; }
     const visible = cols.apply(columns) as any[];
@@ -343,16 +375,23 @@ export default function StockSheet() {
       title: String(c.title ?? ''),
       value: (r: any) => cell(c, r),
     }));
-    writeCsv(view === 'general' ? 'general-stock' : 'stock-sheet', csvCols, data);
+    const name = view === 'general' ? 'general-stock' : 'stock-sheet';
+    // الصنف وسجله في ملف واحد. ولو العدد كبير، الملف بيطلع بالورقة وحدها — والسبب اتقال.
+    const entries = await withLogs(data);
+    if (entries) exportItemsWithLogs(name, csvCols, entries);
+    else writeCsv(name, csvCols, data);
   };
 
   /**
-   * طباعة الورقة — بنفس قاعدة التصدير: المحدّد، وإلا المفلتر.
+   * طباعة الورقة — **الصنف وسجله**، قسم لكل صنف فيه رصيده وتحته حركاته في الفترة.
    *
-   * والفلاتر بتتكتب في ترويسة الورقة. ورقة مطبوعة من غير الفلاتر اللي طلّعتها بتبقى
-   * أرقام مالهاش سياق بعد أسبوع — ومحدش هيفتكر كان مفلتر على إيه.
+   * زرار واحد مش اتنين: الورقة اللي بتقول «رصيده كذا» من غير «وليه كذا» بترجّع اللي
+   * بيراجع للشاشة لكل صنف — وهو غالباً قاعد بيراجع ورق بعيد عنها أصلاً.
+   *
+   * واللي بيتطبع هو **المحدّد لو فيه تحديد، وإلا اللي الفلتر مطلّعه** — نفس قاعدة
+   * التصدير. ولو العدد أكبر من الحد، بتطلع الورقة من غير سجل والسبب بيتقال.
    */
-  const printIt = () => {
+  const printIt = async () => {
     const data = forOutput();
     if (!data.length) { message.info('مفيش صفوف للطباعة'); return; }
     const visible = cols.apply(columns) as any[];
@@ -361,21 +400,33 @@ export default function StockSheet() {
       value: (r: any) => cell(c, r),
       numeric: c.key === 'quantity' || c.key === 'actual' || c.key === 'diff',
     }));
-    printReport(
+    const entries = await withLogs(data);
+    if (!entries) {
+      // العدد أكبر من الحد — الورقة بتطلع من غير سجل بدل ما الطباعة تقف.
+      printReport(
+        {
+          title: TITLES[view],
+          date: dayjs().format('YYYY/MM/DD'),
+          meta: [
+            ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
+            ['المطبوع', picked.length ? `${picked.length} صنف محدّد` : 'كل اللي في الفلتر'],
+          ],
+        },
+        printCols, data,
+      );
+      return;
+    }
+    printItemsWithLogs(
       {
-        title: TITLES[view],
+        title: `${TITLES[view]} — بالسجل`,
         date: dayjs().format('YYYY/MM/DD'),
         meta: [
-          ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
-          ...(picked.length
-            ? [['المطبوع', `${picked.length} صنف محدّد`] as [string, string]]
-            : [['المطبوع', 'كل اللي في الفلتر'] as [string, string]]),
           ['فترة السجل', logFrom || logTo
             ? `${logFrom ? logFrom.format('YYYY/MM/DD') : '—'} ← ${logTo ? logTo.format('YYYY/MM/DD') : '—'}`
             : 'كل الحركات'],
         ],
       },
-      printCols, data,
+      printCols, entries,
     );
   };
 
