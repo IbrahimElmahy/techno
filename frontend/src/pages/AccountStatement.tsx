@@ -14,6 +14,7 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import DocumentLink, { DocKind, docKindOf, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import JournalEntryLines from '../components/JournalEntryLines';
+import DocumentItemLines, { hasItemLines } from '../components/DocumentItemLines';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
@@ -130,13 +131,12 @@ export default function AccountStatement() {
       .catch(() => {});
   }, []);
 
-  // الأصناف والمخازن بتتجابوا مرة لما الموضوع يبقى «صنف» — مش مع فتح الشاشة، عشان اللي
-  // فاتح كشف حساب عميل مايستناش تحميل كتالوج مش هيستعمله.
+  // الأصناف والمخازن بيتحملوا مع الشاشة — مش بس لكشف الصنف: توسعة أي سطر وراه فاتورة
+  // بتعرض أصنافها بأساميها ومخازنها، وكشف حساب من غير الكتالوجات كان هيوري «صنف #11».
   useEffect(() => {
-    if (subject !== 'item' || items.length) return;
-    api.get('/api/v1/items?kind=product').then((r) => setItems(r.data || [])).catch(() => {});
+    api.get('/api/v1/items').then((r) => setItems(r.data || [])).catch(() => {});
     api.get('/api/v1/warehouses').then((r) => setWarehouses(r.data || [])).catch(() => {});
-  }, [subject]);
+  }, []);
 
   /**
    * بيحمّل الكشف — من مصدرين على حسب الموضوع، وبيطلّع نفس الشكل.
@@ -368,7 +368,9 @@ export default function AccountStatement() {
    * والأنواع بتتقرا من الكشف نفسه مش من قايمة ثابتة — عرض كل أنواع الحركات في النظام على
    * حساب اتحرك بنوعين هو قايمة بتوعد بحاجات مش موجودة.
    */
-  const [typeFilter, setTypeFilter] = useState<string | undefined>();
+  // متعدد زي نظامهم — «المبيعات والتحصيلات مع بعض» سؤال حقيقي، واختيار واحد كان بيجبر
+  // اللي بيسأله يقارن كشفين ورا بعض من الذاكرة.
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const repOptions = [...new Set(lines.map((l) => l.rep_name).filter(Boolean))]
     .map((r) => ({ value: r as string, label: r as string }));
   const typeOptions = [...new Set(lines.map((l) => l.entry_type).filter(Boolean))]
@@ -384,7 +386,7 @@ export default function AccountStatement() {
     const q = query.trim().toLowerCase();
     return lines.filter((l) => {
       if (repFilter && l.rep_name !== repFilter) return false;
-      if (typeFilter && l.entry_type !== typeFilter) return false;
+      if (typeFilter.length && !typeFilter.includes(l.entry_type)) return false;
       if (!q) return true;
       return [l.description, l.doc_number, l.rep_name, entryTypeLabel(l.entry_type)]
         .some((v) => String(v ?? '').toLowerCase().includes(q));
@@ -404,7 +406,7 @@ export default function AccountStatement() {
    * وبيبان بس لما يكون فيه فلتر شغّال؛ من غير فلتر هو نفس عمود الرصيد بالظبط، وعمودين
    * بنفس الأرقام بيخلّوا الواحد يدوّر على الفرق بينهم.
    */
-  const filtering = !!(repFilter || typeFilter || query.trim());
+  const filtering = !!(repFilter || typeFilter.length || query.trim());
   const runningOf = useMemo(() => {
     const m = new Map<string, number>();
     let acc = 0;
@@ -440,7 +442,9 @@ export default function AccountStatement() {
   const toggleRow = (l: StatementLine) => {
     const k = rowKeyOf(l);
     setExpandedKeys((keys) => (keys.includes(k) ? keys.filter((x) => x !== k) : [...keys, k]));
-    if (subject === 'account') loadEntry(l.entry_id);
+    // القيد بيتجاب بس للسطور اللي مالهاش مستند بأصناف — سطر الفاتورة بيوري أصنافها،
+    // ومايحتاجش سطور القيد أصلاً.
+    if (subject === 'account' && !hasItemLines(l.doc_kind)) loadEntry(l.entry_id);
   };
 
   const kb = useTableKeyboard<StatementLine>({
@@ -530,6 +534,16 @@ export default function AccountStatement() {
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('account-statement', columns);
 
+  const itemNameOf = (id: number) => {
+    const it = items.find((x: any) => x.id === id);
+    return it ? (it.code ? `${it.code} — ${it.name}` : it.name) : `صنف #${id}`;
+  };
+  const whName = (id: number | null | undefined) => {
+    if (!id) return null;
+    const w = warehouses.find((x: any) => x.id === id);
+    return w ? w.name : `مخزن #${id}`;
+  };
+
   const acctName = (id: number) => {
     const a = accounts.find((x: any) => x.id === id);
     return a ? labelOf(a) : `حساب #${id}`;
@@ -584,6 +598,21 @@ export default function AccountStatement() {
         </span>
       </div>
     );
+
+    // زي علامة «حركة مخزنية» في نظامهم: السطر اللي وراه فاتورة بيفرد أصنافها —
+    // المخزن والصنف والكمية والسعر والإجمالي. اللي بيراجع كشف عميل مش بيسأل «القيد اتقفل
+    // على أنهي حساب» — بيسأل «العميل ده خد إيه». سطور القيد إجابة محاسب؛ الأصناف إجابة
+    // صاحب الشغل، وهي دي اللي بتتفرد. القيود اليدوية بس هي اللي بتوري سطور القيد،
+    // لأنها كل اللي عندها.
+    if (l.doc_kind && l.doc_id && hasItemLines(l.doc_kind)) {
+      return (
+        <div style={{ padding: '4px 8px' }}>
+          {head}
+          <DocumentItemLines kind={l.doc_kind} id={l.doc_id}
+            itemName={itemNameOf} warehouseName={whName} money={money} />
+        </div>
+      );
+    }
 
     if (isItem) {
       const r = l.raw || {};
@@ -735,7 +764,8 @@ export default function AccountStatement() {
         <Col xs={24} md={4}>
           {/* نوع الحركة فوق مش في رأس عمود — ده سؤال بيتقال بصوت عالي. */}
           <Select
-            showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+            mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear maxTagCount="responsive"
             placeholder="نوع الحركة" value={typeFilter} onChange={setTypeFilter}
             options={typeOptions} disabled={!typeOptions.length}
           />
@@ -787,7 +817,16 @@ export default function AccountStatement() {
                     : statement.total_credit)} />
               </Card>
             </Col>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={3}>
+              <Card size="small">
+                {/* «رصيد الحركة» زي نظامهم: صافي الفترة المعروضة — مدينها ناقص دائنها.
+                    الرصيد الختامي بيقول انت واقف فين؛ ده بيقول الفترة دي لوحدها عملت إيه،
+                    ومن غيره كانوا بيتطرحوا على آلة حاسبة جنب الشاشة. */}
+                <Statistic title="رصيد الحركة"
+                  value={num(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))} />
+              </Card>
+            </Col>
+            <Col xs={12} md={3}>
               <Card size="small">
                 <Statistic title={`الرصيد — ${statement.account_name}`}
                   value={num(statement.closing_balance)}
@@ -804,7 +843,7 @@ export default function AccountStatement() {
               type="info" showIcon style={{ marginBottom: 12 }}
               message={[
                 repFilter && `حركة «${repFilter}»`,
-                typeFilter && `نوع «${entryTypeLabel(typeFilter)}»`,
+                typeFilter.length && `نوع «${typeFilter.map(entryTypeLabel).join('، ')}»`,
                 query.trim() && `بحث «${query.trim()}»`,
               ].filter(Boolean).join(' · ')}
               description={`${shownLines.length} حركة من إجمالي ${lines.length}. `
