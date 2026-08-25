@@ -14,32 +14,11 @@ import VoucherKeyRunner, {
   KIND_COLORS, KIND_LABELS, VoucherKey, useRunnerWorld,
 } from '../components/VoucherKeyRunner';
 
-/**
- * المفاتيح الخاصة — ربط بين حسابين رئيسيين، والسند بيتعمل بضغطة.
- *
- * Their system carries «مفاتيح خاصة» beside «قيد حر», and that placement is the whole idea: a free
- * entry asks for both accounts every single time; a key is the same entry with the accounts already
- * answered. Writing «تحصيل نقدي» forty times a week is forty times choosing the same safe out of a
- * list and the same heading out of the chart — none of that is a decision, it is the same answer
- * retyped, and every retyping is a chance to pick the wrong one.
- *
- * **The direction decides what the key is.** مدين الخزينة / دائن العملاء is money coming in, so it
- * posts as a سند قبض and inherits the أبيض/بولي split and the safe's balance guard. Turn the pair
- * around and it is something else. The screen never works that out for itself — it asks the server,
- * which resolves it with the same table it will post by, so the preview here cannot drift from what
- * actually happens.
- *
- * This screen replaced «السندات السريعة», which was the same idea narrowed to expense accounts
- * only. One mechanism, not two: the keys page is where they are set up, and `VoucherKeyStrip` puts
- * the same runner above the vouchers screen where they are used.
- */
-
 interface Account {
   id: number;
   code: string | null;
   name: string | null;
   parent_id: number | null;
-  /** نوع الحساب — بيه بنعرف حسابات العملاء والموردين والخزن من غير ما نلفّ الشجرة. */
   account_type?: string | null;
   is_postable: boolean;
   active: boolean;
@@ -50,17 +29,6 @@ interface Account {
 const accLabel = (a: Account) =>
   `${a.code ? `${a.code} — ` : ''}${a.owner_name || a.name || `#${a.id}`}`;
 
-/**
- * المجموعات الرئيسية — دي مش سطور في الشجرة.
- *
- * «العملاء» is 233 accounts sharing an account type and no parent between them; the heading every
- * screen shows is derived, not stored. A picker offering only real rows could therefore never
- * express «تحصيل نقدي», so the groups sit at the top of the list as first-class choices.
- */
-/**
- * الأنواع اللي حساباتها ورقة تحت مجموعة، مش عناوين بذاتها: حساب لكل عميل، ولكل مورد،
- * ولكل مندوب، ولكل خزينة. دول مايبانوش في «الحسابات الرئيسية» مهما كان `parent_id` فاضي.
- */
 const OWNED_TYPES = ['customer_receivable', 'supplier_payable', 'custody', 'treasury'];
 
 const GROUPS: { value: string; label: string }[] = [
@@ -70,23 +38,6 @@ const GROUPS: { value: string; label: string }[] = [
   { value: 'custody', label: 'عهد المناديب' },
 ];
 
-/**
- * الطرف بيتحدّد على خطوتين: **حساب رئيسي**، وبعده **حساب فرعي جوّاه — اختياري**.
- *
- * كانت قايمة واحدة مسطّحة فيها كل حسابات الشجرة: المجموعات الأربعة فوق، وتحتهم كل حساب
- * في النظام واحد ورا التاني — يعني ٢٣٣ حساب عميل في نفس القايمة اللي فيها «الخزينة».
- * الاختيار من قايمة بالطول ده مش اختيار، ده تفتيش.
- *
- * والخطوتين مش شكل: هما نفس السؤال اللي في دماغ اللي بيعمل المفتاح — «الربط ده على
- * الذمم المدينة كلها، ولا على عميل بعينه جوّاها؟». **ولو مااختارش فرعي، الربط بيبقى على
- * الرئيسي نفسه** — وساعتها السيرفر هو اللي بيسأل عن الحساب وقت عمل السند، لأن الطرف
- * اللي مش حساب واحد مستقر بيفضل سؤال مفتوح لحد ما السند يتكتب.
- *
- * الترميز اللي بيتبعت للسيرفر ما اتغيّرش: `g:` مجموعة و`a:` حساب — الفرق إن اللي بيتبعت
- * بقى الفرعي لو اتحدّد، والرئيسي لو لأ.
- */
-
-/** الاختيار الواحد بيحمل نوعه معاه: `g:customer_receivable` مجموعة، `a:12` حساب. */
 const encodeSide = (k: Partial<VoucherKey>, side: 'debit' | 'credit'): string | undefined => {
   const group = side === 'debit' ? k.debit_group : k.credit_group;
   const acc = side === 'debit' ? k.debit_account_id : k.credit_account_id;
@@ -102,13 +53,6 @@ const decodeSide = (v: string | undefined, side: 'debit' | 'credit') => {
     : { [`${side}_account_id`]: Number(v.slice(2)), [`${side}_group`]: null };
 };
 
-/**
- * طرف واحد — رئيسي وتحته فرعي اختياري.
- *
- * الفرعي بيتقفل لما الرئيسي مايكونش مختار، ولما يكون مجموعة (المجموعة مالهاش شجرة تحتها
- * هنا)، ولما الرئيسي مالوش حسابات جوّاه. وفي الحالات دي السطر اللي تحته بيقول السبب —
- * خانة مقفولة من غير سبب بتخلّي الواحد يفضل يجرّب فيها.
- */
 function SideFields({
   side, title, hint, mainOptions, subsOf, form, onChange,
 }: {
@@ -125,8 +69,6 @@ function SideFields({
       {() => {
         const main: string | undefined = form.getFieldValue(`${side}_main`);
         const subs = subsOf(main);
-        // المجموعة بقى ليها فرعي كمان — العملاء اللي تحتها. فالقفل بقى على حاجة واحدة
-        // بس: مافيش حاجة جوّه الرئيسي أصلاً.
         const why = !main ? 'اختار الحساب الرئيسي الأول'
           : subs.length === 0 ? 'الحساب ده مافيهوش حسابات فرعية' : null;
         return (
@@ -137,7 +79,6 @@ function SideFields({
               <Select showSearch optionFilterProp="label" options={mainOptions}
                 placeholder={`${hint} — الحساب الرئيسي`}
                 onChange={() => {
-                  // الفرعي بتاع رئيسي تاني مالوش معنى تحت الرئيسي الجديد.
                   form.setFieldValue(`${side}_sub`, undefined);
                   onChange();
                 }} />
@@ -165,7 +106,6 @@ export default function VoucherKeys() {
   const [world] = useRunnerWorld();
   const [running, setRunning] = useState<VoucherKey | null>(null);
 
-  /** المفتاح اللي بنعدّله دلوقتي — أو `{}` لمفتاح جديد. */
   const [editing, setEditing] = useState<Partial<VoucherKey> | null>(null);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<{ voucher_kind: string; asks: string[] } | null>(null);
@@ -201,7 +141,6 @@ export default function VoucherKeys() {
     setEditing(k ?? {});
     setPreview(k ? { voucher_kind: k.voucher_kind, asks: k.asks } : null);
     form.resetFields();
-    /** مفتاح متسجّل على حساب واحد بيتفتح على خطوتيه: رئيسيه فوق، وهو نفسه تحت لو فرعي. */
     const asSteps = (side: 'debit' | 'credit') => {
       const enc = k ? encodeSide(k, side) : undefined;
       if (!enc) return { main: undefined, sub: undefined };
@@ -226,19 +165,12 @@ export default function VoucherKeys() {
     } : { sort_order: keys.length, active: true });
   };
 
-  /**
-   * الرئيسي + الفرعي ← الترميز اللي السيرفر بيفهمه.
-   *
-   * الفرعي بيكسب لو اتحدّد، والرئيسي بيبقى هو الربط لو مااتحددش — ودي القاعدة اللي
-   * الشاشة كلها قايمة عليها.
-   */
   const sideOf = useCallback((side: 'debit' | 'credit'): string | undefined => {
     const sub = form.getFieldValue(`${side}_sub`);
     if (sub) return `a:${sub}`;
     return form.getFieldValue(`${side}_main`) || undefined;
   }, [form]);
 
-  /** بنسأل السيرفر السند ده هيبقى إيه — نفس الجدول اللي هيترحّل بيه، مش نسخة تانية هنا. */
   const refreshPreview = useCallback(async () => {
     const debit = sideOf('debit');
     const credit = sideOf('credit');
@@ -255,7 +187,6 @@ export default function VoucherKeys() {
     }
   }, [sideOf]);
 
-  /** بيبدّل الطرفين بخطوتيهم — الرئيسي والفرعي مع بعض، مش الترميز الناتج بس. */
   const swapSides = () => {
     const d = { main: form.getFieldValue('debit_main'), sub: form.getFieldValue('debit_sub') };
     const c = { main: form.getFieldValue('credit_main'), sub: form.getFieldValue('credit_sub') };
@@ -271,7 +202,6 @@ export default function VoucherKeys() {
     try {
       const body = {
         name: v.name,
-        // الفرعي لو اتحدّد، وإلا الرئيسي — وده كل الفرق.
         ...decodeSide(sideOf('debit'), 'debit'),
         ...decodeSide(sideOf('credit'), 'credit'),
         payment_method: v.payment_method || null,
@@ -303,7 +233,6 @@ export default function VoucherKeys() {
     }
   };
 
-  /** الأب ← ولاده. اتبنت مرة واحدة عشان مانلفّش على القايمة كلها لكل حساب. */
   const childrenBy = useMemo(() => {
     const m = new Map<number, Account[]>();
     accounts.forEach((a) => {
@@ -313,18 +242,6 @@ export default function VoucherKeys() {
     return m;
   }, [accounts]);
 
-  /**
-   * الحسابات الرئيسية.
-   *
-   * **حساب العميل مش حساب رئيسي، حتى لو مالوش أب.** أول ما عميل يتعمل بيتفتحله حساب
-   * و`parent_id` بتاعه بيفضل فاضي؛ مابياخدش أب إلا لما تسوية الشجرة تشتغل وتحطّه تحت
-   * «الذمم المدينة». يعني أي عميل اتعمل بعد آخر مرة اتسوّت فيها الشجرة بيبقى بلا أب —
-   * ولو قسّمنا على `parent_id` بس، ٢٣٣ عميل بيطلعوا في قايمة الحسابات الرئيسية.
-   *
-   * والسيرفر عارف كده وبيتعامل معاه (`chart_service.effective_parent_id`)، بس اللي
-   * بيتبعت في الـAPI هو العمود الخام. فبنستنّى من الرئيسية أي حساب نوعه بيقول إنه ورقة
-   * تحت مجموعة — عميل أو مورد أو عهدة أو خزينة — ونسيب المجموعة نفسها هي اللي في القايمة.
-   */
   const mainOptions = useMemo(() => {
     const roots = accounts.filter((a) => a.parent_id == null
       && !OWNED_TYPES.includes(a.account_type || ''));
@@ -336,17 +253,8 @@ export default function VoucherKeys() {
     ];
   }, [accounts]);
 
-  /**
-   * كل اللي تحت الحساب الرئيسي، على أي عمق.
-   *
-   * مش الولاد المباشرين بس: الشجرة عندها ممكن تبقى «الذمم المدينة ← فرع ← عميل»، واللي
-   * بيدوّر على عميل بعينه عايزه في القايمة مش عايز ينزل درجة درجة.
-   */
   const subsOf = useCallback((mainValue?: string) => {
     if (!mainValue) return [];
-    // المجموعة حسابها الفرعي هو حسابات نوعها — العملاء تحت «العملاء»، والخزن تحت
-    // «الخزينة والبنوك». دي اللي بتخلّي المجموعة تتفتح على اللي جوّاها فعلاً بدل ما
-    // تبقى اختيار مقفول.
     if (mainValue.startsWith('g:')) {
       const t = mainValue.slice(2);
       return accounts.filter((a) => (a.account_type || '') === t)
@@ -362,7 +270,6 @@ export default function VoucherKeys() {
     return out.map((a) => ({ value: a.id, label: accLabel(a) }));
   }, [childrenBy, accounts]);
 
-  /** الرئيسي اللي الحساب ده واقع تحته — عشان مفتاح قديم يتفتح على نفس الخطوتين. */
   const rootOf = useCallback((accountId: number): number => {
     let cur = accounts.find((a) => a.id === accountId);
     while (cur && cur.parent_id != null) {
@@ -383,7 +290,6 @@ export default function VoucherKeys() {
             onClick={() => setManage(!manage)}>
             {manage ? 'خلصت إعداد' : 'إعداد المفاتيح'}
           </Button>
-          {/* «مفتاح جديد» بياخد نفس اختصار «جديد» في كل الشاشات — اختصار واحد في النظام كله. */}
           {manage && (
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
               onClick={() => openEditor()}>
@@ -442,14 +348,9 @@ export default function VoucherKeys() {
                     title="تشيل المفتاح؟"
                     description="السندات اللي اتعملت منه مش بتتأثر — كل سند مستند لوحده."
                     okText="شيله" cancelText="سيبه"
-                    onConfirm={() => remove(k)}
-                  >
-                    {/* من غير `stopPropagation` هنا — وده اللي كان بيمنع الحذف أصلاً.
-                        شيم `Popconfirm` (بعد ما التأكيدات اتشالت) بيلفّ اللي جوّاه في
-                        `<span onClick>`؛ فالزرار اللي بيوقّف الحدث عنده كان بيمنعه يوصل
-                        للشيم، والدوسة تروح في السكوت. الشيم نفسه بيوقّف الحدث قبل ما
-                        ينفّذ، فسطر الكارت اللي تحته مابيشتغلش. */}
-                    <Button size="small" danger icon={<DeleteOutlined />} />
+                     onConfirm={() => remove(k)}
+                   >
+                     <Button size="small" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
                 </Space>
               )}
@@ -476,8 +377,6 @@ export default function VoucherKeys() {
             <Input placeholder="زي «تحصيل نقدي» أو «إيجار المقر»" />
           </Form.Item>
 
-          {/* الطرفين، كل واحد على خطوتين. الفرعي اختياري — وسطر تحته بيقول كده بالنص
-              بدل ما الواحد يجرّب ويشوف. */}
           <SideFields
             side="debit" title="الطرف المدين" hint="اللي بياخد"
             mainOptions={mainOptions} subsOf={subsOf} form={form} onChange={refreshPreview} />
@@ -492,7 +391,6 @@ export default function VoucherKeys() {
             side="credit" title="الطرف الدائن" hint="اللي بيدي"
             mainOptions={mainOptions} subsOf={subsOf} form={form} onChange={refreshPreview} />
 
-          {/* اللي المفتاح ده هيعمله — جاي من السيرفر عشان ميختلفش عن اللي هيترحّل فعلاً. */}
           {preview && (
             <Alert
               type="success" showIcon style={{ marginBottom: 12 }}

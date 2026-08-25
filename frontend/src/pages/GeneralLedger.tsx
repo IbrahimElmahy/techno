@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, Tree, message, Radio,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, message, Radio,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
-  ReloadOutlined, SearchOutlined,
+  ReloadOutlined, SearchOutlined, DownloadOutlined, PrinterOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -21,8 +21,9 @@ import { textColumn, numberColumn, choiceColumn, dateColumn } from '../component
 import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import { exportCsv } from '../utils/exportCsv';
+import { printReport } from '../print/reportSheet';
 
-// --- Types --------------------------------------------------------------------------------
 interface Account {
   id: number;
   code: string | null;
@@ -67,8 +68,6 @@ interface TrialRow {
   period_debit: string;
   period_credit: string;
   closing: string;
-  // (031) Which book the row belongs in. Their دفتر الإستاذ is four tables on one screen; this is
-  // what lets one fetch answer both that view and the flat one.
   nature: 'asset' | 'liability' | 'equity' | 'income' | 'expense' | null;
 }
 
@@ -81,17 +80,10 @@ interface LineDraft {
   cost_center_id?: number | null;
 }
 
-
-
-// الشجرة تُفلتر بالعقدة أو أي فرع تحتها، حتى لا يختفي حساب مطابق داخل مجموعة غير مطابقة.
 const flatten = <T extends { children?: T[] | null }>(node: T): T[] =>
   [node, ...(node.children || []).flatMap(flatten)];
 
 export default function GeneralLedger() {
-  // What is left here is what «الأستاذ العام» actually means: the chart, the entries, and the
-  // trial balance. الحسابات الرئيسيه، الفرعيه and مراكز التكلفة were tabs of this page and are
-  // their own screens now — each is master data you set up once, which is a different job from
-  // reading balances, and their menu had always said so.
   const [activeTab, selectTab] = useQueryTab('chart');
   return (
     <Tabs
@@ -105,7 +97,6 @@ export default function GeneralLedger() {
   );
 }
 
-// --- Tab 1: Chart of Accounts -------------------------------------------------------------
 function ChartTab() {
   const navigate = useNavigate();
   const [tree, setTree] = useState<Account[]>([]);
@@ -113,12 +104,8 @@ function ChartTab() {
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [form] = Form.useForm();
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
 
-  // «الحسابات الرئيسيه» and «الحسابات الفرعيه» are two menu entries there and one chart here. The
-  // distinction is real in the data — a group node versus a postable leaf — so the entry narrows to
-  // what it names instead of dropping the reader into the whole tree and leaving them to squint.
-  // The chart is a TREE and the columns filter individual accounts, so the distinct lists are
-  // built from the flattened accounts — otherwise a child's nature would never appear as a choice.
   const flatAccounts = useMemo(() => tree.flatMap(flatten), [tree]);
 
   const filter = useListFilter(tree, {
@@ -130,6 +117,10 @@ function ChartTab() {
       active: (a, v) => flatten(a).some((n) => n.active === (v === 'active')),
     },
   });
+
+  useEffect(() => {
+    setExpandedKeys(tree.filter((a) => !a.parent_id).map((a) => a.id));
+  }, [tree]);
 
   const load = async () => {
     setLoading(true);
@@ -186,21 +177,43 @@ function ChartTab() {
       render: (b: string) => <strong>{egp(b)}</strong> },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const chartTabCols = useTableColumns('gl-chart', columns);
 
-  // الحساب في الشجرة بيفتح كشف حسابه. اللي بيبص على شجرة الحسابات بيدوّر على حساب عشان يشوف
-  // حركته — والشجرة كانت بتوقف عند الاسم.
   const chartKb = useTableKeyboard<any>({
     rows: filter.filtered, rowKey: (a) => a.id,
     onOpen: (a) => navigate(`/account-statement?account=${a.id}`),
   });
+
+  const chartReportCols = [
+    { title: 'الكود', value: (a: Account) => a.code },
+    { title: 'اسم الحساب', value: (a: Account) => a.name },
+    { title: 'النوع', value: (a: Account) => (a.nature ? NATURE_LABEL[a.nature] : '') },
+    { title: 'التصنيف', value: (a: Account) => (a.is_postable ? 'قابل للترحيل' : 'مجموعة') },
+    { title: 'المستوى الرئيسي', value: (a: Account) => a.main_level ?? '' },
+    { title: 'يظهر في', value: (a: Account) => (a.appears_in && APPEARS_IN_LABEL[a.appears_in]) || '' },
+    { title: 'النظام', value: (a: Account) => (a.is_system ? 'نظام' : '') },
+    { title: 'الرصيد (ج.م)', value: (a: Account) => a.balance, numeric: true },
+  ];
+  const shownAccounts = () => filter.filtered.flatMap(flatten);
+  const exportChart = () => {
+    const rows = shownAccounts();
+    if (!rows.length) { message.info('لا توجد بيانات للتصدير'); return; }
+    exportCsv('chart-of-accounts', chartReportCols, rows);
+  };
+  const printChart = () => {
+    printReport(
+      { title: 'دليل الحسابات', date: dayjs().format('YYYY/MM/DD') },
+      chartReportCols, shownAccounts(),
+    );
+  };
 
   return (
     <Card
       title="الهيكل الشجري لدليل الحسابات"
       extra={
         <Space>
+          <Button icon={<DownloadOutlined />} onClick={exportChart}>تصدير CSV</Button>
+          <Button icon={<PrinterOutlined />} onClick={printChart}>طباعة</Button>
           <Button icon={<ReloadOutlined />} onClick={load} />
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawer(true)}>حساب جديد</Button>
         </Space>
@@ -231,7 +244,11 @@ function ChartTab() {
         dataSource={filter.filtered}
         columns={chartTabCols.columns}
         pagination={false}
-        expandable={{ defaultExpandAllRows: true, childrenColumnName: 'children' }}
+        expandable={{
+          expandedRowKeys: expandedKeys,
+          onExpandedRowsChange: (keys) => setExpandedKeys([...keys]),
+          childrenColumnName: 'children',
+        }}
       />
 
       <TabModal footer={null} centered title="إضافة حساب جديد" width={460} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
@@ -263,8 +280,8 @@ function ChartTab() {
             extra="اختر من القائمة أو اكتب مستوى جديد">
             <Select allowClear showSearch placeholder="مثال: مصروفات غير مباشرة"
               options={MAIN_LEVELS.map((l) => ({ value: l, label: l }))}
-              // Free text on purpose — the suggestions cover the common chart, not every chart.
-              onSearch={() => {}} filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              onSearch={() => {}}
+              filterOption={(i, o) => normalizeAr(String(o?.label ?? '')).includes(normalizeAr(i))}
               mode="tags" maxCount={1} />
           </Form.Item>
           <Form.Item name="appears_in" label="يظهر في"
@@ -279,7 +296,6 @@ function ChartTab() {
   );
 }
 
-// --- Tab 2: Journal Entries ---------------------------------------------------------------
 function JournalTab() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -389,13 +405,6 @@ function JournalTab() {
     });
   };
 
-  /**
-   * اللون بس اللي محلي. الاسم بييجي من الخريطة المشتركة.
-   *
-   * This used to carry its own three names, which meant the same entry read one way here and
-   * another on كشف الحساب, and the sixteen types it did not list showed through in English. A
-   * colour is a decision about this screen; a name is a fact about the system.
-   */
   const TYPE_COLOR: Record<string, string> = {
     journal: 'blue', opening_balance: 'gold', reversal: 'red',
   };
@@ -428,8 +437,6 @@ function JournalTab() {
     { title: 'البيان', dataIndex: 'description', key: 'description',
       ...textColumn(entries, (e: JournalEntry) => e.description) },
     { title: 'الحركات', dataIndex: 'lines', key: 'lines',
-      // Filtered by how many movements the entry has — «القيود المركّبة» is a real thing to look
-      // for, and it is not visible from any other column.
       ...numberColumn<JournalEntry>((e) => (e.lines || []).length),
       render: (ls: JournalLine[]) => (
         <div>
@@ -454,22 +461,54 @@ function JournalTab() {
         ) : <Tag color="red">معكوس</Tag> },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const journalTabCols = useTableColumns('gl-journal', columns);
 
-  // القيد بيفتح كشف حساب أول سطر فيه — القيد بسطوره ظاهر في الجدول نفسه، واللي بعده هو
-  // «الحساب ده رصيده بقى كام».
   const entryKb = useTableKeyboard<any>({
     rows: filter.filtered, rowKey: (e) => e.id,
     onOpen: (e) => { const a = e.lines?.[0]?.account_id;
       if (a) navigate(`/account-statement?account=${a}`); },
   });
 
+  const entryReportCols = [
+    { title: 'رقم', value: (e: JournalEntry) => e.id },
+    { title: 'التاريخ', value: (e: JournalEntry) => e.date ?? '' },
+    { title: 'النوع', value: (e: JournalEntry) => entryTypeLabel(e.entry_type) },
+    { title: 'البيان', value: (e: JournalEntry) => e.description },
+    { title: 'الفرع', value: (e: JournalEntry) => branchName(e.branch_id) },
+    { title: 'الحركات', value: (e: JournalEntry) => (e.lines || []).length },
+    { title: 'الإجمالي', value: (e: JournalEntry) => e.total, numeric: true },
+  ];
+  const sideSum = (es: JournalEntry[], dir: 'debit' | 'credit') =>
+    es.reduce((t, e) => t + (e.lines || []).reduce((s, l) => s + (l.direction === dir ? Number(l.amount) : 0), 0), 0);
+  const exportJournal = () => {
+    if (!filter.filtered.length) { message.info('لا توجد بيانات للتصدير'); return; }
+    exportCsv('journal-entries', entryReportCols, filter.filtered);
+  };
+  const printJournal = () => {
+    printReport(
+      {
+        title: 'قيود اليومية',
+        date: dayjs().format('YYYY/MM/DD'),
+        meta: [
+          ['من', filter.range ? filter.range[0].format('YYYY/MM/DD') : 'من البداية'],
+          ['إلى', filter.range ? filter.range[1].format('YYYY/MM/DD') : 'حتى اليوم'],
+        ],
+      },
+      entryReportCols, filter.filtered,
+      [
+        { label: 'إجمالي مدين', value: egp(sideSum(filter.filtered, 'debit')) },
+        { label: 'إجمالي دائن', value: egp(sideSum(filter.filtered, 'credit')) },
+      ],
+    );
+  };
+
   return (
     <Card
       title="قيود اليومية (دفتر الأستاذ الموحد)"
       extra={
         <Space>
+          <Button icon={<DownloadOutlined />} onClick={exportJournal}>تصدير CSV</Button>
+          <Button icon={<PrinterOutlined />} onClick={printJournal}>طباعة</Button>
           <Button icon={<BankOutlined />} onClick={() => setOpeningDrawer(true)}>أرصدة افتتاحية</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawer(true)}>قيد جديد</Button>
         </Space>
@@ -492,7 +531,6 @@ function JournalTab() {
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{journalTabCols.control}</div>
       <Table {...entryKb.tableProps} rowKey="id" loading={loading} dataSource={filter.filtered} columns={journalTabCols.columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
 
-      {/* New journal drawer */}
       <TabModal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onPost} requiredMark={false}
           initialValues={{ date: dayjs() }}>
@@ -562,7 +600,6 @@ function JournalTab() {
         </Form>
       </TabModal>
 
-      {/* Opening balances drawer */}
       <TabModal footer={null} centered title="تسجيل الأرصدة الافتتاحية" width={560} open={openingDrawer}
         onCancel={() => setOpeningDrawer(false)} destroyOnHidden>
         <Form form={openForm} layout="vertical" onFinish={onPostOpening} requiredMark={false}
@@ -611,19 +648,6 @@ function JournalTab() {
   );
 }
 
-// --- Tab 3: Trial Balance -----------------------------------------------------------------
-/**
- * Their دفتر الإستاذ shows four books on one screen — اصول · خصوم · مصروفات · ايرادات — each with
- * `رقم · الاسم · مدين · دائن · رصيد`.
- *
- * **حقوق الملكية is a fifth here.** It is not among their four, and leaving capital off a ledger
- * would hide the side the books balance against — a section that is empty says «nothing here»,
- * while a section that does not exist says nothing at all.
- *
- * Every row carries more than theirs does: an opening balance, and the period and cost-centre
- * filters this screen already had. Grouping is a toggle rather than a replacement, so the flat
- * trial balance — which is the auditor's view and reads its own way — is still one click away.
- */
 const BOOKS: { nature: TrialRow['nature']; label: string }[] = [
   { nature: 'asset', label: 'اصول' },
   { nature: 'liability', label: 'خصوم' },
@@ -641,9 +665,7 @@ function TrialBalanceTab() {
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  // الفترة والفرع ومركز التكلفة من السيرفر — البحث النصي فوق الصفوف المعروضة.
   const [rowQuery, setRowQuery] = useState('');
-  // Their four-book view is the default: it is the one somebody arriving from a5 expects.
   const [grouped, setGrouped] = useState(true);
 
   const rows: TrialRow[] = data?.rows ?? [];
@@ -671,9 +693,6 @@ function TrialBalanceTab() {
       setData(res.data);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  // الفترة والفرع ومركز التكلفة كلهم بيحمّلوا على طول — «عرض» فضل للتحديث بنفس الفلاتر.
-  // فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور، والراجل يا بيصدّق الأرقام القديمة
-  // يا بيضغط الزرار ويستغرب ليه كان لازم.
   useEffect(() => { run(); }, [range, branchId, costCenterId]);
 
   const columns = [
@@ -696,16 +715,47 @@ function TrialBalanceTab() {
       render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const trialBalanceTabCols = useTableColumns('gl-trial-balance', columns);
 
-  // ميزان المراجعة → كشف الحساب: النزول من الرقم المجمّع للحركات اللي عملته. الجداول التلاتة
-  // (مقسّم بالطبيعة، وبدون تصنيف، والمسطّح) بتتشارك المؤشر لأن `account_id` مايتكررش بينهم،
-  // وواحد بس منهم بيتعرض في المرة.
   const trialKb = useTableKeyboard<any>({
     rows: shownRows, rowKey: (r) => r.account_id,
     onOpen: (r) => navigate(`/account-statement?account=${r.account_id}`),
   });
+
+  const bookLabel = (n: TrialRow['nature']) =>
+    BOOKS.find((b) => b.nature === n)?.label ?? 'بدون تصنيف';
+  const trialReportCols = [
+    { title: 'الكود', value: (r: TrialRow) => r.code },
+    { title: 'الحساب', value: (r: TrialRow) => r.name },
+    { title: 'القسم', value: (r: TrialRow) => bookLabel(r.nature) },
+    { title: 'افتتاحي', value: (r: TrialRow) => r.opening, numeric: true },
+    { title: 'مدين', value: (r: TrialRow) => r.period_debit, numeric: true },
+    { title: 'دائن', value: (r: TrialRow) => r.period_credit, numeric: true },
+    { title: 'ختامي', value: (r: TrialRow) => r.closing, numeric: true },
+  ];
+  const exportTrial = () => {
+    if (!shownRows.length) { message.info('لا توجد بيانات للتصدير'); return; }
+    exportCsv('trial-balance', trialReportCols, shownRows);
+  };
+  const printTrial = () => {
+    printReport(
+      {
+        title: 'ميزان المراجعة',
+        date: dayjs().format('YYYY/MM/DD'),
+        meta: [
+          ['من', range[0].format('YYYY/MM/DD')],
+          ['إلى', range[1].format('YYYY/MM/DD')],
+          ...(branchId ? ([['الفرع', branches.find((b) => b.id === branchId)?.name ?? String(branchId)]] as [string, string][]) : []),
+          ...(costCenterId ? ([['مركز التكلفة', costCenters.find((c) => c.id === costCenterId)?.name ?? String(costCenterId)]] as [string, string][]) : []),
+        ],
+      },
+      trialReportCols, shownRows,
+      data ? [
+        { label: 'إجمالي مدين', value: egp(data.grand_total_debit) },
+        { label: 'إجمالي دائن', value: egp(data.grand_total_credit) },
+      ] : undefined,
+    );
+  };
 
   return (
     <Card title="ميزان المراجعة">
@@ -724,6 +774,8 @@ function TrialBalanceTab() {
           <Radio.Button value={false}>ميزان مسطّح</Radio.Button>
         </Radio.Group>
         <Button type="primary" icon={<ReloadOutlined />} onClick={run} loading={loading}>عرض</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportTrial}>تصدير CSV</Button>
+        <Button icon={<PrinterOutlined />} onClick={printTrial}>طباعة</Button>
         {trialBalanceTabCols.control}
       </Space>
 
@@ -740,8 +792,6 @@ function TrialBalanceTab() {
                 loading={loading} pagination={false} size="small"
                 style={{ marginBottom: 18 }}
                 title={() => <strong>{label}</strong>}
-                // An empty book is shown, not hidden: «مفيش حسابات هنا» is a fact about the chart,
-                // and a section that vanishes reads as one that was never meant to be there.
                 locale={{ emptyText: 'لا توجد حسابات في هذا القسم' }}
                 summary={() => (book.length ? (
                   <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
@@ -754,8 +804,6 @@ function TrialBalanceTab() {
               />
             );
           })}
-          {/* Accounts the chart has not classified would otherwise vanish from a grouped view
-              entirely — worse than a wrong section, because nobody goes looking for them. */}
           {shownRows.some((r) => !r.nature) && (
             <Table
               {...trialKb.tableProps}

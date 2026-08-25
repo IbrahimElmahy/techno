@@ -455,3 +455,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #6b6b6b;
   padding-top: 2px;
 }
+
+@keyframes qty-flash-bg { 0%,100% { background: transparent; } 35% { background: #FFF3D6; } }
+.qty-flash td, .qty-flash { animation: qty-flash-bg 0.9s ease-in-out 2; }

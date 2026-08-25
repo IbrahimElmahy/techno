@@ -3,7 +3,7 @@ import {
   Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
-  PlusOutlined, StopOutlined, SearchOutlined, ReloadOutlined, EditOutlined,
+  PlusOutlined, StopOutlined, SearchOutlined, ReloadOutlined, EditOutlined, CheckOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
@@ -12,14 +12,6 @@ import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { CostCenter } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
-
-/** مراكز التكلفة — their `/cost_centers`, its own screen.
- *
- * Last of the twelve in إداره الانشاءات. It was the fourth tab of the general-ledger page, which
- * is a page about entries and balances; a cost centre is master data you set up once, and the two
- * jobs had no reason to share a screen beyond both being «accounting».
- */
-
 
 export default function CostCenters() {
   const { user } = useAuth();
@@ -35,8 +27,6 @@ export default function CostCenters() {
   const load = async () => {
     setLoading(true);
     try {
-      // The flat list, not the tree: theirs is a list with the parent as a column, and a list is
-      // what you scan when you are looking for one centre by name.
       const res = await api.get('/api/v1/cost-centers');
       setRows(res.data);
     } catch (err) {
@@ -48,8 +38,6 @@ export default function CostCenters() {
 
   useEffect(() => { load(); }, []);
 
-  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
-  // habit carries from one to the next instead of being relearned per page.
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
     onSearch: () => searchRef.current?.focus(),
@@ -83,19 +71,6 @@ export default function CostCenters() {
     }
   };
 
-  /**
-   * تعديل مركز التكلفة.
-   *
-   * The screen could create a centre and disable one, and never rename one — so a typo in a name
-   * was permanent, and the only way round it was to disable the row and type it again, which
-   * leaves every historical entry tagged to the disabled one. `PATCH /cost-centers/{id}` has
-   * accepted a name the whole time; nothing called it.
-   *
-   * **The code and the parent are not editable, deliberately.** The code is what entries are
-   * posted against and the parent is what the levels are derived from: renaming either in place
-   * changes the meaning of history rather than correcting it. Only the label people read is
-   * something you can be wrong about in a way that is safe to fix.
-   */
   const [editing, setEditing] = useState<CostCenter | null>(null);
   const [editForm] = Form.useForm();
 
@@ -133,13 +108,21 @@ export default function CostCenters() {
     });
   };
 
-  // السطر يفتح التعديل — وبيتحطّ بعد `onEdit` عشان الدالة تكون موجودة قبل ما تتربط.
+  const onReactivate = async (r: CostCenter) => {
+    try {
+      await api.patch(`/api/v1/cost-centers/${r.id}`, { active: true });
+      message.success('تم إعادة تنشيط مركز التكلفة');
+      load();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر إعادة تنشيط مركز التكلفة');
+    }
+  };
+
   const kb = useTableKeyboard<CostCenter>({
     rows: filtered, rowKey: (r) => r.id,
     onOpen: canWrite ? (r) => openEdit(r) : undefined,
   });
 
-  // Their four columns, in their order: `رقم · الاسم · مستوي مركز التكلفة · المركز التابع له`.
   const columns = [
     {
       title: 'رقم',
@@ -184,10 +167,15 @@ export default function CostCenters() {
             <Button type="text" icon={<EditOutlined />}
               onClick={(e) => { e.stopPropagation(); openEdit(r); }} />
           </Tooltip>
-          {r.active && (
+          {r.active ? (
             <Tooltip title="تعطيل">
               <Button type="text" danger icon={<StopOutlined />}
                 onClick={(e) => { e.stopPropagation(); onDeactivate(r); }} />
+            </Tooltip>
+          ) : (
+            <Tooltip title="إعادة تنشيط">
+              <Button type="text" icon={<CheckOutlined />}
+                onClick={(e) => { e.stopPropagation(); onReactivate(r); }} />
             </Tooltip>
           )}
         </Space>
@@ -195,7 +183,6 @@ export default function CostCenters() {
     }] : []),
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('cost-centers', columns);
 
   return (
@@ -236,10 +223,6 @@ export default function CostCenters() {
         />
       </Card>
 
-      {/* Their form asks for a level and a name. Ours asks for the parent instead of the level:
-          the level IS the depth of the parent chain, so choosing a parent sets it — and asking for
-          both is asking for the day they disagree. The code is ours, for the same reason the chart
-          of accounts keeps one: the numbering is the accountant's. */}
       <TabModal footer={null} centered title="مركز تكلفة جديد" width={620} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}>
@@ -274,8 +257,6 @@ export default function CostCenters() {
         </Form>
       </TabModal>
 
-      {/* التعديل: الاسم بس. الكود والمركز الأب مقفولين وبيتعرضوا عشان اللي بيعدّل يشوف إنه واقف
-          على المركز الصح، مش عشان يغيّرهم. */}
       <TabModal footer={null} centered width={520} destroyOnHidden
         title={editing ? `تعديل «${editing.name}»` : 'تعديل مركز تكلفة'}
         open={!!editing} onCancel={() => setEditing(null)}>

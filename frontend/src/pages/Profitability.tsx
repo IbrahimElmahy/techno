@@ -13,25 +13,6 @@ import { textColumn, numberColumn } from '../components/gridColumns';
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
-/**
- * الربحية بمركز التكلفة وبالفرع.
- *
- * النظام كان بيعرف يقول «الشركة كسبت كام» وبس. The data behind «الفرع ده كسب كام» has been in the
- * books all along — `cost_center_id` on the line and `branch_id` on the entry are written on every
- * posting — and nothing ever read them grouped.
- *
- * تلات حاجات مقصودة في الشاشة دي:
- *
- * * **بتتقرا من الدفتر.** These figures are the income statement divided, so they add up to it. A
- *   report that re-summed invoices would disagree with it the first time anything was posted by
- *   hand, and nobody could say which of the two was the company's.
- * * **«غير موزّع» سطر حقيقي.** Hiding lines with no cost centre makes the parts silently not add
- *   up to the whole. It shows, it is marked, and turning it off is a switch the reader flips
- *   knowingly.
- * * **كل سطر بيتفتح.** «المركز ده خسر ٢٠ ألف» is never the end; «في إيه» is. Clicking a row opens
- *   the accounts underneath it.
- */
-
 type Dimension = 'cost_center' | 'branch';
 
 interface Row {
@@ -92,14 +73,13 @@ export default function Profitability() {
       const res = await api.get('/api/v1/reports/profitability', { params });
       setRows(res.data.rows || []);
       setTotals(res.data.totals || null);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل التقرير');
+    } catch (err) {
+      console.error(err);
     } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [params]);
 
-  /** «الرقم ده جه منين» — أول سؤال بعد أي سطر في التقرير ده. */
   const openBreakdown = async (row: Row) => {
     setOpenRow(row); setBreakdown(null); setBreakdownLoading(true);
     try {
@@ -107,8 +87,8 @@ export default function Profitability() {
         params: { ...params, key: row.key ?? undefined },
       });
       setBreakdown(res.data);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل التفصيل');
+    } catch (err) {
+      console.error(err);
     } finally { setBreakdownLoading(false); }
   };
 
@@ -132,7 +112,6 @@ export default function Profitability() {
         <b style={{ color: Number(v) < 0 ? '#cf1322' : '#6AB42D' }}>{money(v)}</b>) },
     { title: 'هامش %', dataIndex: 'margin_pct', align: 'left' as const,
       ...numberColumn<Row>((r) => r.margin_pct),
-      // مركز مصروفات صافية مالوش هامش — «٠٪» جواب مش صحيح، والفراغ أصدق منه.
       render: (v: string | null) => (v === null ? '-' : `${money(v)}%`) },
   ];
 
@@ -227,7 +206,6 @@ export default function Profitability() {
         </Row>
       )}
 
-      {/* الأجزاء لازم تجمع الكل — والسطر ده بيقول قد إيه منها مش متنسوب لحاجة. */}
       {!!totals?.unassigned_lines && includeUnassigned && (
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}

@@ -1,19 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Table, Tag } from 'antd';
 
-/**
- * القيد بسطوره — الطرف المقابل.
- *
- * كشف الحساب بيوري طرف واحد من كل قيد: الحساب اللي انت فاتح كشفه. يعني العمود بيرد على
- * سؤال انت عارف إجابته، والسؤال الحقيقي — «مقابل إيه؟» — كان لازمله إنك تسيب الشاشة وتفتح
- * القيد في اليومية وتدوّر على رقمه.
- *
- * الجدول ده هو الرد: الحسابات اللي القيد قفل عليها كلها، وكل واحد فيهم بيفتح كشفه.
- *
- * وهو في `components/` مش جوّه الشاشة عن قصد — الجداول اللي جوّه الشاشات بتخضع لقواعد
- * التقارير (كل عمود بيتفلتر، والسطر بيفتح حاجة مع الكيبورد)، وهي قواعد صح لجدول بيتقرا
- * بمئات السطور وغلط لقيد من سطرين.
- */
 export interface JournalLine {
   account_id: number;
   direction: string;
@@ -24,7 +11,6 @@ export interface JournalLine {
 
 interface Props {
   lines: JournalLine[];
-  /** الحساب اللي الكشف مفتوح عليه — سطره بيتعلّم عشان اللي بيقرا يعرف هو فين في القيد. */
   currentAccountId?: number;
   accountLabel: (id: number) => string;
   costCenterName: (id: number | null | undefined) => string | null;
@@ -37,17 +23,6 @@ const dash = <span style={{ color: '#8c8c8c' }}>-</span>;
 export default function JournalEntryLines({
   lines, currentAccountId, accountLabel, costCenterName, onOpenAccount, money,
 }: Props) {
-  /**
-   * القيود المجمّعة بتتلخّص.
-   *
-   * استيراد الأرصدة الافتتاحية قيد واحد فيه سطر لكل عميل — مئات السطور. اللي فاتح كشف
-   * عميل واحد وفتح السطر ده كان بيلاقي قدامه العملاء كلهم بأرصدتهم، وده مش تفصيل القيد
-   * بالنسبة له، ده داتا ناس تانية. الأنظمة المعروفة بتوري في كشف العميل سطور العميل وبس.
-   *
-   * فالقاعدة: سطور الحساب المفتوح بتتعرض دايماً؛ والباقي لو كتير بيتلخّص في سطر واحد —
-   * عددهم وإجماليهم — وزرار لمن يحب يشوف القيد كامل. قيد عادي من سطرين-تلاتة بيتعرض
-   * كله زي ما هو، لأن الطرف المقابل هو المعلومة أصلاً.
-   */
   const [showAll, setShowAll] = useState(false);
   const all = (lines || []).map((l, i) => ({ ...l, _k: i }));
   const mine = all.filter((l) => l.account_id === currentAccountId);
@@ -63,7 +38,6 @@ export default function JournalEntryLines({
         size="small"
         pagination={false}
         rowKey="_k"
-        // القيد ممكن يكون فيه سطرين بنفس الحساب وبنفس المبلغ، فترتيبهم هو اللي بيفرّقهم.
         dataSource={shown}
         rowClassName={(l: any) => (l.account_id === currentAccountId ? 'row-cursor' : '')}
         onRow={(l: any) => ({

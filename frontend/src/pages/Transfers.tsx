@@ -25,6 +25,7 @@ import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /**
  * تحويلات المخزون — move stock between locations.
@@ -258,9 +259,8 @@ export default function Transfers() {
     const available = Number(row.on_hand || 0);
     const existing = lines.find((l) => l.item_id === itemId);
     if (existing) {
-      // Bump by one, but never past what the source holds.
-      setLines((prev) => prev.map((l) => (l.item_id === itemId
-        ? { ...l, quantity: Math.min(l.available, Number(l.quantity || 0) + 1) } : l)));
+      flashExistingItem(itemId);
+      message.info(`«${row.name}» موجود بالفعل — عدّل الكمية من السطر`);
       return;
     }
     const key = `${itemId}-${lines.length}`;
@@ -1006,6 +1006,7 @@ export default function Transfers() {
                     </span>
                   ) },
                 { title: 'الكمية المحوّلة', dataIndex: 'quantity',
+                  onCell: (r: TransferLine) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
                   // No `max` — see `quantityGuard`: capping silently rewrites the number
                   // somebody typed, and they never learn it was changed.
                   render: (v: number, r: TransferLine) => (

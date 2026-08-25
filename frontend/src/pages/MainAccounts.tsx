@@ -15,15 +15,7 @@ import {
 } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
-
-/** الحسابات الرئيسيه — their `/mainaccounts`, its own screen.
- *
- * A main account is the grouping level: it is not posted to, it is what postable accounts roll up
- * into. That is `is_postable === false` here, and on their side it is simply which of the two
- * screens you opened. Keeping the two as separate screens rather than one tree with a filter is
- * the point — somebody adding an expense group and somebody adding a customer's account are doing
- * different jobs, and their menu has always said so.
- */
+import { normalizeAr } from '../components/ListToolbar';
 
 export default function MainAccounts() {
   const { user } = useAuth();
@@ -42,8 +34,6 @@ export default function MainAccounts() {
     setLoading(true);
     try {
       const res = await api.get('/api/v1/accounts');
-      // The grouping level only. The flat list is used rather than the tree because this screen
-      // is a list of groups, not a hierarchy to be walked.
       setRows(res.data.filter((a: ChartAccount) => !a.is_postable));
     } catch (err) {
       console.error(err);
@@ -54,20 +44,17 @@ export default function MainAccounts() {
 
   useEffect(() => { load(); }, []);
 
-  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
-  // habit carries from one to the next instead of being relearned per page.
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
     onSearch: () => searchRef.current?.focus(),
     onClose: () => { setCreateOpen(false); },
   });
 
-
   const filtered = rows.filter((a) => {
-    const q = search.trim();
+    const q = normalizeAr(search);
     if (!q) return true;
-    return [a.code || '', a.name || '', a.main_level || '',
-      NATURE_LABEL[a.nature || ''] || ''].some((v) => v.includes(q));
+    return [a.code, a.name, a.main_level, NATURE_LABEL[a.nature || '']]
+      .some((v) => normalizeAr(v).includes(q));
   });
 
   const onCreate = async (v: any) => {
@@ -76,8 +63,6 @@ export default function MainAccounts() {
         code: v.code,
         name: v.name,
         nature: v.nature,
-        // The screen decides this, not the user: a main account is the grouping level by
-        // definition, and asking would only invite the answer that makes the screen wrong.
         is_postable: false,
         parent_id: v.parent_id ?? null,
         appears_in: v.appears_in ?? null,
@@ -108,23 +93,13 @@ export default function MainAccounts() {
     }
   };
 
-
-  /**
-   * حذف الحساب — إقفال، مش مسح.
-   *
-   * `DELETE /accounts/{id}` deactivates. A chart account that has ever been posted to is named on
-   * ledger entries that cannot be edited, so erasing the row would leave those entries pointing at
-   * a number with no name — the statement would read «#41» where the account used to be. The
-   * server refuses a system account and one with live children underneath it, and says which.
-   */
   const removeAccount = async (record: ChartAccount) => {
     try {
       await api.delete(`/api/v1/accounts/${record.id}`);
       message.success('اتقفل الحساب');
       load();
-    } catch (err: any) {
-      // الرفض بيقول السبب — «تحته حسابات شغالة» خطوة تالية، مش حيطة.
-      message.error(err?.response?.data?.detail?.message || 'تعذر إقفال الحساب', 6);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -136,7 +111,6 @@ export default function MainAccounts() {
     });
   };
 
-  // Their five columns, in their order: `رقم · الاسم · نوع الحساب · المستوى الرئيسي · يظهر في`.
   const columns = [
     {
       title: 'رقم',
@@ -182,8 +156,6 @@ export default function MainAccounts() {
         ? <Tag color="geekblue">{APPEARS_IN_LABEL[a]}</Tag>
         : <span style={{ color: '#8c8c8c' }}>حسب الطبيعة</span>),
     },
-    // Ours: a group's balance is the sum of what rolls into it, which is the number somebody
-    // opened this screen to read.
     {
       title: 'الرصيد',
       dataIndex: 'balance',
@@ -218,12 +190,8 @@ export default function MainAccounts() {
     }] : []),
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('main-accounts', columns);
 
-  // Their form: الاسم · المستوى الرئيسي · يظهر في · نوع الحساب. The code is ours — their system
-  // numbers accounts for you, but a chart of accounts code carries a scheme the accountant owns
-  // («١١٠٠» is current assets), and generating one would quietly break their numbering.
   const formFields = (isCreate: boolean) => (
     <>
       <Row gutter={12}>
@@ -237,7 +205,6 @@ export default function MainAccounts() {
           <Form.Item name="main_level" label="المستوى الرئيسي">
             <Select allowClear showSearch placeholder="اختر أو اكتب"
               options={MAIN_LEVELS.map((l) => ({ value: l, label: l }))}
-              // Free text on purpose — the suggestions cover the common chart, not every chart.
               mode="tags" maxCount={1}
               filterOption={(i, o) => String(o?.label ?? '').includes(i)} />
           </Form.Item>
@@ -255,8 +222,6 @@ export default function MainAccounts() {
         <Col span={8}>
           <Form.Item name="nature" label="نوع الحساب"
             rules={[{ required: isCreate, message: 'اختر نوع الحساب' }]}>
-            {/* Locked after creation: the nature decides which side the account sits on, and
-                flipping it under posted entries would move balances nobody asked to move. */}
             <Select disabled={!isCreate} placeholder="اختر النوع"
               options={Object.entries(NATURE_LABEL)
                 .map(([v, l]) => ({ value: v, label: l }))} />
@@ -272,7 +237,6 @@ export default function MainAccounts() {
     </>
   );
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<ChartAccount>({
     rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });

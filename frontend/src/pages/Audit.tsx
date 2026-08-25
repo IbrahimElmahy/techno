@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Tag, Button, Descriptions , Space} from 'antd';
+import { Table, Card, Tag, Button, Descriptions, Space } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -19,6 +19,36 @@ interface AuditLog {
   created_at: string;
 }
 
+const ACTION_LABEL: Record<string, string> = {
+  login: 'دخول',
+  login_failed: 'فشل الدخول',
+  logout: 'خروج',
+  create: 'إنشاء',
+  update: 'تعديل',
+  delete: 'حذف',
+  reverse: 'عكس',
+  post: 'ترحيل',
+};
+
+const ENTITY_LABEL: Record<string, string> = {
+  user: 'مستخدم',
+  invoice: 'فاتورة',
+  voucher: 'سند',
+  account: 'حساب',
+  item: 'صنف',
+  customer: 'عميل',
+  supplier: 'مورد',
+  treasury: 'خزينة',
+  branch: 'فرع',
+  warehouse: 'مخزن',
+  journal_entry: 'قيد يومية',
+  cost_center: 'مركز تكلفة',
+  employee: 'موظف',
+};
+
+const actionLabel = (a: string) => ACTION_LABEL[a] ?? a;
+const entityLabel = (e: string | null) => (e ? ENTITY_LABEL[e] ?? e : '-');
+
 export default function Audit() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
@@ -28,7 +58,7 @@ export default function Audit() {
     setLoading(true);
     try {
       const res = await api.get('/api/v1/audit');
-      setLogs(res.data.reverse()); // Show newest first
+      setLogs(res.data.reverse());
     } catch (err) {
       console.error(err);
     } finally {
@@ -57,7 +87,8 @@ export default function Audit() {
   };
 
   const filter = useListFilter(logs, {
-    search: (l) => [l.action, l.entity_type, l.entity_id, getActorName(l.actor_user_id)],
+    search: (l) => [l.action, l.entity_type, actionLabel(l.action),
+      l.entity_type ? entityLabel(l.entity_type) : '', l.entity_id, getActorName(l.actor_user_id)],
     filters: {
       action: (l, v) => l.action === v,
       entity_type: (l, v) => l.entity_type === v,
@@ -67,9 +98,9 @@ export default function Audit() {
   });
 
   const actionOptions = Array.from(new Set(logs.map((l) => l.action).filter(Boolean)))
-    .map((a) => ({ value: a, label: a }));
+    .map((a) => ({ value: a, label: actionLabel(a) }));
   const entityOptions = Array.from(new Set(logs.map((l) => l.entity_type).filter(Boolean)))
-    .map((e) => ({ value: e as string, label: e as string }));
+    .map((e) => ({ value: e as string, label: entityLabel(e as string) }));
 
   const columns = [
     {
@@ -84,7 +115,7 @@ export default function Audit() {
       title: 'العملية المسجلة',
       dataIndex: 'action',
       key: 'action',
-      ...textColumn(logs, (r: AuditLog) => r.action),
+      ...textColumn(logs, (r: AuditLog) => actionLabel(r.action)),
       render: (action: string) => {
         let color = 'blue';
         if (action.includes('fail') || action.includes('delete') || action.includes('deactivate')) {
@@ -92,7 +123,7 @@ export default function Audit() {
         } else if (action.includes('success') || action.includes('create')) {
           color = 'green';
         }
-        return <Tag color={color}>{action}</Tag>;
+        return <Tag color={color}>{actionLabel(action)}</Tag>;
       },
       width: '20%',
     },
@@ -108,8 +139,8 @@ export default function Audit() {
       title: 'نوع الكيان',
       dataIndex: 'entity_type',
       key: 'entity_type',
-      ...textColumn(logs, (r: AuditLog) => r.entity_type),
-      render: (type: string | null) => type || '-',
+      ...textColumn(logs, (r: AuditLog) => entityLabel(r.entity_type)),
+      render: (type: string | null) => entityLabel(type),
       width: '20%',
     },
     {
@@ -122,11 +153,8 @@ export default function Audit() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('audit', columns);
 
-  // «إيه اللي حصل على المستند ده كله؟» — قراية سطر واحد في السجل بتفتح السؤال ده دايماً، وكان
-  // لازم تفلتر بإيدك بنوع الكيان ورقمه. السطر بيفتح السجل المشترك مقصور على كيانه.
   const [trail, setTrail] = useState<{ type: string; id: number } | null>(null);
   const kb = useTableKeyboard<AuditLog>({
     rows: filter.filtered, rowKey: (r) => r.id,
@@ -192,8 +220,6 @@ export default function Audit() {
         />
       </Card>
 
-      {/* السجل المشترك، مقصور على الكيان اللي في السطر — نفس النافذة اللي إذن التحويل بيفتحها،
-          عشان «سجل المستند» يبقى شكل واحد في النظام كله مش شكل لكل شاشة. */}
       <DocumentAuditModal
         entityType={trail?.type || ''} entityId={trail?.id ?? null}
         title={trail ? `سجل العمليات — ${trail.type} #${trail.id}` : undefined}

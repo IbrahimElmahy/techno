@@ -3,7 +3,7 @@ import {
   Button, Card, Col, Divider, Form, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
-import { PlusOutlined, RollbackOutlined, WalletOutlined, FileSearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, RollbackOutlined, WalletOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
@@ -51,12 +51,20 @@ export default function Treasury() {
   const [balance, setBalance] = useState<string>('...');
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountNames, setAccountNames] = useState<Record<number, string>>({});
   const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
 
   const branchName = (id: number | null) =>
     id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام (إداري)';
+
+  const accountDisplay = (accountId: number) => {
+    const name = accountNames[accountId];
+    if (name) return `${name} (#${accountId})`;
+    const acc = accounts.find((a) => a.id === accountId);
+    return acc ? `${acc.account_type} (#${acc.id})` : `حساب #${accountId}`;
+  };
 
   const filter = useListFilter(entries, {
     search: (e) => [e.id, entryTypeLabel(e.entry_type), e.description,
@@ -71,7 +79,6 @@ export default function Treasury() {
   const entryTypeOptions = Array.from(new Set(entries.map((e) => e.entry_type).filter(Boolean)))
     .map((t) => ({ value: t, label: t }));
 
-  // Manual Journal inputs
   const [form] = Form.useForm();
   const [journalLines, setJournalLines] = useState<JournalLineInput[]>([
     { key: '1', account_id: null, direction: 'debit', amount: 0 },
@@ -116,10 +123,24 @@ export default function Treasury() {
     }
   };
 
+  const loadAccountNames = async () => {
+    try {
+      const res = await api.get('/api/v1/accounts');
+      const map: Record<number, string> = {};
+      for (const a of res.data as any[]) {
+        map[a.id] = a.owner_name || a.name || '';
+      }
+      setAccountNames(map);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchBalance();
     fetchEntries();
     loadLookups();
+    loadAccountNames();
   }, []);
 
   const handleReverse = (record: LedgerEntry) => {
@@ -139,7 +160,6 @@ export default function Treasury() {
     });
   };
 
-  // Dynamic journal calculations
   const totalDebits = journalLines
     .filter((l) => l.direction === 'debit')
     .reduce((sum, l) => sum + l.amount, 0);
@@ -244,25 +264,19 @@ export default function Treasury() {
       title: 'الحركات المالية والتسويات المزدوجة',
       dataIndex: 'lines',
       key: 'lines',
-      // Filtered by the TOTAL the entry moved. «القيود اللي فوق العشرة آلاف» is the question asked
-      // of a treasury log, and the lines cell is where that number lives.
       ...numberColumn<LedgerEntry>(
         (e) => (e.lines || []).reduce((t, l) => t + Number(l.amount || 0), 0)),
       render: (lines: LedgerLine[]) => (
         <div style={{ padding: '4px 0' }}>
-          {lines.map((line) => {
-            const acc = accounts.find((a) => a.id === line.account_id);
-            const accName = acc ? `${acc.account_type} (#${acc.id})` : `حساب #${line.account_id}`;
-            return (
-              <div key={line.id} style={{ fontSize: '13px', marginBottom: 4 }}>
-                <span style={{ color: line.direction === 'debit' ? '#6AB42D' : '#F5A11D' }}>
-                  {line.direction === 'debit' ? '[مدين] ' : '[دائن] '}
-                </span>
-                <span>{accName}: </span>
-                <strong>{money(line.amount)} ج.م</strong>
-              </div>
-            );
-          })}
+          {lines.map((line) => (
+            <div key={line.id} style={{ fontSize: '13px', marginBottom: 4 }}>
+              <span style={{ color: line.direction === 'debit' ? '#6AB42D' : '#F5A11D' }}>
+                {line.direction === 'debit' ? '[مدين] ' : '[دائن] '}
+              </span>
+              <span>{accountDisplay(line.account_id)}: </span>
+              <strong>{money(line.amount)} ج.م</strong>
+            </div>
+          ))}
         </div>
       ),
     },
@@ -270,7 +284,6 @@ export default function Treasury() {
       title: 'معكوس للقيد',
       dataIndex: 'reverses_entry_id',
       key: 'reverses_entry_id',
-      // «وريني القيود العكسية بس» — الفلتر ده هو الطريقة الوحيدة توصل لها من غير ما تقرا السطور.
       ...choiceColumn<LedgerEntry>(
         [{ text: 'قيد عكسي', value: 'yes' }, { text: 'قيد أصلي', value: 'no' }],
         (e, v) => (v === 'yes' ? e.reverses_entry_id !== null : e.reverses_entry_id === null)),
@@ -297,11 +310,8 @@ export default function Treasury() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('treasury-moves', columns);
 
-  // القيد بسطوره ظاهر في الجدول؛ اللي بعده هو «الحساب ده رصيده بقى كام»، فالسطر بيودّي لكشف
-  // حساب أول حساب في القيد.
   const kb = useTableKeyboard<LedgerEntry>({
     rows: filter.filtered, rowKey: (e) => e.id,
     onOpen: (e) => { const a = e.lines?.[0]?.account_id;
@@ -375,7 +385,6 @@ export default function Treasury() {
         />
       </Card>
 
-      {/* Manual Entry Drawer */}
       <TabModal footer={null} centered
         title="تسجيل قيد تسوية يدوية"
         width={550}
@@ -417,7 +426,7 @@ export default function Treasury() {
 
           <Divider orientation="right">حركات القيد المزدوج</Divider>
 
-          {journalLines.map((line, idx) => (
+          {journalLines.map((line) => (
             <Row gutter={12} key={line.key} align="middle" style={{ marginBottom: 12 }}>
               <Col span={10}>
                 <Select
@@ -428,7 +437,7 @@ export default function Treasury() {
                 >
                   {accounts.map((a) => (
                     <Select.Option key={a.id} value={a.id}>
-                      {a.account_type} (#{a.id})
+                      {accountDisplay(a.id)}
                     </Select.Option>
                   ))}
                 </Select>

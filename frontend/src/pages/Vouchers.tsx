@@ -28,13 +28,11 @@ import { useLookup } from '../hooks/useLookup';
 import { VoucherKeyStrip, RunnerWorld } from '../components/VoucherKeyRunner';
 import { TreasuryField, ExpenseAccountField, defaultTreasuryId } from '../components/VoucherFields';
 import { TabModal } from '../components/TabModal';
+import { money } from '../utils/money';
 
 interface VoucherRecord {
   id: number;
   document_number: string;
-  // The backend writes five kinds (`VoucherKind`), not three. The narrow type meant the expense
-  // and cash-transfer registers could not even be asked for — and every one of those vouchers was
-  // arriving in this list untyped and unfilterable.
   kind: 'receipt' | 'payment' | 'rep_handover' | 'expense' | 'cash_transfer';
   amount: string;
   customer_id: number | null;
@@ -82,24 +80,17 @@ const KIND_LABEL: Record<string, string> = {
   receipt: 'سند قبض',
   payment: 'سند صرف',
   rep_handover: 'توريد مندوب',
+  expense: 'سند مصروف',
+  cash_transfer: 'تحويل نقدي',
 };
 const KIND_COLOR: Record<string, string> = {
   receipt: 'green',
   payment: 'red',
   rep_handover: 'blue',
+  expense: 'orange',
+  cash_transfer: 'purple',
 };
 
-const money = (v: string | number) =>
-  Number(v).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-
-/**
- * حركة الخزينة — every movement of one treasury with the balance before and after it.
- *
- * The treasuries table answers "how much is in it"; this answers "how did it get there".
- * It reads the treasury's own ledger account through the same statement engine every other
- * account uses, so this view can never disagree with the books.
- */
 const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) => {
   const [treasuryId, setTreasuryId] = useState<number | undefined>();
   const [range, setRange] = useState<any>(null);
@@ -174,9 +165,7 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
 };
 
 const Vouchers: React.FC = () => {
-  // أوراق قبض / أوراق دفع are two of their screens and one tab of ours (الشيكات).
   const [tab, setTab] = useQueryTab('receipt');
-  // «أوراق قبض» / «أوراق دفع» are two entries in their menu and two directions of الشيكات here.
   const [chequeDir] = useQueryTab('', 'direction');
   const [vouchers, setVouchers] = useState<VoucherRecord[]>([]);
   const [customers, setCustomers] = useState<Party[]>([]);
@@ -191,7 +180,6 @@ const Vouchers: React.FC = () => {
   ]);
   const { options: methodOptions } = useLookup('payment_method');
 
-  // كشف الحساب
   const [stKind, setStKind] = useState<'customer' | 'supplier' | 'rep'>('customer');
   const [stParty, setStParty] = useState<number | undefined>(undefined);
   const [stRange, setStRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
@@ -205,21 +193,12 @@ const Vouchers: React.FC = () => {
   const [periodLock, setPeriodLock] = useState<string | null>(null);
   const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
 
-  /** اللي المفاتيح محتاجاه — من الليستات اللي الصفحة قرياها أصلاً، مش نداء تاني. */
   const keyWorld = useMemo<RunnerWorld>(() => ({
     treasuries: treasuries as any, customers, suppliers, reps: reps as any, accounts: [],
   }), [treasuries, customers, suppliers, reps]);
 
   const [receiptForm] = Form.useForm();
-  /**
-   * حسابات كل عميل — واحد لكل خط منتجات.
-   *
-   * A receipt has to say which debt it settles, and the answer only exists for a customer who owes
-   * on more than one line. Fetched per customer as he is chosen rather than for the whole list:
-   * most customers have one account and would be paying for a question nobody asks about them.
-   */
   const [receiptFamilies, setReceiptFamilies] = useState<Record<number, any[]>>({});
-  /** «أبيض» / «بولي» / `__total__`. Empty until the customer is known to owe on two. */
   const [receiptTarget, setReceiptTarget] = useState<string>('');
   const [paymentForm] = Form.useForm();
   const [handoverForm] = Form.useForm();
@@ -227,38 +206,13 @@ const Vouchers: React.FC = () => {
   const [transferForm] = Form.useForm();
   const [treasuryForm] = Form.useForm();
   const [chequeForm] = Form.useForm();
-  /**
-   * إنشاء ورقة القبض/الدفع في بوباب.
-   *
-   * It was an inline row of fields sitting above the register — eight controls across the top of a
-   * screen whose job is reading a list. That shape is why the list started below the fold, and why
-   * a half-typed note stayed on screen while somebody scrolled the register looking for something
-   * else. Creating is a decision with a beginning and an end; the register is what the screen is
-   * FOR. Same separation as every other document in the system.
-   */
   const [chequeOpen, setChequeOpen] = useState(false);
-  /**
-   * الإنشاء في بوباب هنا كمان — والتبويب بقى سجل النوع بتاعه.
-   *
-   * A tab whose whole body is a creation form answers «اعمل سند» and nothing else; «السندات اللي
-   * اتعملت» — which is what somebody opens this screen for most days — had to be looked for
-   * somewhere else on the page. Now the tab is the register and creating is a decision that opens
-   * and closes over it.
-   */
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
 
-  /**
-   * F2 = «جديد» في التبويب المفتوح.
-   *
-   * This screen holds six creation dialogs behind tabs, so a `data-shortcut` marker on each button
-   * would leave several claiming the key at once — and the winner would be whichever the DOM
-   * ordered first, not the one on screen. Registering ONE handler that dispatches on the open tab
-   * is the only way F2 can mean «جديد هنا».
-   */
   useScreenShortcuts({
     onNew: () => {
       const open: Record<string, () => void> = {
@@ -283,7 +237,6 @@ const Vouchers: React.FC = () => {
       const { data } = await api.get<VoucherRecord[]>('/api/v1/vouchers', { params });
       setVouchers(data);
     } catch {
-      /* the interceptor already surfaced the error */
     } finally {
       setLoading(false);
     }
@@ -293,13 +246,6 @@ const Vouchers: React.FC = () => {
     loadVouchers();
   }, [loadVouchers]);
 
-  /**
-   * فتح نموذج سند — والخزنة مختارة من الأول.
-   *
-   * `resetFields` leaves the treasury blank, and blank used to mean «the server will pick». Seating
-   * the default here makes the answer visible before the voucher is written rather than discoverable
-   * from the ledger afterwards.
-   */
   const openVoucher = useCallback((form: any, show: (v: boolean) => void) => {
     form.resetFields();
     const id = defaultTreasuryId(treasuries);
@@ -307,15 +253,11 @@ const Vouchers: React.FC = () => {
     show(true);
   }, [treasuries]);
 
-  /** حسابات المصروفات — بتتقرا تاني بعد ما حد يضيف واحد من جوّه السند. */
   const loadExpenseAccounts = useCallback(() => {
     api.get<any[]>('/api/v1/accounts')
       .then((r) => {
         const expense = r.data.filter((a) => a.nature === 'expense');
-        // Hidden accounts stay out of the picker but keep their entries — that is what the
-        // «إخفاء» on الحسابات الفرعيه is for.
         setExpenseAccounts(expense.filter((a) => a.is_postable && a.active !== false));
-        // The headings a new one can be filed under.
         setExpenseGroups(expense.filter((a) => !a.is_postable && a.active !== false));
       })
       .catch(() => {});
@@ -326,7 +268,6 @@ const Vouchers: React.FC = () => {
       const { data } = await api.get<any[]>('/api/v1/treasuries');
       setTreasuries(data);
     } catch {
-      /* interceptor */
     }
   }, []);
 
@@ -335,7 +276,6 @@ const Vouchers: React.FC = () => {
       const { data } = await api.get<any[]>('/api/v1/cheques');
       setCheques(data);
     } catch {
-      /* interceptor */
     }
   }, []);
 
@@ -375,7 +315,6 @@ const Vouchers: React.FC = () => {
         ? suppliers.find((x) => x.id === c.supplier_id)?.name || `#${c.supplier_id}`
         : '';
 
-  // النوع والفترة بيتفلتروا من السيرفر — البحث النصي فوق النتيجة المحمّلة.
   const [voucherQuery, setVoucherQuery] = useState('');
   const shownVouchers = voucherQuery
     ? vouchers.filter((v) =>
@@ -393,7 +332,6 @@ const Vouchers: React.FC = () => {
     dateOf: (c) => c.due_date,
   });
 
-  // Map a voucher row onto the shared voucher sheet (same data on screen and in print).
   const voucherDoc = (v: VoucherRecord | null): VoucherDoc | null => {
     if (!v) return null;
     const treasuryName = (id: any) => treasuries.find((t) => t.id === id)?.name ?? null;
@@ -411,7 +349,6 @@ const Vouchers: React.FC = () => {
       paymentMethod: v.payment_method,
       reference: v.reference,
       description: v.description,
-      // Which debt this receipt settled — printed on the sheet the customer signs.
       family: (v as any).family ?? null,
       entryId: (v as any).ledger_entry_id ?? null,
       isReversal: v.is_reversal,
@@ -426,8 +363,6 @@ const Vouchers: React.FC = () => {
       await api.post(path, payload);
       message.success(okMsg);
       form.resetFields();
-      // The dialog closes only on success. A failed post leaves it open with what was typed still
-      // in it, so the person fixes one field instead of entering the whole voucher again.
       setReceiptOpen(false);
       setPaymentOpen(false);
       setHandoverOpen(false);
@@ -437,7 +372,6 @@ const Vouchers: React.FC = () => {
       loadTreasuries();
       if (statement) loadStatement();
     } catch {
-      /* interceptor shows the server's Arabic message */
     } finally {
       setPosting(false);
     }
@@ -449,7 +383,6 @@ const Vouchers: React.FC = () => {
       message.success('تم عكس السند ✔');
       loadVouchers();
     } catch {
-      /* interceptor */
     }
   };
 
@@ -515,18 +448,8 @@ const Vouchers: React.FC = () => {
     );
   };
 
-  /**
-   * كل تبويب سندات له مؤشر كيبورد بتاعه.
-   *
-   * The five tabs stay mounted and merely hidden, so which one owns ↑↓ cannot be decided from
-   * React state — `useTableKeyboard` asks the DOM whether its rows are actually on screen, and only
-   * the open tab's are. `setVoucherView` is the same thing «عرض / طباعة» does, so Enter and the
-   * button land in the same place.
-   */
   const byKind = (k: string) => shownVouchers.filter((v) => v.kind === k);
   const kbArgs = { rowKey: (v: VoucherRecord) => v.id, onOpen: setVoucherView };
-  // Written out rather than looped: five hook calls in a fixed order is what the rules of hooks
-  // require, and a helper that calls one reads like it might not be.
   const receiptKb = useTableKeyboard<VoucherRecord>({ rows: byKind('receipt'), ...kbArgs });
   const paymentKb = useTableKeyboard<VoucherRecord>({ rows: byKind('payment'), ...kbArgs });
   const handoverKb = useTableKeyboard<VoucherRecord>({ rows: byKind('rep_handover'), ...kbArgs });
@@ -582,8 +505,6 @@ const Vouchers: React.FC = () => {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه. مفتاح واحد لكل
-  // تبويبات السندات، لأنها كلها بتعرض نفس الأعمدة: ترتّبها مرة تمشي عليهم كلهم.
   const voucherCols = useTableColumns('vouchers', voucherColumns);
 
   const totals = {
@@ -597,8 +518,6 @@ const Vouchers: React.FC = () => {
 
   return (
     <div>
-      {/* المفاتيح الخاصة فوق الصفحة — السندات اللي بتتكتب كل يوم بضغطة، من غير ما حد يخرج من هنا.
-          نفس المحرك بتاع صفحة المفاتيح، مش نسخة تانية بتترحّل بطريقتها. */}
       <VoucherKeyStrip world={keyWorld}
         onPosted={() => { loadVouchers(); loadTreasuries(); }} />
       <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -663,8 +582,6 @@ const Vouchers: React.FC = () => {
                   </Button>
                   </Space>
                 )}>
-                {/* السندات اللي اتعملت — the thing this screen is opened for most days. A tab whose
-                    whole body was a creation form answered «اعمل سند» and nothing else. */}
                 <Table<VoucherRecord>
                   {...receiptKb.tableProps}
                   rowKey="id" size="small" loading={loading}
@@ -817,7 +734,6 @@ const Vouchers: React.FC = () => {
                       treasuryForm.resetFields();
                       loadTreasuries();
                     } catch {
-                      /* interceptor */
                     } finally {
                       setPosting(false);
                     }
@@ -863,8 +779,6 @@ const Vouchers: React.FC = () => {
                     ورقة جديدة
                   </Button>
                 )}>
-                {/* The register starts at the top now. It was pushed down to clear the inline
-                    creation form, which is why the list used to begin below the fold. */}
                 <div>
                   <ListToolbar
                     searchPlaceholder="بحث برقم الشيك أو المستند أو البنك أو الطرف"
@@ -945,7 +859,6 @@ const Vouchers: React.FC = () => {
                                 loadCheques();
                                 loadTreasuries();
                               } catch {
-                                /* interceptor */
                               }
                             }}
                           >
@@ -965,7 +878,6 @@ const Vouchers: React.FC = () => {
                                   loadCheques();
                                   loadTreasuries();
                                 } catch {
-                                  /* interceptor */
                                 }
                               }}
                             >
@@ -984,7 +896,6 @@ const Vouchers: React.FC = () => {
                                     message.success('تم تسجيل الارتداد');
                                     loadCheques();
                                   } catch {
-                                    /* interceptor */
                                   }
                                 }}
                               >
@@ -1124,15 +1035,7 @@ const Vouchers: React.FC = () => {
               style={{ width: 140 }}
               value={kindFilter}
               onChange={setKindFilter}
-              options={[
-                { value: 'receipt', label: 'سند قبض' },
-                { value: 'payment', label: 'سند صرف' },
-                { value: 'rep_handover', label: 'توريد مندوب' },
-                // The register writes these two and could not filter for them: the dropdown listed
-                // three of the five kinds, so «وريني المصروفات» had no answer on this screen.
-                { value: 'expense', label: 'مصروف' },
-                { value: 'cash_transfer', label: 'تحويل نقدي' },
-              ]}
+              options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
             />
             <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} />
             <Button onClick={loadVouchers}>تحديث</Button>
@@ -1149,7 +1052,6 @@ const Vouchers: React.FC = () => {
         />
       </Card>
 
-      {/* The voucher itself — branded sheet with the amount in words, printable as-is. */}
       <TabModal
         open={voucherView !== null}
         title={`${voucherView ? VOUCHER_TITLES[voucherView.kind as VoucherDoc['kind']] : 'سند'} ${voucherView?.document_number ?? ''}`}
@@ -1162,9 +1064,6 @@ const Vouchers: React.FC = () => {
         {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
       </TabModal>
 
-
-      {/* سند قبض جديد. Vertical in a dialog rather than inline across a page: a row of eight
-          fields is a form nobody reads the labels of. */}
       <TabModal
         open={receiptOpen}
         title="سند قبض — تحصيل من عميل"
@@ -1177,19 +1076,21 @@ const Vouchers: React.FC = () => {
 <Form
                   form={receiptForm}
                   layout="vertical"
-                  onFinish={(v) =>
+                  onFinish={(v) => {
+                    const lines = receiptFamilies[v.customer_id] || [];
+                    if (lines.length >= 2 && !receiptTarget) {
+                      message.error('حدد أنهي مديونية — أو اختر «على الإجمالي»');
+                      return;
+                    }
                     submit('/api/v1/vouchers/receipts', {
                       ...v,
-                      // Empty for a customer with one debt — the server needs no choice then.
                       family: receiptTarget && receiptTarget !== '__total__'
                         ? receiptTarget : undefined,
                       on_total: receiptTarget === '__total__',
-                    }, receiptForm, 'تم تسجيل سند القبض ✔')
-                  }
+                    }, receiptForm, 'تم تسجيل سند القبض ✔');
+                  }}
                 >
                   <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
-                    {/* The same window the documents use — one way to answer «مين», and the
-                        only one that can create a party who is not on the list yet. */}
                     <PartyField
                       kind="customer"
                       options={customers.map((c) => ({ value: c.id, label: c.name }))}
@@ -1206,11 +1107,6 @@ const Vouchers: React.FC = () => {
                       }}
                     />
                   </Form.Item>
-                  {/* (031) أنهي مديونية بيسدّد.
-                      Shown only for a customer who owes on more than one line — for everybody else
-                      it is a question with a single possible answer. «على الإجمالي» splits the
-                      collection across his lines in proportion to what each one owes, because a
-                      ledger has no total to credit. */}
                   <Form.Item noStyle shouldUpdate={(a, b) => a.customer_id !== b.customer_id}>
                     {({ getFieldValue }) => {
                       const lines = receiptFamilies[getFieldValue('customer_id')] || [];
@@ -1435,8 +1331,7 @@ const Vouchers: React.FC = () => {
                   </Form.Item>
                 </Form>
       </TabModal>
-      {/* ورقة قبض/دفع جديدة. Vertical, not the inline row it was: eight fields shoulder to
-          shoulder is a form nobody reads the labels of. */}
+
       <TabModal
         open={chequeOpen}
         title="ورقة قبض / دفع جديدة"
@@ -1463,14 +1358,11 @@ const Vouchers: React.FC = () => {
               setChequeOpen(false);
               loadCheques();
             } catch {
-              /* interceptor */
             } finally {
               setPosting(false);
             }
           }}
         >
-          {/* On أوراق دفع the form has to open on «صادر» too. Landing the list on outgoing while
-              the form still says وارد is how somebody records a payment note as a receipt. */}
           <Form.Item name="direction" label="النوع"
             initialValue={chequeDir || 'incoming'} rules={[{ required: true }]}>
             <Segmented

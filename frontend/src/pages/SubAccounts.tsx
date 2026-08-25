@@ -14,33 +14,8 @@ import { useAuth } from '../components/AuthProvider';
 import { ChartAccount, NATURE_COLOR, NATURE_LABEL, egp } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import { normalizeAr } from '../components/ListToolbar';
 
-/** الحسابات الفرعيه — their `/subaccounts`, its own screen.
- *
- * A sub-account is the postable leaf: the thing entries actually land on. Their list is three
- * columns — `رقم · الحساب الرئيسي · الاسم` — and their form asks two questions, because at this
- * level the only real decision is which group it belongs under.
- *
- * كل قسم قائمة منسدلة، لأن الليستة الواحدة كانت عشوائية.
- *
- * Every postable account in the system used to arrive as one flat paginated list: a customer, then
- * a safe, then an expense, then four hundred more customers. Sorted by nothing anybody thinks in.
- * Somebody looking for an expense account paged through customers to find it, and the shape of the
- * chart — that customers outnumber everything else forty to one — was invisible.
- *
- * They are filed under their heading now, each heading collapsed until asked for, carrying its
- * count and its total on the bar. Closed is the useful default: the answer to «فيه إيه» is the
- * list of headings, not four hundred rows. Searching opens whatever matched, because a hit hidden
- * inside a closed section is the same as no hit.
- */
-
-/**
- * قسم واحد — جدول جوّه القائمة المنسدلة.
- *
- * Its own component because the keyboard hook is a hook: one table per section means one call per
- * section, and hooks cannot be called in a loop. Each section keeps its own cursor, so ↑↓ walk the
- * section you opened rather than the whole chart.
- */
 function AccountGroup({ rows, columns, onOpen }: {
   rows: ChartAccount[];
   columns: any[];
@@ -57,8 +32,6 @@ function AccountGroup({ rows, columns, onOpen }: {
       rowKey="id"
       size="small"
       tableLayout="fixed"
-      // Paged inside the section: العملاء alone can be thousands of rows, and mounting them all
-      // to show a heading nobody has expanded yet is what makes the screen crawl.
       pagination={rows.length > 25
         ? { defaultPageSize: 25, showSizeChanger: true, size: 'small',
             showTotal: (t: number) => `عدد: ${t}` }
@@ -96,17 +69,12 @@ export default function SubAccounts() {
 
   useEffect(() => { load(); }, []);
 
-  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
-  // habit carries from one to the next instead of being relearned per page.
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
     onSearch: () => searchRef.current?.focus(),
     onClose: () => { setCreateOpen(false); },
   });
 
-
-  // What this account sits under. Accounts opened for a customer or a supplier are filed by
-  // their kind — «العملاء», «الموردين» — which is exactly how their own subaccounts screen reads.
   const parentName = (r: ChartAccount) => {
     if (r.owner_group) return r.owner_group;
     if (!r.parent_id) return '-';
@@ -114,13 +82,12 @@ export default function SubAccounts() {
     return g ? (g.name || `#${g.id}`) : `#${r.parent_id}`;
   };
 
-  // An owner-derived account has no name of its own; the customer's name is its name.
   const accountName = (r: ChartAccount) => r.name || r.owner_name || '-';
 
   const filtered = rows.filter((a) => {
-    const q = search.trim();
+    const q = normalizeAr(search);
     if (!q) return true;
-    return [a.code || '', accountName(a), parentName(a)].some((v) => v.includes(q));
+    return [a.code, accountName(a), parentName(a)].some((v) => normalizeAr(v).includes(q));
   });
 
   const onCreate = async (v: any) => {
@@ -130,9 +97,6 @@ export default function SubAccounts() {
         code: v.code,
         name: v.name,
         parent_id: v.parent_id ?? null,
-        // A leaf inherits its group's nature. Asking again is asking for the answer that
-        // contradicts the parent, and a customer account filed under expenses is a hole in every
-        // statement that reads the tree.
         nature: parent?.nature ?? v.nature,
         is_postable: true,
       });
@@ -157,14 +121,6 @@ export default function SubAccounts() {
     }
   };
 
-  /**
-   * إخفاء / إظهار الحساب.
-   *
-   * `active` was rendered as a «مخفي» tag and could not be set from anywhere, so a chart of
-   * accounts only ever grew. That is what makes the expense dropdown on سند مصروف unmanageable:
-   * an account opened once by mistake stays in the list of every voucher forever. Hiding rather
-   * than deleting, because entries already posted to it still have to resolve to a name.
-   */
   const toggleActive = async (record: ChartAccount) => {
     try {
       await api.patch(`/api/v1/accounts/${record.id}`, { active: !record.active });
@@ -175,23 +131,13 @@ export default function SubAccounts() {
     }
   };
 
-
-  /**
-   * حذف الحساب — إقفال، مش مسح.
-   *
-   * `DELETE /accounts/{id}` deactivates. A chart account that has ever been posted to is named on
-   * ledger entries that cannot be edited, so erasing the row would leave those entries pointing at
-   * a number with no name — the statement would read «#41» where the account used to be. The
-   * server refuses a system account and one with live children underneath it, and says which.
-   */
   const removeAccount = async (record: ChartAccount) => {
     try {
       await api.delete(`/api/v1/accounts/${record.id}`);
       message.success('اتقفل الحساب');
       load();
-    } catch (err: any) {
-      // الرفض بيقول السبب — «تحته حسابات شغالة» خطوة تالية، مش حيطة.
-      message.error(err?.response?.data?.detail?.message || 'تعذر إقفال الحساب', 6);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -200,7 +146,6 @@ export default function SubAccounts() {
     editForm.setFieldsValue(record);
   };
 
-  // Their three columns, in their order: `رقم · الحساب الرئيسي · الاسم`.
   const columns = [
     {
       title: 'رقم',
@@ -227,7 +172,6 @@ export default function SubAccounts() {
         </Space>
       ),
     },
-    // Ours: on a postable account the balance IS the account, so it stays on the row.
     {
       title: 'النوع',
       dataIndex: 'nature',
@@ -275,11 +219,6 @@ export default function SubAccounts() {
     }] : []),
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-
-  // Their two fields, plus the code. Their system numbers accounts for you; ours asks, because a
-  // chart of accounts code carries a scheme the accountant owns and generating one would quietly
-  // break their numbering.
   const formFields = (isCreate: boolean) => (
     <Row gutter={12}>
       <Col span={10}>
@@ -308,14 +247,9 @@ export default function SubAccounts() {
     </Row>
   );
 
-  // «الحساب الرئيسي» is the section heading, so repeating it on every row inside the section is
-  // the same word four hundred times.
   const inSection = columns.filter((c: any) => c.key !== 'parent_id');
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه. بيشتغل على أعمدة
-  // القسم لأنها اللي بتوصل الجدول فعلاً، مش على القايمة الكاملة.
   const tableCols = useTableColumns('sub-accounts', inSection);
 
-  /** الأقسام — كل حساب رئيسي وتحته حساباته، ومعاه العدد والإجمالي. */
   const sections = useMemo(() => {
     const byName = new Map<string, ChartAccount[]>();
     for (const r of filtered) {
@@ -330,13 +264,9 @@ export default function SubAccounts() {
         total: items.reduce((s, a) => s + Number(a.balance || 0), 0),
         hidden: items.filter((a) => !a.active).length,
       }))
-      // Biggest first. The chart is dominated by customer accounts and pretending otherwise by
-      // sorting alphabetically buries the two headings anybody actually browses.
       .sort((a, b) => b.items.length - a.items.length);
   }, [filtered, groups]);
 
-  // A search hit inside a closed section is the same as no hit, so searching opens what matched.
-  // Otherwise nothing is open: the answer to «فيه إيه» is the list of headings.
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const searching = search.trim().length > 0;
   const activeKeys = searching ? sections.map((s) => s.name) : openKeys;
@@ -378,8 +308,6 @@ export default function SubAccounts() {
               <Space size={8} wrap>
                 <span style={{ fontWeight: 600 }}>{s.name}</span>
                 <Tag>{s.items.length}</Tag>
-                {/* The two numbers that decide whether this section is the one you want, on the
-                    bar — so the section does not have to be opened to find out. */}
                 <span style={{ color: '#6b6b6b', fontSize: 12 }}>الإجمالي {egp(s.total)}</span>
                 {s.hidden > 0 && <Tag color="red">{s.hidden} مخفي</Tag>}
               </Space>

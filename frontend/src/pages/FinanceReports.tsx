@@ -13,7 +13,6 @@ import {
   Tag,
   Descriptions,
   Alert,
-  message,
 } from 'antd';
 import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -81,12 +80,7 @@ const BUCKETS = ['0-30', '31-60', '61-90', '90+'];
 
 const FinanceReports: React.FC = () => {
   const navigate = useNavigate();
-  // «مديونيه عملاء» and «ارصده موردين» are separate entries in their menu; both live in أعمار
-  // الديون here, so the entry has to land on it rather than on قائمة الدخل.
   const [tab, setTab] = useQueryTab('income');
-  // Their four accounting reports are two of ours, each asked twice: «ختامية» reads from the start
-  // of the year, «خلال فترة» reads a window you choose. Same report, different span — so the entry
-  // decides where the range starts and the picker stays free afterwards.
   const [period] = useQueryTab('', 'period');
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([
     period ? dayjs().startOf('month') : dayjs().startOf('year'),
@@ -101,7 +95,6 @@ const FinanceReports: React.FC = () => {
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Aging and commissions can run to hundreds of parties — let the user jump straight to one.
   const agingFilter = useListFilter(aging, { search: (r) => [r.party_name] });
   const commissionFilter = useListFilter(commissions, { search: (r) => [r.rep_name] });
 
@@ -131,7 +124,6 @@ const FinanceReports: React.FC = () => {
       setVat(v.data);
       setCommissions(c.data);
     } catch {
-      /* the interceptor surfaces the message */
     } finally {
       setLoading(false);
     }
@@ -141,7 +133,6 @@ const FinanceReports: React.FC = () => {
     loadAll();
   }, [loadAll]);
 
-  // Every printed statement shares the company letterhead defined in print/brand.
   const printBlock = (title: string, bodyHtml: string) => {
     printDocument(
       {
@@ -161,8 +152,6 @@ const FinanceReports: React.FC = () => {
       '<tr><td colspan="2">لا توجد حركة</td></tr>'
     }</tbody></table>`;
 
-  // The account lines of whichever of the two statements is on screen. Ids are unique across the
-  // sections, so one cursor can walk all of them — and only one statement renders at a time.
   const acctRows = useMemo(() => [
     ...(income?.income ?? []), ...(income?.expenses ?? []),
     ...(sheet?.assets ?? []), ...(sheet?.liabilities ?? []), ...(sheet?.equity ?? []),
@@ -176,21 +165,16 @@ const FinanceReports: React.FC = () => {
     ...numberColumn<ReportLine>((r) => r.amount),
     render: (v: string) => money(v),
   };
-  // The distinct list is built from every account line on screen, so «وريني حساب كذا» works the
-  // same in the income statement and the balance sheet rather than per section.
   const nameCol = {
     title: 'الحساب',
     ...textColumn(acctRows, (r: ReportLine) => r.name || r.code || `#${r.account_id}`),
     render: (_: any, r: ReportLine) => r.name || r.code || `#${r.account_id}`,
   };
 
-  // الرقم في قائمة الدخل أو الميزانية بيفتح كشف حساب الحساب اللي عمله — دي النزلة اللي أي حد
-  // بيقرا تقرير مالي بيعملها بعد ما يشوف رقم مش متوقع.
   const acctKb = useTableKeyboard<any>({
     rows: acctRows, rowKey: (r) => r.account_id,
     onOpen: (r) => navigate(`/account-statement?account=${r.account_id}`),
   });
-  // وسطر الأعمار بيفتح ملف الطرف نفسه — «العميل ده متأخر عليه كام» بيتبعها «وريني ملفه».
   const agingKb = useTableKeyboard<AgingRow>({
     rows: agingFilter.filtered, rowKey: (r) => r.party_id,
     onOpen: (r) => navigate(agingParty === 'customers'
@@ -358,8 +342,8 @@ const FinanceReports: React.FC = () => {
                       render: (v: string) => <b>{money(v)}</b>,
                     },
                   ]}
-                  summary={(rows) => {
-                    const sum = rows.reduce((s, r) => s + Number(r.total), 0);
+                  summary={() => {
+                    const sum = agingFilter.filtered.reduce((s, r) => s + Number(r.total), 0);
                     return (
                       <Table.Summary.Row>
                         <Table.Summary.Cell index={0} colSpan={5}>
@@ -476,13 +460,13 @@ const FinanceReports: React.FC = () => {
                       render: (v: string) => <b>{money(v)}</b>,
                     },
                   ]}
-                  summary={(rows) => (
+                  summary={() => (
                     <Table.Summary.Row>
                       <Table.Summary.Cell index={0} colSpan={4}>
                         <b>الإجمالي</b>
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={4}>
-                        <b>{money(rows.reduce((s, r) => s + Number(r.commission), 0))}</b>
+                        <b>{money(commissionFilter.filtered.reduce((s, r) => s + Number(r.commission), 0))}</b>
                       </Table.Summary.Cell>
                     </Table.Summary.Row>
                   )}

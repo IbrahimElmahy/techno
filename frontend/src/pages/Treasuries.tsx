@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Button, Card, Checkbox, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
+  Button, Card, Checkbox, Col, Form, Input, Row, Select, Space, Switch, Table, Tag, Tooltip, message
 } from 'antd';
 import {
-  PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined,
+  PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, CheckOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
@@ -13,14 +13,6 @@ import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { egp } from '../utils/accounts';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
-
-/** الخزينه و البنوك — their `/payment-methods`, its own screen.
- *
- * The records existed and the API was complete; what was wrong was where the menu went. The entry
- * «الخزينه و البنوك» pointed at `/treasury`, which is the journal-entries screen — «how money
- * moved», not «what we keep it in» — while the safes themselves were a tab inside السندات. So the
- * one entry named after this data took you to a screen that never lists it.
- */
 
 interface TreasuryRecord {
   id: number;
@@ -49,7 +41,6 @@ export default function Treasuries() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  // Safes are office data — a rep is refused this by the API too, not just hidden from it here.
   const canWrite = ['system_admin', 'accountant', 'branch_manager'].includes(user?.role || '');
 
   const load = async () => {
@@ -70,8 +61,6 @@ export default function Treasuries() {
 
   useEffect(() => { load(); }, []);
 
-  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
-  // habit carries from one to the next instead of being relearned per page.
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
     onSearch: () => searchRef.current?.focus(),
@@ -116,6 +105,7 @@ export default function Treasuries() {
         bank_name: v.bank_name || null,
         account_number: v.account_number || null,
         is_default: !!v.is_default,
+        active: !!v.active,
       });
       message.success('اتعدّلت الخزينة');
       setEditing(null);
@@ -147,7 +137,16 @@ export default function Treasuries() {
     });
   };
 
-  // Their four columns, in their order: `رقم · الاسم · نوع · الفرع`.
+  const onReactivate = async (record: TreasuryRecord) => {
+    try {
+      await api.patch(`/api/v1/treasuries/${record.id}`, { active: true });
+      message.success('تم إعادة تنشيط الخزينة');
+      load();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const columns = [
     {
       title: 'رقم',
@@ -185,7 +184,6 @@ export default function Treasuries() {
       ellipsis: true,
       render: (id: number | null) => branchName(id),
     },
-    // Ours: a safe with no balance beside it is a name, not an answer.
     {
       title: 'الرصيد',
       dataIndex: 'balance',
@@ -205,9 +203,13 @@ export default function Treasuries() {
           <Tooltip title="تعديل">
             <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           </Tooltip>
-          {record.active && (
+          {record.active ? (
             <Tooltip title="إخفاء">
               <Button type="text" icon={<StopOutlined />} onClick={() => onDeactivate(record)} />
+            </Tooltip>
+          ) : (
+            <Tooltip title="إعادة تنشيط">
+              <Button type="text" icon={<CheckOutlined />} onClick={() => onReactivate(record)} />
             </Tooltip>
           )}
         </Space>
@@ -215,11 +217,8 @@ export default function Treasuries() {
     }] : []),
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('treasuries', columns);
 
-  // Ours that used to have no room: the bank's own details, and which safe a document falls back
-  // to when it names none.
   const expandedRow = (r: TreasuryRecord) => (
     <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
       <span><span style={{ color: '#888' }}>اسم البنك: </span>{r.bank_name || '—'}</span>
@@ -234,7 +233,6 @@ export default function Treasuries() {
     </Space>
   );
 
-  // Their three fields — الفرع · نوع · الاسم — then the bank details, which only a bank has.
   const formFields = (isCreate: boolean) => (
     <>
       <Row gutter={12}>
@@ -247,8 +245,6 @@ export default function Treasuries() {
         </Col>
         <Col span={8}>
           <Form.Item name="kind" label="نوع" rules={[{ required: isCreate }]}>
-            {/* Locked after creation: the kind decides whether the bank fields mean anything, and
-                a safe that turns into a bank account halfway through its history is neither. */}
             <Select disabled={!isCreate} options={[
               { value: 'cash', label: 'خزينة' },
               { value: 'bank', label: 'بنك' },
@@ -263,7 +259,6 @@ export default function Treasuries() {
         </Col>
       </Row>
 
-      {/* Shown only for a bank — asking a cash box for its account number is asking for a blank. */}
       <Form.Item noStyle shouldUpdate={(prev, cur) => prev.kind !== cur.kind}>
         {({ getFieldValue }) => (getFieldValue('kind') === 'bank' ? (
           <Row gutter={12}>
@@ -287,7 +282,6 @@ export default function Treasuries() {
     </>
   );
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<TreasuryRecord>({
     rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
@@ -346,6 +340,9 @@ export default function Treasuries() {
         open={!!editing} onCancel={() => setEditing(null)}>
         <Form form={editForm} layout="vertical" onFinish={onEdit} requiredMark={false}>
           {formFields(false)}
+          <Form.Item name="active" valuePropName="checked" label="الحالة">
+            <Switch checkedChildren="نشطة" unCheckedChildren="مخفية" />
+          </Form.Item>
           <Space style={{ marginTop: 16 }}>
             <Button type="primary" htmlType="submit">حفظ</Button>
             <Button onClick={() => setEditing(null)}>تراجع</Button>
