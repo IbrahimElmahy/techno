@@ -202,6 +202,7 @@ def create_app() -> FastAPI:
         _relax_not_null(engine)
         _backfill_branch(engine)
         _migrate_appears_in(engine)
+        _ensure_coupon_kind_tiers(engine)
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
 
@@ -735,6 +736,32 @@ def _relax_configurable_enum_columns(engine) -> None:
             logging.getLogger("uvicorn.error").info(
                 "relax enum %s.%s skipped: %s", table, column, exc
             )
+
+
+def _ensure_coupon_kind_tiers(engine) -> None:
+    """أنواع الكوبونات بقت قايمة حرة بالفئات الورقية (عادي/فضي/ذهبي/ماسي).
+
+    القايمة كانت متبذّرة أول مرة بقيم قديمة (نقدي/هدية) — والبذر الخامل ما بيعيدش
+    يزرع قايمة فيها صفوف. الحذف هنا بيسيبها فاضية فيقرأ الـseed الجديد. Idempotent.
+    """
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    try:
+        inspector = sa_inspect(engine)
+        if "lookup_option" not in set(inspector.get_table_names()):
+            return
+        with engine.begin() as conn:
+            conn.execute(text(
+                "DELETE FROM lookup_option "
+                "WHERE category = 'coupon_kind' AND value IN ('money', 'gift')"
+            ))
+    except Exception as exc:  # pragma: no cover — best-effort
+        logging.getLogger("uvicorn.error").info(
+            "coupon_kind tiers fixup skipped: %s", exc
+        )
 
 
 app = create_app()

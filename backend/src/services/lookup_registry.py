@@ -45,9 +45,12 @@ CATEGORIES: dict[str, dict] = {
                      ("distributor", "موزع"), ("other", "أخرى")],
     },
     # --- Loyalty page ---
+    # أنواع الكوبونات = فئات الكوبون الورقي (عادي/فضي/ذهبي/ماسي) — قايمة حرة يديرها صاحب
+    # الشغل من الإعدادات، وبنقرأها في شاشة استلام الكوبونات على الويب والموبايل.
     "coupon_kind": {
-        "page": "loyalty", "label": "أنواع الكوبونات", "system": True,
-        "defaults": [("money", "نقدي"), ("gift", "هدية")],
+        "page": "setup", "label": "أنواع الكوبونات", "system": False,
+        "defaults": [("عادي", "عادي"), ("فضي", "فضي"),
+                     ("ذهبي", "ذهبي"), ("ماسي", "ماسي")],
     },
     "redemption_mode": {
         "page": "loyalty", "label": "طرق استرداد الكوبون", "system": True,
@@ -94,6 +97,7 @@ CATEGORIES: dict[str, dict] = {
 
 # Human-readable page titles for the Settings UI.
 PAGE_LABELS: dict[str, str] = {
+    "setup": "اداره الانشءات",
     "catalog": "الكتالوج والأصناف",
     "customers": "العملاء",
     "loyalty": "الولاء والكوبونات",

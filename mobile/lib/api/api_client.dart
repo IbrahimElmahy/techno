@@ -80,7 +80,7 @@ class ApiClient {
         )
     ]);
 
-    for (final category in ['inspection_description', 'inspection_type']) {
+    for (final category in ['inspection_description', 'inspection_type', 'coupon_kind']) {
       final r = await http
           .get(await _uri('/settings/lookups', {'category': category}), headers: headers)
           .timeout(const Duration(seconds: 30));

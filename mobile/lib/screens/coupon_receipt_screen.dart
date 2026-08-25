@@ -71,7 +71,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   /// The server works the true kind out from the serial's issued range, but only once the phone
   /// reaches it. A rep with no signal still has to tell the customer «ثلاثة ذهبي» before he walks
   /// away, so what he declares is what the screen adds up and what travels with the sync.
-  String _kind = 'silver';
+  String _kind = 'عادي';
   final _valueCtrl = TextEditingController();
 
   /// العملاء المتاحين للمندوب — من الكاش، فبيشتغلوا من غير نت.
@@ -79,11 +79,26 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   final _customerSearch = TextEditingController();
 
   static const kinds = <String, String>{
-    'standard': 'عادي',
-    'silver': 'فضي',
-    'gold': 'ذهبي',
-    'diamond': 'ماسي',
+    'عادي': 'عادي',
+    'فضي': 'فضي',
+    'ذهبي': 'ذهبي',
+    'ماسي': 'ماسي',
   };
+
+  Map<String, String> _tiers = kinds;
+
+  Future<void> _loadTiers() async {
+    final rows = await LocalDb.instance.lookups('coupon_kind');
+    if (!mounted) return;
+    if (rows.isEmpty) {
+      setState(() => _tiers = kinds);
+      return;
+    }
+    setState(() {
+      _tiers = {for (final o in rows) o.value: o.label};
+      if (!_tiers.containsKey(_kind)) _kind = _tiers.keys.first;
+    });
+  }
 
   /// رقم الاستلام — ثابت من أول ما الشاشة فتحت، وبيتقفل على القديم لو بنعدّل.
   late final String _uuid;
@@ -94,6 +109,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   void initState() {
     super.initState();
     _loadCustomers();
+    _loadTiers();
     final e = widget.existing;
     _uuid = (e?['client_uuid'] as String?) ??
         'cr-${DateTime.now().microsecondsSinceEpoch}';
@@ -103,7 +119,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     _customerId = e['customer_id'] as int?;
     _customerName = e['customer_name'] as String?;
     _customerType = (e['customer_type'] as String?) ?? 'plumber';
-    _kind = (e['coupon_kind'] as String?) ?? 'silver';
+    _kind = (e['coupon_kind'] as String?) ?? 'عادي';
     final v = e['coupon_value'] as num?;
     if (v != null) _valueCtrl.text = _fmtValue(v.toDouble());
     _notesCtrl.text = (e['notes'] as String?) ?? '';
@@ -218,7 +234,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   List<(String, int)> get _summary {
     final counted = _entries.where((e) => e.isGood || e.status == 'pending').length;
     if (counted == 0) return const [];
-    return [(kinds[_kind] ?? _kind, counted)];
+    return [(_tiers[_kind] ?? _kind, counted)];
   }
 
   double get _totalValue {
@@ -332,7 +348,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                             prefixIcon: Icon(Icons.workspace_premium_outlined),
                           ),
                           items: [
-                            for (final e in kinds.entries)
+                            for (final e in _tiers.entries)
                               DropdownMenuItem(value: e.key, child: Text(e.value)),
                           ],
                           onChanged: (v) => setState(() => _kind = v ?? _kind),
