@@ -1,5 +1,5 @@
-import React from 'react';
-import { Table, Tag } from 'antd';
+import React, { useState } from 'react';
+import { Button, Table, Tag } from 'antd';
 
 /**
  * القيد بسطوره — الطرف المقابل.
@@ -37,6 +37,26 @@ const dash = <span style={{ color: '#8c8c8c' }}>-</span>;
 export default function JournalEntryLines({
   lines, currentAccountId, accountLabel, costCenterName, onOpenAccount, money,
 }: Props) {
+  /**
+   * القيود المجمّعة بتتلخّص.
+   *
+   * استيراد الأرصدة الافتتاحية قيد واحد فيه سطر لكل عميل — مئات السطور. اللي فاتح كشف
+   * عميل واحد وفتح السطر ده كان بيلاقي قدامه العملاء كلهم بأرصدتهم، وده مش تفصيل القيد
+   * بالنسبة له، ده داتا ناس تانية. الأنظمة المعروفة بتوري في كشف العميل سطور العميل وبس.
+   *
+   * فالقاعدة: سطور الحساب المفتوح بتتعرض دايماً؛ والباقي لو كتير بيتلخّص في سطر واحد —
+   * عددهم وإجماليهم — وزرار لمن يحب يشوف القيد كامل. قيد عادي من سطرين-تلاتة بيتعرض
+   * كله زي ما هو، لأن الطرف المقابل هو المعلومة أصلاً.
+   */
+  const [showAll, setShowAll] = useState(false);
+  const all = (lines || []).map((l, i) => ({ ...l, _k: i }));
+  const mine = all.filter((l) => l.account_id === currentAccountId);
+  const others = all.filter((l) => l.account_id !== currentAccountId);
+  const summarised = !showAll && currentAccountId != null && mine.length > 0 && others.length > 8;
+  const shown = summarised ? mine : all;
+  const otherDebit = others.reduce((t, l) => t + (l.direction === 'debit' ? Number(l.amount) : 0), 0);
+  const otherCredit = others.reduce((t, l) => t + (l.direction === 'credit' ? Number(l.amount) : 0), 0);
+
   return (
     <>
       <Table
@@ -44,7 +64,7 @@ export default function JournalEntryLines({
         pagination={false}
         rowKey="_k"
         // القيد ممكن يكون فيه سطرين بنفس الحساب وبنفس المبلغ، فترتيبهم هو اللي بيفرّقهم.
-        dataSource={(lines || []).map((l, i) => ({ ...l, _k: i }))}
+        dataSource={shown}
         rowClassName={(l: any) => (l.account_id === currentAccountId ? 'row-cursor' : '')}
         onRow={(l: any) => ({
           onClick: () => onOpenAccount(l.account_id),
@@ -90,9 +110,18 @@ export default function JournalEntryLines({
           },
         ]}
       />
-      <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 6 }}>
-        دوس على أي حساب فوق يفتحلك كشفه.
-      </div>
+      {summarised && (
+        <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 6 }}>
+          القيد ده مجمّع: فيه {others.length.toLocaleString('ar-EG')} سطر تاني لحسابات تانية
+          {' '}(مدين {money(otherDebit)} / دائن {money(otherCredit)}) — معروض منه سطور الحساب ده بس.
+          <Button type="link" size="small" onClick={() => setShowAll(true)}>عرض القيد كامل</Button>
+        </div>
+      )}
+      {!summarised && (
+        <div style={{ color: '#8c8c8c', fontSize: 12, marginTop: 6 }}>
+          دوس على أي حساب فوق يفتحلك كشفه.
+        </div>
+      )}
     </>
   );
 }
