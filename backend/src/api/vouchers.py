@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -15,10 +16,12 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
+from src.models.ledger import Account
 from src.models.role import RoleName
 from src.models.treasury import TreasuryKind
 from src.models.voucher import Voucher, VoucherKind
 from src.services import (
+    chart_service,
     document_resolver,
     ledger_service,
     statement_service,
@@ -168,6 +171,9 @@ class StatementLineOut(BaseModel):
     # And a مندوب column. The LINE never held one — the document that posted it did.
     rep_user_id: int | None = None
     rep_name: str | None = None
+    # (a5) في الكشف المجمّع كل سطر بيقول هو بتاع أنهي حساب فرعي.
+    account_id: int | None = None
+    account_name: str | None = None
 
 
 class FamilyBalanceOut(BaseModel):
@@ -234,6 +240,8 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None) -> Sta
             doc_id=(docs.get(ln.entry_id) or {}).get("id"),
             doc_number=(docs.get(ln.entry_id) or {}).get("document_number"),
             cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name,
+            account_id=getattr(ln, "account_id", None),
+            account_name=getattr(ln, "account_name", None),
             # المستند الأول، والقيد نفسه لو المستند مش معروف.
             #
             # `document_resolver` only maps the document kinds it knows, so an entry it cannot
@@ -569,6 +577,67 @@ def customer_statement(
     ]
     out.family = family
     return out
+
+
+@router.get("/accounts-group/statement", response_model=StatementOut)
+def account_group_statement(
+    owner_group: str | None = Query(default=None),
+    root_id: int | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> StatementOut:
+    """كشف مجمّع — الحساب الرئيسي بكل الفرعيين اللي تحته، زي نظامهم.
+
+    عندهم بتختار «العملاء» بس من غير حساب فرعي، فيطلع كل حركات العملاء كلهم ورا بعض
+    برصيد جاري واحد، وكل سطر بيقول هو بتاع أنهي عميل. عندنا الشاشة كانت بتقف لحد ما
+    تختار حساب واحد — يعني «مين اتحرك النهارده من العملاء كلهم؟» ماكانش ليه إجابة.
+
+    «الحساب الرئيسي» حاجتين في الشجرة دي: جذر مرقّم بشجرة تحته (`root_id`)، أو مجموعة
+    أطراف (`owner_group`) — العملاء والموردين حسابتهم من غير أب خالص. الاتنين بيتحلوا
+    هنا لنفس الحاجة: قايمة حسابات بتتقرا كشف واحد بمحرك الكشف نفسه، اللي أصلاً بيعرف
+    يقرا كذا حساب مع بعض (also_accounts) ويوقّع كل سطر بجانب حسابه هو.
+    """
+    accounts = db.scalars(select(Account)).all()
+    if owner_group:
+        # «owner_group» مش عمود — بيتشتق من نوع الحساب، بنفس الاشتقاق اللي شاشة الشجرة
+        # بتعرضه بيه، فاللي الشاشة بتسميه «العملاء» هو نفسه اللي بيتبعت هنا.
+        members = [a for a in accounts
+                   if chart_service.owner_group_label(a.account_type) == owner_group]
+        title = owner_group
+    elif root_id is not None:
+        by_id = {a.id: a for a in accounts}
+        root = by_id.get(root_id)
+        if root is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND,
+                                {"code": "not_found", "message": "الحساب الرئيسي غير موجود"})
+        def in_tree(a: Account) -> bool:
+            cur, hops = a, 0
+            while cur is not None and hops < 12:
+                if cur.id == root_id:
+                    return True
+                cur = by_id.get(cur.parent_id) if cur.parent_id else None
+                hops += 1
+            return False
+        members = [a for a in accounts if in_tree(a)]
+        title = root.name or f"#{root_id}"
+    else:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "missing_group",
+                             "message": "حدد owner_group أو root_id"})
+    if not members:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "المجموعة دي مافيهاش حسابات"})
+
+    ids = [a.id for a in members]
+    s = statement_service.account_statement(
+        db, account_id=ids[0], also_accounts=ids[1:],
+        date_from=date_from, date_to=date_to)
+    # عنوان الكشف هو المجموعة مش أول حساب صودف إنه الأول في القايمة.
+    s = replace(s, account_name=title, account_id=(root_id or 0),
+                main_account_id=None, main_account_name=None)
+    return _with_docs(db, s)
 
 
 @router.get("/accounts/{account_id}/statement", response_model=StatementOut)

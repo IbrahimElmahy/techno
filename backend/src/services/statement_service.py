@@ -46,6 +46,11 @@ class StatementLine:
     # nobody's round put it there.
     rep_id: int | None = None
     rep_name: str | None = None
+    # (a5) الكشف المجمّع — الحساب الرئيسي وتحته كل الفرعيين — بيحتاج كل سطر يقول هو بتاع
+    # مين: عمود «الحساب الفرعي» عندهم. في كشف الحساب الواحد الاتنين بيبقوا نفس الاسم
+    # المكرر، فالشاشة بتخفيهم؛ هنا هما المعلومة.
+    account_id: int | None = None
+    account_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -97,6 +102,14 @@ def account_statement(
 
     # One query for the names rather than one per line: a statement can run to hundreds of rows.
     cost_centers = {c.id: c.name for c in db.scalars(select(CostCenter)).all()}
+    # اسم كل حساب في المجموعة — حسابات الأطراف اسمها عند الطرف مش على الحساب.
+    from src.services import chart_service
+    owner_names = chart_service.bulk_owner_names(db, list(accounts.values()))
+    def name_of(aid: int) -> str:
+        a = accounts.get(aid)
+        if a is None:
+            return f"#{aid}"
+        return a.name or owner_names.get(aid) or f"#{aid}"
     # نفس المنطق: استعلام واحد للأسماء بدل واحد لكل سطر.
     reps = {u.id: (u.full_name or u.username)
             for u in db.scalars(select(User)).all()}
@@ -146,16 +159,16 @@ def account_statement(
             # المندوب على القيد مش على السطر: القيد الواحد بيتكتب في جولة مندوب واحد.
             rep_id=line.entry.rep_id,
             rep_name=reps.get(line.entry.rep_id),
+            account_id=line.account_id,
+            account_name=name_of(line.account_id),
         ))
 
     parent = db.get(Account, account.parent_id) if account.parent_id else None
     # A customer's or supplier's account carries no `name` — the party's name lives on the party,
     # and the chart resolves it as `owner_name`. Reading only `name` made every party statement
     # open with «#29» as its title, which is precisely the statement people ask for by name.
-    from src.services import chart_service
-    owner = chart_service.bulk_owner_names(db, [account]).get(account_id)
     return Statement(
-        account_id=account_id, account_name=account.name or owner or f"#{account_id}",
+        account_id=account_id, account_name=name_of(account_id),
         # A top-level account IS its own book, and saying so by leaving the field empty is more
         # honest than repeating its own name back as its parent.
         main_account_id=parent.id if parent else None,

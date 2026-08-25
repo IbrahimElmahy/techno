@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Select, Spin,
-  Statistic, Table, Tag, message,
+  Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Empty, Input, Row, Select,
+  Space, Spin, Statistic, Table, Tag, message,
 } from 'antd';
 import {
-  DownloadOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
+  DownloadOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
 } from '@ant-design/icons';
-import { Dayjs } from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
@@ -17,30 +17,10 @@ import JournalEntryLines from '../components/JournalEntryLines';
 import DocumentItemLines, { hasItemLines } from '../components/DocumentItemLines';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import { normalizeAr } from '../components/ListToolbar';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
-/**
- * كشف حساب — any account in the chart, not only customers and suppliers.
- *
- * The party statements on the customer and supplier files already ran a balance; the same
- * question applies to a treasury, a bank, an expense or a revenue account, and there was no
- * reason only two account types could be asked it. Every row carries the balance before the
- * movement and after it, so a disputed figure can be read off one line.
- */
-
-/**
- * موضوع الكشف — الحساب ولا الصنف.
- *
- * السؤال واحد: «إيه اللي حصل على ده؟». والشاشة كانت بتجاوبه لحسابات الشجرة بس، والصنف
- * ليه شاشة تانية بأعمدة تانية وفلاتر تانية وطباعة تانية — فاللي عايز يعرف تاريخ صنف
- * بيتنطّط بين شاشتين على نفس السؤال، ومابيلاقيش عند الصنف الحاجات اللي اتبنت هنا:
- * فلاتر الأعمدة، وإخفاء الأعمدة، والطباعة، والأهم — إن السطر يفتح مستنده **للتعديل**.
- *
- * الصف بيتحوّل لنفس الشكل: تاريخ، ونوع، وبيان، وحركة، ورصيد قبلها وبعدها، ومستند.
- * الفرق الوحيد إن «مدين/دائن» عند الصنف بيبقوا «داخل/خارج» — نفس العمود بنفس المعنى،
- * والوحدة مختلفة.
- */
 type Subject = 'account' | 'item';
 
 interface StatementLine {
@@ -55,19 +35,12 @@ interface StatementLine {
   credit: string;
   balance_before: string;
   balance: string;
-  // Both are returned by the API and were rendered through `dataIndex` without ever being
-  // declared, so nothing typed could reach them — which is why the filters could not either.
   rep_name?: string | null;
   cost_center_name?: string | null;
-  /**
-   * الصف زي ما المصدر رجّعه.
-   *
-   * كارت الصنف بيرجّع على كل حركة أكتر بكتير من اللي بيتعرض: سعر الوحدة، والخصم، والضريبة،
-   * وإجمالي السطر، والوحدة اللي اتباع بيها، وتاريخ الصلاحية. الكشف كان بيرمي ده كله وهو
-   * بيحوّل الصف لسطر كشف، فاللي عايز يعرف «السطر ده اتحسب إزاي» كان لازم يفتح المستند.
-   * بنحتفظ بيه هنا عشان التوسعة تعرضه من غير طلب تاني.
-   */
+  account_id?: number | null;
+  account_name?: string | null;
   raw?: any;
+  _serial?: number;
 }
 
 interface StatementOut {
@@ -85,74 +58,62 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 });
 
 export default function AccountStatement() {
+  const [search, setSearch] = useSearchParams();
+  const u0 = {
+    subject: (search.get('subject') === 'item' ? 'item' : 'account') as Subject,
+    account: Number(search.get('account')) || undefined as number | undefined,
+    main: search.get('main') || undefined as string | undefined,
+    item: Number(search.get('item')) || undefined as number | undefined,
+    wh: Number(search.get('wh')) || undefined as number | undefined,
+    from: search.get('from'),
+    to: search.get('to'),
+    rep: search.get('rep') || undefined as string | undefined,
+    types: (search.get('type') || '').split(',').filter(Boolean),
+    q: search.get('q') || '',
+    cc: (search.get('cc') || '').split(',').filter(Boolean),
+    doc: search.get('doc') || '',
+    x: search.get('x') === '1',
+    z: search.get('z') === '1',
+  };
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [accountId, setAccountId] = useState<number | undefined>();
-  // Their screen asks الحساب الرئيسي first, then الحساب الفرعي under it. A flat list of every
-  // account in the chart is a list nobody scrolls: the person already knows which book they are
-  // in, and narrowing by it turns hundreds of options into a handful.
-  const [mainKey, setMainKey] = useState<string | undefined>();
-  const [subject, setSubject] = useState<Subject>('account');
+  const [accountId, setAccountId] = useState<number | undefined>(u0.account);
+  const [mainKey, setMainKey] = useState<string | undefined>(u0.main);
+  const [subject, setSubject] = useState<Subject>(u0.subject);
   const [items, setItems] = useState<any[]>([]);
-  const [itemId, setItemId] = useState<number | undefined>();
+  const [itemId, setItemId] = useState<number | undefined>(u0.item);
   const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [warehouseId, setWarehouseId] = useState<number | undefined>();
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
-
-  /**
-   * السطر بيتفتح تحته.
-   *
-   * الكشف بيقول إن حاجة حصلت وبكام، ومابيقولش **إيه** اللي حصل: القيد بيتقفل على أكتر من
-   * حساب — العميل والإيراد والضريبة — والكشف بيوري طرف واحد منهم، وهو الحساب اللي انت
-   * فاتح كشفه أصلاً. يعني العمود بيرد على سؤال انت عارف إجابته، والسؤال الحقيقي — «مقابل
-   * إيه؟» — كان لازمله إنك تسيب الشاشة وتفتح القيد في اليومية وتدوّر على رقمه.
-   *
-   * والقيد بيتجاب أول ما السطر يتفتح مش مع الكشف: كشف فيه ٤٠٠ حركة يبقى ٤٠٠ طلب على حاجة
-   * مافيش حد هيبصلها كلها.
-   */
+  const [warehouseId, setWarehouseId] = useState<number | undefined>(u0.wh);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
+    u0.from && u0.to ? [dayjs(u0.from), dayjs(u0.to)] : null,
+  );
   const [expandedKeys, setExpandedKeys] = useState<readonly React.Key[]>([]);
+  const [showStock, setShowStock] = useState(false);
   const [entryCache, setEntryCache] = useState<Record<number, any>>({});
   const [entryBusy, setEntryBusy] = useState<Record<number, boolean>>({});
   const [costCenters, setCostCenters] = useState<any[]>([]);
   const [statement, setStatement] = useState<StatementOut | null>(null);
   const [loading, setLoading] = useState(false);
-  // ?account=<id> — the customer and supplier files hand the account over rather than making the
-  // reader find it again in a dropdown they have just come from.
-  const [search] = useSearchParams();
-  const asked = Number(search.get('account')) || undefined;
-  useEffect(() => { if (asked) setAccountId(asked); }, [asked]);
 
   useEffect(() => {
     api.get('/api/v1/accounts')
       .then((r) => setAccounts(r.data || []))
       .catch(console.error);
-    // سطور القيد بتحمل مركز التكلفة برقمه؛ من غير الأسماء دي بتتعرض «#7».
     api.get('/api/v1/cost-centers?active=true')
       .then((r) => setCostCenters(r.data || []))
       .catch(() => {});
   }, []);
 
-  // الأصناف والمخازن بيتحملوا مع الشاشة — مش بس لكشف الصنف: توسعة أي سطر وراه فاتورة
-  // بتعرض أصنافها بأساميها ومخازنها، وكشف حساب من غير الكتالوجات كان هيوري «صنف #11».
   useEffect(() => {
     api.get('/api/v1/items').then((r) => setItems(r.data || [])).catch(() => {});
     api.get('/api/v1/warehouses').then((r) => setWarehouses(r.data || [])).catch(() => {});
   }, []);
 
-  /**
-   * بيحمّل الكشف — من مصدرين على حسب الموضوع، وبيطلّع نفس الشكل.
-   *
-   * التحويل هنا مش تجميل: الجدول والفلاتر والطباعة والروابط كلها متبنية على `StatementLine`،
-   * فأي مصدر جديد بيتكلّم لغتها بيورث كل ده من غير سطر زيادة في أي منهم.
-   *
-   * والأرقام بتفضل صادقة: عند الصنف «مدين/دائن» هما الكمية الداخلة والخارجة، والرصيد قبل
-   * وبعد هما رصيد المخزون — نفس المعنى بوحدة مختلفة، والعناوين بتقول الوحدة دي.
-   */
+  const grouped = subject === 'account' && !accountId && !!mainKey;
+
   const load = async () => {
-    // اللي كان مفتوح بيبقى بتاع كشف راح؛ سيبانه مفتوح على كشف تاني بيوري تفاصيل حركة
-    // مش موجودة في اللي قدامك.
     setExpandedKeys([]);
     if (subject === 'account') {
-      if (!accountId) { setStatement(null); return; }
+      if (!accountId && !mainKey) { setStatement(null); return; }
       setLoading(true);
       try {
         const params: any = {};
@@ -160,7 +121,14 @@ export default function AccountStatement() {
           params.date_from = range[0].format('YYYY-MM-DD');
           params.date_to = range[1].format('YYYY-MM-DD');
         }
-        const res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
+        let res;
+        if (accountId) {
+          res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
+        } else {
+          if (mainKey!.startsWith('grp:')) params.owner_group = mainKey!.slice(4);
+          else params.root_id = Number(mainKey!.slice(4));
+          res = await api.get('/api/v1/accounts-group/statement', { params });
+        }
         setStatement(res.data);
       } catch (err: any) {
         message.error(err?.response?.data?.detail?.message || 'تعذر تحميل كشف الحساب');
@@ -194,8 +162,6 @@ export default function AccountStatement() {
           entry_id: r.movement_id,
           entry_date: r.date,
           entry_type: r.movement_type,
-          // البيان بيتركّب من اللي على الحركة: الطرف والمكان. الكارت بيرجّعهم، وسطر من
-          // غيرهم بيبقى رقم مالوش قصة.
           description: [r.party, r.location].filter(Boolean).join(' — ') || '-',
           debit: r.quantity_in ?? '0',
           credit: r.quantity_out ?? '0',
@@ -203,7 +169,6 @@ export default function AccountStatement() {
           balance: r.balance_after ?? '0',
           rep_name: r.rep_name ?? null,
           cost_center_name: null,
-          // نفس محرك الروابط — فالسطر بيفتح فاتورته **للتعديل** زي كشف الحساب بالظبط.
           doc_kind: docKindOf(r.source_doc_type),
           doc_id: r.source_doc_id ?? null,
           doc_number: r.document_number ?? null,
@@ -216,25 +181,22 @@ export default function AccountStatement() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [subject, accountId, itemId, warehouseId, range]);
+  useEffect(() => { load(); }, [subject, accountId, mainKey, itemId, warehouseId, range]);
 
-  /** What a row reads as. Party accounts carry no `name` at all — the customer's name lives in
-   *  `owner_name` — so a picker that only read `name` showed «حساب #16» for every customer and
-   *  supplier in the chart, which are precisely the accounts people open statements for. */
+  const asked = Number(search.get('account')) || undefined;
+  useEffect(() => {
+    if (asked && asked !== accountId) {
+      setSubject('account');
+      setMainKey(undefined);
+      setAccountId(asked);
+    }
+  }, [asked]);
+
   const labelOf = (a: any) => {
     const named = a.name || a.owner_name || `حساب #${a.id}`;
     return a.code ? `${a.code} — ${named}` : named;
   };
 
-  /**
-   * «الحساب الرئيسي» is two different things in this chart, and the box offers both.
-   *
-   * The coded roots — الأصول · الالتزامات · حقوق الملكية · الإيرادات · المصروفات — are real
-   * accounts with a subtree under them. The party accounts are NOT under any of them: every
-   * customer and supplier account is parentless and carries an `owner_group` instead. Offering
-   * only the roots would leave «العملاء» — the most-asked-for book on this screen — unreachable
-   * from the first box.
-   */
   const mainOptions = useMemo(() => {
     const roots = accounts.filter((a: any) => !a.parent_id && a.code)
       .map((a: any) => ({ value: `acc:${a.id}`, label: labelOf(a) }));
@@ -245,8 +207,6 @@ export default function AccountStatement() {
     return [...roots, ...groups];
   }, [accounts]);
 
-  /** What the second box offers. With a book chosen it is that book's accounts; with none it is
-   *  the whole chart, so somebody who knows the name can still find it without the first box. */
   const visibleAccounts = useMemo(() => {
     if (!mainKey) return accounts;
     if (mainKey.startsWith('grp:')) {
@@ -254,8 +214,6 @@ export default function AccountStatement() {
       return accounts.filter((a: any) => a.owner_group === group);
     }
     const rootId = Number(mainKey.slice(4));
-    // The whole subtree, not just the children: the chart goes three deep (`1 → 1.01 →
-    // 1.01.001`), and stopping at one level would hide «الخزينة» under «الأصول».
     const byId = new Map<number, any>(accounts.map((a: any) => [a.id, a]));
     const inTree = (a: any) => {
       let cur: any = a;
@@ -268,8 +226,6 @@ export default function AccountStatement() {
     return accounts.filter(inTree);
   }, [accounts, mainKey]);
 
-  // A statement opened by deep link (`?account=`) arrives with no book chosen, so the first box
-  // is filled in from the account rather than left blank beside a filled second box.
   useEffect(() => {
     if (!accountId || mainKey || !accounts.length) return;
     const chosen = accounts.find((a: any) => a.id === accountId);
@@ -281,132 +237,99 @@ export default function AccountStatement() {
     if (cur && cur.id !== chosen.id) setMainKey(`acc:${cur.id}`);
   }, [accountId, accounts, mainKey]);
 
-  const exportCsv = () => {
-    if (!statement?.lines?.length) { message.info('لا توجد حركات للتصدير'); return; }
-    const cols: CsvColumn<any>[] = [
-      { title: 'التاريخ', value: (l) => String(l.entry_date).slice(0, 10) },
-      { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) },
-      { title: 'البيان', value: 'description' },
-      { title: 'الرصيد قبل', value: 'balance_before' },
-      { title: 'مدين', value: 'debit' },
-      { title: 'دائن', value: 'credit' },
-      { title: 'الرصيد بعد', value: 'balance' },
-    ];
-    writeCsv(`statement-${statement.account_id}`, cols, statement.lines);
-  };
-
-  const printIt = () => {
-    if (!statement) return;
-    const cols: PrintColumn<any>[] = [
-      { title: 'التاريخ', value: (l) => String(l.entry_date).slice(0, 10) },
-      { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) },
-      { title: 'البيان', value: 'description' },
-      { title: 'مدين', value: 'debit', numeric: true },
-      { title: 'دائن', value: 'credit', numeric: true },
-      { title: 'الرصيد', value: 'balance', numeric: true },
-    ];
-    printReport(
-      {
-        title: isItem ? 'كشف صنف' : 'كشف حساب',
-        meta: [
-          [isItem ? 'الصنف' : 'الحساب', statement.account_name ?? ''],
-          // الفلاتر بتتكتب على الورقة — أرقام من غير سياقها بتبقى مالهاش معنى بعد أسبوع.
-          ...(range ? [[
-            'الفترة',
-            `${range[0].format('YYYY/MM/DD')} ← ${range[1].format('YYYY/MM/DD')}`,
-          ] as [string, string]] : []),
-          ...(isItem && warehouseId
-            ? [['المخزن',
-                warehouses.find((w: any) => w.id === warehouseId)?.name ?? ''] as [string, string]]
-            : []),
-        ],
-      },
-      cols, statement.lines,
-      [
-        { label: 'رصيد أول المدة', value: money(statement.opening_balance) },
-        { label: 'إجمالي مدين', value: money(statement.total_debit) },
-        { label: 'إجمالي دائن', value: money(statement.total_credit) },
-        { label: 'الرصيد الختامي', value: money(statement.closing_balance) },
-      ],
-    );
-  };
-
-  // «إيه السطر ده؟» — السطر كله يفتح مستنده، مش عمود المستند لوحده. اللي بيقرا كشف حساب
-  // بيمشي بعينه على الأرقام على الشمال، والزرار في آخر السطر بعيد عن اللي بيبصّ عليه.
-  // Distinct values come from the whole statement, not the visible page.
   const lines: StatementLine[] = statement?.lines ?? [];
 
-  /**
-   * فلتر المندوب — «المندوب ده حرّك إيه على الحساب ده».
-   *
-   * The rep column already carried a per-column dropdown, but a filter buried in a column header
-   * is one nobody finds while looking at a statement — and «شوفلي حركة المندوب» is a question
-   * asked out loud, not hunted for. It sits with the date range because it is the same kind of
-   * narrowing: which slice of this account am I reading.
-   *
-   * The list of names comes from the statement itself, not from the users table: offering every
-   * rep in the company on an account only two of them ever touched is a list nobody can use.
-   */
-  const [repFilter, setRepFilter] = useState<string | undefined>();
+  const [repFilter, setRepFilter] = useState<string | undefined>(u0.rep);
+  const [query, setQuery] = useState(u0.q);
+  const [typeFilter, setTypeFilter] = useState<string[]>(u0.types);
+  const [ccFilter, setCcFilter] = useState<string[]>(u0.cc);
+  const [docNo, setDocNo] = useState(u0.doc);
+  const [exactMatch, setExactMatch] = useState(u0.x);
+  const [hideZero, setHideZero] = useState(u0.z);
 
-  /**
-   * بحث نصي على الكشف.
-   *
-   * الفلاتر اللي على رؤوس الأعمدة بتشتغل لما تعرف **أنهي عمود** فيه اللي بتدوّر عليه.
-   * واللي بيفتح كشف بتمنميت سطر بيبقى معاه رقم مستند أو اسم، مش عمود — و«فين الحركة
-   * اللي فيها ١٢٥٠؟» سؤال مالوش إجابة في فلتر عمود واحد.
-   */
-  const [query, setQuery] = useState('');
-
-  /**
-   * فلتر نوع الحركة — «ورّيني المبيعات بس» أو «التحصيلات بس».
-   *
-   * كان موجود كفلتر على رأس عمود «النوع»، ودي حاجة محدش بيلاقيها وهو بيقرا كشف: الفلتر
-   * اللي جوّه رأس عمود بيتفتح بضغطة على أيقونة صغيرة مالهاش عنوان. وده سؤال بيتقال بصوت
-   * عالي، فمكانه فوق مع الفترة والمندوب.
-   *
-   * والأنواع بتتقرا من الكشف نفسه مش من قايمة ثابتة — عرض كل أنواع الحركات في النظام على
-   * حساب اتحرك بنوعين هو قايمة بتوعد بحاجات مش موجودة.
-   */
-  // متعدد زي نظامهم — «المبيعات والتحصيلات مع بعض» سؤال حقيقي، واختيار واحد كان بيجبر
-  // اللي بيسأله يقارن كشفين ورا بعض من الذاكرة.
-  const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const repOptions = [...new Set(lines.map((l) => l.rep_name).filter(Boolean))]
     .map((r) => ({ value: r as string, label: r as string }));
   const typeOptions = [...new Set(lines.map((l) => l.entry_type).filter(Boolean))]
     .map((t) => ({ value: t as string, label: entryTypeLabel(t as string) }));
+  const ccOptions = [...new Set(lines.map((l) => l.cost_center_name).filter(Boolean))]
+    .map((c) => ({ value: c as string, label: c as string }));
 
-  /**
-   * اللي على الشاشة بعد الفلاتر — وده اللي الرصيد التراكمي بيتحسب عليه كمان.
-   *
-   * البحث بيدوّر في البيان ورقم المستند واسم المندوب والنوع — الأربعة اللي حد ممكن
-   * يكون فاكرهم عن سطر بيدوّر عليه.
-   */
+  const PRESETS: Array<{ label: string; get: () => [Dayjs, Dayjs] }> = [
+    { label: 'اليوم', get: () => [dayjs(), dayjs()] },
+    { label: 'الأمس', get: () => [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')] },
+    { label: 'آخر ٧ أيام', get: () => [dayjs().subtract(6, 'day'), dayjs()] },
+    { label: 'الشهر ده', get: () => [dayjs().startOf('month'), dayjs()] },
+    {
+      label: 'الشهر اللي فات',
+      get: () => [
+        dayjs().subtract(1, 'month').startOf('month'),
+        dayjs().subtract(1, 'month').endOf('month'),
+      ],
+    },
+    { label: 'السنة دي', get: () => [dayjs().startOf('year'), dayjs()] },
+  ];
+  const presetActive = (p: { get: () => [Dayjs, Dayjs] }) => {
+    if (!range) return false;
+    const [s, e] = p.get();
+    return range[0].isSame(s, 'day') && range[1].isSame(e, 'day');
+  };
+
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (subject === 'item') p.set('subject', 'item');
+    if (accountId) p.set('account', String(accountId));
+    if (mainKey) p.set('main', mainKey);
+    if (itemId) p.set('item', String(itemId));
+    if (warehouseId) p.set('wh', String(warehouseId));
+    if (range?.[0]) p.set('from', range[0].format('YYYY-MM-DD'));
+    if (range?.[1]) p.set('to', range[1].format('YYYY-MM-DD'));
+    if (repFilter) p.set('rep', repFilter);
+    if (typeFilter.length) p.set('type', typeFilter.join(','));
+    if (ccFilter.length) p.set('cc', ccFilter.join(','));
+    if (query.trim()) p.set('q', query.trim());
+    if (docNo.trim()) p.set('doc', docNo.trim());
+    if (exactMatch) p.set('x', '1');
+    if (hideZero) p.set('z', '1');
+    setSearch(p, { replace: true });
+  }, [subject, accountId, mainKey, itemId, warehouseId, range, repFilter, typeFilter,
+    ccFilter, query, docNo, exactMatch, hideZero, setSearch]);
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      message.success('اتنسخ رابط الكشف بالفلاتر زي ما هي — ابعتّه لأي حد يفتحه');
+    } catch {
+      message.error('المتصفح رفض النسخ — انسخ العنوان من شريط العناوين');
+    }
+  };
+
   const shownLines = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const qRaw = query.trim();
+    const q = normalizeAr(qRaw).toLowerCase();
+    const dRaw = docNo.trim();
+    const d = normalizeAr(dRaw).toLowerCase();
     return lines.filter((l) => {
       if (repFilter && l.rep_name !== repFilter) return false;
       if (typeFilter.length && !typeFilter.includes(l.entry_type)) return false;
+      if (ccFilter.length && !ccFilter.includes(l.cost_center_name ?? '')) return false;
+      if (hideZero && !Number(l.debit || 0) && !Number(l.credit || 0)) return false;
+      if (dRaw) {
+        const dn = normalizeAr(l.doc_number ?? '');
+        if (exactMatch ? dn !== d : !dn.includes(d)) return false;
+      }
       if (!q) return true;
-      return [l.description, l.doc_number, l.rep_name, entryTypeLabel(l.entry_type)]
-        .some((v) => String(v ?? '').toLowerCase().includes(q));
-    });
-  }, [lines, repFilter, typeFilter, query]);
+      const haystacks = [l.description, l.doc_number, l.rep_name, l.cost_center_name,
+        l.account_name, entryTypeLabel(l.entry_type)];
+      return haystacks.some((v) => {
+        const n = normalizeAr(v);
+        return exactMatch ? n === q : n.includes(q);
+      });
+    })
+      .map((l, i) => ({ ...l, _serial: i + 1 }));
+  }, [lines, repFilter, typeFilter, ccFilter, hideZero, docNo, query, exactMatch]);
 
-  /**
-   * الرصيد التراكمي **للمعروض**.
-   *
-   * عمود «الرصيد بعد» بتاع الحساب كله: بيتحسب على كل الحركات، وبيفضل كده حتى لما تفلتر.
-   * وده صح — الرصيد بتاع الحساب مش بتاع اللي انت شايفه — بس النتيجة إن اللي بيفلتر بمندوب
-   * بيقرا عمود أرقامه مالهاش علاقة بالسطور اللي قدامه: سطر بـ٥٠٠ ورصيد ٢٠ ألف جنبه.
-   *
-   * فالعمود ده بيمشي على المعروض وبس: بيبدأ من صفر وبيجمع اللي بيتشاف. مش رصيد الحساب،
-   * وعنوانه بيقول كده — «تراكمي المعروض» — عشان محدش يقراه على إنه الرصيد.
-   *
-   * وبيبان بس لما يكون فيه فلتر شغّال؛ من غير فلتر هو نفس عمود الرصيد بالظبط، وعمودين
-   * بنفس الأرقام بيخلّوا الواحد يدوّر على الفرق بينهم.
-   */
-  const filtering = !!(repFilter || typeFilter.length || query.trim());
+  const filtering = !!(repFilter || ccFilter.length || typeFilter.length
+    || query.trim() || docNo.trim() || hideZero);
   const runningOf = useMemo(() => {
     const m = new Map<string, number>();
     let acc = 0;
@@ -418,12 +341,6 @@ export default function AccountStatement() {
   }, [shownLines]);
   const openDoc = useOpenDocument();
 
-  /**
-   * بيجيب القيد اللي السطر طالع منه.
-   *
-   * الفشل بيتخزّن كـ`null` زي النجاح بالظبط، عشان سطر مالوش قيد يتقرا مايفضلش يطلب نفس
-   * الحاجة كل مرة يتفتح فيها.
-   */
   const loadEntry = async (entryId: number) => {
     if (entryId in entryCache || entryBusy[entryId]) return;
     setEntryBusy((b) => ({ ...b, [entryId]: true }));
@@ -442,54 +359,47 @@ export default function AccountStatement() {
   const toggleRow = (l: StatementLine) => {
     const k = rowKeyOf(l);
     setExpandedKeys((keys) => (keys.includes(k) ? keys.filter((x) => x !== k) : [...keys, k]));
-    // القيد بيتجاب بس للسطور اللي مالهاش مستند بأصناف — سطر الفاتورة بيوري أصنافها،
-    // ومايحتاجش سطور القيد أصلاً.
     if (subject === 'account' && !hasItemLines(l.doc_kind)) loadEntry(l.entry_id);
   };
+
+  useEffect(() => {
+    if (showStock) setExpandedKeys(shownLines.map(rowKeyOf));
+  }, [showStock, shownLines]);
 
   const kb = useTableKeyboard<StatementLine>({
     rows: lines,
     rowKey: rowKeyOf,
-    /**
-     * الضغطة بتفتح السطر، مش المستند.
-     *
-     * كانت بتودّي على المستند على طول، فالطريقة الوحيدة للإجابة على «السطر ده إيه؟» كانت
-     * إنك تسيب الكشف. والسطور اللي مالهاش مستند — القيود اليدوية والأرصدة الافتتاحية —
-     * ماكانتش بتعمل حاجة خالص، وهي بالظبط السطور اللي محتاجة شرح. دلوقتي بتتفتح تحتها،
-     * والمستند ليه زراره جوّه.
-     */
     onOpen: toggleRow,
   });
 
-  /**
-   * عناوين الأعمدة بتتغيّر مع الموضوع، والمعنى ثابت.
-   *
-   * «مدين/دائن» عند الحساب هما نفس «داخل/خارج» عند الصنف: حاجة زادت وحاجة نقصت، والرصيد
-   * قبل وبعد بيمشوا معاهم. اللي بيتغيّر هو الوحدة — جنيه ولا قطعة — والعنوان لازم يقولها،
-   * لأن عمود مكتوب عليه «مدين» فوق كميات هو أسوأ من عمود من غير عنوان.
-   */
   const isItem = subject === 'item';
   const LABELS = isItem
     ? { debit: 'داخل', credit: 'خارج', before: 'الرصيد قبل', after: 'الرصيد بعد' }
     : { debit: 'مدين', credit: 'دائن', before: 'الرصيد قبل', after: 'الرصيد بعد' };
-  /** الكميات بتتعرض بمنازلها، والفلوس بمنزلتين. */
   const num = (v: any) => (isItem
     ? Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 })
     : money(v));
 
   const columns: ColumnsType<StatementLine> = [
+    { title: 'رقم', dataIndex: '_serial', width: 60, align: 'center',
+      ...numberColumn<StatementLine>((l) => l._serial ?? 0) },
     { title: 'التاريخ', dataIndex: 'entry_date',
       ...dateColumn<StatementLine>((l) => l.entry_date),
+      sorter: (a: StatementLine, b: StatementLine) => String(a.entry_date || '')
+        .localeCompare(String(b.entry_date || '')),
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'النوع', dataIndex: 'entry_type',
       ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
       render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
+    ...(grouped ? [{
+      title: 'الحساب الفرعي', dataIndex: 'account_name', width: 180, ellipsis: true,
+      ...textColumn(lines, (l: StatementLine) => l.account_name),
+      render: (v: string | null, l: StatementLine) => (l.account_id ? (
+        <a onClick={() => openAccount(l.account_id!)}>{v ?? `#${l.account_id}`}</a>
+      ) : (v ?? '-')),
+    }] : []),
     { title: 'البيان', dataIndex: 'description',
       ...textColumn(lines, (l: StatementLine) => l.description) },
-    // Their statement has a cost-centre column. The journal line has always carried one
-    // and this screen dropped it, so «against which project?» meant opening the entry.
-    // The line never held a rep; the document that posted it did. A manual journal
-    // entry has none and says so rather than borrowing one.
     { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
       ...textColumn(lines, (l: StatementLine) => l.rep_name),
       render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
@@ -498,12 +408,15 @@ export default function AccountStatement() {
       render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
     { title: LABELS.before, dataIndex: 'balance_before', align: 'left',
       ...numberColumn<StatementLine>((l) => l.balance_before),
+      sorter: (a: StatementLine, b: StatementLine) => Number(a.balance_before) - Number(b.balance_before),
       render: (v: string) => <span style={{ color: '#6b6b6b' }}>{num(v)}</span> },
     { title: LABELS.debit, dataIndex: 'debit', align: 'left',
       ...numberColumn<StatementLine>((l) => l.debit),
+      sorter: (a: StatementLine, b: StatementLine) => Number(a.debit) - Number(b.debit),
       render: (v: string) => (Number(v) ? num(v) : '-') },
     { title: LABELS.credit, dataIndex: 'credit', align: 'left',
       ...numberColumn<StatementLine>((l) => l.credit),
+      sorter: (a: StatementLine, b: StatementLine) => Number(a.credit) - Number(b.credit),
       render: (v: string) => (Number(v) ? num(v) : '-') },
     ...(filtering ? [{
       title: 'تراكمي المعروض',
@@ -517,22 +430,95 @@ export default function AccountStatement() {
     }] : []),
     { title: LABELS.after, dataIndex: 'balance', align: 'left',
       ...numberColumn<StatementLine>((l) => l.balance),
+      sorter: (a: StatementLine, b: StatementLine) => Number(a.balance) - Number(b.balance),
       render: (v: string) => <b>{num(v)}</b> },
-    // The whole point of a statement is to answer «إيه السطر ده؟» — so the answer is
-    // one click away rather than a number to memorise and search for elsewhere.
     { title: 'المستند', key: 'doc', align: 'center',
       ...textColumn(lines, (l: StatementLine) => l.doc_number),
       render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
         <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
           label={l.doc_number || undefined}
-          // كل المستندات اللي شاشتها بتعدّل — `DocumentLink` هي اللي بتعرف مين فيهم،
-          // فالقايمة موجودة في مكان واحد بدل ما كل شاشة تفتكرها.
           allowEdit />
       ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('account-statement', columns);
+
+  const printColOf = (k: string): PrintColumn<StatementLine> | null => {
+    switch (k) {
+      case '_serial': return { title: 'رقم', value: (l) => l._serial ?? '' };
+      case 'entry_date': return { title: 'التاريخ', value: (l) => String(l.entry_date || '').slice(0, 10) };
+      case 'entry_type': return { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) };
+      case 'account_name': return { title: 'الحساب الفرعي', value: (l) => l.account_name ?? '' };
+      case 'description': return { title: 'البيان', value: 'description' };
+      case 'rep_name': return { title: 'مندوب', value: (l) => l.rep_name ?? '' };
+      case 'cost_center_name': return { title: 'مركز التكلفة', value: (l) => l.cost_center_name ?? '' };
+      case 'balance_before': return { title: LABELS.before, value: 'balance_before', numeric: true };
+      case 'debit': return { title: LABELS.debit, value: 'debit', numeric: true };
+      case 'credit': return { title: LABELS.credit, value: 'credit', numeric: true };
+      case 'running':
+        return {
+          title: 'تراكمي المعروض',
+          value: (l) => num(runningOf.get(rowKeyOf(l)) ?? 0),
+          numeric: true,
+        };
+      case 'balance': return { title: LABELS.after, value: 'balance', numeric: true };
+      case 'doc': return { title: 'المستند', value: (l) => l.doc_number ?? '' };
+      default: return null;
+    }
+  };
+
+  const visibleKeys = tableCols.columns.map((c: any) => String(c.key ?? c.dataIndex ?? ''));
+
+  const exportCsv = () => {
+    if (!statement?.lines?.length) { message.info('لا توجد حركات للتصدير'); return; }
+    const cols: CsvColumn<StatementLine>[] = visibleKeys
+      .map((k) => printColOf(k))
+      .filter((c): c is PrintColumn<StatementLine> => !!c)
+      .map(({ title, value }) => ({ title, value }) as CsvColumn<StatementLine>);
+    writeCsv(`statement-${statement.account_id}`, cols, shownLines);
+  };
+
+  const printIt = () => {
+    if (!statement) return;
+    const cols = visibleKeys
+      .map((k) => printColOf(k))
+      .filter((c): c is PrintColumn<StatementLine> => !!c);
+    printReport(
+      {
+        title: isItem ? 'كشف صنف' : 'كشف حساب',
+        meta: [
+          [isItem ? 'الصنف' : 'الحساب', statement.account_name ?? ''],
+          ...(range ? [[
+            'الفترة',
+            `${range[0].format('YYYY/MM/DD')} ← ${range[1].format('YYYY/MM/DD')}`,
+          ] as [string, string]] : []),
+          ...(isItem && warehouseId
+            ? [['المخزن',
+                warehouses.find((w: any) => w.id === warehouseId)?.name ?? ''] as [string, string]]
+            : []),
+          ...(repFilter ? [['مندوب', repFilter] as [string, string]] : []),
+          ...(ccFilter.length
+            ? [['مركز التكلفة', ccFilter.join('، ')] as [string, string]] : []),
+          ...(typeFilter.length
+            ? [['نوع الحركة', typeFilter.map(entryTypeLabel).join('، ')] as [string, string]] : []),
+          ...(docNo.trim() ? [['رقم المستند', docNo.trim()] as [string, string]] : []),
+          ...(query.trim()
+            ? [[exactMatch ? 'بحث (تطابق تام)' : 'بحث', query.trim()] as [string, string]] : []),
+          ...(hideZero ? [['عرض', 'بدون الحركات الصفرية'] as [string, string]] : []),
+        ],
+      },
+      cols,
+      shownLines,
+      [
+        { label: 'رصيد أول المدة', value: money(statement.opening_balance) },
+        { label: `إجمالي ${LABELS.debit} (المعروض)`,
+          value: money(shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)) },
+        { label: `إجمالي ${LABELS.credit} (المعروض)`,
+          value: money(shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)) },
+        { label: 'الرصيد الختامي', value: money(statement.closing_balance) },
+      ],
+    );
+  };
 
   const itemNameOf = (id: number) => {
     const it = items.find((x: any) => x.id === id);
@@ -554,16 +540,6 @@ export default function AccountStatement() {
     return c ? (c.name || `#${id}`) : `#${id}`;
   };
 
-  /**
-   * بيروح لكشف حساب تاني من جوّه القيد.
-   *
-   * ده اللي بيخلّي التوسعة رد فعلي مش عرض: القيد بيقول إن الفلوس دي راحت على حساب فلان،
-   * والسؤال اللي بعده على طول هو «طب وفلان ده رصيده إيه؟» — والإجابة كانت محتاجة إنك
-   * تفتكر الاسم وتدوّر عليه في قايمة الحسابات تاني.
-   *
-   * و«الحساب الرئيسي» بيتفضّى لأن الحساب اللي رايح ليه ممكن مايبقاش تحت اللي متحدد،
-   * وساعتها الخانة بتفضل فاضية وهو مش عارف ليه.
-   */
   const openAccount = (id: number) => {
     if (!id || id === accountId) return;
     setSubject('account');
@@ -571,13 +547,6 @@ export default function AccountStatement() {
     setAccountId(id);
   };
 
-  /**
-   * اللي بيتعرض تحت السطر.
-   *
-   * الحساب والصنف بيوصلوا لنفس الحتة من طريقين: القيد بسطوره عند الحساب، وتفاصيل الحركة
-   * عند الصنف. والاتنين بيبدأوا بنفس الشريط — النوع والتاريخ والبيان وزرار المستند — عشان
-   * اللي بيقرا مايتعلّمش شاشتين.
-   */
   const rowDetail = (l: StatementLine) => {
     const head = (
       <div style={{
@@ -591,19 +560,12 @@ export default function AccountStatement() {
             <DocumentLink kind={l.doc_kind} id={l.doc_id}
               label={l.doc_number ? `المستند ${l.doc_number}` : 'فتح المستند'} allowEdit />
           ) : (
-            // مافيش رابط لأنه مافيش مستند — القيد اليدوي والرصيد الافتتاحي اتكتبوا هنا
-            // مباشرة، وزرار بيوعد بفاتورة مش موجودة أوحش من نص بيقول الحقيقة.
             <span style={{ color: '#8c8c8c' }}>قيد يدوي — مافيش مستند وراه</span>
           )}
         </span>
       </div>
     );
 
-    // زي علامة «حركة مخزنية» في نظامهم: السطر اللي وراه فاتورة بيفرد أصنافها —
-    // المخزن والصنف والكمية والسعر والإجمالي. اللي بيراجع كشف عميل مش بيسأل «القيد اتقفل
-    // على أنهي حساب» — بيسأل «العميل ده خد إيه». سطور القيد إجابة محاسب؛ الأصناف إجابة
-    // صاحب الشغل، وهي دي اللي بتتفرد. القيود اليدوية بس هي اللي بتوري سطور القيد،
-    // لأنها كل اللي عندها.
     if (l.doc_kind && l.doc_id && hasItemLines(l.doc_kind)) {
       return (
         <div style={{ padding: '4px 8px' }}>
@@ -679,20 +641,20 @@ export default function AccountStatement() {
       extra={(
         <>
           {tableCols.control}
+          <Button icon={<LinkOutlined />} onClick={copyLink}
+            disabled={!statement?.lines?.length} style={{ marginInlineEnd: 8 }}>نسخ الرابط</Button>
           <Button icon={<DownloadOutlined />} onClick={exportCsv}
             disabled={!statement?.lines?.length} style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
           <Button icon={<PrinterOutlined />} onClick={printIt}
             disabled={!statement?.lines?.length}
             style={{ marginInlineEnd: 8 }}>طباعة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load} disabled={!accountId}>تحديث</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}
+            disabled={isItem ? !itemId : (!accountId && !mainKey)}>تحديث</Button>
         </>
       )}
     >
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={4}>
-          {/* الموضوع الأول: بنسأل «كشف إيه؟» قبل «مين؟» — لأن الإجابة بتغيّر الخانة اللي
-              بعدها. وتغييره بيفضّي اللي اتحدّد قبله، عشان مايفضلش على الشاشة كشف حاجة
-              والخانة بتقول حاجة تانية. */}
           <Select
             style={{ width: '100%' }} value={subject}
             onChange={(v) => {
@@ -720,7 +682,6 @@ export default function AccountStatement() {
               />
             </Col>
             <Col xs={24} md={4}>
-              {/* من غير مخزن = كل المواقع، وده اللي الكارت بيعمله لوحده. */}
               <Select
                 showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
                 placeholder="كل المخازن" value={warehouseId} onChange={setWarehouseId}
@@ -730,24 +691,22 @@ export default function AccountStatement() {
           </>
         ) : (
           <>
-        <Col xs={24} md={4}>
-          <Select
-            showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
-            placeholder="الحساب الرئيسي" value={mainKey}
-            // Changing the book clears the account under it: keeping a sub-account from the
-            // previous book would leave the two fields disagreeing about what is on screen.
-            onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
-            options={mainOptions}
-          />
-        </Col>
-        <Col xs={24} md={8}>
-          <Select
-            showSearch optionFilterProp="label" style={{ width: '100%' }}
-            placeholder={mainKey ? 'الحساب الفرعي' : 'اختر الحساب'}
-            value={accountId} onChange={setAccountId}
-            options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))}
-          />
-        </Col>
+            <Col xs={24} md={4}>
+              <Select
+                showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+                placeholder="الحساب الرئيسي" value={mainKey}
+                onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
+                options={mainOptions}
+              />
+            </Col>
+            <Col xs={24} md={8}>
+              <Select
+                showSearch optionFilterProp="label" style={{ width: '100%' }}
+                placeholder={mainKey ? 'الكل (كشف مجمّع) — أو اختر حساباً' : 'اختر الحساب'}
+                value={accountId} onChange={setAccountId} allowClear
+                options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))}
+              />
+            </Col>
           </>
         )}
         <Col xs={24} md={6}>
@@ -757,12 +716,10 @@ export default function AccountStatement() {
           />
         </Col>
         <Col xs={24} md={4}>
-          {/* البحث النصي — على البيان ورقم المستند والمندوب والنوع. */}
           <Input allowClear prefix={<SearchOutlined />} placeholder="بحث في الكشف"
             value={query} onChange={(e) => setQuery(e.target.value)} />
         </Col>
         <Col xs={24} md={4}>
-          {/* نوع الحركة فوق مش في رأس عمود — ده سؤال بيتقال بصوت عالي. */}
           <Select
             mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
             allowClear maxTagCount="responsive"
@@ -771,9 +728,6 @@ export default function AccountStatement() {
           />
         </Col>
         <Col xs={24} md={4}>
-          {/* Only offered once the statement is on screen and somebody's name is actually on it —
-              an empty rep box on an account no rep has touched is a control that can only
-              disappoint. */}
           <Select
             showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
             placeholder="المندوب" value={repFilter} onChange={setRepFilter}
@@ -783,17 +737,44 @@ export default function AccountStatement() {
         </Col>
       </Row>
 
-      {((isItem && !itemId) || (!isItem && !accountId)) && (
-        <Empty description={isItem ? 'اختر صنفاً لعرض كشفه' : 'اختر حساباً لعرض كشفه'} />
+      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={6}>
+          <Select
+            mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear maxTagCount="responsive"
+            placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
+            options={ccOptions} disabled={!ccOptions.length}
+          />
+        </Col>
+        <Col xs={24} md={5}>
+          <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"
+            value={docNo} onChange={(e) => setDocNo(e.target.value)} />
+        </Col>
+        <Col xs={24} md={13}>
+          <Space wrap size={[4, 8]}>
+            {PRESETS.map((p) => (
+              <Button key={p.label} size="small"
+                type={presetActive(p) ? 'primary' : 'default'}
+                onClick={() => setRange(p.get())}>{p.label}</Button>
+            ))}
+            {range && (
+              <Button size="small" onClick={() => setRange(null)}>مسح الفترة</Button>
+            )}
+            <Checkbox checked={exactMatch}
+              onChange={(e) => setExactMatch(e.target.checked)}>تطابق تام</Checkbox>
+            <Checkbox checked={hideZero}
+              onChange={(e) => setHideZero(e.target.checked)}>إخفاء الحركات الصفرية</Checkbox>
+          </Space>
+        </Col>
+      </Row>
+
+      {((isItem && !itemId) || (!isItem && !accountId && !mainKey)) && (
+        <Empty description={isItem ? 'اختر صنفاً لعرض كشفه'
+          : 'اختر حساباً — أو حساباً رئيسياً بس لكشف مجمّع لكل اللي تحته'} />
       )}
 
       {statement && (
         <>
-          {/* With a rep filter on, the account's own totals describe rows that are NOT on
-              screen. Debit and credit are recomputed over what is shown; the opening and closing
-              balance are not, because «رصيد أول المدة لمندوب» is not a number that exists — a
-              balance is the whole account or it is nothing. So they say whose they are instead of
-              quietly meaning something else. */}
           <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
             <Col xs={12} md={6}>
               <Card size="small">
@@ -819,9 +800,6 @@ export default function AccountStatement() {
             </Col>
             <Col xs={12} md={3}>
               <Card size="small">
-                {/* «رصيد الحركة» زي نظامهم: صافي الفترة المعروضة — مدينها ناقص دائنها.
-                    الرصيد الختامي بيقول انت واقف فين؛ ده بيقول الفترة دي لوحدها عملت إيه،
-                    ومن غيره كانوا بيتطرحوا على آلة حاسبة جنب الشاشة. */}
                 <Statistic title="رصيد الحركة"
                   value={num(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))} />
               </Card>
@@ -835,22 +813,32 @@ export default function AccountStatement() {
             </Col>
           </Row>
 
-          {/* أي فلتر شغّال بيتقال، مش المندوب وحده.
-              اللي بيقرا كشف مفلتر وهو فاكره كامل بيطلع باستنتاج غلط — والإجماليات فوق
-              بتاعة الحساب كله، فالفرق لازم يكون مكتوب. */}
           {filtering && (
             <Alert
               type="info" showIcon style={{ marginBottom: 12 }}
               message={[
                 repFilter && `حركة «${repFilter}»`,
+                ccFilter.length && `مركز تكلفة «${ccFilter.join('، ')}»`,
                 typeFilter.length && `نوع «${typeFilter.map(entryTypeLabel).join('، ')}»`,
-                query.trim() && `بحث «${query.trim()}»`,
+                docNo.trim() && `مستند «${docNo.trim()}»`,
+                query.trim() && `بحث «${query.trim()}»${exactMatch ? ' (تطابق تام)' : ''}`,
+                hideZero && 'بدون الحركات الصفرية',
               ].filter(Boolean).join(' · ')}
               description={`${shownLines.length} حركة من إجمالي ${lines.length}. `
                 + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو اللي بيمشي '
                 + 'مع السطور اللي قدامك.'}
             />
           )}
+
+          <div style={{ marginBottom: 8 }}>
+            <Checkbox checked={showStock} onChange={(e) => {
+              const on = e.target.checked;
+              setShowStock(on);
+              if (!on) setExpandedKeys([]);
+            }}>
+              حركة مخزنية — فرد أصناف كل المستندات
+            </Checkbox>
+          </div>
 
           <Table<StatementLine>
             {...kb.tableProps}
@@ -862,10 +850,25 @@ export default function AccountStatement() {
             columns={tableCols.columns}
             expandable={{
               expandedRowKeys: expandedKeys,
-              // الضغط على الصف نفسه بيفتحه كمان (من `onOpen`)، والسهم موجود عشان اللي
-              // بيدوّر بعينه على حاجة تتفتح يلاقيها.
               onExpand: (_open, l) => toggleRow(l),
               expandedRowRender: rowDetail,
+            }}
+            summary={() => {
+              const td = shownLines.reduce((t, l) => t + Number(l.debit || 0), 0);
+              const tc = shownLines.reduce((t, l) => t + Number(l.credit || 0), 0);
+              const cols = tableCols.columns;
+              const di = cols.findIndex((c: any) => c.dataIndex === 'debit');
+              const ci = cols.findIndex((c: any) => c.dataIndex === 'credit');
+              if (di < 0 || ci < 0) return null;
+              return (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={di + 1}><b>الإجمالي</b></Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}><b>{num(td)}</b></Table.Summary.Cell>
+                  {ci > di + 1 && <Table.Summary.Cell index={2} colSpan={ci - di - 1} />}
+                  <Table.Summary.Cell index={3}><b>{num(tc)}</b></Table.Summary.Cell>
+                  <Table.Summary.Cell index={4} colSpan={Math.max(1, cols.length - ci)} />
+                </Table.Summary.Row>
+              );
             }}
           />
         </>
