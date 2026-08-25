@@ -23,7 +23,8 @@ import { useNavigate } from 'react-router-dom';
  * A kind listed here is a promise that a screen can open one of these; keeping an unkept one
  * around is how the next person adds a link that quietly goes nowhere.
  */
-export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return';
+export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return'
+  | 'transfer' | 'stock_permit';
 
 const SCREEN: Record<DocKind, string> = {
   invoice: '/invoices',
@@ -32,6 +33,11 @@ const SCREEN: Record<DocKind, string> = {
   // (031) Purchase returns have a register of their own now; they used to land on the purchase
   // list, which is a different document from the one the link was named after.
   purchase_return: '/purchase-returns',
+  // إذن التحويل وإذن الإضافة/الصرف — الاتنين بيحرّكوا مخزون، فبيظهروا في كارت الصنف
+  // وكشفه. وكانوا بيتعرضوا كنص من غير رابط، فاللي بيدوّر على سبب حركة كان بيقف عند
+  // رقم مستند مايقدرش يفتحه.
+  transfer: '/transfers',
+  stock_permit: '/stock-permits',
 };
 
 /**
@@ -46,6 +52,8 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
     case 'sale_return': return 'return';
     case 'purchase': return 'purchase';
     case 'purchase_return': return 'purchase_return';
+    case 'transfer': return 'transfer';
+    case 'stock_permit': return 'stock_permit';
     default: return null;
   }
 }
@@ -58,6 +66,11 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
  * للفرجة وبس. اللي بيدوس على رقم مستند عشان يصلّحه لازم يوصل لمكان يقدر يصلّح فيه.
  */
 const EDITABLE = new Set<DocKind>(['invoice', 'return', 'purchase', 'purchase_return']);
+
+/**
+ * التحويل والإذن مش في القايمة عن قصد: شاشتهم بتفتح المستند وتوريه، ومافيهاش تعديل عليه.
+ * إرسال حد لشاشة «تعديل» مش موجودة أوحش من الفرجة اللي طلبها.
+ */
 
 /**
  * «افتح المستند ده» — the single answer to where a document opens.

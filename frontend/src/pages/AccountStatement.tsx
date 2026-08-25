@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Empty, Input, Row, Select, Statistic, Table, Tag,
+  message,
 } from 'antd';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  DownloadOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
+} from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -311,11 +314,72 @@ export default function AccountStatement() {
    * rep in the company on an account only two of them ever touched is a list nobody can use.
    */
   const [repFilter, setRepFilter] = useState<string | undefined>();
+
+  /**
+   * بحث نصي على الكشف.
+   *
+   * الفلاتر اللي على رؤوس الأعمدة بتشتغل لما تعرف **أنهي عمود** فيه اللي بتدوّر عليه.
+   * واللي بيفتح كشف بتمنميت سطر بيبقى معاه رقم مستند أو اسم، مش عمود — و«فين الحركة
+   * اللي فيها ١٢٥٠؟» سؤال مالوش إجابة في فلتر عمود واحد.
+   */
+  const [query, setQuery] = useState('');
+
+  /**
+   * فلتر نوع الحركة — «ورّيني المبيعات بس» أو «التحصيلات بس».
+   *
+   * كان موجود كفلتر على رأس عمود «النوع»، ودي حاجة محدش بيلاقيها وهو بيقرا كشف: الفلتر
+   * اللي جوّه رأس عمود بيتفتح بضغطة على أيقونة صغيرة مالهاش عنوان. وده سؤال بيتقال بصوت
+   * عالي، فمكانه فوق مع الفترة والمندوب.
+   *
+   * والأنواع بتتقرا من الكشف نفسه مش من قايمة ثابتة — عرض كل أنواع الحركات في النظام على
+   * حساب اتحرك بنوعين هو قايمة بتوعد بحاجات مش موجودة.
+   */
+  const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const repOptions = [...new Set(lines.map((l) => l.rep_name).filter(Boolean))]
     .map((r) => ({ value: r as string, label: r as string }));
-  const shownLines = repFilter
-    ? lines.filter((l) => l.rep_name === repFilter)
-    : lines;
+  const typeOptions = [...new Set(lines.map((l) => l.entry_type).filter(Boolean))]
+    .map((t) => ({ value: t as string, label: entryTypeLabel(t as string) }));
+
+  /**
+   * اللي على الشاشة بعد الفلاتر — وده اللي الرصيد التراكمي بيتحسب عليه كمان.
+   *
+   * البحث بيدوّر في البيان ورقم المستند واسم المندوب والنوع — الأربعة اللي حد ممكن
+   * يكون فاكرهم عن سطر بيدوّر عليه.
+   */
+  const shownLines = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return lines.filter((l) => {
+      if (repFilter && l.rep_name !== repFilter) return false;
+      if (typeFilter && l.entry_type !== typeFilter) return false;
+      if (!q) return true;
+      return [l.description, l.doc_number, l.rep_name, entryTypeLabel(l.entry_type)]
+        .some((v) => String(v ?? '').toLowerCase().includes(q));
+    });
+  }, [lines, repFilter, typeFilter, query]);
+
+  /**
+   * الرصيد التراكمي **للمعروض**.
+   *
+   * عمود «الرصيد بعد» بتاع الحساب كله: بيتحسب على كل الحركات، وبيفضل كده حتى لما تفلتر.
+   * وده صح — الرصيد بتاع الحساب مش بتاع اللي انت شايفه — بس النتيجة إن اللي بيفلتر بمندوب
+   * بيقرا عمود أرقامه مالهاش علاقة بالسطور اللي قدامه: سطر بـ٥٠٠ ورصيد ٢٠ ألف جنبه.
+   *
+   * فالعمود ده بيمشي على المعروض وبس: بيبدأ من صفر وبيجمع اللي بيتشاف. مش رصيد الحساب،
+   * وعنوانه بيقول كده — «تراكمي المعروض» — عشان محدش يقراه على إنه الرصيد.
+   *
+   * وبيبان بس لما يكون فيه فلتر شغّال؛ من غير فلتر هو نفس عمود الرصيد بالظبط، وعمودين
+   * بنفس الأرقام بيخلّوا الواحد يدوّر على الفرق بينهم.
+   */
+  const filtering = !!(repFilter || typeFilter || query.trim());
+  const runningOf = useMemo(() => {
+    const m = new Map<string, number>();
+    let acc = 0;
+    for (const l of shownLines) {
+      acc += Number(l.debit || 0) - Number(l.credit || 0);
+      m.set(`${l.entry_id}-${l.entry_date}-${l.balance}`, acc);
+    }
+    return m;
+  }, [shownLines]);
   const openDoc = useOpenDocument();
   const kb = useTableKeyboard<StatementLine>({
     rows: lines,
@@ -368,6 +432,16 @@ export default function AccountStatement() {
     { title: LABELS.credit, dataIndex: 'credit', align: 'left',
       ...numberColumn<StatementLine>((l) => l.credit),
       render: (v: string) => (Number(v) ? num(v) : '-') },
+    ...(filtering ? [{
+      title: 'تراكمي المعروض',
+      key: 'running',
+      align: 'left' as const,
+      render: (_: unknown, l: StatementLine) => (
+        <span style={{ color: '#b26a00' }}>
+          {num(runningOf.get(`${l.entry_id}-${l.entry_date}-${l.balance}`) ?? 0)}
+        </span>
+      ),
+    }] : []),
     { title: LABELS.after, dataIndex: 'balance', align: 'left',
       ...numberColumn<StatementLine>((l) => l.balance),
       render: (v: string) => <b>{num(v)}</b> },
@@ -471,6 +545,19 @@ export default function AccountStatement() {
           />
         </Col>
         <Col xs={24} md={4}>
+          {/* البحث النصي — على البيان ورقم المستند والمندوب والنوع. */}
+          <Input allowClear prefix={<SearchOutlined />} placeholder="بحث في الكشف"
+            value={query} onChange={(e) => setQuery(e.target.value)} />
+        </Col>
+        <Col xs={24} md={4}>
+          {/* نوع الحركة فوق مش في رأس عمود — ده سؤال بيتقال بصوت عالي. */}
+          <Select
+            showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+            placeholder="نوع الحركة" value={typeFilter} onChange={setTypeFilter}
+            options={typeOptions} disabled={!typeOptions.length}
+          />
+        </Col>
+        <Col xs={24} md={4}>
           {/* Only offered once the statement is on screen and somebody's name is actually on it —
               an empty rep box on an account no rep has touched is a control that can only
               disappoint. */}
@@ -526,11 +613,20 @@ export default function AccountStatement() {
             </Col>
           </Row>
 
-          {repFilter && (
+          {/* أي فلتر شغّال بيتقال، مش المندوب وحده.
+              اللي بيقرا كشف مفلتر وهو فاكره كامل بيطلع باستنتاج غلط — والإجماليات فوق
+              بتاعة الحساب كله، فالفرق لازم يكون مكتوب. */}
+          {filtering && (
             <Alert
               type="info" showIcon style={{ marginBottom: 12 }}
-              message={`بتشوف حركة «${repFilter}» بس على الحساب ده`}
-              description={`${shownLines.length} حركة من إجمالي ${lines.length}. الرصيد أول وآخر المدة للحساب كله — مش للمندوب.`}
+              message={[
+                repFilter && `حركة «${repFilter}»`,
+                typeFilter && `نوع «${entryTypeLabel(typeFilter)}»`,
+                query.trim() && `بحث «${query.trim()}»`,
+              ].filter(Boolean).join(' · ')}
+              description={`${shownLines.length} حركة من إجمالي ${lines.length}. `
+                + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو اللي بيمشي '
+                + 'مع السطور اللي قدامك.'}
             />
           )}
 

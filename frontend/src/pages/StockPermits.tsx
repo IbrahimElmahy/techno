@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -10,6 +10,7 @@ import {
   EditOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -63,6 +64,7 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function StockPermits() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [permits, setPermits] = useState<Permit[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -155,6 +157,24 @@ export default function StockPermits() {
 
   /** Open a posted permit on the same page it would have been written on. */
   const openPermit = (p: Permit) => { setCreating(false); setDetail(p); };
+
+  /**
+   * `?doc=` — بيفتح الإذن اللي الرابط بيشاور عليه، زي إذن التحويل بالظبط.
+   *
+   * الحركة في كارت الصنف بتقول «إذن إضافة» ورقمه؛ والرابط لازم يوصّل للإذن نفسه مش
+   * للقايمة اللي هو فيها.
+   */
+  const pendingDoc = useRef<number | null>(null);
+  useEffect(() => {
+    const doc = searchParams.get('doc') || searchParams.get('edit');
+    if (doc) { pendingDoc.current = Number(doc); setSearchParams({}, { replace: true }); }
+    const wanted = pendingDoc.current;
+    if (!wanted || !permits.length) return;
+    pendingDoc.current = null;
+    const target = permits.find((x) => x.id === wanted);
+    if (target) openPermit(target);
+    else message.warning(`الإذن رقم ${wanted} مش في القائمة المعروضة`);
+  }, [searchParams, permits]);
 
   /** Leave the document, whichever kind it was. */
   const closeDoc = () => { setCreating(false); setDetail(null); resetDraft(); };

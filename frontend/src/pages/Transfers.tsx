@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -9,6 +9,7 @@ import {
   ClearOutlined, ArrowLeftOutlined, CloseCircleOutlined, FileSearchOutlined, EditOutlined,
   PrinterOutlined,
 } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
@@ -110,6 +111,7 @@ const routeFor = (srcKind: string, dstKind: string): string | null => {
 };
 
 export default function Transfers() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const { user } = useAuth();
@@ -322,6 +324,24 @@ export default function Transfers() {
    * matches what is on the shelf is the ordinary reason an approver hesitates, and «اعتمد أو
    * سيبه» is not how a request that is nearly right gets handled.
    */
+  /**
+   * `?doc=` — بيفتح إذن التحويل اللي الرابط بيشاور عليه.
+   *
+   * الرابط بييجي من كارت الصنف وكشفه: الحركة بتقول «تحويل» ورقم الإذن، والضغط عليه كان
+   * بيوصل للقايمة واللي بيقرا يدوّر بنفسه على الرقم اللي لسه ضاغط عليه.
+   */
+  const pendingDoc = useRef<number | null>(null);
+  useEffect(() => {
+    const doc = searchParams.get('doc') || searchParams.get('edit');
+    if (doc) { pendingDoc.current = Number(doc); setSearchParams({}, { replace: true }); }
+    const wanted = pendingDoc.current;
+    if (!wanted || !transfers.length) return;
+    pendingDoc.current = null;
+    const target = transfers.find((t) => t.id === wanted);
+    if (target) openTransfer(target);
+    else message.warning(`إذن التحويل رقم ${wanted} مش في القائمة المعروضة`);
+  }, [searchParams, transfers]);
+
   const openTransfer = async (t: TransferRecord) => {
     setEditing(t);
     setDraftQty({});
