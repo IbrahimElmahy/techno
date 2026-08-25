@@ -23,11 +23,21 @@ const pageFiles = readdirSync(PAGES).filter((f) => f.endsWith('.tsx'));
 const read = (f: string) => readFileSync(join(PAGES, f), 'utf8');
 
 describe('سجل عمليات الصنف', () => {
-  /** The screen that IS the item card report. It owns the endpoint by definition. */
-  const OWNER = 'ItemCard.tsx';
+  /**
+   * الشاشات اللي **بتملك** تقرير على المصدر ده — ومن حقها تنده عليه.
+   *
+   * `ItemCard` هي كارت الصنف نفسه. و`AccountStatement` بقت تعمل **كشف صنف**: مش سجل
+   * حركات جوّه شاشة، ده نفس كشف الحساب بأعمدته وفلاتره وطباعته وروابطه، والصنف بقى
+   * موضوع فيه زي الحساب. الشاشة اللي عايزة تعرض سجل جوّاها لسه بتفتح المشترك.
+   *
+   * والخطر اللي القاعدة دي بتحمي منه — نسختين بيقولوا أرقام مختلفة — مقفول هنا: الكشف
+   * بيعرض `balance_before`/`balance_after` زي ما بيرجعوا من المصدر، مابيحسبش رصيد من عنده.
+   * ولو ده اتغيّر يوم، الاختبار ده هو المكان اللي بيفكّر إن فيه قارئين مش واحد.
+   */
+  const OWNERS = ['ItemCard.tsx', 'AccountStatement.tsx'];
 
-  it('is fetched by its own screen and by the shared log — nobody else', () => {
-    const direct = pageFiles.filter((f) => f !== OWNER
+  it('is fetched by its own screens and by the shared log — nobody else', () => {
+    const direct = pageFiles.filter((f) => !OWNERS.includes(f)
       && /items\/\$\{[^}]+\}\/card/.test(read(f)));
     expect(direct, 'شاشة بتعمل سجل حركات لنفسها بدل ما تستعمل المشترك').toEqual([]);
   });

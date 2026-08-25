@@ -8,7 +8,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
-import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
+import DocumentLink, { DocKind, docKindOf, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -23,6 +23,20 @@ import { printReport, type PrintColumn } from '../print/reportSheet';
  * reason only two account types could be asked it. Every row carries the balance before the
  * movement and after it, so a disputed figure can be read off one line.
  */
+
+/**
+ * موضوع الكشف — الحساب ولا الصنف.
+ *
+ * السؤال واحد: «إيه اللي حصل على ده؟». والشاشة كانت بتجاوبه لحسابات الشجرة بس، والصنف
+ * ليه شاشة تانية بأعمدة تانية وفلاتر تانية وطباعة تانية — فاللي عايز يعرف تاريخ صنف
+ * بيتنطّط بين شاشتين على نفس السؤال، ومابيلاقيش عند الصنف الحاجات اللي اتبنت هنا:
+ * فلاتر الأعمدة، وإخفاء الأعمدة، والطباعة، والأهم — إن السطر يفتح مستنده **للتعديل**.
+ *
+ * الصف بيتحوّل لنفس الشكل: تاريخ، ونوع، وبيان، وحركة، ورصيد قبلها وبعدها، ومستند.
+ * الفرق الوحيد إن «مدين/دائن» عند الصنف بيبقوا «داخل/خارج» — نفس العمود بنفس المعنى،
+ * والوحدة مختلفة.
+ */
+type Subject = 'account' | 'item';
 
 interface StatementLine {
   doc_kind?: DocKind | null;
@@ -63,6 +77,11 @@ export default function AccountStatement() {
   // account in the chart is a list nobody scrolls: the person already knows which book they are
   // in, and narrowing by it turns hundreds of options into a handful.
   const [mainKey, setMainKey] = useState<string | undefined>();
+  const [subject, setSubject] = useState<Subject>('account');
+  const [items, setItems] = useState<any[]>([]);
+  const [itemId, setItemId] = useState<number | undefined>();
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [statement, setStatement] = useState<StatementOut | null>(null);
   const [loading, setLoading] = useState(false);
@@ -78,8 +97,43 @@ export default function AccountStatement() {
       .catch(console.error);
   }, []);
 
+  // الأصناف والمخازن بتتجابوا مرة لما الموضوع يبقى «صنف» — مش مع فتح الشاشة، عشان اللي
+  // فاتح كشف حساب عميل مايستناش تحميل كتالوج مش هيستعمله.
+  useEffect(() => {
+    if (subject !== 'item' || items.length) return;
+    api.get('/api/v1/items?kind=product').then((r) => setItems(r.data || [])).catch(() => {});
+    api.get('/api/v1/warehouses').then((r) => setWarehouses(r.data || [])).catch(() => {});
+  }, [subject]);
+
+  /**
+   * بيحمّل الكشف — من مصدرين على حسب الموضوع، وبيطلّع نفس الشكل.
+   *
+   * التحويل هنا مش تجميل: الجدول والفلاتر والطباعة والروابط كلها متبنية على `StatementLine`،
+   * فأي مصدر جديد بيتكلّم لغتها بيورث كل ده من غير سطر زيادة في أي منهم.
+   *
+   * والأرقام بتفضل صادقة: عند الصنف «مدين/دائن» هما الكمية الداخلة والخارجة، والرصيد قبل
+   * وبعد هما رصيد المخزون — نفس المعنى بوحدة مختلفة، والعناوين بتقول الوحدة دي.
+   */
   const load = async () => {
-    if (!accountId) { setStatement(null); return; }
+    if (subject === 'account') {
+      if (!accountId) { setStatement(null); return; }
+      setLoading(true);
+      try {
+        const params: any = {};
+        if (range) {
+          params.date_from = range[0].format('YYYY-MM-DD');
+          params.date_to = range[1].format('YYYY-MM-DD');
+        }
+        const res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
+        setStatement(res.data);
+      } catch (err: any) {
+        message.error(err?.response?.data?.detail?.message || 'تعذر تحميل كشف الحساب');
+        setStatement(null);
+      } finally { setLoading(false); }
+      return;
+    }
+
+    if (!itemId) { setStatement(null); return; }
     setLoading(true);
     try {
       const params: any = {};
@@ -87,15 +141,45 @@ export default function AccountStatement() {
         params.date_from = range[0].format('YYYY-MM-DD');
         params.date_to = range[1].format('YYYY-MM-DD');
       }
-      const res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
-      setStatement(res.data);
+      if (warehouseId) {
+        params.location_kind = 'warehouse';
+        params.location_id = warehouseId;
+      }
+      const res = await api.get(`/api/v1/items/${itemId}/card`, { params });
+      const d = res.data || {};
+      setStatement({
+        account_id: itemId,
+        account_name: `${d.item_name ?? ''}${d.item_code ? ` (${d.item_code})` : ''}`,
+        opening_balance: d.opening_balance ?? '0',
+        closing_balance: d.closing_balance ?? '0',
+        total_debit: d.total_in ?? '0',
+        total_credit: d.total_out ?? '0',
+        lines: (d.rows || []).map((r: any) => ({
+          entry_id: r.movement_id,
+          entry_date: r.date,
+          entry_type: r.movement_type,
+          // البيان بيتركّب من اللي على الحركة: الطرف والمكان. الكارت بيرجّعهم، وسطر من
+          // غيرهم بيبقى رقم مالوش قصة.
+          description: [r.party, r.location].filter(Boolean).join(' — ') || '-',
+          debit: r.quantity_in ?? '0',
+          credit: r.quantity_out ?? '0',
+          balance_before: r.balance_before ?? '0',
+          balance: r.balance_after ?? '0',
+          rep_name: r.rep_name ?? null,
+          cost_center_name: null,
+          // نفس محرك الروابط — فالسطر بيفتح فاتورته **للتعديل** زي كشف الحساب بالظبط.
+          doc_kind: docKindOf(r.source_doc_type),
+          doc_id: r.source_doc_id ?? null,
+          doc_number: r.document_number ?? null,
+        })),
+      });
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل كشف الحساب');
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل كشف الصنف');
       setStatement(null);
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [accountId, range]);
+  useEffect(() => { load(); }, [subject, accountId, itemId, warehouseId, range]);
 
   /** What a row reads as. Party accounts carry no `name` at all — the customer's name lives in
    *  `owner_name` — so a picker that only read `name` showed «حساب #16» for every customer and
@@ -185,7 +269,21 @@ export default function AccountStatement() {
       { title: 'الرصيد', value: 'balance', numeric: true },
     ];
     printReport(
-      { title: 'كشف حساب', meta: [['الحساب', statement.account_name ?? '']] },
+      {
+        title: isItem ? 'كشف صنف' : 'كشف حساب',
+        meta: [
+          [isItem ? 'الصنف' : 'الحساب', statement.account_name ?? ''],
+          // الفلاتر بتتكتب على الورقة — أرقام من غير سياقها بتبقى مالهاش معنى بعد أسبوع.
+          ...(range ? [[
+            'الفترة',
+            `${range[0].format('YYYY/MM/DD')} ← ${range[1].format('YYYY/MM/DD')}`,
+          ] as [string, string]] : []),
+          ...(isItem && warehouseId
+            ? [['المخزن',
+                warehouses.find((w: any) => w.id === warehouseId)?.name ?? ''] as [string, string]]
+            : []),
+        ],
+      },
       cols, statement.lines,
       [
         { label: 'رصيد أول المدة', value: money(statement.opening_balance) },
@@ -226,6 +324,22 @@ export default function AccountStatement() {
     onOpen: (l) => { if (l.doc_kind && l.doc_id) openDoc(l.doc_kind, l.doc_id); },
   });
 
+  /**
+   * عناوين الأعمدة بتتغيّر مع الموضوع، والمعنى ثابت.
+   *
+   * «مدين/دائن» عند الحساب هما نفس «داخل/خارج» عند الصنف: حاجة زادت وحاجة نقصت، والرصيد
+   * قبل وبعد بيمشوا معاهم. اللي بيتغيّر هو الوحدة — جنيه ولا قطعة — والعنوان لازم يقولها،
+   * لأن عمود مكتوب عليه «مدين» فوق كميات هو أسوأ من عمود من غير عنوان.
+   */
+  const isItem = subject === 'item';
+  const LABELS = isItem
+    ? { debit: 'داخل', credit: 'خارج', before: 'الرصيد قبل', after: 'الرصيد بعد' }
+    : { debit: 'مدين', credit: 'دائن', before: 'الرصيد قبل', after: 'الرصيد بعد' };
+  /** الكميات بتتعرض بمنازلها، والفلوس بمنزلتين. */
+  const num = (v: any) => (isItem
+    ? Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 })
+    : money(v));
+
   const columns: ColumnsType<StatementLine> = [
     { title: 'التاريخ', dataIndex: 'entry_date',
       ...dateColumn<StatementLine>((l) => l.entry_date),
@@ -245,18 +359,18 @@ export default function AccountStatement() {
     { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
       ...textColumn(lines, (l: StatementLine) => l.cost_center_name),
       render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
-    { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left',
+    { title: LABELS.before, dataIndex: 'balance_before', align: 'left',
       ...numberColumn<StatementLine>((l) => l.balance_before),
-      render: (v: string) => <span style={{ color: '#6b6b6b' }}>{money(v)}</span> },
-    { title: 'مدين', dataIndex: 'debit', align: 'left',
+      render: (v: string) => <span style={{ color: '#6b6b6b' }}>{num(v)}</span> },
+    { title: LABELS.debit, dataIndex: 'debit', align: 'left',
       ...numberColumn<StatementLine>((l) => l.debit),
-      render: (v: string) => (Number(v) ? money(v) : '-') },
-    { title: 'دائن', dataIndex: 'credit', align: 'left',
+      render: (v: string) => (Number(v) ? num(v) : '-') },
+    { title: LABELS.credit, dataIndex: 'credit', align: 'left',
       ...numberColumn<StatementLine>((l) => l.credit),
-      render: (v: string) => (Number(v) ? money(v) : '-') },
-    { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left',
+      render: (v: string) => (Number(v) ? num(v) : '-') },
+    { title: LABELS.after, dataIndex: 'balance', align: 'left',
       ...numberColumn<StatementLine>((l) => l.balance),
-      render: (v: string) => <b>{money(v)}</b> },
+      render: (v: string) => <b>{num(v)}</b> },
     // The whole point of a statement is to answer «إيه السطر ده؟» — so the answer is
     // one click away rather than a number to memorise and search for elsewhere.
     { title: 'المستند', key: 'doc', align: 'center',
@@ -275,7 +389,7 @@ export default function AccountStatement() {
 
   return (
     <Card
-      title="كشف حساب"
+      title={isItem ? 'كشف صنف' : 'كشف حساب'}
       extra={(
         <>
           {tableCols.control}
@@ -289,7 +403,48 @@ export default function AccountStatement() {
       )}
     >
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={5}>
+        <Col xs={24} md={4}>
+          {/* الموضوع الأول: بنسأل «كشف إيه؟» قبل «مين؟» — لأن الإجابة بتغيّر الخانة اللي
+              بعدها. وتغييره بيفضّي اللي اتحدّد قبله، عشان مايفضلش على الشاشة كشف حاجة
+              والخانة بتقول حاجة تانية. */}
+          <Select
+            style={{ width: '100%' }} value={subject}
+            onChange={(v) => {
+              setSubject(v as Subject);
+              setAccountId(undefined); setItemId(undefined);
+              setWarehouseId(undefined); setStatement(null);
+            }}
+            options={[
+              { value: 'account', label: 'كشف حساب' },
+              { value: 'item', label: 'كشف صنف' },
+            ]}
+          />
+        </Col>
+
+        {isItem ? (
+          <>
+            <Col xs={24} md={8}>
+              <Select
+                showSearch optionFilterProp="label" style={{ width: '100%' }}
+                placeholder="اختر الصنف" value={itemId} onChange={setItemId}
+                options={items.map((i: any) => ({
+                  value: i.id,
+                  label: i.code ? `${i.code} — ${i.name}` : i.name,
+                }))}
+              />
+            </Col>
+            <Col xs={24} md={4}>
+              {/* من غير مخزن = كل المواقع، وده اللي الكارت بيعمله لوحده. */}
+              <Select
+                showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+                placeholder="كل المخازن" value={warehouseId} onChange={setWarehouseId}
+                options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))}
+              />
+            </Col>
+          </>
+        ) : (
+          <>
+        <Col xs={24} md={4}>
           <Select
             showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
             placeholder="الحساب الرئيسي" value={mainKey}
@@ -299,7 +454,7 @@ export default function AccountStatement() {
             options={mainOptions}
           />
         </Col>
-        <Col xs={24} md={7}>
+        <Col xs={24} md={8}>
           <Select
             showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder={mainKey ? 'الحساب الفرعي' : 'اختر الحساب'}
@@ -307,13 +462,15 @@ export default function AccountStatement() {
             options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))}
           />
         </Col>
+          </>
+        )}
         <Col xs={24} md={6}>
           <DatePicker.RangePicker
             style={{ width: '100%' }} value={range as any} allowClear
             onChange={(v) => setRange(v as any)} placeholder={['من تاريخ', 'إلى تاريخ']}
           />
         </Col>
-        <Col xs={24} md={6}>
+        <Col xs={24} md={4}>
           {/* Only offered once the statement is on screen and somebody's name is actually on it —
               an empty rep box on an account no rep has touched is a control that can only
               disappoint. */}
@@ -326,7 +483,9 @@ export default function AccountStatement() {
         </Col>
       </Row>
 
-      {!accountId && <Empty description="اختر حساباً لعرض كشفه" />}
+      {((isItem && !itemId) || (!isItem && !accountId)) && (
+        <Empty description={isItem ? 'اختر صنفاً لعرض كشفه' : 'اختر حساباً لعرض كشفه'} />
+      )}
 
       {statement && (
         <>
@@ -338,22 +497,22 @@ export default function AccountStatement() {
           <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
             <Col xs={12} md={6}>
               <Card size="small">
-                <Statistic title="رصيد أول المدة (الحساب كله)"
-                  value={money(statement.opening_balance)} />
+                <Statistic title={isItem ? 'رصيد أول المدة' : 'رصيد أول المدة (الحساب كله)'}
+                  value={num(statement.opening_balance)} />
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card size="small">
-                <Statistic title={repFilter ? `مدين — ${repFilter}` : 'إجمالي مدين'}
-                  value={money(repFilter
+                <Statistic title={repFilter ? `${LABELS.debit} — ${repFilter}` : `إجمالي ${LABELS.debit}`}
+                  value={num(repFilter
                     ? shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)
                     : statement.total_debit)} />
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card size="small">
-                <Statistic title={repFilter ? `دائن — ${repFilter}` : 'إجمالي دائن'}
-                  value={money(repFilter
+                <Statistic title={repFilter ? `${LABELS.credit} — ${repFilter}` : `إجمالي ${LABELS.credit}`}
+                  value={num(repFilter
                     ? shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)
                     : statement.total_credit)} />
               </Card>
@@ -361,7 +520,7 @@ export default function AccountStatement() {
             <Col xs={12} md={6}>
               <Card size="small">
                 <Statistic title={`الرصيد — ${statement.account_name}`}
-                  value={money(statement.closing_balance)}
+                  value={num(statement.closing_balance)}
                   valueStyle={{ color: '#0B5CA8' }} />
               </Card>
             </Col>
