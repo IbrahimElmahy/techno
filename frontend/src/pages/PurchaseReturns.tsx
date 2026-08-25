@@ -1,19 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select, Space, Table, Tag, message,
-} from 'antd';
+import { Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select, Space, Table, Tag, message,  } from 'antd';import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom, useQtyFocus } from '../components/lineKeyboard';
 import {
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, UndoOutlined,
 } from '@ant-design/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter }
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal from '../components/PartyPickerModal';
@@ -21,9 +19,12 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
+import { useAuth } from '../components/AuthProvider';
+import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
+import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /**
  * مردودات شراء — goods going back to the supplier, as a register of its own.
@@ -61,6 +62,9 @@ interface PurchaseLine {
 }
 
 export default function PurchaseReturns() {
+  const navigate = useNavigate();
+  const { can } = useAuth();
+  const canWriteReturn = can('return.write');
   const [rows, setRows] = useState<ReturnRow[]>([]);
   // A purchase return is now a document with a screen, so a link to one has somewhere to land.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -211,6 +215,10 @@ export default function PurchaseReturns() {
 
   /** المردود اللي بيتعدّل دلوقتي — لسه مرحّل، والعكس هيحصل وقت الحفظ. */
   const [editingId, setEditingId] = useState<number | null>(null);
+  const reverseApprovedRef = useRef(false);
+  const [askReverse, setAskReverse] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
 
   /**
    * فتح مردود مرحّل للتعديل — **من غير ما يتغيّر أي حاجة لحد ما تحفظ**.
@@ -233,6 +241,8 @@ export default function PurchaseReturns() {
     }
     setViewing(null);
     setEditingId(row.id);
+    reverseApprovedRef.current = false;
+    setAskReverse(false);
     setReturnDate(doc.return_date ? dayjs(doc.return_date) : dayjs());
     setNotes(doc.notes || '');
     const filled: Record<number, number | null> = {};
@@ -271,21 +281,57 @@ export default function PurchaseReturns() {
    */
   const returnToolbar = (): ToolbarAction[] => {
     const typed = returnLines.filter((l) => l.item_id && Number(l.quantity || 0) > 0).length;
+    const stepList = (step: number) => {
+      if (!filter.filtered.length) return;
+      const at = filter.filtered.findIndex((r) => r.id === editingId);
+      const target = at >= 0 ? filter.filtered[at + step]
+        : (step > 0 ? filter.filtered[0] : filter.filtered[filter.filtered.length - 1]);
+      if (target) {
+        setCreating(false);
+        setEditingId(null);
+        setSupplierFilter(null);
+        openReturn(target);
+      }
+    };
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => openCreate() },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        disabled: editingId === null,
+        onClick: () => editPosted({ id: editingId as number } as ReturnRow) },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setReturnLines([]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
-        disabled: typed === 0, onClick: () => submit() },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />, disabled: true },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+        disabled: typed === 0,
+        onClick: () => {
+          if (editingId !== null && !reverseApprovedRef.current) { setAskReverse(true); return; }
+          submit();
+        } },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: filter.filtered.length === 0, onClick: () => stepList(1) },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+        onClick: () => setPickerOpen(true) },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: filter.filtered.length === 0, onClick: () => stepList(-1) },
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0, onClick: () => setReturnLines([]) },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        disabled: editingId === null || printing,
+        onClick: async () => {
+          setPrinting(true);
+          try {
+            const res = await api.get(`/api/v1/purchases/returns/${editingId}`);
+            const doc = returnDoc(res.data);
+            if (doc) printInvoice(doc, printOpts);
+          } catch (err: any) {
+            message.error(err?.response?.data?.detail?.message || 'تعذر طباعة المردود');
+          } finally {
+            setPrinting(false);
+          }
+        } },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+        disabled: !supplierFilter,
+        onClick: () => supplierFilter && navigate(`/suppliers/${supplierFilter}`) },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => load() },
     ];
   };
@@ -376,6 +422,11 @@ export default function PurchaseReturns() {
   const addReturnLineWith = (itemId: number, wh: number) => {
     const product = items.find((i: any) => i.id === itemId) as any;
     const price = product?.purchase_price ? parseFloat(product.purchase_price) : 0;
+    if (returnLines.some((l) => l.item_id === itemId)) {
+      flashExistingItem(itemId);
+      message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      return;
+    }
     // المفتاح بيتحسب هنا مش جوّه `setState` — عشان التركيز يروح للسطر ده بالظبط.
     // لو اتحسب جوّه، الكود اللي بره مايعرفوش، والمؤشر بيدوّر على سطر مالوش وجود.
     const key = `${Date.now()}-${itemId}`;
@@ -383,10 +434,8 @@ export default function PurchaseReturns() {
     setReturnLines((prev) => {
       const existing = prev.find((l) => l.item_id === itemId);
       if (existing) {
-        // العين تتبع الرقم اللي اتحرّك، مش سطر جديد.
-        landed = existing.key;
-        return prev.map((l) => (l.key === existing.key
-          ? { ...l, quantity: Number(l.quantity || 0) + 1 } : l));
+        landed = '';
+        return prev;
       }
       return [...prev, {
         key, item_id: itemId, quantity: null, unit_price: price,
@@ -419,6 +468,10 @@ export default function PurchaseReturns() {
         warehouse_id: l.warehouse_id ?? warehouseId,
       }));
     if (!lines.length) { message.warning('اكتب الكمية المرتجعة على صنف واحد على الأقل'); return; }
+    if (editingId !== null && !reverseApprovedRef.current) {
+      setAskReverse(true);
+      return;
+    }
     setSaving(true);
     try {
       // المردود اللي اتفتح للتعديل بيتعكس **دلوقتي** مش وقت الفتح — التبديل بيحصل مرة واحدة:
@@ -453,6 +506,8 @@ export default function PurchaseReturns() {
       message.success(editingId !== null
         ? 'اتعدّل المردود واترحّل من جديد' : 'اتسجّل مردود الشراء');
       setEditingId(null);
+      reverseApprovedRef.current = false;
+      setAskReverse(false);
       setReturnLines([]);
       setCreating(false);
       load();
@@ -524,8 +579,10 @@ export default function PurchaseReturns() {
         <Space size="middle">
           {/* زي سجل الشرا بالظبط: «عرض» بيفتح التعديل على طول، و«طباعة» بتفتح معاينة
               الورقة في بوباب فوق السجل. */}
-          <Button type="dashed" size="small" icon={<EyeOutlined />}
-            onClick={() => editPosted(record)}>عرض</Button>
+          {canWriteReturn && (
+            <Button type="dashed" size="small" icon={<EyeOutlined />}
+              onClick={() => editPosted(record)}>عرض</Button>
+          )}
           <Button type="link" size="small" icon={<PrinterOutlined />}
             onClick={() => openReturn(record)}>طباعة</Button>
         </Space>
@@ -893,7 +950,7 @@ export default function PurchaseReturns() {
                             ? { ...l, unit: v === '__base__' ? null : v } : l)))}
                         options={unitOptions(line.item_id)} />
                     </td>
-                    <td>
+                    <td {...{ [QTY_DATA_ATTR]: line.item_id }}>
                       <InputNumber size="small" style={{ width: '100%' }} min={0.001}
                         data-qty-key={line.key} data-grid-col="qty" keyboard={false}
                         placeholder="الكمية" value={line.quantity ?? undefined}
@@ -1004,13 +1061,30 @@ export default function PurchaseReturns() {
           background: '#fdf6f3', border: '1px solid #f3e0d8',
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
         }}>
-          <Button type="primary" danger loading={saving} onClick={submit}>
-            ترحيل المردود
-          </Button>
+          <Popconfirm
+            title="هيتعكس المردود القديم ويفتح نسخة للتعديل — متابعة؟"
+            okText="متابعة"
+            cancelText="رجوع"
+            open={askReverse}
+            onConfirm={() => {
+              setAskReverse(false);
+              reverseApprovedRef.current = true;
+              submit();
+            }}
+            onCancel={() => setAskReverse(false)}
+          >
+            <Button type="primary" danger loading={saving}
+              onClick={() => {
+                if (editingId !== null && !reverseApprovedRef.current) setAskReverse(true);
+              }}>
+              ترحيل المردود
+            </Button>
+          </Popconfirm>
           {/* الرجوع من غير ترحيل مابيغيّرش حاجة — العكس بيحصل وقت الحفظ. */}
           <Button
             onClick={() => { setCreating(false); setEditingId(null);
-              setSupplierFilter(null); }}>إلغاء</Button>
+              setSupplierFilter(null); setAskReverse(false);
+              reverseApprovedRef.current = false; }}>إلغاء</Button>
         </div>
       </Card>
       )}

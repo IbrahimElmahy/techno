@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
+  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag,
+  Tooltip, Typography, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -27,6 +28,7 @@ import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
+import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 interface InvoiceRecord {
   id: number;
@@ -216,6 +218,7 @@ export default function Invoices() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
+  const [editingInvoice, setEditingInvoice] = useState<{ id: number; voided: boolean } | null>(null);
 
   // Forms
   const [createForm] = Form.useForm();
@@ -350,8 +353,9 @@ export default function Invoices() {
       });
       const res = await api.get('/api/v1/sales', { params });
       setInvoices(res.data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفواتير');
     } finally {
       setLoading(false);
     }
@@ -403,8 +407,9 @@ export default function Invoices() {
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
       setPointValues(pts);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوايم الشاشة');
     }
   };
 
@@ -552,6 +557,7 @@ export default function Invoices() {
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
+    setEditingInvoice(null);
     createForm.resetFields();
   };
 
@@ -600,13 +606,12 @@ export default function Invoices() {
     l.fixed_discount = defaultFixedDiscount(itemId, fresh);
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
-      setLines((prev) => prev.map((x) => (x.key === existing.key
-        ? { ...x, quantity: Number(x.quantity || 0) + 1 } : x)));
-      setFocusLineKey(existing.key);
-    } else {
-      setLines((prev) => [...prev, l]);
-      setFocusLineKey(l.key);
+      flashExistingItem(itemId);
+      message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      return;
     }
+    setLines((prev) => [...prev, l]);
+    setFocusLineKey(l.key);
   };
 
   const addProductById = async (itemId: number) => {
@@ -631,18 +636,14 @@ export default function Invoices() {
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null, fresh);
     l.fixed_discount = defaultFixedDiscount(itemId, fresh);
-    // If the same product is already on the invoice, just bump its quantity.
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
-      setLines((prev) => prev.map((x) => (x.key === existing.key
-        ? { ...x, quantity: Number(x.quantity || 0) + 1 } : x)));
-      // Focus the line that just changed, not a new one — the eye should follow the number
-      // that moved.
-      setFocusLineKey(existing.key);
-    } else {
-      setLines((prev) => [...prev, l]);
-      setFocusLineKey(l.key);
+      flashExistingItem(itemId);
+      message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      return;
     }
+    setLines((prev) => [...prev, l]);
+    setFocusLineKey(l.key);
   };
 
   const handleRemoveLine = (key: string) => {
@@ -976,6 +977,9 @@ export default function Invoices() {
     }
 
     try {
+      if (editingInvoice && !editingInvoice.voided) {
+        if (!(await reverseInvoice({ id: editingInvoice.id } as InvoiceRecord, 'edit'))) return;
+      }
       await api.post('/api/v1/sales', {
         customer_id: values.customer_id,
         // Who sold it. Recorded on the document so a commission report and a rep's own list of
@@ -1029,16 +1033,19 @@ export default function Invoices() {
         family: invoiceFamily,
       });
 
-      message.success('تم تسجيل فاتورة البيع بنجاح');
+      message.success(editingInvoice
+        ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة البيع بنجاح');
       setCreateVisible(false);
       createForm.resetFields();
       setLines([]);
       setActiveCategory(null);
       setCashAmount(0);
       setDiscountPct(0);
+      setEditingInvoice(null);
       fetchInvoices();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الفاتورة');
     }
   };
 
@@ -1080,27 +1087,10 @@ export default function Invoices() {
   };
 
   /**
-   * تعديل الفاتورة — reverse it, then reopen its contents as a fresh invoice to correct and post.
+   * تعديل فاتورة مرحّلة — بتتفتح في المحرّر بمحتواها، من غير أي حركة على الدفاتر.
    *
-   * The customer sees "edit"; the books see a return and a new sale, which is the only version of
-   * editing that cannot rewrite a month that has already been reported on.
-   */
-  /**
-   * فتح فاتورة مرحّلة للتعديل — على طول، من غير سؤال.
-   *
-   * A posted invoice cannot be altered in place — the ledger is append-only — so «تعديل» reverses
-   * it with a full return and reopens the form on what it held.
-   *
-   * It used to ask first, and the question was removed on request: clicking تعديل IS the answer,
-   * and a dialog that always gets the same reply is a keystroke, not a safeguard. What actually
-   * protects the books is that the reversal is a posting with its own document — undoing it is
-   * reading the register, not hunting for something that was overwritten.
-   *
-   * **والفاتورة اللي اترجّعت بالكامل بتتفتح برضه.** كانت بتقف على بوباب بيقول «مفيش حاجة
-   * تتعكس» ويسيب الواحد في طريق مقفول. دلوقتي بتعدّي: قيمتها راجعة كلها أصلاً، يعني أثرها
-   * على الدفاتر صفر — فمفيش حاجة تتعكس، والصح إن الشاشة تروح على طول للخطوة اللي بعدها
-   * وتفتح فاتورة جديدة بنفس سطورها. ده بالظبط «احذفها واعمل واحدة تانية» بلغة دفتر
-   * مابيتمسحش منه: القديمة اتصفّرت خلاص، فاللي فاضل هو كتابة اللي محلّها.
+   * المستند المرحّل مابيتعدلش في مكانه، فالحفظ هو اللي بيعكس القديمة ويرحّل الجديدة مكانها —
+   * وبسؤال صريح قبل العكس. اللي فتح وغيّر رأيه وقفل، سيب المخزون والقيد زي ما هم.
    */
   const handleEditInvoice = async (record: InvoiceRecord) => {
     let det: any;
@@ -1121,16 +1111,14 @@ export default function Invoices() {
     } catch { /* unreadable returns must not block an edit that would have worked */ }
     const alreadyVoid = returned > 0 && Math.abs(returned - Number(det.net || 0)) < 0.01;
 
-    // العكس بيحصل بس لما يكون فيه حاجة تتعكس. الفاتورة المرجّعة بالكامل لو اتعكست تاني
-    // كان هيرجع منها كمية اترجّعت خلاص — والسيرفر بيرفض بـ«Cumulative return exceeds sold
-    // quantity»، بالإنجليزي، من غير ما يقول أنهي فاتورة ولا الطريق منين.
+    // العكس مش هنا — الفتح قراية بس. القديمة بتتعكس وقت الحفظ وبعد التأكيد، واللي كانت
+    // مرجّعة بالكامل بتعدي عادي لأن أثرها على الدفاتر صفر أصلاً.
     if (!alreadyVoid) {
-      if (!(await reverseInvoice(record, 'edit'))) return;
-      message.success('اتعكست الفاتورة — عدّل وارحّل من جديد');
+      message.info(`${record.document_number} مفتوحة للتعديل — الحفظ بيعكس النسخة القديمة ويرحّل الجديدة`);
     } else {
       message.info(`${record.document_number} كانت مرجّعة بالكامل — دي فاتورة جديدة بنفس سطورها`);
     }
-    fetchInvoices();
+    setEditingInvoice({ id: record.id, voided: alreadyVoid });
 
     // Refill the form from what the invoice actually held, line by line.
     const refilled: SaleLineItem[] = (det.lines || []).map((l: any, idx: number) => {
@@ -1314,8 +1302,9 @@ export default function Invoices() {
       setViewInvoice({ ...record, ...detRes.data });
       setViewReturns(retRes.data);
       setDetailVisible(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر فتح الفاتورة');
     }
   };
 
@@ -1540,9 +1529,8 @@ export default function Invoices() {
               المبيعات وبس. كان في مكانين بيعملوا نفس الحاجة بشكلين مختلفين — بوباب سريع
               جنب السطر، وشاشة مستند كاملة — واللي بيتعمل من هنا كان بيطلع سند ناقص:
               من غير مندوب ولا بيان ولا خصم ولا مخزن استلام. مدخل واحد يعني سند واحد كامل. */}
-          {/* No Popconfirm here: `handleEditInvoice` asks for itself, so the question is put once
-              wherever editing is reached from — this button, the toolbar, or a document link on
-              another screen. Two confirmations for one action teach people to click through both. */}
+          {/* التعديل بيفتح المحرّر بس — العكس سؤاله على الحفظ، في مهما بلغت الطرق اللي
+              وصلت بيه: الزرار ده أو الشريط أو لينك من شاشة تانية. */}
           {canEditInvoice && (
             <Tooltip title="تعديل">
               <Button type="text" icon={<EditOutlined />}
@@ -1608,7 +1596,7 @@ export default function Invoices() {
         onClick: () => { setLines([]); setActiveCategory(null); } },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: lineCount === 0,
-        onClick: () => createForm.submit() },
+        onClick: () => { createForm.submit(); } },
       { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
         disabled: invoices.length === 0,
         onClick: () => stepFromDraft(0) },
@@ -2013,7 +2001,8 @@ export default function Invoices() {
                             line.key, 'unit', v === '__base__' ? null : v)}
                           options={saleUnitOptions(line.item_id)} />
                       </td>
-                      <td>
+                      <td {...(line.item_id != null
+                        ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
                         <InputNumber size="small" style={{ width: '100%' }} min={0.001}
                           data-qty-key={line.key} data-grid-col="qty" keyboard={false}
                           placeholder="الكمية" value={line.quantity ?? undefined}
@@ -2196,8 +2185,8 @@ export default function Invoices() {
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Space>
                 <Button type="primary" htmlType="submit">
-                  تسجيل وحفظ فاتورة البيع
-                </Button>
+                    تسجيل وحفظ فاتورة البيع
+                  </Button>
                 <Button onClick={closeCreate}>إلغاء</Button>
               </Space>
             </div>
@@ -2321,8 +2310,8 @@ export default function Invoices() {
            * after the button of that name was retired: clicking an invoice means «وريني الفاتورة
            * دي عشان أشتغل عليها», and the view was a stop everybody passed through on the way.
            *
-           * Editing a posted invoice reverses it, so the edit path asks for confirmation when it
-           * gets there — the guard is at the act, not in front of the click.
+           * Editing a posted invoice moves nothing on opening: the reversal — and its
+           * question — live on الحفظ, so a click that stops halfway leaves the books untouched.
            *
            * Somebody without the edit permission still gets the sheet. It is what they are allowed
            * to have, and a row that does nothing for them would read as broken.

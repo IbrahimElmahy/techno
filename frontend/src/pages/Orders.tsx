@@ -21,6 +21,8 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
+import { printReport } from '../print/reportSheet';
+import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /**
  * طلبات البيع والشراء — شيت تسعير، مش مستند حركة.
@@ -110,7 +112,10 @@ export default function Orders() {
     try {
       const res = await api.get('/api/v1/orders');
       setOrders(res.data || []);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err: any) {
+      console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الطلبات');
+    } finally { setLoading(false); }
   };
 
   useEffect(() => {
@@ -121,7 +126,10 @@ export default function Orders() {
     ]).then(([i, c, s]) => {
       setItems(i.data || []); setCustomers(c.data || []);
       setSuppliers(s.data || []);
-    }).catch(console.error);
+    }).catch((err: any) => {
+      console.error(err);
+      message.error('تعذر تحميل بيانات الأصناف والعملاء والموردين');
+    });
   }, []);
 
   /**
@@ -231,6 +239,14 @@ export default function Orders() {
       setLines([]); setNotes(''); setDueDate(null);
       setSheetDate(dayjs()); setDiscountPct(0);
     };
+    const stepList = (step: number) => {
+      const rows = filter.filtered;
+      if (!rows.length) return;
+      const at = rows.findIndex((r) => r.id === detail?.id);
+      const target = at >= 0 ? rows[at + step]
+        : (step > 0 ? rows[0] : rows[rows.length - 1]);
+      if (target) { setCreating(false); setDetail(target); }
+    };
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />, onClick: clear },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
@@ -238,19 +254,112 @@ export default function Orders() {
         onClick: () => setLines([]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0, onClick: submit },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />, disabled: true },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: filter.filtered.length === 0, onClick: () => stepList(1) },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+        onClick: () => setPickerOpen(true) },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: filter.filtered.length === 0, onClick: () => stepList(-1) },
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0, onClick: clear },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        disabled: typed === 0,
+        onClick: () => printOrder(draftAsOrder()) },
       { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: load },
     ];
   };
 
+  const printOrder = (o: Order) => {
+    const rows = o.lines.map((l, i) => ({
+      no: i + 1,
+      item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
+      unit: l.unit ?? 'الأساسية',
+      quantity: qty(l.quantity),
+      price: money(l.unit_price),
+      gross: money(Number(l.quantity || 0) * Number(l.unit_price || 0)),
+      disc: Number(l.discount_pct || 0) ? `${Number(l.discount_pct)}%` : '-',
+      total: money(l.line_total != null
+        ? l.line_total
+        : Number(l.quantity || 0) * Number(l.unit_price || 0)
+          * (1 - Math.min(99.99, Number(l.discount_pct || 0)) / 100)),
+    }));
+    const pct = Number(o.variable_discount_pct || 0);
+    printReport(
+      {
+        title: o.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء',
+        number: o.document_number || '',
+        date: o.order_date ? String(o.order_date).slice(0, 10) : undefined,
+        meta: [
+          ...(o.due_date
+            ? [['ساري لحد', String(o.due_date).slice(0, 10)]] as [string, string][]
+            : []),
+          ...(o.notes ? [['ملاحظات', o.notes]] as [string, string][] : []),
+        ],
+        note: 'شيت تسعير — مش بيحرّك مخزون ولا خزينة.',
+      },
+      [
+        { title: '#', value: 'no' },
+        { title: 'الصنف', value: 'item' },
+        { title: 'الوحدة', value: 'unit' },
+        { title: 'الكمية', value: 'quantity', numeric: true },
+        { title: 'سعر الوحدة', value: 'price', numeric: true },
+        { title: 'اجمالي قبل', value: 'gross', numeric: true },
+        { title: 'خصم', value: 'disc', numeric: true },
+        { title: 'الإجمالي', value: 'total', numeric: true },
+      ],
+      rows,
+      [
+        { label: 'عدد الأصناف', value: String(rows.length) },
+        { label: 'قبل الخصم', value: money(o.gross) },
+        ...(pct > 0.001
+          ? [{ label: `خصم الورقة ${pct}%`, value: money(Number(o.gross) - Number(o.total)) }]
+          : []),
+        { label: 'الإجمالي', value: money(o.total) },
+      ],
+    );
+  };
+
+  const draftAsOrder = (): Order => ({
+    id: 0,
+    document_number: '',
+    kind,
+    status: 'open',
+    customer_id: null,
+    supplier_id: null,
+    order_date: sheetDate.format('YYYY-MM-DD'),
+    due_date: dueDate ? dueDate.format('YYYY-MM-DD') : null,
+    warehouse_id: null,
+    gross: String(grossTotal),
+    variable_discount_pct: String(discountPct || 0),
+    total: String(draftTotal),
+    notes: notes || null,
+    converted_invoice_id: null,
+    converted_at: null,
+    created_at: null,
+    lines: lines.filter((l) => l.item_id).map((l) => ({
+      id: l.key,
+      item_id: l.item_id as number,
+      item_name: items.find((it) => it.id === l.item_id)?.name ?? null,
+      quantity: String(l.quantity ?? 0),
+      unit_price: String(l.unit_price ?? 0),
+      unit: l.unit ?? null,
+      unit_factor: String(unitFactor(l)),
+      discount_pct: String(l.discount_pct ?? 0),
+      line_total: String(lineNet(l)),
+      notes: null,
+    })),
+  });
+
   const addItem = (itemId: number) => {
     setPickerOpen(false);
+    const existing = lines.find((l) => l.item_id === itemId);
+    if (existing) {
+      const name = items.find((i) => i.id === itemId)?.name ?? `صنف #${itemId}`;
+      flashExistingItem(itemId);
+      message.info(`«${name}» موجود بالفعل — عدّل الكمية من السطر`);
+      return;
+    }
     const key = (lines[lines.length - 1]?.key ?? 0) + 1;
     // An order is a price quoted in advance, so the line opens on the item's own price rather
     // than empty — the person is confirming a number, not inventing one. والخصم كمان.
@@ -426,7 +535,7 @@ export default function Orders() {
         title={kind === 'sale' ? 'اختر الصنف المطلوب' : 'اختر الصنف المطلوب شراؤه'}
         categories={[...new Set(items.map((i) => i.category).filter(Boolean))] as string[]}
         categoryLabels={categoryLabels}
-        products={items.filter((i) => !lines.some((l) => l.item_id === i.id))}
+        products={items}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
         onCancel={() => setPickerOpen(false)}
@@ -534,7 +643,8 @@ export default function Orders() {
                           }))}
                           options={unitOptions(line.item_id)} />
                       </td>
-                      <td>
+                      <td {...(line.item_id != null
+                        ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
                         {/* مفيش `max` على الكمية عن قصد: الورقة دي بتسعّر حاجة ممكن ماتكونش
                             في المخزن أصلاً — لسه ماوصلتش، أو العميل بيسأل عن كمية كبيرة. */}
                         <InputNumber size="small" min={0} style={{ width: '100%' }}
@@ -625,11 +735,17 @@ export default function Orders() {
             <span>{detail.document_number}</span>
           </Space>
         )}
-        extra={detail.status === 'open' && (
-          <Popconfirm title="إلغاء الطلب؟" onConfirm={() => cancel(detail)}
-            okText="إلغاء الطلب" cancelText="رجوع">
-            <Button danger>إلغاء الطلب</Button>
-          </Popconfirm>
+        extra={(
+          <Space>
+            <Button icon={<PrinterOutlined />}
+              onClick={() => printOrder(detail)}>طباعة</Button>
+            {detail.status === 'open' && (
+              <Popconfirm title="إلغاء الطلب؟" onConfirm={() => cancel(detail)}
+                okText="إلغاء الطلب" cancelText="رجوع">
+                <Button danger>إلغاء الطلب</Button>
+              </Popconfirm>
+            )}
+          </Space>
         )}
       >
         {detail && (

@@ -27,9 +27,11 @@ import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import { guardQuantity } from '../components/quantityGuard';
+import { useAuth } from '../components/AuthProvider';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
+import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
@@ -111,6 +113,8 @@ export default function Returns() {
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
+  const { can } = useAuth();
+  const canWriteReturn = can('return.write');
 
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
@@ -205,6 +209,8 @@ export default function Returns() {
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewReturn, setViewReturn] = useState<any>(null);
+  const [editingSourceId, setEditingSourceId] = useState<number | null>(null);
+  const [printing, setPrinting] = useState(false);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
   // All of their columns exist; these start hidden. A returns list is read for «who, when, how
   // much came back and what it cost us» — the rest are there when a question needs them.
@@ -226,7 +232,10 @@ export default function Returns() {
       if (f.date_to) params.date_to = f.date_to;
       const res = await api.get('/api/v1/sales/returns', { params });
       setReturns(res.data);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err: any) {
+      console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل المرتجعات');
+    } finally { setLoading(false); }
   };
 
   const loadLookups = async () => {
@@ -248,7 +257,10 @@ export default function Returns() {
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
       setPointValues(pts);
-    } catch (err) { console.error(err); }
+    } catch (err: any) {
+      console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوايم الشاشة');
+    }
   };
 
   useEffect(() => { fetchReturns(); loadLookups(); }, []);
@@ -314,6 +326,7 @@ export default function Returns() {
     setRepId(null); setExternalDocNumber(''); setDocNotes(''); setStatements(['', '', '']);
     setCouponRows([blankCoupon()]); setIssuedBooks([]);
     setReturnDate(dayjs());
+    setEditingSourceId(null);
     createForm.resetFields();
   };
 
@@ -424,10 +437,8 @@ export default function Returns() {
       : (prod?.sale_price ? parseFloat(prod.sale_price) : 0);
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
-      setLines((prev) => prev.map((x) => (x.key === existing.key
-        ? { ...x, quantity: Number(x.quantity || 0) + 1 } : x)));
-      // Focus the line that just changed, not a new one — the eye follows the number that moved.
-      setFocusLineKey(existing.key);
+      flashExistingItem(itemId);
+      message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
     } else {
       const key = Date.now().toString();
       setLines((prev) => [...prev, {
@@ -516,8 +527,10 @@ export default function Returns() {
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => { createForm.resetFields(); setLines([]);
-          setReturnDate(dayjs()); setNewStep('party'); } },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+          setReturnDate(dayjs()); setEditingSourceId(null); setNewStep('party'); } },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        disabled: editingSourceId === null || !canWriteReturn,
+        onClick: () => handleEditReturn({ id: editingSourceId as number } as ReturnRecord) },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setLines([]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
@@ -530,8 +543,23 @@ export default function Returns() {
         disabled: returns.length === 0, onClick: () => stepFromDraft(-1) },
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0, onClick: () => setLines([]) },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        disabled: editingSourceId === null || printing,
+        onClick: async () => {
+          setPrinting(true);
+          try {
+            const res = await api.get(`/api/v1/sales/returns/${editingSourceId}`);
+            const doc = returnDoc(res.data);
+            if (doc) printInvoice(doc, printOpts);
+          } catch (err: any) {
+            message.error(err?.response?.data?.detail?.message || 'تعذر طباعة المرتجع');
+          } finally {
+            setPrinting(false);
+          }
+        } },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+        disabled: !customerId,
+        onClick: () => customerId && navigate(`/customers/${customerId}`) },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
     ];
   };
@@ -585,7 +613,10 @@ export default function Returns() {
           message.success(`تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
           closeCreate();
           fetchReturns();
-        } catch (err) { console.error(err); }
+        } catch (err: any) {
+          console.error(err);
+          message.error(err?.response?.data?.detail?.message || 'تعذر تسجيل المرتجع');
+        }
       },
     });
   };
@@ -662,6 +693,7 @@ export default function Returns() {
       message.error('تعذر قراءة المرتجع');
       return;
     }
+    setEditingSourceId(record.id);
     if (!(await reverseReturn(record))) return;
     message.success('اتعكس المرتجع — عدّل وارحّل من جديد');
     fetchReturns();
@@ -697,7 +729,10 @@ export default function Returns() {
       const res = await api.get(`/api/v1/sales/returns/${record.id}`);
       setViewReturn(res.data);
       setDetailVisible(true);
-    } catch (err) { console.error(err); }
+    } catch (err: any) {
+      console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر فتح المرتجع');
+    }
   };
 
   useEffect(() => {
@@ -1072,7 +1107,8 @@ export default function Returns() {
                                   <Tag>لم يشترِه من قبل</Tag>
                                 )}
                               </Col>
-                              <Col md={2} xs={8}>
+                              <Col md={2} xs={8} {...(line.item_id != null
+                                ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
                                 {/* No `available` — a return brings goods IN, so there is no
                                     shelf to check against. Zero and negative are still refused:
                                     a negative return REMOVES stock, posted as a return. */}
@@ -1369,7 +1405,7 @@ export default function Returns() {
               onClick={async () => { await openDetail(record); }} />
           </Tooltip>
           <Tooltip title="تعديل">
-            <Button type="text" icon={<EditOutlined />}
+            <Button type="text" icon={<EditOutlined />} disabled={!canWriteReturn}
               onClick={() => handleEditReturn(record)} />
           </Tooltip>
           <Popconfirm
@@ -1377,6 +1413,7 @@ export default function Returns() {
             description="السند المرحّل بيتعكس مش بيتمسح — البضاعة تخرج تاني والقيد يترجّع، والمستندين يفضلوا في الدفاتر."
             okText="عكس المرتجع" cancelText="إلغاء"
             onConfirm={() => handleDeleteReturn(record)}
+            disabled={!canWriteReturn}
           >
             <Tooltip title="حذف">
               <Button type="text" danger icon={<DeleteOutlined />} />
@@ -1474,6 +1511,7 @@ export default function Returns() {
                 onClick: () => { setDetailVisible(false); setReturnDate(dayjs());
                   setNewStep('party'); } },
               { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+                disabled: !canWriteReturn,
                 onClick: () => handleEditReturn(viewReturn as any) },
               { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: true },
               { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
@@ -1486,12 +1524,15 @@ export default function Returns() {
                 disabled: !neighbour(-1),
                 onClick: () => { const p = neighbour(-1); if (p) openDetail(p); } },
               { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />,
-                danger: true,
+                danger: true, disabled: !canWriteReturn,
                 onClick: () => { setDetailVisible(false);
                   handleDeleteReturn(viewReturn as any); } },
               { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
                 onClick: () => printInvoice(returnDoc(viewReturn)!, printOpts) },
-              { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+              { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+                disabled: !viewReturn?.customer_id,
+                onClick: () => viewReturn?.customer_id
+                  && navigate(`/customers/${viewReturn.customer_id}`) },
               { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
                 onClick: () => fetchReturns() },
             ]} />

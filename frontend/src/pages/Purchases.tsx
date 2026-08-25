@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Select, Space, Table, Tag, Typography, message, DatePicker,
-} from 'antd';
+import { Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Select, Space, Table, Tag, Typography, message, DatePicker,  } from 'antd';import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined,
@@ -26,6 +24,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
+import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /** الاسم القديم في الشاشة دي — نفس الدالة. */
 const fmtMoney = money;
@@ -248,6 +247,9 @@ export default function Purchases() {
    * بيفرّق بينهم هو إن الحفظ بيعكس القديمة الأول.
    */
   const [editingId, setEditingId] = useState<number | null>(null);
+  const reverseApprovedRef = useRef(false);
+  const [askReverse, setAskReverse] = useState(false);
+  const [printing, setPrinting] = useState(false);
   /** الفاتورة اللي معروضة في بوباب الطباعة — معاينة، مش صفحة. */
   const [preview, setPreview] = useState<PurchaseDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -343,8 +345,9 @@ export default function Purchases() {
         parent_document_number: r.purchase_document_number ?? null,
       }));
       setPurchases([...invoices, ...returns]);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل سجل المشتريات');
     } finally {
       setListLoading(false);
     }
@@ -395,8 +398,9 @@ export default function Purchases() {
     try {
       const res = await api.get(`/api/v1/purchases/${record.id}`);
       setDetail(res.data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر فتح الفاتورة');
     } finally {
       setDetailLoading(false);
     }
@@ -452,8 +456,9 @@ export default function Purchases() {
       // Filter out central/branch warehouses
       setWarehouses(whRes.data);
       setItems(itemsRes.data.filter((i: any) => i.active !== false));
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوايم الشاشة');
     } finally {
       setLoading(false);
     }
@@ -617,6 +622,15 @@ export default function Purchases() {
    *  greyed rather than vanishing, so the row does not shift under a practised hand. */
   const purchaseToolbar = (): ToolbarAction[] => {
     const typed = purchaseItems.filter((i) => i.item_id !== null).length;
+    const invoicesInList = purchasesFilter.filtered.filter((r) => r.kind === 'purchase');
+    const stepDoc = (step: number) => {
+      if (!invoicesInList.length) return;
+      const at = invoicesInList.findIndex(
+        (r) => r.id === (editingId ?? (docResult?.id as number | undefined) ?? null));
+      const target = at >= 0 ? invoicesInList[at + step]
+        : (step > 0 ? invoicesInList[0] : invoicesInList[invoicesInList.length - 1]);
+      if (target) { closeCreate(); openDetail(target); }
+    };
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => { form.resetFields(); setPurchaseItems([
@@ -624,26 +638,58 @@ export default function Purchases() {
     discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
           setPurchaseDate(dayjs()); setDetail(null); setDocResult(null);
           setEditingId(null);
+          setAskReverse(false);
+          reverseApprovedRef.current = false;
           // 'party' مش 'date': مافيش بوباب تاريخ في الشاشة دي أصلاً، فـ«جديد» كان بيسيب
           // الحالة على خطوة محدش بيرسمها — يعني الزرار مكانش بيفتح حاجة.
           setNewStep('party'); } },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />, disabled: true },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        disabled: editingId === null,
+        onClick: async () => {
+          const det = await loadDocument(editingId as number);
+          if (det) editPosted(det);
+        } },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
         onClick: () => setPurchaseItems([
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
     discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
-        disabled: typed === 0, onClick: () => form.submit() },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />, disabled: true },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />, disabled: true },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />, disabled: true },
+        disabled: typed === 0,
+        onClick: () => {
+          if (editingId !== null && !reverseApprovedRef.current) { setAskReverse(true); return; }
+          form.submit();
+        } },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: invoicesInList.length === 0, onClick: () => stepDoc(1) },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+        onClick: () => setPickerOpen(true) },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: invoicesInList.length === 0, onClick: () => stepDoc(-1) },
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0,
         onClick: () => setPurchaseItems([
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
     discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />, disabled: true },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        disabled: editingId === null || printing,
+        onClick: async () => {
+          setPrinting(true);
+          try {
+            const det = await loadDocument(editingId as number);
+            const doc = purchaseDoc(det);
+            if (doc) printInvoice(doc, printOpts);
+          } catch (err: any) {
+            message.error(err?.response?.data?.detail?.message || 'تعذر طباعة الفاتورة');
+          } finally {
+            setPrinting(false);
+          }
+        } },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+        disabled: !party?.id && !form.getFieldValue('supplier_id'),
+        onClick: () => {
+          const sid = party?.id ?? (form.getFieldValue('supplier_id') as number | undefined);
+          if (sid) navigate(`/suppliers/${sid}`);
+        } },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
     ];
   };
@@ -669,6 +715,8 @@ export default function Purchases() {
    */
   const editPosted = async (det: PurchaseDetail) => {
     setEditingId(det.id);
+    reverseApprovedRef.current = false;
+    setAskReverse(false);
     // Refill from what the invoice actually held, line by line.
     form.setFieldsValue({
       supplier_id: det.supplier_id,
@@ -753,6 +801,10 @@ export default function Purchases() {
       // بلغة دفتر مابيتمسحش منه. أي فشل تاني لسه بيوقف — الرصيد اللي مايكفيش غلط حقيقي.
       let voided = false;
       if (editingId !== null) {
+        if (!reverseApprovedRef.current) {
+          setAskReverse(true);
+          return;
+        }
         try {
           await api.post(`/api/v1/purchases/${editingId}/reverse`, { reason: 'edit' });
         } catch (err: any) {
@@ -811,14 +863,17 @@ export default function Purchases() {
           ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة الشراء بنجاح');
       }
       setEditingId(null);
+      reverseApprovedRef.current = false;
+      setAskReverse(false);
       form.resetFields();
       setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
         discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
       setCashAmount(0);
       setCreditAmount(0);
       fetchPurchases();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر ترحيل فاتورة الشراء');
     } finally {
       setSubmitLoading(false);
     }
@@ -877,13 +932,16 @@ export default function Purchases() {
     const selected = items.find((i) => i.id === itemId);
     const price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
 
+    if (purchaseItems.some((l) => l.item_id === itemId)) {
+      flashExistingItem(itemId);
+      message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      return;
+    }
+
     setPurchaseItems((prev) => {
       const existing = prev.find((l) => l.item_id === itemId);
       if (existing) {
-        // العين تتبع الرقم اللي اتحرك، مش سطر جديد.
-        landedRef.current = existing.key;
-        return prev.map((l) => (l.key === existing.key
-          ? { ...l, quantity: Number(l.quantity || 0) + 1 } : l));
+        return prev;
       }
       // Reuse a blank row rather than leaving an empty line above the real one.
       const blank = prev.find((l) => l.item_id === null);
@@ -936,6 +994,8 @@ export default function Purchases() {
     // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
     // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
     setEditingId(null);
+    setAskReverse(false);
+    reverseApprovedRef.current = false;
   };
 
   const createContent = docResult ? (
@@ -1157,7 +1217,8 @@ export default function Purchases() {
                                 line.key, 'unit', val === '__base__' ? null : val)}
                               options={unitOptions(line.item_id)} />
                           </td>
-                          <td>
+                          <td {...(line.item_id != null
+                            ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
                             {/* فاضية معناها «مااتكتبتش». صندوق بيفتح على ١ بيحوّل «٥» لـ«١٥»
                                 لأي حد يكتب من غير ما يمسح الأول. */}
                             <InputNumber size="small" style={{ width: '100%' }} min={0.001}
@@ -1299,15 +1360,34 @@ export default function Purchases() {
           />
 
           <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<FileDoneOutlined />}
-              size="large"
-              loading={submitLoading}
+            <Popconfirm
+              title="هيتعكس الفاتورة القديمة وتفتح نسخة للتعديل — متابعة؟"
+              okText="متابعة"
+              cancelText="رجوع"
+              open={askReverse}
+              onConfirm={() => {
+                setAskReverse(false);
+                reverseApprovedRef.current = true;
+                form.submit();
+              }}
+              onCancel={() => setAskReverse(false)}
             >
-              تسجيل وترحيل فاتورة الشراء
-            </Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<FileDoneOutlined />}
+                size="large"
+                loading={submitLoading}
+                onClick={(e) => {
+                  if (editingId !== null && !reverseApprovedRef.current) {
+                    e.preventDefault();
+                    setAskReverse(true);
+                  }
+                }}
+              >
+                تسجيل وترحيل فاتورة الشراء
+              </Button>
+            </Popconfirm>
           </Form.Item>
       </Form>
     </Card>
@@ -1469,6 +1549,8 @@ export default function Purchases() {
               setDetail(null);
               setDocResult(null);
               setEditingId(null);
+              setAskReverse(false);
+              reverseApprovedRef.current = false;
               setNewStep('party');
             }}>
             تسجيل فاتورة شراء
