@@ -430,7 +430,7 @@ def create_sale(
                                          statement=exp.get("description") or "مصروف على العميل"))
     entry = ledger_service.post_entry(
         db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
-        rep_id=actor_user_id if actor_role == RoleName.sales_rep else None,
+        rep_id=invoice.rep_id,
         description=f"Sale {invoice.document_number}",
         # Same date as the document: the books and the paper have to agree.
         entry_date=invoice_date,
@@ -757,6 +757,7 @@ def return_sale(
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, credit_reduction))
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
+        rep_id=ret.rep_id,
         description=f"Sales return {ret.document_number}",
     )
     ret.ledger_entry_id = entry.id
@@ -922,6 +923,7 @@ def create_standalone_return(
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, to_money(credit_reduction)))
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
+        rep_id=ret.rep_id,
         description=f"Sales return {ret.document_number}",
     )
     ret.ledger_entry_id = entry.id

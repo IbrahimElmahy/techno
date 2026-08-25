@@ -171,6 +171,7 @@ def create_purchase(
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit, to_money(credit_amount)))
     entry = ledger_service.post_entry(
         db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
+        rep_id=rep_id,
         description=f"Purchase {invoice.document_number}",
     )
     invoice.ledger_entry_id = entry.id
