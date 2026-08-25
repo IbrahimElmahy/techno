@@ -75,6 +75,7 @@ class Inspection {
   String? floorNumber;
   String? description; // توصيف المعاينة
   String? inspectionType; // نوع المعاينة
+  String? visitType; // نوع الزيارة — معاينة/مرمة
   String? technicianName;
   String? technicianPhone;
   String? purchaseShop;
@@ -98,6 +99,7 @@ class Inspection {
     this.floorNumber,
     this.description,
     this.inspectionType,
+    this.visitType,
     this.technicianName,
     this.technicianPhone,
     this.purchaseShop,
@@ -125,6 +127,7 @@ class Inspection {
         'floor_number': floorNumber,
         'description': description,
         'inspection_type': inspectionType,
+        'visit_type': visitType,
         'technician_name': technicianName,
         'technician_phone': technicianPhone,
         'purchase_shop': purchaseShop,

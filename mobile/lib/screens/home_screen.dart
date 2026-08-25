@@ -103,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.16),
+                                  color: Colors.black.withValues(alpha: 0.16),
                                   blurRadius: 14,
                                   offset: const Offset(0, 6),
                                 ),
@@ -362,7 +362,7 @@ class _BigAction extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(icon, size: 36, color: color),

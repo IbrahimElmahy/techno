@@ -81,7 +81,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                             borderRadius: BorderRadius.circular(28),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.18),
+                                color: Colors.black.withValues(alpha: 0.18),
                                 blurRadius: 28,
                                 offset: const Offset(0, 12),
                               ),
@@ -174,7 +174,7 @@ class _Glow extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withOpacity(0.06),
+          color: Colors.white.withValues(alpha: 0.06),
         ),
       ),
     );

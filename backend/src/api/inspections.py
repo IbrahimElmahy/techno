@@ -47,6 +47,8 @@ class InspectionIn(BaseModel):
     floor_number: str | None = None
     description: str | None = None       # توصيف المعاينة (lookup)
     inspection_type: str | None = None   # نوع المعاينة (lookup)
+    # نوع الزيارة (معاينة/مرمة) — بيتختار على الموبايل بدل ما يفضل افتراضي على المراجع.
+    visit_type: str | None = Field(default=None, max_length=40)
     technician_name: str | None = None
     technician_phone: str | None = None
     purchase_shop: str | None = None
@@ -160,6 +162,7 @@ def _create(db: Session, body: InspectionIn, current: CurrentUser):
         owner_phone=body.owner_phone, national_id=body.national_id,
         owner_address=body.owner_address, floor_number=body.floor_number,
         description=body.description, inspection_type=body.inspection_type,
+        visit_type=body.visit_type,
         technician_name=body.technician_name, technician_phone=body.technician_phone,
         purchase_shop=body.purchase_shop, purchase_shop_phone=body.purchase_shop_phone,
         visit_details=body.visit_details,

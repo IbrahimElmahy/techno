@@ -293,7 +293,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
           if (!_loading && _rows.isNotEmpty)
             Container(
               width: double.infinity,
-              color: AppColors.primary.withOpacity(0.08),
+              color: AppColors.primary.withValues(alpha: 0.08),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -375,7 +375,7 @@ class _KindChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: c.withOpacity(0.12),
+        color: c.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text('$label · $count',

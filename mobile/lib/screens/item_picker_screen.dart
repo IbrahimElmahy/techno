@@ -33,6 +33,7 @@ class AddItemFlow {
 
       if (!context.mounted) return;
       final answer = await _askQuantity(context, item);
+      if (!context.mounted) return;
       if (answer == null) continue; // رجع يختار صنف تاني
 
       onAdd(answer.line);
@@ -165,7 +166,7 @@ class _ItemPickerDialogState extends State<_ItemPickerDialog> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: AppColors.accent.withOpacity(0.15),
+                                  color: AppColors.accent.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text('${_fmt(it.points)} نقطة',

@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 12, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 13, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -27,6 +27,12 @@ class LocalDb {
         // v5: coupons taken back from customers on the round. Queued like an inspection —
         // the rep is at a door with no signal far more often than not.
         await d.execute(_couponReceiptTable);
+      }
+      if (from < 13) {
+        // v13: نوع الزيارة (معاينة/مرمة) بيتختار في الشاشة وبيتبعت مع المزامنة.
+        try {
+          await d.execute('ALTER TABLE inspection ADD COLUMN visit_type TEXT');
+        } catch (_) {}
       }
       if (from < 8) {
         try { await d.execute(_attachmentTable); } catch (_) {}
@@ -83,7 +89,7 @@ class LocalDb {
           inspection_date TEXT NOT NULL,
           owner_name TEXT NOT NULL,
           owner_phone TEXT, national_id TEXT, owner_address TEXT, floor_number TEXT,
-          description TEXT, inspection_type TEXT,
+          description TEXT, inspection_type TEXT, visit_type TEXT,
           technician_name TEXT, technician_phone TEXT,
           purchase_shop TEXT, purchase_shop_phone TEXT, visit_details TEXT,
           customer_id INTEGER,
@@ -243,6 +249,7 @@ class LocalDb {
         'floor_number': insp.floorNumber,
         'description': insp.description,
         'inspection_type': insp.inspectionType,
+        'visit_type': insp.visitType,
         'technician_name': insp.technicianName,
         'technician_phone': insp.technicianPhone,
         'purchase_shop': insp.purchaseShop,
@@ -321,6 +328,7 @@ class LocalDb {
       floorNumber: r['floor_number'] as String?,
       description: r['description'] as String?,
       inspectionType: r['inspection_type'] as String?,
+      visitType: r['visit_type'] as String?,
       technicianName: r['technician_name'] as String?,
       technicianPhone: r['technician_phone'] as String?,
       purchaseShop: r['purchase_shop'] as String?,

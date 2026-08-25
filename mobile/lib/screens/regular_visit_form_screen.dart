@@ -33,6 +33,26 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
   DateTime _date = DateTime.now();
   int? _customerId; // set only when an existing customer is picked
   bool _saving = false;
+  String? _visitType = 'معاينة';
+  List<LookupOption> _visitTypes = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVisitTypes();
+  }
+
+  Future<void> _loadVisitTypes() async {
+    final rows = await LocalDb.instance.lookups('visit_type');
+    if (!mounted) return;
+    setState(() {
+      _visitTypes = rows;
+      if (_visitTypes.isNotEmpty &&
+          !_visitTypes.any((o) => o.value == _visitType)) {
+        _visitType = _visitTypes.first.value;
+      }
+    });
+  }
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -60,6 +80,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
       ownerName: name,
       customerId: _customerId, // null for a new name typed freely
       visitDetails: _visitDetails.text.trim().isEmpty ? null : _visitDetails.text.trim(),
+      visitType: _visitType,
       // زيارة عادية مالهاش أصناف ولا نقاط — دي معاينة الفنيين.
       lines: const [],
     );
@@ -106,6 +127,34 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                         const SizedBox(width: 6),
                         const Icon(Icons.calendar_today, size: 18, color: AppColors.primary),
                       ]),
+                    ),
+                  ),
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _visitType,
+                            isDense: true,
+                            decoration: const InputDecoration(
+                              border: InputBorder.none,
+                              hintText: 'نوع الزيارة',
+                            ),
+                            items: [
+                              for (final o in _visitTypes)
+                                DropdownMenuItem(
+                                    value: o.value, child: Text(o.label)),
+                            ],
+                            onChanged: (v) =>
+                                setState(() => _visitType = v),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('نوع الزيارة',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                      ],
                     ),
                   ),
                   const Divider(),
@@ -223,7 +272,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           decoration: BoxDecoration(color: Colors.white, boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8)
+            BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8)
           ]),
           child: Row(
             children: [

@@ -45,6 +45,8 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   String? _inspectionType;
   List<LookupOption> _descriptions = [];
   List<LookupOption> _types = [];
+  String? _visitType = 'معاينة';
+  List<LookupOption> _visitTypes = [];
   final List<InspectionLine> _lines = [];
   bool _saving = false;
 
@@ -72,6 +74,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     _floorNumber.text = e.floorNumber ?? '';
     _description = e.description;
     _inspectionType = e.inspectionType;
+    _visitType = e.visitType ?? 'معاينة';
     _technicianName.text = e.technicianName ?? '';
     _technicianPhone.text = e.technicianPhone ?? '';
     _purchaseShop.text = e.purchaseShop ?? '';
@@ -84,10 +87,16 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   Future<void> _loadLookups() async {
     final d = await LocalDb.instance.lookups('inspection_description');
     final t = await LocalDb.instance.lookups('inspection_type');
+    final v = await LocalDb.instance.lookups('visit_type');
     if (mounted) {
       setState(() {
         _descriptions = d;
         _types = t;
+        _visitTypes = v;
+        if (_visitTypes.isNotEmpty &&
+            !_visitTypes.any((o) => o.value == _visitType)) {
+          _visitType = _visitTypes.first.value;
+        }
       });
     }
   }
@@ -193,6 +202,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       floorNumber: _nullable(_floorNumber),
       description: _description,
       inspectionType: _inspectionType,
+      visitType: _visitType,
       technicianName: _nullable(_technicianName),
       technicianPhone: _nullable(_technicianPhone),
       purchaseShop: _nullable(_purchaseShop),
@@ -286,7 +296,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
             ]),
             _section('تفاصيل المعاينة', Icons.checklist, [
               DropdownButtonFormField<String>(
-                value: _description,
+                initialValue: _description,
                 decoration: const InputDecoration(labelText: 'توصيف المعاينة'),
                 items: [
                   for (final o in _descriptions)
@@ -295,13 +305,22 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 onChanged: (v) => setState(() => _description = v),
               ),
               DropdownButtonFormField<String>(
-                value: _inspectionType,
+                initialValue: _inspectionType,
                 decoration: const InputDecoration(labelText: 'نوع المعاينة'),
                 items: [
                   for (final o in _types)
                     DropdownMenuItem(value: o.value, child: Text(o.label)),
                 ],
                 onChanged: (v) => setState(() => _inspectionType = v),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: _visitType,
+                decoration: const InputDecoration(labelText: 'نوع الزيارة'),
+                items: [
+                  for (final o in _visitTypes)
+                    DropdownMenuItem(value: o.value, child: Text(o.label)),
+                ],
+                onChanged: (v) => setState(() => _visitType = v),
               ),
             ]),
             if (_isTechnician)
@@ -357,7 +376,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
         child: Container(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           decoration: BoxDecoration(color: Colors.white, boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8)
+            BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8)
           ]),
           child: Row(
             children: [

@@ -168,7 +168,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       child: FilterChip(
         label: Text(label),
         selected: selected,
-        selectedColor: AppColors.primary.withOpacity(0.15),
+        selectedColor: AppColors.primary.withValues(alpha: 0.15),
         checkmarkColor: AppColors.primary,
         onSelected: (_) {
           setState(toggle);
@@ -185,7 +185,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         leading: CircleAvatar(
           backgroundColor: (isTech ? AppColors.primary : AppColors.success)
-              .withOpacity(0.12),
+              .withValues(alpha: 0.12),
           child: Icon(isTech ? Icons.engineering : Icons.home_work_outlined,
               color: isTech ? AppColors.primary : AppColors.success),
         ),
@@ -324,6 +324,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               _kv('الدور', insp.floorNumber),
               _kv('توصيف المعاينة', insp.description),
               _kv('نوع المعاينة', insp.inspectionType),
+              _kv('نوع الزيارة', insp.visitType),
               _kv('اسم الفني', insp.technicianName),
               _kv('تليفون الفني', insp.technicianPhone),
               _kv('محل الشراء', insp.purchaseShop),

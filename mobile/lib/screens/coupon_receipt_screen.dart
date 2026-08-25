@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart' as intl;
 
 import '../api/api_client.dart';
@@ -302,9 +301,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         canPop: _entries.isEmpty,
         onPopInvokedWithResult: (didPop, _) async {
           if (didPop || !mounted) return;
-          if (await _confirmLeave()) {
-            if (mounted) Navigator.pop(context);
-          }
+          final navigator = Navigator.of(context);
+          if (await _confirmLeave() && mounted) navigator.pop();
         },
         child: Scaffold(
         appBar: AppBar(title: Text(_isEdit ? 'تعديل استلام' : 'استلام كوبونات')),
@@ -475,7 +473,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
             if (_customerName != null)
               Container(
                 width: double.infinity,
-                color: AppColors.primary.withOpacity(0.08),
+                color: AppColors.primary.withValues(alpha: 0.08),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Text('العميل: $_customerName',
                     style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -659,7 +657,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
