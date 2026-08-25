@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Empty, Input, Row, Select, Statistic, Table, Tag,
-  message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Select, Spin,
+  Statistic, Table, Tag, message,
 } from 'antd';
 import {
   DownloadOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
@@ -13,6 +13,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentLink, { DocKind, docKindOf, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
+import JournalEntryLines from '../components/JournalEntryLines';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
@@ -57,6 +58,15 @@ interface StatementLine {
   // declared, so nothing typed could reach them — which is why the filters could not either.
   rep_name?: string | null;
   cost_center_name?: string | null;
+  /**
+   * الصف زي ما المصدر رجّعه.
+   *
+   * كارت الصنف بيرجّع على كل حركة أكتر بكتير من اللي بيتعرض: سعر الوحدة، والخصم، والضريبة،
+   * وإجمالي السطر، والوحدة اللي اتباع بيها، وتاريخ الصلاحية. الكشف كان بيرمي ده كله وهو
+   * بيحوّل الصف لسطر كشف، فاللي عايز يعرف «السطر ده اتحسب إزاي» كان لازم يفتح المستند.
+   * بنحتفظ بيه هنا عشان التوسعة تعرضه من غير طلب تاني.
+   */
+  raw?: any;
 }
 
 interface StatementOut {
@@ -86,6 +96,22 @@ export default function AccountStatement() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
+
+  /**
+   * السطر بيتفتح تحته.
+   *
+   * الكشف بيقول إن حاجة حصلت وبكام، ومابيقولش **إيه** اللي حصل: القيد بيتقفل على أكتر من
+   * حساب — العميل والإيراد والضريبة — والكشف بيوري طرف واحد منهم، وهو الحساب اللي انت
+   * فاتح كشفه أصلاً. يعني العمود بيرد على سؤال انت عارف إجابته، والسؤال الحقيقي — «مقابل
+   * إيه؟» — كان لازمله إنك تسيب الشاشة وتفتح القيد في اليومية وتدوّر على رقمه.
+   *
+   * والقيد بيتجاب أول ما السطر يتفتح مش مع الكشف: كشف فيه ٤٠٠ حركة يبقى ٤٠٠ طلب على حاجة
+   * مافيش حد هيبصلها كلها.
+   */
+  const [expandedKeys, setExpandedKeys] = useState<readonly React.Key[]>([]);
+  const [entryCache, setEntryCache] = useState<Record<number, any>>({});
+  const [entryBusy, setEntryBusy] = useState<Record<number, boolean>>({});
+  const [costCenters, setCostCenters] = useState<any[]>([]);
   const [statement, setStatement] = useState<StatementOut | null>(null);
   const [loading, setLoading] = useState(false);
   // ?account=<id> — the customer and supplier files hand the account over rather than making the
@@ -98,6 +124,10 @@ export default function AccountStatement() {
     api.get('/api/v1/accounts')
       .then((r) => setAccounts(r.data || []))
       .catch(console.error);
+    // سطور القيد بتحمل مركز التكلفة برقمه؛ من غير الأسماء دي بتتعرض «#7».
+    api.get('/api/v1/cost-centers?active=true')
+      .then((r) => setCostCenters(r.data || []))
+      .catch(() => {});
   }, []);
 
   // الأصناف والمخازن بتتجابوا مرة لما الموضوع يبقى «صنف» — مش مع فتح الشاشة، عشان اللي
@@ -118,6 +148,9 @@ export default function AccountStatement() {
    * وبعد هما رصيد المخزون — نفس المعنى بوحدة مختلفة، والعناوين بتقول الوحدة دي.
    */
   const load = async () => {
+    // اللي كان مفتوح بيبقى بتاع كشف راح؛ سيبانه مفتوح على كشف تاني بيوري تفاصيل حركة
+    // مش موجودة في اللي قدامك.
+    setExpandedKeys([]);
     if (subject === 'account') {
       if (!accountId) { setStatement(null); return; }
       setLoading(true);
@@ -174,6 +207,7 @@ export default function AccountStatement() {
           doc_kind: docKindOf(r.source_doc_type),
           doc_id: r.source_doc_id ?? null,
           doc_number: r.document_number ?? null,
+          raw: r,
         })),
       });
     } catch (err: any) {
@@ -248,7 +282,7 @@ export default function AccountStatement() {
   }, [accountId, accounts, mainKey]);
 
   const exportCsv = () => {
-    if (!statement?.lines.length) { message.info('لا توجد حركات للتصدير'); return; }
+    if (!statement?.lines?.length) { message.info('لا توجد حركات للتصدير'); return; }
     const cols: CsvColumn<any>[] = [
       { title: 'التاريخ', value: (l) => String(l.entry_date).slice(0, 10) },
       { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) },
@@ -381,11 +415,46 @@ export default function AccountStatement() {
     return m;
   }, [shownLines]);
   const openDoc = useOpenDocument();
+
+  /**
+   * بيجيب القيد اللي السطر طالع منه.
+   *
+   * الفشل بيتخزّن كـ`null` زي النجاح بالظبط، عشان سطر مالوش قيد يتقرا مايفضلش يطلب نفس
+   * الحاجة كل مرة يتفتح فيها.
+   */
+  const loadEntry = async (entryId: number) => {
+    if (entryId in entryCache || entryBusy[entryId]) return;
+    setEntryBusy((b) => ({ ...b, [entryId]: true }));
+    try {
+      const r = await api.get(`/api/v1/journal-entries/${entryId}`);
+      setEntryCache((c) => ({ ...c, [entryId]: r.data }));
+    } catch {
+      setEntryCache((c) => ({ ...c, [entryId]: null }));
+    } finally {
+      setEntryBusy((b) => ({ ...b, [entryId]: false }));
+    }
+  };
+
+  const rowKeyOf = (l: StatementLine) => `${l.entry_id}-${l.entry_date}-${l.balance}`;
+
+  const toggleRow = (l: StatementLine) => {
+    const k = rowKeyOf(l);
+    setExpandedKeys((keys) => (keys.includes(k) ? keys.filter((x) => x !== k) : [...keys, k]));
+    if (subject === 'account') loadEntry(l.entry_id);
+  };
+
   const kb = useTableKeyboard<StatementLine>({
     rows: lines,
-    rowKey: (l) => `${l.entry_id}-${l.entry_date}-${l.balance}`,
-    // A manual journal entry has no document behind it; leaving those inert is the honest answer.
-    onOpen: (l) => { if (l.doc_kind && l.doc_id) openDoc(l.doc_kind, l.doc_id); },
+    rowKey: rowKeyOf,
+    /**
+     * الضغطة بتفتح السطر، مش المستند.
+     *
+     * كانت بتودّي على المستند على طول، فالطريقة الوحيدة للإجابة على «السطر ده إيه؟» كانت
+     * إنك تسيب الكشف. والسطور اللي مالهاش مستند — القيود اليدوية والأرصدة الافتتاحية —
+     * ماكانتش بتعمل حاجة خالص، وهي بالظبط السطور اللي محتاجة شرح. دلوقتي بتتفتح تحتها،
+     * والمستند ليه زراره جوّه.
+     */
+    onOpen: toggleRow,
   });
 
   /**
@@ -461,6 +530,120 @@ export default function AccountStatement() {
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('account-statement', columns);
 
+  const acctName = (id: number) => {
+    const a = accounts.find((x: any) => x.id === id);
+    return a ? labelOf(a) : `حساب #${id}`;
+  };
+  const ccName = (id: number | null | undefined) => {
+    if (!id) return null;
+    const c = costCenters.find((x: any) => x.id === id);
+    return c ? (c.name || `#${id}`) : `#${id}`;
+  };
+
+  /**
+   * بيروح لكشف حساب تاني من جوّه القيد.
+   *
+   * ده اللي بيخلّي التوسعة رد فعلي مش عرض: القيد بيقول إن الفلوس دي راحت على حساب فلان،
+   * والسؤال اللي بعده على طول هو «طب وفلان ده رصيده إيه؟» — والإجابة كانت محتاجة إنك
+   * تفتكر الاسم وتدوّر عليه في قايمة الحسابات تاني.
+   *
+   * و«الحساب الرئيسي» بيتفضّى لأن الحساب اللي رايح ليه ممكن مايبقاش تحت اللي متحدد،
+   * وساعتها الخانة بتفضل فاضية وهو مش عارف ليه.
+   */
+  const openAccount = (id: number) => {
+    if (!id || id === accountId) return;
+    setSubject('account');
+    setMainKey(undefined);
+    setAccountId(id);
+  };
+
+  /**
+   * اللي بيتعرض تحت السطر.
+   *
+   * الحساب والصنف بيوصلوا لنفس الحتة من طريقين: القيد بسطوره عند الحساب، وتفاصيل الحركة
+   * عند الصنف. والاتنين بيبدأوا بنفس الشريط — النوع والتاريخ والبيان وزرار المستند — عشان
+   * اللي بيقرا مايتعلّمش شاشتين.
+   */
+  const rowDetail = (l: StatementLine) => {
+    const head = (
+      <div style={{
+        display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10,
+      }}>
+        <Tag>{entryTypeLabel(l.entry_type)}</Tag>
+        <span style={{ color: '#8c8c8c' }}>{String(l.entry_date || '').slice(0, 10)}</span>
+        <span>{l.description}</span>
+        <span style={{ marginInlineStart: 'auto' }}>
+          {l.doc_kind && l.doc_id ? (
+            <DocumentLink kind={l.doc_kind} id={l.doc_id}
+              label={l.doc_number ? `المستند ${l.doc_number}` : 'فتح المستند'} allowEdit />
+          ) : (
+            // مافيش رابط لأنه مافيش مستند — القيد اليدوي والرصيد الافتتاحي اتكتبوا هنا
+            // مباشرة، وزرار بيوعد بفاتورة مش موجودة أوحش من نص بيقول الحقيقة.
+            <span style={{ color: '#8c8c8c' }}>قيد يدوي — مافيش مستند وراه</span>
+          )}
+        </span>
+      </div>
+    );
+
+    if (isItem) {
+      const r = l.raw || {};
+      const facts: Array<[string, React.ReactNode]> = [];
+      if (r.quantity_in_unit) facts.push(['الكمية بالوحدة', `${r.quantity_in_unit} ${r.unit ?? ''}`]);
+      if (r.unit_price != null) facts.push(['سعر الوحدة', money(r.unit_price)]);
+      if (r.discount_pct != null && Number(r.discount_pct)) {
+        facts.push(['الخصم', `${Number(r.discount_pct).toLocaleString('ar-EG')}%`]);
+      }
+      if (r.tax_amount != null && Number(r.tax_amount)) facts.push(['الضريبة', money(r.tax_amount)]);
+      if (r.line_total != null) facts.push(['إجمالي السطر', <b key="t">{money(r.line_total)}</b>]);
+      if (r.party) facts.push(['الطرف', r.party]);
+      if (r.location) facts.push(['المكان', r.location]);
+      if (r.expiry_date) facts.push(['تاريخ الصلاحية', String(r.expiry_date).slice(0, 10)]);
+      if (r.is_reversal) facts.push(['ملاحظة', <Tag key="rv" color="red">حركة عكسية</Tag>]);
+
+      return (
+        <div style={{ padding: '4px 8px' }}>
+          {head}
+          {facts.length ? (
+            <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 3, lg: 4 }}>
+              {facts.map(([k, v]) => (
+                <Descriptions.Item key={k} label={k}>{v}</Descriptions.Item>
+              ))}
+            </Descriptions>
+          ) : (
+            <span style={{ color: '#8c8c8c' }}>الحركة دي مالهاش تفاصيل زيادة عن اللي في السطر</span>
+          )}
+        </div>
+      );
+    }
+
+    if (entryBusy[l.entry_id] || !(l.entry_id in entryCache)) {
+      return <div style={{ padding: '4px 8px' }}>{head}<Spin size="small" /></div>;
+    }
+    const entry = entryCache[l.entry_id];
+    if (!entry) {
+      return (
+        <div style={{ padding: '4px 8px' }}>
+          {head}
+          <span style={{ color: '#8c8c8c' }}>تعذر تحميل سطور القيد</span>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ padding: '4px 8px' }}>
+        {head}
+        <JournalEntryLines
+          lines={entry.lines || []}
+          currentAccountId={accountId}
+          accountLabel={acctName}
+          costCenterName={ccName}
+          onOpenAccount={openAccount}
+          money={money}
+        />
+      </div>
+    );
+  };
+
   return (
     <Card
       title={isItem ? 'كشف صنف' : 'كشف حساب'}
@@ -468,9 +651,9 @@ export default function AccountStatement() {
         <>
           {tableCols.control}
           <Button icon={<DownloadOutlined />} onClick={exportCsv}
-            disabled={!statement?.lines.length} style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
+            disabled={!statement?.lines?.length} style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
           <Button icon={<PrinterOutlined />} onClick={printIt}
-            disabled={!statement?.lines.length}
+            disabled={!statement?.lines?.length}
             style={{ marginInlineEnd: 8 }}>طباعة</Button>
           <Button icon={<ReloadOutlined />} onClick={load} disabled={!accountId}>تحديث</Button>
         </>
@@ -632,12 +815,19 @@ export default function AccountStatement() {
 
           <Table<StatementLine>
             {...kb.tableProps}
-            rowKey={(l) => `${l.entry_id}-${l.entry_date}-${l.balance}`}
+            rowKey={rowKeyOf}
             size="small" loading={loading} dataSource={shownLines}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
             pagination={{ defaultPageSize: 25, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
             columns={tableCols.columns}
+            expandable={{
+              expandedRowKeys: expandedKeys,
+              // الضغط على الصف نفسه بيفتحه كمان (من `onOpen`)، والسهم موجود عشان اللي
+              // بيدوّر بعينه على حاجة تتفتح يلاقيها.
+              onExpand: (_open, l) => toggleRow(l),
+              expandedRowRender: rowDetail,
+            }}
           />
         </>
       )}
