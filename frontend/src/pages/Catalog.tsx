@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, message,
@@ -7,7 +7,7 @@ import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined,
   EditOutlined, StopOutlined, SearchOutlined, ClearOutlined, AppstoreOutlined,
-  UnorderedListOutlined,
+  UnorderedListOutlined, DownloadOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -741,18 +741,75 @@ export default function Catalog() {
     </Space>
   );
 
+  const importingRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get('/api/v1/items/import-template', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'items-import-template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { /* interceptor */ }
+  };
+  const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      const res = await api.post('/api/v1/items/import-excel', fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } });
+      const d = res.data;
+      message.success(`اتضاف ${d.created} صنف · اتم تخطي ${d.skipped} موجود`
+        + (d.failed ? ` · فشل ${d.failed}` : ''));
+      if (d.errors?.length) {
+        Modal.warning({
+          title: 'صفوف ما اتعملتش',
+          width: 560,
+          content: (
+            <ul style={{ maxHeight: 260, overflowY: 'auto', paddingRight: 18 }}>
+              {d.errors.map((x: any, i: number) => (
+                <li key={i}>صف {x.row} «{x.name}»: {x.message}</li>
+              ))}
+            </ul>
+          ),
+        });
+      }
+      fetchItems();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر الاستيراد');
+    } finally { setImporting(false); }
+  };
+
   return (
     <div>
+      <input ref={importingRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
+        onChange={onImportFile} />
       <Card
         title="الأصناف"
         extra={
           <Space>
             {tableCols.control}
-            canManageItems ? (
+            {canManageItems && (
+              <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>تنزيل القالب</Button>
+            )}
+            {canManageItems && (
+              <Button icon={<UploadOutlined />} loading={importing} onClick={() => importingRef.current?.click()}>
+                استيراد Excel
+              </Button>
+            )}
+            {canManageItems && (
               <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
                 إضافة صنف للكتالوج
               </Button>
-            ) : null
+            )}
           </Space>
         }
       >

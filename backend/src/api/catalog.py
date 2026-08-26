@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, status, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -226,6 +226,162 @@ def _apply_point_value(db: Session, item: Item, value, *, actor_user_id: int) ->
         ppv.point_value = value
         ppv.updated_by = actor_user_id
     db.flush()
+
+
+
+
+# --- استيراد الأصناف من إكسل -------------------------------------------------------
+
+_IMPORT_HEADERS = [
+    "الاسم", "الفئة", "الوحدة",
+    "سعر الجملة", "سعر التجاري", "سعر نص جملة", "سعر نص تجاري",
+    "سعر المستهلك", "سعر اللستة",
+    "أقل مخزون", "أقصى مخزون", "ملاحظات",
+]
+
+_TIER_COLUMNS: list[tuple[str, PriceTier]] = [
+    ("سعر الجملة", PriceTier.wholesale),
+    ("سعر التجاري", PriceTier.commercial),
+    ("سعر نص جملة", PriceTier.semi_wholesale),
+    ("سعر نص تجاري", PriceTier.semi_commercial),
+    ("سعر المستهلك", PriceTier.consumer),
+    ("سعر اللستة", PriceTier.list_price),
+]
+
+
+@router.get("/import-template")
+def items_import_template(
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+):
+    """قالب الاستيراد — نفس الأعمدة اللي المستورد بيقراها، بسطرين مثال."""
+    import io as _io
+
+    import openpyxl
+    from fastapi.responses import StreamingResponse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "الأصناف"
+    ws.append(_IMPORT_HEADERS)
+    ws.append(["سخام 4 بوصة", "مواسير", "قطعة", 120, 135, 110, 125, 150, None, None, None, None])
+    ws.append(["صنف تاني بدون أسعار اختيارية", "عدد وأدوات", "قطعة"])
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=items-import-template.xlsx"},
+    )
+
+
+def _dec(v) -> Decimal | None:
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return None
+    try:
+        d = Decimal(str(v).strip())
+        return d
+    except Exception:
+        return None
+
+
+@router.post("/import-excel")
+async def import_items_excel(
+    file: UploadFile = File(...),
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """استيراد أصناف من ملف إكسل بأعمدة القالب.
+
+    كل صف بيتحفظ في معاملة مستقلة (savepoint): الصنفي اللي بيغلطوا مايوقفوش الباقي،
+    واللي اتكرر بالاسم بيتعّد «تم تخطيه» بدل ما يتكرر.
+    """
+    import io as _io
+
+    import openpyxl
+
+    raw = await file.read()
+    try:
+        wb = openpyxl.load_workbook(_io.BytesIO(raw), data_only=True, read_only=True)
+    except Exception:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {
+            "code": "bad_file",
+            "message": "الملف مش إكسل مقروء — نزّل القالب واملأ بنفس الأعمدة.",
+        })
+    ws = wb[wb.sheetnames[0]]
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            {"code": "empty", "message": "الملف فاضي."})
+    header = [(str(cell).strip() if cell is not None else "") for cell in rows[0]]
+    if "الاسم" not in header:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {
+            "code": "bad_headers",
+            "message": "أول صف لازم يكون عناوين الأعمدة ويسبقها عمود «الاسم» — نزّل القالب.",
+        })
+
+    def col(title: str) -> int:
+        return header.index(title)
+
+    i_name = col("الاسم")
+    i_cat = header.index("الفئة") if "الفئة" in header else -1
+    i_unit = header.index("الوحدة") if "الوحدة" in header else -1
+    i_min = header.index("أقل مخزون") if "أقل مخزون" in header else -1
+    i_max = header.index("أقصى مخزون") if "أقصى مخزون" in header else -1
+    i_note = header.index("ملاحظات") if "ملاحظات" in header else -1
+    tier_cols = [(header.index(t), tier) for t, tier in _TIER_COLUMNS if t in header]
+    i_whole = header.index("سعر الجملة") if "سعر الجملة" in header else -1
+
+    created = skipped = failed = 0
+    errors: list[dict] = []
+    for idx, r in enumerate(rows[1:], start=2):
+        def cell(i: int):
+            return r[i] if 0 <= i < len(r) else None
+
+        name = str(cell(i_name)).strip() if cell(i_name) is not None else ""
+        if not name:
+            continue
+        try:
+            existing = db.scalar(select(Item).where(func.lower(Item.name) == name.lower()))
+            if existing is not None:
+                skipped += 1
+                continue
+            unit = str(cell(i_unit)).strip() if cell(i_unit) is not None and str(cell(i_unit)).strip() else "قطعة"
+            sale_price = _dec(cell(i_whole)) if i_whole >= 0 else None
+            item = Item(
+                code=_next_code(db, ItemKind.product), name=name, kind=ItemKind.product,
+                unit_of_measure=unit, sale_price=sale_price,
+                category=(str(cell(i_cat)).strip() if i_cat >= 0 and cell(i_cat) is not None else None),
+                min_stock=_dec(cell(i_min)) if i_min >= 0 else None,
+                max_stock=_dec(cell(i_max)) if i_max >= 0 else None,
+                description=(str(cell(i_note)).strip() if i_note >= 0 and cell(i_note) is not None else None),
+            )
+            db.add(item)
+            db.flush()
+            tiers = []
+            for ci, tier in tier_cols:
+                v = _dec(cell(ci))
+                if v is not None:
+                    tiers.append(TierPrice(tier=tier, price=v))
+            if item.sale_price is not None and not any(t.tier == PriceTier.wholesale for t in tiers):
+                tiers.append(TierPrice(tier=PriceTier.wholesale, price=item.sale_price))
+            if tiers:
+                _apply_tiers(db, item, tiers, actor_user_id=current.id)
+            db.commit()
+            created += 1
+        except HTTPException as exc:
+            db.rollback()
+            failed += 1
+            msg = (exc.detail or {}).get("message") if isinstance(exc.detail, dict) else str(exc.detail)
+            errors.append({"row": idx, "name": name, "message": msg or "بيانات غير صحيحة"})
+        except Exception as exc:
+            db.rollback()
+            failed += 1
+            errors.append({"row": idx, "name": name, "message": str(exc)})
+        if len(errors) >= 50:
+            errors.append({"row": 0, "name": "", "message": "… وفيه أخطاء تانية اتشالت من العرض"})
+            break
+    return {"created": created, "skipped": skipped, "failed": failed, "errors": errors}
 
 
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
