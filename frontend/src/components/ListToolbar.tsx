@@ -118,7 +118,7 @@ export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {
 export default function ListToolbar({
   query, onQueryChange, searchPlaceholder = 'بحث...', filters = [], values = {}, onValueChange,
   showDateRange = false, range, onRangeChange, onReset, total, shown, searchSpan = 6,
-  extra,
+  extra, searchRef: externalSearchRef,
 }: {
   query: string;
   onQueryChange: (v: string) => void;
@@ -142,8 +142,16 @@ export default function ListToolbar({
    * الكارت، بعيد عن الفلاتر اللي شغّالة معاها.
    */
   extra?: React.ReactNode;
+  /**
+   * مقبض على خانة البحث — عشان الشاشة تقدر تركّز عليها من برّه الشريط.
+   *
+   * F3 معرّفة هنا وبتشتغل لوحدها؛ الخاصية دي للحالة اللي الشاشة بتقفل فيها حاجة الأول
+   * (معاينة مستند مثلاً) وعايزة المؤشر ينتهي في الخانة بعد ما القايمة ترجع.
+   */
+  searchRef?: React.MutableRefObject<any>;
 }) {
-  const searchRef = useRef<any>(null);
+  const ownSearchRef = useRef<any>(null);
+  const searchRef = externalSearchRef ?? ownSearchRef;
   // F3 belongs to the search box, and the search box lives here — so declaring it once here gives
   // every list in the system the key, instead of thirty screens each remembering to ask for it.
   // It costs nothing where a screen has its own idea of F3: the stack hands the key to whoever

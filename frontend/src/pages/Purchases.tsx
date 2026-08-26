@@ -189,6 +189,14 @@ export default function Purchases() {
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
   // Same contract as the sales screen: a link elsewhere names a document, this screen opens it.
   const [searchParams, setSearchParams] = useSearchParams();
+  /**
+   * خانة البحث في السجل — عشان زرار «بحث» يوصلها.
+   *
+   * الزرار كان بيقفل المعاينة وبس. ده بيوصّل للسجل فعلاً، بس الزرار مكتوب عليه «بحث»
+   * ومعاه F3، واللي بيدوسه بيستنى خانة تستنى كتابة — فبيلاقي نفسه في قايمة والمؤشر مش
+   * في حتة.
+   */
+  const listSearchRef = useRef<any>(null);
   const handledIntent = useRef<string | null>(null);
 
   // Form state
@@ -790,7 +798,15 @@ export default function Purchases() {
         disabled: invoicesInList.length === 0,
         onClick: () => stepDetail(1) },
       { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-        onClick: () => { setDetail(null); closeCreate(); } },
+        // القفل الأول، والتركيز بعد ما الرسمة تنزل — الخانة لسه مش موجودة في نفس اللفّة.
+        onClick: () => {
+          setDetail(null);
+          closeCreate();
+          requestAnimationFrame(() => {
+            listSearchRef.current?.focus?.();
+            listSearchRef.current?.select?.();
+          });
+        } },
       { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
         disabled: invoicesInList.length === 0,
         onClick: () => stepDetail(-1) },
@@ -1727,6 +1743,7 @@ export default function Purchases() {
       </div>
 
       <ListToolbar
+        searchRef={listSearchRef}
         searchSpan={5}
         searchPlaceholder="بحث برقم المستند أو المورد أو رقم فاتورته أو الملاحظات"
         query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}

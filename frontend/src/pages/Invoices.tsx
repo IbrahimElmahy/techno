@@ -185,6 +185,15 @@ export default function Invoices() {
   const navigate = useNavigate();
   const [filters, setFilters] = useState<InvoiceFilters>({});
   const [search, setSearch] = useState('');
+  /**
+   * خانة البحث في السجل — عشان زرار «بحث» يوصلها.
+   *
+   * الزرار في شريط المستند المعروض كان بيقفل المعاينة وبس. ده بيوصّلك للسجل فعلاً، بس
+   * الزرار مكتوب عليه «بحث» ومعاه F3، واللي بيدوسه بيستنى خانة تستنى كتابة — فبيلاقي
+   * نفسه في قايمة والمؤشر مش في حتة. القفل بيفضل جزء من الحركة، والفرق إن المؤشر
+   * بينتهي في الخانة.
+   */
+  const listSearchRef = useRef<any>(null);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -1326,7 +1335,14 @@ export default function Invoices() {
       disabled: !neighbour(1),
       onClick: () => { const n = neighbour(1); if (n) openDetail(n); } },
     { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-      onClick: () => setDetailVisible(false) },
+      // القفل الأول، والتركيز بعد ما الرسمة تنزل — الخانة لسه مش موجودة في نفس اللفّة.
+      onClick: () => {
+        setDetailVisible(false);
+        requestAnimationFrame(() => {
+          listSearchRef.current?.focus?.();
+          listSearchRef.current?.select?.();
+        });
+      } },
     { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
       disabled: !neighbour(-1),
       onClick: () => { const n = neighbour(-1); if (n) openDetail(n); } },
@@ -2322,6 +2338,7 @@ export default function Invoices() {
           <Col xs={24} md={6}>
             <Input
               allowClear
+              ref={listSearchRef}
               value={search}
               placeholder="بحث برقم المستند أو الفاتورة"
               prefix={<SearchOutlined />}
