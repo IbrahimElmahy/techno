@@ -16,6 +16,10 @@ class TransferRoute(str, enum.Enum):
     central_to_branch = "central_to_branch"
     central_to_rep = "central_to_rep"
     rep_to_rep = "rep_to_rep"
+    # المندوب بيرجّع بضاعة للمخزن. المسار ده كان ناقص، والشاشة كانت بتقول «التحويل من عهدة
+    # مندوب إلى مخزن غير متاح حالياً — استخدم تسليم العهدة»، وتسليم العهدة بيسلّم فلوس مش
+    # بضاعة. يعني البضاعة اللي في عربية المندوب ماكانش ليها طريق ترجع بيه.
+    rep_to_central = "rep_to_central"
 
 
 class TransferStatus(str, enum.Enum):

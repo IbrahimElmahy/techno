@@ -22,6 +22,7 @@ import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ProductPickerModal from '../components/ProductPickerModal';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
@@ -277,8 +278,6 @@ export default function Invoices() {
   const canEditInvoice = can('sale.edit');
   const canDeleteInvoice = can('sale.delete');
 
-  const lineCols = useHiddenColumns('invoice-lines');
-  const showCol = (key: string) => !lineCols.hidden.includes(key);
 
   const [couponRows, setCouponRows] = useState<CouponRow[]>(() => [blankCoupon()]);
   const [couponTypes, setCouponTypes] = useState<{ id: number; name: string }[]>([]);
@@ -532,6 +531,125 @@ export default function Invoices() {
   // Invoice computations: per-line discounts first, then the invoice-total discount.
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
   const netTotal = grossTotal * (1 - discountPct / 100);
+  /**
+   * أعمدة شبكة سطور الفاتورة كبيانات — عشان تتخفي وتترتّب.
+   *
+   * الشاشة كانت بتعرض زرار أعمدة **بيشتغل على الفاضي**: `showCol()` كانت متعرّفة وماحدش
+   * بيناديها، فالشيك بوكس بيتحرك والجدول زي ما هو. والتعليق جنب الزرار كان بيقول إن
+   * مافيش أسهم ترتيب «لأن الخلايا محطوطة بالإيد مش جاية من قايمة أعمدة» — وده كان صح.
+   *
+   * دلوقتي الأعمدة قايمة فعلاً: `useEntryGrid` بيرسم منها الرأس والخلايا وصف الإجماليات،
+   * فالإخفاء بقى بيخفي والترتيب بقى ممكن، وكل إجمالي بيتحرك تحت عموده.
+   */
+  const lineColumns: EntryColumn<SaleLineItem>[] = [
+    { key: 'idx', title: '#', width: 34, locked: true,
+      cellStyle: { color: '#6b6b6b' }, cell: (_l, i) => i + 1 },
+    { key: 'warehouse', title: 'المخزن', minWidth: 150,
+      cell: (line) => (
+        /* مخزن السطر — الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن. **والتغيير هنا
+           بيثبت للأصناف الجاية**: اللي بيغيّر مخزن سطر غالباً بيقول «باقي الفاتورة من
+           هنا». السطور اللي اتكتبت مابتتلمسش — دي حاجة قالها بإيده. */
+        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+          value={line.warehouse_id ?? undefined}
+          onChange={(v) => {
+            handleLineChange(line.key, 'warehouse_id', v ?? null);
+            if (v != null) setDocWarehouseId(v as number);
+          }}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+      ) },
+    { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
+      cell: (line) => (
+        <b style={{ cursor: 'pointer' }} onClick={() => setPanelItemId(line.item_id)}>
+          {line.item_id ? productName(line.item_id) : 'اختر الصنف'}
+        </b>
+      ) },
+    { key: 'unit', title: 'الوحدة', minWidth: 96,
+      cell: (line) => (
+        <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+          value={line.unit ?? '__base__'}
+          onChange={(v) => handleLineChange(line.key, 'unit', v === '__base__' ? null : v)}
+          options={saleUnitOptions(line.item_id)} />
+      ) },
+    { key: 'quantity', title: 'الكمية', minWidth: 84, locked: true,
+      cellProps: (line) => (line.item_id != null
+        ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
+      cell: (line) => (
+        <InputNumber size="small" style={{ width: '100%' }} min={0.001}
+          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
+          placeholder="الكمية" value={line.quantity ?? undefined}
+          // المسح بيسيبها فاضية بدل ما ترجع لرقم — من غير كده «اكتب فوقها» مالهاش معنى.
+          onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
+          onBlur={() => handleLineChange(line.key, 'quantity', checkedQuantity(line))}
+          // والحارس على Enter كمان مش على الخروج بس: اللي بيكمّل بالكيبورد مابيخرجش من
+          // الخانة أصلاً، فكان بيعدّي من غير ما حد يقيس المتاح.
+          onPressEnter={(e) => {
+            e.preventDefault();
+            handleLineChange(line.key, 'quantity', checkedQuantity(line));
+            advanceFrom(line.key);
+          }} />
+      ),
+      footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
+        .toLocaleString('ar-EG', { maximumFractionDigits: 3 }) },
+    { key: 'unit_price', title: 'سعر الوحدة', minWidth: 100,
+      cell: (line) => (
+        <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+          placeholder="السعر" value={line.unit_price}
+          onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
+          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+      ),
+      footer: () => null },
+    { key: 'gross', title: 'اجمالي قبل', minWidth: 100,
+      cellStyle: { whiteSpace: 'nowrap' },
+      cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
+      footer: (rows) => money(rows.reduce(
+        (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
+    { key: 'variable_discount', title: 'خصم متغير %', minWidth: 84,
+      // المتغيّر الأول والثابت بعده — بترتيب اللي بيتغيّر كل فاتورة قبل اللي بيتغيّر
+      // مرة كل شوية. والاتنين نسبة، والاتنين بيتكتبوا.
+      cell: (line) => (
+        /* المتغيّر — اللي بيتفاوض عليه في الفاتورة دي. */
+        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          placeholder="متغير" value={line.variable_discount ?? undefined}
+          onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}
+          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+      ),
+      footer: () => null },
+    { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 84,
+      cell: (line) => (
+        /* الثابت — بيبتدي من الصنف، **وبيتعدّل**. كان بيتعرض بالجنيه وقفل، وفي عملاء
+           بياخدوا ثابت أقل أو أكتر، فالفرق كان بيتحطّ في المتغيّر — والفاتورة تقول إن
+           البايع خصم حاجة والشركة خصمت حاجة تانية، وده اللي المراجعة بتدوّر عليه. */
+        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          placeholder="ثابت" value={line.fixed_discount ?? undefined}
+          onChange={(v) => handleLineChange(line.key, 'fixed_discount', (v as number) ?? 0)}
+          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+      ),
+      footer: () => null },
+    { key: 'total', title: 'الإجمالي', minWidth: 100, locked: true,
+      cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
+      cell: (line) => money(saleLineNet(line)),
+      footer: (rows) => money(rows.reduce((n, l) => n + saleLineNet(l), 0)) },
+    { key: 'points', title: 'النقاط', minWidth: 84,
+      // النقاط رجعت للجدول. اتشالت وقت ما السطور اتحوّلت من كروت لجدول ومحدش واخد باله،
+      // والعميل بيسأل «جبت كام نقطة؟» وهو واقف.
+      cellStyle: { whiteSpace: 'nowrap', color: '#b26a00' },
+      cell: (line) => (linePoints(line)
+        ? linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })
+        : '-'),
+      footer: () => (
+        <span style={{ color: '#b26a00' }}>
+          {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+        </span>
+      ) },
+    { key: 'actions', title: '', label: 'حذف السطر', width: 40, locked: true,
+      cell: (line) => (
+        <Button size="small" danger type="text" icon={<DeleteOutlined />}
+          onClick={() => handleRemoveLine(line.key)} />
+      ),
+      footer: () => null },
+  ];
+  const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
+
   const totalPoints = lines.reduce((sum, line) => sum + linePoints(line), 0);
 
   // credit = net − cash, SIGNED: positive → the remainder is added to the customer's account;
@@ -1810,27 +1928,11 @@ export default function Invoices() {
             {/* الفاصل من غير عنوان — «المنتجات المباعة» فوق جدول أعمدته مكتوبة بيقول حاجة
                 الجدول بيقولها. */}
             <Divider style={{ flex: 1, minWidth: 0, margin: 0 }} />
-            {/* Each person turns off the columns they never read. الصنف · الكمية · الإجمالي are
-                locked — a line without them is not a line anybody can check. */}
-            <ColumnSettings
-              choices={[
-                { key: 'product', title: 'المنتج', locked: true },
-                { key: 'warehouse', title: 'المخزن' },
-                { key: 'category', title: 'الفئة' },
-                { key: 'tier', title: 'فئة السعر' },
-                { key: 'quantity', title: 'الكمية', locked: true },
-                { key: 'unit_price', title: 'سعر الوحدة' },
-                { key: 'fixed_discount', title: 'خصم ثابت %' },
-                { key: 'variable_discount', title: 'خصم متغير %' },
-                { key: 'total', title: 'الإجمالي', locked: true },
-                { key: 'points', title: 'النقاط' },
-              ]}
-              hidden={lineCols.hidden}
-              onChange={lineCols.setHidden}
-              // No `order`/`onMove` here: these cells are hand-placed in JSX, not read from a
-              // `columns={...}` array — `apply()` has nothing to reorder, so offering arrows that
-              // silently did nothing would be worse than not offering them.
-            />
+            {/* كل واحد بيقفل الأعمدة اللي مابيقراهاش، وبيرتّب اللي فاضل.
+                الصنف والكمية والإجمالي مقفولين — سطر من غيرهم مش سطر حد يقدر يراجعه.
+                الزرار ده كان بيرسم شيك بوكسات مالهاش أثر: `showCol()` كانت متعرّفة
+                وماحدش بيناديها. دلوقتي هو نفس محرك الجدول، فاللي بيتقفل بيختفي فعلاً. */}
+            {lineGrid.control}
           </div>
 
           {/* Products on the right, the stock panel pinned beside them: picking a category or a
@@ -1929,146 +2031,13 @@ export default function Invoices() {
           ) : (
             <div style={{ border: '1px solid #e6efe3', borderRadius: 10, overflowX: 'auto' }}>
               <table className="entry-grid">
-                <thead>
-                  <tr>
-                    <th style={{ width: 34 }}>#</th>
-                    <th style={{ minWidth: 150 }}>المخزن</th>
-                    <th style={{ minWidth: 170 }}>الصنف</th>
-                    <th style={{ minWidth: 96 }}>الوحدة</th>
-                    <th style={{ minWidth: 84 }}>الكمية</th>
-                    <th style={{ minWidth: 100 }}>سعر الوحدة</th>
-                    <th style={{ minWidth: 100 }}>اجمالي قبل</th>
-                    {/* المتغيّر الأول والثابت بعده — بترتيب اللي بيتغيّر كل فاتورة قبل
-                        اللي بيتغيّر مرة كل شوية. والاتنين نسبة، والاتنين بيتكتبوا. */}
-                    <th style={{ minWidth: 84 }}>خصم متغير %</th>
-                    <th style={{ minWidth: 84 }}>خصم ثابت %</th>
-                    <th style={{ minWidth: 100 }}>الإجمالي</th>
-                    {/* النقاط رجعت للجدول. اتشالت وقت ما السطور اتحوّلت من كروت لجدول،
-                        ومحدش واخد باله — والعميل بيسأل «جبت كام نقطة؟» وهو واقف. */}
-                    <th style={{ minWidth: 84 }}>النقاط</th>
-                    <th style={{ width: 40 }} />
-                  </tr>
-                </thead>
+                <thead>{lineGrid.head}</thead>
                 <tbody>
                   {lines.map((line, idx) => (
-                    <tr key={line.key}>
-                      <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
-                      <td>
-                        {/* مخزن السطر — الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن.
-                            **والتغيير هنا بيثبت للأصناف الجاية.** اللي بيغيّر مخزن سطر
-                            غالباً بيقول «باقي الفاتورة من هنا»، مش بيصلّح سطر واحد؛
-                            وإجباره يغيّره في كل سطر بعده هو نفس الشغل مكرر. السطور اللي
-                            اتكتبت مابتتلمسش — دي حاجة قالها بإيده. */}
-                        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
-                          value={line.warehouse_id ?? undefined}
-                          onChange={(v) => {
-                            handleLineChange(line.key, 'warehouse_id', v ?? null);
-                            if (v != null) setDocWarehouseId(v as number);
-                          }}
-                          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-                      </td>
-                      <td>
-                        <b style={{ cursor: 'pointer' }}
-                          onClick={() => setPanelItemId(line.item_id)}>
-                          {line.item_id ? productName(line.item_id) : 'اختر الصنف'}
-                        </b>
-                      </td>
-                      <td>
-                        <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
-                          value={line.unit ?? '__base__'}
-                          onChange={(v) => handleLineChange(
-                            line.key, 'unit', v === '__base__' ? null : v)}
-                          options={saleUnitOptions(line.item_id)} />
-                      </td>
-                      <td {...(line.item_id != null
-                        ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
-                        <InputNumber size="small" style={{ width: '100%' }} min={0.001}
-                          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
-                          placeholder="الكمية" value={line.quantity ?? undefined}
-                          // المسح بيسيبها فاضية بدل ما ترجع لرقم — من غير كده «اكتب فوقها»
-                          // مالهاش معنى.
-                          onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
-                          onBlur={() => handleLineChange(
-                            line.key, 'quantity', checkedQuantity(line))}
-                          // والحارس على Enter كمان مش على الخروج بس: اللي بيكمّل بالكيبورد
-                          // مابيخرجش من الخانة أصلاً، فكان بيعدّي من غير ما حد يقيس المتاح.
-                          onPressEnter={(e) => {
-                            e.preventDefault();
-                            handleLineChange(line.key, 'quantity', checkedQuantity(line));
-                            advanceFrom(line.key);
-                          }} />
-                      </td>
-                      <td>
-                        <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-                          placeholder="السعر" value={line.unit_price}
-                          onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
-                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        {money(Number(line.quantity || 0) * (line.unit_price || 0))}
-                      </td>
-                      <td>
-                        {/* المتغيّر — اللي بيتفاوض عليه في الفاتورة دي. */}
-                        <InputNumber size="small" min={0} max={99.99} step={0.5}
-                          style={{ width: '100%' }} placeholder="متغير"
-                          value={line.variable_discount ?? undefined}
-                          onChange={(v) => handleLineChange(
-                            line.key, 'variable_discount', (v as number) ?? null)}
-                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-                      </td>
-                      <td>
-                        {/* الثابت — بيبتدي من الصنف، **وبيتعدّل**.
-                            كان بيتعرض بالجنيه وقفل. وفي عملاء بياخدوا ثابت أقل أو أكتر
-                            من اللي على الصنف، فاللي كان بيحصل إن الفرق ده بيتحطّ في
-                            المتغيّر — والفاتورة تقول إن البايع خصم حاجة والشركة خصمت
-                            حاجة تانية، وده اللي المراجعة بتدوّر عليه. */}
-                        <InputNumber size="small" min={0} max={99.99} step={0.5}
-                          style={{ width: '100%' }} placeholder="ثابت"
-                          value={line.fixed_discount ?? undefined}
-                          onChange={(v) => handleLineChange(
-                            line.key, 'fixed_discount', (v as number) ?? 0)}
-                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-                      </td>
-                      <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        {money(saleLineNet(line))}
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#b26a00' }}>
-                        {linePoints(line)
-                          ? linePoints(line).toLocaleString('ar-EG',
-                              { maximumFractionDigits: 3 })
-                          : '-'}
-                      </td>
-                      <td>
-                        <Button size="small" danger type="text" icon={<DeleteOutlined />}
-                          onClick={() => handleRemoveLine(line.key)} />
-                      </td>
-                    </tr>
+                    <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
                   ))}
                 </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={4} style={{ fontWeight: 700 }}>الإجمالي</td>
-                    <td style={{ fontWeight: 700 }}>
-                      {lines.reduce((n, l) => n + Number(l.quantity || 0), 0)
-                        .toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
-                    </td>
-                    <td />
-                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                      {money(lines.reduce(
-                        (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0))}
-                    </td>
-                    <td colSpan={2} />
-                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                      {money(lines.reduce((n, l) => n + saleLineNet(l), 0))}
-                    </td>
-                    {/* إجمالي نقاط الفاتورة — نفس الرقم اللي في سُلّم الإجماليات، بس هنا
-                        تحت عموده مباشرة عشان يتقارن بالسطور اللي فوقه. */}
-                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap', color: '#b26a00' }}>
-                      {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
-                    </td>
-                    <td />
-                  </tr>
-                </tfoot>
+                <tfoot>{lineGrid.foot(lines)}</tfoot>
               </table>
             </div>
           )}

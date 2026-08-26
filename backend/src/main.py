@@ -442,6 +442,10 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     # v4: points are fractional — "6 pieces = 1 point".
     ("product_point_value", "point_value", "NUMERIC(18,3)"),
     ("point_record", "delta", "NUMERIC(18,3)"),
+    # مسار رابع للتحويل: المندوب بيرجّع بضاعة للمخزن. من غير التوسعة دي MySQL بيرفض القيمة
+    # الجديدة وهي واصلة، والشاشة بتقول «تعذّر تسجيل طلب التحويل» من غير سبب مفهوم.
+    ("stock_transfer", "route",
+     "ENUM('central_to_branch','central_to_rep','rep_to_rep','rep_to_central')"),
 ]
 
 

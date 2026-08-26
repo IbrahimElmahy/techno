@@ -195,6 +195,52 @@ def check_ledger_entries_balanced(db: Session, report: IntegrityReport) -> None:
             ))
 
 
+def check_customers_have_a_rep(db: Session, report: IntegrityReport) -> None:
+    """كل عميل مربوط بمندوب موجود وشغّال.
+
+    العمود `customer.rep_id` غير قابل للفراغ والـAPI بتطلبه، فالعميل من غير مندوب مفروض
+    مستحيل. اللي مش مستحيل حاجتين: مندوب **اتمسح** فالرقم بقى بيشاور على حد مش موجود،
+    ومندوب **اتقفل** فعملاؤه بقوا مالهمش حد بيزورهم.
+
+    والاتنين بيعطّلوا حاجات مابتقولش السبب: كشف المندوب بيطلع ناقص، وتطبيق الموبايل
+    مابيوصّلش العميل لحد، والفلاتر اللي بتتبني على أسماء المندوبين بتفضل فاضية. فالفحص
+    ده بيقولها بصوت عالي بدل ما تتكتشف من غياب.
+    """
+    from src.models.customer import Customer
+    from src.models.user import User
+
+    total = db.scalar(select(func.count()).select_from(Customer)) or 0
+    report.checked["customers"] = total
+
+    missing = db.execute(
+        select(Customer.id, Customer.name)
+        .outerjoin(User, User.id == Customer.rep_id)
+        .where(User.id.is_(None))
+    ).all()
+    for cid, name in missing:
+        report.findings.append(Finding(
+            check="customer_rep",
+            subject=f"عميل #{cid} — {name or ''}".strip(),
+            expected="مندوب موجود",
+            found="مندوب محذوف أو غير محدد",
+            detail="العميل ده مش هيظهر لأي مندوب في التطبيق ولا في كشوف المندوبين.",
+        ))
+
+    closed = db.execute(
+        select(Customer.id, Customer.name, User.username)
+        .join(User, User.id == Customer.rep_id)
+        .where(User.active.is_(False))
+    ).all()
+    for cid, name, username in closed:
+        report.findings.append(Finding(
+            check="customer_rep",
+            subject=f"عميل #{cid} — {name or ''}".strip(),
+            expected="مندوب شغّال",
+            found=f"مندوب مقفول ({username})",
+            detail="محدش بيزور العميل ده — انقله لمندوب تاني.",
+        ))
+
+
 def run_all(db: Session) -> IntegrityReport:
     """Run every check. Read-only — nothing here writes, by design."""
     report = IntegrityReport()
@@ -202,4 +248,5 @@ def run_all(db: Session) -> IntegrityReport:
     check_batch_sums(db, report)
     check_serial_counts(db, report)
     check_ledger_entries_balanced(db, report)
+    check_customers_have_a_rep(db, report)
     return report

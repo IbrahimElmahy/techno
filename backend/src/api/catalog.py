@@ -472,6 +472,56 @@ def get_item_prices(
     return _prices_out(db, item)
 
 
+class ReturnPriceOut(BaseModel):
+    item_id: int
+    unit_price: Decimal
+    discount_pct: Decimal
+    source: str   # «last_purchase» أو «item_price» أو «none»
+
+
+@router.get("/{item_id}/return-price", response_model=ReturnPriceOut)
+def get_return_price(
+    item_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> ReturnPriceOut:
+    """السعر اللي سطر المرتجع بيتملّى بيه — آخر سعر شراء، وإلا سعر الصنف الحالي.
+
+    المرتجع كان بيفتح بسعر فاضي، فاللي بيكتبه بيروح يدوّر على فاتورة الشراء أو يكتب رقم
+    من دماغه. وآخر سعر شراء هو الرقم الصح للمرتجع: البضاعة دي دخلت بالسعر ده، فرجوعها
+    بنفسه هو اللي بيخلّي المخزون والحساب يقفلوا على نفس المبلغ.
+
+    ولو الصنف عمره ما اتشرى (اتصنّع، أو رصيد افتتاحي)، بيرجع سعر البيع الحالي — رقم ليه
+    معنى أحسن من خانة فاضية، واللي مش عاجبه بيغيّره.
+
+    الخصم بيتبع نفس الترتيب: خصم الصنف المسجّل عليه، وصفر لو مفيش.
+    """
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الصنف مش موجود"})
+
+    from src.services import costing_service
+
+    last = costing_service.last_purchase_cost(db, item_id)
+    if last and Decimal(str(last)) > 0:
+        price, source = Decimal(str(last)), "last_purchase"
+    elif item.sale_price is not None and Decimal(str(item.sale_price)) > 0:
+        price, source = Decimal(str(item.sale_price)), "item_price"
+    else:
+        price, source = Decimal("0"), "none"
+
+    # الخصم بيتسجّل على شريحة السعر مش على الصنف — `item_price.discount_pct`. أول شريحة
+    # ليها خصم هي اللي بتتاخد: الصنف اللي ليه خصم متفق عليه بيبقى نفس النسبة على شرايحه.
+    row = db.scalar(
+        select(ItemPrice.discount_pct)
+        .where(ItemPrice.item_id == item_id, ItemPrice.discount_pct.isnot(None))
+        .limit(1)
+    )
+    disc = Decimal(str(row or 0))
+
+    return ReturnPriceOut(item_id=item_id, unit_price=price, discount_pct=disc, source=source)
+
+
 @router.put("/{item_id}/prices", response_model=ItemPricesOut)
 def set_item_prices(
     item_id: int,

@@ -103,12 +103,16 @@ const parseLoc = (v: string) => {
   return { kind, id: Number(id) };
 };
 
-/** The backend supports three routes; the direction alone determines which one applies. */
+/** الاتجاه لوحده بيحدّد المسار — الأربع اتجاهات كلهم ليهم مسار دلوقتي. */
 const routeFor = (srcKind: string, dstKind: string): string | null => {
   if (srcKind === 'warehouse' && dstKind === 'warehouse') return 'central_to_branch';
   if (srcKind === 'warehouse' && dstKind === 'custody') return 'central_to_rep';
   if (srcKind === 'custody' && dstKind === 'custody') return 'rep_to_rep';
-  return null;   // custody → warehouse has no route yet
+  // المندوب بيرجّع بضاعة للمخزن. الاتجاه ده ماكانش ليه مسار، والشاشة كانت بتقول «استخدم
+  // تسليم العهدة» — وتسليم العهدة بيسلّم فلوس مش بضاعة، فالبضاعة اللي في العربية ماكانش
+  // ليها طريق ترجع بيه.
+  if (srcKind === 'custody' && dstKind === 'warehouse') return 'rep_to_central';
+  return null;
 };
 
 export default function Transfers() {
@@ -392,10 +396,7 @@ export default function Transfers() {
   const handleSubmit = async () => {
     if (!source || !dest) { message.warning('اختر المصدر والوجهة أولاً'); return; }
     if (sameLocation) { message.error('لا يمكن التحويل إلى نفس الموقع'); return; }
-    if (!route) {
-      message.error('التحويل من عهدة مندوب إلى مخزن غير متاح حالياً — استخدم تسليم العهدة');
-      return;
-    }
+    if (!route) { message.error('الاتجاه ده مش متاح للتحويل'); return; }
     const valid = lines.filter((l) => Number(l.quantity || 0) > 0);
     if (!valid.length) { message.warning('أضف صنفاً واحداً على الأقل بكمية أكبر من صفر'); return; }
     const over = valid.find((l) => Number(l.quantity || 0) > l.available);
@@ -433,7 +434,20 @@ export default function Transfers() {
           item_id: l.item_id, quantity: String(l.quantity || 0),
         });
       }
-      message.success(`اتسجّل طلب التحويل بـ${valid.length} صنف`);
+      // الاعتماد على طول لو اللي كاتب الإذن هو نفسه اللي بيقدر يعتمده.
+      //
+      // الإذن بيتكتب «معلّق» والاعتماد هو اللي بيحرّك البضاعة. ده صح لما الطالب حاجة
+      // والمعتمد حاجة تانية؛ وهو عبث لما يكونوا نفس الشخص — الأدمن كان بيكتب الإذن،
+      // الشاشة تقول «اتسجّل الطلب»، وهو يروح يبص على المخزن يلاقي مافيش حاجة اتحركت،
+      // لأنه مستني موافقة نفسه. السيرفر هو اللي بيقرر — بيعتمد لو يقدر، وبيسيبه معلّق لو لأ.
+      let approved = false;
+      try {
+        const r = await api.post(`/api/v1/transfers/${created.data.id}/self-approve`);
+        approved = r.data?.status === 'approved';
+      } catch { /* الإذن اتكتب؛ الاعتماد هيحصل من حد تاني */ }
+      message.success(approved
+        ? `اتحوّل ${valid.length} صنف واتحرّك المخزون`
+        : `اتسجّل طلب التحويل بـ${valid.length} صنف — مستني الاعتماد`);
       closeCreate();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذّر تسجيل طلب التحويل');
@@ -818,6 +832,106 @@ export default function Transfers() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  /**
+   * أعمدة سطور الإذن — بتتخفي وبتترتّب زي أي جدول تاني في النظام.
+   *
+   * كانت مكتوبة inline جوّه `columns={[...]}`، فمافيش حاجة تقدر توصلها. `useTableColumns`
+   * هو نفس المحرك اللي القوايم بتستعمله.
+   */
+  /** أعمدة سطور الإذن المفتوح — نفس المحرك، وتفضيلاتها لوحدها. */
+  const docLineColumns = [
+                { title: 'الصنف', dataIndex: 'item_id',
+                  render: (id: number) => <b>{nameOfItem(id)}</b> },
+                { title: 'المتاح في المصدر',
+                  render: (_: any, r: any) => {
+                    // Red the moment the line asks for more than is on the shelf — the ordinary
+                    // reason an approver hesitates, said before he presses اعتماد rather than by
+                    // the negative-stock guard afterwards.
+                    const have = reviewStock[r.item_id] ?? 0;
+                    const short = Number(r.quantity || 0) > have;
+                    return (
+                      <span style={{ color: short ? '#cf1322' : '#6AB42D', fontWeight: 600 }}>
+                        {qty(have)}
+                      </span>
+                    );
+                  } },
+                { title: 'الكمية المحوّلة', dataIndex: 'quantity',
+                  render: (v: any, r: any) => (editing?.status === 'pending' && !r._header ? (
+                    <InputNumber size="small" min={0} step={1}
+                      value={draftQty[r.id] ?? Number(v)}
+                      style={{ width: 120 }} keyboard={false} data-grid-col="qty"
+                      onChange={(val) => setDraftQty(
+                        (d) => ({ ...d, [r.id]: Number(val) }))}
+                      onPressEnter={() => setReviewLineQty(r.id, guardQuantity({
+                        value: draftQty[r.id] ?? Number(v),
+                        available: reviewStock[r.item_id] ?? 0,
+                        itemName: nameOfItem(r.item_id),
+                      }, Number(v)) as number)}
+                      onBlur={() => setReviewLineQty(r.id, guardQuantity({
+                        value: draftQty[r.id] ?? Number(v),
+                        available: reviewStock[r.item_id] ?? 0,
+                        itemName: nameOfItem(r.item_id),
+                      }, Number(v)) as number)} />
+                  ) : <b>{qty(Number(v))}</b>) },
+                ...(editing?.status === 'pending' ? [{
+                  title: '', width: 50,
+                  render: (_: any, r: any) => (r._header ? null : (
+                    <Popconfirm title="تشيل الصنف ده من الإذن؟" okText="شيل" cancelText="لأ"
+                      onConfirm={() => removeReviewLine(r.id)}>
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                    </Popconfirm>
+                  )),
+                }] : []),
+              ];
+  const docCols = useTableColumns('transfer-doc-lines', docLineColumns);
+
+  const draftLineColumns = [
+                { title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
+                { title: 'الفئة', dataIndex: 'category',
+                  render: (c: string | null) => (c ? <Tag>{categoryLabels[c] || c}</Tag> : '-') },
+                { title: 'المتاح في المصدر', dataIndex: 'available',
+                  render: (v: number, r: TransferLine) => (
+                    <span style={{ color: '#6AB42D', fontWeight: 600 }}>
+                      {qty(v)} {r.unit || ''}
+                    </span>
+                  ) },
+                { title: 'الكمية المحوّلة', dataIndex: 'quantity',
+                  onCell: (r: TransferLine) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
+                  // No `max` — see `quantityGuard`: capping silently rewrites the number
+                  // somebody typed, and they never learn it was changed.
+                  render: (v: number, r: TransferLine) => (
+                    <InputNumber size="small" step={1} value={v}
+                      style={{ width: 120 }}
+                      data-qty-key={r.key}
+                      data-grid-col="qty" keyboard={false}
+                      onBlur={() => setLineQty(r.key, guardQuantity(
+                        { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
+                        null) as number)}
+                      // Enter means «this line is done» — the window opens for the next item,
+                      // exactly as on the sale, the return and the purchase.
+                      onPressEnter={(e) => {
+                        e.preventDefault();
+                        const kept = guardQuantity(
+                          { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
+                          null);
+                        setLineQty(r.key, kept as number);
+                        // Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح الشباك — كان بيفتح
+                        // الشباك على طول، فاللي عنده خمس سطور مكتوبة كان لازم يرجع للماوس
+                        // عشان يوصل للسطر التاني.
+                        if (kept !== null) advance(r.key);
+                      }}
+                      onChange={(val) => setLineQty(r.key, Number(val))} />
+                  ) },
+                { title: 'المتبقي بعد التحويل',
+                  render: (_: any, r: TransferLine) => qty(r.available - Number(r.quantity || 0)) },
+                { title: '', width: 50,
+                  render: (_: any, r: TransferLine) => (
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                      onClick={() => removeLine(r.key)} />
+                  ) },
+              ];
+  const draftCols = useTableColumns('transfer-draft-lines', draftLineColumns);
+
   const tableCols = useTableColumns('transfer-requests', columns);
 
   if (createVisible) {
@@ -943,50 +1057,8 @@ export default function Transfers() {
               style={{ marginTop: 16 }} size="small" rowKey="id" pagination={false}
               dataSource={docLines(editing)}
               locale={{ emptyText: 'مفيش أصناف على الإذن — ارفضه بدل ما تعتمده' }}
-              columns={[
-                { title: 'الصنف', dataIndex: 'item_id',
-                  render: (id: number) => <b>{nameOfItem(id)}</b> },
-                { title: 'المتاح في المصدر',
-                  render: (_: any, r: any) => {
-                    // Red the moment the line asks for more than is on the shelf — the ordinary
-                    // reason an approver hesitates, said before he presses اعتماد rather than by
-                    // the negative-stock guard afterwards.
-                    const have = reviewStock[r.item_id] ?? 0;
-                    const short = Number(r.quantity || 0) > have;
-                    return (
-                      <span style={{ color: short ? '#cf1322' : '#6AB42D', fontWeight: 600 }}>
-                        {qty(have)}
-                      </span>
-                    );
-                  } },
-                { title: 'الكمية المحوّلة', dataIndex: 'quantity',
-                  render: (v: any, r: any) => (editing.status === 'pending' && !r._header ? (
-                    <InputNumber size="small" min={0} step={1}
-                      value={draftQty[r.id] ?? Number(v)}
-                      style={{ width: 120 }} keyboard={false} data-grid-col="qty"
-                      onChange={(val) => setDraftQty(
-                        (d) => ({ ...d, [r.id]: Number(val) }))}
-                      onPressEnter={() => setReviewLineQty(r.id, guardQuantity({
-                        value: draftQty[r.id] ?? Number(v),
-                        available: reviewStock[r.item_id] ?? 0,
-                        itemName: nameOfItem(r.item_id),
-                      }, Number(v)) as number)}
-                      onBlur={() => setReviewLineQty(r.id, guardQuantity({
-                        value: draftQty[r.id] ?? Number(v),
-                        available: reviewStock[r.item_id] ?? 0,
-                        itemName: nameOfItem(r.item_id),
-                      }, Number(v)) as number)} />
-                  ) : <b>{qty(Number(v))}</b>) },
-                ...(editing.status === 'pending' ? [{
-                  title: '', width: 50,
-                  render: (_: any, r: any) => (r._header ? null : (
-                    <Popconfirm title="تشيل الصنف ده من الإذن؟" okText="شيل" cancelText="لأ"
-                      onConfirm={() => removeReviewLine(r.id)}>
-                      <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  )),
-                }] : []),
-              ]}
+              columns={docCols.columns}
+              title={() => <div style={{ textAlign: 'left' }}>{docCols.control}</div>}
             />
           )}
 
@@ -995,51 +1067,10 @@ export default function Transfers() {
             <Table
               style={{ marginTop: 16 }} size="small" rowKey="key" pagination={false}
               dataSource={lines}
-              columns={[
-                { title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
-                { title: 'الفئة', dataIndex: 'category',
-                  render: (c: string | null) => (c ? <Tag>{categoryLabels[c] || c}</Tag> : '-') },
-                { title: 'المتاح في المصدر', dataIndex: 'available',
-                  render: (v: number, r: TransferLine) => (
-                    <span style={{ color: '#6AB42D', fontWeight: 600 }}>
-                      {qty(v)} {r.unit || ''}
-                    </span>
-                  ) },
-                { title: 'الكمية المحوّلة', dataIndex: 'quantity',
-                  onCell: (r: TransferLine) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
-                  // No `max` — see `quantityGuard`: capping silently rewrites the number
-                  // somebody typed, and they never learn it was changed.
-                  render: (v: number, r: TransferLine) => (
-                    <InputNumber size="small" step={1} value={v}
-                      style={{ width: 120 }}
-                      data-qty-key={r.key}
-                      data-grid-col="qty" keyboard={false}
-                      onBlur={() => setLineQty(r.key, guardQuantity(
-                        { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
-                        null) as number)}
-                      // Enter means «this line is done» — the window opens for the next item,
-                      // exactly as on the sale, the return and the purchase.
-                      onPressEnter={(e) => {
-                        e.preventDefault();
-                        const kept = guardQuantity(
-                          { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
-                          null);
-                        setLineQty(r.key, kept as number);
-                        // Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح الشباك — كان بيفتح
-                        // الشباك على طول، فاللي عنده خمس سطور مكتوبة كان لازم يرجع للماوس
-                        // عشان يوصل للسطر التاني.
-                        if (kept !== null) advance(r.key);
-                      }}
-                      onChange={(val) => setLineQty(r.key, Number(val))} />
-                  ) },
-                { title: 'المتبقي بعد التحويل',
-                  render: (_: any, r: TransferLine) => qty(r.available - Number(r.quantity || 0)) },
-                { title: '', width: 50,
-                  render: (_: any, r: TransferLine) => (
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                      onClick={() => removeLine(r.key)} />
-                  ) },
-              ]}
+              columns={draftCols.columns}
+              title={() => (
+                <div style={{ textAlign: 'left' }}>{draftCols.control}</div>
+              )}
             />
           )}
 

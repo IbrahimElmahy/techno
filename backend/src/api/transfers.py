@@ -18,6 +18,9 @@ from src.services import transfer_service
 from src.services.stock_service import StockError
 from src.services.transfer_service import TransferDenied, TransferError
 
+from src.auth.rbac import role_has_capability
+from src.models.role import RoleName
+from src.models.transfer import StockTransfer, TransferStatus
 router = APIRouter(tags=["transfers"], prefix="/transfers")
 
 
@@ -131,6 +134,54 @@ def create_transfer(
         # for more than the source holds.
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "transfer_invalid", "message": str(exc)})
+    db.commit()
+    return _out(t)
+
+
+def _may_approve_now(db: Session, current: CurrentUser, t) -> bool:
+    """هل اللي كاتب الإذن هو نفسه اللي بيعتمده؟
+
+    الإذن بيتكتب «معلّق» وبيستنى اعتماد، والاعتماد هو اللي بيحرّك البضاعة. ده صح لما
+    الطالب حاجة والمعتمد حاجة تانية — أمين مخزن بيطلب ومدير بيوافق.
+
+    وهو عبث لما يكونوا نفس الشخص. الأدمن بيكتب إذن تحويل بين مخزنين، الشاشة بتقول
+    «اتسجّل طلب التحويل»، وهو بيروح يبص على المخزن يلاقي مافيش حاجة اتحركت — لأنه مستني
+    موافقة نفسه على ورقة كتبها بنفسه. ده كان أكبر سبب إن «التحويل مش بيخصم ولا بيزود».
+    """
+    if not role_has_capability(current.role, CAP_TRANSFER_APPROVE):
+        return False
+    src_branch = transfer_service._location_branch(
+        db, t.source_location_kind, t.source_location_id)
+    if src_branch is None:
+        return current.is_admin
+    return current.is_admin or (current.role == RoleName.branch_manager
+                                and current.branch_id == src_branch)
+
+
+@router.post("/{transfer_id}/self-approve", response_model=TransferOut)
+def self_approve(
+    transfer_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    """بيعتمد الإذن لو اللي طلبه هو نفسه اللي بيقدر يعتمده — وإلا بيسيبه معلّق.
+
+    مش نفس `/approve`: ده بيرجع الإذن زي ما هو من غير خطأ لو الشخص مالوش صلاحية، عشان
+    الشاشة تقدر تناديه بعد الإنشاء على طول من غير ما تعرف مين واقف قدامها.
+    """
+    t = db.get(StockTransfer, transfer_id)
+    if t is None:
+        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود"})
+    if t.status != TransferStatus.pending or not _may_approve_now(db, current, t):
+        return _out(t)
+    try:
+        t = transfer_service.approve(
+            db, transfer_id=transfer_id, approver_role=current.role,
+            approver_branch_id=current.branch_id, approver_user_id=current.id,
+            is_admin=current.is_admin)
+    except (TransferDenied, TransferError, StockError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
     db.commit()
     return _out(t)
 

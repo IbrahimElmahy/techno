@@ -19,6 +19,7 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
 import { printReport } from '../print/reportSheet';
@@ -188,6 +189,85 @@ export default function Orders() {
     * (1 - Math.min(99.99, Number(l.discount_pct || 0)) / 100);
 
   /** قبل خصم الورقة، وبعده — نفس سُلّم الفاتورة. */
+  /**
+   * أعمدة شبكة السطور كبيانات — عشان تتخفي وتترتّب.
+   *
+   * كانت `<thead>` وخلايا `<tr>` مكتوبين بالإيد في نفس الترتيب، يعني الأعمدة مالهاش وجود
+   * كقايمة، فمافيش حاجة تقدر تخفي عمود ولا تحرّكه. `useEntryGrid` بيرسم الاتنين من
+   * القايمة دي، فالإخفاء والترتيب بيشتغلوا لوحدهم.
+   */
+  const lineColumns: EntryColumn<DraftLine>[] = [
+    { key: 'idx', title: '#', width: 34, locked: true,
+      cellStyle: { color: '#6b6b6b' },
+      cell: (_l, i) => i + 1 },
+    { key: 'item', title: 'الصنف', minWidth: 190, locked: true,
+      cell: (line) => (
+        <b>{items.find((i) => i.id === line.item_id)?.name ?? `صنف #${line.item_id}`}</b>
+      ) },
+    { key: 'unit', title: 'الوحدة', minWidth: 96,
+      cell: (line) => (
+        <Select size="small" style={{ width: '100%' }}
+          value={line.unit ?? '__base__'}
+          onChange={(v) => setLines((prev) => prev.map((l) => {
+            if (l.key !== line.key) return l;
+            const unit = v === '__base__' ? null : v;
+            // السعر بيتضرب في معامل الوحدة — نفس حساب الفاتورة (٠٠٧+٠٠٨). من غير كده
+            // اختيار «كرتونة» بيسيب سعر القطعة، والورقة تطلع بسعر مالوش علاقة باللي جنبه.
+            const factor = (unitsCache[l.item_id || 0] || [])
+              .find((u) => u.name === unit)?.factor ?? 1;
+            return { ...l, unit, unit_price: storedPrice(l.item_id) * factor };
+          }))}
+          options={unitOptions(line.item_id)} />
+      ) },
+    { key: 'qty', title: 'الكمية', minWidth: 84, locked: true,
+      cellProps: (line) => (line.item_id != null
+        ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
+      cell: (line) => (
+        /* مفيش `max` على الكمية عن قصد: الورقة دي بتسعّر حاجة ممكن ماتكونش في المخزن
+           أصلاً — لسه ماوصلتش، أو العميل بيسأل عن كمية كبيرة. */
+        <InputNumber size="small" min={0} style={{ width: '100%' }}
+          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
+          placeholder="الكمية" value={line.quantity}
+          onChange={(q) => setLines((prev) => prev.map((l) => (l.key === line.key
+            ? { ...l, quantity: q as number } : l)))}
+          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+      ) },
+    { key: 'price', title: 'سعر الوحدة', minWidth: 100,
+      cell: (line) => (
+        <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+          data-grid-col="price" keyboard={false}
+          placeholder="السعر" value={line.unit_price}
+          onChange={(v) => setLines((prev) => prev.map((l) => (l.key === line.key
+            ? { ...l, unit_price: v as number } : l)))}
+          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+      ) },
+    { key: 'gross', title: 'اجمالي قبل', minWidth: 100,
+      cellStyle: { whiteSpace: 'nowrap' },
+      cell: (line) => money(lineGross(line)) },
+    { key: 'disc_value', title: 'خصم', minWidth: 90,
+      cellStyle: { whiteSpace: 'nowrap' },
+      // «١٠٪» مابتقولش كام اتخصم — واللي بيراجع بيراجع بالجنيه.
+      cell: (line) => money(lineGross(line) - lineNet(line)) },
+    { key: 'disc_pct', title: 'خصم %', minWidth: 78,
+      cell: (line) => (
+        <InputNumber size="small" min={0} max={99.99} step={0.5}
+          style={{ width: '100%' }} keyboard={false} placeholder="٠"
+          value={line.discount_pct}
+          onChange={(v) => setLines((prev) => prev.map((l) => (l.key === line.key
+            ? { ...l, discount_pct: (v as number) ?? 0 } : l)))}
+          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+      ) },
+    { key: 'total', title: 'الإجمالي', minWidth: 100, locked: true,
+      cellStyle: { whiteSpace: 'nowrap', fontWeight: 700 },
+      cell: (line) => money(lineNet(line)) },
+    { key: 'actions', title: '', label: 'حذف السطر', width: 40, locked: true,
+      cell: (line) => (
+        <Button type="text" danger size="small" icon={<DeleteOutlined />}
+          onClick={() => setLines((prev) => prev.filter((l) => l.key !== line.key))} />
+      ) },
+  ];
+  const lineGrid = useEntryGrid('pricing-sheet-lines', lineColumns);
+
   const grossTotal = lines.reduce((sum, l) => sum + lineGross(l), 0);
   const netBeforeDoc = lines.reduce((sum, l) => sum + lineNet(l), 0);
   const draftTotal = netBeforeDoc * (1 - Math.min(99.99, discountPct) / 100);
@@ -605,85 +685,12 @@ export default function Orders() {
               style={{ margin: '12px 0' }} />
           ) : (
             <div style={{ border: '1px solid #e6efe3', borderRadius: 10, overflowX: 'auto' }}>
+              <div style={{ textAlign: 'left', padding: '6px 8px 0' }}>{lineGrid.control}</div>
               <table className="entry-grid">
-                <thead>
-                  <tr>
-                    <th style={{ width: 34 }}>#</th>
-                    <th style={{ minWidth: 190 }}>الصنف</th>
-                    <th style={{ minWidth: 96 }}>الوحدة</th>
-                    <th style={{ minWidth: 84 }}>الكمية</th>
-                    <th style={{ minWidth: 100 }}>سعر الوحدة</th>
-                    <th style={{ minWidth: 100 }}>اجمالي قبل</th>
-                    <th style={{ minWidth: 90 }}>خصم</th>
-                    <th style={{ minWidth: 78 }}>خصم %</th>
-                    <th style={{ minWidth: 100 }}>الإجمالي</th>
-                    <th style={{ width: 40 }} />
-                  </tr>
-                </thead>
+                <thead>{lineGrid.head}</thead>
                 <tbody>
                   {lines.map((line, idx) => (
-                    <tr key={line.key}>
-                      <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
-                      <td>
-                        <b>{items.find((i) => i.id === line.item_id)?.name
-                          ?? `صنف #${line.item_id}`}</b>
-                      </td>
-                      <td>
-                        <Select size="small" style={{ width: '100%' }}
-                          value={line.unit ?? '__base__'}
-                          onChange={(v) => setLines((prev) => prev.map((l) => {
-                            if (l.key !== line.key) return l;
-                            const unit = v === '__base__' ? null : v;
-                            // السعر بيتضرب في معامل الوحدة — نفس حساب الفاتورة (٠٠٧+٠٠٨).
-                            // من غير كده اختيار «كرتونة» بيسيب سعر القطعة، والورقة تطلع
-                            // بسعر مالوش علاقة باللي مكتوب جنبه.
-                            const factor = (unitsCache[l.item_id || 0] || [])
-                              .find((u) => u.name === unit)?.factor ?? 1;
-                            return { ...l, unit, unit_price: storedPrice(l.item_id) * factor };
-                          }))}
-                          options={unitOptions(line.item_id)} />
-                      </td>
-                      <td {...(line.item_id != null
-                        ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
-                        {/* مفيش `max` على الكمية عن قصد: الورقة دي بتسعّر حاجة ممكن ماتكونش
-                            في المخزن أصلاً — لسه ماوصلتش، أو العميل بيسأل عن كمية كبيرة. */}
-                        <InputNumber size="small" min={0} style={{ width: '100%' }}
-                          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
-                          placeholder="الكمية" value={line.quantity}
-                          onChange={(q) => setLines((prev) => prev.map((l) => (l.key === line.key
-                            ? { ...l, quantity: q as number } : l)))}
-                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-                      </td>
-                      <td>
-                        <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-                          data-grid-col="price" keyboard={false}
-                          placeholder="السعر" value={line.unit_price}
-                          onChange={(v) => setLines((prev) => prev.map((l) => (l.key === line.key
-                            ? { ...l, unit_price: v as number } : l)))}
-                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{money(lineGross(line))}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        {/* «١٠٪» مابتقولش كام اتخصم — واللي بيراجع بيراجع بالجنيه. */}
-                        {money(lineGross(line) - lineNet(line))}
-                      </td>
-                      <td>
-                        <InputNumber size="small" min={0} max={99.99} step={0.5}
-                          style={{ width: '100%' }} keyboard={false} placeholder="٠"
-                          value={line.discount_pct}
-                          onChange={(v) => setLines((prev) => prev.map((l) => (l.key === line.key
-                            ? { ...l, discount_pct: (v as number) ?? 0 } : l)))}
-                          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
-                        {money(lineNet(line))}
-                      </td>
-                      <td>
-                        <Button type="text" danger size="small" icon={<DeleteOutlined />}
-                          onClick={() => setLines((prev) => prev.filter(
-                            (l) => l.key !== line.key))} />
-                      </td>
-                    </tr>
+                    <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
                   ))}
                 </tbody>
               </table>

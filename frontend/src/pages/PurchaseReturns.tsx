@@ -9,6 +9,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
@@ -414,10 +415,23 @@ export default function PurchaseReturns() {
   /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف. */
   const advance = advanceFrom(returnLines, setFocusLineKey, () => setPickerOpen(true));
 
-  /** نفس الإضافة بمخزن **صريح** — `setWarehouseId` مابيغيّرش القيمة في نفس اللفّة. */
-  const addReturnLineWith = (itemId: number, wh: number) => {
+  /**
+   * نفس الإضافة بمخزن **صريح** — `setWarehouseId` مابيغيّرش القيمة في نفس اللفّة.
+   *
+   * السعر والخصم بيتملّوا من السيرفر: **آخر سعر شراء** للصنف، ولو عمره ما اتشرى فسعره
+   * الحالي. `purchase_price` اللي على الكتالوج هو سعر إرشادي بيتكتب مرة وبيقدم؛ آخر سعر
+   * شراء هو اللي البضاعة دي دخلت بيه فعلاً، وهو الرقم اللي بيخلّي المخزون والحساب يقفلوا
+   * على نفس المبلغ لما ترجع.
+   */
+  const addReturnLineWith = async (itemId: number, wh: number) => {
     const product = items.find((i: any) => i.id === itemId) as any;
-    const price = product?.purchase_price ? parseFloat(product.purchase_price) : 0;
+    let price = product?.purchase_price ? parseFloat(product.purchase_price) : 0;
+    let disc: number | null = null;
+    try {
+      const r = await api.get(`/api/v1/items/${itemId}/return-price`);
+      if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
+      if (Number(r.data?.discount_pct) > 0) disc = Number(r.data.discount_pct);
+    } catch { /* الكتالوج بيفضل الاحتياطي */ }
     if (returnLines.some((l) => l.item_id === itemId)) {
       flashExistingItem(itemId);
       message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
@@ -435,7 +449,7 @@ export default function PurchaseReturns() {
       }
       return [...prev, {
         key, item_id: itemId, quantity: null, unit_price: price,
-        discount_pct: null, fixed_discount_pct: null, unit: null,
+        discount_pct: null, fixed_discount_pct: disc, unit: null,
         warehouse_id: wh,
       }];
     });
@@ -443,6 +457,109 @@ export default function PurchaseReturns() {
     fetchOnHand(itemId, wh);
     fetchUnits(itemId);
   };
+
+  /**
+   * أعمدة شبكة السطور كبيانات — عشان تتخفي وتترتّب.
+   *
+   * كانت مكتوبة بالإيد في `<thead>` و`<tbody>` و`<tfoot>`، وصف الإجماليات معلّق على
+   * `colSpan={4}` بتعليق بيحذّر إنه لازم يتغيّر مع أي عمود بيتزوّد قبله. دلوقتي كل عمود
+   * شايل خليته وإجماليه، فالاتنين بيتحركوا معاه.
+   */
+  const lineColumns: EntryColumn<ReturnLineDraft>[] = [
+    { key: 'idx', title: '#', width: 34, locked: true,
+      cellStyle: { color: '#6b6b6b' }, cell: (_l, i) => i + 1 },
+    { key: 'warehouse', title: 'المخزن', minWidth: 150,
+      cell: (line) => (
+        /* مخزن السطر — الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن، والمردود لازم
+           يقدر يطلّع كل صنف من مخزنه. */
+        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+          value={line.warehouse_id ?? warehouseId ?? undefined}
+          onChange={(v) => {
+            setReturnLines((prev) => prev.map((l) => (
+              l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
+            // وبيثبت للسطور الجاية — نفس فاتورة البيع والشرا.
+            if (v != null) setWarehouseId(v as number);
+          }}
+          options={warehouses.map((w: any) => ({
+            value: w.id,
+            label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
+          }))} />
+      ) },
+    { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
+      // سطر من غير اسم صنف هو كمية وسعر محدش عارف بتوع إيه، والمراجعة بتبدأ من «ده صنف إيه».
+      cell: (line) => <b>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b> },
+    { key: 'unit', title: 'الوحدة', minWidth: 96,
+      cell: (line) => (
+        <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+          value={line.unit ?? '__base__'}
+          onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+            l.key === line.key ? { ...l, unit: v === '__base__' ? null : v } : l)))}
+          options={unitOptions(line.item_id)} />
+      ) },
+    { key: 'qty', title: 'الكمية', minWidth: 84, locked: true,
+      cellProps: (line) => ({ [QTY_DATA_ATTR]: line.item_id } as any),
+      cell: (line) => (
+        <InputNumber size="small" style={{ width: '100%' }} min={0.001}
+          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
+          placeholder="الكمية" value={line.quantity ?? undefined}
+          onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
+          onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+            l.key === line.key ? { ...l, quantity: v as number | null } : l)))}
+          // المتاح بيتقاس عند الخانة، مش بعد ما المستند كله يتكتب.
+          onBlur={() => setReturnLines((prev) => prev.map((l) => (
+            l.key === line.key ? { ...l, quantity: guardQuantity({
+              value: l.quantity,
+              available: warehouseId ? onHand[l.item_id] : undefined,
+              itemName: itemName(l.item_id),
+            }, null) } : l)))} />
+      ),
+      footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0) },
+    { key: 'price', title: 'سعر الوحدة', minWidth: 100,
+      cell: (line) => (
+        <InputNumber size="small" style={{ width: '100%' }} min={0} step={0.01}
+          onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
+          placeholder="السعر" value={line.unit_price}
+          onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+            l.key === line.key ? { ...l, unit_price: (v as number) || 0 } : l)))} />
+      ),
+      footer: () => null },
+    { key: 'gross', title: 'اجمالي قبل', minWidth: 100,
+      cellStyle: { whiteSpace: 'nowrap' },
+      cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
+      footer: (rows) => money(rows.reduce(
+        (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
+    { key: 'disc_var', title: 'خصم متغير %', minWidth: 84,
+      // المتغيّر الأول والثابت بعده — نفس ترتيب البيع والشرا.
+      cell: (line) => (
+        /* المتغيّر. فاضي = مفيش خصم متفق عليه، مش صفر. */
+        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          placeholder="متغير" value={line.discount_pct ?? undefined}
+          onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+            l.key === line.key ? { ...l, discount_pct: (v as number) ?? null } : l)))} />
+      ),
+      footer: () => null },
+    { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 84,
+      cell: (line) => (
+        /* الثابت — بيتكتب زي ما اتكتب على فاتورة الشرا اللي البضاعة راجعة منها، عشان
+           المردود يطلع بنفس الخصم اللي البضاعة اتشرت بيه. */
+        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
+          onChange={(v) => setReturnLines((prev) => prev.map((l) => (
+            l.key === line.key ? { ...l, fixed_discount_pct: (v as number) ?? null } : l)))} />
+      ),
+      footer: () => null },
+    { key: 'total', title: 'الإجمالي', minWidth: 100, locked: true,
+      cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
+      cell: (line) => money(lineNet(line)),
+      footer: (rows) => money(rows.reduce((n, l) => n + lineNet(l), 0)) },
+    { key: 'actions', title: '', label: 'حذف السطر', width: 40, locked: true,
+      cell: (line) => (
+        <Button size="small" danger type="text" icon={<DeleteOutlined />}
+          onClick={() => setReturnLines((prev) => prev.filter((l) => l.key !== line.key))} />
+      ),
+      footer: () => null },
+  ];
+  const lineGrid = useEntryGrid('purchase-return-lines', lineColumns);
 
   const draftValue = useMemo(
     () => grossTotal * (1 - (variableDiscount || 0) / 100),
@@ -879,132 +996,15 @@ export default function PurchaseReturns() {
           <Empty description="اختار الأصناف الراجعة" style={{ margin: '12px 0' }} />
         ) : (
           <div style={{ border: '1px solid #f3e0d8', borderRadius: 10, overflowX: 'auto' }}>
-            <table className="entry-grid">
-              <thead>
-                {/* نفس أعمدة جدول الفاتورة بالظبط — من غير عمود اسم الصنف اللي اتشال منها. */}
-                <tr>
-                  <th style={{ width: 34 }}>#</th>
-                  <th style={{ minWidth: 150 }}>المخزن</th>
-                  {/* عمود الصنف — رجع مع فاتورة الشرا. سطر من غير اسم صنف هو كمية وسعر
-                      محدش عارف بتوع إيه، والمراجعة كلها بتبدأ من «ده صنف إيه». */}
-                  <th style={{ minWidth: 170 }}>الصنف</th>
-                  <th style={{ minWidth: 96 }}>الوحدة</th>
-                  <th style={{ minWidth: 84 }}>الكمية</th>
-                  <th style={{ minWidth: 100 }}>سعر الوحدة</th>
-                  <th style={{ minWidth: 100 }}>اجمالي قبل</th>
-                  {/* المتغيّر الأول والثابت بعده — نفس ترتيب البيع والشرا. */}
-                  <th style={{ minWidth: 84 }}>خصم متغير %</th>
-                  <th style={{ minWidth: 84 }}>خصم ثابت %</th>
-                  <th style={{ minWidth: 100 }}>الإجمالي</th>
-                  <th style={{ width: 40 }} />
-                </tr>
-              </thead>
+            <div style={{ textAlign: 'left', padding: '6px 8px 0' }}>{lineGrid.control}</div>
+              <table className="entry-grid">
+              <thead>{lineGrid.head}</thead>
               <tbody>
                 {returnLines.map((line, idx) => (
-                  <tr key={line.key}>
-                    <td style={{ color: '#6b6b6b' }}>{idx + 1}</td>
-                    <td>
-                      {/* مخزن السطر — الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن، والمردود
-                          لازم يقدر يطلّع كل صنف من مخزنه. */}
-                      <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
-                        value={line.warehouse_id ?? warehouseId ?? undefined}
-                        onChange={(v) => {
-                          setReturnLines((prev) => prev.map((l) => (
-                            l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
-                          // وبيثبت للسطور الجاية — نفس فاتورة البيع والشرا.
-                          if (v != null) setWarehouseId(v as number);
-                        }}
-                        options={warehouses.map((w: any) => ({
-                          value: w.id,
-                          label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
-                        }))} />
-                    </td>
-                    <td>
-                      <b>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b>
-                    </td>
-                    <td>
-                      <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
-                        value={line.unit ?? '__base__'}
-                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
-                          l.key === line.key
-                            ? { ...l, unit: v === '__base__' ? null : v } : l)))}
-                        options={unitOptions(line.item_id)} />
-                    </td>
-                    <td {...{ [QTY_DATA_ATTR]: line.item_id }}>
-                      <InputNumber size="small" style={{ width: '100%' }} min={0.001}
-                        data-qty-key={line.key} data-grid-col="qty" keyboard={false}
-                        placeholder="الكمية" value={line.quantity ?? undefined}
-                        onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
-                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
-                          l.key === line.key ? { ...l, quantity: v as number | null } : l)))}
-                        // المتاح بيتقاس عند الخانة، مش بعد ما المستند كله يتكتب.
-                        onBlur={() => setReturnLines((prev) => prev.map((l) => (
-                          l.key === line.key ? { ...l, quantity: guardQuantity({
-                            value: l.quantity,
-                            available: warehouseId ? onHand[l.item_id] : undefined,
-                            itemName: itemName(l.item_id),
-                          }, null) } : l)))} />
-                    </td>
-                    <td>
-                      <InputNumber size="small" style={{ width: '100%' }} min={0} step={0.01}
-                        onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
-                        placeholder="السعر" value={line.unit_price}
-                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
-                          l.key === line.key ? { ...l, unit_price: (v as number) || 0 } : l)))} />
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {money(Number(line.quantity || 0) * (line.unit_price || 0))}
-                    </td>
-                    <td>
-                      {/* المتغيّر. فاضي = مفيش خصم متفق عليه، مش صفر. */}
-                      <InputNumber size="small" min={0} max={99.99} step={0.5}
-                        style={{ width: '100%' }} placeholder="متغير"
-                        value={line.discount_pct ?? undefined}
-                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
-                          l.key === line.key
-                            ? { ...l, discount_pct: (v as number) ?? null } : l)))} />
-                    </td>
-                    <td>
-                      {/* الثابت — بيتكتب زي ما اتكتب على فاتورة الشرا اللي البضاعة راجعة
-                          منها، عشان المردود يطلع بنفس الخصم اللي البضاعة اتشرت بيه. */}
-                      <InputNumber size="small" min={0} max={99.99} step={0.5}
-                        style={{ width: '100%' }} placeholder="ثابت"
-                        value={line.fixed_discount_pct ?? undefined}
-                        onChange={(v) => setReturnLines((prev) => prev.map((l) => (
-                          l.key === line.key
-                            ? { ...l, fixed_discount_pct: (v as number) ?? null } : l)))} />
-                    </td>
-                    <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                      {money(lineNet(line))}
-                    </td>
-                    <td>
-                      <Button size="small" danger type="text" icon={<DeleteOutlined />}
-                        onClick={() => setReturnLines((prev) =>
-                          prev.filter((l) => l.key !== line.key))} />
-                    </td>
-                  </tr>
+                  <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  {/* أربعة: الرقم والمخزن والصنف والوحدة — لحد عمود الكمية. لازم يتغيّر
-                      مع أي عمود بيتزوّد قبلها، وإلا الصف بيزحلق. */}
-                  <td colSpan={4} style={{ fontWeight: 700 }}>الإجمالي</td>
-                  <td style={{ fontWeight: 700 }}>
-                    {returnLines.reduce((n, l) => n + Number(l.quantity || 0), 0)}
-                  </td>
-                  <td />
-                  <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {money(returnLines.reduce(
-                      (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0))}
-                  </td>
-                  <td colSpan={2} />
-                  <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    {money(grossTotal)}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
+              <tfoot>{lineGrid.foot(returnLines)}</tfoot>
             </table>
           </div>
         )}

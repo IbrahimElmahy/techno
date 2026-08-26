@@ -23,6 +23,7 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../com
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
@@ -110,6 +111,10 @@ interface CouponRow {
 function blankCoupon(): CouponRow {
   return { key: `c${Date.now()}${Math.random().toString(36).slice(2, 7)}` };
 }
+
+
+/** فاصل السيريالات — سطر جديد. مكتوب كثابت عشان يفضل واضح في الـJSX. */
+const SERIAL_SEP = '\n';
 
 export default function Returns() {
   const { options: categoryOptions } = useLookup('item_category');
@@ -429,10 +434,25 @@ export default function Returns() {
   const addProductByIdWith = async (itemId: number, warehouseId: number) => {
     const prod = products.find((p) => p.id === itemId);
     const info = await fetchLastInfo(itemId);
-    // Auto-select the last price the customer paid; fall back to the product's list price.
-    const price = info.last_price != null
-      ? parseFloat(info.last_price)
-      : (prod?.sale_price ? parseFloat(prod.sale_price) : 0);
+    /**
+     * ترتيب السعر: آخر سعر دفعه العميل ده، فآخر سعر شراء، فسعر الصنف الحالي.
+     *
+     * آخر سعر للعميل هو الأصح لما يكون موجود — البضاعة خرجت من هنا بالسعر ده، فرجوعها
+     * بنفسه بيقفل حسابه مظبوط. والمرتجع الحر ساعات بيتكتب لعميل عمره ما اشترى الصنف ده
+     * (بضاعة اتجمّعت، أو عميل جديد بيرجّع شحنة قديمة)، وساعتها السطر كان بيفتح بسعر
+     * البيع اللي المفروض العميل ياخد بيه — رقم مالوش علاقة باللي رجع. آخر سعر شراء أقرب
+     * للحقيقة، وهو اللي بيخلّي المخزون والحساب يقفلوا على نفس المبلغ.
+     */
+    let price = info.last_price != null ? parseFloat(info.last_price) : 0;
+    let fallbackDisc: number | null = null;
+    if (!(price > 0)) {
+      try {
+        const r = await api.get(`/api/v1/items/${itemId}/return-price`);
+        if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
+        if (Number(r.data?.discount_pct) > 0) fallbackDisc = Number(r.data.discount_pct);
+      } catch { /* الكتالوج بيفضل الاحتياطي */ }
+    }
+    if (!(price > 0)) price = prod?.sale_price ? parseFloat(prod.sale_price) : 0;
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
       flashExistingItem(itemId);
@@ -442,9 +462,10 @@ export default function Returns() {
       setLines((prev) => [...prev, {
         key, category: prod?.category ?? null, item_id: itemId,
         quantity: null, unit_price: price, discount: 0,
-        // الثابت من الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر.
+        // الثابت من الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر، وخصم الشريحة لو
+        // الصنف مالوش خصم افتراضي مكتوب عليه.
         fixed_discount: prod?.default_discount_pct
-          ? parseFloat(prod.default_discount_pct) : 0,
+          ? parseFloat(prod.default_discount_pct) : (fallbackDisc ?? 0),
         warehouse_id: warehouseId,
         is_serialized: !!prod?.is_serialized,
         serials: [] as string[],
@@ -640,6 +661,111 @@ export default function Returns() {
       },
     });
   };
+
+  /**
+   * أعمدة سطر المرتجع كبيانات — عشان تتخفي وتترتّب.
+   *
+   * الشاشة دي مش جدول: السطور متجمّعة تحت رؤوس فئات، فكل مجموعة ليها رأسها. بس رأس
+   * الأعمدة (`Row` من `Col`) وخلايا كل سطر متقابلين بالموضع بالظبط زي `thead`/`tbody` —
+   * فنفس القايمة بترسم الاتنين، والإخفاء والترتيب بيشتغلوا زي أي شبكة تانية.
+   *
+   * السيريالات مش عمود: هي صف كامل بيتفتح تحت السطر لما الصنف يكون بسيريال، فمكانها
+   * جوّه الصف مش جنب الأعمدة.
+   */
+  const lineColumns: EntryColumn<ReturnLineItem>[] = [
+    { key: 'item', title: 'الصنف', span: 4, xs: 24, locked: true,
+      cell: (line) => <b>{productName(line.item_id as number)}</b> },
+    { key: 'warehouse', title: 'المخزن', span: 3, xs: 12,
+      cell: (line) => (
+        /* (030) البضاعة ممكن ترجع لمخزن مختلف لكل سطر. */
+        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+          value={line.warehouse_id ?? docWarehouseId ?? undefined}
+          onChange={(val) => {
+            handleLineChange(line.key, 'warehouse_id', val);
+            // وبيثبت للسطور الجاية — اللي بيغيّر مخزن سطر غالباً بيقول «باقي المرتجع
+            // راجع هنا»، مش بيصلّح سطر واحد.
+            if (val != null) setDocWarehouseId(val as number);
+          }}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+      ) },
+    { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12,
+      cell: (line) => {
+        const info = line.item_id ? lastInfo[line.item_id] : undefined;
+        const last = info?.last_price;
+        return last != null ? (
+          <Tag color="green" style={{ cursor: 'pointer' }}
+            onClick={() => setHistModal({
+              name: productName(line.item_id as number),
+              rows: info?.history || [],
+            })}>
+            <HistoryOutlined /> {money(last)} ج.م
+          </Tag>
+        ) : <Tag>لم يشترِه من قبل</Tag>;
+      } },
+    { key: 'quantity', title: 'الكمية', span: 2, xs: 8, locked: true,
+      cellProps: (line) => (line.item_id != null
+        ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
+      cell: (line) => (
+        /* مفيش `available` — المرتجع بيدخّل بضاعة، فمافيش رصيد يتقاس عليه. الصفر والسالب
+           لسه مرفوضين: مرتجع بالسالب بيطلّع بضاعة وهو متسجّل كمرتجع. */
+        <InputNumber size="small" style={{ width: '100%' }}
+          ref={(el) => { qtyRefs.current[line.key] = el; }}
+          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
+          placeholder="الكمية" value={line.quantity ?? undefined}
+          onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
+          onBlur={() => handleLineChange(line.key, 'quantity', guardQuantity({
+            value: line.quantity,
+            itemName: products.find((p) => p.id === line.item_id)?.name,
+          }, null))}
+          // Enter معناها «السطر ده خلص» — رجوع على طول لشباك الأصناف. و`preventDefault`
+          // عشان «Enter بينقل للخانة اللي بعدها» مايشتغلش بعده ويشد المؤشر بعيد.
+          onPressEnter={(e) => {
+            e.preventDefault();
+            const kept = guardQuantity({
+              value: line.quantity,
+              itemName: products.find((p) => p.id === line.item_id)?.name,
+            }, null);
+            handleLineChange(line.key, 'quantity', kept);
+            advance(line.key);
+          }} />
+      ) },
+    { key: 'unit_price', title: 'سعر الإرجاع', span: 3, xs: 8,
+      cell: (line) => (
+        <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+          value={line.unit_price}
+          onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
+      ) },
+    { key: 'variable_discount', title: 'خصم متغير %', span: 2, xs: 8,
+      cell: (line) => (
+        /* المتغيّر — اللي بيتفاوض عليه على المرتجع ده. */
+        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          placeholder="متغير" value={line.discount}
+          onChange={(val) => handleLineChange(line.key, 'discount', val || 0)} />
+      ) },
+    { key: 'fixed_discount', title: 'خصم ثابت %', span: 2, xs: 8,
+      cell: (line) => (
+        /* الثابت — نفس اللي البضاعة اتباعت بيه. بيبتدي من الصنف وبيتعدّل، عشان المرتجع
+           يرجّع بنفس الخصم اللي اتباع بيه. */
+        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          placeholder="ثابت" value={line.fixed_discount}
+          onChange={(val) => handleLineChange(line.key, 'fixed_discount', val || 0)} />
+      ) },
+    { key: 'points', title: 'النقاط', span: 2, xs: 12, align: 'center',
+      cell: (line) => (
+        <span style={{ color: '#F5A11D', fontWeight: 600 }}>
+          {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+        </span>
+      ) },
+    { key: 'total', title: 'الإجمالي', span: 3, xs: 12, align: 'center', locked: true,
+      cell: (line) => <b style={{ color: '#cf4b1a' }}>{money(lineTotal(line))}</b> },
+    { key: 'actions', title: '', label: 'حذف السطر', span: 1, xs: 4, align: 'center',
+      locked: true,
+      cell: (line) => (
+        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+          onClick={() => handleRemoveLine(line.key)} />
+      ) },
+  ];
+  const lineGrid = useEntryGrid('return-lines', lineColumns);
 
   const returnDoc = (r: any): InvoiceDoc | null => {
     if (!r) return null;
@@ -1062,8 +1188,11 @@ export default function Returns() {
 
                 {lines.length === 0 ? (
                   <Empty description="اختر الفئة ثم الأصناف لإضافتها للمرتجع" style={{ margin: '12px 0' }} />
-                ) : (
-                  linesByCategory.map((group) => (
+                ) : (<>
+                  {/* زرار الأعمدة فوق المجموعات كلها — التفضيل واحد لكل السطور مهما
+                      كانت فئتها، فزرار لكل مجموعة كان هيسأل نفس السؤال أربع مرات. */}
+                  <div style={{ textAlign: 'left', marginBottom: 8 }}>{lineGrid.control}</div>
+                  {linesByCategory.map((group) => (
                     <div key={group.category ?? '__none__'}
                       style={{ border: '1px solid #e6efe3', borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
                       <div style={{ background: '#fdf3ee', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1074,131 +1203,46 @@ export default function Returns() {
                       </div>
 
                       <Row gutter={8} style={{ padding: '6px 12px 0', color: '#6b6b6b', fontSize: 12 }}>
-                        <Col md={4}>الصنف</Col>
-                        <Col md={3}>المخزن</Col>
-                        <Col md={2}>آخر سعر شراء</Col>
-                        <Col md={2}>الكمية</Col>
-                        <Col md={3}>سعر الإرجاع</Col>
-                        <Col md={2}>خصم متغير %</Col>
-                        <Col md={2}>خصم ثابت %</Col>
-                        <Col md={2} style={{ textAlign: 'center' }}>النقاط</Col>
-                        <Col md={3} style={{ textAlign: 'center' }}>الإجمالي</Col>
-                        <Col md={1} />
+                        {lineGrid.colHead.map((c) => (
+                          <Col key={c.key} md={c.span}
+                            style={c.align ? { textAlign: c.align } : undefined}>
+                            {c.title}
+                          </Col>
+                        ))}
                       </Row>
 
-                      {group.items.map((line) => {
-                        const info = line.item_id ? lastInfo[line.item_id] : undefined;
-                        const last = info?.last_price;
-                        return (
-                          <div key={line.key} style={{ padding: '4px 12px 6px', borderTop: '1px solid #f5efec' }}>
-                            <Row gutter={8} align="middle">
-                              <Col md={4} xs={24}><b>{productName(line.item_id as number)}</b></Col>
-                              <Col md={3} xs={12}>
-                                {/* (030) Goods may come back into a different warehouse per line. */}
-                                <Select size="small" style={{ width: '100%' }}
-                                  placeholder="المخزن"
-                                  value={line.warehouse_id ?? docWarehouseId ?? undefined}
-                                  onChange={(val) => {
-                                    handleLineChange(line.key, 'warehouse_id', val);
-                                    // وبيثبت للسطور الجاية — اللي بيغيّر مخزن سطر غالباً
-                                    // بيقول «باقي المرتجع راجع هنا»، مش بيصلّح سطر واحد.
-                                    if (val != null) setDocWarehouseId(val as number);
-                                  }}
-                                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+                      {group.items.map((line) => (
+                        <div key={line.key}
+                          style={{ padding: '4px 12px 6px', borderTop: '1px solid #f5efec' }}>
+                          <Row gutter={8} align="middle">
+                            {lineGrid.colRow(line, 0).map((c) => (
+                              <Col key={c.key} md={c.span} xs={c.xs}
+                                style={c.align ? { textAlign: c.align } : undefined}
+                                {...(c.key === 'quantity' && line.item_id != null
+                                  ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
+                                {c.node}
                               </Col>
-                              <Col md={2} xs={12}>
-                                {last != null ? (
-                                  <Tag color="green" style={{ cursor: 'pointer' }}
-                                    onClick={() => setHistModal({
-                                      name: productName(line.item_id as number),
-                                      rows: info?.history || [],
-                                    })}>
-                                    <HistoryOutlined /> {money(last)} ج.م
-                                  </Tag>
-                                ) : (
-                                  <Tag>لم يشترِه من قبل</Tag>
-                                )}
+                            ))}
+                            {/* السيريالات صف كامل تحت السطر — مش عمود جنب الباقي، لأنها
+                                بتتكتب رقم في كل سطر بعدد الكمية. */}
+                            {line.is_serialized && (
+                              <Col span={24}>
+                                <Input.TextArea
+                                  size="small" rows={2}
+                                  placeholder="السيريالات المرتجعة — رقم في كل سطر بعدد الكمية"
+                                  value={(line.serials || []).join(SERIAL_SEP)}
+                                  onChange={(e) => handleLineChange(line.key, 'serials',
+                                    e.target.value.split(SERIAL_SEP)
+                                      .map((x) => x.trim()).filter(Boolean))}
+                                />
                               </Col>
-                              <Col md={2} xs={8} {...(line.item_id != null
-                                ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
-                                {/* No `available` — a return brings goods IN, so there is no
-                                    shelf to check against. Zero and negative are still refused:
-                                    a negative return REMOVES stock, posted as a return. */}
-                                <InputNumber size="small" style={{ width: '100%' }}
-                                  ref={(el) => { qtyRefs.current[line.key] = el; }}
-                                  data-qty-key={line.key}
-                                  data-grid-col="qty" keyboard={false}
-                                  placeholder="الكمية"
-                                  value={line.quantity ?? undefined}
-                                  onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
-                                  onBlur={() => handleLineChange(line.key, 'quantity', guardQuantity({
-                                    value: line.quantity,
-                                    itemName: products.find((p) => p.id === line.item_id)?.name,
-                                  }, null))}
-                                  // Enter means «this line is done» — straight back to the picker.
-                                  // preventDefault so the global «Enter moves to the next field»
-                                  // does not run after this and drag the caret off the new line.
-                                  onPressEnter={(e) => {
-                                    e.preventDefault();
-                                    const kept = guardQuantity({
-                                      value: line.quantity,
-                                      itemName: products.find((p) => p.id === line.item_id)?.name,
-                                    }, null);
-                                    handleLineChange(line.key, 'quantity', kept);
-                                    advance(line.key)
-                                  }} />
-                              </Col>
-                              {line.is_serialized && (
-                                <Col span={24}>
-                                  <Input.TextArea
-                                    size="small" rows={2}
-                                    placeholder="السيريالات المرتجعة — رقم في كل سطر بعدد الكمية"
-                                    value={(line.serials || []).join('\n')}
-                                    onChange={(e) => handleLineChange(line.key, 'serials',
-                                      e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
-                                  />
-                                </Col>
-                              )}
-                              <Col md={3} xs={8}>
-                                <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-                                  value={line.unit_price}
-                                  onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
-                              </Col>
-                              <Col md={2} xs={8}>
-                                {/* المتغيّر — اللي بيتفاوض عليه على المرتجع ده. */}
-                                <InputNumber size="small" min={0} max={99.99} step={0.5}
-                                  style={{ width: '100%' }} placeholder="متغير"
-                                  value={line.discount}
-                                  onChange={(val) => handleLineChange(line.key, 'discount', val || 0)} />
-                              </Col>
-                              <Col md={2} xs={8}>
-                                {/* الثابت — نفس اللي البضاعة اتباعت بيه. بيبتدي من الصنف
-                                    وبيتعدّل، عشان المرتجع يرجّع بنفس الخصم اللي اتباع بيه. */}
-                                <InputNumber size="small" min={0} max={99.99} step={0.5}
-                                  style={{ width: '100%' }} placeholder="ثابت"
-                                  value={line.fixed_discount}
-                                  onChange={(val) => handleLineChange(
-                                    line.key, 'fixed_discount', val || 0)} />
-                              </Col>
-                              <Col md={2} xs={12} style={{ textAlign: 'center' }}>
-                                <span style={{ color: '#F5A11D', fontWeight: 600 }}>
-                                  {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
-                                </span>
-                              </Col>
-                              <Col md={3} xs={12} style={{ textAlign: 'center' }}>
-                                <b style={{ color: '#cf4b1a' }}>{money(lineTotal(line))}</b>
-                              </Col>
-                              <Col md={1} xs={4} style={{ textAlign: 'center' }}>
-                                <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                                  onClick={() => handleRemoveLine(line.key)} />
-                              </Col>
-                            </Row>
-                          </div>
-                        );
-                      })}
+                            )}
+                          </Row>
+                        </div>
+                      ))}
                     </div>
-                  ))
-                )}
+                  ))}
+                </>)}
                 {/* لوحة «رصيد الصنف في المخازن» اتشالت بطلب صاحب النظام — نفس اللي
                     اتعمل في فاتورة البيع. كانت واخدة ربع الشاشة عشان تقول أرقام المرتجع
                     مش بيتاخد قرار على أساسها: البضاعة راجعة، والسؤال هو راجعة لفين —

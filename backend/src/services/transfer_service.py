@@ -29,6 +29,7 @@ _ROUTE_KINDS = {
     TransferRoute.central_to_branch: (LocationKind.warehouse, LocationKind.warehouse),
     TransferRoute.central_to_rep: (LocationKind.warehouse, LocationKind.custody),
     TransferRoute.rep_to_rep: (LocationKind.custody, LocationKind.custody),
+    TransferRoute.rep_to_central: (LocationKind.custody, LocationKind.warehouse),
 }
 
 
@@ -110,9 +111,9 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
     # Source-branch authority: central source (None) ⇒ admin/central; else the source-branch manager.
     if src_branch is None:
         if not is_admin:
-            raise TransferDenied("Central-source transfer requires head-office/central authority.")
+            raise TransferDenied("التحويل من مخزن مركزي محتاج صلاحية الإدارة.")
     elif not (is_admin or (approver_role == RoleName.branch_manager and approver_branch_id == src_branch)):
-        raise TransferDenied("Only the source branch's Branch Manager may approve.")
+        raise TransferDenied("الاعتماد لمدير فرع المصدر بس.")
 
     # (031) Every line the document carries. A transfer written before lines existed has none, so
     # its own `item_id`/`quantity` stand in — which is what lets old documents approve unchanged.
