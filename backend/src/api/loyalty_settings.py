@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -84,3 +84,44 @@ def update_type(
     db.flush()
     db.commit()
     return _out(ct)
+
+
+@router.delete("/{type_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_type(
+    type_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_LOYALTY_SETTINGS_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف نوع الكوبون — والنوع اللي اتصرف منه كوبونات بيتقفل بدل ما يتمسح.
+
+    `coupon.coupon_type_id` عمود **مش بيقبل الفراغ**، وكوبون مصروف بيحتفظ بنوعه عشان
+    يفضل مقروء بعد سنة. فمسح النوع بيسيب صفوف بتشاور على حاجة مش موجودة — والقاعدة
+    بترفض العملية أصلاً وبترجّع خطأ ٥٠٠ مالوش معنى للّي دايس الزرار.
+
+    واللي بيدوس «حذف» على نوع اتصرف منه كوبونات عايز حاجة واحدة: إنه مايظهرش تاني في
+    قايمة الصرف. والإقفال بيعمل ده بالظبط، وبيسيب الكوبونات القديمة تقرا صح.
+
+    النوع اللي عمره ما اتصرف منه حاجة بيتمسح فعلاً — مافيش سبب يفضل.
+    """
+    ct = db.get(CouponType, type_id)
+    if ct is None:
+        raise HTTPException(404, {"code": "not_found", "message": "نوع الكوبون مش موجود"})
+
+    from src.models.loyalty import Coupon
+    from src.models.sales import SalesInvoiceCoupon
+
+    used = db.scalar(
+        select(func.count()).select_from(Coupon).where(Coupon.coupon_type_id == type_id)
+    ) or 0
+    used += db.scalar(
+        select(func.count()).select_from(SalesInvoiceCoupon)
+        .where(SalesInvoiceCoupon.coupon_type_id == type_id)
+    ) or 0
+
+    if used:
+        ct.active = False
+    else:
+        db.delete(ct)
+    db.flush()
+    db.commit()
+

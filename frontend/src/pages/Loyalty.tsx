@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Col, Divider, Form, Input, Modal, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
-import { PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined, CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import {
+  PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined,
+  CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined, DeleteOutlined
+} from '@ant-design/icons';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
@@ -13,6 +16,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
+import CouponStatsOverview from '../components/CouponStatsOverview';
 
 interface CouponType {
   id: number;
@@ -51,11 +55,19 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
 
 export default function Loyalty() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('settings');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'settings';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [couponTypes, setCouponTypes] = useState<CouponType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [couponKinds, setCouponKinds] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Kind modal (فئات الكوبونات)
+  const [kindModalVisible, setKindModalVisible] = useState(false);
+  const [kindForm] = Form.useForm();
+  const [editingKind, setEditingKind] = useState<any>(null);
 
   // Drawers & Modals
   const [typeVisible, setTypeVisible] = useState(false);
@@ -122,9 +134,62 @@ export default function Loyalty() {
     }
   };
 
+  const fetchCouponKinds = async () => {
+    try {
+      const res = await api.get('/api/v1/settings/lookups?category=coupon_kind');
+      setCouponKinds(res.data || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const onSaveCouponKind = async (values: any) => {
+    try {
+      if (editingKind) {
+        await api.patch(`/api/v1/settings/lookups/${editingKind.id}`, {
+          label: values.label,
+          active: values.active !== undefined ? values.active : true,
+        });
+        message.success('تم تعديل فئة الكوبون بنجاح');
+      } else {
+        await api.post('/api/v1/settings/lookups', {
+          category: 'coupon_kind',
+          value: values.value || values.label,
+          label: values.label,
+        });
+        message.success('تمت إضافة فئة الكوبون بنجاح');
+      }
+      setKindModalVisible(false);
+      kindForm.resetFields();
+      setEditingKind(null);
+      fetchCouponKinds();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ فئة الكوبون');
+    }
+  };
+
+  const onDeleteCouponKind = (record: any) => {
+    Modal.confirm({
+      title: 'حذف فئة الكوبون',
+      content: `هل أنت متأكد من حذف فئة الكوبون "${record.label}"؟`,
+      okText: 'حذف',
+      okType: 'danger',
+      cancelText: 'إلغاء',
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/settings/lookups/${record.id}`);
+          message.success('تم حذف فئة الكوبون');
+          fetchCouponKinds();
+        } catch (err: any) {
+          message.error(err?.response?.data?.detail?.message || 'تعذر حذف فئة الكوبون');
+        }
+      },
+    });
+  };
+
   const fetchData = async () => {
     setLoading(true);
-    await Promise.all([fetchCouponTypes(), fetchCoupons(), loadLookups()]);
+    await Promise.all([fetchCouponTypes(), fetchCoupons(), loadLookups(), fetchCouponKinds()]);
     setLoading(false);
   };
 
@@ -212,6 +277,25 @@ export default function Loyalty() {
         onOk: doToggle,
       });
     }
+  };
+
+  const onDeleteCouponType = (record: CouponType) => {
+    Modal.confirm({
+      title: 'حذف نوع الكوبون',
+      content: `هل أنت متأكد من حذف نوع الكوبون "${record.name}" نهائياً؟`,
+      okText: 'حذف',
+      okType: 'danger',
+      cancelText: 'إلغاء',
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/loyalty/coupon-types/${record.id}`);
+          message.success('تم حذف نوع الكوبون بنجاح');
+          fetchCouponTypes();
+        } catch (err: any) {
+          message.error(err?.response?.data?.detail?.message || 'تعذر حذف نوع الكوبون');
+        }
+      },
+    });
   };
 
   const handleConvertPoints = async (values: any) => {
@@ -352,6 +436,9 @@ export default function Loyalty() {
               تفعيل
             </Button>
           )}
+          <Button size="small" danger icon={<DeleteOutlined />} onClick={() => onDeleteCouponType(record)}>
+            حذف
+          </Button>
         </Space>
       ),
     },
@@ -495,11 +582,111 @@ export default function Loyalty() {
         </div>
       ),
     },
+    {
+      key: 'kinds',
+      label: `فئات الكوبونات (${couponKinds.length})`,
+      children: (
+        <div>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <span style={{ color: '#595959' }}>
+              هذه الفئات هي الأنواع المتاحة للاختيار عند استلام وتصنيف الكوبونات (عادي / فضي / ذهبي / ماسي / ...).
+            </span>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setEditingKind(null);
+                kindForm.resetFields();
+                kindForm.setFieldsValue({ active: true });
+                setKindModalVisible(true);
+              }}
+            >
+              إضافة فئة كوبون جديدة
+            </Button>
+          </div>
+          <Table
+            size="small"
+            dataSource={couponKinds}
+            rowKey="id"
+            loading={loading}
+            pagination={false}
+            columns={[
+              { title: 'اسم الفئة / النوع', dataIndex: 'label', key: 'label',
+                render: (l: string) => <Tag color="blue" style={{ fontSize: 13, padding: '2px 8px' }}>{l}</Tag> },
+              { title: 'القيمة المرجعية', dataIndex: 'value', key: 'value' },
+              { title: 'الحالة', dataIndex: 'active', key: 'active',
+                render: (active: boolean) => (
+                  <Tag color={active ? 'green' : 'red'}>{active ? 'نشط' : 'معطل'}</Tag>
+                ) },
+              {
+                title: 'الإجراءات',
+                key: 'actions',
+                render: (_: any, record: any) => (
+                  <Space size="middle">
+                    <Button size="small" icon={<EditOutlined />} onClick={() => {
+                      setEditingKind(record);
+                      kindForm.setFieldsValue({ label: record.label, value: record.value, active: record.active });
+                      setKindModalVisible(true);
+                    }}>
+                      تعديل
+                    </Button>
+                    <Button size="small" danger icon={<DeleteOutlined />} onClick={() => onDeleteCouponKind(record)}>
+                      حذف
+                    </Button>
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        </div>
+      ),
+    },
   ];
+
+  const totalCouponsCount = coupons.length;
+  const totalCouponsValue = coupons.reduce((s, c) => s + Number(c.value || 0), 0);
+
+  const kindStats = useMemo(() => {
+    if (couponTypes.length > 0) {
+      return couponTypes.map((t) => {
+        const matching = coupons.filter((c) => c.kind === t.name || c.value === t.value || c.kind === t.kind);
+        return {
+          key: String(t.id),
+          label: t.name,
+          count: matching.length,
+          value: matching.reduce((s, c) => s + Number(c.value || 0), 0),
+          onClick: () => {
+            couponFilter.setQuery(t.name);
+            setActiveTab('coupons');
+          },
+        };
+      });
+    }
+    return [
+      {
+        key: 'money',
+        label: 'رصيد مالي',
+        count: coupons.filter((c) => c.kind === 'money' || !c.kind).length,
+        value: coupons.filter((c) => c.kind === 'money' || !c.kind).reduce((s, c) => s + Number(c.value || 0), 0),
+      },
+      {
+        key: 'discount',
+        label: 'خصم فواتير',
+        count: coupons.filter((c) => c.kind === 'gift_money_off' || c.kind === 'discount').length,
+        value: coupons.filter((c) => c.kind === 'gift_money_off' || c.kind === 'discount').reduce((s, c) => s + Number(c.value || 0), 0),
+      },
+    ];
+  }, [couponTypes, coupons]);
 
   return (
     <div>
-      <Card title="إعدادات برنامج الولاء (ولاء العملاء)">
+      <Card title="أنواع الكوبونات (إدارة الإنشاءات)">
+        <CouponStatsOverview
+          totalCount={totalCouponsCount}
+          totalValue={totalCouponsValue}
+          kinds={kindStats}
+          kindsTitle="أنواع الكوبونات وتوزيع الأعداد"
+        />
         <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
       </Card>
 
@@ -714,6 +901,60 @@ export default function Loyalty() {
               }
               return null;
             }}
+          </Form.Item>
+        </Form>
+      </TabModal>
+
+      {/* Add / Edit Coupon Kind Modal */}
+      <TabModal
+        title={editingKind ? `تعديل فئة الكوبون: ${editingKind.label}` : 'إضافة فئة كوبون جديدة'}
+        open={kindModalVisible}
+        onCancel={() => {
+          setKindModalVisible(false);
+          setEditingKind(null);
+          kindForm.resetFields();
+        }}
+        footer={null}
+        destroyOnHidden
+      >
+        <Form form={kindForm} layout="vertical" onFinish={onSaveCouponKind} requiredMark={false}>
+          <Form.Item
+            name="label"
+            label="اسم الفئة / النوع (مثال: عادي، فضي، ذهبي، ماسي)"
+            rules={[{ required: true, message: 'يرجى إدخال اسم الفئة!' }]}
+          >
+            <Input placeholder="اسم الفئة" />
+          </Form.Item>
+
+          <Form.Item
+            name="value"
+            label="القيمة المرجعية (اختياري - تُترك فارغة لاستخدام الاسم)"
+          >
+            <Input placeholder="كود أو قيمة الفئة" />
+          </Form.Item>
+
+          {editingKind && (
+            <Form.Item name="active" label="الحالة">
+              <Select>
+                <Select.Option value={true}>نشط</Select.Option>
+                <Select.Option value={false}>معطل</Select.Option>
+              </Select>
+            </Form.Item>
+          )}
+
+          <Form.Item style={{ marginTop: 24 }}>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                {editingKind ? 'حفظ التعديلات' : 'إضافة الفئة'}
+              </Button>
+              <Button onClick={() => {
+                setKindModalVisible(false);
+                setEditingKind(null);
+                kindForm.resetFields();
+              }}>
+                إلغاء
+              </Button>
+            </Space>
           </Form.Item>
         </Form>
       </TabModal>

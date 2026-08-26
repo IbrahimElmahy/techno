@@ -84,6 +84,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/sub-accounts', label: 'الحسابات الفرعيه', roles: R(BOOKS), a5: '/subaccounts' },
       { key: '/fixed-assets', label: 'الاصول الثابتة', roles: R(BOOKS), a5: '/fixed-assets' },
       { key: '/cost-centers', label: 'مراكز التكلفة', roles: R(BOOKS), a5: '/cost_centers' },
+      { key: '/loyalty', label: 'أنواع الكوبونات', roles: R(LOYALTY), a5: '/loyalty' },
     ],
   },
 
@@ -363,7 +364,6 @@ export const EXTRA_SECTIONS: NavGroup[] = [
     label: 'خدمات ما بعد البيع',
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
-      { key: '/loyalty', label: 'خدمة ما بعد البيع والنقاط', roles: ['system_admin', 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/inspection-items', label: 'أصناف المعاينة', roles: OFFICE },
       {
