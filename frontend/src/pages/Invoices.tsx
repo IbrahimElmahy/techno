@@ -570,9 +570,6 @@ export default function Invoices() {
 
   /**
    * خيارات الوحدة — وفيها **دايماً** خيار الوحدة الأساسية.
-   *
-   * `__base__` قيمة داخلية بتتخزّن `null` على السطر، وantd لما تلاقي قيمة مالهاش خيار مطابق
-   * بتعرض القيمة نفسها — فبتكتب مفتاح إنجليزي في خانة عربية لحد ما وحدات الصنف توصل.
    */
   const saleUnitOptions = (itemId: number | null) => {
     const units = unitsCache[itemId || 0] || [];
@@ -586,9 +583,6 @@ export default function Invoices() {
 
   /**
    * Enter معناها «السطر ده خلص» — ننتقل للسطر اللي بعده، وآخر سطر بيفتح بوباب الأصناف.
-   *
-   * نفس حركة فاتورة الشرا: الإيد مابتسيبش الكيبورد — كمية، Enter، كمية، Enter — ولما تخلص
-   * السطور البوباب بيفتح لصنف جديد.
    */
   const advanceFrom = (key: string) => {
     const idx = lines.findIndex((l) => l.key === key);
@@ -610,24 +604,15 @@ export default function Invoices() {
   // Invoice computations: per-line discounts first, then the invoice-total discount.
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
   const netTotal = grossTotal * (1 - discountPct / 100);
+
   /**
-   * أعمدة شبكة سطور الفاتورة كبيانات — عشان تتخفي وتترتّب.
-   *
-   * الشاشة كانت بتعرض زرار أعمدة **بيشتغل على الفاضي**: `showCol()` كانت متعرّفة وماحدش
-   * بيناديها، فالشيك بوكس بيتحرك والجدول زي ما هو. والتعليق جنب الزرار كان بيقول إن
-   * مافيش أسهم ترتيب «لأن الخلايا محطوطة بالإيد مش جاية من قايمة أعمدة» — وده كان صح.
-   *
-   * دلوقتي الأعمدة قايمة فعلاً: `useEntryGrid` بيرسم منها الرأس والخلايا وصف الإجماليات،
-   * فالإخفاء بقى بيخفي والترتيب بقى ممكن، وكل إجمالي بيتحرك تحت عموده.
+   * أعمدة شبكة سطور الفاتورة كبيانات — بأبعاد متناسقة ومساحات مريحة.
    */
   const lineColumns: EntryColumn<SaleLineItem>[] = [
-    { key: 'idx', title: '#', width: 34, locked: true,
-      cellStyle: { color: '#6b6b6b' }, cell: (_l, i) => i + 1 },
-    { key: 'warehouse', title: 'المخزن', minWidth: 150,
+    { key: 'idx', title: '#', width: 28, locked: true,
+      cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
+    { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
-        /* مخزن السطر — الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن. **والتغيير هنا
-           بيثبت للأصناف الجاية**: اللي بيغيّر مخزن سطر غالباً بيقول «باقي الفاتورة من
-           هنا». السطور اللي اتكتبت مابتتلمسش — دي حاجة قالها بإيده. */
         <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
           value={line.warehouse_id ?? undefined}
           onChange={(v) => {
@@ -638,29 +623,26 @@ export default function Invoices() {
       ) },
     { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
       cell: (line) => (
-        <b style={{ cursor: 'pointer' }} onClick={() => setPanelItemId(line.item_id)}>
+        <b style={{ cursor: 'pointer', fontSize: 13 }} onClick={() => setPanelItemId(line.item_id)}>
           {line.item_id ? productName(line.item_id) : 'اختر الصنف'}
         </b>
       ) },
-    { key: 'unit', title: 'الوحدة', minWidth: 96,
+    { key: 'unit', title: 'الوحدة', minWidth: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
           value={line.unit ?? '__base__'}
           onChange={(v) => handleLineChange(line.key, 'unit', v === '__base__' ? null : v)}
           options={saleUnitOptions(line.item_id)} />
       ) },
-    { key: 'quantity', title: 'الكمية', minWidth: 84, locked: true,
+    { key: 'quantity', title: 'الكمية', minWidth: 70, locked: true,
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0.001}
           data-qty-key={line.key} data-grid-col="qty" keyboard={false}
           placeholder="الكمية" value={line.quantity ?? undefined}
-          // المسح بيسيبها فاضية بدل ما ترجع لرقم — من غير كده «اكتب فوقها» مالهاش معنى.
           onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
           onBlur={() => handleLineChange(line.key, 'quantity', checkedQuantity(line))}
-          // والحارس على Enter كمان مش على الخروج بس: اللي بيكمّل بالكيبورد مابيخرجش من
-          // الخانة أصلاً، فكان بيعدّي من غير ما حد يقيس المتاح.
           onPressEnter={(e) => {
             e.preventDefault();
             handleLineChange(line.key, 'quantity', checkedQuantity(line));
@@ -669,7 +651,7 @@ export default function Invoices() {
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
         .toLocaleString('ar-EG', { maximumFractionDigits: 3 }) },
-    { key: 'unit_price', title: 'سعر الوحدة', minWidth: 100,
+    { key: 'unit_price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
           placeholder="السعر" value={line.unit_price}
@@ -677,40 +659,32 @@ export default function Invoices() {
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'gross', title: 'اجمالي قبل', minWidth: 100,
+    { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
       cellStyle: { whiteSpace: 'nowrap' },
       cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
       footer: (rows) => money(rows.reduce(
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
-    { key: 'variable_discount', title: 'خصم متغير %', minWidth: 84,
-      // المتغيّر الأول والثابت بعده — بترتيب اللي بيتغيّر كل فاتورة قبل اللي بيتغيّر
-      // مرة كل شوية. والاتنين نسبة، والاتنين بيتكتبوا.
+    { key: 'variable_discount', title: 'خصم متغير %', minWidth: 75,
       cell: (line) => (
-        /* المتغيّر — اللي بيتفاوض عليه في الفاتورة دي. */
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           placeholder="متغير" value={line.variable_discount ?? undefined}
           onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 84,
+    { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
-        /* الثابت — بيبتدي من الصنف، **وبيتعدّل**. كان بيتعرض بالجنيه وقفل، وفي عملاء
-           بياخدوا ثابت أقل أو أكتر، فالفرق كان بيتحطّ في المتغيّر — والفاتورة تقول إن
-           البايع خصم حاجة والشركة خصمت حاجة تانية، وده اللي المراجعة بتدوّر عليه. */
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           placeholder="ثابت" value={line.fixed_discount ?? undefined}
           onChange={(v) => handleLineChange(line.key, 'fixed_discount', (v as number) ?? 0)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'total', title: 'الإجمالي', minWidth: 100, locked: true,
+    { key: 'total', title: 'الإجمالي', minWidth: 90, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
       cell: (line) => money(saleLineNet(line)),
       footer: (rows) => money(rows.reduce((n, l) => n + saleLineNet(l), 0)) },
-    { key: 'points', title: 'النقاط', minWidth: 84,
-      // النقاط رجعت للجدول. اتشالت وقت ما السطور اتحوّلت من كروت لجدول ومحدش واخد باله،
-      // والعميل بيسأل «جبت كام نقطة؟» وهو واقف.
+    { key: 'points', title: 'النقاط', minWidth: 65,
       cellStyle: { whiteSpace: 'nowrap', color: '#b26a00' },
       cell: (line) => (linePoints(line)
         ? linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })
@@ -720,7 +694,7 @@ export default function Invoices() {
           {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
         </span>
       ) },
-    { key: 'actions', title: '', label: 'حذف السطر', width: 40, locked: true,
+    { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
       cell: (line) => (
         <Button size="small" danger type="text" icon={<DeleteOutlined />}
           onClick={() => handleRemoveLine(line.key)} />
@@ -1324,17 +1298,9 @@ export default function Invoices() {
       setSearchParams({}, { replace: true });
     }
     const wanted = pendingIntent.current;
-    if (!wanted || !invoices.length) return;
-    // Consuming the ref IS the once-only guard, so a re-render cannot fire the same intent twice —
-    // which for an edit would mean reversing an invoice a second time. It used to be guarded by
-    // remembering the intent's *value*, which quietly made a link work only once per session.
+    if (!wanted) return;
     pendingIntent.current = null;
-    const target = invoices.find((i) => i.id === wanted.id);
-    if (!target) {
-      // Saying so beats a silent no-op, which the user cannot tell apart from a broken link.
-      message.warning('المستند مش في القائمة المعروضة — وسّع الفلتر أو ابحث برقمه.');
-      return;
-    }
+    const target = invoices.find((i) => i.id === wanted.id) || ({ id: wanted.id } as InvoiceRecord);
     if (wanted.mode === 'view') openDetail(target);
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
@@ -1343,11 +1309,18 @@ export default function Invoices() {
    *  a step to the neighbouring document, in the order the list is currently showing. */
   const viewToolbar = (): ToolbarAction[] => [
     { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-      onClick: () => { setDetailVisible(false); setInvoiceDate(dayjs()); setNewStep('party'); } },
+      onClick: () => {
+        setDetailVisible(false);
+        closeCreate();
+        setInvoiceDate(dayjs());
+        setNewStep('party');
+        setPartyPickerOpen(true);
+      } },
     { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
       disabled: !canEditInvoice,
       onClick: () => { if (viewInvoice) { setDetailVisible(false); handleEditInvoice(viewInvoice); } } },
-    { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: true },
+    { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+      onClick: () => setDetailVisible(false) },
     { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
     { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
       disabled: !neighbour(1),
@@ -1359,14 +1332,31 @@ export default function Invoices() {
       onClick: () => { const n = neighbour(-1); if (n) openDetail(n); } },
     { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
       disabled: !canDeleteInvoice,
-      onClick: () => { if (viewInvoice) { setDetailVisible(false); handleDeleteInvoice(viewInvoice); } } },
+      onClick: () => {
+        if (viewInvoice) {
+          Modal.confirm({
+            title: 'حذف الفاتورة',
+            content: `هل أنت متأكد من حذف الفاتورة ${viewInvoice.document_number || ''}؟`,
+            okText: 'نعم، احذف',
+            okType: 'danger',
+            cancelText: 'تراجع',
+            onOk: async () => {
+              setDetailVisible(false);
+              await handleDeleteInvoice(viewInvoice);
+            },
+          });
+        }
+      } },
     { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-      // The document, on the letterhead, through مفاتيح الطباعة — not the browser printing the
-      // screen it happens to be showing.
       onClick: () => { const doc = invoiceDoc(viewInvoice); if (doc) printInvoice(doc, printOpts); } },
     { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
       disabled: !viewInvoice?.customer_id,
-      onClick: () => viewInvoice?.customer_id && navigate(`/customers/${viewInvoice.customer_id}`) },
+      onClick: () => {
+        if (viewInvoice?.customer_id) {
+          setDetailVisible(false);
+          navigate(`/customers/${viewInvoice.customer_id}`);
+        }
+      } },
     { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
       onClick: () => { if (viewInvoice) openDetail(viewInvoice); } },
   ];
@@ -1753,13 +1743,27 @@ export default function Invoices() {
     const lineCount = lines.filter((l) => l.item_id !== null).length;
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => { closeCreate(); setInvoiceDate(dayjs()); setNewStep('party'); } },
+        onClick: () => {
+          setEditingInvoice(null);
+          createForm.resetFields();
+          setLines([]);
+          setActiveCategory(null);
+          setInvoiceDate(dayjs());
+          setNewStep('party');
+          setPartyPickerOpen(true);
+        } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
         // The open document IS the editable one; on a saved invoice this is «reverse and reopen».
         disabled: true },
       { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
-        disabled: lineCount === 0,
-        onClick: () => { setLines([]); setActiveCategory(null); } },
+        onClick: () => {
+          if (editingInvoice || lines.length > 0) {
+            closeCreate();
+          } else {
+            setLines([]);
+            setActiveCategory(null);
+          }
+        } },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: lineCount === 0,
         onClick: () => { createForm.submit(); } },
@@ -1988,36 +1992,19 @@ export default function Invoices() {
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* `minWidth: 0` is load-bearing. antd's horizontal Divider carries `min-width: 100%`,
-                so inside a flex row it claims the full width no matter what `flex` says and
-                shoves whatever sits beside it off the edge — the الأعمدة button ended up at
-                `left: -29`, with only the gear peeking past the screen and its label clipped.
-                `flexShrink: 0` on the button then keeps it whole when the row gets tight. */}
-            {/* الفاصل من غير عنوان — «المنتجات المباعة» فوق جدول أعمدته مكتوبة بيقول حاجة
-                الجدول بيقولها. */}
-            <Divider style={{ flex: 1, minWidth: 0, margin: 0 }} />
-            {/* كل واحد بيقفل الأعمدة اللي مابيقراهاش، وبيرتّب اللي فاضل.
-                الصنف والكمية والإجمالي مقفولين — سطر من غيرهم مش سطر حد يقدر يراجعه.
-                الزرار ده كان بيرسم شيك بوكسات مالهاش أثر: `showCol()` كانت متعرّفة
-                وماحدش بيناديها. دلوقتي هو نفس محرك الجدول، فاللي بيتقفل بيختفي فعلاً. */}
-            {lineGrid.control}
-          </div>
-
-          {/* Products on the right, the stock panel pinned beside them: picking a category or a
-              product answers "do we have it, and where" without leaving the half-typed invoice. */}
           <Row gutter={16}>
-          <Col xs={24} lg={18}>
+          <Col xs={24}>
 
-          {/* One button, one window. As two inline dropdowns this cost a click to open, a
-              scroll to find and a click to choose — twice per line, all day. */}
-          <Button data-shortcut="F2"
-            type="primary" icon={<PlusOutlined />} block
-            style={{ marginBottom: 10, height: 38 }}
-            onClick={() => setPickerOpen(true)}
-          >
-            إضافة صنف للفاتورة
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
+            <Button data-shortcut="F2"
+              type="primary" icon={<PlusOutlined />}
+              style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#6AB42D', borderColor: '#6AB42D' }}
+              onClick={() => setPickerOpen(true)}
+            >
+              إضافة صنف للفاتورة (F2)
+            </Button>
+            <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
+          </div>
 
           {/*
             * «الفاتورة دي من أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
@@ -2105,8 +2092,29 @@ export default function Invoices() {
               <table className="entry-grid">
                 <thead>{lineGrid.head}</thead>
                 <tbody>
-                  {lines.map((line, idx) => (
-                    <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                  {linesByCategory.map((group) => (
+                    <React.Fragment key={group.category ?? '__none__'}>
+                      {linesByCategory.length > 1 && (
+                        <tr style={{ background: '#f6faf3', borderTop: '1.5px solid #6AB42D', borderBottom: '1px solid #e2ede0' }}>
+                          <td colSpan={20} style={{ padding: '1px 8px', background: '#f6faf3' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 3, margin: 0 }}>
+                                  {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                                </Tag>
+                                <span style={{ color: '#555', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                              </div>
+                              <span style={{ color: '#666', fontSize: 11, fontWeight: 600 }}>
+                                إجمالي الفئة: {money(group.items.reduce((s, l) => s + saleLineNet(l), 0))}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {group.items.map((line, idx) => (
+                        <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                      ))}
+                    </React.Fragment>
                   ))}
                 </tbody>
                 <tfoot>{lineGrid.foot(lines)}</tfoot>

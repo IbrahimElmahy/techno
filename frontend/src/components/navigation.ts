@@ -179,7 +179,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           // clicking items one at a time. The two differ only in whether the store is a column or
           // is summed away.
           { key: '/stock-sheet?view=count', label: 'جرد المخازن', roles: R(STOCK), a5: '/inventorycount' },
-          { key: '/stock-sheet?view=general', label: 'جرد عام المخازن', roles: R(STOCK), a5: '/generalinventorycount' },
           // Ours, with no counterpart in theirs: the sheet → counted → difference → adjustment
           // cycle. Kept because it is the half of a stocktake their screens do not do.
           { key: '/stock-counts', label: 'دورة الجرد (عدّ وتسوية)', roles: STOCK },

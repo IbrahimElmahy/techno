@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select, Space, Table, Tag, message,  } from 'antd';import { Popconfirm } from '../components/noConfirm';
+import { Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row, Select, Space, Table, Tag, message, } from 'antd';import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom, useQtyFocus } from '../components/lineKeyboard';
 import {
@@ -12,6 +12,7 @@ import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useLookup, labelMap } from '../hooks/useLookup';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
@@ -167,20 +168,13 @@ export default function PurchaseReturns() {
       setSearchParams({}, { replace: true });
     }
     const wanted = pendingDoc.current;
-    if (!wanted || !rows.length) return;
+    if (!wanted) return;
     pendingDoc.current = null;
-    const target = rows.find((r) => r.id === wanted);
-    if (target) {
-      // Marked AND opened. The mark says where on the page it is; the document says what is in it.
-      setHighlight(wanted);
-      setTimeout(() => setHighlight(null), 4000);
-      const wantsEdit = pendingEdit.current;
-      pendingEdit.current = false;
-      if (wantsEdit) editPosted(target);
-      else openReturn(target);
-    } else {
-      message.warning(`مردود الشراء رقم ${wanted} مش في القائمة`);
-    }
+    const target = rows.find((r) => r.id === wanted) || ({ id: wanted } as ReturnRow);
+    const wantsEdit = pendingEdit.current;
+    pendingEdit.current = false;
+    if (wantsEdit) editPosted(target);
+    else openReturn(target);
   }, [searchParams, rows]);
 
   // What each purchase has ALREADY had returned, so the screen can say what is still returnable
@@ -294,14 +288,19 @@ export default function PurchaseReturns() {
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: () => openCreate() },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-        disabled: editingId === null,
-        onClick: () => editPosted({ id: editingId as number } as ReturnRow) },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
-        onClick: () => setReturnLines([]) },
+        disabled: true },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        onClick: () => {
+          if (editingId || returnLines.length > 0) {
+            setCreating(false);
+            setEditingId(null);
+          } else {
+            setReturnLines([]);
+          }
+        } },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0,
         onClick: () => {
-
           submit();
         } },
       { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
@@ -313,12 +312,70 @@ export default function PurchaseReturns() {
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0, onClick: () => setReturnLines([]) },
       { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-        disabled: editingId === null || printing,
+        disabled: true },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+        disabled: !supplierFilter,
+        onClick: () => supplierFilter && navigate(`/suppliers/${supplierFilter}`) },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => load() },
+    ];
+  };
+
+  const viewingToolbar = (): ToolbarAction[] => {
+    const stepList = (step: number) => {
+      if (!filter.filtered.length || !viewing) return;
+      const at = filter.filtered.findIndex((r) => r.id === viewing.id);
+      const target = at >= 0 ? filter.filtered[at + step]
+        : (step > 0 ? filter.filtered[0] : filter.filtered[filter.filtered.length - 1]);
+      if (target) {
+        openReturn(target);
+      }
+    };
+    return [
+      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+        onClick: () => { setViewing(null); openCreate(); } },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        onClick: () => {
+          const v = viewing;
+          setViewing(null);
+          editPosted(v);
+        } },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        onClick: () => setViewing(null) },
+      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: filter.filtered.length === 0, onClick: () => stepList(1) },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+        onClick: () => setViewing(null) },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: filter.filtered.length === 0, onClick: () => stepList(-1) },
+      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+        onClick: () => {
+          if (viewing) {
+            Modal.confirm({
+              title: 'حذف المردود',
+              content: `هل أنت متأكد من حذف مردود الشراء ${viewing.document_number || ''}؟`,
+              okText: 'نعم، احذف',
+              okType: 'danger',
+              cancelText: 'تراجع',
+              onOk: async () => {
+                try {
+                  await api.delete(`/api/v1/purchases/returns/${viewing.id}`);
+                  message.success('تم حذف المردود بنجاح');
+                  setViewing(null);
+                  load();
+                } catch (err: any) {
+                  message.error(err?.response?.data?.detail?.message || 'تعذر حذف المردود');
+                }
+              },
+            });
+          }
+        } },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        disabled: printing,
         onClick: async () => {
           setPrinting(true);
           try {
-            const res = await api.get(`/api/v1/purchases/returns/${editingId}`);
-            const doc = returnDoc(res.data);
+            const doc = returnDoc(viewing);
             if (doc) printInvoice(doc, printOpts);
           } catch (err: any) {
             message.error(err?.response?.data?.detail?.message || 'تعذر طباعة المردود');
@@ -327,9 +384,14 @@ export default function PurchaseReturns() {
           }
         } },
       { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
-        disabled: !supplierFilter,
-        onClick: () => supplierFilter && navigate(`/suppliers/${supplierFilter}`) },
-      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => load() },
+        disabled: !viewing?.supplier_id,
+        onClick: () => {
+          if (viewing?.supplier_id) {
+            setViewing(null);
+            navigate(`/suppliers/${viewing.supplier_id}`);
+          }
+        } },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => openReturn(viewing) },
     ];
   };
 
@@ -409,12 +471,26 @@ export default function PurchaseReturns() {
     }
   }, [warehouseId, pickerOpen]);
 
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
+
   /** فئات الأصناف اللي البوباب بيجمّع بيها — من اللي في القايمة فعلاً. */
   const itemCategories = useMemo(() => {
     const set = new Set<string>();
     items.forEach((i: any) => { if (i.category) set.add(i.category); });
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [items]);
+
+  const linesByCategory = useMemo(() => {
+    const groups: { category: string | null; items: ReturnLineDraft[] }[] = [];
+    returnLines.forEach((l) => {
+      const cat = (l.item_id ? items.find((i: any) => i.id === l.item_id)?.category : null) || null;
+      let g = groups.find((x) => x.category === cat);
+      if (!g) { g = { category: cat, items: [] }; groups.push(g); }
+      g.items.push(l);
+    });
+    return groups;
+  }, [returnLines, items]);
 
   /**
    * إضافة صنف للمردود — الصنف اللي موجود بتزيد كميته بدل ما يتكرّر سطر.
@@ -488,18 +564,15 @@ export default function PurchaseReturns() {
    * شايل خليته وإجماليه، فالاتنين بيتحركوا معاه.
    */
   const lineColumns: EntryColumn<ReturnLineDraft>[] = [
-    { key: 'idx', title: '#', width: 34, locked: true,
-      cellStyle: { color: '#6b6b6b' }, cell: (_l, i) => i + 1 },
-    { key: 'warehouse', title: 'المخزن', minWidth: 150,
+    { key: 'idx', title: '#', width: 28, locked: true,
+      cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
+    { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
-        /* مخزن السطر — الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن، والمردود لازم
-           يقدر يطلّع كل صنف من مخزنه. */
         <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
           value={line.warehouse_id ?? warehouseId ?? undefined}
           onChange={(v) => {
             setReturnLines((prev) => prev.map((l) => (
               l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
-            // وبيثبت للسطور الجاية — نفس فاتورة البيع والشرا.
             if (v != null) setWarehouseId(v as number);
           }}
           options={warehouses.map((w: any) => ({
@@ -508,9 +581,8 @@ export default function PurchaseReturns() {
           }))} />
       ) },
     { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
-      // سطر من غير اسم صنف هو كمية وسعر محدش عارف بتوع إيه، والمراجعة بتبدأ من «ده صنف إيه».
-      cell: (line) => <b>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b> },
-    { key: 'unit', title: 'الوحدة', minWidth: 96,
+      cell: (line) => <b style={{ fontSize: 13 }}>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b> },
+    { key: 'unit', title: 'الوحدة', minWidth: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
           value={line.unit ?? '__base__'}
@@ -518,7 +590,7 @@ export default function PurchaseReturns() {
             l.key === line.key ? { ...l, unit: v === '__base__' ? null : v } : l)))}
           options={unitOptions(line.item_id)} />
       ) },
-    { key: 'qty', title: 'الكمية', minWidth: 84, locked: true,
+    { key: 'qty', title: 'الكمية', minWidth: 70, locked: true,
       cellProps: (line) => ({ [QTY_DATA_ATTR]: line.item_id } as any),
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0.001}
@@ -527,7 +599,6 @@ export default function PurchaseReturns() {
           onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
           onChange={(v) => setReturnLines((prev) => prev.map((l) => (
             l.key === line.key ? { ...l, quantity: v as number | null } : l)))}
-          // المتاح بيتقاس عند الخانة، مش بعد ما المستند كله يتكتب.
           onBlur={() => setReturnLines((prev) => prev.map((l) => (
             l.key === line.key ? { ...l, quantity: guardQuantity({
               value: l.quantity,
@@ -536,7 +607,7 @@ export default function PurchaseReturns() {
             }, null) } : l)))} />
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0) },
-    { key: 'price', title: 'سعر الوحدة', minWidth: 100,
+    { key: 'price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0} step={0.01}
           onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
@@ -545,36 +616,32 @@ export default function PurchaseReturns() {
             l.key === line.key ? { ...l, unit_price: (v as number) || 0 } : l)))} />
       ),
       footer: () => null },
-    { key: 'gross', title: 'اجمالي قبل', minWidth: 100,
+    { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
       cellStyle: { whiteSpace: 'nowrap' },
       cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
       footer: (rows) => money(rows.reduce(
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
-    { key: 'disc_var', title: 'خصم متغير %', minWidth: 84,
-      // المتغيّر الأول والثابت بعده — نفس ترتيب البيع والشرا.
+    { key: 'disc_var', title: 'خصم متغير %', minWidth: 75,
       cell: (line) => (
-        /* المتغيّر. فاضي = مفيش خصم متفق عليه، مش صفر. */
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           placeholder="متغير" value={line.discount_pct ?? undefined}
           onChange={(v) => setReturnLines((prev) => prev.map((l) => (
             l.key === line.key ? { ...l, discount_pct: (v as number) ?? null } : l)))} />
       ),
       footer: () => null },
-    { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 84,
+    { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
-        /* الثابت — بيتكتب زي ما اتكتب على فاتورة الشرا اللي البضاعة راجعة منها، عشان
-           المردود يطلع بنفس الخصم اللي البضاعة اتشرت بيه. */
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
           onChange={(v) => setReturnLines((prev) => prev.map((l) => (
             l.key === line.key ? { ...l, fixed_discount_pct: (v as number) ?? null } : l)))} />
       ),
       footer: () => null },
-    { key: 'total', title: 'الإجمالي', minWidth: 100, locked: true,
+    { key: 'total', title: 'الإجمالي', minWidth: 90, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
       cell: (line) => money(lineNet(line)),
       footer: (rows) => money(rows.reduce((n, l) => n + lineNet(l), 0)) },
-    { key: 'actions', title: '', label: 'حذف السطر', width: 40, locked: true,
+    { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
       cell: (line) => (
         <Button size="small" danger type="text" icon={<DeleteOutlined />}
           onClick={() => setReturnLines((prev) => prev.filter((l) => l.key !== line.key))} />
@@ -909,7 +976,7 @@ export default function PurchaseReturns() {
         open={pickerOpen}
         title="اختر الصنف الراجع"
         categories={itemCategories}
-        categoryLabels={{}}
+        categoryLabels={categoryLabels}
         products={items as any}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
@@ -1009,22 +1076,47 @@ export default function PurchaseReturns() {
         {/* فاصل من غير عنوان — الجدول اللي تحته أعمدته مكتوبة. */}
         <Divider style={{ margin: '10px 0' }} />
 
-        <Button type="primary" danger icon={<PlusOutlined />} block
-          style={{ marginBottom: 10, height: 38 }}
-          onClick={() => setPickerOpen(true)}>
-          إضافة صنف للمردود
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
+          <Button data-shortcut="F2"
+            type="primary" danger icon={<PlusOutlined />}
+            style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6 }}
+            onClick={() => setPickerOpen(true)}
+          >
+            إضافة صنف للمردود (F2)
+          </Button>
+          <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
+        </div>
 
         {returnLines.length === 0 ? (
           <Empty description="اختار الأصناف الراجعة" style={{ margin: '12px 0' }} />
         ) : (
           <div style={{ border: '1px solid #f3e0d8', borderRadius: 10, overflowX: 'auto' }}>
-            <div style={{ textAlign: 'left', padding: '6px 8px 0' }}>{lineGrid.control}</div>
-              <table className="entry-grid">
+            <table className="entry-grid">
               <thead>{lineGrid.head}</thead>
               <tbody>
-                {returnLines.map((line, idx) => (
-                  <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                {linesByCategory.map((group) => (
+                  <React.Fragment key={group.category ?? '__none__'}>
+                    {linesByCategory.length > 1 && (
+                      <tr style={{ background: '#fdf3ee', borderTop: '1.5px solid #cf4b1a', borderBottom: '1px solid #f3e0d8' }}>
+                        <td colSpan={20} style={{ padding: '1px 8px', background: '#fdf3ee' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <Tag color="volcano" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 3, margin: 0 }}>
+                                {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                              </Tag>
+                              <span style={{ color: '#555', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                            </div>
+                            <span style={{ color: '#666', fontSize: 11, fontWeight: 600 }}>
+                              إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineNet(l), 0))}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {group.items.map((line, idx) => (
+                      <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                    ))}
+                  </React.Fragment>
                 ))}
               </tbody>
               <tfoot>{lineGrid.foot(returnLines)}</tfoot>
@@ -1091,6 +1183,7 @@ export default function PurchaseReturns() {
         title={viewing ? `مردود شراء ${viewing.document_number}` : 'معاينة'}
         footer={invoiceFooter(returnDoc(viewing), () => setViewing(null))}
       >
+        {viewing && <DocumentToolbar actions={viewingToolbar()} />}
         {viewing ? <InvoiceDocument doc={returnDoc(viewing)!} /> : null}
       </TabModal>
     </div>

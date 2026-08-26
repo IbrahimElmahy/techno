@@ -577,13 +577,24 @@ export default function Returns() {
     const typed = lines.filter((l) => l.item_id !== null).length;
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => { createForm.resetFields(); setLines([]);
-          setReturnDate(dayjs()); setEditingSourceId(null); setNewStep('party'); } },
+        onClick: () => {
+          createForm.resetFields();
+          setLines([]);
+          setReturnDate(dayjs());
+          setEditingSourceId(null);
+          setNewStep('party');
+          setPartyPickerOpen(true);
+        } },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-        disabled: editingSourceId === null || !canWriteReturn,
-        onClick: () => handleEditReturn({ id: editingSourceId as number } as ReturnRecord) },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
-        onClick: () => setLines([]) },
+        disabled: true },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        onClick: () => {
+          if (editingSourceId || lines.length > 0) {
+            closeCreate();
+          } else {
+            setLines([]);
+          }
+        } },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0, onClick: () => createForm.submit() },
       { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
@@ -914,18 +925,13 @@ export default function Returns() {
       setSearchParams({}, { replace: true });
     }
     const wanted = pendingDoc.current;
-    if (!wanted || !returns.length) return;
-    // Consuming the ref is the once-only guard.
+    if (!wanted) return;
     pendingDoc.current = null;
-    const target = returns.find((r) => r.id === wanted);
-    if (target) {
-      const wantsEdit = pendingEdit.current;
-      pendingEdit.current = false;
-      if (wantsEdit) handleEditReturn(target);
-      else openDetail(target);
-    }
-    // Saying so beats a silent no-op, which reads as a broken link.
-    else message.warning(`المرتجع رقم ${wanted} مش في القائمة`);
+    const target = returns.find((r) => r.id === wanted) || ({ id: wanted } as ReturnRecord);
+    const wantsEdit = pendingEdit.current;
+    pendingEdit.current = false;
+    if (wantsEdit) handleEditReturn(target);
+    else openDetail(target);
   }, [searchParams, returns]);
 
   // --- The full create page --------------------------------------------------------------------
@@ -1187,13 +1193,16 @@ export default function Returns() {
               <>
                 <Row gutter={16}>
                 <Col xs={24}>
-                <Button data-shortcut="F2"
-                  type="primary" danger icon={<PlusOutlined />} block
-                  style={{ marginBottom: 10, height: 38 }}
-                  onClick={() => setPickerOpen(true)}
-                >
-                  إضافة صنف للمرتجع
-                </Button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, marginTop: 4 }}>
+                  <Button data-shortcut="F2"
+                    type="primary" danger icon={<PlusOutlined />}
+                    style={{ flex: 1, height: 40, fontSize: 15, fontWeight: 700, borderRadius: 8 }}
+                    onClick={() => setPickerOpen(true)}
+                  >
+                    إضافة صنف للمرتجع (F2)
+                  </Button>
+                  <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
+                </div>
 
                 <ProductPickerModal
                   open={pickerOpen}
@@ -1607,12 +1616,22 @@ export default function Returns() {
                 were unreachable from the one place a person actually walks it. */}
             <DocumentToolbar actions={[
               { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-                onClick: () => { setDetailVisible(false); setReturnDate(dayjs());
-                  setNewStep('party'); } },
+                onClick: () => {
+                  setDetailVisible(false);
+                  setCreateVisible(true);
+                  setReturnDate(dayjs());
+                  setLines([]);
+                  setNewStep('party');
+                  setPartyPickerOpen(true);
+                } },
               { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
                 disabled: !canWriteReturn,
-                onClick: () => handleEditReturn(viewReturn as any) },
-              { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: true },
+                onClick: () => {
+                  setDetailVisible(false);
+                  handleEditReturn(viewReturn as any);
+                } },
+              { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+                onClick: () => setDetailVisible(false) },
               { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
               { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
                 disabled: !neighbour(1),
@@ -1624,14 +1643,29 @@ export default function Returns() {
                 onClick: () => { const p = neighbour(-1); if (p) openDetail(p); } },
               { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />,
                 danger: true, disabled: !canWriteReturn,
-                onClick: () => { setDetailVisible(false);
-                  handleDeleteReturn(viewReturn as any); } },
+                onClick: () => {
+                  Modal.confirm({
+                    title: 'حذف المرتجع',
+                    content: `هل أنت متأكد من حذف سند المرتجع ${viewReturn.document_number || ''}؟`,
+                    okText: 'نعم، احذف',
+                    okType: 'danger',
+                    cancelText: 'تراجع',
+                    onOk: async () => {
+                      setDetailVisible(false);
+                      await handleDeleteReturn(viewReturn as any);
+                    },
+                  });
+                } },
               { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
                 onClick: () => printInvoice(returnDoc(viewReturn)!, printOpts) },
               { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
                 disabled: !viewReturn?.customer_id,
-                onClick: () => viewReturn?.customer_id
-                  && navigate(`/customers/${viewReturn.customer_id}`) },
+                onClick: () => {
+                  if (viewReturn?.customer_id) {
+                    setDetailVisible(false);
+                    navigate(`/customers/${viewReturn.customer_id}`);
+                  }
+                } },
               { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
                 onClick: () => fetchReturns() },
             ]} />

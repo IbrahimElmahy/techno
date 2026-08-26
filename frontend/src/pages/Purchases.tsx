@@ -52,6 +52,9 @@ interface RawMaterial {
   name: string;
   unit_of_measure: string;
   purchase_price: string | null;
+  sale_price?: string | null;
+  consumer_price?: string | null;
+  category?: string | null;
 }
 
 interface PurchaseItem {
@@ -423,10 +426,9 @@ export default function Purchases() {
     const docId = searchParams.get('doc') || searchParams.get('edit');
     const wantsEdit = !!searchParams.get('edit');
     if (!docId || handledIntent.current === docId) return;
-    const target = purchases.find((p) => p.id === Number(docId));
-    if (!target) return;
     handledIntent.current = docId;
     setSearchParams({}, { replace: true });
+    const target = purchases.find((p) => p.id === Number(docId)) || ({ id: Number(docId), kind: 'purchase' } as PurchaseRecord);
     if (wantsEdit) openRow(target);
     else openDetail(target);
   }, [searchParams, purchases]);
@@ -562,6 +564,17 @@ export default function Purchases() {
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [items]);
 
+  const linesByCategory = useMemo(() => {
+    const groups: { category: string | null; items: PurchaseItem[] }[] = [];
+    purchaseItems.forEach((l) => {
+      const cat = (l.item_id ? items.find((i) => i.id === l.item_id)?.category : null) || null;
+      let g = groups.find((x) => x.category === cat);
+      if (!g) { g = { category: cat, items: [] }; groups.push(g); }
+      g.items.push(l);
+    });
+    return groups;
+  }, [purchaseItems, items]);
+
   const handleAddItem = (focusIt = false) => {
     const newKey = Date.now().toString();
     setPurchaseItems([
@@ -643,7 +656,9 @@ export default function Purchases() {
         // Auto-fill price if item changes
         if (field === 'item_id') {
           const selected = items.find((i) => i.id === value);
-          updatedItem.unit_price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
+          let p = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
+          if (!p && selected?.sale_price) p = parseFloat(selected.sale_price);
+          updatedItem.unit_price = p;
           updatedItem.unit = null;
           if (value) fetchUnits(value);
         }
@@ -691,24 +706,31 @@ export default function Purchases() {
     };
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => { form.resetFields(); setPurchaseItems([
-          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
-          setPurchaseDate(dayjs()); setDetail(null); setDocResult(null);
+        onClick: () => {
+          form.resetFields();
+          setPurchaseItems([
+            { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+              discount_pct: null, fixed_discount_pct: null, warehouse_id: null }
+          ]);
+          setPurchaseDate(dayjs());
+          setDetail(null);
+          setDocResult(null);
           setEditingId(null);
-          // 'party' مش 'date': مافيش بوباب تاريخ في الشاشة دي أصلاً، فـ«جديد» كان بيسيب
-          // الحالة على خطوة محدش بيرسمها — يعني الزرار مكانش بيفتح حاجة.
-          setNewStep('party'); } },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-        disabled: editingId === null,
-        onClick: async () => {
-          const det = await loadDocument(editingId as number);
-          if (det) editPosted(det);
+          setPartyPickerOpen(true);
         } },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />, disabled: typed === 0,
-        onClick: () => setPurchaseItems([
-          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        disabled: true },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        onClick: () => {
+          if (editingId || purchaseItems.some((l) => l.item_id !== null)) {
+            closeCreate();
+          } else {
+            setPurchaseItems([
+              { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+                discount_pct: null, fixed_discount_pct: null, warehouse_id: null }
+            ]);
+          }
+        } },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0,
         onClick: () => form.submit() },
@@ -722,14 +744,85 @@ export default function Purchases() {
         disabled: typed === 0,
         onClick: () => setPurchaseItems([
           { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-    discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
+            discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
       { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-        disabled: editingId === null || printing,
+        disabled: true },
+      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+        disabled: !party?.id && !form.getFieldValue('supplier_id'),
+        onClick: () => {
+          const sid = party?.id ?? (form.getFieldValue('supplier_id') as number | undefined);
+          if (sid) navigate(`/suppliers/${sid}`);
+        } },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
+    ];
+  };
+
+  const detailToolbar = (): ToolbarAction[] => {
+    const invoicesInList = purchasesFilter.filtered.filter((r: any) => r.kind === 'purchase');
+    const stepDetail = (step: number) => {
+      if (!invoicesInList.length || !detail) return;
+      const at = invoicesInList.findIndex((r: any) => r.id === detail.id);
+      const target = at >= 0 ? invoicesInList[at + step]
+        : (step > 0 ? invoicesInList[0] : invoicesInList[invoicesInList.length - 1]);
+      if (target) { openDetail(target); }
+    };
+    return [
+      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+        onClick: () => {
+          setDetail(null);
+          setEditingId(null);
+          form.resetFields();
+          setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null, discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
+          setPurchaseDate(dayjs());
+          setPartyPickerOpen(true);
+        } },
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        onClick: () => {
+          if (detail) editPosted(detail);
+        } },
+      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        onClick: () => {
+          setDetail(null);
+          closeCreate();
+        } },
+      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: invoicesInList.length === 0,
+        onClick: () => stepDetail(1) },
+      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
+        onClick: () => { setDetail(null); closeCreate(); } },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: invoicesInList.length === 0,
+        onClick: () => stepDetail(-1) },
+      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+        onClick: () => {
+          if (detail) {
+            Modal.confirm({
+              title: 'حذف الفاتورة',
+              content: `هل أنت متأكد من حذف فاتورة الشراء ${detail.document_number || ''}؟`,
+              okText: 'نعم، احذف',
+              okType: 'danger',
+              cancelText: 'تراجع',
+              onOk: async () => {
+                try {
+                  await api.delete(`/api/v1/purchases/${detail.id}`);
+                  message.success('تم حذف الفاتورة بنجاح');
+                  setDetail(null);
+                  closeCreate();
+                  fetchPurchases();
+                } catch (err: any) {
+                  message.error(err?.response?.data?.detail?.message || 'تعذر حذف الفاتورة');
+                }
+              },
+            });
+          }
+        } },
+      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+        disabled: printing,
         onClick: async () => {
           setPrinting(true);
           try {
-            const det = await loadDocument(editingId as number);
-            const doc = purchaseDoc(det);
+            const doc = purchaseDoc(detail);
             if (doc) printInvoice(doc, printOpts);
           } catch (err: any) {
             message.error(err?.response?.data?.detail?.message || 'تعذر طباعة الفاتورة');
@@ -738,12 +831,12 @@ export default function Purchases() {
           }
         } },
       { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
-        disabled: !party?.id && !form.getFieldValue('supplier_id'),
+        disabled: !detail?.supplier_id,
         onClick: () => {
-          const sid = party?.id ?? (form.getFieldValue('supplier_id') as number | undefined);
-          if (sid) navigate(`/suppliers/${sid}`);
+          if (detail?.supplier_id) navigate(`/suppliers/${detail.supplier_id}`);
         } },
-      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
+        onClick: () => { if (detail) openDetail({ id: detail.id } as any); } },
     ];
   };
 
@@ -954,7 +1047,8 @@ export default function Purchases() {
    */
   const addProductByIdWith = async (itemId: number, warehouseId: number) => {
     const selected = items.find((i) => i.id === itemId);
-    const price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
+    let price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
+    if (!price && selected?.sale_price) price = parseFloat(selected.sale_price);
 
     if (purchaseItems.some((l) => l.item_id === itemId)) {
       flashExistingItem(itemId);
@@ -1029,11 +1123,10 @@ export default function Purchases() {
    * دلوقتي كل عمود شايل خليته وإجماليه، فالاتنين بيتحركوا معاه.
    */
   const lineColumns: EntryColumn<PurchaseItem>[] = [
-    { key: 'idx', title: '#', width: 34, locked: true,
-      cellStyle: { color: '#6b6b6b' }, cell: (_l, i) => i + 1 },
-    { key: 'warehouse', title: 'المخزن', minWidth: 150,
+    { key: 'idx', title: '#', width: 28, locked: true,
+      cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
+    { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
-        /* المخزن أول عمود عن قصد: هو أول حاجة بتتحدّد في السطر، وبيثبت للسطور اللي بعده. */
         <Select size="small" style={{ width: '100%' }} placeholder="مخزن الاستلام"
           value={line.warehouse_id ?? undefined}
           onChange={(val) => {
@@ -1046,10 +1139,24 @@ export default function Purchases() {
           }))} />
       ) },
     { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
-      // عمود الصنف رجع بعد ما اتشال: الفاتورة كانت بقت سطور كمية وسعر من غير ما حد يعرف
-      // كل سطر بتاع إيه — والمراجعة كلها بتبدأ من «ده صنف إيه».
-      cell: (line) => <b>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b> },
-    { key: 'unit', title: 'الوحدة', minWidth: 96,
+      cell: (line) => {
+        const itemObj = line.item_id ? items.find((i) => i.id === line.item_id) : null;
+        return (
+          <div>
+            <b style={{ fontSize: 13 }}>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b>
+            {itemObj?.purchase_price && Number(itemObj.purchase_price) > 0 ? (
+              <div style={{ fontSize: 10, color: '#1677ff', marginTop: 1 }}>
+                شراء: {fmtMoney(itemObj.purchase_price)} ج.م
+              </div>
+            ) : itemObj?.sale_price && Number(itemObj.sale_price) > 0 ? (
+              <div style={{ fontSize: 10, color: '#52c41a', marginTop: 1 }}>
+                بيع: {fmtMoney(itemObj.sale_price)} ج.م
+              </div>
+            ) : null}
+          </div>
+        );
+      } },
+    { key: 'unit', title: 'الوحدة', minWidth: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
           value={line.unit ?? '__base__'}
@@ -1057,12 +1164,10 @@ export default function Purchases() {
             line.key, 'unit', val === '__base__' ? null : val)}
           options={unitOptions(line.item_id)} />
       ) },
-    { key: 'qty', title: 'الكمية', minWidth: 84, locked: true,
+    { key: 'qty', title: 'الكمية', minWidth: 70, locked: true,
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
-        /* فاضية معناها «مااتكتبتش». صندوق بيفتح على ١ بيحوّل «٥» لـ«١٥» لأي حد يكتب
-           من غير ما يمسح الأول. */
         <InputNumber size="small" style={{ width: '100%' }} min={0.001} step={1}
           placeholder="الكمية" value={line.quantity ?? undefined}
           data-qty-key={line.key} data-grid-col="qty" keyboard={false}
@@ -1071,47 +1176,40 @@ export default function Purchases() {
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
         .toLocaleString('ar-EG', { maximumFractionDigits: 3 }) },
-    { key: 'price', title: 'سعر الوحدة', minWidth: 100,
+    { key: 'price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-          placeholder="سعر الوحدة" value={line.unit_price} data-price-key={line.key}
+          placeholder="السعر" value={line.unit_price} data-price-key={line.key}
           onChange={(val) => handleItemChange(line.key, 'unit_price', val || 0)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'gross', title: 'اجمالي قبل', minWidth: 100,
+    { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
       cellStyle: { whiteSpace: 'nowrap' },
-      // قبل الخصم — الكمية × السعر. مشتق، فمفيش رقمين يختلفوا.
       cell: (line) => fmtMoney(Number(line.quantity || 0) * (line.unit_price || 0)),
       footer: (rows) => fmtMoney(rows.reduce(
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
-    { key: 'disc_var', title: 'خصم متغير %', minWidth: 84,
-      // المتغيّر الأول والثابت بعده — نفس ترتيب فاتورة البيع، وبنفس السبب: اللي بيتغيّر
-      // كل مستند قبل اللي بيتغيّر مرة كل شوية.
+    { key: 'disc_var', title: 'خصم متغير %', minWidth: 75,
       cell: (line) => (
-        /* المتغيّر — بتاع الصفقة دي. فاضي = مفيش خصم متفق عليه، مش صفر. */
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           placeholder="متغير" value={line.discount_pct ?? undefined} data-disc-key={line.key}
           onChange={(val) => handleItemChange(line.key, 'discount_pct', val ?? null)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 84,
+    { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
-        /* الثابت — الاتفاق الدايم مع المورد. بيبتدي فاضي لأن مافيش خصم شرا متسجّل على
-           الصنف؛ اللي بيعرفه بيكتبه، وبيفضل مفصول عن خصم الصفقة عشان المراجعة تعرف
-           مين خصم كام. */
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
           onChange={(val) => handleItemChange(line.key, 'fixed_discount_pct', val ?? null)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'total', title: 'الإجمالي', minWidth: 100, locked: true,
+    { key: 'total', title: 'الإجمالي', minWidth: 90, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
       cell: (line) => fmtMoney(lineTotal(line)),
       footer: () => fmtMoney(grossTotal) },
-    { key: 'actions', title: '', label: 'حذف السطر', width: 40, locked: true,
+    { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
       cell: (line) => (
         <Button size="small" danger type="text" icon={<DeleteOutlined />}
           onClick={() => handleRemoveItem(line.key)} />
@@ -1145,18 +1243,14 @@ export default function Purchases() {
     <Card
       title={(
         <Space>
-          <Button type="text" icon={<ArrowLeftOutlined />}
+          <Button type="text" icon={<ArrowRightOutlined />}
             onClick={() => setDetail(null)}>رجوع</Button>
           <span>{`فاتورة شراء ${detail.document_number}`}</span>
         </Space>
       )}
       extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}
     >
-      <Alert
-        type="info" showIcon style={{ marginBottom: 12 }}
-        message="الفاتورة دي اتّرحّلت خلاص"
-        description="البضاعة دخلت المخزن والقيد اتكتب، فالفاتورة ماتتغيّرش في مكانها. «تعديل الفاتورة» بيعملها مرتجع كامل ويفتحها تاني بمحتواها عشان تصحّح وترحّل من جديد — والتلاتة بيفضلوا في السجل."
-      />
+      <DocumentToolbar actions={detailToolbar()} />
       <InvoiceDocument doc={purchaseDoc(detail)!} />
 
       <Divider orientation="right">المرتجعات</Divider>
@@ -1259,41 +1353,49 @@ export default function Purchases() {
                   It used to be a small dashed button UNDERNEATH the table, which on an invoice of
                   fifteen lines is a scroll to find and a click to choose, twice per line, all day.
                   Above the lines it is always in the same place. */}
-              <Button data-shortcut="F2"
-                type="primary" icon={<PlusOutlined />} block
-                style={{ marginBottom: 10, height: 38 }}
-                onClick={() => setPickerOpen(true)}
-              >
-                إضافة صنف للفاتورة
-              </Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
+                <Button data-shortcut="F2"
+                  type="primary" icon={<PlusOutlined />}
+                  style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#1677ff', borderColor: '#1677ff' }}
+                  onClick={() => setPickerOpen(true)}
+                >
+                  إضافة صنف للفاتورة (F2)
+                </Button>
+                <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
+              </div>
 
-              {/*
-                * سطور الفاتورة كجدول مضغوط — نفس شكل الشاشة اللي العميل شغّال عليها.
-                *
-                * كانت كروت متجمّعة بالفئة: كل سطر بياخد مساحة كبيرة، وعنوان فئة فوق كل مجموعة،
-                * وفاتورة خمستاشر صنف بتبقى صفحتين تمرير. الجدول بيقول نفس الحاجات في سطر واحد
-                * وبعنوان أعمدة مرة واحدة فوق، فالعين بتقارن الكميات والأسعار رأسياً بدل ما
-                * تدوّر عليها جوّا كل كارت.
-                *
-                * الفئة بقت سطر صغير تحت اسم الصنف بدل ما تكون ترويسة مجموعة — نفس المعلومة من
-                * غير ما تكسر الجدول لمجموعات وتمنع المقارنة الرأسية.
-                *
-                * مفيش عمود باركود، ومفيش بحث بيه — اتشال من النظام بطلب العميل.
-                */}
               {purchaseItems.length === 0 ? (
                 <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
                   style={{ margin: '12px 0' }} />
               ) : (
                 <div style={{ border: '1px solid #e6efe3', borderRadius: 10,
                               overflowX: 'auto' }}>
-                  <div style={{ textAlign: 'left', padding: '6px 8px 0' }}>
-                    {lineGrid.control}
-                  </div>
                   <table className="entry-grid">
                     <thead>{lineGrid.head}</thead>
                     <tbody>
-                      {purchaseItems.map((line, idx) => (
-                        <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                      {linesByCategory.map((group) => (
+                        <React.Fragment key={group.category ?? '__none__'}>
+                          {linesByCategory.length > 1 && (
+                            <tr style={{ background: '#f6faf3', borderTop: '1.5px solid #1677ff', borderBottom: '1px solid #e2ede0' }}>
+                              <td colSpan={20} style={{ padding: '1px 8px', background: '#f6faf3' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <Tag color="blue" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 3, margin: 0 }}>
+                                      {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                                    </Tag>
+                                    <span style={{ color: '#555', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                  </div>
+                                  <span style={{ color: '#666', fontSize: 11, fontWeight: 600 }}>
+                                    إجمالي الفئة: {fmtMoney(group.items.reduce((s, l) => s + lineTotal(l), 0))} ج.م
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          {group.items.map((line, idx) => (
+                            <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                          ))}
+                        </React.Fragment>
                       ))}
                     </tbody>
                     {/*

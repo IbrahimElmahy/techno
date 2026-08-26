@@ -32,13 +32,16 @@ interface Props {
   title?: string;
   /** Quantity available for an item, when the caller knows it — shown beside the name. */
   availableFor?: (itemId: number) => number | null;
+  /** Optional custom price resolver or label */
+  priceFor?: (itemId: number) => number | string | null;
 }
 
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+const fmtPrice = (v: any) => Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
 
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
-  onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor,
+  onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
 }: Props) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -171,20 +174,36 @@ export default function ProductPickerModal({
                     <b>{p.name}</b>
                     {p.code && <Tag style={{ marginInlineStart: 8 }}>{p.code}</Tag>}
                   </span>
-                  {available !== null && (
-                    <Tag
-                      color={available > 0 ? 'success' : 'default'}
-                      style={{
-                        marginInlineStart: 8,
-                        fontWeight: 700,
-                        fontSize: 13,
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                      }}
-                    >
-                      {available > 0 ? `المتاح بالمخزن: ${qty(available)}` : 'المتاح: 0'}
-                    </Tag>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {priceFor && priceFor(p.id) != null && (
+                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>
+                        السعر: {typeof priceFor(p.id) === 'number' ? fmtPrice(priceFor(p.id)) : priceFor(p.id)}
+                      </Tag>
+                    )}
+                    {!priceFor && p.purchase_price != null && Number(p.purchase_price) > 0 && (
+                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>
+                        شراء: {fmtPrice(p.purchase_price)}
+                      </Tag>
+                    )}
+                    {!priceFor && (p.sale_price != null || p.consumer_price != null) && Number(p.sale_price || p.consumer_price) > 0 && (
+                      <Tag color="cyan" style={{ fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>
+                        بيع: {fmtPrice(p.sale_price || p.consumer_price)}
+                      </Tag>
+                    )}
+                    {available !== null && (
+                      <Tag
+                        color={available > 0 ? 'success' : 'default'}
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 12,
+                          padding: '2px 8px',
+                          borderRadius: 6,
+                        }}
+                      >
+                        {available > 0 ? `المتاح: ${qty(available)}` : 'المتاح: 0'}
+                      </Tag>
+                    )}
+                  </div>
                 </div>
               );
             })}

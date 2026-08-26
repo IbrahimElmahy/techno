@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Tag, Tooltip } from 'antd';
-import { EditOutlined, ExportOutlined } from '@ant-design/icons';
+import { ExportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
 /**
@@ -59,17 +59,15 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
 }
 
 /**
- * المستندات اللي شاشتها بتفتحها للتعديل.
+ * الرابط بيفتح المستند **للعرض** — دايماً.
  *
- * كانت فاتورة البيع وحدها. والتلاتة التانية بقى ليهم تعديل فعلاً — المرتجع والشرا
- * ومردوده — والقايمة دي فضلت زي ما هي، فالرابط اللي جاي من كشف الحساب كان بيفتحهم
- * للفرجة وبس. اللي بيدوس على رقم مستند عشان يصلّحه لازم يوصل لمكان يقدر يصلّح فيه.
- */
-const EDITABLE = new Set<DocKind>(['invoice', 'return', 'purchase', 'purchase_return']);
-
-/**
- * التحويل والإذن مش في القايمة عن قصد: شاشتهم بتفتح المستند وتوريه، ومافيهاش تعديل عليه.
- * إرسال حد لشاشة «تعديل» مش موجودة أوحش من الفرجة اللي طلبها.
+ * كان بيفتح للتعديل على طول لو الشاشة بتعرف تعدّل. والنتيجة إن اللي بيدوس على رقم فاتورة
+ * من كشف حساب عشان يشوفها، بيلاقي نفسه واقف في شاشة كتابة على مستند مرحّل — وأي ضغطة
+ * غلط بتغيّره. اللي عايز يعدّل بيدوس «تعديل» من شريط الأدوات، وده قرار بياخده هو.
+ *
+ * وعشان كده مافيش قايمة «مستندات بتتعدّل» هنا: الرابط مابقاش بيفرّق بينهم، والشاشة نفسها
+ * هي اللي بتعرف إذا كان عندها تعديل ولا لأ — وبتقوله بزرار موجود أو مطفي، مش برابط
+ * بيوعد بحاجة من برّه.
  */
 
 /**
@@ -85,13 +83,10 @@ const EDITABLE = new Set<DocKind>(['invoice', 'return', 'purchase', 'purchase_re
  */
 export function useOpenDocument() {
   const navigate = useNavigate();
-  return (kind: DocKind, id: number | null | undefined, opts?: { readOnly?: boolean }) => {
+  return (kind: DocKind, id: number | null | undefined, _opts?: { readOnly?: boolean }) => {
     if (!id) return;
-    // Straight to editing where the screen can edit. Clicking a document number means «وريني
-    // الفاتورة دي عشان أشتغل عليها»; the sale asks for confirmation when it gets there, because
-    // reopening a posted invoice reverses it.
-    const intent = !opts?.readOnly && EDITABLE.has(kind) ? 'edit' : 'doc';
-    navigate(`${SCREEN[kind]}?${intent}=${id}`);
+    // Always open in view mode ('doc'). The user clicks 'تعديل' on the toolbar if they want to edit.
+    navigate(`${SCREEN[kind]}?doc=${id}`);
   };
 }
 
@@ -100,8 +95,11 @@ interface Props {
   /** The document's own number, shown instead of the generic label when known. */
   label?: string;
   id: number;
-  /** Whether this document's screen can EDIT it. Only the sales invoice does today; everything
-   *  else can only be opened, so for those the link opens rather than pretending otherwise. */
+  /**
+   * @deprecated الفتح بقى للعرض دايماً، فالخاصية دي مابقاش ليها أثر.
+   *
+   * سايبة عشان الشاشات الستة اللي بتبعتها ماتقعش؛ اللي بيمسّ واحدة منهم بيشيلها.
+   */
   allowEdit?: boolean;
   size?: 'small' | 'middle';
   /** Called after navigating, so a modal the link sits inside can close itself. */
@@ -125,7 +123,7 @@ export function DocRef({ kind, id, label, onNavigate }: {
   // on a list and leaves the reader to search for what they just clicked.
   if (!id) return <Tag>{label}</Tag>;
   return (
-    <Tooltip title={EDITABLE.has(kind) ? 'افتح الفاتورة للتعديل' : 'افتح المستند في شاشته'}>
+    <Tooltip title="افتح المستند في شاشته">
       <a onClick={(e) => {
         e.stopPropagation();
         open(kind, id);
@@ -138,26 +136,18 @@ export function DocRef({ kind, id, label, onNavigate }: {
 }
 
 export default function DocumentLink({
-  kind, id, label, allowEdit = false, size = 'middle', onNavigate,
+  kind, id, label, size = 'middle', onNavigate,
 }: Props) {
   const open = useOpenDocument();
 
-  const go = (intent: 'doc' | 'edit') => {
-    open(kind, id, { readOnly: intent === 'doc' });
-    onNavigate?.();
-  };
-
-  // ONE action, not two. «عرض المستند» beside «تعديل» made every reader choose between a screen
-  // they wanted and a screen they had to pass through; the read-only view was almost always the
-  // wrong one of the two and there was no way to tell them apart at a glance.
-  const canEdit = allowEdit && EDITABLE.has(kind);
+  // زرار واحد بيقول حاجة واحدة: بيفتح المستند. كان بيتحوّل لقلم مكتوب عليه «فتح للتعديل»
+  // لما `allowEdit` تكون متبعوتة — وبعد ما الفتح بقى للعرض دايماً، الزرار فضل بيقول
+  // «تعديل» وبيفتح عرض. زرار بيكذب أوحش من زرار عام.
   return (
-    <Tooltip title={canEdit
-      ? 'افتح الفاتورة للتعديل — هيتم تأكيد العكس قبل ما تتفتح'
-      : 'افتح المستند في شاشته'}>
-      <Button size={size} icon={canEdit ? <EditOutlined /> : <ExportOutlined />}
-        onClick={() => go(canEdit ? 'edit' : 'doc')}>
-        {label || (canEdit ? 'فتح للتعديل' : 'فتح المستند')}
+    <Tooltip title="افتح المستند في شاشته">
+      <Button size={size} icon={<ExportOutlined />}
+        onClick={() => { open(kind, id); onNavigate?.(); }}>
+        {label || 'فتح المستند'}
       </Button>
     </Tooltip>
   );

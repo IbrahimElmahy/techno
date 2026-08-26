@@ -200,11 +200,11 @@ export default function Orders() {
     { key: 'idx', title: '#', width: 34, locked: true,
       cellStyle: { color: '#6b6b6b' },
       cell: (_l, i) => i + 1 },
-    { key: 'item', title: 'الصنف', minWidth: 190, locked: true,
+    { key: 'item', title: 'الصنف', minWidth: 260, locked: true,
       cell: (line) => (
         <b>{items.find((i) => i.id === line.item_id)?.name ?? `صنف #${line.item_id}`}</b>
       ) },
-    { key: 'unit', title: 'الوحدة', minWidth: 96,
+    { key: 'unit', title: 'الوحدة', minWidth: 100,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }}
           value={line.unit ?? '__base__'}
@@ -219,7 +219,7 @@ export default function Orders() {
           }))}
           options={unitOptions(line.item_id)} />
       ) },
-    { key: 'qty', title: 'الكمية', minWidth: 84, locked: true,
+    { key: 'qty', title: 'الكمية', minWidth: 95, locked: true,
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
@@ -232,7 +232,7 @@ export default function Orders() {
             ? { ...l, quantity: q as number } : l)))}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ) },
-    { key: 'price', title: 'سعر الوحدة', minWidth: 100,
+    { key: 'price', title: 'سعر الوحدة', minWidth: 110,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
           data-grid-col="price" keyboard={false}
