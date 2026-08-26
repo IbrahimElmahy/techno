@@ -7,7 +7,7 @@ import {
   FileExcelOutlined, ReloadOutlined, BuildOutlined, DatabaseOutlined,
   DeleteOutlined, HourglassOutlined, ShoppingOutlined,
 } from '@ant-design/icons';
-import { api, getApiBaseURL } from '../api/client';
+import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
@@ -38,16 +38,23 @@ const dateParams = (range: Range): Record<string, string> => {
 };
 
 // --- CSV export (preserved feature) -------------------------------------------------------
-const handleExport = (reportType: string) => {
-  const token = localStorage.getItem('token');
-  const baseUrl = getApiBaseURL();
-  const downloadUrl = `${baseUrl}/api/v1/reports/export?report_type=${reportType}&token=${token}`;
-  const a = document.createElement('a');
-  a.href = downloadUrl;
-  a.download = `report_${reportType}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+const handleExport = async (reportType: string) => {
+  try {
+    const res = await api.get('/api/v1/reports/export', {
+      params: { report_type: reportType },
+      responseType: 'blob',
+    });
+    const url = URL.createObjectURL(res.data as Blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `report_${reportType}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 function ExportButton({ type, label }: { type: string; label: string }) {
