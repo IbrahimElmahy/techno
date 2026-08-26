@@ -87,6 +87,8 @@ interface ReturnLineItem {
   /** والثابت — بيجي من الصنف/العميل زي فاتورة البيع. الاتنين بيتجمعوا وقت الإرسال. */
   fixed_discount: number;
   warehouse_id: number | null;   // (030) this line comes back into its own warehouse
+  is_serialized?: boolean;
+  serials?: string[];
 }
 
 interface Filters {
@@ -409,10 +411,6 @@ export default function Returns() {
   const addProductById = async (itemId: number) => {
     if (!itemId || !customerId) return;
     const prod = products.find((p) => p.id === itemId);
-    if (prod?.is_serialized) {
-      message.warning('الأصناف ذات الأرقام التسلسلية تُرتجع من فاتورتها الأصلية.');
-      return;
-    }
     // مافيش مخزن للمرتجع لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
     if (docWarehouseId === null) {
       setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
@@ -448,6 +446,8 @@ export default function Returns() {
         fixed_discount: prod?.default_discount_pct
           ? parseFloat(prod.default_discount_pct) : 0,
         warehouse_id: warehouseId,
+        is_serialized: !!prod?.is_serialized,
+        serials: [] as string[],
       }]);
       setFocusLineKey(key);
     }
@@ -568,6 +568,18 @@ export default function Returns() {
     if (!customerId) { message.warning('يرجى اختيار العميل'); return; }
     const valid = lines.filter((l) => l.item_id !== null && Number(l.quantity || 0) > 0);
     if (valid.length === 0) { message.warning('أضف صنفاً واحداً على الأقل للمرتجع'); return; }
+
+    for (const l of valid) {
+      if (!l.is_serialized) continue;
+      const need = Number(l.quantity || 0);
+      const given = [...new Set(l.serials || [])];
+      if (given.length !== need) {
+        message.error(`«${products.find((p) => p.id === l.item_id)?.name ?? 'صنف'}»: `
+          + `اكتب ${need} سيريال بعدد الكمية — هما اللي بيرجعوا للمخزن.`);
+        return;
+      }
+      l.serials = given;
+    }
     const cash = parseFloat(cashRefund.toString()) || 0;
     if (cash + creditReduction - netTotal > 0.01 || netTotal - (cash + creditReduction) > 0.01) {
       message.error('مجموع المسترد نقداً + الخصم من الحساب يجب أن يساوي صافي المرتجع');
@@ -608,6 +620,7 @@ export default function Returns() {
               discount_pct: lineDiscountPct(l),
               // (030) only when the line differs from the document's warehouse
               warehouse_id: l.warehouse_id ?? undefined,
+              serials: l.is_serialized ? (l.serials || []) : undefined,
             })),
           });
           message.success(`تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
@@ -1136,6 +1149,17 @@ export default function Returns() {
                                     advance(line.key)
                                   }} />
                               </Col>
+                              {line.is_serialized && (
+                                <Col span={24}>
+                                  <Input.TextArea
+                                    size="small" rows={2}
+                                    placeholder="السيريالات المرتجعة — رقم في كل سطر بعدد الكمية"
+                                    value={(line.serials || []).join('\n')}
+                                    onChange={(e) => handleLineChange(line.key, 'serials',
+                                      e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
+                                  />
+                                </Col>
+                              )}
                               <Col md={3} xs={8}>
                                 <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
                                   value={line.unit_price}

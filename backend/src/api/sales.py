@@ -127,6 +127,8 @@ class StandaloneReturnLineIn(BaseModel):
     unit: str | None = None                # (008) unit of measure; None = base
     discount_pct: Decimal | None = None    # (027) per-line discount; None = 0
     warehouse_id: int | None = None        # (030) this line returns into its own warehouse
+    # (009) المرتجع الحر — سيريالات الأصناف المسلسلة المرتجعة.
+    serials: list[str] | None = None
 
 
 class ReturnedCouponIn(BaseModel):
@@ -556,7 +558,7 @@ def create_standalone_return(
             variable_discount_pct=body.variable_discount_pct,
             cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
             lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
-                              l.warehouse_id)
+                              l.warehouse_id, serials=l.serials)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, family=body.family,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,

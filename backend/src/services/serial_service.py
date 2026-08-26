@@ -191,6 +191,34 @@ def mark_sold(
     db.flush()
 
 
+def restore_free(
+    db: Session,
+    *,
+    item: Item,
+    origin_kind: LocationKind,
+    origin_id: int,
+    serials: list[str],
+    document_id: int | None = None,
+    actor_user_id: int | None = None,
+) -> None:
+    """المرتجع الحر — السيريال بيرجع مخزن من أي بيعة، من غير ربط بفاتورة معينة.
+
+    الحارس الوحيد: الرقم لازم يكون موجود ومبيع فعلاً — اللي مش موجود بيرفع خطأ واضح،
+    والمرتجع كله بيفشل قبل ما يتحرك أي حاجة.
+    """
+    for s_no in serials:
+        row = _get(db, item.id, s_no)
+        if row is None or row.status != SerialStatus.sold:
+            raise SerialError(f"السيريال «{s_no}» مش مبيع في النظام — اتأكد من الرقم.")
+        row.status = SerialStatus.in_stock
+        row.location_kind = origin_kind
+        row.location_id = origin_id
+        row.sold_invoice_id = None
+        _log(db, row, SerialMovementKind.returned, location_kind=origin_kind,
+             location_id=origin_id, document_type="sales_return",
+             document_id=document_id, actor_user_id=actor_user_id)
+
+
 def restore_for_return(
     db: Session,
     *,

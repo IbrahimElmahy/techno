@@ -777,6 +777,8 @@ class ReturnLine:
     discount_pct: Decimal | None = None    # (027) per-line discount; None = 0 (refund the actual price)
     # (030) the warehouse THIS line comes back into; None = the document's location
     warehouse_id: int | None = None
+    # (009) المرتجع الحر: سيريالات الوحدات المرتجعة لأصناف مسلسلة — بدون ربط بفاتورة.
+    serials: list[str] | None = None
 
 
 def create_standalone_return(
@@ -842,10 +844,6 @@ def create_standalone_return(
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
             raise SalesError("المرتجع بيقبل منتجات بس — مش خامات.")
-        if item.is_serialized:
-            # Serial ownership can only be restored against the original sale — route serialized
-            # items through the invoice-bound return instead.
-            raise SalesError("الأصناف اللي بسيريال بترجع من فاتورتها الأصلية — افتح الفاتورة واعمل المرتجع منها.")
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
@@ -903,6 +901,17 @@ def create_standalone_return(
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type="sale_return", source_doc_id=ret.id,
         )
+        if item is not None and item.is_serialized:
+            ser = [s.strip() for s in (ln.serials or []) if s.strip()]
+            if len(set(ser)) != len(ser):
+                raise SalesError(f"«{item.name}»: فيه سيريال مكرر في المرتجع.")
+            if len(ser) != int(base_qty):
+                raise SalesError(
+                    f"«{item.name}»: اكتب {int(base_qty)} سيريال بعدد الكمية — "
+                    "هما اللي بيرجعوا للمخزن.")
+            serial_service.restore_free(
+                db, item=item, origin_kind=back_kind, origin_id=back_loc,
+                serials=ser, document_id=ret.id, actor_user_id=actor_user_id)
         ret.lines.append(SalesReturnLine(
             item_id=ln.item_id, quantity=Decimal(ln.quantity), unit_price=unit_price,
             discount_pct=(Decimal(ln.discount_pct) if ln.discount_pct is not None else ZERO),
