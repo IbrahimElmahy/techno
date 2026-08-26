@@ -172,9 +172,18 @@ export default function ProductPickerModal({
                     {p.code && <Tag style={{ marginInlineStart: 8 }}>{p.code}</Tag>}
                   </span>
                   {available !== null && (
-                    <span style={{ color: available > 0 ? '#6AB42D' : '#cf1322', fontSize: 13 }}>
-                      {out ? 'مش موجود في المخزن ده' : `المتاح: ${qty(available)}`}
-                    </span>
+                    <Tag
+                      color={available > 0 ? 'success' : 'default'}
+                      style={{
+                        marginInlineStart: 8,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        padding: '2px 8px',
+                        borderRadius: 6,
+                      }}
+                    >
+                      {available > 0 ? `المتاح بالمخزن: ${qty(available)}` : 'المتاح: 0'}
+                    </Tag>
                   )}
                 </div>
               );

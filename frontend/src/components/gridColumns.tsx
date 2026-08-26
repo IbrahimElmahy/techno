@@ -5,6 +5,7 @@ import {
 import { InputNumber } from './NumberInput';
 import dayjs from 'dayjs';
 import { normalizeAr } from './ListToolbar';
+import DateRangeFilter from './DateRangeFilter';
 
 /**
  * أعمدة بتتفلتر وبتتترتب — الأساس اللي جداول الجرد قايمة عليه.
@@ -113,15 +114,16 @@ export function dateColumn<T>(get: (row: T) => any) {
       return (
         <div style={{ padding: 10 }} onKeyDown={(e) => e.stopPropagation()}>
           <Space direction="vertical" size={8}>
-            <DatePicker.RangePicker
-              allowEmpty={[true, true]} style={{ width: 250 }}
-              placeholder={['من', 'إلى']}
-              value={[from ? dayjs(from) : null, to ? dayjs(to) : null] as any}
-              onChange={(v: any) => set([
-                v?.[0] ? v[0].format('YYYY-MM-DD') : null,
-                v?.[1] ? v[1].format('YYYY-MM-DD') : null,
-              ])}
-            />
+            <div style={{ width: 260 }}>
+              <DateRangeFilter
+                placeholder={['من', 'إلى']}
+                value={[from ? dayjs(from) : null, to ? dayjs(to) : null] as any}
+                onChange={(v: any) => set([
+                  v?.[0] ? v[0].format('YYYY-MM-DD') : null,
+                  v?.[1] ? v[1].format('YYYY-MM-DD') : null,
+                ])}
+              />
+            </div>
             <Space>
               <Button type="primary" size="small" onClick={() => confirm()}>تصفية</Button>
               <Button size="small" onClick={() => { clearFilters?.(); confirm(); }}>مسح</Button>

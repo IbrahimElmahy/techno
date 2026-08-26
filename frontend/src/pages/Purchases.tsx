@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Select, Space, Table, Tag, Typography, message, DatePicker,  } from 'antd';import { Popconfirm } from '../components/noConfirm';
+import {
+  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result,
+  Row, Segmented, Select, Space, Statistic, Table, Tag, Typography, message, DatePicker,
+} from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import {
-  PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined,
+  PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, RollbackOutlined,
   PrinterOutlined, FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
@@ -159,6 +163,7 @@ export default function Purchases() {
    * that gets found out at the stocktake.
    */
   const [stickyWarehouseId, setStickyWarehouseId] = useState<number | null>(null);
+  const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
   /**
    * الأصناف المستنية المخزن — نفس بوباب فاتورة البيع والمرتجع.
    *
@@ -227,6 +232,34 @@ export default function Purchases() {
   // The picker window, so a line is added by typing rather than by hunting a dropdown — the same
   // round trip the sale and the return use.
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  /**
+   * رصيد المخزن المختار — بيتجاب من جديد كل ما الشباك يتفتح.
+   *
+   * كان فيه حارس `if (availability[wh]) return;` بيمنع الجلب لو المخزن اتقرا قبل كده.
+   * والنتيجة إن الأرقام بتتجمّد أول مرة وتفضل كده طول الجلسة: تكتب فاتورة تطلّع خمسة،
+   * تفتح الشباك تاني، يقولك الرقم القديم — والشباك ده اتعمل عشان يقول المتاح دلوقتي.
+   *
+   * والنداء بيتعمل لما الشباك يتفتح بس (الـ`useEffect` معلّق على `pickerOpen`)، فمرة
+   * لكل فتحة مش مع كل حرف بيتكتب.
+   */
+  const loadWarehouseStock = async (warehouseId: number) => {
+    if (!warehouseId) return;
+    try {
+      const res = await api.get('/api/v1/stock/by-location', {
+        params: { location_kind: 'warehouse', location_id: warehouseId, only_available: false },
+      });
+      const map: Record<number, number> = {};
+      (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
+      setAvailability((prev) => ({ ...prev, [warehouseId]: map }));
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => {
+    if (stickyWarehouseId) {
+      loadWarehouseStock(stickyWarehouseId);
+    }
+  }, [stickyWarehouseId, pickerOpen]);
   const qtyRefs = useRef<Record<string, any>>({});
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
   /** السطر اللي آخر صنف نزل فيه — بيتكتب جوّا تحديث الحالة عشان يعرف مين السطر فعلاً. */
@@ -332,14 +365,20 @@ export default function Purchases() {
         purchase_date: r.return_date ?? null,
         created_at: r.created_at,
         notes: r.notes ?? null,
-        // قيمة البضاعة الراجعة. بتنزل في «الاجمالي» عشان تتجمع مع الفواتير في نفس العمود.
-        total: r.value,
-        external_document_number: null,
-        branch_id: null, branch_name: null,
-        expense_account_id: null, expense_account_name: null,
-        gross: null, discount_amount: null, combined_pct: null,
-        tax_amount: null, tax_pct: null, net: null,
-        cash_amount: null, credit_amount: null,
+        total: r.value || r.total || '0',
+        gross: r.gross || r.value || '0',
+        discount_amount: r.discount_amount || '0',
+        combined_pct: r.combined_pct || '0',
+        tax_amount: r.tax_amount || '0',
+        tax_pct: r.tax_pct || '0',
+        net: r.value || r.total || '0',
+        cash_amount: r.cash_refund || '0',
+        credit_amount: r.credit_reduction || '0',
+        external_document_number: r.external_document_number || null,
+        branch_id: r.branch_id || null,
+        branch_name: r.branch_name || null,
+        expense_account_id: null,
+        expense_account_name: null,
         parent_id: r.purchase_invoice_id,
         parent_document_number: r.purchase_document_number ?? null,
       }));
@@ -351,6 +390,26 @@ export default function Purchases() {
       setListLoading(false);
     }
   };
+
+  // Live summary for Purchases, Returns, and Net Purchases
+  const purchasesSummary = useMemo(() => {
+    const invoicesList = (purchases || []).filter((p) => p.kind === 'purchase');
+    const returnsList = (purchases || []).filter((p) => p.kind === 'return');
+    const totalPurchasesNet = invoicesList.reduce((s, p) => s + Number(p.net || p.total || 0), 0);
+    const totalReturnsNet = returnsList.reduce((s, p) => s + Number(p.net || p.total || 0), 0);
+    const netPurchases = totalPurchasesNet - totalReturnsNet;
+    const totalCredit = invoicesList.reduce((s, p) => s + Number(p.credit_amount || 0), 0)
+      - returnsList.reduce((s, p) => s + Number(p.credit_amount || 0), 0);
+
+    return {
+      totalPurchasesCount: invoicesList.length,
+      totalReturnsCount: returnsList.length,
+      totalPurchasesNet,
+      totalReturnsNet,
+      netPurchases,
+      totalCredit,
+    };
+  }, [purchases]);
 
   /**
    * `?doc=` بيفتح للعرض، و`?edit=` بيفتح للتعديل.
@@ -1372,18 +1431,35 @@ export default function Purchases() {
    * اتكتبت في النظام.
    */
   const listColumns = [
-    { title: 'النوع', dataIndex: 'kind', key: 'kind', fixed: 'left' as const, width: 86,
-      filters: [{ text: 'فاتورة', value: 'purchase' }, { text: 'مرتجع', value: 'return' }],
+    {
+      title: 'نوع المستند',
+      dataIndex: 'kind',
+      key: 'kind',
+      fixed: 'left' as const,
+      width: 100,
+      filters: [{ text: 'فاتورة شراء', value: 'purchase' }, { text: 'مردود شراء', value: 'return' }],
       onFilter: (v: any, r: PurchaseRecord) => r.kind === v,
       render: (v: string) => (v === 'return'
-        ? <Tag color="orange">مرتجع</Tag>
-        : <Tag color="green">فاتورة</Tag>) },
-    { title: 'مستند رقم', dataIndex: 'document_number', key: 'document_number',
-      fixed: 'left' as const, width: 130,
+        ? <Tag color="orange" style={{ fontWeight: 600 }}>مردود شراء</Tag>
+        : <Tag color="blue" style={{ fontWeight: 600 }}>فاتورة شراء</Tag>),
+    },
+    {
+      title: 'رقم المستند',
+      dataIndex: 'document_number',
+      key: 'document_number',
+      fixed: 'left' as const,
+      width: 140,
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
-      render: (doc: string) => <Tag color="blue">{doc}</Tag> },
+      render: (doc: string, r: PurchaseRecord) => (
+        <Space direction="vertical" size={0}>
+          <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>
+          {r.parent_document_number && (
+            <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.parent_document_number}</span>
+          )}
+        </Space>
+      ),
+    },
     { title: 'التاريخ', dataIndex: 'purchase_date', key: 'purchase_date',
-      // يوم ما البضاعة وصلت. `created_at` يوم ما الصف اتكتب — سؤال تاني، ومحدش بيسأله.
       ...dateColumn<PurchaseRecord>((r) => r.purchase_date || r.created_at),
       defaultSortOrder: 'descend' as const,
       render: (v: string | null, r: PurchaseRecord) => fmtDate(v || r.created_at) },
@@ -1402,7 +1478,6 @@ export default function Purchases() {
       render: (v: string | null) => v || '-' },
     { title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.gross),
-      // فاضي على المرتجع — مالوش «اجمالي قبل خصم»، والصفر كان هيتقري كأنه رقم محسوب.
       render: (v: string | null) => (v === null ? '-' : `${fmtMoney(v)} ج.م`) },
     { title: 'خصم فاتورة', dataIndex: 'discount_amount', key: 'discount_amount',
       align: 'left' as const,
@@ -1418,9 +1493,18 @@ export default function Purchases() {
     { title: 'الضرائب %', dataIndex: 'tax_pct', key: 'tax_pct', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.tax_pct),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
-    { title: 'الصافي', dataIndex: 'net', key: 'net', align: 'left' as const,
+    {
+      title: 'الصافي',
+      dataIndex: 'net',
+      key: 'net',
+      align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.net),
-      render: (v: string | null) => (v === null ? '-' : `${fmtMoney(v)} ج.م`) },
+      render: (v: string | null, r: PurchaseRecord) => (v === null ? '-' : (
+        <strong style={{ color: r.kind === 'purchase' ? '#0958d9' : '#d46b08' }}>
+          {r.kind === 'return' ? '-' : ''}{fmtMoney(v)} ج.م
+        </strong>
+      )),
+    },
     { title: 'الاجمالي', dataIndex: 'total', key: 'total', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.total),
       render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong> },
@@ -1429,7 +1513,6 @@ export default function Purchases() {
       render: (val: string | null) => (val === null ? '-' : `${fmtMoney(val)} ج.م`) },
     { title: 'الباقي', dataIndex: 'credit_amount', key: 'credit_amount', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.credit_amount),
-      // الباقي هو اللي لسه على الشركة — أحمر لما يكون فيه رقم، مش لون واحد للكل.
       render: (val: string | null) => (val === null ? '-' : Number(val)
         ? <b style={{ color: '#cf1322' }}>{fmtMoney(val)} ج.م</b>
         : `${fmtMoney(val)} ج.م`) },
@@ -1444,8 +1527,6 @@ export default function Purchases() {
           <Button type="dashed" icon={<EyeOutlined />} onClick={() => openRow(record)}>
             عرض
           </Button>
-          {/* الطباعة بتفتح معاينة في بوباب — الورقة بتتشاف قبل ما تطلع من الطابعة، ومن غير
-              ما اللي بيطبع يسيب السجل. */}
           <Button type="link" icon={<PrinterOutlined />}
             onClick={() => openPrint(record.kind === 'return' && record.parent_id
               ? { ...record, id: record.parent_id } : record)}>
@@ -1456,20 +1537,18 @@ export default function Purchases() {
     },
   ];
 
-
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const listCols = useTableColumns('purchase-list', listColumns);
 
   const listContent = (
     <Card
-      title="سجل عمليات الشراء — فواتير ومرتجعات"
+      title="المشتريات (سجل الفواتير والمردودات)"
       extra={(
         <Space>
           {listCols.control}
           <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
-          {/* من غير F2 — المفتاح بتاع «إضافة صنف» جوّه الفاتورة، زي شاشة البيع بالظبط.
-              المحرك بيقرا الملف كله، فزرارين بيدّعوا نفس المفتاح مابيبقاش واضح مين هيترد عليه. */}
           <Button type="primary" icon={<PlusOutlined />}
+            style={{ fontWeight: 600 }}
             onClick={() => {
               form.resetFields();
               setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0,
@@ -1485,8 +1564,66 @@ export default function Purchases() {
         </Space>
       )}
     >
-      {/* الأعرض بيتحدد عشان الصف الأول يملا ٢٤ بالظبط: بحث ٥ + مستند ٣ + فاتورة ٣ + فرع ٤ +
-          مورد ٤ + ملاحظات ٥. من غير كده الفلاتر بتلف وتسيب فراغ في نص الشريط. */}
+      {/* --- Summary Statistics --- */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={12} md={6}>
+          <Card size="small" style={{ borderRadius: 8, borderColor: '#91caff', backgroundColor: '#e6f4ff' }}>
+            <Statistic
+              title="إجمالي فواتير المشتريات"
+              value={money(purchasesSummary.totalPurchasesNet)}
+              suffix="ج.م"
+              prefix={<Tag color="blue">{purchasesSummary.totalPurchasesCount} فاتورة</Tag>}
+              valueStyle={{ color: '#0958d9', fontWeight: 'bold' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small" style={{ borderRadius: 8, borderColor: '#ffd591', backgroundColor: '#fff7e6' }}>
+            <Statistic
+              title="إجمالي مردودات المشتريات"
+              value={money(purchasesSummary.totalReturnsNet)}
+              suffix="ج.م"
+              prefix={<Tag color="orange">{purchasesSummary.totalReturnsCount} مردود</Tag>}
+              valueStyle={{ color: '#d46b08', fontWeight: 'bold' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small" style={{ borderRadius: 8, borderColor: '#d9f7be', backgroundColor: '#f6ffed' }}>
+            <Statistic
+              title="صافي المشتريات الفعلي"
+              value={money(purchasesSummary.netPurchases)}
+              suffix="ج.م"
+              valueStyle={{ color: '#389e0d', fontWeight: 'bold' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card size="small" style={{ borderRadius: 8, borderColor: '#ffa39e', backgroundColor: '#fff1f0' }}>
+            <Statistic
+              title="إجمالي المستحق للموردين"
+              value={money(purchasesSummary.totalCredit)}
+              suffix="ج.م"
+              valueStyle={{ color: '#cf1322', fontWeight: 'bold' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      {/* --- Quick Tabs / Segmented --- */}
+      <div style={{ marginBottom: 12 }}>
+        <Segmented
+          size="middle"
+          value={purchasesFilter.values.kind || 'all'}
+          onChange={(v: any) => purchasesFilter.setValue('kind', v === 'all' ? undefined : v)}
+          options={[
+            { label: <span>الكل ({purchasesSummary.totalPurchasesCount + purchasesSummary.totalReturnsCount})</span>, value: 'all' },
+            { label: <span style={{ color: '#0958d9', fontWeight: 600 }}>🔵 فواتير المشتريات ({purchasesSummary.totalPurchasesCount})</span>, value: 'purchase' },
+            { label: <span style={{ color: '#d46b08', fontWeight: 600 }}>🟠 مردودات المشتريات ({purchasesSummary.totalReturnsCount})</span>, value: 'return' },
+          ]}
+        />
+      </div>
+
       <ListToolbar
         searchSpan={5}
         searchPlaceholder="بحث برقم المستند أو المورد أو رقم فاتورته أو الملاحظات"
@@ -1683,6 +1820,7 @@ export default function Purchases() {
         products={items as any}
         activeCategory={activeCategory}
         onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
+        availableFor={(id) => (stickyWarehouseId ? (availability[stickyWarehouseId]?.[id] ?? 0) : null)}
         onCancel={() => setPickerOpen(false)}
         onPick={(id) => {
           setPickerOpen(false);

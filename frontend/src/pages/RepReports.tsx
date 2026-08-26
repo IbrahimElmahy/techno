@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn } from '../components/gridColumns';
@@ -101,9 +102,11 @@ export default function RepReports() {
 
   const header = (
     <Space wrap>
-      <DatePicker.RangePicker
-        value={range as any} onChange={(v) => setRange(v as any)} allowClear={false}
-      />
+      <div style={{ width: 280 }}>
+        <DateRangeFilter
+          value={range as any} onChange={(v) => setRange(v as any)} allowClear={false}
+        />
+      </div>
       <Select
         allowClear showSearch optionFilterProp="label" style={{ minWidth: 200 }}
         placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions}

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Spin } from 'antd';
-import { api } from '../api/client';
+import { api, clearApiCache } from '../api/client';
 
 // A session that never interrupts work: the token is long-lived on the server, and we
 // re-issue it on every app load and every few hours while the tab stays open. So anyone
@@ -105,6 +105,12 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   }, []);
 
   const login = (newToken: string, newUser: User) => {
+    // كاش الطلبات بيتفضّى مع تغيير المستخدم.
+    //
+    // القوايم المخزّنة مقيّدة بمين طالبها: المندوب بيشوف عملاءه هو بس. فيوزر بيخرج
+    // وتاني بيدخل من غير تفضية كان بيلاقي قايمة اللي قبله لسه معروضة — داتا بتعدّي
+    // من جلسة لجلسة.
+    clearApiCache();
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(newUser));
     setToken(newToken);
@@ -113,6 +119,7 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   };
 
   const logout = () => {
+    clearApiCache();
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);

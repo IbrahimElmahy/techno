@@ -21,6 +21,7 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { printDocument } from '../print/brand';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 
@@ -184,7 +185,9 @@ const FinanceReports: React.FC = () => {
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
-        <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} />
+        <div style={{ width: 280 }}>
+          <DateRangeFilter value={range as any} onChange={(v) => setRange(v as any)} />
+        </div>
         <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>
           تحديث
         </Button>

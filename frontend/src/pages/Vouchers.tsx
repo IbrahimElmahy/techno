@@ -22,6 +22,7 @@ import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { printDocument } from '../print/brand';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
@@ -125,8 +126,9 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
           value={treasuryId} onChange={setTreasuryId}
           options={treasuries.map((t) => ({ value: t.id, label: `${t.name} (${fmt(t.balance)})` }))}
         />
-        <DatePicker.RangePicker value={range} onChange={(v) => setRange(v)}
-          placeholder={['من تاريخ', 'إلى تاريخ']} />
+        <div style={{ width: 280 }}>
+          <DateRangeFilter value={range} onChange={(v) => setRange(v)} />
+        </div>
       </Space>
 
       {statement && (
@@ -948,7 +950,9 @@ const Vouchers: React.FC = () => {
                     onChange={setStParty}
                     options={stPartyOptions}
                   />
-                  <DatePicker.RangePicker value={stRange as any} onChange={(v) => setStRange(v as any)} />
+                  <div style={{ width: 280 }}>
+                    <DateRangeFilter value={stRange as any} onChange={(v) => setStRange(v as any)} />
+                  </div>
                   <Button type="primary" icon={<FileSearchOutlined />} onClick={loadStatement}>
                     عرض الكشف
                   </Button>
@@ -1035,7 +1039,9 @@ const Vouchers: React.FC = () => {
               onChange={setKindFilter}
               options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
             />
-            <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} />
+            <div style={{ width: 280 }}>
+              <DateRangeFilter value={range as any} onChange={(v) => setRange(v as any)} />
+            </div>
             <Button onClick={loadVouchers}>تحديث</Button>
           </Space>
         }

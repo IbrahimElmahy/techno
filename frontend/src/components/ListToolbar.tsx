@@ -1,8 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Button, Col, DatePicker, Input, Row, Select, Tag } from 'antd';
+import { Button, Col, Input, Row, Select, Tag } from 'antd';
 import { SearchOutlined, ClearOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useScreenShortcuts } from './keyboard';
+import DateRangeFilter from './DateRangeFilter';
 
 /**
  * One search-and-filter bar for every list in the system.
@@ -225,11 +226,10 @@ export default function ListToolbar({
         ))}
 
         {showDateRange && (
-          <div style={{ flex: '0 1 250px', minWidth: 210 }}>
-            <DatePicker.RangePicker
-              style={{ width: '100%' }}
+          <div style={{ flex: '0 1 270px', minWidth: 220 }}>
+            <DateRangeFilter
               value={range ?? null}
-              onChange={(v) => onRangeChange?.(v as [Dayjs, Dayjs] | null)}
+              onChange={(v) => onRangeChange?.(v)}
             />
           </div>
         )}

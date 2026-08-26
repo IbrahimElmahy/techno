@@ -11,6 +11,7 @@ import type { ColumnsType } from 'antd/es/table';
 
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableKeyboard } from '../components/keyboard';
 import { useQueryTab } from '../components/useQueryTab';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
@@ -256,9 +257,8 @@ export default function Attendance() {
     <>
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={9}>
-          <DatePicker.RangePicker
-            style={{ width: '100%' }} value={range as any} onChange={(v) => setRange(v as any)}
-            format="YYYY/MM/DD"
+          <DateRangeFilter
+            value={range as any} onChange={(v) => setRange(v as any)}
           />
         </Col>
         <Col xs={24} md={7}>

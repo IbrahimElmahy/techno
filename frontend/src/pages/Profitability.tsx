@@ -6,6 +6,7 @@ import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/i
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
 import TabModal from '../components/TabModal';
@@ -174,10 +175,9 @@ export default function Profitability() {
           />
         </Col>
         <Col xs={24} md={8}>
-          <DatePicker.RangePicker
-            style={{ width: '100%' }} value={range as any}
-            onChange={(v) => setRange(v as any)} allowClear
-            placeholder={['من تاريخ', 'إلى تاريخ']}
+          <DateRangeFilter
+            value={range as any}
+            onChange={(v) => setRange(v as any)}
           />
         </Col>
         <Col xs={24} md={6}>

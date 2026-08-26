@@ -13,8 +13,7 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import { useTableColumns } from '../components/ColumnSettings';
-
-const { RangePicker } = DatePicker;
+import DateRangeFilter from '../components/DateRangeFilter';
 
 // --- Shared helpers -----------------------------------------------------------------------
 type Period = 'week' | 'month' | 'year';
@@ -95,11 +94,12 @@ export default function Reports() {
           style={{ width: 130 }}
           options={(Object.keys(PERIOD_LABEL) as Period[]).map((p) => ({ value: p, label: PERIOD_LABEL[p] }))}
         />
-        <RangePicker
-          value={range as any}
-          format="YYYY-MM-DD"
-          onChange={(v) => setRange(v as Range)}
-        />
+        <div style={{ width: 280 }}>
+          <DateRangeFilter
+            value={range as any}
+            onChange={(v) => setRange(v as Range)}
+          />
+        </div>
         <Divider type="vertical" />
         <span>تصدير:</span>
         <ExportButton type="sales" label="المبيعات CSV" />

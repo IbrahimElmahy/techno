@@ -31,6 +31,7 @@ import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -199,6 +200,35 @@ export default function Returns() {
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
   // The document's warehouse — the default each line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
+  const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
+
+  /**
+   * رصيد المخزن المختار — بيتجاب من جديد كل ما الشباك يتفتح.
+   *
+   * كان فيه حارس `if (availability[wh]) return;` بيمنع الجلب لو المخزن اتقرا قبل كده.
+   * والنتيجة إن الأرقام بتتجمّد أول مرة وتفضل كده طول الجلسة: تكتب فاتورة تطلّع خمسة،
+   * تفتح الشباك تاني، يقولك الرقم القديم — والشباك ده اتعمل عشان يقول المتاح دلوقتي.
+   *
+   * والنداء بيتعمل لما الشباك يتفتح بس (الـ`useEffect` معلّق على `pickerOpen`)، فمرة
+   * لكل فتحة مش مع كل حرف بيتكتب.
+   */
+  const loadWarehouseStock = async (warehouseId: number) => {
+    if (!warehouseId) return;
+    try {
+      const res = await api.get('/api/v1/stock/by-location', {
+        params: { location_kind: 'warehouse', location_id: warehouseId, only_available: false },
+      });
+      const map: Record<number, number> = {};
+      (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
+      setAvailability((prev) => ({ ...prev, [warehouseId]: map }));
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => {
+    if (docWarehouseId) {
+      loadWarehouseStock(docWarehouseId);
+    }
+  }, [docWarehouseId, pickerOpen]);
   /**
    * الأصناف اللي مستنية المخزن يتحدّد قبل ما تنزل — نفس بوباب فاتورة البيع.
    *
@@ -1173,6 +1203,7 @@ export default function Returns() {
                   products={products}
                   activeCategory={activeCategory}
                   onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
+                  availableFor={(id) => (docWarehouseId ? (availability[docWarehouseId]?.[id] ?? 0) : null)}
                   onCancel={() => setPickerOpen(false)}
                   onPick={(id) => {
                     setPickerOpen(false);
@@ -1531,8 +1562,8 @@ export default function Returns() {
               filterOption={(i, o) => String(o?.label ?? '').includes(i)}
               options={customers.map((c) => ({ value: c.id, label: c.name }))} />
           </Col>
-          <Col xs={16} md={8}>
-            <DatePicker.RangePicker style={{ width: '100%' }}
+          <Col xs={24} md={8}>
+            <DateRangeFilter
               value={filters.date_from && filters.date_to
                 ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
               onChange={(v) => {
@@ -1542,7 +1573,8 @@ export default function Returns() {
                   date_to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
                 };
                 setFilters(next); fetchReturns(next);
-              }} />
+              }}
+            />
           </Col>
           <Col xs={8} md={4}>
             <Button icon={<ClearOutlined />} onClick={resetFilters} block>مسح</Button>

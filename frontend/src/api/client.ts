@@ -20,6 +20,100 @@ export function getApiBaseURL() {
   return api.defaults.baseURL || 'http://127.0.0.1:8000';
 }
 
+/**
+ * كاش في الذاكرة للقوايم المرجعية — عشان التنقل بين الشاشات يبقى فوري.
+ *
+ * الشاشات بتفتح وبتطلب نفس القوايم كل مرة: المخازن، الفروع، شجرة الحسابات، العملاء،
+ * الموردين، الأصناف. القوايم دي بتتغيّر مرة كل شوية وبتتقرا مية مرة في الساعة، فطلبها
+ * من الأول مع كل شاشة هو الانتظار اللي كان باين.
+ *
+ * ## اللي بيتخزّن هو القايمة نفسها — مش أي حاجة تحتها
+ *
+ * الشرط كان `startsWith`، وده كان بيلقط حاجات مالهاش أي علاقة بالقوايم:
+ * `/accounts` كانت بتلقط `/accounts/16/statement`، و`/items` بتلقط `/items/5/card`،
+ * و`/customers` بتلقط `/customers/3/statement`. يعني كشف حساب عميل وكارت صنف — أرقام
+ * بتتغيّر مع كل فاتورة — كانوا بيتعرضوا من كاش عمره ٢٠ ثانية. واللي بيراجع رصيد بيقرا
+ * رقم قديم من غير ما حاجة تقوله.
+ *
+ * فالمطابقة بقت على المسار **بالظبط**: القايمة نفسها بس، وأي حاجة تحتها بتعدّي زي ما هي.
+ */
+const getCache = new Map<string, { data: any; expiry: number }>();
+const inflightRequests = new Map<string, Promise<any>>();
+
+/**
+ * رقم بيزيد مع كل تفضية.
+ *
+ * التفضية لوحدها مش كفاية: طلب كان طاير وقت الحفظ بيرجع **بعده** وبيكتب داتا ما قبل
+ * الحفظ في الكاش بعمر جديد — يعني الحفظ بيخلّي الشاشة قديمة ٢٠ ثانية بدل ما يحدّثها.
+ * الطلب بياخد الرقم وهو خارج، وبيتأكد إنه ما اتغيّرش قبل ما يكتب.
+ */
+let cacheEpoch = 0;
+
+export function clearApiCache() {
+  getCache.clear();
+  inflightRequests.clear();
+  cacheEpoch += 1;
+}
+
+/** القوايم اللي بتتخزّن — بمسارها الكامل، مش كبداية مسار. */
+const CACHEABLE_PATHS = new Set([
+  '/api/v1/warehouses',
+  '/api/v1/branches',
+  '/api/v1/accounts',
+  '/api/v1/loyalty/coupon-types',
+  '/api/v1/settings/lookups',
+  '/api/v1/employees',
+  '/api/v1/users',
+  '/api/v1/customers',
+  '/api/v1/suppliers',
+  '/api/v1/items',
+  '/api/v1/products/point-values',
+]);
+
+const originalGet = api.get.bind(api);
+
+api.get = function (url: string, config?: any): Promise<any> {
+  const isNoCache = config?.headers?.['Cache-Control'] === 'no-cache';
+  // اللي بعد «؟» جزء من العنوان، فبيتشال قبل المقارنة وبيدخل في المفتاح.
+  const path = url.split('?')[0];
+  const fullKey = `${url}?${JSON.stringify(config?.params || {})}`;
+  const isCacheable = !isNoCache && CACHEABLE_PATHS.has(path);
+
+  if (isCacheable) {
+    const cached = getCache.get(fullKey);
+    if (cached && Date.now() < cached.expiry) {
+      return Promise.resolve({
+        data: cached.data, status: 200, statusText: 'OK',
+        headers: {}, config: config || {},
+      });
+    }
+
+    if (inflightRequests.has(fullKey)) {
+      return inflightRequests.get(fullKey)!;
+    }
+
+    const startedAt = cacheEpoch;
+    const reqPromise = originalGet(url, config)
+      .then((res) => {
+        inflightRequests.delete(fullKey);
+        // حصل حفظ والطلب ده كان طاير؟ رده صحيح للّي طلبه، وقديم لأي حد جاي بعده.
+        if (startedAt === cacheEpoch) {
+          getCache.set(fullKey, { data: res.data, expiry: Date.now() + 20000 });
+        }
+        return res;
+      })
+      .catch((err) => {
+        inflightRequests.delete(fullKey);
+        throw err;
+      });
+
+    inflightRequests.set(fullKey, reqPromise);
+    return reqPromise;
+  }
+
+  return originalGet(url, config);
+} as any;
+
 // Request interceptor to attach JWT token
 api.interceptors.request.use(
   (config) => {
@@ -37,6 +131,11 @@ api.interceptors.request.use(
 // Response interceptor for errors and auto-logout
 api.interceptors.response.use(
   (response) => {
+    // Clear cache on any data mutations so UI is always fresh
+    const method = response.config.method?.toUpperCase();
+    if (method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+      clearApiCache();
+    }
     return response;
   },
   (error) => {

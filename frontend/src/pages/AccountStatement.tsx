@@ -17,6 +17,7 @@ import JournalEntryLines from '../components/JournalEntryLines';
 import DocumentItemLines, { hasItemLines } from '../components/DocumentItemLines';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { normalizeAr } from '../components/ListToolbar';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
@@ -709,10 +710,10 @@ export default function AccountStatement() {
             </Col>
           </>
         )}
-        <Col xs={24} md={6}>
-          <DatePicker.RangePicker
-            style={{ width: '100%' }} value={range as any} allowClear
-            onChange={(v) => setRange(v as any)} placeholder={['من تاريخ', 'إلى تاريخ']}
+        <Col xs={24} md={7}>
+          <DateRangeFilter
+            value={range as any}
+            onChange={(v) => setRange(v as any)}
           />
         </Col>
         <Col xs={24} md={4}>

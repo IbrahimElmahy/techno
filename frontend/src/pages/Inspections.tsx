@@ -19,6 +19,7 @@ import { printDocument } from '../print/brand';
 import { useLookup } from '../hooks/useLookup';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import DateRangeFilter from '../components/DateRangeFilter';
 
 interface InspectionLine {
   id: number;
@@ -314,11 +315,12 @@ const Inspections: React.FC = () => {
 
       <Card title="مراجعة زيارات المناديب (المعاينات)">
         <Space wrap style={{ marginBottom: 16 }}>
-          <DatePicker.RangePicker
-            value={range as any}
-            onChange={(v) => setRange(v as any)}
-            allowClear
-          />
+          <div style={{ width: 280 }}>
+            <DateRangeFilter
+              value={range as any}
+              onChange={(v) => setRange(v as any)}
+            />
+          </div>
           <InputNumber
             placeholder="رقم الشهادة"
             style={{ width: 130 }}

@@ -16,6 +16,7 @@ import DocumentLink from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import { useOpenDocument } from '../components/DocumentLink';
 import { TabModal } from '../components/TabModal';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableColumns } from '../components/ColumnSettings';
 
 /**
@@ -313,8 +314,10 @@ export default function SupplierProfile() {
                   children: (
                     <>
                       <Space style={{ marginBottom: 12 }} wrap>
-                        <DatePicker.RangePicker value={range as any}
-                          onChange={(v) => setRange(v as any)} />
+                        <div style={{ width: 280 }}>
+                          <DateRangeFilter value={range as any}
+                            onChange={(v) => setRange(v as any)} />
+                        </div>
                         <Button onClick={() => setRange(null)}>
                           كل الفترات
                         </Button>

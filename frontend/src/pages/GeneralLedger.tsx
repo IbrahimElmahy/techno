@@ -22,6 +22,7 @@ import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv } from '../utils/exportCsv';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { printReport } from '../print/reportSheet';
 
 interface Account {
@@ -762,8 +763,9 @@ function TrialBalanceTab() {
       <Space wrap style={{ marginBottom: 16 }}>
         <Input allowClear value={rowQuery} onChange={(e) => setRowQuery(e.target.value)}
           prefix={<SearchOutlined />} placeholder="بحث بكود الحساب أو الاسم" style={{ width: 240 }} />
-        <DatePicker.RangePicker value={range} format="YYYY-MM-DD"
-          onChange={(v) => v && setRange(v as [dayjs.Dayjs, dayjs.Dayjs])} />
+        <div style={{ width: 280 }}>
+          <DateRangeFilter value={range} onChange={(v) => v && setRange(v)} />
+        </div>
         <Select allowClear placeholder="كل الفروع" style={{ width: 180 }} value={branchId} onChange={setBranchId}
           options={branches.map((b) => ({ value: b.id, label: b.name }))} />
         <Select allowClear placeholder="كل مراكز التكلفة" style={{ width: 220 }} value={costCenterId}

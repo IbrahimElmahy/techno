@@ -7,6 +7,7 @@ import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/i
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
@@ -333,16 +334,18 @@ export default function Stocktake() {
           <Space size={6} wrap style={{ flex: '0 0 auto' }}>
             {/* «إلى» is the day the balance is read at; «من» opens the movement log on the period.
                 Two dates because a difference is a question about a stretch of time, not a day. */}
-            <DatePicker.RangePicker
-              style={{ width: '100%' }} allowClear={false}
-              value={[dateFrom, asOf] as any}
-              onChange={(v: any) => {
-                if (!v || !v[0] || !v[1]) return;
-                setDateFrom(v[0]);
-                setAsOf(v[1]);
-              }}
-              placeholder={['من تاريخ', 'الرصيد حتى']}
-            />
+            <div style={{ width: 280 }}>
+              <DateRangeFilter
+                allowClear={false}
+                value={[dateFrom, asOf] as any}
+                placeholder={['من تاريخ', 'الرصيد حتى']}
+                onChange={(v: any) => {
+                  if (!v || !v[0] || !v[1]) return;
+                  setDateFrom(v[0]);
+                  setAsOf(v[1]);
+                }}
+              />
+            </div>
             <Select
               allowClear style={{ width: '100%' }} placeholder="كل المخازن"
               value={warehouseId} onChange={setWarehouseId}

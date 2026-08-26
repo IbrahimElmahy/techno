@@ -374,18 +374,40 @@ export default function PurchaseReturns() {
    * بيقولها عند الخانة.
    */
   const [onHand, setOnHand] = useState<Record<number, number>>({});
-  const fetchOnHand = async (itemId: number, wh: number) => {
+  const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
+
+  /**
+   * رصيد المخزن المختار — بيتجاب من جديد كل ما الشباك يتفتح.
+   *
+   * كان فيه حارس `if (availability[wh]) return;` بيمنع الجلب لو المخزن اتقرا قبل كده.
+   * والنتيجة إن الأرقام بتتجمّد أول مرة وتفضل كده طول الجلسة: تكتب فاتورة تطلّع خمسة،
+   * تفتح الشباك تاني، يقولك الرقم القديم — والشباك ده اتعمل عشان يقول المتاح دلوقتي.
+   *
+   * والنداء بيتعمل لما الشباك يتفتح بس (الـ`useEffect` معلّق على `pickerOpen`)، فمرة
+   * لكل فتحة مش مع كل حرف بيتكتب.
+   */
+  const loadWarehouseStock = async (wh: number) => {
+    if (!wh) return;
     try {
-      const res = await api.get('/api/v1/stock/on-hand', { params: {
-        item_id: itemId, location_kind: 'warehouse', location_id: wh } });
-      setOnHand((prev) => ({ ...prev, [itemId]: Number(res.data?.on_hand ?? 0) }));
-    } catch { /* الرصيد مش معروف — الحارس بيسيب الكمية والسيرفر بيقرر */ }
+      const res = await api.get('/api/v1/stock/by-location', {
+        params: { location_kind: 'warehouse', location_id: wh, only_available: false },
+      });
+      const map: Record<number, number> = {};
+      (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
+      setAvailability((prev) => ({ ...prev, [wh]: map }));
+      setOnHand(map);
+    } catch (err) { console.error(err); }
   };
-  // تغيير المخزن بيغيّر كل الأرصدة — اللي كان متاح في مخزن مش متاح في التاني.
+
+  const fetchOnHand = async (_itemId: number, wh: number) => {
+    if (wh) await loadWarehouseStock(wh);
+  };
+
   useEffect(() => {
-    if (!warehouseId) { setOnHand({}); return; }
-    returnLines.forEach((l) => { if (l.item_id) fetchOnHand(l.item_id, warehouseId); });
-  }, [warehouseId]);
+    if (warehouseId) {
+      loadWarehouseStock(warehouseId);
+    }
+  }, [warehouseId, pickerOpen]);
 
   /** فئات الأصناف اللي البوباب بيجمّع بيها — من اللي في القايمة فعلاً. */
   const itemCategories = useMemo(() => {
@@ -891,6 +913,7 @@ export default function PurchaseReturns() {
         products={items as any}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
+        availableFor={(id) => (warehouseId ? (availability[warehouseId]?.[id] ?? 0) : null)}
         onCancel={() => setPickerOpen(false)}
         onPick={(id) => { setPickerOpen(false); addReturnLine(id); }}
         onPickMany={(ids) => { setPickerOpen(false); ids.forEach(addReturnLine); }} />

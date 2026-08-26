@@ -16,6 +16,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useTableKeyboard } from '../components/keyboard';
 import { useQueryTab } from '../components/useQueryTab';
 import { TabModal } from '../components/TabModal';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
@@ -389,7 +390,7 @@ export default function Leave() {
           </Col>
           <Col span={24}>
             <div style={{ marginBottom: 4 }}>المدة *</div>
-            <DatePicker.RangePicker style={{ width: '100%' }} format="YYYY/MM/DD"
+            <DateRangeFilter
               value={form.range} onChange={(v) => setForm({ ...form, range: v })} />
             <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
               الجمعة والسبت والعطلات الرسمية مابيتخصموش من الرصيد.

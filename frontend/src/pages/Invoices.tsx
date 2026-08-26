@@ -7,7 +7,7 @@ import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, PrinterOutlined, DeleteOutlined,
-  EditOutlined,
+  EditOutlined, RollbackOutlined,
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
@@ -28,6 +28,7 @@ import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -339,7 +340,9 @@ export default function Invoices() {
   // The category products are picked from — chosen once, stays until changed.
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Return quantities tracking
+  // Sales returns list for the unified sales register
+  const [salesReturns, setSalesReturns] = useState<any[]>([]);
+  const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return'>('all');
 
   // Filtering happens on the server so it covers ALL invoices, not just the loaded page.
   const fetchInvoices = async (override?: InvoiceFilters) => {
@@ -350,11 +353,15 @@ export default function Invoices() {
       Object.entries(active).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
       });
-      const res = await api.get('/api/v1/sales', { params });
-      setInvoices(res.data);
+      const [salesRes, returnsRes] = await Promise.all([
+        api.get('/api/v1/sales', { params }),
+        api.get('/api/v1/sales/returns').catch(() => ({ data: [] })),
+      ]);
+      setInvoices(salesRes.data);
+      setSalesReturns(returnsRes.data || []);
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفواتير');
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفواتير والمرتجعات');
     } finally {
       setLoading(false);
     }
@@ -374,12 +381,84 @@ export default function Invoices() {
     fetchInvoices({});
   };
 
-  // Live summary of whatever the current filter returned.
+  // Unified list merging sales and sales returns
+  const unifiedRecords = useMemo(() => {
+    const saleRows = (invoices || []).map((s: any) => ({
+      id: s.id,
+      rowKey: `sale-${s.id}`,
+      doc_type: 'sale' as const,
+      document_number: s.document_number,
+      original_invoice_number: null,
+      external_document_number: s.external_document_number,
+      date: String(s.invoice_date || s.created_at || '').slice(0, 10),
+      customer_id: s.customer_id,
+      rep_id: s.rep_id,
+      revenue_account_id: s.revenue_account_id,
+      family: s.family,
+      gross: Number(s.gross || 0),
+      combined_pct: Number(s.combined_pct || 0),
+      discount_value: Number(s.gross || 0) * (Number(s.combined_pct || 0) / 100),
+      net: Number(s.net || 0),
+      cash_amount: Number(s.cash_amount || 0),
+      credit_amount: Number(s.credit_amount || 0),
+      ledger_entry_id: s.ledger_entry_id,
+      raw: s,
+    }));
+
+    const returnRows = (salesReturns || []).map((r: any) => ({
+      id: r.id,
+      rowKey: `ret-${r.id}`,
+      doc_type: 'return' as const,
+      document_number: r.document_number,
+      original_invoice_number: r.invoice_document_number,
+      external_document_number: r.external_document_number,
+      date: String(r.return_date || r.created_at || '').slice(0, 10),
+      customer_id: r.customer_id,
+      rep_id: r.rep_id,
+      revenue_account_id: null,
+      family: null,
+      gross: Number(r.gross || 0),
+      combined_pct: Number(r.combined_pct || 0),
+      discount_value: Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100),
+      net: Number(r.net || 0),
+      cash_amount: Number(r.cash_refund || 0),
+      credit_amount: Number(r.credit_reduction || 0),
+      ledger_entry_id: r.ledger_entry_id,
+      raw: r,
+    }));
+
+    let combined: any[] = [];
+    if (docKindFilter === 'all') {
+      combined = [...saleRows, ...returnRows];
+    } else if (docKindFilter === 'sale') {
+      combined = saleRows;
+    } else {
+      combined = returnRows;
+    }
+
+    return combined.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
+  }, [invoices, salesReturns, docKindFilter]);
+
+  // Live summary of sales, returns, and net sales
   const summary = useMemo(() => {
-    const net = invoices.reduce((s, i) => s + Number(i.net || 0), 0);
-    const credit = invoices.reduce((s, i) => s + Number(i.credit_amount || 0), 0);
-    return { count: invoices.length, net, credit };
-  }, [invoices]);
+    const totalSalesCount = (invoices || []).length;
+    const totalReturnsCount = (salesReturns || []).length;
+    const totalSalesNet = (invoices || []).reduce((s: number, i: any) => s + Number(i.net || 0), 0);
+    const totalReturnsNet = (salesReturns || []).reduce((s: number, r: any) => s + Number(r.net || 0), 0);
+    const netSales = totalSalesNet - totalReturnsNet;
+    const totalCredit = (invoices || []).reduce((s: number, i: any) => s + Number(i.credit_amount || 0), 0)
+      - (salesReturns || []).reduce((s: number, r: any) => s + Number(r.credit_reduction || 0), 0);
+
+    return {
+      totalSalesCount,
+      totalReturnsCount,
+      totalSalesNet,
+      totalReturnsNet,
+      netSales,
+      totalCredit,
+      filteredCount: unifiedRecords.length,
+    };
+  }, [invoices, salesReturns, unifiedRecords]);
 
   const loadLookups = async () => {
     try {
@@ -697,27 +776,13 @@ export default function Invoices() {
    * بيبقى في المخزن الرئيسي. المنع كان بيوقّف بيع بضاعة موجودة، والسكوت كان بينزّل السطر
    * على مخزن فاضي وبيقول «المتاح ٠» عن حاجة في الدور اللي تحت.
    */
-  const warehouseHolding = async (itemId: number, preferred: number): Promise<number> => {
-    if (availableFor(itemId, null, preferred) > 0) return preferred;
-    try {
-      const res = await api.get(`/api/v1/items/${itemId}/balance`);
-      const spot = (res.data?.locations || []).find((x: any) => (
-        x.kind === 'warehouse' && Number(x.quantity) > 0));
-      if (spot) {
-        message.info(`${productName(itemId)}: مش في المخزن المختار — نزل على «${spot.name}»`);
-        await loadWarehouseStock(spot.id);
-        return spot.id;
-      }
-    } catch { /* مش عارفين — بننزّله على مخزن الفاتورة زي ما هو */ }
-    return preferred;
-  };
-
   const addProductByIdWith = async (itemId: number, warehouseId: number) => {
     const fresh = await fetchPrices(itemId);
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(Date.now().toString(), tier);
-    l.warehouse_id = await warehouseHolding(itemId, warehouseId);
+    // يثبت على المخزن المختار فقط ولا يتم تغييره تلقائياً
+    l.warehouse_id = warehouseId;
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null, fresh);
@@ -734,11 +799,7 @@ export default function Invoices() {
 
   const addProductById = async (itemId: number) => {
     if (!itemId) return;
-    // مافيش مخزن للفاتورة لسه؟ نسأل مرة واحدة قبل ما السطر ينزل. السطر اللي بينزل من غير
-    // مخزن بيقول «المتاح ٠» عن بضاعة موجودة، وده أسوأ من إننا نسأل سؤال واحد.
     if (docWarehouseId === null) {
-      // بيتجمّعوا مش بيتبدّلوا: «اختار كذا صنف مرة واحدة» بينده الدالة دي لكل صنف، فلو
-      // كل واحد مسح اللي قبله كان هينزل صنف واحد بس والباقي يضيع في السكوت.
       setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
       setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
       return;
@@ -747,9 +808,8 @@ export default function Invoices() {
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(Date.now().toString(), tier);
-    // السطر بيبدأ على مخزن المستند — إلا لو الصنف مش موجود فيه، ساعتها بينزل على
-    // المخزن اللي فيه الصنف فعلاً.
-    l.warehouse_id = await warehouseHolding(itemId, docWarehouseId);
+    // يثبت على مخزن الفاتورة المختار فقط
+    l.warehouse_id = docWarehouseId;
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null, fresh);
@@ -1473,19 +1533,27 @@ export default function Invoices() {
   //   **مراكز التكلفة** — the cost centre is a dimension on ledger entries, not on the invoice.
   const columns = [
     {
+      title: 'نوع المستند',
+      dataIndex: 'doc_type',
+      key: 'doc_type',
+      width: 100,
+      render: (t: string) => t === 'sale'
+        ? <Tag color="green" style={{ fontWeight: 600 }}>فاتورة بيع</Tag>
+        : <Tag color="magenta" style={{ fontWeight: 600 }}>مرتجع بيع</Tag>,
+    },
+    {
       title: 'رقم',
       dataIndex: 'id',
       key: 'id',
-      width: 80,
+      width: 70,
       render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
     },
     {
       title: 'التاريخ',
-      dataIndex: 'invoice_date',
-      key: 'invoice_date',
+      dataIndex: 'date',
+      key: 'date',
       width: 95,
-      // Falls back to when it was typed, for the invoices written before the date existed.
-      render: (d: string, r: any) => String(d || r.created_at || '').slice(0, 10) || '-',
+      render: (d: string) => d || '-',
     },
     {
       title: 'مستند رقم',
@@ -1495,18 +1563,24 @@ export default function Invoices() {
       render: (v: string | null) => v || '-',
     },
     {
-      title: 'الفاتورة رقم',
+      title: 'رقم المستند',
       dataIndex: 'document_number',
       key: 'document_number',
-      width: 115,
-      // The whole row is clickable (see the table's onRow); just show the number.
-      render: (doc: string) => <Tag color="blue">{doc}</Tag>,
+      width: 130,
+      render: (doc: string, r: any) => (
+        <Space direction="vertical" size={0}>
+          <Tag color={r.doc_type === 'sale' ? 'blue' : 'volcano'}>{doc}</Tag>
+          {r.original_invoice_number && (
+            <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.original_invoice_number}</span>
+          )}
+        </Space>
+      ),
     },
     {
       title: 'الحساب الفرعي',
       dataIndex: 'revenue_account_id',
       key: 'revenue_account_id',
-      width: 150,
+      width: 140,
       ellipsis: true,
       render: (id: number | null) => {
         if (!id) return <span style={{ color: '#8c8c8c' }}>الافتراضي</span>;
@@ -1519,8 +1593,6 @@ export default function Invoices() {
       dataIndex: 'customer_id',
       key: 'customer_id',
       ellipsis: true,
-      // The customer's name opens their file — from a list of invoices the next question is
-      // almost always «العميل ده عليه إيه؟», and that answer lives one screen away.
       render: (cId: number) => {
         const c = customers.find((cust) => cust.id === cId);
         return (
@@ -1531,9 +1603,6 @@ export default function Invoices() {
       },
     },
     {
-      // (031) أبيض ولا بولي — which of the customer's debts this document moved. It was stored on
-      // the document and shown nowhere, so «ده اتسجّل على أنهي حساب؟» had to be answered from the
-      // ledger. Blank for a customer who was never split, which is most of them.
       title: 'النوع',
       dataIndex: 'family',
       key: 'family',
@@ -1552,36 +1621,36 @@ export default function Invoices() {
       title: 'اجمالي قبل',
       dataIndex: 'gross',
       key: 'gross',
-      width: 120,
+      width: 115,
       align: 'left' as const,
-      render: (val: string) => `${money(val)} ج.م`,
+      render: (val: number) => `${money(val)} ج.م`,
     },
     {
       title: 'خصم',
+      dataIndex: 'discount_value',
       key: 'discount_value',
-      width: 110,
+      width: 105,
       align: 'left' as const,
-      // The money, not the rate — derived from the two figures beside it so it can never disagree
-      // with them, which is what a stored third copy eventually does.
-      render: (_: any, r: InvoiceRecord) => {
-        const cut = Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100);
-        return `${money(cut)} ج.م`;
-      },
+      render: (val: number) => `${money(val)} ج.م`,
     },
     {
       title: 'خصم%',
       dataIndex: 'combined_pct',
       key: 'combined_pct',
-      width: 90,
-      render: (val: string) => `${parseFloat(val).toFixed(0)}%`,
+      width: 80,
+      render: (val: number) => `${Number(val || 0).toFixed(0)}%`,
     },
     {
       title: 'الصافى',
       dataIndex: 'net',
       key: 'net',
-      width: 110,
+      width: 115,
       align: 'left' as const,
-      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{money(val)} ج.م</strong>,
+      render: (val: number, r: any) => (
+        <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#c41d7f' }}>
+          {r.doc_type === 'return' ? '-' : ''}{money(val)} ج.م
+        </strong>
+      ),
     },
     {
       title: 'تم السداد',
@@ -1589,7 +1658,7 @@ export default function Invoices() {
       key: 'cash_amount',
       width: 100,
       align: 'left' as const,
-      render: (val: string) => `${money(val)} ج.م`,
+      render: (val: number) => `${money(val)} ج.م`,
     },
     {
       title: 'الباقى',
@@ -1597,9 +1666,9 @@ export default function Invoices() {
       key: 'credit_amount',
       width: 100,
       align: 'left' as const,
-      render: (val: string) => {
-        const n = parseFloat(val);
-        return <span style={{ color: n > 0 ? '#cf1322' : undefined }}>{money(n)} ج.م</span>;
+      render: (val: number) => {
+        const n = Number(val || 0);
+        return <span style={{ color: n > 0 ? '#cf1322' : undefined, fontWeight: n > 0 ? 600 : undefined }}>{money(n)} ج.م</span>;
       },
     },
     {
@@ -1996,9 +2065,12 @@ export default function Invoices() {
             products={products}
             activeCategory={activeCategory}
             onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
-            // المتاح بيتعرض ومابيمنعش. جُرّب المنع وطلع غلط: الصنف اللي مش في المخزن
-            // المختار بيبقى غالباً في مخزن تاني، والمنع كان بيوقّف البيع بدل ما يوجّهه.
-            // اللي بيحصل دلوقتي إن السطر بينزل على المخزن اللي فيه الصنف فعلاً.
+            // المتاح بيتعرض ومابيمنعش — الصفر بيتقال ومابيوقفش الإضافة.
+            //
+            // وكان بيوجّه كمان: السطر بينزل على المخزن اللي فيه الصنف فعلاً لو المختار
+            // فاضي منه. ده اتشال بطلب صاحب النظام — الفاتورة بتتصرف من المخزن اللي
+            // اتحدّد وبس، والتبديل من ورا اللي بيكتب كان بيخلّي الورقة تقول مخزن
+            // والبضاعة تطلع من غيره.
             availableFor={(id) => (docWarehouseId === null
               ? null : availableFor(id, null, docWarehouseId))}
             onCancel={() => setPickerOpen(false)}
@@ -2154,16 +2226,14 @@ export default function Invoices() {
   return (
     <div>
       <Card
-        title="الفواتير (سجل فواتير المبيعات)"
+        title="المبيعات (سجل الفواتير والمرتجعات)"
         extra={(
           <Space>
             <ColumnSettings
               choices={columns.map((c: any) => ({
                 key: String(c.key ?? c.dataIndex ?? ''),
                 title: typeof c.title === 'string' ? c.title : 'إجراءات',
-                // The number is how a row is identified out loud; hiding it would leave a table
-                // nobody can refer to.
-                locked: c.key === 'document_number',
+                locked: c.key === 'document_number' || c.key === 'doc_type',
               }))}
               hidden={invoiceCols.hidden}
               onChange={invoiceCols.setHidden}
@@ -2172,19 +2242,80 @@ export default function Invoices() {
             />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" icon={<PlusOutlined />}
+              style={{ fontWeight: 600 }}
               onClick={() => { setInvoiceDate(dayjs()); setNewStep('party'); }}>
               تسجيل فاتورة بيع
             </Button>
           </Space>
         )}
       >
+        {/* --- Summary Statistics --- */}
+        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+          <Col xs={12} md={6}>
+            <Card size="small" style={{ borderRadius: 8, borderColor: '#d9f7be', backgroundColor: '#f6ffed' }}>
+              <Statistic
+                title="إجمالي فواتير المبيعات"
+                value={money(summary.totalSalesNet)}
+                suffix="ج.م"
+                prefix={<Tag color="green">{summary.totalSalesCount} فاتورة</Tag>}
+                valueStyle={{ color: '#389e0d', fontWeight: 'bold' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} md={6}>
+            <Card size="small" style={{ borderRadius: 8, borderColor: '#ffd6e7', backgroundColor: '#fff0f6' }}>
+              <Statistic
+                title="إجمالي مرتجعات المبيعات"
+                value={money(summary.totalReturnsNet)}
+                suffix="ج.م"
+                prefix={<Tag color="magenta">{summary.totalReturnsCount} مرتجع</Tag>}
+                valueStyle={{ color: '#eb2f96', fontWeight: 'bold' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} md={6}>
+            <Card size="small" style={{ borderRadius: 8, borderColor: '#91caff', backgroundColor: '#e6f4ff' }}>
+              <Statistic
+                title="صافي المبيعات الفعلي"
+                value={money(summary.netSales)}
+                suffix="ج.م"
+                valueStyle={{ color: '#0958d9', fontWeight: 'bold' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={12} md={6}>
+            <Card size="small" style={{ borderRadius: 8, borderColor: '#ffa39e', backgroundColor: '#fff1f0' }}>
+              <Statistic
+                title="المتبقي آجل على العملاء"
+                value={money(summary.totalCredit)}
+                suffix="ج.م"
+                valueStyle={{ color: '#cf1322', fontWeight: 'bold' }}
+              />
+            </Card>
+          </Col>
+        </Row>
+
+        {/* --- Filter Segmented Tabs --- */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <Segmented
+            size="middle"
+            value={docKindFilter}
+            onChange={(v: any) => setDocKindFilter(v)}
+            options={[
+              { label: <span>الكل ({summary.totalSalesCount + summary.totalReturnsCount})</span>, value: 'all' },
+              { label: <span style={{ color: '#389e0d', fontWeight: 600 }}>🟢 فواتير المبيعات ({summary.totalSalesCount})</span>, value: 'sale' },
+              { label: <span style={{ color: '#eb2f96', fontWeight: 600 }}>🔴 مرتجعات المبيعات ({summary.totalReturnsCount})</span>, value: 'return' },
+            ]}
+          />
+        </div>
+
         {/* --- Search + filters (server-side, so they cover every invoice) --- */}
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
           <Col xs={24} md={6}>
             <Input
               allowClear
               value={search}
-              placeholder="بحث برقم الفاتورة"
+              placeholder="بحث برقم المستند أو الفاتورة"
               prefix={<SearchOutlined />}
               onChange={(e) => setSearch(e.target.value)}
               onPressEnter={applySearch}
@@ -2199,7 +2330,7 @@ export default function Invoices() {
               options={customers.map((c) => ({ value: c.id, label: c.name }))} />
           </Col>
           <Col xs={12} md={6}>
-            <DatePicker.RangePicker style={{ width: '100%' }}
+            <DateRangeFilter
               value={filters.date_from && filters.date_to
                 ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
               onChange={(v) => {
@@ -2210,7 +2341,8 @@ export default function Invoices() {
                 };
                 setFilters(next);
                 fetchInvoices(next);
-              }} />
+              }}
+            />
           </Col>
           <Col xs={12} md={4}>
             <Select allowClear style={{ width: '100%' }} placeholder="طريقة السداد"
@@ -2227,45 +2359,21 @@ export default function Invoices() {
           </Col>
         </Row>
 
-        <Row gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="عدد الفواتير الظاهرة" value={summary.count} /></Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small">
-              <Statistic title="إجمالي صافي المبيعات" value={money(summary.net)} suffix="ج.م" />
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small">
-              <Statistic title="إجمالي المتبقي آجل" value={money(summary.credit)} suffix="ج.م"
-                valueStyle={{ color: summary.credit > 0 ? '#cf1322' : undefined }} />
-            </Card>
-          </Col>
-        </Row>
-
         <Table
-          dataSource={invoices}
+          dataSource={unifiedRecords}
           columns={invoiceCols.apply(columns)}
           tableLayout="fixed"
-          rowKey="id"
+          rowKey="rowKey"
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-          /**
-           * السطر يفتح الفاتورة للتعديل على طول.
-           *
-           * It opened the read-only sheet, which was the last place «عرض المستند» still lived
-           * after the button of that name was retired: clicking an invoice means «وريني الفاتورة
-           * دي عشان أشتغل عليها», and the view was a stop everybody passed through on the way.
-           *
-           * Editing a posted invoice moves nothing on opening: the reversal — and its
-           * question — live on الحفظ, so a click that stops halfway leaves the books untouched.
-           *
-           * Somebody without the edit permission still gets the sheet. It is what they are allowed
-           * to have, and a row that does nothing for them would read as broken.
-           */
-          onRow={(record) => ({
-            onClick: () => (canEditInvoice ? handleEditInvoice(record) : openDetail(record)),
+          onRow={(record: any) => ({
+            onClick: () => {
+              if (record.doc_type === 'sale') {
+                canEditInvoice ? handleEditInvoice(record.raw) : openDetail(record.raw);
+              } else {
+                navigate(`/returns?id=${record.id}`);
+              }
+            },
             style: { cursor: 'pointer' },
           })}
         />

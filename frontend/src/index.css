@@ -458,3 +458,205 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 
 @keyframes qty-flash-bg { 0%,100% { background: transparent; } 35% { background: #FFF3D6; } }
 .qty-flash td, .qty-flash { animation: qty-flash-bg 0.9s ease-in-out 2; }
+
+/* ==========================================================================
+   Modern DatePicker & RangePicker Styling (RTL Arabic Friendly)
+   ========================================================================== */
+
+/* The Input Box */
+.ant-picker {
+  border-radius: 8px !important;
+  border: 1px solid #d0d7de !important;
+  padding: 4px 12px !important;
+  transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1) !important;
+  background-color: #ffffff !important;
+  height: 38px !important;
+  box-sizing: border-box !important;
+}
+
+.ant-picker:hover {
+  border-color: #6AB42D !important;
+  box-shadow: 0 0 0 2px rgba(106, 180, 45, 0.12) !important;
+}
+
+.ant-picker-focused {
+  border-color: #6AB42D !important;
+  box-shadow: 0 0 0 3px rgba(106, 180, 45, 0.2) !important;
+}
+
+.ant-picker-range .ant-picker-input {
+  display: flex !important;
+  align-items: center !important;
+}
+
+.ant-picker-range .ant-picker-input > input {
+  font-family: 'Cairo', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 13.5px !important;
+  text-align: center !important;
+  color: #141414 !important;
+  padding: 0 4px !important;
+}
+
+.ant-picker-range .ant-picker-input > input::placeholder {
+  color: #8c8c8c !important;
+  font-weight: 500 !important;
+}
+
+.ant-picker-range .ant-picker-separator {
+  color: #6AB42D !important;
+  font-weight: bold !important;
+  padding: 0 8px !important;
+  font-size: 14px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+.ant-picker-range .ant-picker-suffix {
+  color: #6AB42D !important;
+  font-size: 16px !important;
+  margin-inline-start: 6px !important;
+}
+
+/* The Popup Dropdown Container */
+.ant-picker-dropdown {
+  border-radius: 12px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+  padding: 6px !important;
+}
+
+.ant-picker-dropdown .ant-picker-panel-container {
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  border: 1px solid #e8e8e8 !important;
+  background: #ffffff !important;
+}
+
+.ant-picker-panels {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+}
+
+.ant-picker-panel {
+  min-width: 290px !important;
+  border: none !important;
+}
+
+/* Header (Month + Year + Arrows) */
+.ant-picker-header {
+  border-bottom: 1px solid #f0f0f0 !important;
+  padding: 8px 12px !important;
+  font-family: 'Cairo', sans-serif !important;
+}
+
+.ant-picker-header > button {
+  color: #555555 !important;
+  font-size: 14px !important;
+  transition: color 0.2s !important;
+}
+
+.ant-picker-header > button:hover {
+  color: #6AB42D !important;
+}
+
+.ant-picker-header-view {
+  font-family: 'Cairo', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 15px !important;
+  color: #1f1f1f !important;
+}
+
+.ant-picker-header-view button {
+  font-family: 'Cairo', sans-serif !important;
+  font-weight: 700 !important;
+  color: #1f1f1f !important;
+}
+
+.ant-picker-header-view button:hover {
+  color: #6AB42D !important;
+}
+
+/* Weekday Table Headers (Eliminates text overlapping) */
+.ant-picker-content {
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+
+.ant-picker-content th {
+  font-family: 'Cairo', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #4a4a4a !important;
+  text-align: center !important;
+  padding: 8px 0 !important;
+  width: 38px !important;
+  height: 36px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
+
+/* Calendar Day Cells */
+.ant-picker-cell {
+  padding: 3px 0 !important;
+}
+
+.ant-picker-cell .ant-picker-cell-inner {
+  font-family: 'Cairo', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  width: 32px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  border-radius: 8px !important;
+  margin: 0 auto !important;
+  transition: all 0.15s ease !important;
+}
+
+.ant-picker-cell:hover:not(.ant-picker-cell-selected):not(.ant-picker-cell-range-start):not(.ant-picker-cell-range-end) .ant-picker-cell-inner {
+  background: #f6ffed !important;
+  color: #389e0d !important;
+}
+
+.ant-picker-cell-in-view.ant-picker-cell-selected .ant-picker-cell-inner,
+.ant-picker-cell-in-view.ant-picker-cell-range-start .ant-picker-cell-inner,
+.ant-picker-cell-in-view.ant-picker-cell-range-end .ant-picker-cell-inner {
+  background: #6AB42D !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 6px rgba(106, 180, 45, 0.35) !important;
+}
+
+.ant-picker-cell-in-view.ant-picker-cell-today .ant-picker-cell-inner::before {
+  border: 2px solid #6AB42D !important;
+  border-radius: 8px !important;
+}
+
+.ant-picker-cell-in-view.ant-picker-cell-in-range::before {
+  background: #eef8e8 !important;
+}
+
+/* Preset Buttons in Sidebar */
+.ant-picker-dropdown .ant-picker-presets {
+  border-inline-end: 1px solid #f0f0f0 !important;
+  padding: 8px !important;
+}
+
+.ant-picker-dropdown .ant-picker-presets ul li {
+  font-family: 'Cairo', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  border-radius: 6px !important;
+  padding: 6px 12px !important;
+  margin: 3px 0 !important;
+  color: #333333 !important;
+  transition: all 0.15s ease !important;
+  text-align: center !important;
+}
+
+.ant-picker-dropdown .ant-picker-presets ul li:hover {
+  background-color: #f6ffed !important;
+  color: #389e0d !important;
+}
+
+

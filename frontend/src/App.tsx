@@ -1,16 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { ConfigProvider, Spin } from 'antd';
 import arEG from 'antd/locale/ar_EG';
+import dayjs from 'dayjs';
+import 'dayjs/locale/ar';
+import updateLocale from 'dayjs/plugin/updateLocale';
+
+dayjs.extend(updateLocale);
+dayjs.locale('ar');
+dayjs.updateLocale('ar', {
+  weekdaysMin: ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'],
+  weekdaysShort: ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'],
+  months: [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+  ],
+  monthsShort: [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+  ],
+});
 
 /**
- * ترويسة أيام التقويم بالمختصر.
- *
- * `ar_EG` بتاعة antd بتبعت أسماء الأيام **كاملة** في `shortWeekDays` — «الأحد» و«الأربعاء»
- * في خانة معمولة لحرفين. النتيجة إن الأسماء بتتلزق في بعض وترويسة التقويم بتبقى صف
- * مقروء بالعافية، في كل خانة تاريخ في النظام.
- *
- * والاختصارات دي مش اختراع: `dayjs` بتاعة العربي نفسها فيها `weekdaysMin` بنفس الحروف.
- * الفرق إن antd مابتقراهاش منها.
+ * ضبط لغة التقويم للعربية مع اختصارات واضحة لأيام الأسبوع وأسماء الشهور.
  */
 const AR_LOCALE: typeof arEG = {
   ...arEG,
@@ -18,7 +29,14 @@ const AR_LOCALE: typeof arEG = {
     ...arEG.DatePicker!,
     lang: {
       ...arEG.DatePicker!.lang,
+      locale: 'ar',
+      placeholder: 'اختر التاريخ',
+      rangePlaceholder: ['من تاريخ', 'إلى تاريخ'],
       shortWeekDays: ['ح', 'ن', 'ث', 'ر', 'خ', 'ج', 'س'],
+      shortMonths: [
+        'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+        'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+      ],
     },
   },
 };
