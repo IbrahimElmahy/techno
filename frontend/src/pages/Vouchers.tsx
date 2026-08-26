@@ -9,6 +9,7 @@ import {
   ExportOutlined,
   SwapOutlined,
   FileSearchOutlined,
+  DeleteOutlined,
   UndoOutlined,
   PrinterOutlined,
   SearchOutlined,
@@ -190,7 +191,6 @@ const Vouchers: React.FC = () => {
   const [expenseAccounts, setExpenseAccounts] = useState<any[]>([]);
   const [expenseGroups, setExpenseGroups] = useState<any[]>([]);
   const [cheques, setCheques] = useState<any[]>([]);
-  const [periodLock, setPeriodLock] = useState<string | null>(null);
   const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
 
   const keyWorld = useMemo<RunnerWorld>(() => ({
@@ -283,11 +283,7 @@ const Vouchers: React.FC = () => {
     loadTreasuries();
     loadCheques();
     loadExpenseAccounts();
-    api
-      .get<{ locked_through: string | null }>('/api/v1/period-lock')
-      .then((r) => setPeriodLock(r.data.locked_through))
-      .catch(() => {});
-  }, [loadTreasuries, loadCheques]);
+      }, [loadTreasuries, loadCheques]);
 
   useEffect(() => {
     api.get<Party[]>('/api/v1/customers').then((r) => setCustomers(r.data)).catch(() => {});
@@ -377,12 +373,19 @@ const Vouchers: React.FC = () => {
     }
   };
 
-  const reverseVoucher = async (id: number) => {
+  /**
+   * حذف السند — بيروح هو وقيده.
+   *
+   * كان بيتعكس: يتكتب سند تاني «عكس SR-000012» جنب الأصلي، فالخزينة بتوري عمليتين على
+   * غلطة واحدة. السند اللي اتكتب غلط بيتمسح وخلاص.
+   */
+  const deleteVoucher = async (id: number) => {
     try {
-      await api.post(`/api/v1/vouchers/${id}/reverse`);
-      message.success('تم عكس السند ✔');
+      await api.delete(`/api/v1/vouchers/${id}`);
+      message.success('اتمسح السند');
       loadVouchers();
-    } catch {
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر مسح السند');
     }
   };
 
@@ -488,15 +491,15 @@ const Vouchers: React.FC = () => {
             <Tag>عكسي</Tag>
           ) : (
           <Popconfirm
-            title="عكس السند؟"
-            description="هيتم عكس القيد وإرجاع الرصيد كما كان."
-            okText="عكس"
+            title="مسح السند؟"
+            description="هيتشال هو وقيده، والرصيد هيرجع زي ما كان."
+            okText="مسح"
             cancelText="إلغاء"
             okButtonProps={{ danger: true }}
-            onConfirm={() => reverseVoucher(r.id)}
+            onConfirm={() => deleteVoucher(r.id)}
           >
-            <Button size="small" danger icon={<UndoOutlined />}>
-              عكس
+            <Button size="small" danger icon={<DeleteOutlined />}>
+              مسح
             </Button>
           </Popconfirm>
           )}
@@ -556,14 +559,9 @@ const Vouchers: React.FC = () => {
         </Col>
       </Row>
 
-      {periodLock && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message={`الفترة مقفلة حتى ${periodLock} — أي سند بتاريخ أقدم أو مساوٍ هيترفض.`}
-        />
-      )}
+      {/* لافتة «الفترة مقفلة حتى كذا — أي سند بتاريخ أقدم هيترفض» اتشالت مع القفل نفسه.
+          الترحيل بقى مسموح بأي تاريخ، ولافتة بتحذّر من رفض مش بيحصل بتخلّي اللي بيقراها
+          يبعد عن حاجة مالهاش داعي. */}
 
       <Tabs
         activeKey={tab} onChange={setTab}

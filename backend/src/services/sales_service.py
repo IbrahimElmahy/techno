@@ -226,6 +226,10 @@ def create_sale(
     expenses: list[dict] | None = None,
     # (033) رقم الجهاز — بيتخزّن زي ما هو، والـUNIQUE عليه هي اللي بتمنع التكرار.
     client_uuid: str | None = None,
+    # التعديل الحر: الفاتورة دي تتبني من جديد **مكان** فاتورة موجودة — بنفس الرقم ونفس
+    # الـid. أثر القديمة بيتشال قبل البناء (شوف `document_edit_service`)، فاللي بيطلع في
+    # الآخر مستند واحد، مش مستند وتصحيحه.
+    replace_invoice_id: int | None = None,
 ) -> SalesInvoice:
     if not lines:
         raise SalesError("الفاتورة لازم يكون فيها صنف واحد على الأقل.")
@@ -320,7 +324,14 @@ def create_sale(
         raise SalesError("العميل ده مالوش حساب ذمم.")
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
 
-    invoice = SalesInvoice(
+    # الفاتورة اللي بتتعدّل بتحتفظ برقمها وتاريخ إنشائها — الرقم ده اتطبع واتقال في
+    # التليفون، وتغييره عشان سعر اتظبط بيخلّي الورقة اللي في إيد العميل تشاور على حاجة
+    # مش موجودة.
+    existing = db.get(SalesInvoice, replace_invoice_id) if replace_invoice_id else None
+    if replace_invoice_id and existing is None:
+        raise SalesError("الفاتورة اللي بتتعدّل مش موجودة.")
+
+    invoice = existing or SalesInvoice(
         document_number=_doc_number(db, SalesInvoice, "SINV"),
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,
@@ -340,7 +351,39 @@ def create_sale(
         invoice_date=invoice_date,
         client_uuid=client_uuid,
     )
-    db.add(invoice)
+    if existing is not None:
+        # نفس الحقول اللي البناء بيملاها، بس على صف موجود. `client_uuid` مابيتلمسش —
+        # هو بصمة الجهاز اللي بعت الفاتورة أول مرة، والتعديل من الشاشة مش إرسال جديد.
+        existing.customer_id = customer_id
+        existing.origin_location_kind = origin_location_kind
+        existing.origin_location_id = origin_location_id
+        existing.gross = gross
+        existing.fixed_discount_pct = fixed
+        existing.family = family
+        existing.variable_discount_pct = variable
+        existing.combined_pct = combined
+        existing.net = net
+        existing.tax_amount = tax
+        existing.cash_amount = to_money(cash_amount)
+        existing.credit_amount = to_money(credit_amount)
+        existing.cash_account_id = cash_acc.id
+        existing.ledger_entry_id = None
+        existing.rep_id = rep_id if rep_id is not None else (
+            actor_user_id if actor_role == RoleName.sales_rep else None)
+        existing.revenue_account_id = revenue_account_id
+        existing.external_document_number = (external_document_number or None)
+        existing.notes = notes
+        existing.statement1 = statement1
+        existing.statement2 = statement2
+        existing.statement3 = statement3
+        existing.coupon_serial_from = (coupon_serial_from or None)
+        existing.coupon_serial_to = (coupon_serial_to or None)
+        existing.coupon_count = _coupon_count(coupon_serial_from, coupon_serial_to, coupon_count)
+        if invoice_date is not None:
+            existing.invoice_date = invoice_date
+        invoice.lines.clear()
+    else:
+        db.add(invoice)
     db.flush()
     # (030) Every line may draw from its own warehouse, so check the whole document against each
     # location BEFORE moving anything — see `_assert_lines_available`.
@@ -448,7 +491,9 @@ def create_sale(
     invoice.expenses_billed = billed_expenses
     invoice.expenses_operating = operating_expenses
     db.flush()
-    audit_service.record(db, action="sale.create", actor_user_id=actor_user_id,
+    audit_service.record(db,
+                         action="sale.edit" if replace_invoice_id else "sale.create",
+                         actor_user_id=actor_user_id,
                          entity_type="sales_invoice", entity_id=invoice.id,
                          after={"net": str(net), "doc": invoice.document_number})
     # Additive cross-feature hook (no-op if no subscriber, e.g. 002-only deploy). 003 loyalty earns here.
@@ -807,6 +852,8 @@ def create_standalone_return(
     statement2: str | None = None,
     statement3: str | None = None,
     return_date=None,
+    # التعديل الحر — نفس فكرة الفاتورة: المرتجع يتبني مكان واحد موجود بنفس رقمه.
+    replace_return_id: int | None = None,
 ) -> SalesReturn:
     """A sales return built like a sale but reversed (028): pick a customer + items directly (no
     originating invoice), goods go back INTO stock, and the customer is credited (cash refund from a
@@ -871,7 +918,11 @@ def create_standalone_return(
     cash_acc = (account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
                 if to_money(cash_refund) > ZERO else None)
 
-    ret = SalesReturn(
+    existing = db.get(SalesReturn, replace_return_id) if replace_return_id else None
+    if replace_return_id and existing is None:
+        raise SalesError("المرتجع اللي بيتعدّل مش موجود.")
+
+    ret = existing or SalesReturn(
         document_number=_doc_number(db, SalesReturn, "SRET"),
         sales_invoice_id=None, customer_id=customer_id, family=family,
         origin_location_kind=origin_location_kind, origin_location_id=origin_location_id,
@@ -887,7 +938,31 @@ def create_standalone_return(
         return_date=return_date or date.today(),
         ledger_entry_id=None, actor_user_id=actor_user_id,
     )
-    db.add(ret)
+    if existing is not None:
+        existing.customer_id = customer_id
+        existing.family = family
+        existing.origin_location_kind = origin_location_kind
+        existing.origin_location_id = origin_location_id
+        existing.gross = gross
+        existing.combined_pct = variable
+        existing.value = net
+        existing.tax_amount = tax
+        existing.cash_refund = to_money(cash_refund)
+        existing.credit_reduction = to_money(credit_reduction)
+        existing.cash_account_id = cash_acc.id if cash_acc else None
+        existing.rep_id = rep_id
+        existing.revenue_account_id = revenue_account_id
+        existing.external_document_number = (external_document_number or None)
+        existing.notes = (notes or None)
+        existing.statement1 = (statement1 or None)
+        existing.statement2 = (statement2 or None)
+        existing.statement3 = (statement3 or None)
+        existing.ledger_entry_id = None
+        if return_date is not None:
+            existing.return_date = return_date
+        ret.lines.clear()
+    else:
+        db.add(ret)
     db.flush()
     for ln, unit_price, line_total, factor in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # goods return to stock in base units

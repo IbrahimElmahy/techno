@@ -30,33 +30,39 @@ class LineInput:
 
 
 def _validate_lines(lines: list[LineInput]) -> None:
-    if len(lines) < 2:
-        raise LedgerError("القيد لازم يكون فيه سطرين على الأقل.")
-    debit = sum((to_money(l.amount) for l in lines if l.direction == Direction.debit), ZERO)
-    credit = sum((to_money(l.amount) for l in lines if l.direction == Direction.credit), ZERO)
+    """اللي فاضل من التحقق: سطر واحد على الأقل، وكل سطر بمبلغ موجب.
+
+    كان فيه قاعدتين تانيين اتشالوا بطلب العميل — «سطرين على الأقل» و«مدين = دائن».
+    الاتنين قواعد دفتر أستاذ: صح للنظام اللي بيتقفل بميزانية مدققة، وعائق للنظام اللي
+    بيتكتب فيه قيد بسيط عشان يظبط رصيد. اللي كان بيكتب قيد بسطر واحد كان بيتقاله «القيد
+    لازم يكون فيه سطرين»، فيخترع سطر تاني عشان يعدّي — والنتيجة قيد فيه سطر مالوش معنى
+    بدل قيد ناقص بصراحة.
+
+    الحاجتين اللي فاضلين مش قواعد محاسبية، دول شرط إن السطر يبقى ليه معنى أصلاً: قيد من
+    غير سطور مش قيد، ومبلغ بصفر أو بالسالب مش مبلغ — والاتجاه (مدين/دائن) هو اللي بيحمل
+    الإشارة.
+
+    والمستندات اللي النظام بيكتبها بنفسه (بيع، شرا، سندات) بتطلع متوازنة بحكم بنائها،
+    فمافيش حاجة فيها اتغيّرت.
+    """
+    if not lines:
+        raise LedgerError("القيد لازم يكون فيه سطر واحد على الأقل.")
     if any(to_money(l.amount) <= ZERO for l in lines):
         raise LedgerError("كل سطر لازم يكون مبلغه أكبر من صفر.")
-    if debit != credit:
-        raise LedgerError(f"القيد مش متوازن — مدين {debit} ودائن {credit}.")
 
 
 def _assert_period_open(db: Session, when: date | None) -> None:
-    """إقفال الفترة — refuse to post into a closed period (019).
+    """إقفال الفترة — اتشال بطلب العميل، والدالة سايبة كعلامة على المكان.
 
-    Enforced HERE, in the single write path into the ledger, so no document type can slip
-    a posting into a month the accountant has already closed and reported on.
+    كانت بترفض أي ترحيل بتاريخ جوّه شهر الحسابات قفلته: «الفترة مقفلة حتى ٣١/٠٧ — لا يمكن
+    الترحيل بتاريخ ٢٥/٠٧». دي قاعدة دفتر أستاذ صح للنظام اللي بيتقفل بميزانية مدققة
+    وبتتقدّم لجهة برّه؛ الشركة دي مش بتشتغل كده، والفاتورة اللي اتأخرت شهر لازم تتكتب
+    بتاريخها الحقيقي مش بتاريخ النهارده.
+
+    الدالة سايبة فاضية بدل ما نداءها يتشال من `post_entry`: المكان ده هو الطريق الوحيد
+    اللي بيدخل الدفتر، ولو رجع يوم قفل الفترة، هيرجع هنا — مش في سبع حتة مختلفة.
     """
-    # Imported lazily: treasury_service imports ledger_service for balances.
-    from src.models.treasury import PeriodLock
-
-    lock = db.scalar(select(PeriodLock).order_by(PeriodLock.id.desc()).limit(1))
-    if lock is None:
-        return
-    effective = when or date.today()
-    if effective <= lock.locked_through:
-        raise LedgerError(
-            f"الفترة مقفلة حتى {lock.locked_through} — لا يمكن الترحيل بتاريخ {effective}."
-        )
+    return
 
 
 def post_entry(
@@ -98,46 +104,6 @@ def post_entry(
     return entry
 
 
-def _assert_within_edit_window(db: Session, original: LedgerEntry, actor_user_id: int) -> None:
-    """«قفل تعديل المستندات (أيام)» — after N days, only an admin may reverse a document.
-
-    A rolling companion to the hard period lock, not a replacement: the lock is a deliberate act on
-    a date the accountant chooses, and it only ever protects a month somebody remembered to close.
-    This closes the ordinary user's window by itself, so last month's invoice cannot be quietly
-    reversed on a busy Tuesday and quietly change a figure already reported.
-
-    Enforced here, in the one path every financial reversal takes, so no document type is exempt by
-    accident. The actor's role is read from the database rather than passed in — a guard that
-    depends on seven callers remembering to hand it the role is a guard that silently does nothing.
-
-    Off by default (NULL/0). Stock-only documents that post no ledger entry — stock permits,
-    transfers, production orders — do not pass through here and are not covered; that gap is real
-    and is documented rather than papered over.
-    """
-    from src.models.role import RoleName
-    from src.models.sales import SalesSetting
-    from src.models.user import User
-
-    setting = db.scalar(select(SalesSetting).order_by(SalesSetting.id.desc()).limit(1))
-    days = getattr(setting, "edit_lock_days", None) if setting else None
-    if not days or int(days) <= 0:
-        return
-
-    doc_date = original.entry_date or date.today()
-    age = (date.today() - doc_date).days
-    if age <= int(days):
-        return
-
-    actor = db.get(User, actor_user_id)
-    # `User.role` is the Role row, not the enum — its `.name` is the RoleName.
-    role_name = getattr(getattr(actor, "role", None), "name", None)
-    if role_name == RoleName.system_admin:
-        return
-    raise LedgerError(
-        f"المستند بتاريخ {doc_date} عدّى {days} يوم — التعديل أو العكس للمسؤول بس."
-    )
-
-
 def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> LedgerEntry:
     """Create the mirror reversal of an entry (debits<->credits swapped).
 
@@ -146,14 +112,9 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
     original = db.get(LedgerEntry, original_id)
     if original is None:
         raise LedgerError("القيد الأصلي مش موجود.")
-    if original.reverses_entry_id is not None:
-        raise LedgerError("القيد العكسي نفسه مايتعملهوش عكس.")
-    existing = db.scalar(
-        select(LedgerEntry).where(LedgerEntry.reverses_entry_id == original_id)
-    )
-    if existing is not None:
-        raise LedgerError("القيد ده اتعكس قبل كده.")
-    _assert_within_edit_window(db, original, actor_user_id)
+    # «العكس مرة واحدة» و«العكسي مايتعكسش» اتشالوا: التعديل والحذف بقوا بيمسحوا أثر
+    # المستند بدل ما يكتبوا قيد مضاد (شوف `document_edit_service`)، فالعكس بقى حاجة
+    # نادرة بيعملها حد قاصدها — والقاعدة اللي كانت بتحميه من نفسه بقت بتقف قدامه.
 
     swapped = [
         LineInput(

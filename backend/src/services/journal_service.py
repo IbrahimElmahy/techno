@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from src.models.ledger import Direction, LedgerEntry
+from src.models.ledger import Account, Direction, LedgerEntry
 from src.services import audit_service, chart_service, cost_center_service, ledger_service
 from src.services.ledger_service import LedgerError, LineInput
 
@@ -43,12 +43,18 @@ def post_entry(
 ) -> LedgerEntry:
     """Post a manual journal entry. ≥2 balanced lines, all on postable+active leaves."""
     if not lines:
-        raise JournalError("قيد اليومية لازم يكون فيه سطرين على الأقل.")
+        raise JournalError("قيد اليومية لازم يكون فيه سطر واحد على الأقل.")
     for ln in lines:
-        if not chart_service.is_postable_leaf(db, ln.account_id):
-            raise JournalError(
-                "الحساب ده مش حساب فرعي شغال بيقبل الترحيل — القيود بتترحّل على الحسابات الفرعية."
-            )
+        # «الحساب ده مش حساب فرعي شغال بيقبل الترحيل» اتشالت بطلب العميل: القيد بينزل على
+        # أي حساب متحدد، رئيسي أو فرعي. القاعدة كانت بتقول إن الحساب الرئيسي مجموع أولاده
+        # ومايتكتبش عليه — وده صح محاسبياً وعائق عملياً، لأن اللي بيكتب قيد بيبقى قاصد
+        # الحساب اللي اختاره.
+        #
+        # الحساب المقفول لسه مرفوض: مقفول معناها «مش بيتحرك تاني»، وده قرار المستخدم نفسه
+        # مش قاعدة اتفرضت عليه.
+        acc = db.get(Account, ln.account_id)
+        if acc is None or not acc.active:
+            raise JournalError("الحساب ده مش موجود أو مقفول.")
         if ln.cost_center_id is not None and not cost_center_service.is_active(db, ln.cost_center_id):
             raise JournalError(
                 "مركز التكلفة ده مش موجود أو مقفول."

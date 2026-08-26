@@ -464,59 +464,35 @@ function AccountRoutingCard() {
 // قفل تعديل المستندات (أيام)
 // ---------------------------------------------------------------------------
 /**
- * A rolling window: past N days from a document's date, only an admin may reverse it.
+ * إعدادات المستندات — الخصم الثابت ونسبة الضريبة.
  *
- * Sits beside the hard period lock rather than replacing it. The lock is a deliberate act on a date
- * the accountant picks, and it only ever protects a month somebody remembered to close; this closes
- * the ordinary user's window on its own, so last month's invoice cannot be quietly reversed on a
- * busy Tuesday and move a figure that has already been reported.
+ * كان فيها كمان «قفل تعديل المستندات بعد (أيام)»: بعد المدة دي من تاريخ المستند، التعديل
+ * للمسؤول بس. الخانة اتشالت لما القفل نفسه اتشال من السيرفر بطلب العميل — والخانة اللي
+ * بتوعد بقفل مش بيحصل أوحش من مافيش خانة خالص، لأن اللي بيظبطها بيفتكر إنه اتحمى.
+ *
+ * العمود `edit_lock_days` لسه في الجدول وفي عقد الـAPI؛ مسحه بيحتاج هجرة على قاعدة فيها
+ * بيانات، وقيمته دلوقتي مالهاش أي أثر.
  */
 function DocumentPolicyCard() {
-  const [days, setDays] = useState<number | null>(null);
   const [fixedPct, setFixedPct] = useState<string>('0');
   const [vatPct, setVatPct] = useState<string>('0');
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api.get('/api/v1/settings/sales')
       .then((r) => {
-        setDays(r.data?.edit_lock_days ?? null);
         setFixedPct(String(r.data?.fixed_discount_pct ?? '0'));
         setVatPct(String(r.data?.vat_rate_pct ?? '0'));
       })
       .catch(console.error);
   }, []);
 
-  const save = async (value: number | null) => {
-    setSaving(true);
-    try {
-      // The other two are sent back unchanged: this endpoint replaces the whole settings row, so
-      // omitting them would silently reset the fixed discount and the VAT rate.
-      await api.put('/api/v1/settings/sales', {
-        fixed_discount_pct: fixedPct, vat_rate_pct: vatPct, edit_lock_days: value,
-      });
-      setDays(value || null);
-      message.success(value ? `التعديل مقفول بعد ${value} يوم` : 'قفل التعديل متوقّف');
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الإعداد');
-    } finally { setSaving(false); }
-  };
-
   return (
     <Card title="إعدادات المستندات" size="small">
       <Space wrap align="center">
-        <span>قفل تعديل المستندات بعد (أيام):</span>
-        <InputNumber
-          min={0} value={days ?? 0} disabled={saving} style={{ width: 120 }}
-          onBlur={(e) => {
-            const v = Number((e.target as HTMLInputElement).value || 0);
-            if ((v || null) !== days) save(v || null);
-          }}
-          onChange={(v) => setDays(v as number | null)}
-        />
+        <span>الخصم الثابت: <b>{fixedPct}%</b></span>
+        <span>نسبة الضريبة: <b>{vatPct}%</b></span>
         <span style={{ color: '#888' }}>
-          بعد المدة دي من تاريخ المستند، العكس أو التعديل للمسؤول بس. صفر = متوقّف.
-          ده غير إقفال الفترة — الإقفال قرار بتاخده بتاريخ معيّن، وده بيقفل شبّاك المستخدم لوحده.
+          الاتنين بيتظبطوا من شاشة الخصومات والضرائب.
         </span>
       </Space>
     </Card>

@@ -113,5 +113,5 @@ def _block_mutation(mapper, connection, target):  # noqa: ANN001
 
 
 # ORM-level immutability guard (DB-agnostic; MySQL trigger enforces the same in production).
-event.listen(StockMovement, "before_update", _block_mutation, propagate=True)
-event.listen(StockMovement, "before_delete", _block_mutation, propagate=True)
+# اتشال — نفس سبب قيد الدفتر: تعديل المستند بيشيل حركته القديمة ويكتب واحدة جديدة.
+_ = _block_mutation

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from datetime import date
 from typing import Literal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete as sa_delete, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
@@ -32,6 +32,8 @@ from src.services import coupon_receipt_service, sales_service
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
+from src.services import document_edit_service
+from src.services.document_edit_service import DocumentEditError
 from src.services.stock_service import StockError
 
 router = APIRouter(tags=["sales"], prefix="/sales")
@@ -332,6 +334,106 @@ def rep_bundle(
     }
 
 
+def _build_sale(
+    db: Session, body: "SaleCreate", current: CurrentUser, *,
+    replace_invoice_id: int | None = None,
+) -> SalesInvoice:
+    """بيبني الفاتورة من الجسم — سواء جديدة أو مكان واحدة موجودة.
+
+    الإنشاء والتعديل نفس البناء بالظبط: نفس التحقق، ونفس التسعير، ونفس حركة المخزون،
+    ونفس القيد. الفرق الوحيد إن التعديل بيتم على صف موجود. لو الاتنين اتكتبوا كل واحد
+    لوحده، أول حقل يتضاف للفاتورة هيتحط في واحد وينسى في التاني.
+    """
+    _rep_scope_check(db, current, body.customer_id, body.origin)
+    can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
+    try:
+        inv = sales_service.create_sale(
+            db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
+            origin_location_id=body.origin.location_id,
+            variable_discount_pct=body.variable_discount_pct,
+            cash_amount=body.cash_amount, credit_amount=body.credit_amount,
+            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials,
+                            l.discount_pct, l.warehouse_id)
+                   for l in body.lines],
+            actor_role=current.role, actor_user_id=current.id, family=body.family,
+            can_sell_below=can_sell_below,
+            rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
+            external_document_number=body.external_document_number, notes=body.notes,
+            coupon_serial_from=body.coupon_serial_from,
+            coupon_serial_to=body.coupon_serial_to, coupon_count=body.coupon_count,
+            invoice_date=body.invoice_date,
+            expenses=[e.model_dump() for e in body.expenses],
+            statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
+            client_uuid=body.client_uuid,
+            replace_invoice_id=replace_invoice_id,
+        )
+    except SalesError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "sale_invalid", "message": str(exc)})
+    except StockError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "no_negative_stock", "message": str(exc)})
+
+    # Written after the sale so they hang off a document that exists. A row with nothing in it at
+    # all is dropped rather than stored: an empty coupon line is one somebody started and left,
+    # and keeping it would read as a hand-over of nothing.
+    if replace_invoice_id:
+        db.execute(sa_delete(SalesInvoiceCoupon).where(
+            SalesInvoiceCoupon.invoice_id == inv.id))
+    for c in body.coupons:
+        if c.coupon_type_id is None and not c.count and not c.serial_from and not c.serial_to:
+            continue
+        db.add(SalesInvoiceCoupon(
+            invoice_id=inv.id, coupon_type_id=c.coupon_type_id, count=c.count,
+            serial_from=c.serial_from, serial_to=c.serial_to,
+        ))
+    db.flush()
+    return inv
+
+
+@router.put("/{sale_id}", response_model=SalesInvoiceOut)
+def update_sale(
+    sale_id: int,
+    body: SaleCreate,
+    current: CurrentUser = Depends(require_capability(CAP_SALE_EDIT)),
+    db: Session = Depends(get_db),
+) -> SalesInvoiceOut:
+    """تعديل فاتورة بيع — بتتحفظ مكان القديمة، من غير مرتجع ولا قيد عكسي.
+
+    الطريقة القديمة كانت بتعكس الفاتورة وتكتب واحدة جديدة، فتصليح سعر كان بيسيب وراه
+    مرتجع محدش رجّعه ورقم فاتورة جديد على ورقة العميل القديمة. دلوقتي الأثر القديم بيتشال
+    والفاتورة بتتبني تاني بنفس رقمها — زي أي شاشة تعديل في أي نظام.
+    """
+    inv = db.get(SalesInvoice, sale_id)
+    if inv is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
+    try:
+        document_edit_service.assert_sale_editable(db, inv)
+        document_edit_service.purge_sale(db, inv)
+    except DocumentEditError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "edit_blocked", "message": str(exc)})
+    inv = _build_sale(db, body, current, replace_invoice_id=sale_id)
+    db.commit()
+    return _inv_out(inv, db)
+
+
+@router.delete("/{sale_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sale(
+    sale_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_SALE_DELETE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف فاتورة بيع — بتروح هي وأثرها، مش بتتعكس."""
+    try:
+        document_edit_service.delete_sale(
+            db, invoice_id=sale_id, actor_user_id=current.id)
+    except DocumentEditError as exc:
+        code = 404 if "مش موجودة" in str(exc) else status.HTTP_409_CONFLICT
+        raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
+    db.commit()
+
+
 @router.post("", response_model=SalesInvoiceOut, status_code=status.HTTP_201_CREATED)
 def create_sale(
     body: SaleCreate,
@@ -349,42 +451,7 @@ def create_sale(
         if seen is not None:
             return _inv_out(seen, db)
 
-    _rep_scope_check(db, current, body.customer_id, body.origin)
-    can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
-    try:
-        inv = sales_service.create_sale(
-            db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
-            origin_location_id=body.origin.location_id, variable_discount_pct=body.variable_discount_pct,
-            cash_amount=body.cash_amount, credit_amount=body.credit_amount,
-            lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials,
-                            l.discount_pct, l.warehouse_id)
-                   for l in body.lines],
-            actor_role=current.role, actor_user_id=current.id, family=body.family,
-            can_sell_below=can_sell_below,
-            rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
-            external_document_number=body.external_document_number, notes=body.notes,
-            coupon_serial_from=body.coupon_serial_from,
-            coupon_serial_to=body.coupon_serial_to, coupon_count=body.coupon_count,
-            invoice_date=body.invoice_date,
-            expenses=[e.model_dump() for e in body.expenses],
-            statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
-            client_uuid=body.client_uuid,
-        )
-    except SalesError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "sale_invalid", "message": str(exc)})
-    except StockError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "no_negative_stock", "message": str(exc)})
-    # Written after the sale so they hang off a document that exists. A row with nothing in it at
-    # all is dropped rather than stored: an empty coupon line is one somebody started and left, and
-    # keeping it would read as a hand-over of nothing.
-    for c in body.coupons:
-        if c.coupon_type_id is None and not c.count and not c.serial_from and not c.serial_to:
-            continue
-        db.add(SalesInvoiceCoupon(
-            invoice_id=inv.id, coupon_type_id=c.coupon_type_id, count=c.count,
-            serial_from=c.serial_from, serial_to=c.serial_to,
-        ))
-    db.flush()
+    inv = _build_sale(db, body, current)
     db.commit()
     return _inv_out(inv, db)
 
@@ -593,6 +660,70 @@ def create_standalone_return(
                             {"code": "no_negative_stock", "message": str(exc)})
     db.commit()
     return _standalone_return_out(ret)
+
+
+@router.put("/returns/{return_id}", response_model=dict)
+def update_standalone_return(
+    return_id: int,
+    body: StandaloneReturnCreate,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """تعديل مرتجع — بيتحفظ مكان القديم بنفس رقمه، من غير قيد عكسي."""
+    ret = db.get(SalesReturn, return_id)
+    if ret is None:
+        raise HTTPException(404, {"code": "not_found", "message": "المرتجع غير موجود"})
+    _rep_scope_check(db, current, body.customer_id, body.origin)
+    try:
+        document_edit_service.purge_sales_return(db, ret)
+    except DocumentEditError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "edit_blocked", "message": str(exc)})
+    try:
+        ret = sales_service.create_standalone_return(
+            db, customer_id=body.customer_id,
+            origin_location_kind=body.origin.location_kind,
+            origin_location_id=body.origin.location_id,
+            variable_discount_pct=body.variable_discount_pct,
+            cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
+            lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
+                              l.warehouse_id, serials=l.serials)
+                   for l in body.lines],
+            actor_role=current.role, actor_user_id=current.id, family=body.family,
+            rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
+            external_document_number=body.external_document_number, notes=body.notes,
+            statement1=body.statement1, statement2=body.statement2,
+            statement3=body.statement3, return_date=body.return_date,
+            replace_return_id=return_id,
+        )
+    except SalesError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "return_invalid", "message": str(exc)})
+    except StockError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "no_negative_stock", "message": str(exc)})
+    db.commit()
+    return _standalone_return_out(ret, db)
+
+
+@router.delete("/returns/{return_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sales_return(
+    return_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف مرتجع مبيعات — بيروح هو وأثره، مش بيتعكس.
+
+    مُعلن قبل `/returns/{return_id}` بتاع القراية عشان الطريقين مايتلخبطوش، ومن غير قيد
+    عكسي: المرتجع اللي اتكتب غلط بيتمسح، والفاتورة بتاعته بترجع قابلة للتعديل تاني.
+    """
+    try:
+        document_edit_service.delete_sales_return(
+            db, return_id=return_id, actor_user_id=current.id)
+    except DocumentEditError as exc:
+        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
+    db.commit()
 
 
 @router.post("/returns/{return_id}/reverse", response_model=dict)

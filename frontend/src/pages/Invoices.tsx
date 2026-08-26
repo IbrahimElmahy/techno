@@ -977,10 +977,14 @@ export default function Invoices() {
     }
 
     try {
-      if (editingInvoice && !editingInvoice.voided) {
-        if (!(await reverseInvoice({ id: editingInvoice.id } as InvoiceRecord, 'edit'))) return;
-      }
-      await api.post('/api/v1/sales', {
+      // التعديل بيروح للفاتورة نفسها. كان بيعكسها الأول وبعدين يكتب واحدة جديدة، فتصليح
+      // سعر كان بيسيب وراه مرتجع محدش رجّعه ورقم فاتورة جديد على الورقة اللي في إيد
+      // العميل. دلوقتي الفاتورة بتتحفظ في مكانها زي أي شاشة تعديل.
+      const editingId = editingInvoice?.id;
+      const send = editingId
+        ? (b: any) => api.put(`/api/v1/sales/${editingId}`, b)
+        : (b: any) => api.post('/api/v1/sales', b);
+      await send({
         customer_id: values.customer_id,
         // Who sold it. Recorded on the document so a commission report and a rep's own list of
         // invoices do not have to re-derive it from whoever owns the customer today.
@@ -1050,39 +1054,20 @@ export default function Invoices() {
   };
 
   /**
-   * حذف الفاتورة — a posted invoice is reversed, never erased.
+   * حذف الفاتورة — بتتمسح هي وأثرها.
    *
-   * It moved stock, booked a ledger entry and put a debt on the customer; deleting the row would
-   * leave all three behind with nothing to explain them. A full return undoes exactly what the
-   * invoice did, and both documents stay visible, which is what makes the books answerable.
+   * كانت بتتعكس: يتكتب مرتجع بأصنافها وقيد مضاد بمبلغها، وتفضل في السجل ومعاها مستند
+   * تاني بيشرح إنها اتلغت. ده أسلوب دفتر أستاذ محاسبي، والشركة مش بتشتغل بيه — الفاتورة
+   * الغلط بتتمسح، وخلاص. السيرفر بيشيل الحركة المخزنية والقيد والنقاط ويرجّع السيريالات
+   * والدفعات (شوف `document_edit_service`).
    */
-  /**
-   * عكس الفاتورة بالكامل — للتعديل أو للإلغاء.
-   *
-   * Through `/reverse`, not `/returns`. A customer return is a real business event that belongs in
-   * مردودات المبيعات; the shop reopening its own invoice is a correction that merely happens to be
-   * implemented the same way. Sending both through one door counted our mistakes as his returns —
-   * and let anyone who could take a return void any invoice ever posted.
-   *
-   * The reason travels with the request because the SERVER decides the right, not this screen.
-   */
-  const reverseInvoice = async (
-    record: InvoiceRecord, reason: 'edit' | 'delete',
-  ): Promise<boolean> => {
-    try {
-      await api.post(`/api/v1/sales/${record.id}/reverse`, { reason });
-      return true;
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message
-        || 'تعذر عكس الفاتورة — لو الأصناف اتباعت أو اتحوّلت بعدها، رجّعها الأول.');
-      return false;
-    }
-  };
-
   const handleDeleteInvoice = async (record: InvoiceRecord) => {
-    if (await reverseInvoice(record, 'delete')) {
-      message.success('اتعكست الفاتورة بالكامل');
+    try {
+      await api.delete(`/api/v1/sales/${record.id}`);
+      message.success('اتمسحت الفاتورة');
       fetchInvoices();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر مسح الفاتورة');
     }
   };
 
@@ -1111,13 +1096,7 @@ export default function Invoices() {
     } catch { /* unreadable returns must not block an edit that would have worked */ }
     const alreadyVoid = returned > 0 && Math.abs(returned - Number(det.net || 0)) < 0.01;
 
-    // العكس مش هنا — الفتح قراية بس. القديمة بتتعكس وقت الحفظ وبعد التأكيد، واللي كانت
-    // مرجّعة بالكامل بتعدي عادي لأن أثرها على الدفاتر صفر أصلاً.
-    if (!alreadyVoid) {
-      message.info(`${record.document_number} مفتوحة للتعديل — الحفظ بيعكس النسخة القديمة ويرحّل الجديدة`);
-    } else {
-      message.info(`${record.document_number} كانت مرجّعة بالكامل — دي فاتورة جديدة بنفس سطورها`);
-    }
+    message.info(`${record.document_number} مفتوحة للتعديل`);
     setEditingInvoice({ id: record.id, voided: alreadyVoid });
 
     // Refill the form from what the invoice actually held, line by line.

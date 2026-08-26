@@ -590,7 +590,12 @@ export default function Returns() {
       content: `سيتم إرجاع ${valid.length} صنف إلى المخزن وتسوية مبلغ ${money(netTotal)} ج.م لحساب العميل. متابعة؟`,
       onOk: async () => {
         try {
-          const res = await api.post('/api/v1/sales/returns', {
+          // التعديل بيروح للمرتجع نفسه بنفس رقمه — كان بيتعكس ويتكتب سند جديد.
+          const editingId = editingSourceId;
+          const send = editingId
+            ? (b: any) => api.put(`/api/v1/sales/returns/${editingId}`, b)
+            : (b: any) => api.post('/api/v1/sales/returns', b);
+          const res = await send({
             customer_id: customerId,
             // المخزن من السطر. الترويسة مابقاش فيها خانة مخزن، والـ`origin` بقى أول مخزن
             // مسمّى في السطور — وكل سطر بيرجع لمخزنه هو على أي حال.
@@ -623,7 +628,9 @@ export default function Returns() {
               serials: l.is_serialized ? (l.serials || []) : undefined,
             })),
           });
-          message.success(`تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
+          message.success(editingSourceId
+            ? `اتحفظ المرتجع. رقم السند: ${res.data.document_number}`
+            : `تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
           closeCreate();
           fetchReturns();
         } catch (err: any) {
@@ -674,20 +681,14 @@ export default function Returns() {
    * المرتجع المرحّل ماينفعش يتعدّل في مكانه، بنفس السبب اللي في الفاتورة بالظبط: البضاعة
    * رجعت المخزن والقيد اتكتب، والدفتر مابيتمحاش. فالحذف عكس، والتعديل عكس وكتابة من جديد.
    */
-  const reverseReturn = async (record: ReturnRecord) => {
-    try {
-      await api.post(`/api/v1/sales/returns/${record.id}/reverse`);
-      return true;
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر عكس المرتجع');
-      return false;
-    }
-  };
-
   const handleDeleteReturn = async (record: ReturnRecord) => {
-    if (!(await reverseReturn(record))) return;
-    message.success('اتعكس المرتجع بالكامل');
-    fetchReturns();
+    try {
+      await api.delete(`/api/v1/sales/returns/${record.id}`);
+      message.success('اتمسح المرتجع');
+      fetchReturns();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر مسح المرتجع');
+    }
   };
 
   /**
@@ -707,9 +708,7 @@ export default function Returns() {
       return;
     }
     setEditingSourceId(record.id);
-    if (!(await reverseReturn(record))) return;
-    message.success('اتعكس المرتجع — عدّل وارحّل من جديد');
-    fetchReturns();
+    message.info(`${det.document_number ?? ''} مفتوح للتعديل`);
 
     setCreateVisible(true);
     setDetailVisible(false);

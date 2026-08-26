@@ -82,6 +82,8 @@ def create_purchase(
     purchase_date=None,
     # خصم الفاتورة والضريبة — نفس ترتيب البيع بالظبط.
     variable_discount_pct: Decimal = ZERO,
+    # التعديل الحر — نفس فكرة البيع: الفاتورة تتبني مكان واحدة موجودة بنفس رقمها.
+    replace_invoice_id: int | None = None,
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
@@ -126,7 +128,11 @@ def create_purchase(
         raise PurchaseError("النقدي + الآجل لازم يساوي إجمالي فاتورة الشراء.")
 
     # Stock in (raw materials) — one movement per line.
-    invoice = PurchaseInvoice(
+    existing = db.get(PurchaseInvoice, replace_invoice_id) if replace_invoice_id else None
+    if replace_invoice_id and existing is None:
+        raise PurchaseError("فاتورة الشراء اللي بتتعدّل مش موجودة.")
+
+    invoice = existing or PurchaseInvoice(
         document_number=_doc_number(db, PurchaseInvoice, "PINV"),
         supplier_id=supplier_id, location_kind=location_kind, location_id=location_id,
         gross=gross, fixed_discount_pct=fixed, variable_discount_pct=variable,
@@ -140,7 +146,32 @@ def create_purchase(
         # NULL would push every report that groups by day into guessing.
         purchase_date=purchase_date or date.today(),
     )
-    db.add(invoice)
+    if existing is not None:
+        existing.supplier_id = supplier_id
+        existing.location_kind = location_kind
+        existing.location_id = location_id
+        existing.gross = gross
+        existing.fixed_discount_pct = fixed
+        existing.variable_discount_pct = variable
+        existing.combined_pct = combined
+        existing.net = net
+        existing.tax_amount = tax
+        existing.total = total
+        existing.cash_amount = to_money(cash_amount)
+        existing.credit_amount = to_money(credit_amount)
+        existing.ledger_entry_id = None
+        existing.rep_id = rep_id
+        existing.expense_account_id = expense_account_id
+        existing.external_document_number = (external_document_number or None)
+        existing.notes = notes
+        existing.statement1 = statement1
+        existing.statement2 = statement2
+        existing.statement3 = statement3
+        if purchase_date is not None:
+            existing.purchase_date = purchase_date
+        invoice.lines.clear()
+    else:
+        db.add(invoice)
     db.flush()
     for ln, line_total, factor, line_disc in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock in base units
@@ -176,7 +207,9 @@ def create_purchase(
     )
     invoice.ledger_entry_id = entry.id
     db.flush()
-    audit_service.record(db, action="purchase.create", actor_user_id=actor_user_id,
+    audit_service.record(db,
+                         action="purchase.edit" if replace_invoice_id else "purchase.create",
+                         actor_user_id=actor_user_id,
                          entity_type="purchase_invoice", entity_id=invoice.id,
                          after={"total": str(total), "doc": invoice.document_number})
     return invoice
@@ -370,6 +403,8 @@ def create_standalone_purchase_return(
     statement1: str | None = None,
     statement2: str | None = None,
     statement3: str | None = None,
+    # التعديل الحر — نفس فكرة الفاتورة: المردود يتبني مكان واحد موجود بنفس رقمه.
+    replace_return_id: int | None = None,
 ) -> PurchaseReturn:
     """مردود شرا مستقل — **نسخة من فاتورة الشرا بالعكس**.
 
@@ -423,7 +458,11 @@ def create_standalone_purchase_return(
     gross = to_money(gross)
     value = to_money(gross * (Decimal("1") - variable / Decimal("100")))
 
-    ret = PurchaseReturn(
+    existing = db.get(PurchaseReturn, replace_return_id) if replace_return_id else None
+    if replace_return_id and existing is None:
+        raise PurchaseError("المردود اللي بيتعدّل مش موجود.")
+
+    ret = existing or PurchaseReturn(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
         purchase_invoice_id=None,
         supplier_id=supplier_id,
@@ -436,7 +475,26 @@ def create_standalone_purchase_return(
         external_document_number=external_document_number,
         statement1=statement1, statement2=statement2, statement3=statement3,
     )
-    db.add(ret)
+    if existing is not None:
+        existing.supplier_id = supplier_id
+        existing.origin_location_kind = origin_location_kind
+        existing.origin_location_id = origin_location_id
+        existing.gross = gross
+        existing.variable_discount_pct = variable
+        existing.combined_pct = variable
+        existing.value = value
+        existing.ledger_entry_id = None
+        existing.notes = notes
+        existing.expense_account_id = expense_account_id
+        existing.external_document_number = external_document_number
+        existing.statement1 = statement1
+        existing.statement2 = statement2
+        existing.statement3 = statement3
+        if return_date is not None:
+            existing.return_date = return_date
+        ret.lines.clear()
+    else:
+        db.add(ret)
     db.flush()
 
     for b in built:

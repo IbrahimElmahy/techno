@@ -247,8 +247,6 @@ export default function Purchases() {
    * بيفرّق بينهم هو إن الحفظ بيعكس القديمة الأول.
    */
   const [editingId, setEditingId] = useState<number | null>(null);
-  const reverseApprovedRef = useRef(false);
-  const [askReverse, setAskReverse] = useState(false);
   const [printing, setPrinting] = useState(false);
   /** الفاتورة اللي معروضة في بوباب الطباعة — معاينة، مش صفحة. */
   const [preview, setPreview] = useState<PurchaseDetail | null>(null);
@@ -638,8 +636,6 @@ export default function Purchases() {
     discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
           setPurchaseDate(dayjs()); setDetail(null); setDocResult(null);
           setEditingId(null);
-          setAskReverse(false);
-          reverseApprovedRef.current = false;
           // 'party' مش 'date': مافيش بوباب تاريخ في الشاشة دي أصلاً، فـ«جديد» كان بيسيب
           // الحالة على خطوة محدش بيرسمها — يعني الزرار مكانش بيفتح حاجة.
           setNewStep('party'); } },
@@ -655,10 +651,7 @@ export default function Purchases() {
     discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0,
-        onClick: () => {
-          if (editingId !== null && !reverseApprovedRef.current) { setAskReverse(true); return; }
-          form.submit();
-        } },
+        onClick: () => form.submit() },
       { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
         disabled: invoicesInList.length === 0, onClick: () => stepDoc(1) },
       { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
@@ -715,8 +708,6 @@ export default function Purchases() {
    */
   const editPosted = async (det: PurchaseDetail) => {
     setEditingId(det.id);
-    reverseApprovedRef.current = false;
-    setAskReverse(false);
     // Refill from what the invoice actually held, line by line.
     form.setFieldsValue({
       supplier_id: det.supplier_id,
@@ -795,30 +786,6 @@ export default function Purchases() {
       // فعلاً مايكفيش، الرسالة بتيجي وهي بتقول حاجة صح، والفاتورة القديمة بتفضل زي ما هي.
       //
       // **والفاتورة اللي اترجّعت بالكامل بتعدّي.** لو المردودات أكلت قيمتها كلها، مفيش
-      // حاجة فاضلة تتعكس — أثرها على الدفاتر صفر أصلاً — والسيرفر بيرفض العكس برسالة
-      // إنجليزي («Cumulative return exceeds…») مش بتقول أنهي فاتورة ولا الطريق منين.
-      // في الحالة دي بنعدّي على العكس ونرحّل الجديدة وخلاص: ده «احذفها واعمل واحدة تانية»
-      // بلغة دفتر مابيتمسحش منه. أي فشل تاني لسه بيوقف — الرصيد اللي مايكفيش غلط حقيقي.
-      let voided = false;
-      if (editingId !== null) {
-        if (!reverseApprovedRef.current) {
-          setAskReverse(true);
-          return;
-        }
-        try {
-          await api.post(`/api/v1/purchases/${editingId}/reverse`, { reason: 'edit' });
-        } catch (err: any) {
-          const detail = err?.response?.data?.detail;
-          const text = String(detail?.message || detail || '');
-          if (/Cumulative return|بالكامل|exceeds sold/i.test(text)) {
-            voided = true;
-          } else {
-            message.error(text || 'تعذر عكس الفاتورة القديمة — التعديل ماتمّش');
-            setSubmitLoading(false);
-            return;
-          }
-        }
-      }
       const payload = {
         supplier_id: values.supplier_id,
         // مخزن المستند بقى مخزن أول سطر. السيرفر لسه محتاج مكان على المستند (٠٣٠)، والسطر
@@ -854,17 +821,14 @@ export default function Purchases() {
         purchase_date: purchaseDate.format('YYYY-MM-DD'),
       };
 
-      const res = await api.post('/api/v1/purchases', payload);
+      // التعديل بيروح للفاتورة نفسها — بنفس رقمها، من غير مردود ولا قيد عكسي.
+      const res = editingId !== null
+        ? await api.put(`/api/v1/purchases/${editingId}`, payload)
+        : await api.post('/api/v1/purchases', payload);
       setDocResult(res.data);
-      if (voided) {
-        message.info('الفاتورة القديمة كانت مرجّعة بالكامل — دي فاتورة جديدة بنفس سطورها');
-      } else {
-        message.success(editingId !== null
-          ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة الشراء بنجاح');
-      }
+      message.success(editingId !== null
+        ? 'اتحفظت الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
       setEditingId(null);
-      reverseApprovedRef.current = false;
-      setAskReverse(false);
       form.resetFields();
       setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
         discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
@@ -994,8 +958,6 @@ export default function Purchases() {
     // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
     // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
     setEditingId(null);
-    setAskReverse(false);
-    reverseApprovedRef.current = false;
   };
 
   const createContent = docResult ? (
@@ -1360,34 +1322,18 @@ export default function Purchases() {
           />
 
           <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
-            <Popconfirm
-              title="هيتعكس الفاتورة القديمة وتفتح نسخة للتعديل — متابعة؟"
-              okText="متابعة"
-              cancelText="رجوع"
-              open={askReverse}
-              onConfirm={() => {
-                setAskReverse(false);
-                reverseApprovedRef.current = true;
-                form.submit();
-              }}
-              onCancel={() => setAskReverse(false)}
+            {/* من غير سؤال قبل الحفظ. السؤال كان بيقول «هيتعكس الفاتورة القديمة» —
+                وده كان بيحصل فعلاً، فكان لازم يتقال. دلوقتي الفاتورة بتتحفظ في مكانها،
+                والسؤال بقى خطوة زيادة على حاجة عادية. */}
+            <Button
+              type="primary"
+              htmlType="submit"
+              icon={<FileDoneOutlined />}
+              size="large"
+              loading={submitLoading}
             >
-              <Button
-                type="primary"
-                htmlType="submit"
-                icon={<FileDoneOutlined />}
-                size="large"
-                loading={submitLoading}
-                onClick={(e) => {
-                  if (editingId !== null && !reverseApprovedRef.current) {
-                    e.preventDefault();
-                    setAskReverse(true);
-                  }
-                }}
-              >
-                تسجيل وترحيل فاتورة الشراء
-              </Button>
-            </Popconfirm>
+              {editingId !== null ? 'حفظ التعديل' : 'تسجيل وترحيل فاتورة الشراء'}
+            </Button>
           </Form.Item>
       </Form>
     </Card>
@@ -1549,8 +1495,6 @@ export default function Purchases() {
               setDetail(null);
               setDocResult(null);
               setEditingId(null);
-              setAskReverse(false);
-              reverseApprovedRef.current = false;
               setNewStep('party');
             }}>
             تسجيل فاتورة شراء

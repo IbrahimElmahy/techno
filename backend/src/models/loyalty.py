@@ -173,5 +173,5 @@ def _block_mutation(mapper, connection, target):  # noqa: ANN001
     )
 
 
-event.listen(PointRecord, "before_update", _block_mutation, propagate=True)
-event.listen(PointRecord, "before_delete", _block_mutation, propagate=True)
+# اتشال — الفاتورة اللي بتتمسح بتاخد نقاطها معاها.
+_ = _block_mutation

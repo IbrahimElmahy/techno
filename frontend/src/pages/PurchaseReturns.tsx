@@ -215,8 +215,6 @@ export default function PurchaseReturns() {
 
   /** المردود اللي بيتعدّل دلوقتي — لسه مرحّل، والعكس هيحصل وقت الحفظ. */
   const [editingId, setEditingId] = useState<number | null>(null);
-  const reverseApprovedRef = useRef(false);
-  const [askReverse, setAskReverse] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
 
@@ -241,8 +239,6 @@ export default function PurchaseReturns() {
     }
     setViewing(null);
     setEditingId(row.id);
-    reverseApprovedRef.current = false;
-    setAskReverse(false);
     setReturnDate(doc.return_date ? dayjs(doc.return_date) : dayjs());
     setNotes(doc.notes || '');
     const filled: Record<number, number | null> = {};
@@ -304,7 +300,7 @@ export default function PurchaseReturns() {
       { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         disabled: typed === 0,
         onClick: () => {
-          if (editingId !== null && !reverseApprovedRef.current) { setAskReverse(true); return; }
+
           submit();
         } },
       { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
@@ -468,26 +464,11 @@ export default function PurchaseReturns() {
         warehouse_id: l.warehouse_id ?? warehouseId,
       }));
     if (!lines.length) { message.warning('اكتب الكمية المرتجعة على صنف واحد على الأقل'); return; }
-    if (editingId !== null && !reverseApprovedRef.current) {
-      setAskReverse(true);
-      return;
-    }
     setSaving(true);
     try {
-      // المردود اللي اتفتح للتعديل بيتعكس **دلوقتي** مش وقت الفتح — التبديل بيحصل مرة واحدة:
-      // القديم يتعكس والجديد يترحّل. ولو العكس وقع، مافيش مردود جديد بيتكتب فوق القديم.
-      if (editingId !== null) {
-        try {
-          await api.post(`/api/v1/purchases/returns/${editingId}/reverse`);
-        } catch (err: any) {
-          message.error(err?.response?.data?.detail?.message
-            || 'تعذر عكس المردود القديم — التعديل ماتمّش');
-          setSaving(false);
-          return;
-        }
-      }
-      // مستند مستقل — مفيش فاتورة في المسار.
-      await api.post('/api/v1/purchases/returns', {
+      // التعديل بيروح للمردود نفسه بنفس رقمه. كان بيتعكس الأول ويتكتب مردود جديد، فتصليح
+      // كمية كان بيسيب وراه قيد مضاد في كشف المورد ورقم سند جديد على ورق قديم.
+      const body = {
         supplier_id: supplierFilter,
         location: { location_kind: 'warehouse', location_id: warehouseId },
         lines,
@@ -502,12 +483,11 @@ export default function PurchaseReturns() {
         statement1: statements[0] || null,
         statement2: statements[1] || null,
         statement3: statements[2] || null,
-      });
-      message.success(editingId !== null
-        ? 'اتعدّل المردود واترحّل من جديد' : 'اتسجّل مردود الشراء');
+      };
+      if (editingId !== null) await api.put(`/api/v1/purchases/returns/${editingId}`, body);
+      else await api.post('/api/v1/purchases/returns', body);
+      message.success(editingId !== null ? 'اتحفظ المردود' : 'اتسجّل مردود الشراء');
       setEditingId(null);
-      reverseApprovedRef.current = false;
-      setAskReverse(false);
       setReturnLines([]);
       setCreating(false);
       load();
@@ -1061,30 +1041,14 @@ export default function PurchaseReturns() {
           background: '#fdf6f3', border: '1px solid #f3e0d8',
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
         }}>
-          <Popconfirm
-            title="هيتعكس المردود القديم ويفتح نسخة للتعديل — متابعة؟"
-            okText="متابعة"
-            cancelText="رجوع"
-            open={askReverse}
-            onConfirm={() => {
-              setAskReverse(false);
-              reverseApprovedRef.current = true;
-              submit();
-            }}
-            onCancel={() => setAskReverse(false)}
-          >
-            <Button type="primary" danger loading={saving}
-              onClick={() => {
-                if (editingId !== null && !reverseApprovedRef.current) setAskReverse(true);
-              }}>
-              ترحيل المردود
-            </Button>
-          </Popconfirm>
-          {/* الرجوع من غير ترحيل مابيغيّرش حاجة — العكس بيحصل وقت الحفظ. */}
+          {/* من غير سؤال — السؤال كان بيقول «هيتعكس المردود القديم»، وده مابقاش بيحصل. */}
+          <Button type="primary" danger loading={saving} onClick={() => submit()}>
+            {editingId !== null ? 'حفظ التعديل' : 'ترحيل المردود'}
+          </Button>
+          {/* الرجوع من غير ترحيل مابيغيّرش حاجة — الحفظ هو اللي بيكتب. */}
           <Button
             onClick={() => { setCreating(false); setEditingId(null);
-              setSupplierFilter(null); setAskReverse(false);
-              reverseApprovedRef.current = false; }}>إلغاء</Button>
+              setSupplierFilter(null); }}>إلغاء</Button>
         </div>
       </Card>
       )}

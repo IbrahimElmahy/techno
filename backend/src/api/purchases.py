@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
+from src.services import document_edit_service
+from src.services.document_edit_service import DocumentEditError
 from src.core.db import get_db
 from src.core.money import to_money
 from src.models.catalog import Item
@@ -360,6 +362,74 @@ def get_purchase(
     )
 
 
+def _doc_out(inv) -> DocOut:
+    return DocOut(
+        id=inv.id, document_number=inv.document_number, ledger_entry_id=inv.ledger_entry_id,
+        gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net,
+        tax_amount=inv.tax_amount, total=inv.total,
+        cash_amount=inv.cash_amount, credit_amount=inv.credit_amount,
+    )
+
+
+@router.put("/{purchase_id}", response_model=DocOut)
+def update_purchase(
+    purchase_id: int,
+    body: PurchaseCreate,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> DocOut:
+    """تعديل فاتورة شراء — بتتحفظ مكان القديمة، من غير مردود ولا قيد عكسي.
+
+    نفس فكرة فاتورة البيع بالظبط: الأثر القديم بيتشال والفاتورة بتتبني تاني بنفس رقمها.
+    """
+    inv = db.get(PurchaseInvoice, purchase_id)
+    if inv is None:
+        raise HTTPException(404, {"code": "not_found", "message": "فاتورة الشراء غير موجودة"})
+    try:
+        document_edit_service.assert_purchase_editable(db, inv)
+        document_edit_service.purge_purchase(db, inv)
+    except DocumentEditError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "edit_blocked", "message": str(exc)})
+    try:
+        inv = purchase_service.create_purchase(
+            db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
+            location_id=body.location.location_id, cash_amount=body.cash_amount,
+            credit_amount=body.credit_amount,
+            lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id,
+                                l.discount_pct)
+                   for l in body.lines],
+            actor_role=current.role, actor_user_id=current.id,
+            rep_id=body.rep_id, expense_account_id=body.expense_account_id,
+            external_document_number=body.external_document_number, notes=body.notes,
+            statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
+            purchase_date=body.purchase_date,
+            variable_discount_pct=body.variable_discount_pct,
+            replace_invoice_id=purchase_id,
+        )
+    except (PurchaseError, StockError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "purchase_invalid", "message": str(exc)})
+    db.commit()
+    return _doc_out(inv)
+
+
+@router.delete("/{purchase_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_purchase(
+    purchase_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف فاتورة شراء — بتروح هي وأثرها، مش بتتعكس."""
+    try:
+        document_edit_service.delete_purchase(
+            db, purchase_id=purchase_id, actor_user_id=current.id)
+    except DocumentEditError as exc:
+        code = 404 if "مش موجودة" in str(exc) else status.HTTP_409_CONFLICT
+        raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
+    db.commit()
+
+
 @router.post("", response_model=DocOut, status_code=status.HTTP_201_CREATED)
 def create_purchase(
     body: PurchaseCreate,
@@ -384,12 +454,7 @@ def create_purchase(
     except (PurchaseError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "purchase_invalid", "message": str(exc)})
     db.commit()
-    return DocOut(
-        id=inv.id, document_number=inv.document_number, ledger_entry_id=inv.ledger_entry_id,
-        gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net,
-        tax_amount=inv.tax_amount, total=inv.total,
-        cash_amount=inv.cash_amount, credit_amount=inv.credit_amount,
-    )
+    return _doc_out(inv)
 
 
 @router.post("/{purchase_id}/returns", response_model=DocOut, status_code=status.HTTP_201_CREATED)
@@ -484,6 +549,65 @@ def create_standalone_purchase_return(
                             {"code": "return_invalid", "message": str(exc)}) from exc
     db.commit()
     return DocOut(id=ret.id, document_number=ret.document_number)
+
+
+@router.put("/returns/{return_id}", response_model=DocOut)
+def update_purchase_return(
+    return_id: int,
+    body: StandaloneReturnIn,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> DocOut:
+    """تعديل مردود شراء — بيتحفظ مكان القديم بنفس رقمه، من غير قيد عكسي."""
+    ret = db.get(PurchaseReturn, return_id)
+    if ret is None:
+        raise HTTPException(404, {"code": "not_found", "message": "المردود غير موجود"})
+    try:
+        document_edit_service.purge_purchase_return(db, ret)
+    except DocumentEditError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "edit_blocked", "message": str(exc)})
+    try:
+        ret = purchase_service.create_standalone_purchase_return(
+            db, supplier_id=body.supplier_id,
+            origin_location_kind=body.location.location_kind,
+            origin_location_id=body.location.location_id,
+            lines=[{
+                "item_id": ln.item_id, "quantity": ln.quantity, "unit_price": ln.unit_price,
+                "discount_pct": ln.discount_pct, "unit": ln.unit,
+                "location_kind": LocationKind.warehouse if ln.warehouse_id else None,
+                "location_id": ln.warehouse_id,
+            } for ln in body.lines],
+            actor_role=current.role, actor_user_id=current.id,
+            return_date=body.return_date, notes=body.notes,
+            expense_account_id=body.expense_account_id,
+            external_document_number=body.external_document_number,
+            statement1=body.statement1, statement2=body.statement2,
+            statement3=body.statement3,
+            variable_discount_pct=body.variable_discount_pct,
+            replace_return_id=return_id,
+        )
+    except (PurchaseError, StockError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "return_invalid", "message": str(exc)})
+    db.commit()
+    return DocOut(id=ret.id, document_number=ret.document_number)
+
+
+@router.delete("/returns/{return_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_purchase_return(
+    return_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف مردود شراء — بيروح هو وأثره، مش بيتعكس."""
+    try:
+        document_edit_service.delete_purchase_return(
+            db, return_id=return_id, actor_user_id=current.id)
+    except DocumentEditError as exc:
+        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
+    db.commit()
 
 
 @router.post("/returns/{return_id}/reverse", response_model=dict)

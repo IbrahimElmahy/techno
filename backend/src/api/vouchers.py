@@ -29,6 +29,8 @@ from src.services import (
     voucher_service,
 )
 from src.services.ledger_service import LedgerError
+from src.services import document_edit_service
+from src.services.document_edit_service import DocumentEditError
 from src.services.statement_service import StatementError
 from src.services.treasury_service import TreasuryError
 from src.services.voucher_service import VoucherError
@@ -477,6 +479,22 @@ def set_period_lock(
                                      actor_user_id=current.id, note=body.note)
     db.commit()
     return PeriodLockOut(locked_through=lock.locked_through, note=lock.note)
+
+
+@router.delete("/vouchers/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_voucher(
+    voucher_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف سند — بيروح هو وقيده، مش بيتعكس."""
+    try:
+        document_edit_service.delete_voucher(
+            db, voucher_id=voucher_id, actor_user_id=current.id)
+    except DocumentEditError as exc:
+        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
+    db.commit()
 
 
 @router.post("/vouchers/{voucher_id}/reverse", response_model=VoucherOut,

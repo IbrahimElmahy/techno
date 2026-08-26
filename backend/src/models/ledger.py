@@ -164,9 +164,13 @@ def _block_mutation(mapper, connection, target):  # noqa: ANN001
     )
 
 
-# ORM-level immutability guard (DB-agnostic; the MySQL trigger in the Alembic migration
-# enforces the same rule at the storage layer for production). Inserts are allowed.
-for _model in (LedgerEntry, LedgerLine):
-    event.listen(_model, "before_update", _block_mutation, propagate=True)
-    event.listen(_model, "before_delete", _block_mutation, propagate=True)
+# الحارس اتشال بطلب العميل.
+#
+# كان بيمنع أي تعديل أو حذف على قيد مرحّل، والتصحيح الوحيد المسموح بيه هو قيد مضاد. ده
+# اللي كان بيخلّي تعديل سعر في فاتورة يسيب وراه قيدين في كشف الحساب. دلوقتي المستند
+# بيتعدّل في مكانه، وده معناه إن أثره القديم لازم يتشال — والحارس كان بيمنع ده بالظبط.
+#
+# `LedgerImmutableError` و`_block_mutation` سايبين: كود قديم لسه بيمسك الاستثناء ده،
+# ومسحه كان هيكسره من غير سبب. والحارس ممكن يرجع بسطرين لو الشركة يوم احتاجت الإقفال.
+_ = _block_mutation
 
