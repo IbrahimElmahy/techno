@@ -240,6 +240,11 @@ class ApiClient {
           },
         )
     ]);
+    // المخازن — عشان إذن التحويل يتكتب والجهاز من غير شبكة.
+    await LocalDb.instance.replaceWarehouses([
+      for (final w in ((body['warehouses'] as List?) ?? []))
+        {'id': w['id'], 'name': '${w['name']}', 'kind': w['kind'] as String?}
+    ]);
     await LocalDb.instance.setKv('last_sales_pull', DateTime.now().toIso8601String());
   }
 
@@ -297,6 +302,73 @@ class ApiClient {
           'فاتورة ${inv['customer_name']}: ${_error(r)}');
     }
     return sent;
+  }
+
+  /// بترفع أذون التحويل اللي المندوب كتبها على الجهاز.
+  ///
+  /// الإذن بيوصل السيرفر **معلّق** — المندوب بيطلب والمسؤول بيراجع ويعتمد أو يرفض. ده مش
+  /// تفصيلة: المندوب مالوش صلاحية الاعتماد عن قصد، والسيرفر هو اللي بيمنعها مش الشاشة.
+  ///
+  /// الإذن بيتكتب على مرحلتين — المستند الأول وبعده سطوره — لأن السيرفر كده. لو السطور
+  /// وقعت بعد ما المستند اتكتب، بيفضل إذن معلّق بسطر واحد على السيرفر: مرئي ومفهوم
+  /// وممكن يتعدّل أو يترفض، مش حاجة ضايعة.
+  Future<int> pushTransfers() async {
+    final pending = await LocalDb.instance.transfers(synced: false);
+    var sent = 0;
+    for (final t in pending) {
+      final lines = await LocalDb.instance.transferLines(t['local_id'] as int);
+      if (lines.isEmpty) continue;
+      final first = lines.first;
+
+      final r = await http
+          .post(await _uri('/transfers'),
+              headers: await _headers(),
+              body: jsonEncode({
+                'item_id': first['item_id'],
+                'quantity': first['quantity'],
+                'route': _routeFor(
+                    '${t['source_kind']}', '${t['dest_kind']}'),
+                'source': {
+                  'location_kind': t['source_kind'],
+                  'location_id': t['source_id'],
+                },
+                'dest': {
+                  'location_kind': t['dest_kind'],
+                  'location_id': t['dest_id'],
+                },
+              }))
+          .timeout(const Duration(seconds: 60));
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode != 200 && r.statusCode != 201) {
+        throw ApiException(r.statusCode, 'إذن تحويل: ${_error(r)}');
+      }
+      final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      final serverId = body['id'] as int;
+
+      // كل الأصناف بتنزل كسطور — بما فيهم الأول. ترويسة المستند شايلة الأول عشان
+      // النسخ القديمة، والسطور هي اللي الاعتماد بيمشي عليها.
+      for (final l in lines) {
+        await http.post(await _uri('/transfers/$serverId/lines'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'item_id': l['item_id'],
+              'quantity': '${l['quantity']}',
+            })).timeout(const Duration(seconds: 45));
+      }
+
+      await LocalDb.instance.markTransferSynced(
+          t['local_id'] as int, serverId, body['document_number'] as String?);
+      sent++;
+    }
+    return sent;
+  }
+
+  /// الاتجاه لوحده بيحدّد المسار — نفس خريطة شاشة الويب بالحرف.
+  static String _routeFor(String src, String dst) {
+    if (src == 'warehouse' && dst == 'warehouse') return 'central_to_branch';
+    if (src == 'warehouse' && dst == 'custody') return 'central_to_rep';
+    if (src == 'custody' && dst == 'custody') return 'rep_to_rep';
+    return 'rep_to_central';
   }
 
   /// بترفع التحصيلات اللي على الجهاز.

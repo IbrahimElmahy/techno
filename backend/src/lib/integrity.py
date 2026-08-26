@@ -241,6 +241,43 @@ def check_customers_have_a_rep(db: Session, report: IntegrityReport) -> None:
         ))
 
 
+def check_reps_have_a_store(db: Session, report: IntegrityReport) -> None:
+    """كل مندوب شغّال ليه مخزن (أو عهدة) بضاعته فيه.
+
+    `rep_store_service` بيدوّر على مخزن الموظف الأول وبعده على عهدته، وبيرجّع `None` لو
+    مالوش الاتنين. والمندوب اللي بيرجّع `None` **مايقدرش يبيع**: كل فاتورة بتتسأل «من
+    فين؟» والإجابة مش موجودة، فالتطبيق بيقف عند خانة المخزن فاضية من غير ما يقول ليه.
+
+    ده مش خطأ بيانات بيحصل بالغلط — ده مندوب اتعمله يوزر ومحدش كمّل ربطه. والفحص ده
+    بيقوله بالاسم بدل ما المندوب يكتشفه وهو واقف عند العميل.
+    """
+    from src.models.employee import Employee
+    from src.models.role import Role, RoleName
+    from src.models.user import User
+    from src.models.warehouse import Custody
+
+    reps = db.execute(
+        select(User.id, User.username, User.full_name)
+        .join(Role, Role.id == User.role_id)
+        .where(Role.name == RoleName.sales_rep, User.active.is_(True))
+    ).all()
+    report.checked["sales_reps"] = len(reps)
+
+    for uid, username, full_name in reps:
+        emp = db.scalar(select(Employee).where(Employee.user_id == uid))
+        if emp is not None and emp.warehouse_id is not None:
+            continue
+        if db.scalar(select(Custody).where(Custody.rep_id == uid)) is not None:
+            continue
+        report.findings.append(Finding(
+            check="rep_store",
+            subject=f"مندوب {username} — {full_name or ''}".strip(),
+            expected="مخزن أو عهدة",
+            found="مافيش",
+            detail="المندوب ده مايقدرش يبيع من التطبيق — اربطه بمخزن من ملف الموظف.",
+        ))
+
+
 def run_all(db: Session) -> IntegrityReport:
     """Run every check. Read-only — nothing here writes, by design."""
     report = IntegrityReport()
@@ -249,4 +286,5 @@ def run_all(db: Session) -> IntegrityReport:
     check_serial_counts(db, report)
     check_ledger_entries_balanced(db, report)
     check_customers_have_a_rep(db, report)
+    check_reps_have_a_store(db, report)
     return report

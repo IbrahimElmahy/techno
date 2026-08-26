@@ -141,7 +141,16 @@ _SI_BY_ROLE: dict[RoleName, set[str]] = {
         CAP_STOCK_READ, CAP_RETURN_WRITE, CAP_MANUFACTURE_READ,
     },
     RoleName.after_sales_staff: {CAP_CATALOG_READ, CAP_STOCK_READ, CAP_MANUFACTURE_READ},
-    RoleName.sales_rep: {CAP_CATALOG_READ, CAP_SALE_WRITE, CAP_STOCK_READ, CAP_RETURN_WRITE},
+    # المندوب بيطلب تحويل — **مابيعتمدوش**.
+    #
+    # `CAP_TRANSFER_INITIATE` كانت ناقصة، فالتطبيق كان بيرجّع 403 على أي إذن المندوب
+    # يكتبه: البضاعة اللي في العربية والبضاعة اللي محتاجها من المخزن ماكانش ليهم طريق
+    # يتطلبوا بيه أصلاً. وهو **مالوش** صلاحية الاعتماد عن قصد — الإذن بتاعه بيوصل
+    # «معلّق» للمسؤول يراجعه ويعدّله أو يرفضه أو يعتمده، وده كل الفايدة منه.
+    RoleName.sales_rep: {
+        CAP_CATALOG_READ, CAP_SALE_WRITE, CAP_STOCK_READ, CAP_RETURN_WRITE,
+        CAP_TRANSFER_INITIATE,
+    },
 }
 
 for _role, _caps in _SI_BY_ROLE.items():

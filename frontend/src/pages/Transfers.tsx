@@ -87,7 +87,7 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
   pending: { color: 'warning', text: 'بانتظار الاعتماد' },
   approved: { color: 'success', text: 'تم الاعتماد والشحن' },
   rejected: { color: 'error', text: 'مرفوض' },
-  reversed: { color: 'default', text: 'ملغي ومعكوس' },
+  reversed: { color: 'default', text: 'ملغي' },
 };
 
 const qty = (v: any) =>
@@ -586,25 +586,26 @@ export default function Transfers() {
   };
 
   /**
-   * تعديل إذن معتمد — يتعكس، ويتفتح تاني بمحتواه للتصحيح.
+   * تعديل إذن معتمد — بيتلغي، وبيتفتح تاني بمحتواه للتصحيح.
    *
-   * An approved transfer posted movements out of one store and into another. Rewriting a quantity
-   * on it would leave two balances describing a document that no longer says what happened, so
-   * «تعديل» means what it means on a posted invoice: reverse it in full, and reopen the form on
-   * exactly what it moved. The original, its reversal and the corrected permit all stay.
+   * الإذن المعتمد طلّع بضاعة من مخزن وحطها في تاني، فتغيير كمية عليه وهو ساكت بيسيب
+   * رصيدين بيوصفوا مستند مابقاش بيقول اللي حصل. فالتعديل بيلغيه الأول: البضاعة بترجع
+   * لمصدرها والإذن بيفضل في السجل مكتوب عليه إنه اتلغى، وانت بتكتب الجديد.
    *
-   * No confirmation: pressing تعديل IS the answer, and a dialog that always gets the same reply
-   * is a keystroke rather than a safeguard. What protects the record is that the reversal is a
-   * posting with its own document — the original, its reversal and the correction all stay.
+   * كان بيتعكس — يتكتب حركتين مضادين لكل سطر ويفضل الإذن ومعاه عكسه في كارت كل صنف.
+   * دلوقتي الحركة بتتشال والرصيد بيرجع لوحده، فالكارت بيقول اللي حصل مرة واحدة.
+   *
+   * من غير تأكيد: الضغط على «تعديل» هو الإجابة، وسؤال بياخد نفس الرد كل مرة هو ضغطة
+   * زيادة مش حماية.
    */
   const editApproved = async (t: TransferRecord) => {
     try {
-      await api.post(`/api/v1/transfers/${t.id}/reverse`);
+      await api.post(`/api/v1/transfers/${t.id}/cancel`, { reason: 'تعديل' });
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر عكس الإذن');
+      message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الإذن');
       return;
     }
-    message.success('اتعكس الإذن — عدّل وابعته للاعتماد من جديد');
+    message.success('اتلغى الإذن — عدّل وابعته للاعتماد من جديد');
 
     // Refill from what it actually moved — including a legacy permit whose item is on the
     // document rather than in a lines row.
@@ -664,16 +665,42 @@ export default function Transfers() {
     });
   };
 
-  const handleReverse = (record: TransferRecord) => {
+  /**
+   * إلغاء إذن معتمد — البضاعة ترجع لمصدرها والإذن يفضل في السجل «ملغي» ومعاه السبب.
+   *
+   * كان «عكس»: بيكتب حركة مضادة لكل سطر، فكارت الصنف يقول إن حاجة راحت ورجعت وانت
+   * بتدوّر على واحدة مااتحركتش أصلاً. دلوقتي الحركة بتتشال والرصيد بيرجع لوحده.
+   */
+  const handleCancel = (record: TransferRecord) => {
     showReversalConfirm({
-      title: 'عكس عملية التحويل المخزني',
-      content: `هل أنت متأكد من إلغاء وعكس مستند التحويل "${record.document_number}"؟ سيتم توليد حركة مخزنية عكسية لإرجاع الكميات لمصدرها.`,
+      title: 'إلغاء إذن التحويل',
+      content: `هتلغي إذن التحويل «${record.document_number}»؟ الكميات هترجع لمخزنها الأصلي، والإذن هيفضل في السجل مكتوب عليه إنه اتلغى.`,
       onOk: async () => {
         try {
-          await api.post(`/api/v1/transfers/${record.id}/reverse`);
-          message.success('تم عكس وإلغاء التحويل بنجاح');
+          await api.post(`/api/v1/transfers/${record.id}/cancel`, { reason: null });
+          message.success('اتلغى الإذن ورجعت الكميات');
           fetchTransfers();
-        } catch (err) { console.error(err); }
+        } catch (err: any) {
+          message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الإذن');
+        }
+      },
+    });
+  };
+
+  /** حذف الإذن — بيروح هو وحركته، مايفضلش منه أثر في السجل. */
+  const handleDelete = (record: TransferRecord) => {
+    showReversalConfirm({
+      title: 'حذف إذن التحويل',
+      content: `هتمسح إذن التحويل «${record.document_number}» خالص؟ لو كان معتمد، الكميات هترجع لمخزنها الأصلي.`,
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/transfers/${record.id}`);
+          message.success('اتمسح الإذن');
+          setEditing(null);
+          fetchTransfers();
+        } catch (err: any) {
+          message.error(err?.response?.data?.detail?.message || 'تعذر مسح الإذن');
+        }
       },
     });
   };
@@ -763,12 +790,17 @@ export default function Transfers() {
         { key: 'reject', label: 'رفض', danger: true, icon: <CloseCircleOutlined />,
           onClick: () => setRejectOpen(true) },
       ] as ToolbarAction[] : []),
-      // A permit that is already approved is corrected the only honest way: reversed and rewritten.
+      // الإذن المعتمد بيتصلّح بالإلغاء وإعادة الكتابة — مافيش عكس في النظام.
       ...(editing && editing.status === 'approved' && canApprove ? [
         { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
           onClick: () => editApproved(editing) },
-        { key: 'reverse', label: 'عكس', danger: true, icon: <RollbackOutlined />,
-          onClick: () => handleReverse(editing) },
+        { key: 'cancel', label: 'إلغاء', danger: true, icon: <CloseCircleOutlined />,
+          onClick: () => handleCancel(editing) },
+      ] as ToolbarAction[] : []),
+      // والحذف على أي إذن محفوظ — المعلّق والمرفوض والمعتمد.
+      ...(editing && canApprove ? [
+        { key: 'delete', label: 'حذف', danger: true, icon: <DeleteOutlined />,
+          onClick: () => handleDelete(editing) },
       ] as ToolbarAction[] : []),
       // Printing is offered on any saved permit, whatever its state: a pending one is the picking
       // list somebody walks to the store, and an approved one is the delivery note they sign.
@@ -821,9 +853,15 @@ export default function Transfers() {
             </Button>
           )}
           {record.status === 'approved' && canApprove && (
-            <Button type="primary" danger size="small" icon={<RollbackOutlined />}
-              onClick={() => handleReverse(record)}>
-              عكس
+            <Button type="primary" danger size="small" icon={<CloseCircleOutlined />}
+              onClick={() => handleCancel(record)}>
+              إلغاء
+            </Button>
+          )}
+          {canApprove && (
+            <Button danger size="small" icon={<DeleteOutlined />}
+              onClick={() => handleDelete(record)}>
+              حذف
             </Button>
           )}
         </Space>
@@ -1123,8 +1161,10 @@ export default function Transfers() {
                         onClick={() => editApproved(editing)}>
                         تعديل الإذن
                       </Button>
-                      <Button danger size="large" icon={<RollbackOutlined />}
-                        onClick={() => handleReverse(editing)}>عكس</Button>
+                      <Button danger size="large" icon={<CloseCircleOutlined />}
+                        onClick={() => handleCancel(editing)}>إلغاء</Button>
+                      <Button danger size="large" icon={<DeleteOutlined />}
+                        onClick={() => handleDelete(editing)}>حذف</Button>
                     </>
                   )}
                   <Button size="large" onClick={closeCreate}>إغلاق</Button>

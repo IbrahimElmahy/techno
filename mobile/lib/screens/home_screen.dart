@@ -10,6 +10,7 @@ import 'collect_cash_screen.dart';
 import 'customer_profile_screen.dart';
 import 'day_summary_screen.dart';
 import 'my_stock_screen.dart';
+import 'transfer_request_screen.dart';
 import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
 import 'review_screen.dart';
@@ -201,6 +202,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     subtitle: 'اللي في العربية دلوقتي بكمياته',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const MyStockScreen())),
+                  ),
+                  const SizedBox(height: 14),
+                  _BigAction(
+                    icon: Icons.swap_horiz_outlined,
+                    color: AppColors.accent,
+                    title: 'طلب تحويل بضاعة',
+                    subtitle: 'من مخزن لمخزن أو من عربيتك — بيستنى الاعتماد',
+                    onTap: () async {
+                      await Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => const TransferRequestScreen()));
+                      _refresh();
+                    },
                   ),
                   const SizedBox(height: 14),
                   _BigAction(

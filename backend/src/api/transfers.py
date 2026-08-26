@@ -205,18 +205,45 @@ def approve_transfer(
     return _out(t)
 
 
-@router.post("/{transfer_id}/reverse", response_model=TransferOut, status_code=status.HTTP_201_CREATED)
-def reverse_transfer(
+class CancelIn(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/{transfer_id}/cancel", response_model=TransferOut)
+def cancel_transfer(
     transfer_id: int,
+    body: CancelIn,
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
+    """إلغاء إذن معتمد — البضاعة ترجع لمصدرها والإذن يفضل في السجل «ملغي».
+
+    كان `/reverse`: بيكتب حركتين مضادين لكل سطر ويسيب الإذن ومعاه عكسه. دلوقتي الحركة
+    بتتشال والرصيد بيرجع لوحده، والإذن بيفضل مقروء ومكتوب عليه سبب الإلغاء.
+    """
     try:
-        t = transfer_service.reverse(db, transfer_id=transfer_id, actor_user_id=current.id)
+        t = transfer_service.cancel(
+            db, transfer_id=transfer_id, actor_user_id=current.id, reason=body.reason)
     except (TransferError, StockError) as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "transfer_conflict", "message": str(exc)})
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
     db.commit()
     return _out(t)
+
+
+@router.delete("/{transfer_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_transfer(
+    transfer_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف إذن التحويل — بيروح هو وحركته."""
+    try:
+        transfer_service.delete(db, transfer_id=transfer_id, actor_user_id=current.id)
+    except (TransferError, StockError) as exc:
+        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        raise HTTPException(code, {"code": "transfer_conflict", "message": str(exc)})
+    db.commit()
 
 
 @router.post("/{transfer_id}/reject", response_model=TransferOut)

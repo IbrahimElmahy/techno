@@ -58,6 +58,9 @@ class _SyncScreenState extends State<SyncScreen> {
       // الرصيد بعد الخصم. العكس كان هيرجّع أرقام قديمة على طول.
       final invoices = await ApiClient.instance.pushSaleInvoices();
       final collected = await ApiClient.instance.pushReceipts();
+      // أذون التحويل — بتترفع معلّقة وبتستنى الاعتماد، فمابتأثرش على الأرصدة اللي
+      // السحب اللي بعدها هيجيبها.
+      final permits = await ApiClient.instance.pushTransfers();
       await ApiClient.instance.pullReferenceData();
       // حزمة البيع بتتسحب مع الباقي — عملاء المندوب وأصناف عربيته بأسعارهم. بتتبلع لو
       // المستخدم مش مندوب أصلاً (مافيش عهدة)، عشان مزامنة الإدارة ماتفشلش من غير سبب.
@@ -70,6 +73,7 @@ class _SyncScreenState extends State<SyncScreen> {
           if (coupons > 0) 'اترفع $coupons استلام كوبونات',
           if (invoices > 0) 'اترفعت $invoices فاتورة',
           if (collected > 0) 'اترفع $collected تحصيل',
+          if (permits > 0) 'اترفع $permits إذن تحويل',
         ];
         _status = parts.isEmpty
             ? 'مفيش حاجة جديدة — واتحدثت الأصناف والقوائم ✔'

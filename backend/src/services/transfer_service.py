@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import Session
 
 from src.services import numbering
@@ -179,32 +179,74 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
     return transfer
 
 
-def reverse(db, *, transfer_id: int, actor_user_id: int) -> StockTransfer:
+def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
+    """حذف إذن التحويل — بيروح هو وحركته، مش بيتعكس.
+
+    كان `reverse`: بيكتب حركتين مضادين لكل سطر ويعلّم الإذن «معكوس»، فالإذن الغلط بيفضل
+    في السجل ومعاه حركتين زيادة في كارت كل صنف. ده أسلوب دفتر أستاذ، والشركة مش بتشتغل
+    بيه — الإذن اللي اتكتب غلط بيتمسح.
+
+    المعتمد بترجع بضاعته لمصدرها الأول: الحركة بتتشال (الرصيد مشتق منها فبيرجع لوحده)،
+    والسيريالات والدفعات بترجع مكانها. المعلّق مالوش أثر أصلاً فبيتشال على طول.
+    """
+    transfer = db.get(StockTransfer, transfer_id)
+    if transfer is None:
+        raise TransferError("إذن التحويل مش موجود.")
+
+    lines = db.scalars(select(StockTransferLine).where(
+        StockTransferLine.transfer_id == transfer.id)).all()
+
+    if transfer.status == TransferStatus.approved:
+        # اللي بيقول **أنهي** وحدات اتحركت لازم يرجع الأول، والرصيد لسه شايل الحركة —
+        # عكس ترتيب الاعتماد بالظبط.
+        for ln in lines:
+            item = db.get(Item, ln.item_id)
+            if item is None:
+                continue
+            if getattr(item, "is_serialized", False):
+                serial_service.relocate(
+                    db, item=item,
+                    from_kind=transfer.dest_location_kind, from_id=transfer.dest_location_id,
+                    to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
+                    quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
+            if getattr(item, "is_perishable", False):
+                batch_service.relocate(
+                    db, item_id=item.id,
+                    from_kind=transfer.dest_location_kind, from_id=transfer.dest_location_id,
+                    to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
+                    quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
+
+        from src.models.stock import StockMovement
+        db.execute(sa_delete(StockMovement).where(
+            StockMovement.source_doc_type == "transfer",
+            StockMovement.source_doc_id == transfer.id))
+
+    doc = transfer.document_number
+    db.execute(sa_delete(StockTransferLine).where(
+        StockTransferLine.transfer_id == transfer.id))
+    db.delete(transfer)
+    db.flush()
+    audit_service.record(db, action="transfer.delete", actor_user_id=actor_user_id,
+                         entity_type="stock_transfer", entity_id=transfer_id,
+                         before={"doc": doc})
+
+
+def cancel(db, *, transfer_id: int, actor_user_id: int,
+           reason: str | None = None) -> StockTransfer:
+    """إلغاء إذن معتمد — البضاعة ترجع لمصدرها والإذن يفضل في السجل «ملغي».
+
+    الفرق بينه وبين الحذف إن ده بيسيب أثر: الإذن يفضل مقروء ومكتوب عليه إنه اتلغى وليه.
+    اللي بيتلغي بعد ما البضاعة اتحركت غالباً ليه سبب حد تاني محتاج يقراه.
+    """
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
         raise TransferError("إذن التحويل مش موجود.")
     if transfer.status != TransferStatus.approved:
-        raise TransferError("الإذن المعتمد بس هو اللي ينفع يتعكس.")
-    # EVERY line's movements, not just the header's pair.
-    #
-    # `transfer.out_movement_id`/`in_movement_id` hold the FIRST line's movements — they date from
-    # when a permit moved one item, and approval still fills them so old documents keep reading.
-    # Reversing only those undid one item out of however many the permit carried and left the rest
-    # sitting in the destination store, with the document marked «معكوس» and the stock saying
-    # otherwise. Invisible while every permit held one line; a live hole the moment one carries
-    # several.
+        raise TransferError("الإذن المعتمد بس هو اللي ينفع يتلغي — اللي لسه معلّق يترفض.")
+
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()
-    pairs = [(ln.out_movement_id, ln.in_movement_id) for ln in lines
-             if ln.out_movement_id and ln.in_movement_id]         or [(transfer.out_movement_id, transfer.in_movement_id)]
-    for out_id, in_id in pairs:
-        stock_service.reverse_movement(db, original_id=out_id, actor_user_id=actor_user_id)
-        stock_service.reverse_movement(db, original_id=in_id, actor_user_id=actor_user_id)
-
-    # The things that say WHICH units moved have to come back too — the same reasoning approval
-    # applies on the way out. Leaving them at the destination is the drift the serial and batch
-    # integrity checks exist to catch.
-    for ln in lines or []:
+    for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None:
             continue
@@ -221,10 +263,22 @@ def reverse(db, *, transfer_id: int, actor_user_id: int) -> StockTransfer:
                 to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
                 quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
 
-    transfer.status = TransferStatus.reversed
+    from src.models.stock import StockMovement
+    db.execute(sa_delete(StockMovement).where(
+        StockMovement.source_doc_type == "transfer",
+        StockMovement.source_doc_id == transfer.id))
+
+    transfer.status = TransferStatus.rejected
+    transfer.reject_reason = (reason or "اتلغى بعد الاعتماد")[:240]
+    for ln in lines:
+        ln.out_movement_id = None
+        ln.in_movement_id = None
+    transfer.out_movement_id = None
+    transfer.in_movement_id = None
     db.flush()
-    audit_service.record(db, action="transfer.reverse", actor_user_id=actor_user_id,
-                         entity_type="stock_transfer", entity_id=transfer.id)
+    audit_service.record(db, action="transfer.cancel", actor_user_id=actor_user_id,
+                         entity_type="stock_transfer", entity_id=transfer.id,
+                         after={"reason": reason})
     return transfer
 
 

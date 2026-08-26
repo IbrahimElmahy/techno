@@ -27,7 +27,7 @@ from src.models.customer import Customer
 from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
-from src.models.warehouse import Custody
+from src.models.warehouse import Custody, Warehouse
 from src.services import coupon_receipt_service, sales_service
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
@@ -313,6 +313,18 @@ def rep_bundle(
         "store_id": store_id,
         # الاسم القديم فاضل للنسخ اللي لسه ما اتحدّثتش من التطبيق.
         "custody_id": store_id if store_kind == LocationKind.custody else None,
+        # المخازن — عشان المندوب يقدر يطلب تحويل من التطبيق.
+        #
+        # الإذن محتاج مصدر ووجهة، والتطبيق شغّال offline فمينفعش يسألهم وقت الكتابة.
+        # بيتحمّلوا مع الحزمة، والإذن بيتكتب على الجهاز وبيترفع لما الشبكة ترجع — وبيوصل
+        # «معلّق» عشان المسؤول يراجعه.
+        "warehouses": [
+            {"id": w.id, "name": w.name, "kind": w.warehouse_type.value}
+            for w in db.scalars(
+                select(Warehouse).where(Warehouse.active.is_(True))
+                .order_by(Warehouse.name)
+            ).all()
+        ],
         "customers": [
             {
                 "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,
@@ -726,31 +738,6 @@ def delete_sales_return(
     db.commit()
 
 
-@router.post("/returns/{return_id}/reverse", response_model=dict)
-def reverse_sales_return_endpoint(
-    return_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
-    db: Session = Depends(get_db),
-) -> dict:
-    """عكس مرتجع مبيعات مرحّل.
-
-    المرتجع المرحّل ماينفعش يتعدّل في مكانه — البضاعة رجعت المخزن والقيد اتكتب — فالتعديل
-    والحذف الاتنين معناهم نفس الحركة: عكس كامل. والفرق بينهم هو اللي بيحصل بعده.
-
-    مُعلن قبل `/returns/{return_id}` عشان المسار الحرفي يكسب. ونفس ترتيب مردود الشرا
-    بالظبط، لأن الشاشتين نسخة من بعض والسيرفر المفروض يبقى كده كمان.
-    """
-    try:
-        ret = sales_service.reverse_sales_return(
-            db, return_id=return_id, actor_user_id=current.id)
-    except SalesError as exc:
-        raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
-    db.commit()
-    return {"id": ret.id, "document_number": ret.document_number,
-            "reversed_at": ret.reversed_at.isoformat() if ret.reversed_at else None,
-            "reversal_entry_id": ret.reversal_entry_id}
-
-
 @router.get("/returns/{return_id}", response_model=dict)
 def get_standalone_return(
     return_id: int,
@@ -842,50 +829,6 @@ class ReverseIn(BaseModel):
     # permissions, and the server cannot tell them apart from the movements alone — both post the
     # same full return.
     reason: Literal["edit", "delete"]
-
-
-@router.post("/{sale_id}/reverse", response_model=dict, status_code=status.HTTP_201_CREATED)
-def reverse_sale(
-    sale_id: int,
-    body: ReverseIn,
-    current: CurrentUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict:
-    """عكس فاتورة مرحّلة بالكامل — للتعديل أو للإلغاء.
-
-    A posted invoice cannot be altered in place; the ledger is append-only. So «تعديل» and «حذف»
-    both mean the same movement — a full return — and differ only in what the user does next.
-
-    They are separate endpoints from `/returns` on purpose. A customer return is a real business
-    event that belongs in مردودات المبيعات; an edit is a correction that happens to be implemented
-    as one. Sending both through the same door meant the returns register counted the shop's own
-    mistakes as customer returns, and it meant a salesman with `return.write` could quietly unmake
-    any invoice ever posted.
-    """
-    needed = CAP_SALE_EDIT if body.reason == "edit" else CAP_SALE_DELETE
-    if not role_has_capability(current.role, needed):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, {
-            "code": "forbidden",
-            "message": "مالكش صلاحية تعديل الفاتورة" if body.reason == "edit"
-                       else "مالكش صلاحية إلغاء الفاتورة"})
-
-    inv = db.get(SalesInvoice, sale_id)
-    if inv is None:
-        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
-    if not inv.lines:
-        raise HTTPException(422, {"code": "validation", "message": "الفاتورة من غير سطور"})
-    try:
-        # `reverse_sale`, not `return_sale`: a reversal fills in the lots and the serials from the
-        # invoice itself. Calling the return path directly is what made «تعديل» fail on any
-        # invoice holding a perishable or a serialized item — it demanded answers only the
-        # original sale knew, and the sale had already written them down.
-        ret = sales_service.reverse_sale(
-            db, sales_invoice_id=sale_id, actor_user_id=current.id)
-    except (SalesError, StockError) as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT,
-                            {"code": "return_invalid", "message": str(exc)})
-    db.commit()
-    return {"id": ret.id, "document_number": ret.document_number, "reason": body.reason}
 
 
 @router.post("/{sale_id}/returns", response_model=dict, status_code=status.HTTP_201_CREATED)

@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 13, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 14, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -71,6 +71,12 @@ class LocalDb {
           try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN $col'); } catch (_) {}
         }
       }
+      if (from < 14) {
+        // v14: المخازن، وإذن التحويل اللي المندوب بيكتبه على الجهاز.
+        for (final ddl in [_warehouseTable, _transferTable, _transferLineTable]) {
+          try { await d.execute(ddl); } catch (_) {}
+        }
+      }
       if (from < 4) {
         // v4: the inspection point-items catalog + customer contact fields for autofill.
         await d.execute('CREATE TABLE insp_item_type('
@@ -116,6 +122,9 @@ class LocalDb {
           'CREATE TABLE lookup(category TEXT, value TEXT, label TEXT, sort INTEGER, '
           'PRIMARY KEY(category, value))');
       await d.execute('CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)');
+      await d.execute(_warehouseTable);
+      await d.execute(_transferTable);
+      await d.execute(_transferLineTable);
       await d.execute(_saleItemTable);
       await d.execute(_saleInvoiceTable);
       await d.execute(_saleLineTable);
@@ -559,6 +568,83 @@ class LocalDb {
     return (r.first['c'] as int?) ?? 0;
   }
 
+  // ------------------------------------------------------------- المخازن والتحويل
+
+  Future<void> replaceWarehouses(List<Map<String, Object?>> rows) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('warehouse');
+      final batch = tx.batch();
+      for (final w in rows) {
+        batch.insert('warehouse', w);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, Object?>>> warehouses() async {
+    final d = await db;
+    return d.query('warehouse', orderBy: 'name');
+  }
+
+  /// بتحفظ إذن تحويل وسطوره في معاملة واحدة — إذن من غير سطور مش إذن.
+  Future<int> saveTransfer({
+    required String clientUuid,
+    required String sourceKind,
+    required int sourceId,
+    required String destKind,
+    required int destId,
+    String? notes,
+    required List<Map<String, Object?>> lines,
+  }) async {
+    final d = await db;
+    return d.transaction<int>((tx) async {
+      final id = await tx.insert('stock_transfer', {
+        'client_uuid': clientUuid,
+        'source_kind': sourceKind,
+        'source_id': sourceId,
+        'dest_kind': destKind,
+        'dest_id': destId,
+        'notes': notes,
+        'synced': 0,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      final batch = tx.batch();
+      for (final l in lines) {
+        batch.insert('stock_transfer_line', {...l, 'transfer_local_id': id});
+      }
+      await batch.commit(noResult: true);
+      return id;
+    });
+  }
+
+  Future<List<Map<String, Object?>>> transfers({bool? synced}) async {
+    final d = await db;
+    return d.query('stock_transfer',
+        where: synced == null ? null : 'synced = ?',
+        whereArgs: synced == null ? null : [synced ? 1 : 0],
+        orderBy: 'local_id DESC');
+  }
+
+  Future<List<Map<String, Object?>>> transferLines(int transferLocalId) async {
+    final d = await db;
+    return d.query('stock_transfer_line',
+        where: 'transfer_local_id = ?', whereArgs: [transferLocalId]);
+  }
+
+  Future<void> markTransferSynced(int localId, int serverId, String? doc) async {
+    final d = await db;
+    await d.update('stock_transfer',
+        {'synced': 1, 'server_id': serverId, 'document_number': doc},
+        where: 'local_id = ?', whereArgs: [localId]);
+  }
+
+  Future<int> pendingTransfersCount() async {
+    final d = await db;
+    final r = await d.rawQuery('SELECT COUNT(*) AS c FROM stock_transfer WHERE synced = 0');
+    return (r.first['c'] as int?) ?? 0;
+  }
+
   Future<void> markSaleSynced(String clientUuid, String documentNumber) async {
     final d = await db;
     await d.update('sale_invoice', {'synced': 1, 'document_number': documentNumber},
@@ -751,4 +837,42 @@ CREATE TABLE sale_receipt(
   synced INTEGER NOT NULL DEFAULT 0,
   document_number TEXT,
   created_at TEXT NOT NULL
+)''';
+
+
+/// المخازن — بتنزل مع حزمة المندوب عشان الإذن يتكتب offline.
+const _warehouseTable = '''
+CREATE TABLE warehouse(
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT
+)''';
+
+/// إذن تحويل اتكتب على الجهاز.
+///
+/// بيتخزّن زي الفاتورة بالظبط: `client_uuid` عشان إعادة الرفع تبقى آمنة، و`synced`
+/// عشان اللي لسه ماوصلش يفضل باين. والإذن بيوصل السيرفر **معلّق** — المندوب بيطلب،
+/// والمسؤول بيراجع ويعتمد أو يرفض.
+const _transferTable = '''
+CREATE TABLE stock_transfer(
+  local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_uuid TEXT UNIQUE NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_id INTEGER NOT NULL,
+  dest_kind TEXT NOT NULL,
+  dest_id INTEGER NOT NULL,
+  notes TEXT,
+  synced INTEGER NOT NULL DEFAULT 0,
+  server_id INTEGER,
+  document_number TEXT,
+  created_at TEXT NOT NULL
+)''';
+
+const _transferLineTable = '''
+CREATE TABLE stock_transfer_line(
+  local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transfer_local_id INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  item_name TEXT NOT NULL,
+  quantity REAL NOT NULL
 )''';
