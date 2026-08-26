@@ -187,3 +187,77 @@ def merge_customers(
 
     db.commit()
     return result
+
+# --- النسخ الاحتياطي والاستعادة ---------------------------------------------------
+
+@router.get("/backup")
+def backup_database(
+    _: CurrentUser = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """كل الجداول في ملف واحد مضغوط — التنزيل هو النسخة الاحتياطية."""
+    import io
+    from datetime import datetime as dt
+
+    from fastapi.responses import StreamingResponse
+
+    from src.services import backup_service
+
+    try:
+        payload = backup_service.to_gzip(backup_service.export_all(db))
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "backup_failed", "message": str(exc)})
+    stamp = dt.now().strftime("%Y%m%d-%H%M")
+    return StreamingResponse(
+        io.BytesIO(payload),
+        media_type="application/gzip",
+        headers={"Content-Disposition": f"attachment; filename=techno-backup-{stamp}.json.gz"},
+    )
+
+
+@router.post("/restore")
+async def restore_database(
+    file: UploadFile = File(...),
+    _: CurrentUser = Depends(_require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    """استبدال كل البيانات بمحتوى ملف نسخة احتياطية.
+
+    قبل الاستبدال بتتحفظ نسخة أمان من الوضع الحالي على السيرفر داخل uploads/backups —
+    فحتى استعادة بملف غلط ليها تراجع.
+    """
+    from src.services import backup_service
+
+    raw = await file.read()
+    if len(raw) > 512 * 1024 * 1024:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            {"code": "too_large", "message": "الملف أكبر من الحد المسموح."})
+    try:
+        data = backup_service.from_gzip(raw)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            {"code": "bad_backup", "message": str(exc)})
+    except Exception:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            {"code": "bad_backup",
+                             "message": "الملف مش مقروء — اتأكد إنه نسخة .json.gz من النظام."})
+
+    current = backup_service.export_all(db)
+    snapshot = backup_service.save_safety_snapshot(current)
+
+    try:
+        counts = backup_service.restore_all(db, data)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "restore_failed",
+                             "message": f"الاستعادة فشلت ومفيش حاجة اتبدلت: {exc}"})
+    return {
+        "restored_tables": len(counts),
+        "restored_rows": sum(counts.values()),
+        "safety_snapshot": snapshot,
+        "backup_exported_at": (data.get("_meta") or {}).get("exported_at"),
+    }

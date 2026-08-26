@@ -119,6 +119,8 @@ export default function Settings() {
 
       <div id="section-integrity"><IntegrityCard /></div>
 
+      <BackupCard />
+
       <CustomerMergeCard />
 
       <DocumentPolicyCard />
@@ -686,6 +688,71 @@ function CustomerMergeCard() {
           )}
         </>
       )}
+    </Card>
+  );
+}
+
+function BackupCard() {
+  const [downloading, setDownloading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+
+  const download = async () => {
+    setDownloading(true);
+    try {
+      const res = await api.get('/api/v1/admin/backup', { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `techno-backup-${new Date().toISOString().slice(0, 10)}.json.gz`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      message.success('اتنزّلت النسخة الاحتياطية — احفظها في مكان آمن خارج الجهاز');
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر إنشاء النسخة الاحتياطية');
+    } finally { setDownloading(false); }
+  };
+
+  const restore = async () => {
+    if (!file) { message.warning('اختر ملف النسخة الأول'); return; }
+    setRestoring(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post('/api/v1/admin/restore', fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } });
+      const d = res.data;
+      message.success(`اتستعادت ${d.restored_rows} سجل في ${d.restored_tables} جدول`
+        + (d.safety_snapshot ? ' — ونسخة أمان من اللي كان موجود اتحفظت على السيرفر' : ''));
+      setFile(null);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذرت الاستعادة');
+    } finally { setRestoring(false); }
+  };
+
+  return (
+    <Card title="النسخ الاحتياطي" size="small">
+      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        <Space wrap align="center">
+          <Button type="primary" loading={downloading} onClick={download}>تنزيل نسخة احتياطية الآن</Button>
+          <span style={{ color: '#888' }}>
+            ملف مضغوط فيه كل بيانات النظام. خُد نسخة بانتظام واحفظها خارج السيرفر.
+          </span>
+        </Space>
+        <Space wrap align="center">
+          <input type="file" accept=".gz,.json"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <Button danger loading={restoring} disabled={!file} onClick={restore}>
+            استعادة كل البيانات من الملف
+          </Button>
+          <span style={{ color: '#888' }}>
+            الاستعادة بتستبدل كل البيانات الحالية — والسيرفر بيحفظ نسخة أمان أوتوماتيكية
+            قبل الاستبدال.
+          </span>
+        </Space>
+      </Space>
     </Card>
   );
 }
