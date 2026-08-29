@@ -206,6 +206,9 @@ class SalesInvoiceOut(BaseModel):
     # «عميل #1841» و«-» مكان المندوب، مع إن الصف نفسه سليم.
     customer_name: str | None = None
     rep_name: str | None = None
+    # «النوع» في جدول المبيعات — أبيض ولا تكنو. الحقل موجود على الفاتورة من زمان والصف
+    # ماكانش بيرجّعه، فالعمود كان بيعرض «-» على كل صف مهما كانت الفاتورة.
+    family: str | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
 
@@ -535,6 +538,7 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         ]
     cust_names, rep_names = names or ({}, {})
     return SalesInvoiceOut(
+        family=inv.family,
         customer_name=cust_names.get(inv.customer_id),
         rep_name=rep_names.get(inv.rep_id) if inv.rep_id else None,
         coupons=coupons,
