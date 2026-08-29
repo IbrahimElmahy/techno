@@ -181,37 +181,48 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
             if branch else {})
 
-        # اتعملت قبل كده؟ الرصيد الافتتاحي بيتكتب مرة — تشغيلة تانية معناها ضعف الكمية.
-        already = db.scalar(select(func.count()).select_from(
-            stock_service.StockMovement).where(
-            stock_service.StockMovement.source_doc_type == f"a5_opening{prefix}")) or 0
-        if already:
-            print(f"\nالأرصدة الافتتاحية متسجّلة قبل كده ({already} حركة) — اتخطّت.")
-        else:
-            for r in opens:
-                if len(r) < 7:
-                    continue
-                code, name = _clean(r[0]), _clean(r[1])
-                it = item_by_code.get(f"{prefix}{code}") or item_by_name.get(name)
-                if it is None:
-                    skipped.append(f"رصيد لصنف مش موجود: «{name}» ({code})")
-                    continue
-                store = _clean(r[2]) or _clean(r[3])
-                wh = wh_by_name.get(store)
-                if wh is None:
-                    skipped.append(f"رصيد في مخزن مش موجود: «{store}»")
-                    continue
-                qty = _money(r[4]) or _money(r[5]) or _money(r[6])
-                if qty <= 0:
-                    continue
-                stock_service.post_movement(
-                    db, item_id=it.id, location_kind=LocationKind.warehouse,
-                    location_id=wh.id, movement_type="opening",
-                    direction=StockDirection.in_, quantity=qty,
-                    source_doc_type=f"a5_opening{prefix}", source_doc_id=0,
-                    actor_user_id=admin.id if admin else 1)
-                made["أرصدة"] += 1
-            db.flush()
+        # اتعملت قبل كده؟ الحارس بيشتغل لكل صنف×مخزن لوحده مش للتشغيلة كلها.
+        #
+        # كان بيتخطى كل حاجة لو لقى أي حركة افتتاحية، ومعنى كده إن أي سطر ماكانش دخل
+        # في المرة الأولى مايدخلش أبداً — والسطور السالبة كانت بره فعلاً، فالرصيد كان
+        # ناقص ٣٦ وحدة في أكتوبر. الحارس المفصّل بيمنع التكرار وبيسمح باللي فات.
+        done = {(m.item_id, m.location_id) for m in db.scalars(
+            select(stock_service.StockMovement).where(
+                stock_service.StockMovement.source_doc_type
+                == f"a5_opening{prefix}")).all()}
+        if done:
+            print(f"أرصدة افتتاحية موجودة: {len(done)} صنف×مخزن — هتتخطى.")
+        for r in opens:
+            if len(r) < 7:
+                continue
+            code, name = _clean(r[0]), _clean(r[1])
+            it = item_by_code.get(f"{prefix}{code}") or item_by_name.get(name)
+            if it is None:
+                skipped.append(f"رصيد لصنف مش موجود: «{name}» ({code})")
+                continue
+            store = _clean(r[2]) or _clean(r[3])
+            wh = wh_by_name.get(store)
+            if wh is None:
+                skipped.append(f"رصيد في مخزن مش موجود: «{store}»")
+                continue
+            if (it.id, wh.id) in done:
+                continue
+            qty = _money(r[4]) or _money(r[5]) or _money(r[6])
+            if qty == 0:
+                continue
+            # a5 عنده أرصدة أول مدة بالسالب — مخزن بدأ بعجز. بتتسجّل حركة خروج مش
+            # بتتخطى: تخطّيها بيدي رصيد أعلى من الحقيقي.
+            out = qty < 0
+            stock_service.post_movement(
+                db, item_id=it.id, location_kind=LocationKind.warehouse,
+                location_id=wh.id, movement_type="opening",
+                direction=StockDirection.out if out else StockDirection.in_,
+                quantity=abs(qty), allow_negative=True,
+                source_doc_type=f"a5_opening{prefix}", source_doc_id=0,
+                actor_user_id=admin.id if admin else 1)
+            done.add((it.id, wh.id))
+            made["أرصدة"] += 1
+        db.flush()
 
         db.commit()
         print(f"\n{'الكيان':<16}{'اتعمل':>8}")
