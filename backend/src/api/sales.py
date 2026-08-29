@@ -25,6 +25,7 @@ from src.core import clock
 from src.core.db import get_db
 from src.models.catalog import Item, ItemPrice, PriceTier
 from src.models.customer import Customer, CustomerAccount
+from src.models.lookup import LookupOption
 from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
@@ -206,8 +207,12 @@ class SalesInvoiceOut(BaseModel):
     # «عميل #1841» و«-» مكان المندوب، مع إن الصف نفسه سليم.
     customer_name: str | None = None
     rep_name: str | None = None
-    # «النوع» في جدول المبيعات — أبيض ولا تكنو. الحقل موجود على الفاتورة من زمان والصف
-    # ماكانش بيرجّعه، فالعمود كان بيعرض «-» على كل صف مهما كانت الفاتورة.
+    # «النوع» في جدول المبيعات = تصنيف العميل (تاجر / سباك / معرض / شركة)، بالاسم العربي
+    # زي ما هو في «أنواع العملاء». بيتبعت مع الصف عشان الجدول مايحتاجش يحمّل كشف العملاء
+    # كله عشان يعرف كلمة واحدة.
+    customer_type: str | None = None
+    # عائلة الفاتورة — أبيض ولا تكنو. مش «النوع»: دي بتقول الفاتورة على أنهي حساب، والنوع
+    # بيقول العميل ده إيه. الفلتر في الشريط بيشتغل عليها.
     family: str | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
@@ -504,19 +509,35 @@ def create_sale(
     return _inv_out(inv, db)
 
 
-def _row_names(db: Session, rows: list) -> tuple[dict[int, str], dict[int, str]]:
-    """اسم العميل واسم المندوب لصفوف الصفحة — نداءين مجمّعين مش نداء لكل صف."""
+def _type_labels(db: Session) -> dict[str, str]:
+    """كود التصنيف → اسمه العربي. الجدول بيعرض «تاجر» مش «trader»."""
+    return dict(db.execute(
+        select(LookupOption.value, LookupOption.label)
+        .where(LookupOption.category == "customer_type")).all())
+
+
+def _row_names(db: Session, rows: list) -> tuple[dict[int, str], dict[int, str],
+                                                 dict[int, str]]:
+    """اسم العميل وتصنيفه واسم المندوب لصفوف الصفحة — نداءات مجمّعة مش نداء لكل صف."""
     cust_ids = {r.customer_id for r in rows if r.customer_id}
     rep_ids = {r.rep_id for r in rows if getattr(r, "rep_id", None)}
-    custs = dict(db.execute(select(Customer.id, Customer.name)
-                            .where(Customer.id.in_(cust_ids))).all()) if cust_ids else {}
+    custs, types = {}, {}
+    if cust_ids:
+        labels = _type_labels(db)
+        for cid, name, ctype in db.execute(
+                select(Customer.id, Customer.name, Customer.customer_type)
+                .where(Customer.id.in_(cust_ids))).all():
+            custs[cid] = name
+            if ctype:
+                types[cid] = labels.get(ctype, ctype)
     reps = dict(db.execute(select(User.id, User.full_name)
                            .where(User.id.in_(rep_ids))).all()) if rep_ids else {}
-    return custs, {k: v for k, v in reps.items() if v}
+    return custs, types, {k: v for k, v in reps.items() if v}
 
 
 def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
-             names: tuple[dict[int, str], dict[int, str]] | None = None) -> SalesInvoiceOut:
+             names: tuple[dict[int, str], dict[int, str], dict[int, str]] | None = None
+             ) -> SalesInvoiceOut:
     coupons: list[InvoiceCouponOut] = []
     if db is not None:
         rows = db.scalars(
@@ -536,9 +557,10 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
             )
             for r in rows
         ]
-    cust_names, rep_names = names or ({}, {})
+    cust_names, cust_types, rep_names = names or ({}, {}, {})
     return SalesInvoiceOut(
         family=inv.family,
+        customer_type=cust_types.get(inv.customer_id),
         customer_name=cust_names.get(inv.customer_id),
         rep_name=rep_names.get(inv.rep_id) if inv.rep_id else None,
         coupons=coupons,

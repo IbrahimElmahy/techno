@@ -1660,12 +1660,15 @@ export default function Invoices() {
       },
     },
     {
+      // «النوع» = تصنيف العميل (تاجر/سباك/معرض)، مش عائلة الفاتورة. العائلة ليها الفلتر
+      // «نوع الفاتورة» في الشريط، وخلطهم في عمود واحد بيخلّي العمود مايجاوبش أي سؤال.
       title: 'النوع',
-      dataIndex: 'family',
-      key: 'family',
+      dataIndex: 'customer_type',
+      key: 'customer_type',
       width: 90,
-      sorter: (a: any, b: any) => (a.family || '').localeCompare(b.family || ''),
-      render: (f: string | null) => f ? <Tag color="geekblue">{f}</Tag> : '-',
+      sorter: (a: any, b: any) =>
+        (a.customer_type || '').localeCompare(b.customer_type || ''),
+      render: (t: string | null) => t ? <Tag color="geekblue">{t}</Tag> : '-',
     },
     {
       title: 'مندوب',
