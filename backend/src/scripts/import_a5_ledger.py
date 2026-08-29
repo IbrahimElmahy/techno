@@ -23,8 +23,12 @@
 * **الحساب بالكود مش بالاسم.** `AccBrnch_id` بيقابل `A5S-{id}` اللي المرحلة التانية عملته.
   الاسم في `AccBrnch_n` لقطة وقت القيد وممكن يكون اتغيّر بعدها.
 
-* **الفاتورة بتتربط بقيدها.** لما المجموعة تكون تابعة لمستند (`AznID`)، رقم القيد بيتكتب
-  على الفاتورة — فالضغط على الفاتورة بيوصّل لقيدها، وده اللي كان بيحصل لو الخدمة رحّلتها.
+* **الفاتورة بتتربط بقيدها.** لما المجموعة تكون تابعة لمستند، رقم القيد بيتكتب على
+  الفاتورة — فالضغط على الفاتورة بيوصّل لقيدها، وده اللي كان بيحصل لو الخدمة رحّلتها.
+
+  والعمود اللي بيقول أنهي مستند هو `ord` / `OrdBk` / `poord` / `PoordBk` حسب النوع، مش
+  `AznID`. الاسم مغري، بس `AznID` بيطابق رقم الفاتورة في ١٧٢٦ صف من ٢٠١٥٨ — هو رقم مستند
+  المخزون مش رقم الفاتورة. الأربعة دول بيطابقوا في الـ٢٠١٥٨ كلهم.
 """
 from __future__ import annotations
 
@@ -115,10 +119,26 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             for row in db.scalars(select(model).where(model.branch_id == branch.id)).all():
                 doc_rows[row.document_number] = row
 
+        # القيود اللي دخلت قبل كده، عشان الربط يتصلّح من غير ما تتعمل تاني.
+        by_ref = {e.external_ref: e for e in db.scalars(
+            select(LedgerEntry).where(LedgerEntry.external_ref.is_not(None))).all()}
+
+        def link(a5_type: str, a5_doc: str, entry: LedgerEntry) -> None:
+            if a5_type not in DOCS or a5_doc in ("0", ""):
+                return
+            row = doc_rows.get(f"{prefix}{DOCS[a5_type][0]}{a5_doc}")
+            if row is not None and getattr(row, "ledger_entry_id", None) is None:
+                row.ledger_entry_id = entry.id
+                made["فواتير اتربطت بقيدها"] += 1
+
         for key in sorted(groups, key=lambda k: (groups[k][0][A_DATE], int(k or 0))):
             g = groups[key]
             ref = f"a5:{prefix}{key}"
             if ref in done:
+                # موجود — بس الربط ممكن يكون فشل في تشغيلة قبل كده.
+                entry = by_ref.get(ref)
+                if entry is not None:
+                    link(g[0][A_TYPE], g[0][A_DOC], entry)
                 continue
             a5_type, a5_doc = g[0][A_TYPE], g[0][A_DOC]
 
@@ -142,8 +162,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             if not lines:
                 continue
 
-            doc = doc_rows.get(f"{prefix}{DOCS[a5_type][0]}{a5_doc}") \
-                if a5_type in DOCS and a5_doc != "0" else None
             kind = (DOCS[a5_type][2] if a5_type in DOCS
                     else "opening_balance" if a5_type == "0" else "journal")
 
@@ -158,12 +176,11 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                 ln.entry_id = entry.id
                 db.add(ln)
             done.add(ref)
+            by_ref[ref] = entry
             made[kind] += 1
             made["سطور"] += len(lines)
 
-            if doc is not None and getattr(doc, "ledger_entry_id", None) is None:
-                doc.ledger_entry_id = entry.id
-                made["فواتير اتربطت بقيدها"] += 1
+            link(a5_type, a5_doc, entry)
 
         db.commit()
         print(f"{'الكيان':<26}{'اتعمل':>8}")
