@@ -207,7 +207,7 @@ def create_app() -> FastAPI:
         Base.metadata.create_all(engine)
         _ensure_columns(engine)
         # بعد ما العمود الجديد يتعمل: القيد الجديد محتاجه، والقديم لازم يتشال قبل ما يمنع.
-        _drop_stale_constraints(engine)
+        _sync_constraints(engine)
         _widen_columns(engine)
         _ensure_customer_account_family(engine)
         _relax_configurable_enum_columns(engine)
@@ -557,12 +557,25 @@ _DROPPED_CONSTRAINTS: list[tuple[str, str]] = [
 ]
 
 
-def _drop_stale_constraints(engine) -> None:
-    """يشيل قيود التفرّد اللي اتبدّلت. بيتعاد تشغيله بأمان — اللي مش موجود بيتخطى."""
+# قيود تفرّد جديدة على جداول موجودة — (الجدول، الاسم، الأعمدة).
+_ADDED_CONSTRAINTS: list[tuple[str, str, tuple[str, ...]]] = [
+    ("coupon_receipt_line", "uq_coupon_receipt_type_serial",
+     ("coupon_type_id", "serial")),
+]
+
+
+def _sync_constraints(engine) -> None:
+    """يشيل قيود التفرّد القديمة ويعمل الجديدة. بيتعاد تشغيله بأمان.
+
+    `create_all` مابيلمسش جدول موجود، فالقيد الجديد مابيتعملش والقديم بيفضل يمنع. الترتيب
+    مهم: الشيل قبل العمل — القديم والجديد ممكن يتعارضوا.
+    """
     import logging
 
     from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
 
+    log = logging.getLogger("uvicorn.error")
     inspector = sa_inspect(engine)
     existing_tables = set(inspector.get_table_names())
     for table, name in _DROPPED_CONSTRAINTS:
@@ -572,18 +585,35 @@ def _drop_stale_constraints(engine) -> None:
         have |= {i["name"] for i in inspector.get_indexes(table)}
         if name not in have:
             continue
+        errors = []
         for ddl in (f"ALTER TABLE {table} DROP CONSTRAINT {name}",
-                    f"DROP INDEX {name}",
-                    f"ALTER TABLE `{table}` DROP INDEX `{name}`"):
+                    f"ALTER TABLE `{table}` DROP INDEX `{name}`",
+                    f"DROP INDEX {name}"):
             try:
                 with engine.begin() as conn:
                     conn.execute(text(ddl))
                 break
-            except Exception:  # pragma: no cover — نجرب الصيغة اللي اللهجة بتفهمها
-                continue
+            except Exception as exc:  # نجرب الصيغة اللي اللهجة بتفهمها
+                errors.append(str(exc)[:120])
         else:
-            logging.getLogger("uvicorn.error").info(
-                "drop constraint %s.%s skipped", table, name)
+            # مابيتبلعش في صمت: قيد قديم فاضل معناه إن القاعدة لسه بتمنع اللي المفروض
+            # بقى مسموح، والعطل هيظهر كرفض غامض بعدين.
+            log.warning("drop constraint %s.%s failed: %s", table, name, errors)
+
+    for table, name, cols in _ADDED_CONSTRAINTS:
+        if table not in existing_tables:
+            continue
+        have = {u["name"] for u in inspector.get_unique_constraints(table)}
+        have |= {i["name"] for i in inspector.get_indexes(table)}
+        if name in have:
+            continue
+        joined = ", ".join(cols)
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"ALTER TABLE {table} ADD CONSTRAINT {name} UNIQUE ({joined})"))
+        except Exception as exc:
+            log.warning("add constraint %s.%s failed: %s", table, name, str(exc)[:160])
 
 
 def _widen_columns(engine) -> None:
