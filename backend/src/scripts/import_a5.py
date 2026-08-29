@@ -37,7 +37,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import func, select
 
 from src.core.db import SessionLocal
-from src.models.catalog import Item, ItemPrice, PriceTier
+from src.models.catalog import Item, ItemKind, ItemPrice, PriceTier
 from src.models.customer import Customer
 from src.models.org import Branch, Territory
 from src.models.supplier import Supplier
@@ -186,7 +186,9 @@ def run(folder: str, *, execute: bool) -> None:
             if name in sup_by_name:
                 rep.add("موردين", False)
                 continue
-            s = Supplier(name=name, phone=_clean(r[3])[:32] or None,
+            # الكود إجباري وفريد — بيتولّد من رقم المورد في a5.
+            s = Supplier(code=f"A5-{r[1]}", name=name,
+                         phone=_clean(r[3])[:32] or None,
                          address=_clean(r[4])[:240] or None, active=True)
             db.add(s)
             sup_by_name[name] = s
@@ -214,7 +216,7 @@ def run(folder: str, *, execute: bool) -> None:
                 while use in item_by_code:
                     use = f"{code or 'A5-' + r[0]}-{n}"
                     n += 1
-                it = Item(code=use, name=name,
+                it = Item(code=use, name=name, kind=ItemKind.product,
                           category=cat_names.get(int(r[1] or 0)) or None,
                           unit_of_measure=_clean(r[4]) or "قطعة",
                           sale_price=_money(r[5]), active=True)
