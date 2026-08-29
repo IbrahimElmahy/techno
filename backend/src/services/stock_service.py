@@ -143,13 +143,19 @@ def post_movement(
     source_doc_type: str | None = None,
     source_doc_id: int | None = None,
     reverses_movement_id: int | None = None,
+    allow_negative: bool = False,
 ) -> StockMovement:
-    """Append one immutable movement; reject an `out` that would drive on-hand below zero."""
+    """Append one immutable movement; reject an `out` that would drive on-hand below zero.
+
+    `allow_negative` is for replaying history that already happened — استيراد حركة سنة كاملة
+    من نظام قديم. الرصيد وقتها بيتحدد من الحركة نفسها، والرفض معناه إن النقل بيقف عند أول
+    فاتورة النظام القديم سمح فيها بالسالب. مالهاش أي استعمال في الشغل اليومي.
+    """
     q = to_qty(quantity)
     if q <= ZERO_QTY:
         raise StockError("كمية الحركة لازم تكون أكبر من صفر.")
     _lock_locator(db, item_id, location_kind, location_id)
-    if direction == StockDirection.out:
+    if direction == StockDirection.out and not allow_negative:
         current = on_hand(db, item_id, location_kind, location_id)
         if current - q < ZERO_QTY:
             raise StockError(_not_enough(db, item_id, location_kind, location_id, current, q))
