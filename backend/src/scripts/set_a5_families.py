@@ -62,8 +62,12 @@ def run(*, execute: bool) -> None:
     try:
         fam = {c.id: _family(c.name) for c in db.scalars(select(Customer)).all()}
 
-        invs = [i for i in db.scalars(select(SalesInvoice)).all() if not i.family]
-        rets = [r for r in db.scalars(select(SalesReturn)).all() if not r.family]
+        def needs(row) -> bool:
+            # اللي بلا نوع، واللي نوعه اتكتب بتسمية قديمة قبل ما الاسمين يتوحّدوا.
+            return not row.family or row.family in RELABEL
+
+        invs = [i for i in db.scalars(select(SalesInvoice)).all() if needs(i)]
+        rets = [r for r in db.scalars(select(SalesReturn)).all() if needs(r)]
         counts = Counter(fam.get(i.customer_id, DEFAULT) for i in invs)
         counts += Counter(fam.get(r.customer_id, DEFAULT) for r in rets if r.customer_id)
 
