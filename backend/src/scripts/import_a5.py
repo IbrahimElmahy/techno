@@ -46,6 +46,9 @@ from src.models.warehouse import Warehouse, WarehouseType
 # اسم من دول مش اسم — رمز أو رقم اتكتب في خانة الاسم.
 JUNK = re.compile(r"^[\s.\-_0-9@#*/\\]+$")
 
+# رقم فعلاً: أرقام ومسافات وعلامات الهاتف وبس. اللي فيه حروف اسم مش رقم.
+PHONE = re.compile(r"^[0-9+()\-\s]{5,}$")
+
 # ترتيب الشرايح زي ما هي في `item_price1..5`.
 TIERS = [PriceTier.commercial, PriceTier.semi_commercial, PriceTier.wholesale,
          PriceTier.semi_wholesale, PriceTier.consumer]
@@ -293,6 +296,12 @@ def run(folder: str, *, execute: bool) -> None:
 
         db.commit()
         rep.show()
+        if unmatched_reps:
+            print("")
+            print("أسماء مناديب في a5 مالهاش حساب عندنا — العملاء دول محتاجين توزيع:")
+            for nm, cnt in sorted(unmatched_reps.items(), key=lambda x: -x[1]):
+                print(f"    {nm:<26}{cnt:>5} عميل")
+            print("  اعمل لهم حسابات من «المستخدمين» ووزّعهم من شاشة «المناديب».")
         print("\nتم.")
     finally:
         db.close()
