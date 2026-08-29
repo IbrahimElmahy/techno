@@ -37,7 +37,6 @@ a5 خالص** — لا قراءة مباشرة ولا اتصال؛ الملفا�
 """
 from __future__ import annotations
 
-import io
 import os
 import re
 import sys
@@ -67,7 +66,7 @@ def _read(path: str) -> list[list[str]]:
     """يقرا ملف مصدّر من sqlcmd — UTF-16 بفاصل ~."""
     if not os.path.exists(path):
         return []
-    raw = io.open(path, "rb").read()
+    raw = open(path, "rb").read()
     txt = (raw.decode("utf-16", errors="replace")
            if raw[:2] in (b"\xff\xfe", b"\xfe\xff")
            else raw.decode("utf-8", errors="replace"))
@@ -233,7 +232,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             if not name or JUNK.match(name):
                 rep.skip(f"صنف باسم غير صالح: «{name}» (كود {code})")
                 continue
-            it = item_by_code.get(code) or item_by_name.get(name)
+            it = item_by_code.get(f"{prefix}{code}") or item_by_name.get(name)
             created = it is None
             if it is None:
                 # الكود إجباري وفريد عندنا. a5 عنده أصناف بلا كود، فبيتولّد من رقمه

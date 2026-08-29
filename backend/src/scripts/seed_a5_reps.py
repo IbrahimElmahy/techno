@@ -12,6 +12,9 @@
 
     $env:SEED_PASSWORD = "..."
     python -m src.scripts.seed_a5_reps --dir C:/pgtmp --yes
+
+    # شركة تانية على فرع تاني:
+    python -m src.scripts.seed_a5_reps --dir C:/aliaa --branch العلياء --yes
 """
 from __future__ import annotations
 
@@ -49,7 +52,7 @@ def _slug(name: str) -> str:
     return ".".join(parts[:3]) or "rep"
 
 
-def run(folder: str, password: str, *, execute: bool) -> None:
+def run(folder: str, password: str, *, execute: bool, branch_name: str = "") -> None:
     custs = _read(os.path.join(folder, "a5_cust.tsv"))
     # الأسماء بتتقرا من الداتا نفسها — قائمة مكتوبة هنا بتقدم أول ما مندوب يتضاف هناك.
     names: dict[str, int] = {}
@@ -73,12 +76,21 @@ def run(folder: str, password: str, *, execute: bool) -> None:
         role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
         if role is None:
             raise SystemExit("دور «مندوب مبيعات» مش موجود في جدول الأدوار.")
-        branch = db.scalars(select(Branch).where(Branch.active.is_(True))
-                            .order_by(Branch.id)).first()
+        if branch_name:
+            branch = db.scalars(select(Branch).where(Branch.name == branch_name)).first()
+            if branch is None:
+                raise SystemExit("مافيش فرع اسمه " + branch_name)
+        else:
+            branch = db.scalars(select(Branch).where(Branch.active.is_(True))
+                                .order_by(Branch.id)).first()
+        print("الفرع المستهدف: " + branch.name)
         terr = db.scalars(select(Territory).where(Territory.branch_id == branch.id)
                           .order_by(Territory.id)).first()
 
-        existing_names = {(u.full_name or "").strip(): u for u in db.scalars(select(User)).all()}
+        # الدورة جوّه الفرع: «اداره مبيعات» موجود في الفرعين، وكل فرع عايز حسابه.
+        existing_names = {(u.full_name or "").strip(): u
+                          for u in db.scalars(select(User).where(
+                              User.branch_id == branch.id)).all()}
         taken = {u.username for u in db.scalars(select(User)).all()}
 
         made = 0
@@ -108,7 +120,8 @@ def run(folder: str, password: str, *, execute: bool) -> None:
 if __name__ == "__main__":
     args = sys.argv[1:]
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
+    branch = args[args.index("--branch") + 1] if "--branch" in args else ""
     pwd = os.environ.get("SEED_PASSWORD", "").strip()
     if "--yes" in args and not pwd:
         raise SystemExit("حدّد SEED_PASSWORD قبل التنفيذ.")
-    run(folder, pwd, execute="--yes" in args)
+    run(folder, pwd, execute="--yes" in args, branch_name=branch)
