@@ -30,15 +30,24 @@ from src.core.db import SessionLocal
 from src.models.customer import Customer
 from src.models.lookup import LookupOption
 from src.models.sales import SalesInvoice, SalesReturn
+from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
 
-# البادئة على اسم العميل → العائلة.
+# أسماء العائلتين بتتقرا من خدمة الدمج مش بتتكتب هنا تاني.
+#
+# لو الاتنين كتبوا الاسم كل واحد لوحده، أول اختلاف حرف — «ابيض» من غير همزة — بيخلّي حساب
+# العميل مايتلاقاش لما الفاتورة تدوّر على عائلتها، والخطأ بيطلع «العميل مالوش حساب لـ…».
+
+# البادئة على اسم العميل → العائلة. «تكنو» عندهم هي «بولي» عندنا — نفس الخط بتسميتين.
 PREFIX = [
-    (re.compile(r"^\s*تكنو\b"), "تكنو"),
-    (re.compile(r"^\s*(ابيض|أبيض)\b"), "ابيض"),
-    (re.compile(r"^\s*(بولى|بولي)\b"), "بولي"),
+    (re.compile(r"^\s*تكنو\b"), FAMILY_POLY),
+    (re.compile(r"^\s*(ابيض|أبيض)\b"), FAMILY_WHITE),
+    (re.compile(r"^\s*(بولى|بولي)\b"), FAMILY_POLY),
 ]
-DEFAULT = "ابيض"
+DEFAULT = FAMILY_WHITE
 LOOKUP = "customer_account_family"
+
+# تسميات كتبتها تشغيلة سابقة قبل ما الاسمين يتوحّدوا — بتتصلّح بدل ما تفضل جنب الصح.
+RELABEL = {"ابيض": FAMILY_WHITE, "تكنو": FAMILY_POLY}
 
 
 def _family(name: str) -> str:

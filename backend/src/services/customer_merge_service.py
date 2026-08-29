@@ -11,6 +11,10 @@ voucher and opening balance posted against it stays exactly where it is, and the
 becomes the بولي account of the surviving customer. The duplicate customer ROW is deactivated, not
 removed, so a document that names it still resolves to a name rather than to a dangling id.
 
+**والمستندات بتتنقل للعميل الباقي.** كانت بتتساب على الصف المعطّل: الرصيد بيبقى صح (لأنه على
+الحساب اللي اتنقل) بس صفحة العميل بتوريه نص فواتيره، والنص التاني على اسم «تكنو فلان (مدموج
+في #123)». الفاتورة نفسها شايلة عائلتها، فنقلها للعميل الموحّد مابيضيّعش على أنهي خط اتباعت.
+
 That is the whole safety argument: merging moves a pointer, it does not move money. The balances
 after a merge are the same two numbers as before, now with a place to be added up.
 
@@ -21,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from src.models.customer import Customer, CustomerAccount
@@ -182,6 +186,8 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
     # ones the loop made; only the moment of writing moved.
     account_changes: list[dict] = []
     customer_changes: list[dict] = []
+    # المكرر → الباقي. المستندات بتتنقل عليها بعد ما الحسابات تتحرّك.
+    moved: dict[int, int] = {}
 
     for pair in p.pairs:
         keep = customers.get(pair.keep_customer_id)
@@ -204,6 +210,7 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
         # every one of them into an id nobody can resolve.
         customer_changes.append({"id": dupe.id, "active": False,
                                  "name": f"{dupe.name} (مدموج في #{keep.id})"})
+        moved[dupe.id] = keep.id
 
     for cid, name in p.techno_only:
         c = customers.get(cid)
@@ -220,6 +227,7 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
         db.execute(update(CustomerAccount), account_changes)
     if customer_changes:
         db.execute(update(Customer), customer_changes)
+    result["documents_moved"] = _move_documents(db, moved)
 
     # The session still holds the pre-update rows; a caller reading a balance straight afterwards
     # must see what the database now has, not what it had when this started.
@@ -230,6 +238,37 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
     done["remaining"] = max(0, result["remaining"] - len(p.pairs) - len(p.techno_only))
     done["merged_now"] = len(p.pairs) + len(p.techno_only)
     return done
+
+
+# كل جدول بيشاور على العميل. القايمة مكتوبة بالاسم عن قصد: جدول جديد بيتضاف بعدين لازم
+# حد ياخد باله ويحطه هنا، والبديل (اكتشاف المفاتيح وقت التشغيل) بينقل صفوف من غير ما حد
+# قرر إنها تتنقل.
+DOCUMENT_TABLES = [
+    "sales_invoice", "sales_return", "voucher", "cheque", "trade_order",
+    "reservation", "inspection", "coupon", "coupon_receipt", "coupon_redemption",
+    "point_record", "point_conversion",
+]
+
+
+def _move_documents(db: Session, moved: dict[int, int]) -> dict[str, int]:
+    """ينقل مستندات العميل المكرر للعميل الباقي.
+
+    من غير الخطوة دي الرصيد بيبقى صح والصفحة غلط: الفلوس على الحساب اللي اتنقل، والفواتير
+    فاضلة على صف معطّل — فصفحة العميل بتوريه نص شغله.
+    """
+    if not moved:
+        return {}
+    out: dict[str, int] = {}
+    for table in DOCUMENT_TABLES:
+        n = 0
+        for dupe_id, keep_id in moved.items():
+            res = db.execute(text(
+                f"UPDATE {table} SET customer_id = :keep WHERE customer_id = :dupe"
+            ), {"keep": keep_id, "dupe": dupe_id})
+            n += res.rowcount or 0
+        if n:
+            out[table] = n
+    return out
 
 
 def receivable_account(db: Session, customer_id: int, family: str | None = None):
