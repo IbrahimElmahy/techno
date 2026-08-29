@@ -158,14 +158,16 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
                 # الاسم بيتكتب على المستند: الورقة بتتطبع وبتتسلّم، والاسم اللي عليها
                 # لازم يفضل حتى لو كارت العميل اتغيّر بعدين.
                 owner_name=(customer.name if customer else UNKNOWN_OWNER)[:160],
-                owner_phone=(customer.phone if customer else None),
+                owner_phone=((customer.phone or '')[:32] or None) if customer else None,
                 owner_address=_clean(r[V_I])[:240] or None,
-                floor_number=_clean(r[V_H])[:24] or None,
-                inspection_type=_clean(r[V_F]) or None,
-                description=_clean(r[V_G]) or None,
-                technician_name=(tech.name if tech else None),
-                technician_phone=(tech.phone if tech else None),
-                visit_details=_clean(r[V_J])[:500] or None,
+                # كل نص بيتقص على حد عموده. «الدور» عندنا ١٦ حرف وعندهم النص حر —
+                # «الدور الثاني شقه 2» بيوقّف النقل كله عند أول واحد زيه.
+                floor_number=_clean(r[V_H])[:16] or None,
+                inspection_type=_clean(r[V_F])[:80] or None,
+                description=_clean(r[V_G])[:80] or None,
+                technician_name=(tech.name[:160] if tech else None),
+                technician_phone=(tech.phone[:32] if tech and tech.phone else None),
+                visit_details=_clean(r[V_J])[:1000] or None,
                 rep_user_id=rep.id)
             db.add(insp)
             db.flush()
