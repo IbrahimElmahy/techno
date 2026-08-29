@@ -286,6 +286,22 @@ export default function Customers() {
       ),
     },
     {
+      // «النوع» كان مدفون في السطر المتوسّع. التلاتة دول (تاجر/سباك/مالك) بيحددوا الشغل
+      // نفسه — مين بيشتري، ومين الكوبون بيرجع منه، ومين المعاينة عنده — فمكانه عمود.
+      title: 'النوع',
+      dataIndex: 'customer_type',
+      key: 'customer_type',
+      width: 90,
+      sorter: (a: CustomerRecord, b: CustomerRecord) =>
+        String(a.customer_type || '').localeCompare(String(b.customer_type || '')),
+      render: (t: string) => {
+        const label = typeLabels[t] || TYPE_LABELS[t] || t;
+        if (!label) return '-';
+        const color = t === 'plumber' ? 'blue' : t === 'owner' ? 'gold' : 'default';
+        return <Tag color={color}>{label}</Tag>;
+      },
+    },
+    {
       title: 'الهاتف',
       dataIndex: 'phone',
       key: 'phone',
