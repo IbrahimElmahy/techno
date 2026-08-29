@@ -7,6 +7,9 @@ a5 خالص** — لا قراءة مباشرة ولا اتصال؛ الملفا�
     python -m src.scripts.import_a5 --dir C:/pgtmp            # يعرض بس
     python -m src.scripts.import_a5 --dir C:/pgtmp --yes      # ينفّذ
 
+    # شركة تانية على فرع تاني، بأكوادها لوحدها:
+    python -m src.scripts.import_a5 --dir C:/aliaa --branch العلياء --prefix AL- --yes
+
 بيتعاد تشغيله بأمان: المطابقة بالاسم، والموجود بيتحدّث والناقص بيتعمل. تشغيلتين ورا بعض
 بيدّوا نفس النتيجة.
 
@@ -22,6 +25,12 @@ a5 خالص** — لا قراءة مباشرة ولا اتصال؛ الملفا�
 * **الأسعار الخمسة بتتحول لشرايح.** `item_price1..5` عندهم أعمدة على الصنف؛ عندنا صفوف في
   `item_price` بفئة لكل شريحة. الصفر مابيتكتبش: سعر صفر مش سعر، هو غياب سعر.
 
+* **كل شركة كتالوجها لوحده.** a5 عنده قاعدة لكل شركة، والكود جوّه كل قاعدة عدّاد بيبدأ
+  من الأول. `0020001` في أكتوبر «تى لحام معزول ٣٢» وفي العلياء «تى ١"×٣/٤ بسن داخلي» —
+  ١٨٠ كود مشترك ومش نفس الصنف. فالبادئة (`--prefix`) بتفصلهم، والبحث عن الموجود بيتقيّد
+  بالبادئة كمان: من غير كده الاستيراد التاني بيلاقي صنف أكتوبر بنفس الاسم وبيكتب عليه سعر
+  العلياء.
+
 * **البيانات الوسخة بتتخطى وبتتقال.** لقينا في a5 مناطق اسمها «.» و«0» و«@@@» وأصناف
   «@@صنف تجريبى». اللي اسمه رمز أو رقم بس بيتسجّل في تقرير التخطي — مابيتشالش في صمت
   ومابيتستوردش كأنه بيانات.
@@ -34,7 +43,7 @@ import re
 import sys
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from src.core.db import SessionLocal
 from src.models.catalog import Item, ItemKind, ItemPrice, PriceTier
@@ -108,7 +117,7 @@ class Report:
                 print(f"    … و{len(self.skipped) - 15} غيرهم")
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") -> None:
     rep = Report()
     cats = _read(os.path.join(folder, "a5_cats.tsv"))
     items = _read(os.path.join(folder, "a5_items.tsv"))
@@ -125,15 +134,24 @@ def run(folder: str, *, execute: bool) -> None:
 
     db = SessionLocal()
     try:
-        branch = db.scalars(select(Branch).where(Branch.active.is_(True))
-                            .order_by(Branch.id)).first()
+        if branch_name:
+            branch = db.scalars(select(Branch).where(Branch.name == branch_name)).first()
+            if branch is None:
+                raise SystemExit(f"مافيش فرع اسمه «{branch_name}».")
+        else:
+            branch = db.scalars(select(Branch).where(Branch.active.is_(True))
+                                .order_by(Branch.id)).first()
         if branch is None:
             raise SystemExit("مافيش فرع نشط — اعمل فرع الأول.")
-        print(f"\nالفرع المستهدف: {branch.name}\n")
+        print(f"\nالفرع المستهدف: {branch.name}"
+              + (f" · البادئة: {prefix}" if prefix else "") + "\n")
 
         # ---------- المناطق: الأب الأول، وبعده اللي تحته ----------
         areas = [r for r in misc if r and r[0] == "AREA"]
-        by_name = {t.name: t for t in db.scalars(select(Territory)).all()}
+        # المنطقة بتتدوّر جوّه الفرع بس: «الجيزة» في أكتوبر و«الجيزة» في العلياء منطقتين،
+        # ولو الدورة عامة عملاء العلياء بيقعدوا على منطقة أكتوبر وبالتالي على فرعها.
+        by_name = {t.name: t for t in db.scalars(
+            select(Territory).where(Territory.branch_id == branch.id)).all()}
 
         def territory(name: str, parent: Territory | None = None) -> Territory | None:
             name = _clean(name)
@@ -163,7 +181,8 @@ def run(folder: str, *, execute: bool) -> None:
         db.flush()
 
         # ---------- المخازن ----------
-        wh_by_name = {w.name: w for w in db.scalars(select(Warehouse)).all()}
+        wh_by_name = {w.name: w for w in db.scalars(
+            select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
         for r in [x for x in misc if x and x[0] == "STORE"]:
             name = _clean(r[2] if len(r) > 2 else "")
             if not name or JUNK.match(name):
@@ -190,7 +209,7 @@ def run(folder: str, *, execute: bool) -> None:
                 rep.add("موردين", False)
                 continue
             # الكود إجباري وفريد — بيتولّد من رقم المورد في a5.
-            s = Supplier(code=f"A5-{r[1]}", name=name,
+            s = Supplier(code=f"{prefix}A5-{r[1]}", name=name,
                          phone=_clean(r[3])[:32] or None,
                          address=_clean(r[4])[:240] or None, active=True)
             db.add(s)
@@ -200,8 +219,13 @@ def run(folder: str, *, execute: bool) -> None:
 
         # ---------- الأصناف وشرايحها ----------
         cat_names = {int(r[0]): _clean(r[1]) for r in cats if r and r[0].isdigit()}
-        item_by_code = {i.code: i for i in db.scalars(select(Item)).all() if i.code}
-        item_by_name = {i.name: i for i in db.scalars(select(Item)).all()}
+        # الكتالوج بيتقسّم بالبادئة. من غير كده «كوع ٢٥ لحام» بتاع العلياء بيلاقي صنف
+        # أكتوبر بنفس الاسم وبيكتب عليه أسعار العلياء.
+        all_items = db.scalars(select(Item)).all()
+        mine = [i for i in all_items if not prefix or (i.code or "").startswith(prefix)]
+        item_by_code = {i.code: i for i in mine if i.code}
+        item_by_name = {i.name: i for i in mine}
+        taken_codes = {i.code for i in all_items if i.code}
         for r in items:
             if len(r) < 12 or not r[0].isdigit():
                 continue
@@ -214,11 +238,12 @@ def run(folder: str, *, execute: bool) -> None:
             if it is None:
                 # الكود إجباري وفريد عندنا. a5 عنده أصناف بلا كود، فبيتولّد من رقمه
                 # هناك — رقم أصلي ثابت، أحسن من عدّاد بيتغيّر لو الاستيراد اتعاد.
-                use = code or f"A5-{r[0]}"
-                n = 2
-                while use in item_by_code:
-                    use = f"{code or 'A5-' + r[0]}-{n}"
+                base = f"{prefix}{code}" if code else f"{prefix}A5-{r[0]}"
+                use, n = base, 2
+                while use in taken_codes:
+                    use = f"{base}-{n}"
                     n += 1
+                taken_codes.add(use)
                 it = Item(code=use, name=name, kind=ItemKind.product,
                           category=cat_names.get(int(r[1] or 0)) or None,
                           unit_of_measure=_clean(r[4]) or "قطعة",
@@ -254,8 +279,12 @@ def run(folder: str, *, execute: bool) -> None:
         from src.models.user import User
 
         rep_role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
-        default_rep = db.scalars(select(User).where(User.role_id == rep_role.id)
-                                 .order_by(User.id)).first() if rep_role else None
+        default_rep = db.scalars(
+            select(User).where(User.role_id == rep_role.id, User.branch_id == branch.id)
+            .order_by(User.id)).first() if rep_role else None
+        if default_rep is None and rep_role is not None:
+            default_rep = db.scalars(select(User).where(User.role_id == rep_role.id)
+                                     .order_by(User.id)).first()
         if default_rep is None:
             default_rep = db.scalars(select(User).order_by(User.id)).first()
         fallback_terr = db.scalars(select(Territory).where(
@@ -269,12 +298,14 @@ def run(folder: str, *, execute: bool) -> None:
         # مناديبنا بالاسم — عشان اللي مكتوب في a5 يتطابق على مندوب حقيقي.
         rep_by_name: dict[str, int] = {}
         if rep_role:
-            for u in db.scalars(select(User).where(User.role_id == rep_role.id)).all():
+            for u in db.scalars(select(User).where(User.role_id == rep_role.id,
+                                                   User.branch_id == branch.id)).all():
                 for key in filter(None, {_clean(u.full_name or ""), u.username}):
                     rep_by_name[key] = u.id
         unmatched_reps: dict[str, int] = {}
 
-        cust_by_name = {c.name: c for c in db.scalars(select(Customer)).all()}
+        cust_by_name = {c.name: c for c in db.scalars(
+            select(Customer).where(Customer.branch_id == branch.id)).all()}
         for r in custs:
             if len(r) < 8 or not r[0].isdigit():
                 continue
@@ -289,7 +320,7 @@ def run(folder: str, *, execute: bool) -> None:
                 # الكود والمندوب والمنطقة إجباريين عندنا وa5 مش لازم يبقى عنده الترتيب
                 # ده. الكود بيتولّد من رقمه الأصلي، والمندوب بيتساب على حساب مؤقت لحد ما
                 # يتوزّعوا من شاشة المناديب — أحسن من إننا نخترع مندوب لكل عميل.
-                c = Customer(code=f"A5-{r[0]}", name=name, customer_type="trader",
+                c = Customer(code=f"{prefix}A5-{r[0]}", name=name, customer_type="trader",
                              rep_id=default_rep.id, territory_id=terr.id,
                              branch_id=terr.branch_id, active=True)
                 db.add(c)
@@ -337,4 +368,6 @@ if __name__ == "__main__":
     folder = "C:/pgtmp"
     if "--dir" in args:
         folder = args[args.index("--dir") + 1]
-    run(folder, execute="--yes" in args)
+    branch = args[args.index("--branch") + 1] if "--branch" in args else ""
+    prefix = args[args.index("--prefix") + 1] if "--prefix" in args else ""
+    run(folder, execute="--yes" in args, branch_name=branch, prefix=prefix)

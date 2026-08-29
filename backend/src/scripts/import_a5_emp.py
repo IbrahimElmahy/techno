@@ -7,6 +7,9 @@
     python -m src.scripts.import_a5_emp --dir C:/pgtmp          # يعرض بس
     python -m src.scripts.import_a5_emp --dir C:/pgtmp --yes    # ينفّذ
 
+    # شركة تانية على فرع تاني:
+    python -m src.scripts.import_a5_emp --dir C:/aliaa --branch العلياء --prefix AL- --yes
+
 بيتعاد تشغيله بأمان.
 
 ---------------------------------------------------------------------------
@@ -49,7 +52,8 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, branch_name: str = "",
+        prefix: str = "") -> None:
     rows = _read(os.path.join(folder, "a5_emp.tsv"))
     emps = [r for r in rows if r and r[0] == "EMP"]
     stores = [r for r in rows if r and r[0] == "STORE"]
@@ -74,8 +78,14 @@ def run(folder: str, *, execute: bool) -> None:
     db = SessionLocal()
     made = {"وظائف": 0, "موظفين": 0, "ربط بحساب": 0, "ربط بمخزن": 0}
     try:
-        branch = db.scalars(select(Branch).where(Branch.active.is_(True))
-                            .order_by(Branch.id)).first()
+        if branch_name:
+            branch = db.scalars(select(Branch).where(Branch.name == branch_name)).first()
+            if branch is None:
+                raise SystemExit("مافيش فرع اسمه " + branch_name)
+        else:
+            branch = db.scalars(select(Branch).where(Branch.active.is_(True))
+                                .order_by(Branch.id)).first()
+        print("الفرع المستهدف: " + (branch.name if branch else "—") + "\n")
 
         # ---------- الوظائف ----------
         jobs = {j.name: j for j in db.scalars(select(JobTitle)).all()}
@@ -89,11 +99,16 @@ def run(folder: str, *, execute: bool) -> None:
                 made["وظائف"] += 1
 
         # ---------- الموظفون ----------
-        by_name = {_norm(e.name): e for e in db.scalars(select(Employee)).all()}
-        users = {_norm(u.full_name or ""): u for u in db.scalars(select(User)).all()
-                 if (u.full_name or "").strip()}
+        by_name = ({_norm(e.name): e for e in db.scalars(
+            select(Employee).where(Employee.branch_id == branch.id)).all()}
+            if branch else {})
+        users = ({_norm(u.full_name or ""): u for u in db.scalars(
+            select(User).where(User.branch_id == branch.id)).all()
+            if (u.full_name or "").strip()} if branch else {})
         linked_users = {e.user_id for e in db.scalars(select(Employee)).all() if e.user_id}
-        whs = db.scalars(select(Warehouse).where(Warehouse.active.is_(True))).all()
+        whs = (db.scalars(select(Warehouse).where(Warehouse.active.is_(True),
+                                                  Warehouse.branch_id == branch.id)).all()
+               if branch else [])
         taken = {e.warehouse_id for e in db.scalars(select(Employee)).all() if e.warehouse_id}
         n = db.scalar(select(func.count()).select_from(Employee)) or 0
 
@@ -103,7 +118,7 @@ def run(folder: str, *, execute: bool) -> None:
             emp = by_name.get(key)
             if emp is None:
                 n += 1
-                code = f"A5E-{r[1]}"
+                code = f"{prefix}A5E-{r[1]}"
                 emp = Employee(code=code, name=name, branch_id=branch.id if branch else None,
                                active=True)
                 db.add(emp)
@@ -160,4 +175,6 @@ def run(folder: str, *, execute: bool) -> None:
 if __name__ == "__main__":
     args = sys.argv[1:]
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
-    run(folder, execute="--yes" in args)
+    branch = args[args.index("--branch") + 1] if "--branch" in args else ""
+    prefix = args[args.index("--prefix") + 1] if "--prefix" in args else ""
+    run(folder, execute="--yes" in args, branch_name=branch, prefix=prefix)

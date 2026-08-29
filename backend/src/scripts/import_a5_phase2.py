@@ -7,6 +7,9 @@
     python -m src.scripts.import_a5_phase2 --dir C:/pgtmp          # يعرض بس
     python -m src.scripts.import_a5_phase2 --dir C:/pgtmp --yes    # ينفّذ
 
+    # شركة تانية على فرع تاني:
+    python -m src.scripts.import_a5_phase2 --dir C:/aliaa --branch العلياء --prefix AL- --yes
+
 بيتعاد تشغيله بأمان.
 
 ---------------------------------------------------------------------------
@@ -28,7 +31,6 @@ from __future__ import annotations
 
 import os
 import sys
-from decimal import Decimal
 
 from sqlalchemy import func, select
 
@@ -54,7 +56,8 @@ NATURE = {
 }
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, branch_name: str = "",
+        prefix: str = "") -> None:
     accs = _read(os.path.join(folder, "a5_acc.tsv"))
     opens = _read(os.path.join(folder, "a5_open.tsv"))
     mains = [r for r in accs if r and r[0] == "MAIN"]
@@ -72,9 +75,16 @@ def run(folder: str, *, execute: bool) -> None:
     made = {"مجموعات": 0, "حسابات": 0, "ربط مناديب": 0, "أرصدة": 0}
     skipped: list[str] = []
     try:
-        branch = db.scalars(select(Branch).where(Branch.active.is_(True))
-                            .order_by(Branch.id)).first()
+        if branch_name:
+            branch = db.scalars(select(Branch).where(Branch.name == branch_name)).first()
+            if branch is None:
+                raise SystemExit("مافيش فرع اسمه " + branch_name)
+        else:
+            branch = db.scalars(select(Branch).where(Branch.active.is_(True))
+                                .order_by(Branch.id)).first()
         admin = db.scalars(select(User).order_by(User.id)).first()
+        print("الفرع المستهدف: " + (branch.name if branch else "—")
+              + ((" · البادئة: " + prefix) if prefix else "") + "\n")
 
         # ---------- ١) شجرة الحسابات ----------
         by_code = {a.code: a for a in db.scalars(select(Account)).all() if a.code}
@@ -85,7 +95,7 @@ def run(folder: str, *, execute: bool) -> None:
             if not name or JUNK.match(name):
                 skipped.append(f"حساب رئيسي باسم غير صالح: «{name}»")
                 continue
-            code = f"A5M-{a5id}"
+            code = f"{prefix}A5M-{a5id}"
             acc = by_code.get(code)
             if acc is None:
                 nature, side = NATURE.get(r[3], (AccountNature.asset, Direction.debit))
@@ -106,7 +116,7 @@ def run(folder: str, *, execute: bool) -> None:
             if not name or JUNK.match(name):
                 skipped.append(f"حساب فرعي باسم غير صالح: «{name}»")
                 continue
-            code = f"A5S-{a5id}"
+            code = f"{prefix}A5S-{a5id}"
             if code in by_code:
                 continue
             parent = main_by_a5.get(parent_a5)
@@ -126,8 +136,12 @@ def run(folder: str, *, execute: bool) -> None:
         # الربط بالاسم جوّه الاسم: «مخزن عمرو رجب». مش أنضف طريقة، بس دي اللي في الداتا —
         # والبديل إن كل مندوب يتربط بإيده من الشاشة.
         rep_role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
-        reps = db.scalars(select(User).where(User.role_id == rep_role.id)).all() if rep_role else []
-        whs = db.scalars(select(Warehouse).where(Warehouse.active.is_(True))).all()
+        reps = (db.scalars(select(User).where(User.role_id == rep_role.id,
+                                              User.branch_id == branch.id)).all()
+                if rep_role and branch else [])
+        whs = (db.scalars(select(Warehouse).where(Warehouse.active.is_(True),
+                                                  Warehouse.branch_id == branch.id)).all()
+               if branch else [])
         taken = {e.warehouse_id for e in db.scalars(select(Employee)).all() if e.warehouse_id}
 
         for u in reps:
@@ -158,14 +172,19 @@ def run(folder: str, *, execute: bool) -> None:
         db.flush()
 
         # ---------- ٣) الأرصدة الافتتاحية ----------
-        item_by_code = {i.code: i for i in db.scalars(select(Item)).all() if i.code}
-        item_by_name = {i.name: i for i in db.scalars(select(Item)).all()}
-        wh_by_name = {w.name: w for w in db.scalars(select(Warehouse)).all()}
+        # الكتالوج بيتقسّم بالبادئة: كود a5 عدّاد جوّه كل شركة، فنفس الكود بيبقى صنفين.
+        all_items = db.scalars(select(Item)).all()
+        mine = [i for i in all_items if not prefix or (i.code or "").startswith(prefix)]
+        item_by_code = {i.code: i for i in mine if i.code}
+        item_by_name = {i.name: i for i in mine}
+        wh_by_name = ({w.name: w for w in db.scalars(
+            select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
+            if branch else {})
 
         # اتعملت قبل كده؟ الرصيد الافتتاحي بيتكتب مرة — تشغيلة تانية معناها ضعف الكمية.
         already = db.scalar(select(func.count()).select_from(
             stock_service.StockMovement).where(
-            stock_service.StockMovement.source_doc_type == "a5_opening")) or 0
+            stock_service.StockMovement.source_doc_type == f"a5_opening{prefix}")) or 0
         if already:
             print(f"\nالأرصدة الافتتاحية متسجّلة قبل كده ({already} حركة) — اتخطّت.")
         else:
@@ -173,7 +192,7 @@ def run(folder: str, *, execute: bool) -> None:
                 if len(r) < 7:
                     continue
                 code, name = _clean(r[0]), _clean(r[1])
-                it = item_by_code.get(code) or item_by_name.get(name)
+                it = item_by_code.get(f"{prefix}{code}") or item_by_name.get(name)
                 if it is None:
                     skipped.append(f"رصيد لصنف مش موجود: «{name}» ({code})")
                     continue
@@ -189,7 +208,7 @@ def run(folder: str, *, execute: bool) -> None:
                     db, item_id=it.id, location_kind=LocationKind.warehouse,
                     location_id=wh.id, movement_type="opening",
                     direction=StockDirection.in_, quantity=qty,
-                    source_doc_type="a5_opening", source_doc_id=0,
+                    source_doc_type=f"a5_opening{prefix}", source_doc_id=0,
                     actor_user_id=admin.id if admin else 1)
                 made["أرصدة"] += 1
             db.flush()
@@ -213,4 +232,6 @@ def run(folder: str, *, execute: bool) -> None:
 if __name__ == "__main__":
     args = sys.argv[1:]
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
-    run(folder, execute="--yes" in args)
+    branch = args[args.index("--branch") + 1] if "--branch" in args else ""
+    prefix = args[args.index("--prefix") + 1] if "--prefix" in args else ""
+    run(folder, execute="--yes" in args, branch_name=branch, prefix=prefix)
