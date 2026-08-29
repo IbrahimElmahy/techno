@@ -543,17 +543,19 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         rows = db.scalars(
             select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.invoice_id == inv.id)
         ).all()
-        names = {}
+        # اسم متغيّر مستقل عن البارامتر `names`. كان بينده عليه `names` كمان، فالفاتورة
+        # اللي فيها كوبونات كانت بتدهس أسماء العملاء وتنهار عند التفكيك تحت.
+        type_names: dict[int, str] = {}
         ids = [r.coupon_type_id for r in rows if r.coupon_type_id]
         if ids:
-            names = dict(db.execute(
+            type_names = dict(db.execute(
                 select(CouponType.id, CouponType.name).where(CouponType.id.in_(ids))
             ).all())
         coupons = [
             InvoiceCouponOut(
                 id=r.id, coupon_type_id=r.coupon_type_id, count=r.count,
                 serial_from=r.serial_from, serial_to=r.serial_to,
-                coupon_type_name=names.get(r.coupon_type_id),
+                coupon_type_name=type_names.get(r.coupon_type_id),
             )
             for r in rows
         ]

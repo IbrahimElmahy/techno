@@ -227,7 +227,7 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
         db.execute(update(CustomerAccount), account_changes)
     if customer_changes:
         db.execute(update(Customer), customer_changes)
-    result["documents_moved"] = _move_documents(db, moved)
+    documents_moved = _move_documents(db, moved)
 
     # The session still holds the pre-update rows; a caller reading a balance straight afterwards
     # must see what the database now has, not what it had when this started.
@@ -237,6 +237,7 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
     # What is LEFT after this batch — the caller repeats until it is zero.
     done["remaining"] = max(0, result["remaining"] - len(p.pairs) - len(p.techno_only))
     done["merged_now"] = len(p.pairs) + len(p.techno_only)
+    done["documents_moved"] = documents_moved
     return done
 
 
