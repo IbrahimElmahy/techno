@@ -29,6 +29,10 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
+// حجم الصفحة. الكشف كله بقى 1437 تحويل بـ17 ألف سطر بعد نقل داتا a5، وتحميلهم
+// كلهم كان بياخد 7.6 ثانية على السيرفر نفسه قبل ما الشبكة تشوف حاجة.
+const PAGE_SIZE = 300;
+
 /**
  * تحويلات المخزون — move stock between locations.
  *
@@ -172,7 +176,7 @@ export default function Transfers() {
   const fetchTransfers = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/transfers');
+      const res = await api.get('/api/v1/transfers', { params: { limit: PAGE_SIZE } });
       setTransfers(res.data);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -397,7 +401,7 @@ export default function Transfers() {
    *  what this screen believes it did. */
   const refreshEditing = async (id: number) => {
     try {
-      const res = await api.get('/api/v1/transfers');
+      const res = await api.get('/api/v1/transfers', { params: { limit: PAGE_SIZE } });
       const rows = res.data || [];
       setTransfers(rows);
       const found = rows.find((t: TransferRecord) => t.id === id) ?? null;

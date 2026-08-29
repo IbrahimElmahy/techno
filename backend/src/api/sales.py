@@ -633,7 +633,9 @@ def list_sales(
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
     rows = list(db.scalars(stmt).all())
-    return [_inv_out(i, names=_row_names(db, rows)) for i in rows]
+    # مرة واحدة للصفحة كلها — كانت جوّه الحلقة، يعني نداء لكل صف.
+    names = _row_names(db, rows)
+    return [_inv_out(i, names=names) for i in rows]
 
 
 @router.get("/summary", response_model=dict)
