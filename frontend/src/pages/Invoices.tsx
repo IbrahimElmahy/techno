@@ -174,6 +174,9 @@ export function couponCount(from?: string | null, to?: string | null): number | 
  * الراجع؛ والنوع هو اللي بيخلّي الدفاتر تقدر تقول اتصرف إيه. */
 interface CouponRow {
   key: string;
+  // فئة الدفتر — عادي/فضي/ذهبي/ماسي. دي اللي بتحدد الكوبون مع رقمه، مش «كتالوج
+  // الكوبونات» اللي هو عروض استبدال النقاط.
+  coupon_kind?: string;
   coupon_type_id?: number;
   count?: number;
   serial_from?: string;
@@ -188,6 +191,8 @@ function blankCoupon(): CouponRow {
 
 export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
+  // فئات الورق اللي بيتسلّم للعميل. مصدر واحد: قائمة «فئات الكوبونات» في الإعدادات.
+  const { options: couponKindOptions } = useLookup('coupon_kind');
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
   const [filters, setFilters] = useState<InvoiceFilters>({});
@@ -1148,7 +1153,8 @@ export default function Invoices() {
     // الآجل بيتبعت للسيرفر، وهو بيتأكد منه — ولو اتساب فاضي بيحسبه من المستحق ناقص النقدي.
 
     const validLines = lines.filter((l) => l.item_id !== null);
-    const validCoupons = couponRows.filter((r) => Boolean(r.coupon_type_id || r.serial_from || r.serial_to));
+    const validCoupons = couponRows.filter(
+      (r) => Boolean(r.coupon_kind || r.serial_from || r.serial_to));
     if (validLines.length === 0 && validCoupons.length === 0) {
       message.error('يرجى إضافة منتج أو تسجيل كوبونات لحفظ الفاتورة!');
       return;
@@ -1243,9 +1249,9 @@ export default function Invoices() {
         // Coupons handed over with this invoice, as the serial range off the book. Kept on the
         // invoice because that is what proves which coupons were his when they come back in.
         coupons: couponRows
-          .filter((r) => r.coupon_type_id || r.serial_from || r.serial_to)
+          .filter((r) => r.coupon_kind || r.serial_from || r.serial_to)
           .map((r) => ({
-            coupon_type_id: r.coupon_type_id ?? null,
+            coupon_kind: r.coupon_kind ?? null,
             // Sent as the range implies it. Sending a separately-typed number was how an invoice
             // came to claim a book size its serials do not support.
             count: couponCount(r.serial_from, r.serial_to),
@@ -1495,7 +1501,7 @@ export default function Invoices() {
       if (det.coupon_rows && det.coupon_rows.length) {
         setCouponRows(det.coupon_rows.map((cr: any) => ({
           key: cr.id || String(Math.random()),
-          coupon_type_id: cr.coupon_type_id,
+          coupon_kind: cr.coupon_kind,
           count: cr.count,
           serial_from: cr.serial_from,
           serial_to: cr.serial_to,
@@ -1503,7 +1509,7 @@ export default function Invoices() {
       } else if (det.coupon_serial_from || det.coupon_serial_to) {
         setCouponRows([{
           key: '1',
-          coupon_type_id: det.coupon_type_id || undefined,
+          coupon_kind: det.coupon_kind || undefined,
           count: det.coupon_count,
           serial_from: det.coupon_serial_from,
           serial_to: det.coupon_serial_to,
@@ -2159,7 +2165,7 @@ export default function Invoices() {
           {/* الكوبونات المصروفة */}
           <div style={{ marginTop: 14, marginBottom: 12 }}>
             <Row gutter={8} className="mini-head">
-              <Col xs={24} md={7}>الكوبون</Col>
+              <Col xs={24} md={7}>فئة الكوبون</Col>
               <Col xs={8} md={4}>العدد</Col>
               <Col xs={8} md={5}>من رقم</Col>
               <Col xs={8} md={5}>إلى رقم</Col>
@@ -2171,10 +2177,11 @@ export default function Invoices() {
                   <Select allowClear showSearch style={{ width: '100%' }}
                     optionFilterProp="label"
                     disabled={viewOnly}
-                    value={row.coupon_type_id}
+                    placeholder="عادي / فضي / ذهبي"
+                    value={row.coupon_kind}
                     onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
-                      ? { ...x, coupon_type_id: v as number } : x)))}
-                    options={couponTypes.map((t) => ({ value: t.id, label: t.name }))} />
+                      ? { ...x, coupon_kind: v as string } : x)))}
+                    options={couponKindOptions.map((k) => ({ value: k.value, label: k.label }))} />
                 </Col>
                 <Col xs={8} md={4}>
                   <InputNumber style={{ width: '100%' }} disabled

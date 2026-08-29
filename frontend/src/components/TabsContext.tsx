@@ -46,7 +46,7 @@ const BASE_TITLES: Record<string, string> = {
   '/vouchers': 'سندات القبض والصرف',
   '/finance-reports': 'القوائم المالية',
   '/general-ledger': 'الأستاذ العام والقيود',
-  '/loyalty': 'أنواع الكوبونات',
+  '/loyalty': 'الكوبونات والنقاط',
   '/audit': 'سجل العمليات',
   '/inspections': 'المعاينات',
   '/inspection-items': 'أصناف المعاينة',

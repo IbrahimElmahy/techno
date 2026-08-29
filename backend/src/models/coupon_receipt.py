@@ -77,23 +77,27 @@ class CouponReceiptLine(Base):
     __tablename__ = "coupon_receipt_line"
     __table_args__ = (
         # A coupon is a bearer document — it can be handed in exactly once.
-        # التفرّد على (النوع، السريال) مش على السريال لوحده.
+        # التفرّد على (الفئة، السريال) مش على السريال لوحده.
         #
         # دفتر الذهبي مرقّم ١..٥٠ ودفتر الفضي مرقّم ١..٥٠ — رقمين مختلفين على ورقتين
         # مختلفتين. القيد القديم كان بيخلّيهم كوبون واحد: أول ما «٥» فضي يتستلم، «٥»
         # ذهبي يبقى «مستلم قبل كده» وميقدرش يرجع أبداً.
-        UniqueConstraint("coupon_type_id", "serial", name="uq_coupon_receipt_type_serial"),
+        UniqueConstraint("coupon_kind", "serial", name="uq_coupon_receipt_kind_serial"),
     )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     receipt_id: Mapped[int] = mapped_column(ForeignKey("coupon_receipt.id"), nullable=False,
                                             index=True)
     serial: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
-    # نوع الكوبون اللي الرقم ده بتاعه. NULL للسطور اللي اتكتبت قبل ما النوع يتخزّن —
-    # وقتها كان الترقيم واحد فالسريال لوحده كان بيكفي.
-    coupon_type_id: Mapped[int | None] = mapped_column(
-        ForeignKey("coupon_type.id"), nullable=True, index=True
-    )
+    # فئة الورقة — عادي / فضي / ذهبي / ماسي، قيمة من قائمة `coupon_kind`.
+    #
+    # مش `coupon_type`: ده كتالوج استبدال النقاط («١٠٠ نقطة → ٥٠ ج»)، حاجة تانية خالص.
+    # الورقة اللي في إيد السباك ليها فئة ورقم، والاتنين مع بعض هما هويتها — زي ما نظامهم
+    # القديم كاتبها في رقم واحد: «ذهبى-536000».
+    #
+    # نص مش مفتاح: الفئات قايمة بيديرها صاحب الشغل من الإعدادات، وربطها بجدول معناه إن
+    # إضافة فئة تبقى تعديل في الكود.
+    coupon_kind: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     sales_invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
 
     receipt: Mapped[CouponReceipt] = relationship(back_populates="lines")

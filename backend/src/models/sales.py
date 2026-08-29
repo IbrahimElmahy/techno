@@ -120,6 +120,11 @@ class SalesInvoiceCoupon(Base):
     # some environments AND from the test fixtures, and two passes over a brand-new table race to
     # create the same named index.
     invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
+    # فئة الدفتر — عادي / فضي / ذهبي / ماسي. دي اللي بتحدد الكوبون مع رقمه.
+    #
+    # `coupon_type_id` تحتها كان بيشاور على كتالوج استبدال النقاط، وده مش فئة ورقة: دفتر
+    # الكوبونات اللي بيتسلّم للعميل ورق مرقّم، وعرض الاستبدال حاجة بتحصل بعدين ولناس تانية.
+    coupon_kind: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     coupon_type_id: Mapped[int | None] = mapped_column(
         ForeignKey("coupon_type.id"), nullable=True
     )

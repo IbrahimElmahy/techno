@@ -526,7 +526,8 @@ export default function Loyalty() {
   const items = [
     {
       key: 'settings',
-      label: 'كتالوج الكوبونات',
+      // الاسمين كانوا بيتلغبطوا: ده عروض استبدال النقاط، والتاني فئات الورق نفسه.
+      label: 'عروض استبدال النقاط',
       children: (
         <div>
           <div style={{ marginBottom: 16, textAlign: 'left' }}>
@@ -584,12 +585,12 @@ export default function Loyalty() {
     },
     {
       key: 'kinds',
-      label: `فئات الكوبونات (${couponKinds.length})`,
+      label: `فئات الكوبونات — الورق (${couponKinds.length})`,
       children: (
         <div>
           <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span style={{ color: '#595959' }}>
-              هذه الفئات هي الأنواع المتاحة للاختيار عند استلام وتصنيف الكوبونات (عادي / فضي / ذهبي / ماسي / ...).
+              فئة الورقة اللي بتتسلّم للعميل على الفاتورة (عادي / فضي / ذهبي / ماسي). الفئة مع رقم الكوبون هما هويته: «٥ ذهبي» غير «٥ فضي».
             </span>
             <Button
               type="primary"

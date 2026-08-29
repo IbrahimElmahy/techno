@@ -24,6 +24,8 @@ interface Entry {
   customerId?: number | null;
   customerName?: string | null;
   documentNumber?: string | null;
+  // فئة الورقة زي ما النظام استنتجها من الدفتر اللي اتصرفت منه.
+  couponKind?: string | null;
 }
 
 interface ReceiptLineOut {
@@ -149,10 +151,15 @@ export default function CouponReceipts() {
         customerId: d.customer_id,
         customerName: d.customer_name,
         documentNumber: d.document_number,
+        couponKind: d.coupon_kind,
       } : e)));
       if (d.status === 'valid' && !customerId && d.customer_id) setCustomerId(d.customer_id);
       if (d.status === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
       if (d.status === 'received') message.warning(`الكوبون ${serial} مُستلَم من قبل`);
+      if (d.status === 'ambiguous') {
+        // نفس الرقم اتصرف تحت أكتر من فئة — التخمين هنا بيحطّ الكوبون على فاتورة مش بتاعته.
+        message.warning(`الكوبون ${serial} متصرّف تحت أكتر من فئة — حدّد الفئة`);
+      }
       if (customerId && d.status === 'valid' && d.customer_id && d.customer_id !== customerId) {
         message.warning(`الكوبون ${serial} متصرّف لعميل تاني`);
       }
@@ -177,6 +184,9 @@ export default function CouponReceipts() {
   const rejects = entries.filter((e) => e.status === 'unknown' || e.status === 'received');
   const offline = entries.filter((e) => e.status === 'pending' || e.status === 'checking');
   const counted = [...good, ...offline];
+  // الفئات اللي طلعت من الكوبونات المدخلة. أكتر من واحدة = الاستلام فيه أكتر من دفتر.
+  const detectedKinds = Array.from(
+    new Set(counted.map((e) => e.couponKind).filter(Boolean) as string[]));
   const mismatched = customerId
     ? good.filter((e) => e.customerId && e.customerId !== customerId)
     : [];
@@ -272,9 +282,15 @@ export default function CouponReceipts() {
           />
         </Col>
         <Col xs={12} md={5}>
-          <Select style={{ width: '100%' }} placeholder="نوع الكوبون" value={kind}
-            onChange={handleKindChange}
-            options={kindOptions} />
+          {/* الفئة بتتقرا من الكوبون مش بتتاخد من اللي بيستلم. الحقل ده كان بيخلّيه
+              يقول إن الذهبي عادي، والرقم يتحسب على فاتورة مش بتاعته. */}
+          <Input
+            style={{ width: '100%' }} readOnly
+            placeholder="فئة الكوبون — بتظهر بعد إدخال أول رقم"
+            value={detectedKinds.length === 0 ? ''
+              : detectedKinds.length === 1 ? kindLabel(detectedKinds[0])
+                : detectedKinds.map(kindLabel).join(' + ')}
+          />
         </Col>
         <Col xs={12} md={5}>
           <InputNumber
@@ -381,16 +397,17 @@ export default function CouponReceipts() {
       />
 
       <div style={{ marginTop: 16 }}>
+        {/* عرض مش اختيار. فئة الورقة مكتوبة عليها وبتتحدد من الدفتر اللي اتصرفت منه —
+            واللي بيستلم مايقدرش يقول إن الذهبي عادي. النظام بيستنتجها من كل رقم. */}
         <CouponStatsOverview
           totalCount={counted.length}
           totalValue={totalValue}
-          currentKind={kindLabel(kind)}
+          currentKind={detectedKinds.length === 1 ? kindLabel(detectedKinds[0])
+            : detectedKinds.length > 1 ? 'أكتر من فئة' : undefined}
           kinds={kindOptions.map((k) => ({
             key: k.value,
             label: k.label,
-            count: k.value === kind ? counted.length : 0,
-            active: k.value === kind,
-            onClick: () => handleKindChange(k.value),
+            count: counted.filter((e: any) => e.couponKind === k.value).length,
           }))}
         />
       </div>

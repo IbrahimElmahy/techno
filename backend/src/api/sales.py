@@ -68,6 +68,9 @@ class InvoiceExpenseIn(BaseModel):
 
 
 class InvoiceCouponIn(BaseModel):
+    # فئة الدفتر — عادي/فضي/ذهبي/ماسي، قيمة من قائمة «فئات الكوبونات».
+    coupon_kind: str | None = None
+    # كتالوج استبدال النقاط. مش فئة الورقة، وسايب للتوافق مع اللي كان بيبعته.
     coupon_type_id: int | None = None
     count: int | None = None
     serial_from: str | None = None
@@ -432,10 +435,12 @@ def _build_sale(
         db.execute(sa_delete(SalesInvoiceCoupon).where(
             SalesInvoiceCoupon.invoice_id == inv.id))
     for c in body.coupons:
-        if c.coupon_type_id is None and not c.count and not c.serial_from and not c.serial_to:
+        if (not c.coupon_kind and c.coupon_type_id is None and not c.count
+                and not c.serial_from and not c.serial_to):
             continue
         db.add(SalesInvoiceCoupon(
-            invoice_id=inv.id, coupon_type_id=c.coupon_type_id, count=c.count,
+            invoice_id=inv.id, coupon_kind=c.coupon_kind,
+            coupon_type_id=c.coupon_type_id, count=c.count,
             serial_from=c.serial_from, serial_to=c.serial_to,
         ))
     db.flush()
@@ -553,7 +558,8 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
             ).all())
         coupons = [
             InvoiceCouponOut(
-                id=r.id, coupon_type_id=r.coupon_type_id, count=r.count,
+                id=r.id, coupon_kind=r.coupon_kind,
+                coupon_type_id=r.coupon_type_id, count=r.count,
                 serial_from=r.serial_from, serial_to=r.serial_to,
                 coupon_type_name=type_names.get(r.coupon_type_id),
             )

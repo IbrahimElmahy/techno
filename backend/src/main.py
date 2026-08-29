@@ -314,8 +314,10 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("purchase_return", "gross", "DECIMAL(18,2)"),
     ("purchase_return", "variable_discount_pct", "DECIMAL(9,4)"),
     ("purchase_return", "combined_pct", "DECIMAL(9,4)"),
-    # نوع الكوبون على سطر الاستلام — الذهبي والفضي مرقّمين ١..٥٠ كل واحد لوحده.
+    # فئة الكوبون على السطر — الذهبي والفضي مرقّمين ١..٥٠ كل واحد لوحده.
     ("coupon_receipt_line", "coupon_type_id", "BIGINT"),
+    ("coupon_receipt_line", "coupon_kind", "VARCHAR(24)"),
+    ("sales_invoice_coupon", "coupon_kind", "VARCHAR(24)"),
     # مرجع المصدر للقيد — استيراد الدفتر من نظام برّه بيتعاد من غير تكرار ولا تخطّي.
     ("ledger_entry", "external_ref", "VARCHAR(60)"),
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
@@ -564,13 +566,15 @@ _DROPPED_CONSTRAINTS: list[tuple[str, str]] = [
     # التفرّد بقى على (نوع الكوبون، السريال). القديم كان على السريال لوحده، وده بيخلّي
     # «٥» ذهبي و«٥» فضي كوبون واحد: أول ما واحد فيهم يتستلم التاني مايقدرش يرجع أبداً.
     ("coupon_receipt_line", "uq_coupon_receipt_serial"),
+    # اتبدّل تاني: الهوية فئة الورقة مش عرض الاستبدال.
+    ("coupon_receipt_line", "uq_coupon_receipt_type_serial"),
 ]
 
 
 # قيود تفرّد جديدة على جداول موجودة — (الجدول، الاسم، الأعمدة).
 _ADDED_CONSTRAINTS: list[tuple[str, str, tuple[str, ...]]] = [
-    ("coupon_receipt_line", "uq_coupon_receipt_type_serial",
-     ("coupon_type_id", "serial")),
+    ("coupon_receipt_line", "uq_coupon_receipt_kind_serial",
+     ("coupon_kind", "serial")),
 ]
 
 
