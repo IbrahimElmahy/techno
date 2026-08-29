@@ -16,9 +16,9 @@
 * **القيمة بتتاخد من الداتا مش من قائمة مكتوبة هنا.** أي فئة على أي صنف بتدخل القائمة.
   قائمة مكتوبة في السكربت بتقدم أول ما حد يضيف فئة من الشاشة.
 
-* **الافتراضي اللي مافيش صنف عليه بيتقفل مابيتشالش.** «مواسير» و«لحامات» اتزرعوا مع
-  النظام ومش مستعملين هنا. الحذف بيكسر أي صنف اتصنّف بيهم بعدين؛ القفل بيشيلهم من
-  القائمة المنسدلة وبيسيبهم يرجعوا بضغطة.
+* **الفئة اللي مافيش صنف عليها بتتقفل مابتتشالش، والوحدة لأ.** «مواسير» و«لحامات»
+  اتزرعوا مع النظام ومالهمش علاقة بالشغل ده، فبيتقفلوا — والقفل بيرجع بضغطة والحذف لأ.
+  الوحدات مابتتقفلش: «متر» و«كيلو» و«لتر» وحدات عامة والصنف الجديد ممكن يحتاجها بكرة.
 
 * **الوحدة الفاضية بتتصلّح.** فيه صنف وحدته `+` — رمز اتكتب في خانة اسم. بيبقى «قطعة»،
   لأن صنف بلا وحدة مايتباعش.
@@ -41,13 +41,15 @@ JUNK = re.compile(r"^[\s.\-_0-9@#*/\\+]+$")
 DEFAULT_UNIT = "قطعة"
 
 
-def _sync(db, category: str, used: Counter, *, execute: bool) -> dict[str, int]:
+def _sync(db, category: str, used: Counter, *, execute: bool,
+          close_unused: bool) -> dict[str, int]:
     have = {o.value: o for o in db.scalars(
         select(LookupOption).where(LookupOption.category == category)).all()}
     order = max([o.sort_order for o in have.values()] or [0])
 
     added = [v for v in used if v not in have]
-    stale = [v for v, o in have.items() if v not in used and o.active and not o.is_system]
+    stale = ([v for v, o in have.items() if v not in used and o.active and not o.is_system]
+             if close_unused else [])
 
     print(f"\n«{category}» — مستعمل في الداتا: {len(used)}   في القائمة: {len(have)}")
     if added:
@@ -97,8 +99,12 @@ def run(*, execute: bool) -> None:
                         if u and not JUNK.match(u))
 
         done = {}
-        done["الفئات"] = _sync(db, "item_category", cats, execute=execute)
-        done["الوحدات"] = _sync(db, "unit_of_measure", units, execute=execute)
+        # الفئات بتتقفل لو مافيش صنف عليها: «مواسير» و«لحامات» اتزرعوا مع النظام ومالهمش
+        # علاقة بالشغل ده. الوحدات لأ — «متر» و«كيلو» و«لتر» وحدات عامة، والصنف الجديد
+        # ممكن يحتاجها بكرة حتى لو مافيش صنف عليها النهاردة.
+        done["الفئات"] = _sync(db, "item_category", cats, execute=execute, close_unused=True)
+        done["الوحدات"] = _sync(db, "unit_of_measure", units, execute=execute,
+                                close_unused=False)
 
         if not execute:
             print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
