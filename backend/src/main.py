@@ -214,7 +214,6 @@ def create_app() -> FastAPI:
         _widen_columns(engine)
         _ensure_customer_account_family(engine)
         _relax_configurable_enum_columns(engine)
-        _relax_not_null(engine)
         _backfill_branch(engine)
         _migrate_appears_in(engine)
         _ensure_coupon_kind_tiers(engine)
@@ -582,42 +581,6 @@ _ADDED_CONSTRAINTS: list[tuple[str, str, tuple[str, ...]]] = [
 ]
 
 
-# أعمدة بقت اختيارية بعد الإصدار. `create_all` مابيلمسش عمود موجود، فالقاعدة بتفضل
-# رافضة الفاضي بعد ما الموديل سمح بيه — (الجدول، العمود).
-_RELAXED_NOT_NULL: list[tuple[str, str]] = [
-    # الكوبون ممكن يكون اتصرف لموزع بدل ما يتباع مع فاتورة، فالفاتورة بقت اختيارية.
-    ("coupon_receipt_line", "sales_invoice_id"),
-]
-
-
-def _relax_not_null(engine) -> None:
-    """يشيل NOT NULL عن الأعمدة اللي بقت اختيارية. بيتعاد تشغيله بأمان."""
-    import logging
-
-    from sqlalchemy import inspect as sa_inspect
-    from sqlalchemy import text
-
-    log = logging.getLogger("uvicorn.error")
-    inspector = sa_inspect(engine)
-    existing = set(inspector.get_table_names())
-    for table, column in _RELAXED_NOT_NULL:
-        if table not in existing:
-            continue
-        col = next((c for c in inspector.get_columns(table) if c["name"] == column), None)
-        if col is None or col.get("nullable", True):
-            continue
-        for ddl in (f"ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL",
-                    f"ALTER TABLE `{table}` MODIFY `{column}` BIGINT NULL"):
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text(ddl))
-                break
-            except Exception:
-                continue
-        else:
-            log.warning("relax not-null %s.%s failed", table, column)
-
-
 def _sync_constraints(engine) -> None:
     """يشيل قيود التفرّد القديمة ويعمل الجديدة. بيتعاد تشغيله بأمان.
 
@@ -715,6 +678,8 @@ _NULLABLE_FK_COLUMNS: list[tuple[str, str]] = [
     ("wastage_document", "stock_movement_id"),
     # 028: standalone returns have no originating invoice.
     ("sales_return", "sales_invoice_id"),
+    # الكوبون ممكن يكون اتصرف لموزع بدل ما يتباع مع فاتورة.
+    ("coupon_receipt_line", "sales_invoice_id"),
 ]
 
 
