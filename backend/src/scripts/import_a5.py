@@ -266,6 +266,14 @@ def run(folder: str, *, execute: bool) -> None:
             db.flush()
         print(f"العملاء بيتحطوا مؤقتاً على: {default_rep.username} / {fallback_terr.name}")
 
+        # مناديبنا بالاسم — عشان اللي مكتوب في a5 يتطابق على مندوب حقيقي.
+        rep_by_name: dict[str, int] = {}
+        if rep_role:
+            for u in db.scalars(select(User).where(User.role_id == rep_role.id)).all():
+                for key in filter(None, {_clean(u.full_name or ""), u.username}):
+                    rep_by_name[key] = u.id
+        unmatched_reps: dict[str, int] = {}
+
         cust_by_name = {c.name: c for c in db.scalars(select(Customer)).all()}
         for r in custs:
             if len(r) < 8 or not r[0].isdigit():
@@ -286,7 +294,24 @@ def run(folder: str, *, execute: bool) -> None:
                              branch_id=terr.branch_id, active=True)
                 db.add(c)
                 cust_by_name[name] = c
-            c.phone = _clean(r[4])[:32] or c.phone
+            # `ph1` مش تليفون — هو **اسم المندوب**.
+            #
+            # a5 عنده عمود مخصص للمندوب (`Emp_Bos`) وهو فاضي في الـ٦٥٠ عميل كلهم، واللي
+            # بيدخّل البيانات بيكتب اسم المندوب في خانة التليفون. فحصنا القيم كلها: صفر
+            # منها رقم، والـ٦٥٠ أسماء («عمرو رجب»، «مندوبية الفيوم»…).
+            #
+            # فبتتحط في مكانها. نسخها كتليفون بتدّي ٦٤٩ عميل بأرقام مالهاش وجود —
+            # والمندوب يفضل ضايع، وهو المعلومة الحقيقية اللي جوّه الخانة.
+            raw = _clean(r[4])
+            if raw and PHONE.match(raw):
+                c.phone = raw[:32]
+            elif raw:
+                rid = rep_by_name.get(raw)
+                if rid:
+                    c.rep_id = rid
+                    rep.add("عملاء بمندوب", True)
+                else:
+                    unmatched_reps[raw] = unmatched_reps.get(raw, 0) + 1
             c.address = _clean(r[5])[:240] or c.address
             if terr is not None:
                 c.territory_id = terr.id
