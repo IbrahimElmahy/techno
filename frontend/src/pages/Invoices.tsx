@@ -302,7 +302,6 @@ export default function Invoices() {
 
 
   const [couponRows, setCouponRows] = useState<CouponRow[]>(() => [blankCoupon()]);
-  const [couponTypes, setCouponTypes] = useState<{ id: number; name: string }[]>([]);
   // The day the sale happened, asked for before the form opens. It is not always today — a rep
   // comes back from a round, a branch catches up on a backlog — and it dates the ledger entry
   // as well as the document, so it has to be settled before anything is typed rather than
@@ -502,7 +501,7 @@ export default function Invoices() {
 
   const loadLookups = async () => {
     try {
-      const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes, ctRes,
+      const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes,
         brRes] = await Promise.all([
         api.get('/api/v1/customers'),
         api.get('/api/v1/items?kind=product'),
@@ -511,7 +510,6 @@ export default function Invoices() {
         api.get('/api/v1/employees', { params: { active: true } }),
         api.get('/api/v1/users'),
         api.get('/api/v1/accounts?postable_only=true').catch(() => ({ data: [] })),
-        api.get('/api/v1/loyalty/coupon-types').catch(() => ({ data: [] })),
         api.get('/api/v1/branches').catch(() => ({ data: [] })),
       ]);
       setCustomers(custRes.data);
@@ -520,7 +518,6 @@ export default function Invoices() {
       setEmployees(empRes.data);
       setReps(userRes.data.filter((u: any) => u.role === 'sales_rep'));
       setPostingAccounts(acctRes.data || []);
-      setCouponTypes(ctRes.data || []);
       setBranches(brRes.data || []);
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });

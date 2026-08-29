@@ -525,65 +525,6 @@ export default function Loyalty() {
 
   const items = [
     {
-      key: 'settings',
-      // الاسمين كانوا بيتلغبطوا: ده عروض استبدال النقاط، والتاني فئات الورق نفسه.
-      label: 'عروض استبدال النقاط',
-      children: (
-        <div>
-          <div style={{ marginBottom: 16, textAlign: 'left' }}>
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setTypeVisible(true)}>
-              إضافة نوع كوبون
-            </Button>
-          </div>
-          <ListToolbar
-            searchPlaceholder="بحث باسم الكوبون"
-            query={typeFilter.query} onQueryChange={typeFilter.setQuery}
-            values={typeFilter.values} onValueChange={typeFilter.setValue}
-            onReset={typeFilter.reset}
-            total={couponTypes.length} shown={typeFilter.filtered.length}
-            filters={[
-              { key: 'kind', placeholder: 'نوع الكوبون',
-                options: Object.entries(KIND_LABELS).map(([v, l]) => ({ value: v, label: l })) },
-              { key: 'active', placeholder: 'حالة العرض',
-                options: [{ value: 'active', label: 'متاح للتحويل' }, { value: 'inactive', label: 'موقف' }] },
-            ]}
-          />
-          <div style={{ textAlign: 'end', marginBottom: 8 }}>{typeCols.control}</div>
-          <Table {...typeKb.tableProps} dataSource={typeFilter.filtered} columns={typeCols.columns}
-            rowKey="id" loading={loading} pagination={false} />
-        </div>
-      ),
-    },
-    {
-      key: 'coupons',
-      label: 'سجل الكوبونات المصدرة وعمليات الاسترداد',
-      children: (
-        <div>
-          <div style={{ marginBottom: 16, textAlign: 'left' }}>
-            <Button type="dashed" icon={<SwapOutlined />} onClick={() => setConvertVisible(true)}>
-              تحويل نقاط يدوي لعميل
-            </Button>
-          </div>
-          <ListToolbar
-            searchPlaceholder="بحث بالرقم التسلسلي أو العميل"
-            query={couponFilter.query} onQueryChange={couponFilter.setQuery}
-            values={couponFilter.values} onValueChange={couponFilter.setValue}
-            onReset={couponFilter.reset}
-            total={coupons.length} shown={couponFilter.filtered.length}
-            filters={[
-              { key: 'status', placeholder: 'حالة الكوبون',
-                options: Object.entries(STATUS_TAGS).map(([v, t]) => ({ value: v, label: t.text })) },
-              { key: 'customer_id', placeholder: 'العميل',
-                options: customers.map((c) => ({ value: c.id, label: c.name })) },
-            ]}
-          />
-          <div style={{ textAlign: 'end', marginBottom: 8 }}>{couponCols.control}</div>
-          <Table {...couponKb.tableProps} dataSource={couponFilter.filtered} columns={couponCols.columns}
-            rowKey="id" loading={loading} />
-        </div>
-      ),
-    },
-    {
       key: 'kinds',
       label: `فئات الكوبونات — الورق (${couponKinds.length})`,
       children: (
@@ -647,17 +588,18 @@ export default function Loyalty() {
   const totalCouponsCount = coupons.length;
   const totalCouponsValue = coupons.reduce((s, c) => s + Number(c.value || 0), 0);
 
+  // الإحصائية على فئات الورق — دي الحاجة الوحيدة اللي للكوبون فئة فيها.
   const kindStats = useMemo(() => {
-    if (couponTypes.length > 0) {
-      return couponTypes.map((t) => {
-        const matching = coupons.filter((c) => c.kind === t.name || c.value === t.value || c.kind === t.kind);
+    if (couponKinds.length > 0) {
+      return couponKinds.map((k) => {
+        const matching = coupons.filter((c) => c.kind === k.value);
         return {
-          key: String(t.id),
-          label: t.name,
+          key: k.value,
+          label: k.label,
           count: matching.length,
           value: matching.reduce((s, c) => s + Number(c.value || 0), 0),
           onClick: () => {
-            couponFilter.setQuery(t.name);
+            couponFilter.setQuery(k.label);
             setActiveTab('coupons');
           },
         };
@@ -677,11 +619,11 @@ export default function Loyalty() {
         value: coupons.filter((c) => c.kind === 'gift_money_off' || c.kind === 'discount').reduce((s, c) => s + Number(c.value || 0), 0),
       },
     ];
-  }, [couponTypes, coupons]);
+  }, [couponKinds, coupons]);
 
   return (
     <div>
-      <Card title="أنواع الكوبونات (إدارة الإنشاءات)">
+      <Card title="الكوبونات والنقاط">
         <CouponStatsOverview
           totalCount={totalCouponsCount}
           totalValue={totalCouponsValue}

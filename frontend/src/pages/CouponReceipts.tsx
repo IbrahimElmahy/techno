@@ -60,7 +60,6 @@ export default function CouponReceipts() {
   const [notes, setNotes] = useState('');
   const [customerId, setCustomerId] = useState<number | undefined>();
   const [customers, setCustomers] = useState<any[]>([]);
-  const [couponTypes, setCouponTypes] = useState<CouponTypeItem[]>([]);
   const [saving, setSaving] = useState(false);
 
   const [receivedDate, setReceivedDate] = useState<Dayjs>(dayjs());
@@ -70,23 +69,15 @@ export default function CouponReceipts() {
 
   const { options: kindLookup } = useLookup('coupon_kind');
 
-  const kindOptions = useMemo(() => {
-    if (couponTypes && couponTypes.length > 0) {
-      return couponTypes.filter((t) => t.active).map((t) => ({
-        value: t.name,
-        label: t.name,
-        defaultValue: t.value ? Number(t.value) : 0,
-      }));
-    }
-    if (kindLookup && kindLookup.length > 0) {
-      return kindLookup.map((o) => ({
-        value: o.value,
-        label: o.label,
-        defaultValue: 0,
-      }));
-    }
-    return [];
-  }, [couponTypes, kindLookup]);
+  // مصدر واحد لفئات الورق: قائمة «فئات الكوبونات» في الإعدادات.
+  //
+  // كانت بتتاخد من كتالوج استبدال النقاط الأول والقائمة دي بديل — وده اللي خلّى فيه
+  // مكانين بيتحكموا في نفس الحاجة وهما مش نفس الحاجة أصلاً.
+  const kindOptions = useMemo(
+    () => (kindLookup || []).map((o) => ({
+      value: o.value, label: o.label, defaultValue: 0,
+    })),
+    [kindLookup]);
 
   useEffect(() => {
     if (kindOptions.length > 0) {
@@ -128,7 +119,6 @@ export default function CouponReceipts() {
   useEffect(() => {
     loadReceipts();
     api.get('/api/v1/customers').then((r) => setCustomers(r.data || [])).catch(console.error);
-    api.get('/api/v1/loyalty/coupon-types').then((r) => setCouponTypes(r.data || [])).catch(console.error);
   }, []);
 
   const customerName = (id: number | null) =>
