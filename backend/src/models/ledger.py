@@ -120,6 +120,14 @@ class LedgerEntry(Base):
     rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
     # Set only on reversal entries; UNIQUE => an entry can be reversed at most once (FR-027).
+    # مرجع المصدر لو القيد جاي من برّه — مفتاح العملية في النظام اللي اتنقل منه.
+    #
+    # من غيره الاستيراد مايعرفش يفرّق بين «القيد ده دخل قبل كده» و«قيد شبهه»، فالإعادة
+    # بتبقى إما تكرار كامل أو تخطّي كامل. الاتنين غلط: التكرار بيضاعف الأرصدة، والتخطّي
+    # بيسيب اللي فشل أول مرة بره للأبد.
+    external_ref: Mapped[str | None] = mapped_column(
+        String(60), nullable=True, index=True
+    )
     reverses_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("ledger_entry.id"), unique=True, nullable=True
     )
