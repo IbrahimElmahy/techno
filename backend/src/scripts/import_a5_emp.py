@@ -42,7 +42,17 @@ from src.models.warehouse import Warehouse
 from src.scripts.import_a5 import JUNK, _clean, _read
 
 # دلاء محاسبية اسمها في خانة الموظف. الرصيد لازم يقعد على حاجة، فاتعملّه «موظف».
-BUCKET = re.compile(r"^\s*(بونص|عهدة|مندوبية|ادارة المبيعات|إدارة المبيعات)")
+# «بوانص» مكتوبة كده فعلاً في قاعدة العلياء، و«فرع اكتوبر» حساب بين الفروع مش بني آدم.
+BUCKET = re.compile(r"^\s*(بونص|بوانص|عهدة|عهده|مندوبية|فرع\s|ادارة المبيعات|إدارة المبيعات)")
+
+# اسم متكتب على كيبورد عربي والوضع إنجليزي: «,hgjt». مافيهوش حرف عربي واحد.
+NO_ARABIC = re.compile(r"^[^؀-ۿ]+$")
+
+# «مخزن فلان» — البادئة دي مش من الاسم. و«محزن»/«مخزم» غلطات مطبعية في الداتا نفسها.
+STORE_PREFIX = re.compile(r"^(مخزن|محزن|مخزم)\s+")
+
+# كلمات بتوصف الدور مش الشخص، فمابتدخلش المقارنة.
+NOISE = {"مندوب", "عهده"}
 
 
 def _norm(s: str) -> str:
@@ -52,14 +62,39 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _words(s: str) -> list[str]:
+    return [w for w in _norm(s).split() if w not in NOISE]
+
+
+def _same_person(emp_name: str, wh_name: str) -> bool:
+    """المخزن ده بتاع الموظف ده؟
+
+    التطابق على الكلمات مش على النص. «حسن» بتقع جوّه «محسن»، فمطابقة النص جوّه النص
+    بتربط عهدة مخزن بواحد مالوش دعوة. والاسم في المخزن أقصر من الاسم في كشف الموظفين
+    عادة («مخزن احمد عبد الله» ← «احمد عبد الله هلول»)، فالأقصر لازم يبقى بداية الأطول
+    — مش أي كلمات مشتركة، لأن «احمد مرسى» و«احمد عبده ناجى» بيشتركوا في «احمد».
+    """
+    w = _words(STORE_PREFIX.sub("", wh_name))
+    e = _words(emp_name)
+    if not w or not e:
+        return False
+    if w == e:
+        return True
+    short, long_ = (w, e) if len(w) < len(e) else (e, w)
+    return long_[:len(short)] == short
+
+
 def run(folder: str, *, execute: bool, branch_name: str = "",
         prefix: str = "") -> None:
     rows = _read(os.path.join(folder, "a5_emp.tsv"))
     emps = [r for r in rows if r and r[0] == "EMP"]
     stores = [r for r in rows if r and r[0] == "STORE"]
 
-    people = [r for r in emps
-              if _clean(r[2]) and not JUNK.match(_clean(r[2])) and not BUCKET.match(_clean(r[2]))]
+    def _is_person(name: str) -> bool:
+        return bool(name) and not (JUNK.match(name) or BUCKET.match(name)
+                                   or NO_ARABIC.match(name))
+
+    people = [r for r in emps if _is_person(_clean(r[2]))]
     buckets = [r for r in emps if r not in people]
 
     print("المصدر:")
@@ -146,21 +181,50 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
                 linked_users.add(u.id)
                 made["ربط بحساب"] += 1
 
-            # «مخزن كامل هلال» ← «كامل هلال». الاسم جوّه الاسم، بعد التطبيع.
-            if emp.warehouse_id is None:
-                match = next((w for w in whs
-                              if w.id not in taken and key and key in _norm(w.name)), None)
-                if match is not None:
-                    emp.warehouse_id = match.id
-                    taken.add(match.id)
-                    made["ربط بمخزن"] += 1
-                    print(f"   {name} ← {match.name}")
+        db.flush()
+
+        # ---------- اللي دخل قبل ما الفلترة تتشدّ ----------
+        #
+        # تشغيلة قديمة عدّت أسماء زي «بوانص الابيض» و«فرع اكتوبر» على إنها موظفين. مابتتشالش
+        # — ممكن حاجة بقت مربوطة بيها — بس بتتقفل، فمابتظهرش في كشف الموظفين ولا في اختيار
+        # أمين المخزن.
+        stale = [e for e in by_name.values()
+                 if e.active and not _is_person(_clean(e.name))]
+        for e in stale:
+            e.active = False
+            made["اتقفل"] = made.get("اتقفل", 0) + 1
+            print(f"   اتقفل (مش شخص): {e.name}")
+
+        # ---------- المخزن لمين ----------
+        #
+        # الدورة من ناحية المخزن مش من ناحية الموظف، والربط بيتم بس لو **موظف واحد**
+        # بيطابق. اتنين معناهم إن الاسم مش كافي يفرّق بينهم، وتخمين هنا بيحطّ عهدة مخزن
+        # على واحد مالوش علاقة — والغلط ده مابيتكشفش غير وقت الجرد.
+        pool = [e for e in by_name.values() if e.warehouse_id is None and e.active]
+        ambiguous: list[str] = []
+        for w in whs:
+            if w.id in taken:
+                continue
+            hits = [e for e in pool if _same_person(e.name, w.name)]
+            if len(hits) == 1:
+                hits[0].warehouse_id = w.id
+                taken.add(w.id)
+                pool.remove(hits[0])
+                made["ربط بمخزن"] += 1
+                print(f"   {hits[0].name} ← {w.name}")
+            elif len(hits) > 1:
+                ambiguous.append(f"{w.name} ← " + " / ".join(e.name for e in hits))
 
         db.commit()
         print(f"\n{'الكيان':<16}{'اتعمل':>8}")
         print("-" * 26)
         for k, v in made.items():
             print(f"{k:<16}{v:>8}")
+
+        if ambiguous:
+            print(f"\nمخازن أكتر من موظف بيطابقها ({len(ambiguous)}) — اتسابت مش مربوطة:")
+            for a in ambiguous:
+                print("   ", a)
 
         free = [w.name for w in whs if w.id not in taken]
         if free:
