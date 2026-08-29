@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+import src.models.coupon_issue  # noqa: F401 — عشان create_all يشوف جداوله
 import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
 from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     accounting,  # General Ledger (005)
@@ -317,6 +318,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # فئة الكوبون على السطر — الذهبي والفضي مرقّمين ١..٥٠ كل واحد لوحده.
     ("coupon_receipt_line", "coupon_type_id", "BIGINT"),
     ("coupon_receipt_line", "coupon_kind", "VARCHAR(24)"),
+    # الورقة ممكن تكون اتصرفت لموزع بدل ما تتباع مع فاتورة.
+    ("coupon_receipt_line", "coupon_issue_id", "BIGINT"),
     ("sales_invoice_coupon", "coupon_kind", "VARCHAR(24)"),
     # مرجع المصدر للقيد — استيراد الدفتر من نظام برّه بيتعاد من غير تكرار ولا تخطّي.
     ("ledger_entry", "external_ref", "VARCHAR(60)"),

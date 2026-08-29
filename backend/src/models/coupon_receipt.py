@@ -98,6 +98,15 @@ class CouponReceiptLine(Base):
     # نص مش مفتاح: الفئات قايمة بيديرها صاحب الشغل من الإعدادات، وربطها بجدول معناه إن
     # إضافة فئة تبقى تعديل في الكود.
     coupon_kind: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
-    sales_invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
+    # الورقة طلعت من فاتورة بيع ولا من مستند صرف لموزع. واحد منهم بيتملى.
+    #
+    # كان إجباري إنها من فاتورة، والشركة بتصرف دفاتر لموزعين من غير بيع — فالورقة دي
+    # مكانش ليها طريق ترجع بيه غير إن حد يخترع لها فاتورة.
+    sales_invoice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_invoice.id"), nullable=True
+    )
+    coupon_issue_id: Mapped[int | None] = mapped_column(
+        ForeignKey("coupon_issue.id"), nullable=True, index=True
+    )
 
     receipt: Mapped[CouponReceipt] = relationship(back_populates="lines")

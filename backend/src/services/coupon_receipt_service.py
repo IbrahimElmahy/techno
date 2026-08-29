@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from src.auth.branch_scope import branch_for
+from src.models.coupon_issue import CouponIssue, CouponIssueLine
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon
 from src.services import audit_service, numbering
@@ -123,11 +124,31 @@ def already_received(db: Session, serial: str,
     return db.scalar(stmt)
 
 
+def find_issuing_issue(db: Session, serial: str,
+                       coupon_kind: str | None = None) -> CouponIssue | None:
+    """مستند الصرف اللي طلعت منه الورقة دي — لو اتصرفت لموزع بدل ما تتباع مع فاتورة.
+
+    الشركة بتصرف دفاتر لموزعين وتجار من غير بيع، والسباك بيرجّعها بعدين. من غير البحث
+    ده الورقة دي بترجع «مش متصرّفة من النظام» وقت الاستلام، والاستلام بيترفض على ورقة
+    حقيقية في إيد الراجل.
+    """
+    stmt = (select(CouponIssue).join(CouponIssueLine,
+                                     CouponIssueLine.issue_id == CouponIssue.id)
+            .where(CouponIssueLine.serial == str(serial).strip()))
+    if coupon_kind:
+        stmt = stmt.where(CouponIssueLine.coupon_kind == coupon_kind)
+    return db.scalar(stmt)
+
+
 def kinds_for_serial(db: Session, serial: str) -> list[str]:
     """كل فئة صُرف تحتها الرقم ده. أكتر من واحدة = الرقم لوحده مش بيحدد كوبون."""
     found: set[str] = set()
     number = _as_int(str(serial).strip())
-    for row in db.scalars(select(SalesInvoiceCoupon)).all():
+    rows = list(db.scalars(select(SalesInvoiceCoupon)).all())
+    for row in db.scalars(select(CouponIssueLine)).all():
+        if row.coupon_kind and str(serial).strip() == row.serial:
+            found.add(row.coupon_kind)
+    for row in rows:
         if not row.coupon_kind:
             continue
         if str(serial).strip() in (row.serial_from, row.serial_to):
@@ -150,9 +171,16 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> di
     """
     serial = str(serial).strip()
     invoice = find_issuing_invoice(db, serial, coupon_kind)
+    issue = None if invoice is not None else find_issuing_issue(db, serial, coupon_kind)
     taken = already_received(db, serial, coupon_kind)
-    status = "unknown" if invoice is None else ("received" if taken else "valid")
+    known = invoice is not None or issue is not None
+    status = "valid" if known and not taken else ("received" if taken else "unknown")
     customer_name = None
+    if invoice is None and issue is not None and issue.customer_id:
+        from src.models.customer import Customer as _C
+
+        owner = db.get(_C, issue.customer_id)
+        customer_name = owner.name if owner else None
     if invoice is not None:
         from src.models.customer import Customer
 
@@ -168,8 +196,11 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> di
         "coupon_kind": resolved,
         "kinds": kinds,
         "sales_invoice_id": invoice.id if invoice else None,
-        "document_number": invoice.document_number if invoice else None,
-        "customer_id": invoice.customer_id if invoice else None,
+        "coupon_issue_id": issue.id if issue else None,
+        "document_number": (invoice.document_number if invoice
+                            else issue.document_number if issue else None),
+        "customer_id": (invoice.customer_id if invoice
+                        else issue.customer_id if issue else None),
         "customer_name": customer_name,
         "received_receipt_id": taken.receipt_id if taken else None,
     }
@@ -227,22 +258,24 @@ def create_receipt(
     if duplicates:
         raise CouponReceiptError(f"كوبونات مكرّرة في نفس الاستلام: {', '.join(sorted(duplicates))}")
 
-    matched: list[tuple[str, SalesInvoice]] = []
+    matched: list[tuple[str, SalesInvoice | None, CouponIssue | None]] = []
     unknown: list[str] = []
     seen_before: list[str] = []
     wrong_customer: list[str] = []
     for serial in cleaned:
         invoice = find_issuing_invoice(db, serial, coupon_kind)
-        if invoice is None:
+        issue = None if invoice is not None else find_issuing_issue(db, serial, coupon_kind)
+        if invoice is None and issue is None:
             unknown.append(serial)
             continue
         if already_received(db, serial, coupon_kind) is not None:
             seen_before.append(serial)
             continue
-        if customer_id is not None and invoice.customer_id != customer_id:
+        owner = invoice.customer_id if invoice is not None else issue.customer_id
+        if customer_id is not None and owner != customer_id:
             wrong_customer.append(serial)
             continue
-        matched.append((serial, invoice))
+        matched.append((serial, invoice, issue))
 
     if unknown:
         raise CouponReceiptError(
@@ -266,9 +299,11 @@ def create_receipt(
     )
     db.add(receipt)
     db.flush()
-    for serial, invoice in matched:
+    for serial, invoice, issue in matched:
         db.add(CouponReceiptLine(
-            receipt_id=receipt.id, serial=serial, sales_invoice_id=invoice.id,
+            receipt_id=receipt.id, serial=serial,
+            sales_invoice_id=invoice.id if invoice else None,
+            coupon_issue_id=issue.id if issue else None,
             coupon_kind=coupon_kind))
     db.flush()
 
