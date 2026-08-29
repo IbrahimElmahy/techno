@@ -206,6 +206,8 @@ def create_app() -> FastAPI:
 
         Base.metadata.create_all(engine)
         _ensure_columns(engine)
+        # بعد ما العمود الجديد يتعمل: القيد الجديد محتاجه، والقديم لازم يتشال قبل ما يمنع.
+        _drop_stale_constraints(engine)
         _widen_columns(engine)
         _ensure_customer_account_family(engine)
         _relax_configurable_enum_columns(engine)
@@ -302,6 +304,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("purchase_return", "gross", "DECIMAL(18,2)"),
     ("purchase_return", "variable_discount_pct", "DECIMAL(9,4)"),
     ("purchase_return", "combined_pct", "DECIMAL(9,4)"),
+    # نوع الكوبون على سطر الاستلام — الذهبي والفضي مرقّمين ١..٥٠ كل واحد لوحده.
+    ("coupon_receipt_line", "coupon_type_id", "BIGINT"),
     # مرجع المصدر للقيد — استيراد الدفتر من نظام برّه بيتعاد من غير تكرار ولا تخطّي.
     ("ledger_entry", "external_ref", "VARCHAR(60)"),
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
@@ -542,6 +546,44 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     ("stock_transfer", "route",
      "ENUM('central_to_branch','central_to_rep','rep_to_rep','rep_to_central')"),
 ]
+
+
+# قيود تفرّد اتغيّرت بعد الإصدار. `create_all` بيعمل الجديد ومابيشيلش القديم، والقديم
+# بيفضل يمنع — (الجدول، اسم القيد القديم).
+_DROPPED_CONSTRAINTS: list[tuple[str, str]] = [
+    # التفرّد بقى على (نوع الكوبون، السريال). القديم كان على السريال لوحده، وده بيخلّي
+    # «٥» ذهبي و«٥» فضي كوبون واحد: أول ما واحد فيهم يتستلم التاني مايقدرش يرجع أبداً.
+    ("coupon_receipt_line", "uq_coupon_receipt_serial"),
+]
+
+
+def _drop_stale_constraints(engine) -> None:
+    """يشيل قيود التفرّد اللي اتبدّلت. بيتعاد تشغيله بأمان — اللي مش موجود بيتخطى."""
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, name in _DROPPED_CONSTRAINTS:
+        if table not in existing_tables:
+            continue
+        have = {u["name"] for u in inspector.get_unique_constraints(table)}
+        have |= {i["name"] for i in inspector.get_indexes(table)}
+        if name not in have:
+            continue
+        for ddl in (f"ALTER TABLE {table} DROP CONSTRAINT {name}",
+                    f"DROP INDEX {name}",
+                    f"ALTER TABLE `{table}` DROP INDEX `{name}`"):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(ddl))
+                break
+            except Exception:  # pragma: no cover — نجرب الصيغة اللي اللهجة بتفهمها
+                continue
+        else:
+            logging.getLogger("uvicorn.error").info(
+                "drop constraint %s.%s skipped", table, name)
 
 
 def _widen_columns(engine) -> None:

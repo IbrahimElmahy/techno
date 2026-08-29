@@ -42,35 +42,43 @@ def _as_int(value) -> int | None:
         return None
 
 
-def find_issuing_invoice(db: Session, serial: str) -> SalesInvoice | None:
+def find_issuing_invoice(db: Session, serial: str,
+                         coupon_type_id: int | None = None) -> SalesInvoice | None:
     """The invoice whose issued range covers this serial, or None if nothing issued it.
 
     Two places to look. The invoice's own `coupon_serial_from/to` is where a single book was
     recorded before 0049; `sales_invoice_coupon` is the row-per-kind table that replaced it. Both
     are live — every invoice written before that migration has only the first — so a check that
     reads one of them calls half the real coupons unknown.
+
+    **والنوع جزء من هوية الرقم.** دفتر الذهبي مرقّم ١..٥٠ ودفتر الفضي مرقّم ١..٥٠، فرقم «٥»
+    لوحده مش بيحدد كوبون. من غير النوع البحث بيرجّع أول فاتورة فيها الرقم ده مهما كان نوعها
+    — يعني كوبون فضي بيتحسب على فاتورة صرفت ذهبي. الحقل الأقدم على الفاتورة نفسها
+    (`coupon_serial_from/to`) مالوش نوع، فبيتشاف بس لما مايتحددش نوع.
     """
     serial = str(serial).strip()
     if not serial:
         return None
 
-    # Exact endpoint match first: it is the only thing that can be trusted for a lettered book.
-    exact = db.scalar(
-        select(SalesInvoice).where(
-            (SalesInvoice.coupon_serial_from == serial)
-            | (SalesInvoice.coupon_serial_to == serial)
+    # النطاق القديم على الفاتورة نفسها مالوش نوع، فمابيتشافش لما النوع متحدد.
+    if coupon_type_id is None:
+        exact = db.scalar(
+            select(SalesInvoice).where(
+                (SalesInvoice.coupon_serial_from == serial)
+                | (SalesInvoice.coupon_serial_to == serial)
+            )
         )
-    )
-    if exact is not None:
-        return exact
+        if exact is not None:
+            return exact
 
     # The per-kind rows, exact endpoints first for the same reason.
-    exact_row = db.scalar(
-        select(SalesInvoiceCoupon).where(
-            (SalesInvoiceCoupon.serial_from == serial)
-            | (SalesInvoiceCoupon.serial_to == serial)
-        )
+    kind_rows = select(SalesInvoiceCoupon).where(
+        (SalesInvoiceCoupon.serial_from == serial)
+        | (SalesInvoiceCoupon.serial_to == serial)
     )
+    if coupon_type_id is not None:
+        kind_rows = kind_rows.where(SalesInvoiceCoupon.coupon_type_id == coupon_type_id)
+    exact_row = db.scalar(kind_rows)
     if exact_row is not None:
         return db.get(SalesInvoice, exact_row.invoice_id)
 
@@ -81,20 +89,22 @@ def find_issuing_invoice(db: Session, serial: str) -> SalesInvoice | None:
     # Numeric containment. The ranges are short and few per customer, so this is checked in
     # Python rather than as a cast in SQL — the column is a string precisely because not every
     # book is numeric, and casting the lettered ones would raise on some engines.
-    candidates = db.scalars(
-        select(SalesInvoice).where(SalesInvoice.coupon_serial_from.isnot(None))
-    ).all()
-    for invoice in candidates:
-        first = _as_int(invoice.coupon_serial_from)
-        last = _as_int(invoice.coupon_serial_to)
-        if first is None or last is None:
-            continue
-        if first <= number <= last:
-            return invoice
+    if coupon_type_id is None:
+        candidates = db.scalars(
+            select(SalesInvoice).where(SalesInvoice.coupon_serial_from.isnot(None))
+        ).all()
+        for invoice in candidates:
+            first = _as_int(invoice.coupon_serial_from)
+            last = _as_int(invoice.coupon_serial_to)
+            if first is None or last is None:
+                continue
+            if first <= number <= last:
+                return invoice
 
-    for row in db.scalars(
-        select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.serial_from.isnot(None))
-    ).all():
+    ranged = select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.serial_from.isnot(None))
+    if coupon_type_id is not None:
+        ranged = ranged.where(SalesInvoiceCoupon.coupon_type_id == coupon_type_id)
+    for row in db.scalars(ranged).all():
         first = _as_int(row.serial_from)
         last = _as_int(row.serial_to)
         if first is None or last is None:
@@ -104,16 +114,24 @@ def find_issuing_invoice(db: Session, serial: str) -> SalesInvoice | None:
     return None
 
 
-def already_received(db: Session, serial: str) -> CouponReceiptLine | None:
-    return db.scalar(
-        select(CouponReceiptLine).where(CouponReceiptLine.serial == str(serial).strip()))
+def already_received(db: Session, serial: str,
+                     coupon_type_id: int | None = None) -> CouponReceiptLine | None:
+    """الكوبون ده رجع قبل كده؟ الرقم لوحده مش سؤال كامل — لازم معاه النوع."""
+    stmt = select(CouponReceiptLine).where(CouponReceiptLine.serial == str(serial).strip())
+    if coupon_type_id is not None:
+        # السطور القديمة مالهاش نوع؛ بتتحسب على أي نوع لأن وقتها كان الترقيم واحد.
+        stmt = stmt.where(
+            (CouponReceiptLine.coupon_type_id == coupon_type_id)
+            | (CouponReceiptLine.coupon_type_id.is_(None))
+        )
+    return db.scalar(stmt)
 
 
-def check_serial(db: Session, serial: str) -> dict:
+def check_serial(db: Session, serial: str, coupon_type_id: int | None = None) -> dict:
     """What the app calls per coupon: is this real, whose was it, and has it come back already?"""
     serial = str(serial).strip()
-    invoice = find_issuing_invoice(db, serial)
-    taken = already_received(db, serial)
+    invoice = find_issuing_invoice(db, serial, coupon_type_id)
+    taken = already_received(db, serial, coupon_type_id)
     status = "unknown" if invoice is None else ("received" if taken else "valid")
     customer_name = None
     if invoice is not None:
@@ -157,12 +175,17 @@ def create_receipt(
     declared_kind: str | None = None, declared_value: object | None = None,
     customer_type: str | None = None,
     client_uuid: str | None = None,
+    coupon_type_id: int | None = None,
 ) -> CouponReceipt:
     """Take in a handful of coupons, or refuse the lot.
 
     Every serial is checked before anything is written. One bad coupon fails the whole receipt
     rather than posting the good ones — a half-accepted handover is worse than a rejected one,
     because the rep walks away believing all of it went through.
+
+    `coupon_type_id` هو نوع الدفتر اللي الأرقام دي منه. من غيره الرقم لوحده مش بيحدد
+    كوبون — الذهبي والفضي كل واحد مرقّم ١..٥٠ — فكوبون فضي كان ممكن يتحسب على فاتورة
+    صرفت ذهبي، والعكس. بيتساب فاضي بس لو النظام شغّال بدفتر واحد.
     """
     if client_uuid:
         existing = db.scalar(
@@ -184,11 +207,11 @@ def create_receipt(
     seen_before: list[str] = []
     wrong_customer: list[str] = []
     for serial in cleaned:
-        invoice = find_issuing_invoice(db, serial)
+        invoice = find_issuing_invoice(db, serial, coupon_type_id)
         if invoice is None:
             unknown.append(serial)
             continue
-        if already_received(db, serial) is not None:
+        if already_received(db, serial, coupon_type_id) is not None:
             seen_before.append(serial)
             continue
         if customer_id is not None and invoice.customer_id != customer_id:
@@ -220,7 +243,8 @@ def create_receipt(
     db.flush()
     for serial, invoice in matched:
         db.add(CouponReceiptLine(
-            receipt_id=receipt.id, serial=serial, sales_invoice_id=invoice.id))
+            receipt_id=receipt.id, serial=serial, sales_invoice_id=invoice.id,
+            coupon_type_id=coupon_type_id))
     db.flush()
 
     audit_service.record(
@@ -305,8 +329,10 @@ def issued_to_customer(db: Session, customer_id: int) -> list[dict]:
     # How many of each book have already been handed back, so the screen offers the remainder
     # rather than the original count.
     for book in books:
-        serials = expand_range(book["serial_from"], book["serial_to"]) if book["serial_from"] else []
-        taken = sum(1 for sr in serials if already_received(db, sr) is not None)
+        serials = (expand_range(book["serial_from"], book["serial_to"])
+                   if book["serial_from"] else [])
+        taken = sum(1 for sr in serials
+                    if already_received(db, sr, book.get("coupon_type_id")) is not None)
         book["returned"] = taken
         book["remaining"] = max((book["count"] or len(serials) or 0) - taken, 0)
     books.sort(key=lambda b: (b["invoice_date"] or "", b["invoice_id"]), reverse=True)
