@@ -913,14 +913,18 @@ export default function Returns() {
 
   const returnDoc = (r: any): InvoiceDoc | null => {
     if (!r) return null;
-    const customer = customers.find((c) => c.id === r.customer_id);
+    // الاسم جاي مع الصف؛ الكشف المحلي خطة بديلة لو النداء وقع. التليفون بيفضل من الكشف
+    // لأنه مش على المستند — لو الكشف مااتحملش، الطباعة بتطلع بالاسم من غير رقم بدل ما
+    // تطلع بـ«#1841».
+    const known = customers.find((c) => c.id === r.customer_id);
+    const customerName = r.customer_name || known?.name;
     return {
       kind: 'sale_return',
       document_number: r.document_number,
       date: r.created_at ?? null,
       partyLabel: 'العميل',
-      partyName: customer?.name ?? `#${r.customer_id}`,
-      partyPhone: customer?.phone ?? null,
+      partyName: customerName ?? `#${r.customer_id}`,
+      partyPhone: known?.phone ?? null,
       partyId: r.customer_id ?? null,
       gross: r.gross,
       discountPct: r.combined_pct,
@@ -1457,9 +1461,10 @@ export default function Returns() {
     },
     {
       title: 'جهه التعامل', dataIndex: 'customer_id', key: 'customer_id', ellipsis: true,
-      render: (cId: number) => (
+      render: (cId: number, row: any) => (
         <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
-          {customers.find((c) => c.id === cId)?.name ?? `عميل #${cId}`}
+          {row?.customer_name || customers.find((c) => c.id === cId)?.name
+            || `عميل #${cId}`}
         </a>
       ),
     },

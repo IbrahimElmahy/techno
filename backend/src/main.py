@@ -243,14 +243,31 @@ def _mount_frontend(app: FastAPI) -> None:
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 
-    app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+    class _Assets(StaticFiles):
+        """ملفات البناء بأسماء فيها بصمة المحتوى — تتخزّن للأبد بأمان."""
+
+        def file_response(self, *args, **kwargs):
+            resp = super().file_response(*args, **kwargs)
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/assets", _Assets(directory=dist / "assets"), name="assets")
+
+    # `index.html` مايتخزّنش في المتصفح، والملفات اللي تحته تتخزّن سنة.
+    #
+    # اسم كل ملف في `assets` فيه بصمة محتواه، فالبناء الجديد اسمه جديد ومافيش خطر من
+    # تخزينه. `index.html` هو اللي بيقول أنهي بصمة، فلو المتصفح خزّنه بيفضل يطلب البناء
+    # القديم بعد كل رفع — والمستخدم بيشوف نظام مااتغيّرش ويقول إن التعديل مانزلش، وهو نزل.
+    NO_STORE = {"Cache-Control": "no-store, must-revalidate"}
+    FOREVER = {"Cache-Control": "public, max-age=31536000, immutable"}
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def _spa(full_path: str):
         candidate = dist / full_path
         if full_path and candidate.is_file():
-            return FileResponse(candidate)
-        return FileResponse(dist / "index.html")
+            fingerprinted = candidate.parent.name == "assets"
+            return FileResponse(candidate, headers=FOREVER if fingerprinted else NO_STORE)
+        return FileResponse(dist / "index.html", headers=NO_STORE)
 
 
 def _load_permission_overrides() -> None:

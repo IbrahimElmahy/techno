@@ -710,7 +710,9 @@ def sales_summary(
 # Declared BEFORE /{sale_id} so the literal "returns"/"customer-item-history" paths win over the
 # int path param.
 
-def _standalone_return_out(r: SalesReturn, db: Session | None = None) -> dict:
+def _standalone_return_out(r: SalesReturn, db: Session | None = None, *,
+                           names: tuple[dict[int, str], dict[int, str],
+                                        dict[int, str]] | None = None) -> dict:
     # «الفاتورة رقم» on their مردود مبيعات list — the sale this came back from. The link has always
     # been stored; the number was never returned, so the column that says WHICH sale a return
     # undoes could not be shown beside it.
@@ -718,7 +720,13 @@ def _standalone_return_out(r: SalesReturn, db: Session | None = None) -> dict:
     if db is not None and r.sales_invoice_id:
         inv = db.get(SalesInvoice, r.sales_invoice_id)
         invoice_no = inv.document_number if inv else None
+    cust_names, cust_types, rep_names = names or ({}, {}, {})
     return {
+        # الاسم مع الصف — نفس سبب فاتورة البيع: الشاشة ماتحتاجش تحمّل كشف العملاء كله
+        # عشان تعرف اسم واحد، والكشف ده هو اللي كان بيقع فتظهر الأكواد.
+        "customer_name": cust_names.get(r.customer_id),
+        "customer_type": cust_types.get(r.customer_id),
+        "rep_name": rep_names.get(r.rep_id) if r.rep_id else None,
         "id": r.id, "document_number": r.document_number, "customer_id": r.customer_id,
         "gross": str(r.gross), "combined_pct": str(r.combined_pct), "net": str(r.value),
         "tax_amount": str(r.tax_amount), "cash_refund": str(r.cash_refund),
@@ -786,7 +794,9 @@ def list_standalone_returns(
     stmt = stmt.order_by(SalesReturn.id.desc())
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
-    return [_standalone_return_out(r, db) for r in db.scalars(stmt).all()]
+    rows = list(db.scalars(stmt).all())
+    names = _row_names(db, rows)
+    return [_standalone_return_out(r, db, names=names) for r in rows]
 
 
 @router.post("/returns", response_model=dict, status_code=status.HTTP_201_CREATED)

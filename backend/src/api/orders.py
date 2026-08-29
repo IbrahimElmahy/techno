@@ -19,6 +19,8 @@ from src.auth.rbac import CAP_SALES_READ
 from src.core.db import get_db
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item
+from src.models.customer import Customer
+from src.models.supplier import Supplier
 from src.models.trade_order import OrderKind, OrderStatus, TradeOrder, TradeOrderLine
 from src.auth import branch_scope
 
@@ -76,7 +78,11 @@ class OrderOut(BaseModel):
     kind: str
     status: str
     customer_id: int | None
+    # اسم الطرف مع الصف — الشاشة كانت بتحوّل الـid لاسم من كشف بتحمّله لوحدها، والكشف بقى
+    # 1327 عميل بعد نقل داتا a5 فبيقع، والجدول بيعرض الكود.
+    customer_name: str | None = None
     supplier_id: int | None
+    supplier_name: str | None = None
     order_date: date | None
     due_date: date | None
     warehouse_id: int | None
@@ -94,12 +100,25 @@ class ConvertIn(BaseModel):
     invoice_id: int
 
 
-def _out(db: Session, o: TradeOrder) -> OrderOut:
+def _party_names(db: Session, orders: list[TradeOrder]) -> tuple[dict, dict]:
+    """أسماء العملاء والموردين لصفوف الصفحة — نداءين مجمّعين مش نداء لكل صف."""
+    cids = {o.customer_id for o in orders if o.customer_id}
+    sids = {o.supplier_id for o in orders if o.supplier_id}
+    custs = dict(db.execute(select(Customer.id, Customer.name)
+                            .where(Customer.id.in_(cids))).all()) if cids else {}
+    supps = dict(db.execute(select(Supplier.id, Supplier.name)
+                            .where(Supplier.id.in_(sids))).all()) if sids else {}
+    return custs, supps
+
+
+def _out(db: Session, o: TradeOrder, parties: tuple[dict, dict] | None = None) -> OrderOut:
     names = {
         i.id: i.name for i in db.scalars(
             select(Item).where(Item.id.in_([ln.item_id for ln in o.lines] or [0]))).all()
     }
+    custs, supps = parties if parties is not None else _party_names(db, [o])
     return OrderOut(
+        customer_name=custs.get(o.customer_id), supplier_name=supps.get(o.supplier_id),
         id=o.id, document_number=o.document_number, kind=o.kind.value, status=o.status.value,
         customer_id=o.customer_id, supplier_id=o.supplier_id, order_date=o.order_date,
         due_date=o.due_date, warehouse_id=o.warehouse_id,
@@ -214,7 +233,8 @@ def list_orders(
     if supplier_id:
         stmt = stmt.where(TradeOrder.supplier_id == supplier_id)
     rows = db.scalars(stmt.order_by(TradeOrder.id.desc())).all()
-    return [_out(db, o) for o in rows]
+    parties = _party_names(db, rows)
+    return [_out(db, o, parties) for o in rows]
 
 
 @router.get("/{order_id}", response_model=OrderOut)

@@ -160,7 +160,7 @@ export default function Orders() {
   });
 
   const partyName = (o: Order) => (o.kind === 'sale'
-    ? customers.find((c) => c.id === o.customer_id)?.name
+    ? (o as any).customer_name || customers.find((c) => c.id === o.customer_id)?.name
     : suppliers.find((s) => s.id === o.supplier_id)?.name) || '-';
 
   /**
