@@ -83,7 +83,10 @@ class SaleCreate(BaseModel):
     origin: LocationIn
     variable_discount_pct: Decimal = Decimal("0")
     cash_amount: Decimal
-    credit_amount: Decimal
+    # سيبه فاضي والسيرفر يحسبه: المستحق ناقص النقدي. الشاشة بتحسب صافي السطور
+    # وبس، والمستحق فيه الضريبة ومصروفات العميل — فمقارنة الرقمين كانت بترفض
+    # فواتير سليمة.
+    credit_amount: Decimal | None = None
     lines: list[SaleLineIn]
     # (030) document fields — who sold it, where revenue posts, the customer's paper number,
     # and free text. All optional: an existing client that sends none behaves exactly as before.

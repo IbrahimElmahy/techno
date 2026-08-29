@@ -57,7 +57,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
 from src.api import (
     settings as sales_settings,
 )
-from src.api import branch_overview, permissions
+from src.api import branch_overview, permissions, reps
 
 
 def create_app() -> FastAPI:
@@ -105,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix=prefix)
     app.include_router(permissions.router, prefix=prefix)
     app.include_router(branch_overview.router, prefix=prefix)
+    app.include_router(reps.router, prefix=prefix)
     # Sales & Inventory (002)
     app.include_router(catalog.router, prefix=prefix)
     app.include_router(serials.router, prefix=prefix)
@@ -361,6 +362,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("coupon_receipt", "branch_id", "BIGINT"),
     ("inspection", "branch_id", "BIGINT"),
     ("stock_transfer", "branch_id", "BIGINT"),
+    # (038) المنطقة الأب — مستوى تاني للمناطق، بمفتاح مش باسم منسوخ.
+    ("territory", "parent_id", "BIGINT"),
     ("stock_count", "kind", "VARCHAR(16) NOT NULL DEFAULT 'full'"),
     ("purchase_return", "notes", "VARCHAR(500)"),
     # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:

@@ -78,7 +78,13 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/customers', label: 'العملاء', roles: R([...SALES, 'after_sales_staff']), a5: '/clients' },
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
       { key: '/warehouses', label: 'المخازن', roles: R(STOCK), a5: '/stores' },
+      // الهيكل من فوق لتحت: محافظة ← فرع ← منطقة. التلاتة كانوا متفرّقين — المحافظات
+      // مدفونة في تبويب مش في القائمة، والمناطق مالهاش شاشة أصلاً.
+      { key: '/governorates', label: 'المحافظات', roles: OFFICE },
       { key: '/branches', label: 'الفروع', roles: OFFICE, a5: '/branches' },
+      { key: '/territories', label: 'المناطق', roles: R(SALES) },
+      // المندوب مستخدم بدور، وكل ما يخصه كان متفرّق على أربع شاشات.
+      { key: '/reps', label: 'المناديب', roles: R(SALES) },
       { key: '/treasuries', label: 'الخزينه و البنوك', roles: R(BOOKS), a5: '/payment-methods' },
       { key: '/main-accounts', label: 'الحسابات الرئيسيه', roles: R(BOOKS), a5: '/mainaccounts' },
       { key: '/sub-accounts', label: 'الحسابات الفرعيه', roles: R(BOOKS), a5: '/subaccounts' },

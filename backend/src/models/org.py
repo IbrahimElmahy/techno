@@ -50,6 +50,17 @@ class Territory(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branch.id"), nullable=False)
+    # (038) المنطقة الأب — «٦ اكتوبر» فوق «الحى الأول» و«الفردوس» و«المستقبل».
+    #
+    # النظام القديم بيعمل المستويين بالاسم: كل عميل شايل نص المنطقة ونص أبوها. فتغيير اسم
+    # منطقة بيسيب العملاء على الاسم القديم، ومافيش حاجة بتمنع منطقة اسمها «.» أو «0» —
+    # ولقينا الاتنين في بياناتهم فعلاً.
+    #
+    # هنا مفتاح: الأب منطقة زي أي منطقة، والابن بيشاور عليها. تغيير الاسم بيتحرّك لوحده،
+    # والحذف بيترفض طالما تحتها حاجة.
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("territory.id"), nullable=True, index=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     branch: Mapped[Branch] = relationship(back_populates="territories")
+    parent: Mapped["Territory | None"] = relationship(remote_side="Territory.id")

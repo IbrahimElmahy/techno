@@ -1115,11 +1115,13 @@ export default function Invoices() {
   };
 
   const handleCreateSubmit = async (values: any) => {
-    const totalSplit = cashAmount + creditAmount;
-    if (Math.abs(totalSplit - netTotal) > 0.01) {
-      message.error('مجموع المدفوع والآجل يجب أن يساوي صافي الفاتورة!');
-      return;
-    }
+    // مافيش فحص على «النقدي + الآجل = الصافي» هنا.
+    //
+    // الشاشة بتعرف صافي السطور بس؛ المستحق الحقيقي فيه الضريبة ومصروفات العميل، وده
+    // السيرفر اللي بيحسبه. فالفحص هنا كان بيقارن رقمين مختلفين ويرفض فواتير سليمة —
+    // وأول ما تتحط ضريبة أو مصروف على العميل تقع الفاتورة من غير سبب مفهوم.
+    //
+    // الآجل بيتبعت للسيرفر، وهو بيتأكد منه — ولو اتساب فاضي بيحسبه من المستحق ناقص النقدي.
 
     const validLines = lines.filter((l) => l.item_id !== null);
     const validCoupons = couponRows.filter((r) => Boolean(r.coupon_type_id || r.serial_from || r.serial_to));
@@ -1192,7 +1194,9 @@ export default function Invoices() {
         },
         variable_discount_pct: discountPct,
         cash_amount: cashAmount,
-        credit_amount: creditAmount,
+        // مش متبعوت عن قصد: السيرفر بيحسبه من المستحق (اللي فيه الضريبة والمصروفات)
+        // ناقص النقدي. اللي على الشاشة تقدير للعرض، والحقيقة عند اللي بيرحّل.
+        credit_amount: undefined,
         lines: validLines.map((l) => {
           const prod = products.find((p) => p.id === l.item_id);
           return {

@@ -68,12 +68,26 @@ export default function App() {
         setConfigLoaded(true);
       });
     } else {
-      // Web build. Local `vite` dev → the backend on :8000. Deployed → the canonical API domain.
-      // NOT a baked VITE_API_URL: a stale Vercel env once pointed the production bundle at the
-      // old *.vercel.app domain, whose /api no longer routes to the backend → CORS-dead login.
+      // Web build.
+      //
+      // **الأصل اللي الصفحة جاية منه هو الـAPI بتاعها** — إلا في تطوير محلي.
+      //
+      // كان مكتوب: أي دومين غير localhost يروح على `api.technothermeg.com`. ده كان صح
+      // لما كان فيه نشر واحد على السحابة، وبقى غلط خطير أول ما اتعمل نشر تاني: الواجهة
+      // اللي بتتقدّم من سيرفر الشركة كانت بتكلّم قاعدة السحابة — نفس الشاشة، وقاعدة
+      // تانية خالص. اللي بيبص عليها بيشوف أرقام مش بتاعة السيرفر اللي فتحه.
+      //
+      // النسبي بيحل ده لوحده: كل نشر بيكلّم الباك إند اللي جنبه، من غير ما حد يفتكر
+      // يظبط متغيّر. والباك إند بيقدّم الواجهة من نفس الخدمة، فالأصل واحد بالضرورة.
+      //
+      // و`VITE_API_URL` بتفضل مخرج للحالة اللي الاتنين فيها متفرّقين (Vercel + Render):
+      // اتقالت صراحةً ⇒ بتُحترم، ماتقالتش ⇒ نفس الأصل.
       const host = window.location.hostname;
       const isLocal = host === 'localhost' || host === '127.0.0.1';
-      const apiBase = isLocal ? 'http://127.0.0.1:8000' : 'https://api.technothermeg.com';
+      const baked = (import.meta as any).env?.VITE_API_URL as string | undefined;
+      const apiBase = baked && baked.trim()
+        ? baked.trim().replace(/\/$/, '')
+        : (isLocal ? 'http://127.0.0.1:8000' : window.location.origin);
       setApiUrl(apiBase);
       setApiBaseURL(apiBase);
       setConfigLoaded(true);

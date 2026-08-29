@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, ensure_branch_access, require_capability
@@ -46,6 +46,7 @@ class BranchUpdate(BaseModel):
 class TerritoryUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
+    parent_id: int | None = None
 
 
 class BranchOut(BaseModel):
@@ -61,12 +62,18 @@ class BranchOut(BaseModel):
 class TerritoryCreate(BaseModel):
     name: str
     branch_id: int
+    # فاضي = منطقة رئيسية. المعبّى = تحت المنطقة دي.
+    parent_id: int | None = None
 
 
 class TerritoryOut(BaseModel):
     id: int
     name: str
     branch_id: int
+    parent_id: int | None = None
+    parent_name: str | None = None
+    # عدد العملاء تحتها — الرقم اللي بيقول هل المنطقة دي حيّة ولا اسم على ورق.
+    customer_count: int = 0
     active: bool
 
 
@@ -214,9 +221,18 @@ def list_territories(
         stmt = stmt.where(Territory.branch_id == current.branch_id)
     elif branch_id is not None:
         stmt = stmt.where(Territory.branch_id == branch_id)
+    rows = db.scalars(stmt).all()
+    names = {t.id: t.name for t in db.scalars(select(Territory)).all()}
+    from src.models.customer import Customer
+    counts = dict(db.execute(
+        select(Customer.territory_id, func.count())
+        .where(Customer.territory_id.isnot(None))
+        .group_by(Customer.territory_id)).all())
     return [
-        TerritoryOut(id=t.id, name=t.name, branch_id=t.branch_id, active=t.active)
-        for t in db.scalars(stmt).all()
+        TerritoryOut(id=t.id, name=t.name, branch_id=t.branch_id,
+                     parent_id=t.parent_id, parent_name=names.get(t.parent_id),
+                     customer_count=counts.get(t.id, 0), active=t.active)
+        for t in rows
     ]
 
 
@@ -230,7 +246,8 @@ def create_territory(
         ensure_branch_access(current, body.branch_id)
     if db.get(Branch, body.branch_id) is None:
         raise HTTPException(404, {"code": "not_found", "message": "Branch not found"})
-    territory = Territory(name=body.name, branch_id=body.branch_id)
+    territory = Territory(name=body.name, branch_id=body.branch_id,
+                          parent_id=getattr(body, 'parent_id', None))
     db.add(territory)
     db.flush()
     db.commit()
@@ -255,9 +272,16 @@ def update_territory(
         t.name = body.name
     if body.active is not None:
         t.active = body.active
+    if body.parent_id is not None:
+        # منطقة تحت نفسها بتعمل حلقة — أي شاشة بتمشي الشجرة بعدها بتلف للأبد.
+        if body.parent_id == t.id:
+            raise HTTPException(422, {"code": "validation",
+                                      "message": "المنطقة ماينفعش تكون تحت نفسها."})
+        t.parent_id = body.parent_id or None
     db.flush()
     db.commit()
-    return TerritoryOut(id=t.id, name=t.name, branch_id=t.branch_id, active=t.active)
+    return TerritoryOut(id=t.id, name=t.name, branch_id=t.branch_id,
+                        parent_id=t.parent_id, active=t.active)
 
 
 @router.delete("/territories/{territory_id}", status_code=status.HTTP_204_NO_CONTENT)

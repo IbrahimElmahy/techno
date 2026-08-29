@@ -200,7 +200,8 @@ def create_sale(
     origin_location_id: int,
     variable_discount_pct: Decimal,
     cash_amount: Decimal,
-    credit_amount: Decimal,
+    # `None` = احسبه من المستحق ناقص النقدي. الرقم الصريح لسه بيتقبل ويتفحص.
+    credit_amount: Decimal | None = None,
     lines: list[SaleLine],
     actor_role: RoleName,
     actor_user_id: int,
@@ -232,8 +233,16 @@ def create_sale(
     # الآخر مستند واحد، مش مستند وتصحيحه.
     replace_invoice_id: int | None = None,
 ) -> SalesInvoice:
-    if not lines:
-        raise SalesError("الفاتورة لازم يكون فيها صنف واحد على الأقل.")
+    # فاتورة كوبونات بس — من غير أي صنف.
+    #
+    # الشركة بتسلّم دفاتر كوبونات لعميل من غير ما تبيعه بضاعة في نفس الورقة، وده مستند
+    # حقيقي: بيتسجّل عليه مين استلم وإمتى وأنهي مدى أرقام. المنع القديم كان بيخلّي الحالة
+    # دي تتكتب كفاتورة بصنف وهمي بصفر — وده بيدخل صنف مالوش وجود في تقارير المبيعات.
+    #
+    # اللي بيتفحص هنا إن المستند مش فاضي، مش إن فيه أصناف: صنف أو كوبونات أو الاتنين.
+    has_coupons = bool(coupon_serial_from or coupon_serial_to or coupon_count)
+    if not lines and not has_coupons:
+        raise SalesError("الفاتورة لازم يكون فيها صنف أو دفتر كوبونات على الأقل.")
     fixed = fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
     combined = fixed + variable
@@ -309,10 +318,25 @@ def create_sale(
     # A billed expense is money the customer owes, so it is part of what has to be paid. An
     # operating expense is ours — it never changes his side of the document.
     payable = to_money(net + tax + billed_expenses)
-    if to_money(cash_amount) + to_money(credit_amount) != payable:
+
+    # الآجل بيتحسب، مايتكتبش.
+    #
+    # الشرط القديم كان «النقدي + الآجل = الصافي بالظبط»، وده كان بيرفض فواتير سليمة لسببين:
+    #
+    # * **الضريبة والمصروفات.** الشاشة بتحسب صافي السطور، والسيرفر بيحسب المستحق = الصافي
+    #   + الضريبة + مصروفات العميل. أول ما يبقى فيه ضريبة أو مصروف، الرقمين بيختلفوا
+    #   والفاتورة بتترفض من غير ما اللي قدامها يعرف ليه.
+    # * **الدفع الزيادة.** العميل بيدي ١٠٠٠ على فاتورة ٢٥٠، والزيادة بتنزل رصيد ليه. النظام
+    #   القديم بتاع الشركة بيقبلها ويكتب الباقي بالسالب — شفنا فواتير حقيقية كده عندهم.
+    #
+    # فالنقدي هو اللي بيتقال، والآجل بيتحسب: `المستحق − النقدي`. والسالب مقصود — القيد
+    # تحته بيعرفه ويقيّده لصالح العميل.
+    cash = to_money(cash_amount)
+    if credit_amount is None:
+        credit_amount = payable - cash
+    elif to_money(cash) + to_money(credit_amount) != payable:
         raise SalesError(
-            "النقدي + الآجل لازم يساوي صافي الفاتورة." if tax == ZERO and not billed_expenses
-            else f"cash + credit must equal the total including VAT and expenses ({payable})."
+            f"النقدي + الآجل لازم يساوي المستحق ({payable})."
         )
 
     # (031) Which of his accounts this invoice belongs to. A customer may hold one per product

@@ -58,6 +58,9 @@ const BASE_TITLES: Record<string, string> = {
   '/settings': 'إعدادات القوائم',
   '/permissions': 'الصلاحيات',
   '/branch-overview': 'نظرة على الفروع',
+  '/reps': 'المناديب',
+  '/territories': 'المناطق',
+  '/governorates': 'المحافظات',
 };
 
 /**
