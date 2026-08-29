@@ -15,6 +15,7 @@ import {
   Alert,
 } from 'antd';
 import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
+import { useTableColumns } from '../components/ColumnSettings';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -182,6 +183,33 @@ const FinanceReports: React.FC = () => {
       ? `/customers/${r.party_id}` : `/suppliers/${r.party_id}`),
   });
 
+  // أعمار الديون هو الجدول الوحيد هنا اللي أعمدته تستاهل إخفاء وترتيب — الشرايح بتوصل
+  // لسبعة أعمدة. القوايم التانية في الصفحة عمودين (اسم ومبلغ)، وإخفاء عمود المبلغ في
+  // ميزانية مش خيار، هو الورقة نفسها.
+  const agingColumns = useMemo(() => ([
+    { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name', key: 'party_name',
+      ...textColumn(aging, (r: AgingRow) => r.party_name) },
+    ...BUCKETS.map((b) => ({
+      title: b === '90+' ? 'أكثر من 90 يوم' : `${b} يوم`,
+      key: `bucket_${b}`,
+      dataIndex: ['buckets', b],
+      width: 130,
+      align: 'left' as const,
+      ...numberColumn<AgingRow>((r) => r.buckets?.[b]),
+      render: (v: string) => (Number(v) ? money(v) : ''),
+    })),
+    {
+      title: 'الإجمالي',
+      dataIndex: 'total',
+      key: 'total',
+      width: 140,
+      align: 'left' as const,
+      ...numberColumn<AgingRow>((r) => r.total),
+      render: (v: string) => <b>{money(v)}</b>,
+    },
+  ]), [agingParty, aging]);
+  const agingCols = useTableColumns('finance-aging', agingColumns as any, { locked: ['party_name'] });
+
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
@@ -300,6 +328,8 @@ const FinanceReports: React.FC = () => {
               <Card
                 title="أعمار الديون"
                 extra={
+                  <Space>
+                  {agingCols.control}
                   <Select
                     value={agingParty}
                     style={{ width: 140 }}
@@ -309,6 +339,7 @@ const FinanceReports: React.FC = () => {
                       { value: 'suppliers', label: 'الموردين' },
                     ]}
                   />
+                  </Space>
                 }
               >
                 <ListToolbar
@@ -325,26 +356,7 @@ const FinanceReports: React.FC = () => {
                   loading={loading}
                   dataSource={agingFilter.filtered}
                   pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
-                  columns={[
-                    { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name',
-                      ...textColumn(aging, (r: AgingRow) => r.party_name) },
-                    ...BUCKETS.map((b) => ({
-                      title: b === '90+' ? 'أكثر من 90 يوم' : `${b} يوم`,
-                      dataIndex: ['buckets', b],
-                      width: 130,
-                      align: 'left' as const,
-                      ...numberColumn<AgingRow>((r) => r.buckets?.[b]),
-                      render: (v: string) => (Number(v) ? money(v) : ''),
-                    })),
-                    {
-                      title: 'الإجمالي',
-                      dataIndex: 'total',
-                      width: 140,
-                      align: 'left' as const,
-                      ...numberColumn<AgingRow>((r) => r.total),
-                      render: (v: string) => <b>{money(v)}</b>,
-                    },
-                  ]}
+                  columns={agingCols.columns}
                   summary={() => {
                     const sum = agingFilter.filtered.reduce((s, r) => s + Number(r.total), 0);
                     return (

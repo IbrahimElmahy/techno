@@ -81,7 +81,7 @@ export function printTransfer(d: TransferDoc): void {
       number: d.document_number,
       date: d.date || undefined,
       meta,
-      note: 'البضاعة تُسلَّم بعد التوقيع من الطرفين — وأي فرق بين المرسل والمستلم يتكتب على الورقة قبل الاعتماد.',
+      note: 'تُسلَّم البضاعة بعد توقيع الطرفين — وأي فرق بين المرسِل والمستلِم يُكتب على الورقة قبل الاعتماد.',
     },
     body,
   );

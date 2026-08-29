@@ -7,6 +7,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { allScreens } from './navigation';
 import { TabModal } from './TabModal';
+import { keepInView } from '../utils/keepInView';
 
 /**
  * Working the whole system from the keyboard.
@@ -465,7 +466,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
         <List
           size="small" style={{ marginTop: 12, maxHeight: 320, overflowY: 'auto' }}
           dataSource={matches}
-          locale={{ emptyText: 'مفيش شاشة بالاسم ده' }}
+          locale={{ emptyText: 'لا توجد شاشة بهذا الاسم' }}
           renderItem={(s) => (
             <List.Item
               style={{ cursor: 'pointer' }}
@@ -482,8 +483,8 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
         title="اختصارات الكيبورد" width={480} destroyOnHidden
       >
         <Typography.Paragraph type="secondary">
-          الشغل كله ينفع من الكيبورد. الاختصارات دي شغالة في أي شاشة، واللي منها مش متاح في الشاشة
-          المفتوحة بيتجاهل.
+          يمكن إنجاز العمل كله من لوحة المفاتيح. هذه الاختصارات تعمل في أي شاشة، وما لا يتوفر منها
+          في الشاشة المفتوحة يُتجاهَل.
         </Typography.Paragraph>
         <List
           size="small"
@@ -493,7 +494,7 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
             ...KEY_MAP.map((k) => ({ keys: k.keys, label: k.label })),
             // The movement keys. They were the two things in here nobody could find out about
             // except by pressing them and noticing — which is the definition of undiscoverable.
-            { keys: 'Enter', label: 'الخانة اللي بعدها — وفي سطور المستند: يفتح نافذة الصنف' },
+            { keys: 'Enter', label: 'الخانة التالية — وفي سطور المستند: يفتح نافذة الصنف' },
             { keys: '↑ ↓', label: 'سطر فوق / سطر تحت في جدول المستند، في نفس العمود' },
             // The list keys. Same two arrows, different table: in a register they walk the rows
             // rather than the cells, because there a row is a thing you open.
@@ -663,7 +664,9 @@ export function useTableKeyboard<T>({
         requestAnimationFrame(() => {
           const tr = trFor(key);
           tr?.focus({ preventScroll: true });
-          tr?.scrollIntoView({ block: 'nearest' });
+          // الصندوق اللي الجدول جواه بس هو اللي بيتحرك. `scrollIntoView` كان بيحرّك كل أب
+          // بيعمل تمرير — الجدول والتبويب والصفحة — فالنزول لآخر صف ظاهر كان بينطّ بالشاشة.
+          keepInView(tr);
         });
         return true;
       },

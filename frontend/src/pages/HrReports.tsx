@@ -556,7 +556,7 @@ export default function HrReports() {
         <Alert
           type="warning" showIcon style={{ marginBottom: 12 }}
           message="التقرير ده فيه مبالغ باسم موظف"
-          description="صلاحية «عرض المرتبات» مش متاحة لحسابك. اختار موضوع تاني، أو اطلب الصلاحية من مدير النظام."
+          description="صلاحية «عرض المرتبات» غير متاحة لحسابك. اختر موضوعاً آخر، أو اطلب الصلاحية من مدير النظام."
         />
       )}
 
@@ -589,7 +589,7 @@ export default function HrReports() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message={`معروض ${rows.length} سطر من ${page.total_rows}`}
-          description="الإجماليات فوق محسوبة على كل السطور في المدى المحدد، مش على المعروض. ضيّق الفترة أو الفلاتر عشان تشوف الباقي."
+          description="الإجماليات أعلاه محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
         />
       )}
 

@@ -164,7 +164,7 @@ const InspectionItems: React.FC = () => {
           {row.active && (
             <Popconfirm
               title="إيقاف الصنف؟"
-              description="هيختفي من التطبيق، والمعاينات القديمة تفضل زي ما هي."
+              description="سيختفي من التطبيق، وتبقى المعاينات القديمة كما هي."
               okText="إيقاف"
               cancelText="إلغاء"
               okButtonProps={{ danger: true }}

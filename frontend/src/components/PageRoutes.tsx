@@ -1,63 +1,78 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import Users from '../pages/Users';
-import Org from '../pages/Org';
-import Warehouses from '../pages/Warehouses';
-import Branches from '../pages/Branches';
-import Dashboard from '../pages/Dashboard';
-import MainAccounts from '../pages/MainAccounts';
-import SubAccounts from '../pages/SubAccounts';
-import Treasuries from '../pages/Treasuries';
-import CostCenters from '../pages/CostCenters';
-import Customers from '../pages/Customers';
-import CustomerProfile from '../pages/CustomerProfile';
-import SupplierProfile from '../pages/SupplierProfile';
-import Suppliers from '../pages/Suppliers';
-import Catalog from '../pages/Catalog';
-import ItemProfile from '../pages/ItemProfile';
-import Purchases from '../pages/Purchases';
-import Manufacturing from '../pages/Manufacturing';
-import Transfers from '../pages/Transfers';
-import StockBalance from '../pages/StockBalance';
-import StockSheet from '../pages/StockSheet';
-import StockAlerts from '../pages/StockAlerts';
-import Categories from '../pages/Categories';
-import PendingScreen from '../pages/PendingScreen';
-import PurchaseReturns from '../pages/PurchaseReturns';
-import FreeProduction from '../pages/FreeProduction';
-import RepReports from '../pages/RepReports';
-import StockCounts from '../pages/StockCounts';
-import ItemCard from '../pages/ItemCard';
-import StockPermits from '../pages/StockPermits';
-import Stocktake from '../pages/Stocktake';
-import AccountStatement from '../pages/AccountStatement';
-import FixedAssets from '../pages/FixedAssets';
-import Employees from '../pages/Employees';
-import Departments from '../pages/Departments';
-import Attendance from '../pages/Attendance';
-import Leave from '../pages/Leave';
-import PayrollSettings from '../pages/PayrollSettings';
-import Advances from '../pages/Advances';
-import Payroll from '../pages/Payroll';
-import HrReports from '../pages/HrReports';
-import OpsReports from '../pages/OpsReports';
-import Profitability from '../pages/Profitability';
-import Orders from '../pages/Orders';
-import CouponReceipts from '../pages/CouponReceipts';
-import Invoices from '../pages/Invoices';
-import Returns from '../pages/Returns';
-import Loyalty from '../pages/Loyalty';
-import Treasury from '../pages/Treasury';
-import GeneralLedger from '../pages/GeneralLedger';
-import Audit from '../pages/Audit';
-import Reports from '../pages/Reports';
-import TradeReports from '../pages/TradeReports';
-import Settings from '../pages/Settings';
-import Inspections from '../pages/Inspections';
-import InspectionItems from '../pages/InspectionItems';
-import Vouchers from '../pages/Vouchers';
-import VoucherKeys from '../pages/VoucherKeys';
-import FinanceReports from '../pages/FinanceReports';
+import { Spin } from 'antd';
+
+/**
+ * كل شاشة في ملف لوحدها — بتتحمّل أول ما تتفتح.
+ *
+ * كانت الشاشات كلها متستوردة على طول، فـVite بيلمّها في ملف واحد. البرنامج كان بيقرا ٢.٣
+ * ميجا جافاسكريبت قبل ما يوريك أول شاشة — وفيها الرواتب والتصنيع والتقارير، اللي واحد
+ * بيكتب فواتير مش هيفتحهم في يومه أصلاً. `lazy` بيخلّي كل شاشة ملف مستقل، فالبداية بتحمّل
+ * الهيكل والشاشة المطلوبة بس.
+ *
+ * الـ`Suspense` جوّه `PageRoutes`، يعني كل تبويب ليه حدوده — التبويب اللي لسه بيحمّل
+ * مايوقّفش اللي مفتوح جنبه.
+ */
+const Users = lazy(() => import('../pages/Users'));
+const Org = lazy(() => import('../pages/Org'));
+const Warehouses = lazy(() => import('../pages/Warehouses'));
+const Branches = lazy(() => import('../pages/Branches'));
+const Dashboard = lazy(() => import('../pages/Dashboard'));
+const MainAccounts = lazy(() => import('../pages/MainAccounts'));
+const SubAccounts = lazy(() => import('../pages/SubAccounts'));
+const Treasuries = lazy(() => import('../pages/Treasuries'));
+const CostCenters = lazy(() => import('../pages/CostCenters'));
+const Customers = lazy(() => import('../pages/Customers'));
+const CustomerProfile = lazy(() => import('../pages/CustomerProfile'));
+const SupplierProfile = lazy(() => import('../pages/SupplierProfile'));
+const Suppliers = lazy(() => import('../pages/Suppliers'));
+const Catalog = lazy(() => import('../pages/Catalog'));
+const ItemProfile = lazy(() => import('../pages/ItemProfile'));
+const Purchases = lazy(() => import('../pages/Purchases'));
+const Manufacturing = lazy(() => import('../pages/Manufacturing'));
+const Transfers = lazy(() => import('../pages/Transfers'));
+const StockBalance = lazy(() => import('../pages/StockBalance'));
+const StockSheet = lazy(() => import('../pages/StockSheet'));
+const StockAlerts = lazy(() => import('../pages/StockAlerts'));
+const Categories = lazy(() => import('../pages/Categories'));
+const PendingScreen = lazy(() => import('../pages/PendingScreen'));
+const PurchaseReturns = lazy(() => import('../pages/PurchaseReturns'));
+const FreeProduction = lazy(() => import('../pages/FreeProduction'));
+const RepReports = lazy(() => import('../pages/RepReports'));
+const StockCounts = lazy(() => import('../pages/StockCounts'));
+const ItemCard = lazy(() => import('../pages/ItemCard'));
+const StockPermits = lazy(() => import('../pages/StockPermits'));
+const Stocktake = lazy(() => import('../pages/Stocktake'));
+const AccountStatement = lazy(() => import('../pages/AccountStatement'));
+const FixedAssets = lazy(() => import('../pages/FixedAssets'));
+const Employees = lazy(() => import('../pages/Employees'));
+const Departments = lazy(() => import('../pages/Departments'));
+const Attendance = lazy(() => import('../pages/Attendance'));
+const Leave = lazy(() => import('../pages/Leave'));
+const PayrollSettings = lazy(() => import('../pages/PayrollSettings'));
+const Advances = lazy(() => import('../pages/Advances'));
+const Payroll = lazy(() => import('../pages/Payroll'));
+const HrReports = lazy(() => import('../pages/HrReports'));
+const OpsReports = lazy(() => import('../pages/OpsReports'));
+const Profitability = lazy(() => import('../pages/Profitability'));
+const Orders = lazy(() => import('../pages/Orders'));
+const CouponReceipts = lazy(() => import('../pages/CouponReceipts'));
+const Invoices = lazy(() => import('../pages/Invoices'));
+const Returns = lazy(() => import('../pages/Returns'));
+const Loyalty = lazy(() => import('../pages/Loyalty'));
+const Treasury = lazy(() => import('../pages/Treasury'));
+const GeneralLedger = lazy(() => import('../pages/GeneralLedger'));
+const Audit = lazy(() => import('../pages/Audit'));
+const Reports = lazy(() => import('../pages/Reports'));
+const TradeReports = lazy(() => import('../pages/TradeReports'));
+const Settings = lazy(() => import('../pages/Settings'));
+const Permissions = lazy(() => import('../pages/Permissions'));
+const BranchOverview = lazy(() => import('../pages/BranchOverview'));
+const Inspections = lazy(() => import('../pages/Inspections'));
+const InspectionItems = lazy(() => import('../pages/InspectionItems'));
+const Vouchers = lazy(() => import('../pages/Vouchers'));
+const VoucherKeys = lazy(() => import('../pages/VoucherKeys'));
+const FinanceReports = lazy(() => import('../pages/FinanceReports'));
 
 const Placeholder = ({ name }: { name: string }) => (
   <div style={{ padding: 24, background: '#fff', borderRadius: 8 }}>
@@ -70,6 +85,7 @@ const Placeholder = ({ name }: { name: string }) => (
  *  `location` renders this tab's routes at its own path without changing the shared URL. */
 export default function PageRoutes({ location }: { location?: string }) {
   return (
+    <Suspense fallback={<div style={{ padding: 40, textAlign: 'center' }}><Spin size="large" /></div>}>
     <Routes location={location}>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="/dashboard" element={<Dashboard />} />
@@ -131,9 +147,12 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/stock-counts" element={<StockCounts />} />
       <Route path="/trade-reports" element={<TradeReports />} />
       <Route path="/settings" element={<Settings />} />
+      <Route path="/permissions" element={<Permissions />} />
+      <Route path="/branch-overview" element={<BranchOverview />} />
       {/* A menu entry whose screen is not built yet lands here and says so, naming the a5 screen
           it will mirror. Bouncing to the dashboard instead would read as the click having failed. */}
       <Route path="*" element={<PendingScreen />} />
     </Routes>
+    </Suspense>
   );
 }

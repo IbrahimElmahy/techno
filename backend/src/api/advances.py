@@ -25,6 +25,7 @@ from src.models.hr_advance import (
 from src.services import advance_service
 from src.services.advance_service import AdvanceError
 from src.services.ledger_service import LedgerError
+from src.auth import branch_scope
 
 router = APIRouter(tags=["advances"], prefix="/hr")
 
@@ -110,10 +111,12 @@ def _adjustment_out(db: Session, r: PayrollAdjustment) -> dict:
 def list_advances(
     employee_id: int | None = Query(None),
     status_filter: AdvanceStatus | None = Query(None, alias="status"),
-    _: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    stmt = select(EmployeeAdvance).order_by(EmployeeAdvance.advance_date.desc())
+    stmt = branch_scope.scope(
+        select(EmployeeAdvance), EmployeeAdvance, current
+    ).order_by(EmployeeAdvance.advance_date.desc())
     if employee_id:
         stmt = stmt.where(EmployeeAdvance.employee_id == employee_id)
     if status_filter:

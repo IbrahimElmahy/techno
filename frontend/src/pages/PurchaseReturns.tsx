@@ -1,9 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row, Select, Space, Table, Tag, message, } from 'antd';import { Popconfirm } from '../components/noConfirm';
+import {
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
+  Select, Space, Table, Tag, Tooltip, Typography, message,
+} from 'antd';
+import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom, useQtyFocus } from '../components/lineKeyboard';
 import {
-  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileAddOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined, UndoOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, DeleteOutlined, EditOutlined,
+  EyeOutlined, FileAddOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
+  SaveOutlined, SearchOutlined, UndoOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -22,6 +28,7 @@ import TotalsLadder from '../components/TotalsLadder';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
+import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
@@ -131,12 +138,11 @@ export default function PurchaseReturns() {
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
   const [notes, setNotes] = useState('');
   const [purchaseId, setPurchaseId] = useState<number | undefined>();
+  const [viewOnly, setViewOnly] = useState(false);
   const [detail, setDetail] = useState<any>(null);
-  // المردود اللي مفتوح للعرض — غير `detail` اللي هو فاتورة الشراء بتاعة الإنشاء.
+  // المردود اللي مفتوح للعرض
   const [viewing, setViewing] = useState<any>(null);
   const [viewLoading, setViewLoading] = useState(false);
-  // Keyed by item, and empty until typed — a box that opens at 1 turns «5» into «15» for anybody
-  // who types over it without clearing first. Same rule as every other document.
   const [qty, setQty] = useState<Record<number, number | null>>({});
   const [saving, setSaving] = useState(false);
 
@@ -159,7 +165,6 @@ export default function PurchaseReturns() {
   useEffect(() => { load(); }, []);
 
   useEffect(() => {
-    // `?edit=` بيفتح المردود للتعديل، و`?doc=` للعرض — الشاشة عندها الاتنين.
     const doc = searchParams.get('doc');
     const edit = searchParams.get('edit');
     if (doc || edit) {
@@ -177,8 +182,6 @@ export default function PurchaseReturns() {
     else openReturn(target);
   }, [searchParams, rows]);
 
-  // What each purchase has ALREADY had returned, so the screen can say what is still returnable
-  // rather than letting somebody find out from a server error.
   const returnedByPurchase = useMemo(() => {
     const m: Record<number, number> = {};
     rows.forEach((r) => {
@@ -189,64 +192,52 @@ export default function PurchaseReturns() {
 
   const itemName = (id: number) => items.find((i) => i.id === id)?.name ?? `صنف #${id}`;
 
-  /**
-   * السطر يفتح المردود بسطوره.
-   *
-   * The row carries the value; only the lines carry «رجعنا إيه». `purchase_return_line` has held
-   * them since returns were built and no screen ever asked for them, so the register could say a
-   * return was worth 4,300 and never which items made it up.
-   */
   const openReturn = async (row: ReturnRow) => {
-    setViewing({ ...row, lines: null });
     setViewLoading(true);
     try {
       const res = await api.get(`/api/v1/purchases/returns/${row.id}`);
-      setViewing(res.data);
+      const doc = res.data;
+      setViewing(doc);
+      setEditingId(doc.id);
+      setReturnDate(doc.return_date ? dayjs(doc.return_date) : dayjs());
+      setNotes(doc.notes || '');
+      setSupplierFilter(doc.supplier_id ?? null);
+      const firstWh = (doc.lines || [])[0]?.warehouse_id ?? null;
+      setWarehouseId(doc.location?.location_id ?? firstWh);
+      setExternalNumber(doc.external_document_number || '');
+      setStatements([doc.statement1 || '', doc.statement2 || '', doc.statement3 || '']);
+      setVariableDiscount(Number(doc.variable_discount_pct || 0));
+      setReturnLines((doc.lines || []).map((l: any, i: number) => ({
+        key: `${Date.now()}-${i}-${l.item_id}`,
+        item_id: l.item_id,
+        quantity: Number(l.quantity) || null,
+        unit_price: Number(l.unit_price) || 0,
+        discount_pct: Number(l.discount_pct || 0),
+        fixed_discount_pct: 0,
+        unit: l.unit || null,
+        warehouse_id: l.warehouse_id ?? null,
+      })));
+      setViewOnly(true);
+      setCreating(true);
     } catch {
       message.error('تعذر فتح المردود');
-      setViewing(null);
     } finally { setViewLoading(false); }
   };
 
-  /** المردود اللي بيتعدّل دلوقتي — لسه مرحّل، والعكس هيحصل وقت الحفظ. */
   const [editingId, setEditingId] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
 
-  /**
-   * فتح مردود مرحّل للتعديل — **من غير ما يتغيّر أي حاجة لحد ما تحفظ**.
-   *
-   * زي فاتورة الشرا بالظبط، ولنفس السبب اللي وقع فيها: لو العكس حصل وقت الفتح، أي مردود
-   * بضاعته اتحركت بعد كده بيبقى مش قابل للفتح — العكس بيرجّع البضاعة للمخزن، ولو المخزن
-   * اتقفل أو الفترة اتقفلت العملية بتقع، ومجرد إنك عايز تبص عليه بيفشل.
-   *
-   * الفتح قراية: الشاشة بتتملّى بفاتورته وبالكميات اللي كانت مترجّعة. والعكس بيحصل لما تدوس
-   * «ترحيل» — القديم يتعكس والجديد يترحّل، مرة واحدة.
-   */
   const editPosted = async (row: ReturnRow) => {
-    let doc: any = null;
-    try {
-      const res = await api.get(`/api/v1/purchases/returns/${row.id}`);
-      doc = res.data;
-    } catch {
-      message.error('تعذر فتح المردود');
-      return;
-    }
-    setViewing(null);
-    setEditingId(row.id);
-    setReturnDate(doc.return_date ? dayjs(doc.return_date) : dayjs());
-    setNotes(doc.notes || '');
-    const filled: Record<number, number | null> = {};
-    (doc.lines || []).forEach((l: any) => { filled[l.item_id] = Number(l.quantity); });
-    await choosePurchase(doc.purchase_invoice_id);
-    setQty(filled);
-    setCreating(true);
+    await openReturn(row);
+    setViewOnly(false);
+    message.info('مردود الشراء مفتوح الآن للتعديل');
   };
 
   const openCreate = () => {
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
-    setEditingId(null); setSupplierFilter(null);
+    setEditingId(null); setSupplierFilter(null); setViewing(null); setViewOnly(false);
     setReturnLines([]); setWarehouseId(null);
     setExternalNumber(''); setStatements(['', '', '']);
     setVariableDiscount(0);
@@ -263,115 +254,138 @@ export default function PurchaseReturns() {
     }
   };
 
-  /**
-   * شريط الأوامر — نفس صف الأفعال اللي على فاتورة الشرا.
-   *
-   * المستند نسخة منها بالعكس، فاللي اتعلّم إيده على واحد مايتعلّمش من الأول على التاني.
-   * والأفعال اللي مالهاش معنى على المردود بتفضل ظاهرة ومقفولة، مش بتختفي: صف أفعال بيتغيّر
-   * طوله من شاشة لشاشة بيخلّي الإيد تدوّر على الزرار كل مرة.
-   */
   const returnToolbar = (): ToolbarAction[] => {
     const typed = returnLines.filter((l) => l.item_id && Number(l.quantity || 0) > 0).length;
+    const isSaved = Boolean(editingId && viewing);
     const stepList = (step: number) => {
       if (!filter.filtered.length) return;
       const at = filter.filtered.findIndex((r) => r.id === editingId);
       const target = at >= 0 ? filter.filtered[at + step]
         : (step > 0 ? filter.filtered[0] : filter.filtered[filter.filtered.length - 1]);
       if (target) {
-        setCreating(false);
-        setEditingId(null);
-        setSupplierFilter(null);
         openReturn(target);
       }
     };
     return [
-      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => openCreate() },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-        disabled: true },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+      {
+        key: 'new',
+        label: 'جديد',
+        shortcut: 'F2',
+        icon: <FileAddOutlined />,
+        onClick: () => openCreate(),
+      },
+      {
+        key: 'edit',
+        label: 'تعديل',
+        icon: <EditOutlined />,
+        disabled: !isSaved || !viewOnly,
         onClick: () => {
-          if (editingId || returnLines.length > 0) {
+          setViewOnly(false);
+          message.info('مردود الشراء مفتوح الآن للتعديل');
+        },
+      },
+      {
+        key: 'undo',
+        label: 'تراجع',
+        icon: <UndoOutlined />,
+        // «تراجع» بيرجّع المستند، مش بيقفل الحقول وبس.
+        //
+        // كان بيعمل `setViewOnly(true)` على طول: الحقول تتقفل واللي اتكتب ومااتحفظش يفضل
+        // ظاهر — مقفول ومقروء، يعني بنفس شكل المحفوظ بالظبط. فاللي غيّر كمية من ١٠ لـ٣
+        // وضغط تراجع بيفضل قدامه ٣ وإجمالي مالوش وجود، ومافيش حاجة على الشاشة بتقول إن ده
+        // مش اللي في القاعدة. إعادة تحميل المستند هي الحاجة الوحيدة اللي بترجّع الأرقام.
+        onClick: () => {
+          if (!viewOnly && editingId) {
+            openReturn({ id: editingId } as ReturnRow);
+          } else if (returnLines.length > 0) {
             setCreating(false);
             setEditingId(null);
+            setViewOnly(false);
+            setViewing(null);
           } else {
             setReturnLines([]);
           }
-        } },
-      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
-        disabled: typed === 0,
+        },
+      },
+      {
+        key: 'save',
+        label: 'حفظ',
+        shortcut: 'F9',
+        icon: <SaveOutlined />,
+        disabled: viewOnly || typed === 0,
         onClick: () => {
           submit();
-        } },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
-        disabled: filter.filtered.length === 0, onClick: () => stepList(1) },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-        onClick: () => setPickerOpen(true) },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
-        disabled: filter.filtered.length === 0, onClick: () => stepList(-1) },
-      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
-        disabled: typed === 0, onClick: () => setReturnLines([]) },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-        disabled: true },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
-        disabled: !supplierFilter,
-        onClick: () => supplierFilter && navigate(`/suppliers/${supplierFilter}`) },
-      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => load() },
-    ];
-  };
-
-  const viewingToolbar = (): ToolbarAction[] => {
-    const stepList = (step: number) => {
-      if (!filter.filtered.length || !viewing) return;
-      const at = filter.filtered.findIndex((r) => r.id === viewing.id);
-      const target = at >= 0 ? filter.filtered[at + step]
-        : (step > 0 ? filter.filtered[0] : filter.filtered[filter.filtered.length - 1]);
-      if (target) {
-        openReturn(target);
-      }
-    };
-    return [
-      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => { setViewing(null); openCreate(); } },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        },
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
+        disabled: filter.filtered.length === 0,
+        onClick: () => stepList(1),
+      },
+      {
+        key: 'search',
+        label: 'بحث',
+        shortcut: 'F3',
+        icon: <SearchOutlined />,
         onClick: () => {
-          const v = viewing;
-          setViewing(null);
-          editPosted(v);
-        } },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
-        onClick: () => setViewing(null) },
-      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
-        disabled: filter.filtered.length === 0, onClick: () => stepList(1) },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-        onClick: () => setViewing(null) },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
-        disabled: filter.filtered.length === 0, onClick: () => stepList(-1) },
-      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+          if (viewOnly) {
+            setCreating(false);
+            setViewOnly(false);
+            setViewing(null);
+          } else {
+            setPickerOpen(true);
+          }
+        },
+      },
+      {
+        key: 'prev',
+        label: 'السابق',
+        icon: <ArrowRightOutlined />,
+        disabled: filter.filtered.length === 0,
+        onClick: () => stepList(-1),
+      },
+      {
+        key: 'delete',
+        label: 'حذف',
+        shortcut: 'F8',
+        icon: <DeleteOutlined />,
+        danger: true,
+        disabled: isSaved ? false : typed === 0,
         onClick: () => {
-          if (viewing) {
+          if (isSaved && viewing) {
             Modal.confirm({
-              title: 'حذف المردود',
-              content: `هل أنت متأكد من حذف مردود الشراء ${viewing.document_number || ''}؟`,
+              title: 'تأكيد حذف مردود الشراء',
+              icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+              content: `هل أنت متأكد من حذف سند مردود الشراء رقم (${viewing.document_number || ''})؟`,
               okText: 'نعم، احذف',
               okType: 'danger',
-              cancelText: 'تراجع',
+              cancelText: 'إلغاء',
               onOk: async () => {
                 try {
                   await api.delete(`/api/v1/purchases/returns/${viewing.id}`);
-                  message.success('تم حذف المردود بنجاح');
+                  message.success('تم حذف مردود الشراء بنجاح');
+                  setCreating(false);
+                  setViewOnly(false);
                   setViewing(null);
                   load();
                 } catch (err: any) {
-                  message.error(err?.response?.data?.detail?.message || 'تعذر حذف المردود');
+                  message.error(err?.response?.data?.detail?.message || 'تعذر حذف مردود الشراء');
                 }
               },
             });
+          } else {
+            setReturnLines([]);
           }
-        } },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-        disabled: printing,
+        },
+      },
+      {
+        key: 'print',
+        label: 'طباعة',
+        shortcut: 'F7',
+        icon: <PrinterOutlined />,
+        disabled: !isSaved || printing,
         onClick: async () => {
           setPrinting(true);
           try {
@@ -382,16 +396,24 @@ export default function PurchaseReturns() {
           } finally {
             setPrinting(false);
           }
-        } },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
-        disabled: !viewing?.supplier_id,
+        },
+      },
+      {
+        key: 'accounts',
+        label: 'حسابات',
+        icon: <BankOutlined />,
+        disabled: !supplierFilter,
+        onClick: () => supplierFilter && navigate(`/suppliers/${supplierFilter}`),
+      },
+      {
+        key: 'reload',
+        label: 'تحميل',
+        icon: <ReloadOutlined />,
         onClick: () => {
-          if (viewing?.supplier_id) {
-            setViewing(null);
-            navigate(`/suppliers/${viewing.supplier_id}`);
-          }
-        } },
-      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => openReturn(viewing) },
+          if (isSaved && viewing) openReturn({ id: viewing.id } as any);
+          else load();
+        },
+      },
     ];
   };
 
@@ -569,6 +591,7 @@ export default function PurchaseReturns() {
     { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+          disabled={viewOnly}
           value={line.warehouse_id ?? warehouseId ?? undefined}
           onChange={(v) => {
             setReturnLines((prev) => prev.map((l) => (
@@ -585,6 +608,7 @@ export default function PurchaseReturns() {
     { key: 'unit', title: 'الوحدة', minWidth: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+          disabled={viewOnly}
           value={line.unit ?? '__base__'}
           onChange={(v) => setReturnLines((prev) => prev.map((l) => (
             l.key === line.key ? { ...l, unit: v === '__base__' ? null : v } : l)))}
@@ -594,6 +618,7 @@ export default function PurchaseReturns() {
       cellProps: (line) => ({ [QTY_DATA_ATTR]: line.item_id } as any),
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0.001}
+          disabled={viewOnly}
           data-qty-key={line.key} data-grid-col="qty" keyboard={false}
           placeholder="الكمية" value={line.quantity ?? undefined}
           onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
@@ -610,6 +635,7 @@ export default function PurchaseReturns() {
     { key: 'price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0} step={0.01}
+          disabled={viewOnly}
           onPressEnter={(e) => { e.preventDefault(); advance(line.key); }}
           placeholder="السعر" value={line.unit_price}
           onChange={(v) => setReturnLines((prev) => prev.map((l) => (
@@ -624,6 +650,7 @@ export default function PurchaseReturns() {
     { key: 'disc_var', title: 'خصم متغير %', minWidth: 75,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          disabled={viewOnly}
           placeholder="متغير" value={line.discount_pct ?? undefined}
           onChange={(v) => setReturnLines((prev) => prev.map((l) => (
             l.key === line.key ? { ...l, discount_pct: (v as number) ?? null } : l)))} />
@@ -632,6 +659,7 @@ export default function PurchaseReturns() {
     { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
           onChange={(v) => setReturnLines((prev) => prev.map((l) => (
             l.key === line.key ? { ...l, fixed_discount_pct: (v as number) ?? null } : l)))} />
@@ -642,10 +670,10 @@ export default function PurchaseReturns() {
       cell: (line) => money(lineNet(line)),
       footer: (rows) => money(rows.reduce((n, l) => n + lineNet(l), 0)) },
     { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
-      cell: (line) => (
+      cell: (line) => (viewOnly ? null : (
         <Button size="small" danger type="text" icon={<DeleteOutlined />}
           onClick={() => setReturnLines((prev) => prev.filter((l) => l.key !== line.key))} />
-      ),
+      )),
       footer: () => null },
   ];
   const lineGrid = useEntryGrid('purchase-return-lines', lineColumns);
@@ -656,8 +684,8 @@ export default function PurchaseReturns() {
   );
 
   const submit = async () => {
-    if (!supplierFilter) { message.warning('اختار المورد الأول'); return; }
-    if (!warehouseId) { message.warning('اختار المخزن اللي البضاعة راجعة منه'); return; }
+    if (!supplierFilter) { message.warning('اختر المورد أولاً'); return; }
+    if (!warehouseId) { message.warning('اختر المخزن الذي ترتجع منه البضاعة'); return; }
     const lines = returnLines
       .filter((l) => l.item_id && Number(l.quantity || 0) > 0)
       .map((l) => ({
@@ -692,7 +720,7 @@ export default function PurchaseReturns() {
       };
       if (editingId !== null) await api.put(`/api/v1/purchases/returns/${editingId}`, body);
       else await api.post('/api/v1/purchases/returns', body);
-      message.success(editingId !== null ? 'اتحفظ المردود' : 'اتسجّل مردود الشراء');
+      message.success(editingId !== null ? 'تم حفظ المردود' : 'تم تسجيل مردود الشراء');
       setEditingId(null);
       setReturnLines([]);
       setCreating(false);
@@ -729,8 +757,7 @@ export default function PurchaseReturns() {
       )),
     },
     {
-      title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', width: 140,
-      fixed: 'left' as const,
+      title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', ellipsis: true, width: 140,
       ...textColumn(rows, (r: ReturnRow) => r.document_number),
       render: (d: string) => <Tag color="volcano">{d}</Tag>,
     },
@@ -760,17 +787,51 @@ export default function PurchaseReturns() {
       render: (v: string | null) => v || '-',
     },
     {
-      title: 'الإجراءات', key: 'actions', width: 190,
+      title: 'الإجراءات', key: 'actions', width: 140,
       render: (_: any, record: ReturnRow) => (
-        <Space size="middle">
-          {/* زي سجل الشرا بالظبط: «عرض» بيفتح التعديل على طول، و«طباعة» بتفتح معاينة
-              الورقة في بوباب فوق السجل. */}
-          {canWriteReturn && (
-            <Button type="dashed" size="small" icon={<EyeOutlined />}
-              onClick={() => editPosted(record)}>عرض</Button>
-          )}
-          <Button type="link" size="small" icon={<PrinterOutlined />}
-            onClick={() => openReturn(record)}>طباعة</Button>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="عرض المردود">
+            <Button type="text" icon={<EyeOutlined />}
+              onClick={() => openReturn(record)} />
+          </Tooltip>
+          <Tooltip title="طباعة">
+            <Button type="text" icon={<PrinterOutlined />}
+              onClick={async () => {
+                try {
+                  const res = await api.get(`/api/v1/purchases/returns/${record.id}`);
+                  const doc = returnDoc(res.data);
+                  if (doc) printInvoice(doc, printOpts);
+                } catch (err) {
+                  message.error('تعذر تحميل بيانات الطباعة');
+                }
+              }} />
+          </Tooltip>
+          <Tooltip title="تعديل">
+            <Button type="text" icon={<EditOutlined />} disabled={!canWriteReturn}
+              onClick={() => editPosted(record)} />
+          </Tooltip>
+          <Tooltip title="حذف">
+            <Button type="text" danger icon={<DeleteOutlined />} disabled={!canWriteReturn}
+              onClick={() => {
+                Modal.confirm({
+                  title: 'تأكيد حذف مردود الشراء',
+                  icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+                  content: `هل أنت متأكد من حذف سند مردود الشراء رقم (${record.document_number || ''})؟`,
+                  okText: 'نعم، احذف',
+                  okType: 'danger',
+                  cancelText: 'إلغاء',
+                  onOk: async () => {
+                    try {
+                      await api.delete(`/api/v1/purchases/returns/${record.id}`);
+                      message.success('تم حذف مردود الشراء بنجاح');
+                      load();
+                    } catch (err: any) {
+                      message.error(err?.response?.data?.detail?.message || 'تعذر حذف مردود الشراء');
+                    }
+                  },
+                });
+              }} />
+          </Tooltip>
         </Space>
       ),
     },
@@ -846,7 +907,7 @@ export default function PurchaseReturns() {
    * shapes for the same paper, so opening yesterday's return landed nowhere near where it was
    * typed. The list simply steps aside while a document is open.
    */
-  const docOpen = creating || !!viewing;
+  const docOpen = creating;
 
   return (
     <div>
@@ -879,7 +940,6 @@ export default function PurchaseReturns() {
           searchSpan={6}
           filters={[
             { key: 'supplier_id', placeholder: 'المورد', span: 5, options: suppliers },
-            // تحت «فلاتر أكثر» — بتتسأل كل شوية، ولها فلتر على العمود كمان.
             { key: 'document_number', placeholder: 'رقم السند', kind: 'text',
               advanced: true, span: 5 },
             { key: 'purchase_document_number', placeholder: 'الفاتورة رقم', kind: 'text',
@@ -891,16 +951,16 @@ export default function PurchaseReturns() {
         <Table
           {...kb.tableProps}
           dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
-          size="small" scroll={{ x: 'max-content' }}
-          // Two marks that mean different things: «وصلت من لينك» يبهت، و«الكيبورد واقف هنا» يفضل.
+          // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
+          //
+          // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
+          // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
+          // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
+          size="small" tableLayout="fixed"
           rowClassName={(r) => [
             r.id === highlight ? 'row-arrived' : '', kb.rowClassName(r),
           ].filter(Boolean).join(' ')}
           summary={(shown) => {
-            /* إجمالي المعروض — على اللي الفلاتر سابته مش على السجل كله. «الشهر ده رجّعنا بكام»
-               سؤال بيتسأل بعد ما تحط فلتر، وإجمالي بيوصف السجل كله بيبان كأنه إجابته.
-               الخلايا بتتبني من الأعمدة المعروضة: `useHiddenColumns` بيخلّي الواحد يخفي عمود،
-               وصف بمواضع ثابتة كان هيحط القيمة تحت عنوان تاني. */
             const list = shown as readonly ReturnRow[];
             if (!list.length) return null;
             const total = list.reduce((n, r) => n + Number(r.value || 0), 0);
@@ -929,19 +989,6 @@ export default function PurchaseReturns() {
       </Card>
       )}
 
-      {/*
-        * نفس الباب اللي بيفتح فاتورة الشرا — الفرع والتاريخ والتصنيف والبحث والقايمة في بوباب
-        * واحد اسمه «انشاء».
-        *
-        * كان بوباب بيسأل التاريخ وبس، وبعده الشاشة بتفتح وتسيبك تدوّر على الفاتورة في قايمة.
-        * والمردود بيبدأ من مورد قبل ما يبدأ من فاتورة: اللي بيمسك بضاعة راجعة عارف مين المورد،
-        * وبيدوّر على أنهي فاتورة منه.
-        *
-        * فاختيار المورد هنا بيضيّق فواتير الخطوة اللي بعدها عليه — بدل قايمة بكل فواتير الشركة.
-        */}
-      {/* بوباب اختيار الصنف — نفس اللي في فاتورة الشرا، فاللي اتعلّم واحد اتعلّم الاتنين. */}
-      {/* «البضاعة خارجة من أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده. محطوط مع
-          باقي الأبواب اللي بترسم في الفرعين. */}
       <TabModal
         open={pendingItems.length > 0}
         title={pendingItems.length > 1
@@ -962,7 +1009,7 @@ export default function PurchaseReturns() {
       >
         <Select
           style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
-          placeholder="اختار المخزن"
+          placeholder="اختر المخزن"
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
           options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))}
@@ -1000,54 +1047,37 @@ export default function PurchaseReturns() {
       {creating && (
       <Card title={(
         <Space>
-          <Button type="text" icon={<ArrowLeftOutlined />}
-            onClick={() => setCreating(false)}>رجوع</Button>
-          <span>تسجيل مردود شراء</span>
+          <Button type="text" icon={<ArrowRightOutlined />}
+            onClick={() => { setCreating(false); setViewOnly(false); setEditingId(null); setViewing(null); }}>رجوع</Button>
+          <Typography.Text strong style={{ fontSize: 16 }}>
+            {viewing ? `مردود شراء ${viewing.document_number}` : (editingId ? 'تعديل مردود شراء' : 'تسجيل مردود شراء جديد')}
+          </Typography.Text>
         </Space>
-      )}>
-        {/*
-          * المستند ده **نسخة من فاتورة الشرا بالعكس**.
-          *
-          * نفس شريط الأوامر، ونفس الترويسة بنفس الترتيب — التاريخ · الفرع · الحساب · مستند رقم //
-          * مورد · الحالي · العنوان · الهاتف // ملاحظات · بيان ١ · بيان ٢ · بيان ٣ — ونفس جدول
-          * السطور، ونفس سلّم الأرقام تحت.
-          *
-          * اللي بالعكس حاجتين بس، وهما اللي بيخلّوه مردود: البضاعة **بتخرج** من المخزن بدل ما
-          * تدخله، واللي على الشركة للمورد **بينقص** بدل ما يزيد.
-          *
-          * اللي بيكتب الاتنين هو نفس الشخص في نفس اليوم؛ شاشتين بشكلين لنفس المستند بتكلّفه
-          * إعادة تعلّم كل مرة يبدّل.
-          */}
+      )}
+      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
         <DocumentToolbar actions={returnToolbar()} />
 
         <Form layout="vertical" size="small" className="doc-form">
-          {/*
-            * ترويسة المستند: **التاريخ ← المورد ← المستند** — نفس فاتورة الشرا بالظبط، لأن
-            * المردود هو الفاتورة بالعكس.
-            *
-            * **الفرع · الحساب · الحالي · العنوان · الهاتف اتشالوا** — بنفس السبب اللي اتشالوا
-            * بيه من فاتورة الشرا: بيانات المورد متسجّلة في النظام أصلاً وبتطلع على الورقة
-            * المطبوعة لما تتطلب، والفرع بيتعرف من المخزن، وحساب المشتريات بياخد الافتراضي
-            * من السيرفر زي الفاتورة. صفّين كاملين كانوا بيتاخدوا في حاجة مش داتا.
-            */}
           <Row gutter={16}>
             <Col xs={12} md={5}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                  disabled={viewOnly}
                   value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
               <Form.Item label="المورد" required style={{ marginBottom: 8 }}>
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
+                  disabled={viewOnly}
                   placeholder="اضغط لاختيار المورد" value={supplierFilter ?? undefined}
-                  onClick={() => setPartyPickerOpen(true)}
+                  onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
                   options={suppliers} />
               </Form.Item>
             </Col>
             <Col xs={12} md={5}>
               <Form.Item label="المستند" style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم إشعار المورد" value={externalNumber}
+                <Input placeholder="رقم إشعار المورد" disabled={viewOnly} value={externalNumber}
                   onChange={(e) => setExternalNumber(e.target.value)} />
               </Form.Item>
             </Col>
@@ -1057,13 +1087,14 @@ export default function PurchaseReturns() {
             <Col xs={24} md={6}>
               <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
+                  disabled={viewOnly}
                   value={notes} onChange={(e) => setNotes(e.target.value)} />
               </Form.Item>
             </Col>
             {([1, 2, 3] as const).map((n) => (
               <Col xs={24} md={6} key={n}>
                 <Form.Item label={`بيان ${n}`} style={{ marginBottom: 8 }}>
-                  <Input placeholder="اختياري" value={statements[n - 1]}
+                  <Input placeholder="اختياري" disabled={viewOnly} value={statements[n - 1]}
                     onChange={(e) => setStatements((prev) => {
                       const next = [...prev]; next[n - 1] = e.target.value; return next;
                     })} />
@@ -1073,22 +1104,23 @@ export default function PurchaseReturns() {
           </Row>
         </Form>
 
-        {/* فاصل من غير عنوان — الجدول اللي تحته أعمدته مكتوبة. */}
         <Divider style={{ margin: '10px 0' }} />
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
-          <Button data-shortcut="F2"
-            type="primary" danger icon={<PlusOutlined />}
-            style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6 }}
-            onClick={() => setPickerOpen(true)}
-          >
-            إضافة صنف للمردود (F2)
-          </Button>
-          <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
-        </div>
+        {!viewOnly && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
+            <Button data-shortcut="F2"
+              type="primary" danger icon={<PlusOutlined />}
+              style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6 }}
+              onClick={() => setPickerOpen(true)}
+            >
+              إضافة صنف للمردود (F2)
+            </Button>
+            <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
+          </div>
+        )}
 
         {returnLines.length === 0 ? (
-          <Empty description="اختار الأصناف الراجعة" style={{ margin: '12px 0' }} />
+          <Empty description="اختر الأصناف المرتجعة" style={{ margin: '12px 0' }} />
         ) : (
           <div style={{ border: '1px solid #f3e0d8', borderRadius: 10, overflowX: 'auto' }}>
             <table className="entry-grid">
@@ -1126,14 +1158,14 @@ export default function PurchaseReturns() {
 
         <Divider style={{ margin: '10px 0' }} />
 
-        {/* نفس سلّم الفاتورة وبنفس الأسماء — اللي بالعكس إن ده بينقص من اللي على الشركة. */}
         <TotalsLadder
           tone="sale"
           inputs={(
             <Form layout="vertical" size="small" className="doc-form">
               <Form.Item label="خصم على المردود %" style={{ marginBottom: 0 }}
-                help="بينزل على مجموع السطور بعد خصم كل سطر — زي فاتورة الشرا">
+                help="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة الشراء">
                 <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
+                  disabled={viewOnly}
                   addonAfter="%" value={variableDiscount}
                   onChange={(v) => setVariableDiscount((v as number) || 0)} />
               </Form.Item>
@@ -1151,41 +1183,22 @@ export default function PurchaseReturns() {
           ]}
         />
 
-        <div style={{
-          marginTop: 16, padding: 16, borderRadius: 10,
-          background: '#fdf6f3', border: '1px solid #f3e0d8',
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
-        }}>
-          {/* من غير سؤال — السؤال كان بيقول «هيتعكس المردود القديم»، وده مابقاش بيحصل. */}
-          <Button type="primary" danger loading={saving} onClick={() => submit()}>
-            {editingId !== null ? 'حفظ التعديل' : 'ترحيل المردود'}
-          </Button>
-          {/* الرجوع من غير ترحيل مابيغيّرش حاجة — الحفظ هو اللي بيكتب. */}
-          <Button
-            onClick={() => { setCreating(false); setEditingId(null);
-              setSupplierFilter(null); }}>إلغاء</Button>
-        </div>
+        {!viewOnly && (
+          <div style={{
+            marginTop: 16, padding: 16, borderRadius: 10,
+            background: '#fdf6f3', border: '1px solid #f3e0d8',
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
+          }}>
+            <Button type="primary" danger loading={saving} onClick={() => submit()}>
+              {editingId !== null ? 'حفظ التعديل' : 'ترحيل المردود'}
+            </Button>
+            <Button
+              onClick={() => { setCreating(false); setEditingId(null);
+                setSupplierFilter(null); }}>إلغاء</Button>
+          </div>
+        )}
       </Card>
       )}
-
-      {/* المردود بعد ما اترحّل — نفس الصفحة، بس مقفولة.
-          It moved goods back to the supplier and wrote a ledger entry, and there is no edit
-          endpoint for one: the way to undo it is to buy the goods again, which is a real event
-          with its own paper rather than a quiet rewrite of this one. */}
-      {/*
-        * المستند في بوباب — عرض ومعاينة طباعة في نفس الحتة، زي سجل الشرا بالظبط.
-        *
-        * كان بيحل محل السجل: تفتح مردود، السجل يختفي، وترجع تدوّر على السطر اللي كنت واقف
-        * عليه. البوباب بيسيب السجل تحته زي ما هو.
-        */}
-      <TabModal
-        open={!!viewing} onCancel={() => setViewing(null)} width={900} centered destroyOnHidden
-        title={viewing ? `مردود شراء ${viewing.document_number}` : 'معاينة'}
-        footer={invoiceFooter(returnDoc(viewing), () => setViewing(null))}
-      >
-        {viewing && <DocumentToolbar actions={viewingToolbar()} />}
-        {viewing ? <InvoiceDocument doc={returnDoc(viewing)!} /> : null}
-      </TabModal>
     </div>
   );
 }

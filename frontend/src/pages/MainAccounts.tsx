@@ -68,7 +68,7 @@ export default function MainAccounts() {
         appears_in: v.appears_in ?? null,
         main_level: (Array.isArray(v.main_level) ? v.main_level[0] : v.main_level) || null,
       });
-      message.success('اتسجّل الحساب الرئيسي');
+      message.success('تم تسجيل الحساب الرئيسي');
       setCreateOpen(false);
       form.resetFields();
       load();
@@ -176,7 +176,7 @@ export default function MainAccounts() {
           </Tooltip>
           <Popconfirm
             title="تقفل الحساب؟"
-            description="بيتقفل مش بيتمسح — اسمه بيفضل مقروء على القيود اللي اتكتبت عليه."
+            description="يُغلق ولا يُحذف — ويبقى اسمه مقروءاً على القيود المسجّلة عليه."
             okText="اقفل" cancelText="رجوع" okButtonProps={{ danger: true }}
             onConfirm={() => removeAccount(record)}
           >

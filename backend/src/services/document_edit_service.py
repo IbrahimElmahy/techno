@@ -29,7 +29,7 @@
 """
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from src.models.catalog import (
@@ -41,14 +41,22 @@ from src.models.catalog import (
     StockBatchMovement,
 )
 from src.models.ledger import LedgerEntry, LedgerLine
-from src.models.loyalty import PointRecord
+from src.models.loyalty import Coupon, CouponRedemption, PointRecord
 from src.models.purchasing import (
     PurchaseInvoice,
     PurchaseInvoiceLine,
     PurchaseReturn,
     PurchaseReturnLine,
 )
-from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
+from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
+from src.models.reservation import Reservation
+from src.models.sales import (
+    SalesInvoice,
+    SalesInvoiceCoupon,
+    SalesInvoiceLine,
+    SalesReturn,
+    SalesReturnLine,
+)
 from src.models.sales_expense import SalesInvoiceExpense
 from src.models.stock import StockMovement
 from src.services.audit_service import record as audit_record
@@ -159,24 +167,43 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
 
 # ---------------------------------------------------------------- فاتورة البيع
 
-def purge_sale(db: Session, invoice: SalesInvoice) -> None:
+def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) -> None:
     """بيشيل كل أثر فاتورة بيع من النظام — من غير ما يمس الفاتورة نفسها.
 
     بيتنادى من التعديل (وبعده الفاتورة بتتبني من جديد) ومن الحذف (وبعده الصف نفسه
     بيتشال).
+
+    `dropping` بيفرّق بين الاتنين، وده مش تفصيلة: فيه مستندات **تانية** بتشاور على الفاتورة
+    دي — سطور استلام الكوبونات، واستهلاك النقاط، والحجوزات. الصف بتاع الفاتورة بيروح في
+    الحذف بس، فالربط ده لازم يتفك في الحذف بس. فكّه في التعديل معناه إن تصليح سعر في فاتورة
+    بيمسح سطور مستند استلام كوبونات محدش فتحه — والمستند بيفضل مكتوب عليه عدد كوبونات
+    مالهاش سطور، والقيد الفريد على رقم الكوبون بيتفك فالكوبون يتسلّم تاني.
     """
     _drop_points(db, sales_invoice_id=invoice.id)
     _restore_serials(db, sold_invoice_id=invoice.id,
                      document_type="sales_invoice", document_id=invoice.id)
     _restore_batches(db, document_type="sales_invoice", document_id=invoice.id)
     _drop_stock(db, source_doc_type="sale", source_doc_id=invoice.id)
-    _drop_entry(db, invoice.ledger_entry_id)
+    entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None
     db.execute(delete(SalesInvoiceExpense).where(
         SalesInvoiceExpense.invoice_id == invoice.id))
     db.execute(delete(SalesInvoiceLine).where(
         SalesInvoiceLine.invoice_id == invoice.id))
+    db.execute(delete(SalesInvoiceCoupon).where(
+        SalesInvoiceCoupon.invoice_id == invoice.id))
+    if dropping:
+        # الصف بيروح، فأي مستند تاني بيشاور عليه لازم يفك الربط — وإلا المفتاح الأجنبي
+        # بيرفض الحذف. سطر الاستلام `sales_invoice_id` بتاعه مش بيقبل NULL، فبيتمسح؛
+        # والباقي بيتفك وبيفضل في مكانه.
+        db.execute(delete(CouponReceiptLine).where(
+            CouponReceiptLine.sales_invoice_id == invoice.id))
+        db.execute(update(CouponRedemption).where(
+            CouponRedemption.sales_invoice_id == invoice.id).values(sales_invoice_id=None))
+        db.execute(update(Reservation).where(
+            Reservation.sales_invoice_id == invoice.id).values(sales_invoice_id=None))
     db.flush()
+    _drop_entry(db, entry_id)
 
 
 def assert_sale_editable(db: Session, invoice: SalesInvoice) -> None:
@@ -195,13 +222,26 @@ def assert_sale_editable(db: Session, invoice: SalesInvoice) -> None:
 
 
 def delete_sale(db: Session, *, invoice_id: int, actor_user_id: int) -> None:
-    """حذف فاتورة بيع بالكامل."""
+    """حذف فاتورة بيع بالكامل وكل ما يتعلق بها من مرتجعات."""
     invoice = db.get(SalesInvoice, invoice_id)
     if invoice is None:
         raise DocumentEditError("فاتورة البيع مش موجودة.")
-    assert_sale_editable(db, invoice)
+    returns = db.scalars(select(SalesReturn).where(
+        SalesReturn.sales_invoice_id == invoice.id)).all()
+    for ret in returns:
+        # كل مرتجع بيتمسح باسمه في السجل. حذف الفاتورة بيجرّ مستندات تانية معاه، واللي
+        # بيتشال في الضهر لازم يبقى مكتوب — وإلا سند مرتجع بيختفي وأول واحد يدوّر عليه
+        # مايلاقيش حاجة بتقول راح فين.
+        ret_doc = ret.document_number
+        purge_sales_return(db, ret)
+        db.delete(ret)
+        db.flush()
+        audit_record(db, action="sales_return.delete", actor_user_id=actor_user_id,
+                     entity_type="sales_return", entity_id=ret.id,
+                     before={"doc": ret_doc, "cascade_from_invoice": invoice.document_number})
+    db.flush()
     doc = invoice.document_number
-    purge_sale(db, invoice)
+    purge_sale(db, invoice, dropping=True)
     db.delete(invoice)
     db.flush()
     audit_record(db, action="sale.delete", actor_user_id=actor_user_id,
@@ -227,13 +267,17 @@ def delete_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> None:
 
     mirrors = db.scalars(select(Voucher).where(Voucher.reverses_id == voucher_id)).all()
     for m in mirrors:
-        _drop_entry(db, m.ledger_entry_id)
+        m_entry = m.ledger_entry_id
         m.ledger_entry_id = None
+        db.flush()
+        _drop_entry(db, m_entry)
         db.delete(m)
     db.flush()
 
-    _drop_entry(db, voucher.ledger_entry_id)
+    v_entry = voucher.ledger_entry_id
     voucher.ledger_entry_id = None
+    db.flush()
+    _drop_entry(db, v_entry)
     db.delete(voucher)
     db.flush()
     audit_record(db, action="voucher.delete", actor_user_id=actor_user_id,
@@ -275,10 +319,11 @@ def purge_sales_return(db: Session, ret: SalesReturn) -> None:
                     invoice_id=ret.sales_invoice_id)
     _restore_batches(db, document_type="sales_return", document_id=ret.id)
     _drop_stock(db, source_doc_type="sale_return", source_doc_id=ret.id)
-    _drop_entry(db, ret.ledger_entry_id)
+    entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
     db.execute(delete(SalesReturnLine).where(SalesReturnLine.return_id == ret.id))
     db.flush()
+    _drop_entry(db, entry_id)
 
 
 def delete_sales_return(db: Session, *, return_id: int, actor_user_id: int) -> None:
@@ -298,10 +343,11 @@ def delete_sales_return(db: Session, *, return_id: int, actor_user_id: int) -> N
 def purge_purchase_return(db: Session, ret: PurchaseReturn) -> None:
     _restore_batches(db, document_type="purchase_return", document_id=ret.id)
     _drop_stock(db, source_doc_type="purchase_return", source_doc_id=ret.id)
-    _drop_entry(db, ret.ledger_entry_id)
+    entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
     db.execute(delete(PurchaseReturnLine).where(PurchaseReturnLine.return_id == ret.id))
     db.flush()
+    _drop_entry(db, entry_id)
 
 
 def delete_purchase_return(db: Session, *, return_id: int, actor_user_id: int) -> None:
@@ -322,11 +368,12 @@ def purge_purchase(db: Session, invoice: PurchaseInvoice) -> None:
     _restore_serials(db, document_type="purchase_invoice", document_id=invoice.id)
     _restore_batches(db, document_type="purchase_invoice", document_id=invoice.id)
     _drop_stock(db, source_doc_type="purchase", source_doc_id=invoice.id)
-    _drop_entry(db, invoice.ledger_entry_id)
+    entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None
     db.execute(delete(PurchaseInvoiceLine).where(
         PurchaseInvoiceLine.invoice_id == invoice.id))
     db.flush()
+    _drop_entry(db, entry_id)
 
 
 def assert_purchase_editable(db: Session, invoice: PurchaseInvoice) -> None:

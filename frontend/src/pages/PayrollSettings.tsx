@@ -8,6 +8,7 @@ import dayjs, { Dayjs } from 'dayjs';
 
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
+import { useTableColumns } from '../components/ColumnSettings';
 import { TabModal } from '../components/TabModal';
 
 /**
@@ -195,7 +196,7 @@ export default function PayrollSettings() {
       } else {
         await api.post('/api/v1/hr/payroll/schemes', payload);
       }
-      message.success('اتحفظ');
+      message.success('تم الحفظ');
       setOpen(false);
       load();
     } catch (err: any) { fail(err, 'تعذر الحفظ'); }
@@ -218,11 +219,45 @@ export default function PayrollSettings() {
     try {
       const res = await api.patch('/api/v1/hr/payroll/settings', patch);
       setSettings(res.data);
-      message.success('اتحفظ');
+      message.success('تم الحفظ');
     } catch (err: any) { fail(err, 'تعذر الحفظ'); }
   };
 
   const noSchemes = !versions.length;
+
+  // جدولين، فمفتاحين — «الشرايح» و«البنود» بيحفظوا ترتيبهم كل واحد لوحده.
+  const schemeColumns = [
+    { title: 'النوع', dataIndex: 'scheme', key: 'scheme', width: 150,
+      render: (v: string) => (v === 'income_tax'
+        ? <Tag color="blue">ضريبة كسب عمل</Tag>
+        : <Tag color="purple">تأمينات اجتماعية</Tag>) },
+    { title: 'الإصدار', dataIndex: 'name', key: 'name' },
+    { title: 'من تاريخ', dataIndex: 'effective_from', key: 'effective_from', width: 120 },
+    { title: 'الشرايح', dataIndex: 'brackets', key: 'brackets', width: 90,
+      render: (b: Bracket[]) => (b.length ? b.length : '—') },
+    { title: 'حصة الموظف', dataIndex: 'employee_pct', key: 'employee_pct', width: 110,
+      render: (v: string | null) => (v ? `${Number(v)}%` : '—') },
+    { title: 'حصة الشركة', dataIndex: 'employer_pct', key: 'employer_pct', width: 110,
+      render: (v: string | null) => (v ? `${Number(v)}%` : '—') },
+    { title: '', dataIndex: 'locked', key: 'locked', width: 130,
+      render: (v: boolean, r: Version) => (v
+        ? <Tag color="default" title="مرتب مرحّل استعمله">🔒 متجمّد</Tag>
+        : <Button size="small" onClick={() => openEdit(r)}>تعديل</Button>) },
+  ];
+  const schemeCols = useTableColumns('payroll-schemes', schemeColumns as any);
+
+  const componentColumns = [
+    { title: 'الكود', dataIndex: 'code', key: 'code', width: 90 },
+    { title: 'البند', dataIndex: 'name', key: 'name' },
+    { title: 'النوع', dataIndex: 'kind', key: 'kind', width: 110,
+      render: (v: string) => (v === 'earning'
+        ? <Tag color="green">استحقاق</Tag> : <Tag color="red">استقطاع</Tag>) },
+    { title: 'داخل وعاء الضريبة', dataIndex: 'taxable', key: 'taxable', width: 150,
+      render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
+    { title: 'داخل الأجر التأميني', dataIndex: 'insurable', key: 'insurable', width: 160,
+      render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
+  ];
+  const componentCols = useTableColumns('payroll-components', componentColumns as any);
 
   return (
     <Card
@@ -232,8 +267,8 @@ export default function PayrollSettings() {
       {noSchemes ? (
         <Alert
           type="warning" showIcon style={{ marginBottom: 12 }}
-          message="لسه محدّدش شرايح"
-          description={'النظام مابيشحنش بأي نسب — أول إصدار بيكتبه محاسب الشركة ويأكّده. '
+          message="لم تُحدَّد الشرائح بعد"
+          description={'لا يأتي النظام بأي نسب — فأول إصدار يكتبه محاسب الشركة ويعتمده. '
             + 'من غيره المسير هيحسب الضريبة والتأمينات صفر.'}
         />
       ) : null}
@@ -246,30 +281,16 @@ export default function PayrollSettings() {
             label: 'الشرايح والنسب',
             children: (
               <>
-                <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-                  onClick={openNew} style={{ marginBottom: 10 }}>إصدار جديد</Button>
+                <Space style={{ marginBottom: 10 }}>
+                  <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+                    onClick={openNew}>إصدار جديد</Button>
+                  {schemeCols.control}
+                </Space>
                 <Table
                   rowKey="id" size="small" loading={loading} dataSource={versions}
                   pagination={false}
                   onRow={(r) => ({ onDoubleClick: () => openEdit(r) })}
-                  columns={[
-                    { title: 'النوع', dataIndex: 'scheme', width: 150,
-                      render: (v: string) => (v === 'income_tax'
-                        ? <Tag color="blue">ضريبة كسب عمل</Tag>
-                        : <Tag color="purple">تأمينات اجتماعية</Tag>) },
-                    { title: 'الإصدار', dataIndex: 'name' },
-                    { title: 'من تاريخ', dataIndex: 'effective_from', width: 120 },
-                    { title: 'الشرايح', dataIndex: 'brackets', width: 90,
-                      render: (b: Bracket[]) => (b.length ? b.length : '—') },
-                    { title: 'حصة الموظف', dataIndex: 'employee_pct', width: 110,
-                      render: (v: string | null) => (v ? `${Number(v)}%` : '—') },
-                    { title: 'حصة الشركة', dataIndex: 'employer_pct', width: 110,
-                      render: (v: string | null) => (v ? `${Number(v)}%` : '—') },
-                    { title: '', dataIndex: 'locked', width: 130,
-                      render: (v: boolean, r: Version) => (v
-                        ? <Tag color="default" title="مرتب مرحّل استعمله">🔒 متجمّد</Tag>
-                        : <Button size="small" onClick={() => openEdit(r)}>تعديل</Button>) },
-                  ]}
+                  columns={schemeCols.columns}
                 />
               </>
             ),
@@ -279,21 +300,13 @@ export default function PayrollSettings() {
             label: 'بنود الراتب',
             children: (
               <>
-                <Button icon={<PlusOutlined />} onClick={() => setCompOpen(true)}
-                  style={{ marginBottom: 10 }}>بند جديد</Button>
+                <Space style={{ marginBottom: 10 }}>
+                  <Button icon={<PlusOutlined />} onClick={() => setCompOpen(true)}>بند جديد</Button>
+                  {componentCols.control}
+                </Space>
                 <Table
                   rowKey="id" size="small" dataSource={components} pagination={false}
-                  columns={[
-                    { title: 'الكود', dataIndex: 'code', width: 90 },
-                    { title: 'البند', dataIndex: 'name' },
-                    { title: 'النوع', dataIndex: 'kind', width: 110,
-                      render: (v: string) => (v === 'earning'
-                        ? <Tag color="green">استحقاق</Tag> : <Tag color="red">استقطاع</Tag>) },
-                    { title: 'داخل وعاء الضريبة', dataIndex: 'taxable', width: 150,
-                      render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
-                    { title: 'داخل الأجر التأميني', dataIndex: 'insurable', width: 160,
-                      render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
-                  ]}
+                  columns={componentCols.columns}
                 />
               </>
             ),
@@ -309,7 +322,7 @@ export default function PayrollSettings() {
                     value={settings.days_per_month}
                     onChange={(v) => saveSettings({ days_per_month: v })} />
                   <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
-                    «تلاتين» ولا «أيام الشهر الفعلية» — الاتنين مستعملين، ومحدش منهم غلط.
+                    «ثلاثون» أم «أيام الشهر الفعلية» — كلاهما مستعمل، وليس أحدهما خطأً.
                   </div>
                 </Col>
                 <Col span={12}>
@@ -334,8 +347,8 @@ export default function PayrollSettings() {
                   <Alert
                     type="info" showIcon
                     message={`سياسة التأخير: ${settings.late_policy === 'none'
-                      ? 'بيتسجّل ومابيتخصمش' : settings.late_policy}`}
-                    description="الافتراضي مابيخصمش. خصم صامت على التأخير أسرع طريقة الموديول يخسر ثقة الناس في أول شهر."
+                      ? 'يُسجَّل ولا يُخصم' : settings.late_policy}`}
+                    description="الافتراضي ألا يُخصم. والخصم الصامت على التأخير أسرع طريق لفقدان ثقة الموظفين في أول شهر."
                   />
                 </Col>
               </Row>
@@ -513,7 +526,7 @@ export default function PayrollSettings() {
           </Col>
           <Col span={24}>
             <div style={{ color: '#888', fontSize: 12 }}>
-              الاتنين سؤالين مختلفين: بدل انتقالات ممكن يكون برّه الأجر التأميني وجوه وعاء الضريبة.
+              هذان سؤالان مختلفان: بدل الانتقالات قد يكون خارج الأجر التأميني وداخل وعاء الضريبة.
             </div>
           </Col>
         </Row>

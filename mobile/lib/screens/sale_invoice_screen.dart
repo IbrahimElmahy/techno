@@ -27,6 +27,12 @@ class SaleInvoiceScreen extends StatefulWidget {
 
 class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   CustomerRef? _customer;
+
+  /// خط المنتجات اللي الفاتورة عليه — «أبيض» أو «بولي».
+  ///
+  /// العميل الواحد ممكن يبقى مديون على الخطين بحسابين منفصلين، فالفاتورة لازم تقول على
+  /// أنهي واحد بتنزل. اللي عنده خط واحد بيتحدّد لوحده — سؤال إجابته واحدة مش سؤال.
+  String? _family;
   DateTime _date = DateTime.now();
   final _notes = TextEditingController();
   final _cash = TextEditingController(text: '0');
@@ -53,6 +59,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     if (picked == null) return;
     setState(() {
       _customer = picked;
+      // خط واحد ⇒ اتحدّد لوحده. أكتر من واحد ⇒ المندوب بيختار. ولا واحد ⇒ الفاتورة
+      // بتنزل على المديونية كلها زي ما كانت بتعمل قبل ما الخطوط تتعرف أصلاً.
+      _family = picked.families.length == 1 ? picked.families.first : null;
       // فئة العميل بتقرّر السعر، فالسطور اللي اتكتبت قبل ما يتحدّد بتتسعّر من جديد عليه.
       for (var i = 0; i < _lines.length; i++) {
         _lines[i].unitPrice = _lines[i].unitPrice;
@@ -123,7 +132,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   }
 
   Future<void> _save() async {
-    if (_customer == null) return _say('اختار العميل');
+    if (_customer == null) return _say('اختر العميل');
+    if (_family == null && (_customer!.families.length > 1)) {
+      // الفاتورة اللي مش قايلة على أنهي مديونية بتنزل، بتوزّع الرقم على الاتنين بالنسبة —
+      // وكشف حساب العميل بعدها مايقولش حاجة مفهومة. السؤال هنا أرخص من التصحيح بعدين.
+      return _say('اختر الحساب — أبيض أو بولي');
+    }
     if (_lines.isEmpty) return _say('ضيف صنف واحد على الأقل');
     if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
     final over = await _overCustody();
@@ -142,6 +156,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         clientUuid: uuid,
         customerId: _customer!.id,
         customerName: _customer!.name,
+        family: _family,
         invoiceDate: _date.toIso8601String().substring(0, 10),
         cashAmount: _cashAmount,
         creditAmount: _credit,
@@ -212,10 +227,36 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                       : [
                           if (_customer!.phone != null) _customer!.phone!,
                           if (_customer!.priceTier != null) 'فئة ${_customer!.priceTier}',
+                          if (_family != null) 'حساب $_family',
                         ].join(' · ')),
                   trailing: const Icon(Icons.chevron_left),
                   onTap: _pickCustomer,
                 ),
+                if ((_customer?.families.length ?? 0) > 1) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('الحساب',
+                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final f in _customer!.families)
+                              ChoiceChip(
+                                label: Text(f),
+                                selected: _family == f,
+                                onSelected: (_) => setState(() => _family = f),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.event_outlined, color: AppColors.primary),

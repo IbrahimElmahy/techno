@@ -87,7 +87,7 @@ export default function Treasuries() {
         account_number: v.account_number || null,
         is_default: !!v.is_default,
       });
-      message.success('اتسجّلت الخزينة');
+      message.success('تم تسجيل الخزينة');
       setCreateOpen(false);
       form.resetFields();
       load();
@@ -229,7 +229,7 @@ export default function Treasuries() {
           : '—'}
       </span>
       <span><span style={{ color: '#888' }}>حساب الأستاذ: </span>#{r.account_id}</span>
-      {r.is_default && <Tag color="gold">السند اللي مايسمّيش خزينة بيقع عليها</Tag>}
+      {r.is_default && <Tag color="gold">يقع عليها السند الذي لا يسمّي خزينة</Tag>}
     </Space>
   );
 
@@ -277,7 +277,7 @@ export default function Treasuries() {
       </Form.Item>
 
       <Form.Item name="is_default" valuePropName="checked" noStyle>
-        <Checkbox>الخزينة الافتراضية — السند اللي مايسمّيش خزينة بيقع عليها</Checkbox>
+        <Checkbox>الخزينة الافتراضية — يقع عليها السند الذي لا يسمّي خزينة</Checkbox>
       </Form.Item>
     </>
   );

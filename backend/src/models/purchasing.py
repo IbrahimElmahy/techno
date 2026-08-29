@@ -15,6 +15,13 @@ from src.models.stock import LocationKind
 class PurchaseInvoice(Base):
     __tablename__ = "purchase_invoice"
 
+    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
+    #
+    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
+    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
+                                                  index=True)
+
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     supplier_id: Mapped[int] = mapped_column(ForeignKey("supplier.id"), nullable=False)
@@ -86,6 +93,13 @@ class PurchaseInvoiceLine(Base):
 
 class PurchaseReturn(Base):
     __tablename__ = "purchase_return"
+
+    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
+    #
+    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
+    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
+                                                  index=True)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)

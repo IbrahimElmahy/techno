@@ -128,7 +128,7 @@ export default function FixedAssets() {
         category: form.category || null,
         notes: form.notes || null,
       });
-      message.success('اتسجّل الأصل');
+      message.success('تم تسجيل الأصل');
       setCreating(false);
       setForm({ name: '', cost: undefined, salvage_value: 0, useful_life_months: 60,
         method: 'straight_line', category: '', notes: '' });
@@ -147,8 +147,8 @@ export default function FixedAssets() {
       const { total, assets: count, skipped } = res.data;
       if (Number(total) === 0) {
         message.info(skipped
-          ? `الشهر ده مرحّل قبل كده (${skipped} أصل) — مافيش حاجة اتغيّرت.`
-          : 'مافيش إهلاك مستحق للشهر ده.');
+          ? `هذا الشهر مُرحَّل من قبل (${skipped} أصل) — ولم يتغيّر شيء.`
+          : 'لا يوجد إهلاك مستحق لهذا الشهر.');
       } else {
         message.success(`اترحّل إهلاك ${count} أصل بإجمالي ${money(total)}`);
       }
@@ -176,7 +176,7 @@ export default function FixedAssets() {
       await api.post(`/api/v1/fixed-assets/${disposing.id}/dispose`, {
         disposal_date: disposalDate.format('YYYY-MM-DD'), proceeds: String(proceeds || 0),
       });
-      message.success('اتسجّل استبعاد الأصل');
+      message.success('تم تسجيل استبعاد الأصل');
       setDisposing(null); setDetail(null); setProceeds(0); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر استبعاد الأصل');
@@ -359,7 +359,7 @@ export default function FixedAssets() {
           </Col>
         </Row>
         <Alert type="info" showIcon style={{ marginTop: 12 }}
-          message="القيمة التخريدية ما بتتهلكش أبداً — الأصل بينزل لحد عندها ويقف." />
+          message="القيمة التخريدية لا تُهلَك أبداً — ينزل الأصل حتى يبلغها ثم يتوقف." />
 
         <div style={{
           marginTop: 16, padding: 16, borderRadius: 10,
@@ -449,7 +449,7 @@ export default function FixedAssets() {
 
             <Table<ScheduleRow>
               rowKey={(r) => `${r.year}-${r.month}`} size="small" dataSource={schedule}
-              locale={{ emptyText: 'لسه مافيش إهلاك مرحّل' }}
+              locale={{ emptyText: 'لا يوجد إهلاك مُرحَّل بعد' }}
               pagination={{ defaultPageSize: 12 }}
               columns={[
                 { title: 'الشهر', render: (_: any, r) => `${r.year}-${String(r.month).padStart(2, '0')}` },

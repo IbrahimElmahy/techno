@@ -9,6 +9,7 @@ import { api } from '../api/client';
 import { normalizeAr } from './ListToolbar';
 import { useLookup } from '../hooks/useLookup';
 import { TabModal } from './TabModal';
+import { keepInView } from '../utils/keepInView';
 
 /**
  * اختيار الطرف — the first step of every sale/purchase document.
@@ -130,9 +131,11 @@ export default function PartyPickerModal({
   useEffect(() => {
     setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
   }, [visible.length]);
+  // القايمة بس هي اللي بتتحرك — شوف `keepInView`.
+  const listRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    rowRefs.current[cursor]?.scrollIntoView({ block: 'nearest' });
-  }, [cursor]);
+    keepInView(rowRefs.current[cursor], listRef.current);
+  }, [cursor, visible.length]);
 
   /** ↑↓ to move, Enter to take the highlighted one — the same keys as «اختر الصنف», so the two
    *  steps of opening a document are driven identically. */
@@ -263,7 +266,7 @@ export default function PartyPickerModal({
         </Col>
 
         <Col xs={24} md={16}>
-          <div style={{ height: 420, overflowY: 'auto', border: '1px solid #f0f0f0',
+          <div ref={listRef} style={{ height: 420, overflowY: 'auto', border: '1px solid #f0f0f0',
                         borderRadius: 8 }} onKeyDown={onListKey}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>

@@ -109,6 +109,7 @@ class ApiClient {
             name: c['name'] as String,
             phone: c['phone'] as String?,
             address: c['address'] as String?,
+            customerType: c['customer_type'] as String?,
           )
       ]);
     }
@@ -223,6 +224,10 @@ class ApiClient {
           phone: c['phone'] as String?,
           address: c['address'] as String?,
           priceTier: c['price_tier'] as String?,
+          customerType: c['customer_type'] as String?,
+          families: [
+            for (final f in ((c['families'] as List?) ?? const [])) f as String
+          ],
         )
     ]);
     await LocalDb.instance.replaceSaleItems([
@@ -271,6 +276,8 @@ class ApiClient {
               headers: await _headers(),
               body: jsonEncode({
                 'customer_id': inv['customer_id'],
+                // خط المنتجات — بيقرّر الفاتورة دي على أنهي مديونية بتنزل.
+                'family': inv['family'],
                 'origin': {'location_kind': storeKind, 'location_id': storeId},
                 'variable_discount_pct': '0',
                 'cash_amount': '${inv['cash_amount']}',

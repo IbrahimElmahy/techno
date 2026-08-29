@@ -29,6 +29,7 @@ from src.models.voucher import Voucher, VoucherKind
 from src.models.warehouse import Custody
 from src.services import account_resolver, audit_service, ledger_service, treasury_service
 from src.services.ledger_service import LineInput
+from src.auth.branch_scope import branch_for
 
 _PREFIX = {
     VoucherKind.receipt: "RCV",
@@ -152,6 +153,8 @@ def _create(
         voucher_date=voucher_date or date.today(), payment_method=payment_method,
         reference=reference, description=description, ledger_entry_id=None,
         reverses_id=reverses_id, actor_user_id=actor_user_id, family=family,
+        # السند مالوش مخزن، ففرعه فرع اللي كتبه.
+        branch_id=branch_for(db, actor_user_id=actor_user_id),
         client_uuid=client_uuid,
     )
     db.add(voucher)
@@ -378,6 +381,8 @@ def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Vouc
         voucher_date=date.today(), payment_method=original.payment_method,
         reference=original.reference, description=f"عكس {original.document_number}",
         ledger_entry_id=None, reverses_id=voucher_id, actor_user_id=actor_user_id,
+        # القيد المضاد بيقعد في فرع السند اللي بيعكسه، مش فرع اللي عكسه.
+        branch_id=getattr(original, "branch_id", None),
     )
     db.add(mirror)
     db.flush()

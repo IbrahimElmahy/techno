@@ -33,7 +33,7 @@ export default function PrintOptionsMenu({
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: '60vh', overflowY: 'auto',
         }}>
           <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 8 }}>
-            اللي بيتطبع على الفاتورة
+            ما يُطبع على الفاتورة
           </div>
           <Space direction="vertical">
             {PRINT_OPTION_LABELS.map((o) => (

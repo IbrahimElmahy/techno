@@ -161,7 +161,7 @@ ALL_CAPABILITIES |= _SI_ALL
 # Deliberately NOT the sales rep: he writes invoices all day, and the whole point of splitting
 # these out is that writing one and unmaking one are different amounts of trust.
 _SALE_EDIT_ALL = {CAP_SALE_EDIT, CAP_SALE_DELETE}
-for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager):
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager, RoleName.sales_rep, RoleName.purchasing_manager):
     ROLE_CAPABILITIES.setdefault(_role, set()).update(_SALE_EDIT_ALL)
 ALL_CAPABILITIES |= _SALE_EDIT_ALL
 
@@ -309,6 +309,95 @@ ROLE_CAPABILITIES[RoleName.viewer] = {
 }
 
 
+# ---------------------------------------------------------------- مدير الفرع
+#
+# «مدير الفرع» معناه الفرع كله — والقايمة بتقول كده من زمان: شجرة الحسابات، القيد الحر،
+# دفتر الأستاذ، الميزانية، فاتورة الشرا، مسيّر الرواتب — كلهم معروضين عليه.
+#
+# بس مجموعة صلاحياته اتكتبت في ٠٠١ وفضلت واقفة مكانها. كل ميزة جديدة بعدها — الأستاذ العام
+# (٠٠٥)، الولاء (٠٠٣)، الرواتب — ضافت صلاحياتها للأدوار اللي اتعملت عشانها ونسيته. فبقى
+# بيفتح الشاشة من القايمة ويلاقي «Capability not granted»: الواجهة بتوعد والسيرفر بيرفض،
+# وده أسوأ من المنع الصريح — اللي قدامه مش عارف هو غلط ولا النظام باظ.
+#
+# القاعدة دلوقتي واحدة ومكتوبة: **كل حاجة ما عدا اللي هو مش صاحب القرار فيه** — إنشاء
+# الفروع (هو أصلاً محبوس في فرع واحد)، وسياسة الولاء اللي بتتقرر على مستوى الشركة.
+#
+# واللي عايز يضيّق أكتر بقى يقدر: شاشة الصلاحيات بتكتب فوق الافتراضي ده.
+_NOT_FOR_BRANCH_MANAGER = {CAP_BRANCH_WRITE, CAP_LOYALTY_SETTINGS_WRITE}
+ROLE_CAPABILITIES[RoleName.branch_manager] = ALL_CAPABILITIES - _NOT_FOR_BRANCH_MANAGER
+
+
+# ------------------------------------------------------ القراءة أرضية مشتركة
+#
+# نفس عطل مدير الفرع، بس منتشر: القايمة بتعرض ٤٢ شاشة على المحاسب وعنده ١١ صلاحية، و٣٥
+# على مدير المبيعات وعنده ٢٠. مافيش قرار اتاخد إن المحاسب مايشوفش كشف حساب عميل — الصلاحية
+# دي اتضافت مع ميزة ومحدش رجع وزّعها، والنتيجة إن كل واحد فيهم بيفتح شاشة من القايمة
+# ويتقاله «مش مسموح».
+#
+# **القراءة مش قرار.** اللي بيقفل بيتقفل على الكتابة: مين يكتب فاتورة، مين يرحّل قيد، مين
+# يمسح مستند. أما «تقدر تشوف أرصدة المخزن؟» فالإجابة نعم لأي حد شغّال في المكتب — وعزل
+# الفروع خلّاص بيضمن إنه بيشوف فرعه هو بس.
+#
+# فكل صلاحية قراءة بتتوزّع على أدوار المكتب كلها، والكتابة بتفضل موزّعة زي ما هي فوق.
+# واللي عايز يضيّق أكتر بيعملها من شاشة الصلاحيات.
+_READ_CAPS = {c for c in ALL_CAPABILITIES if c.endswith(".read")}
+for _role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager,
+              RoleName.accountant, RoleName.after_sales_staff, RoleName.viewer):
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(_READ_CAPS)
+
+# المندوب بيقرا مبيعاته — حزمة المزامنة في التطبيق بتمرّ من `sales.read`.
+#
+# مسارات القراءة في المبيعات كانت متحرسة بـ`sale.write` (يعني عشان تشوف فاتورة لازم تقدر
+# تكتب واحدة)، ولما اتصلّحت لـ`sales.read` بقى المندوب مالوش الصلاحية دي — والتطبيق وقف
+# عن المزامنة. وهو أصلاً مقفول على عملاءه هو في كل استعلام، فالقراءة دي مش بتوسّع عليه حاجة.
+ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).add(CAP_SALES_READ)
+
+# «قارئ» = القراءة كلها، ومافيش كتابة خالص. الاسم بيقول ده، وقبل كده كان عنده ٢٢ من ٢٦
+# قراءة — أربع شاشات كان بيتفرج عليها في القايمة ومايقدرش يفتحها من غير سبب.
+ROLE_CAPABILITIES[RoleName.viewer] = set(_READ_CAPS)
+
+# المحاسب بيرحّل قيود فعلاً — ليها اسمين في النظام (`ledger.*` و`accounting.journal.*`)
+# وكان واخد واحد بس، فنص شاشات القيود كانت بترفضه.
+ROLE_CAPABILITIES[RoleName.accountant].update(
+    {CAP_LEDGER_POST, CAP_LEDGER_REVERSE, CAP_SALARY_VIEW})
+
+
+# ما ضبطه المستخدم من شاشة الصلاحيات — بيتقرا من قاعدة البيانات مرة عند الإقلاع وبعد كل حفظ.
+#
+# مابنضربش على القاعدة مع كل طلب: الفحص ده بيتنادى كذا مرة في الطلب الواحد، وقراءة جدول في
+# كل مرة بتحوّل حارس رخيص لحمل. الكاش بيتبني من `refresh_overrides` وبس.
+_OVERRIDES: dict[RoleName, set[str]] = {}
+
+
+def refresh_overrides(db) -> None:
+    """يعيد بناء الكاش من الجدول. بيتنادى عند الإقلاع وبعد أي حفظ للصلاحيات."""
+    from src.models.permission import RoleCapability  # داخل الدالة: الموديل بيستورد الأدوار
+
+    rows = db.query(RoleCapability.role, RoleCapability.capability).all()
+    fresh: dict[RoleName, set[str]] = {}
+    for role, cap in rows:
+        fresh.setdefault(role, set()).add(cap)
+    _OVERRIDES.clear()
+    _OVERRIDES.update(fresh)
+
+
+def effective_capabilities(role: RoleName) -> set[str]:
+    """اللي الدور ده بيقدر عليه فعلاً — المضبوط لو اتقال، وإلا الافتراضي.
+
+    دور من غير صفوف مضبوطة بيرجع للافتراضي، مش لمجموعة فاضية: الترقية اللي بتضيف صلاحيات
+    جديدة لازم توصل للأدوار اللي محدش لمسها، وإلا كل إصدار بيسيب أدوار ناقصة في صمت.
+    """
+    if role in _OVERRIDES:
+        return _OVERRIDES[role]
+    return ROLE_CAPABILITIES.get(role, set())
+
+
 def role_has_capability(role: RoleName, capability: str) -> bool:
     """Deny-by-default: True only if explicitly granted."""
-    return capability in ROLE_CAPABILITIES.get(role, set())
+    # مدير النظام مابيتقفلش عليه الباب.
+    #
+    # لو اتشالت منه صلاحية المستخدمين بالغلط، مافيش حد يقدر يرجّعها — الشاشة اللي بترجّعها
+    # هي نفسها اللي اتقفلت. الدور ده بيفضل كامل مهما اتضبط، والشاشة مابتديش تعديله أصلاً.
+    if role == RoleName.system_admin:
+        return capability in ALL_CAPABILITIES
+    return capability in effective_capabilities(role)

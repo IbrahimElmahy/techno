@@ -60,7 +60,7 @@ export default function PendingScreen() {
               {screen?.label || 'شاشة غير معروفة'}
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-              الشاشة دي لسه بتتبني. موجودة في المنيو عشان الترتيب يبقى كامل من أول يوم.
+              هذه الشاشة قيد الإنشاء. وهي موجودة في القائمة ليكتمل الترتيب من أول يوم.
             </Typography.Paragraph>
             {pending && (
               <Typography.Paragraph style={{ marginBottom: 8 }}>

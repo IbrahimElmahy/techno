@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Row, Statistic, Table, Tag,
+  Alert, Button, Card, Col, Row, Space, Statistic, Table, Tag,
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
@@ -116,7 +116,8 @@ export default function StockAlerts() {
   // الصلاحية» اتشالوا بطلب العميل — الشركة مابتستعملهمش.
   return (
             <Card title="الأصناف خارج حدودها المخزنية"
-              extra={<Button icon={<ReloadOutlined />} onClick={loadReorder}>تحديث</Button>}>
+              extra={<Space>{tableCols.control}
+                <Button icon={<ReloadOutlined />} onClick={loadReorder}>تحديث</Button></Space>}>
               <Alert type="info" showIcon style={{ marginBottom: 12 }}
                 message="الحدود إرشادية للتخطيط فقط — لا تمنع أي عملية بيع."
                 description="الصنف يظهر هنا لو رصيده الكلي نزل تحت الحد الأدنى أو تعدّى الحد الأقصى." />

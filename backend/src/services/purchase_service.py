@@ -38,6 +38,7 @@ from src.services import (
 )
 from src.services.ledger_service import LineInput
 from src.services.uom_service import UomError
+from src.auth.branch_scope import branch_for
 
 
 class PurchaseError(Exception):
@@ -139,6 +140,8 @@ def create_purchase(
         combined_pct=combined, net=net, tax_amount=tax,
         total=total, cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         ledger_entry_id=None, actor_user_id=actor_user_id,
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=location_kind, location_id=location_id),
         rep_id=rep_id, expense_account_id=expense_account_id,
         external_document_number=(external_document_number or None),
         notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
@@ -278,6 +281,8 @@ def return_purchase(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
         purchase_invoice_id=purchase_invoice_id, value=value, ledger_entry_id=None,
         actor_user_id=actor_user_id,
+        # المردود بياخد فرع فاتورته: البضاعة راجعة من المكان اللي دخلت فيه.
+        branch_id=getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id),
         # Defaulted here rather than on the column: returns recorded before this existed have no
         # captured day, and a column default would have invented one for them.
         return_date=return_date or date.today(), notes=notes,
@@ -468,6 +473,9 @@ def create_standalone_purchase_return(
         supplier_id=supplier_id,
         origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id,
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=origin_location_kind,
+                             location_id=origin_location_id),
         gross=gross, variable_discount_pct=variable, combined_pct=variable, value=value,
         ledger_entry_id=None, actor_user_id=actor_user_id,
         return_date=return_date or date.today(), notes=notes,

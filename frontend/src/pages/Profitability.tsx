@@ -210,7 +210,7 @@ export default function Profitability() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message={`${totals.unassigned_lines} سطر مترحّل من غير ${dimension === 'cost_center' ? 'مركز تكلفة' : 'فرع'}`}
-          description="بيظهروا في سطر «غير موزّع» عشان مجموع الأسطر يساوي قائمة الدخل. إخفاؤهم بيخلّي الأجزاء ماتجمعش الكل من غير ما حاجة تقول ليه."
+          description="تظهر في سطر «غير موزّع» ليساوي مجموع الأسطر قائمة الدخل. وإخفاؤها يجعل الأجزاء لا تُكوِّن الكل دون ما يوضّح السبب."
         />
       )}
       {!includeUnassigned && (

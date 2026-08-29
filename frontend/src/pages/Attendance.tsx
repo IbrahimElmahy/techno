@@ -120,7 +120,7 @@ export default function Attendance() {
   }, []);
 
   const saveDay = async () => {
-    if (!entry.employee_id) { message.warning('اختار الموظف'); return; }
+    if (!entry.employee_id) { message.warning('اختر الموظف'); return; }
     setSaving(true);
     try {
       await api.post('/api/v1/hr/attendance/days', {
@@ -130,7 +130,7 @@ export default function Attendance() {
         check_out: entry.check_out || null,
         notes: entry.notes || null,
       });
-      message.success('اتسجّل');
+      message.success('تم التسجيل');
       setEntry({ ...entry, check_in: '', check_out: '', notes: '' });
       load();
     } catch (err: any) {
@@ -159,7 +159,7 @@ export default function Attendance() {
   });
 
   const runPreview = async () => {
-    if (!csvRows.length) { message.warning('اختار ملف الأول'); return; }
+    if (!csvRows.length) { message.warning('اختر ملفاً أولاً'); return; }
     try {
       const res = await api.post('/api/v1/hr/attendance/import/preview', body());
       setPreview(res.data);
@@ -173,7 +173,7 @@ export default function Attendance() {
     try {
       const res = await api.post('/api/v1/hr/attendance/import', body());
       const { created, updated } = res.data;
-      message.success(`اتعمل ${created} يوم، واتعدّل ${updated}`);
+      message.success(`أُنشئ ${created} يوم، وعُدِّل ${updated}`);
       setPreview(null);
       setCsvRows([]);
       setTab('days');
@@ -284,7 +284,7 @@ export default function Attendance() {
         columns={cols.columns} dataSource={rows}
         pagination={{ defaultPageSize: 50, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
-        locale={{ emptyText: 'مافيش أيام في المدى ده' }}
+        locale={{ emptyText: 'لا توجد أيام في هذا المدى' }}
       />
     </>
   );
@@ -325,7 +325,7 @@ export default function Attendance() {
       <Col span={24}>
         <Button type="primary" loading={saving} onClick={saveDay}>حفظ اليوم</Button>
         <span style={{ marginInlineStart: 12, color: '#888' }}>
-          سيبها فاضية عشان تسجّل غياب.
+          اتركها فارغة لتسجيل غياب.
         </span>
       </Col>
     </Row>
@@ -336,8 +336,8 @@ export default function Attendance() {
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
         message="ملف جهاز البصمة"
-        description={'اختار ملف CSV، ظبّط أرقام الأعمدة، وبعدين «معاينة» — بتوريك اللي هيحصل '
-          + 'من غير ما تكتب حاجة. اللي مايتطابقش بيتعرض بالاسم، مابيتشالش في صمت.'}
+        description={'اختر ملف CSV، واضبط أرقام الأعمدة، ثم «معاينة» — تعرض لك ما سيحدث '
+          + 'دون أن تكتب شيئاً. وما لا يتطابق يُعرض بالاسم ولا يُحذف في صمت.'}
       />
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col>
@@ -384,7 +384,7 @@ export default function Attendance() {
           {preview.unmatched.length ? (
             <Alert
               type="warning" showIcon style={{ marginBottom: 10 }}
-              message="أسماء/أرقام في الملف مش موجودة في الموظفين"
+              message="أسماء/أرقام في الملف غير موجودة في الموظفين"
               description={[...new Set(preview.unmatched.map((u: any) => u.employee_key))]
                 .join(' · ')}
             />

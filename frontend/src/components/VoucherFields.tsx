@@ -71,7 +71,7 @@ export function TreasuryField({
       label="الخزينة"
       // Required, deliberately. The old form allowed «no answer» and resolved it server-side, which
       // is the same as answering for them.
-      rules={[{ required: true, message: 'اختر الخزينة اللي هتتحرك منها الفلوس' }]}
+      rules={[{ required: true, message: 'اختر الخزينة التي ستتحرك منها الأموال' }]}
     >
       <Select
         showSearch optionFilterProp="label" style={{ width }}

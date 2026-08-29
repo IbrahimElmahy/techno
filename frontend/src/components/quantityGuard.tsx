@@ -47,7 +47,7 @@ export function quantityProblem(c: QuantityCheck): string | null {
     return 'الكمية مايصحّش تكون بالسالب. لو الغرض ترجّع بضاعة، ده مرتجع بمستنده.';
   }
   if (v === 0) {
-    return 'الكمية صفر مش كمية. امسح السطر لو مش عايزه.';
+    return 'الكمية صفر ليست كمية. احذف السطر إن لم تكن بحاجة إليه.';
   }
   if (c.available !== undefined && c.available !== null && v > Number(c.available)) {
     const u = c.unit ? ` ${c.unit}` : '';
@@ -67,7 +67,7 @@ export function guardQuantity(c: QuantityCheck, previous: number | null): number
   const problem = quantityProblem(c);
   if (!problem) return c.value ?? null;
   Modal.warning({
-    title: c.itemName ? `الكمية: ${c.itemName}` : 'الكمية مش مظبوطة',
+    title: c.itemName ? `الكمية: ${c.itemName}` : 'الكمية غير صحيحة',
     content: problem,
     okText: 'تمام',
     centered: true,

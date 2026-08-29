@@ -222,8 +222,8 @@ export default function StockPermits() {
         reason: reason || null, notes: notes || null,
         permit_date: permitDate.format('YYYY-MM-DD'),
       });
-      message.success(kind === 'issue' ? 'اتسجّل إذن الصرف'
-        : kind === 'opening' ? 'اتسجّلت بضاعة أول المدة' : 'اتسجّل إذن الإضافة');
+      message.success(kind === 'issue' ? 'تم تسجيل إذن الصرف'
+        : kind === 'opening' ? 'تم تسجيل بضاعة أول المدة' : 'تم تسجيل إذن الإضافة');
       setCreating(false); resetDraft(); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الإذن');
@@ -317,7 +317,7 @@ export default function StockPermits() {
           options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
         <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           {kind === 'issue'
-            ? 'الأصناف اللي هتظهر بعد كده هي المتاح في المخزن ده بس.'
+            ? 'الأصناف التي ستظهر بعد ذلك هي المتاحة في هذا المخزن فقط.'
             : 'البضاعة هتدخل على المخزن ده.'}
         </div>
       </TabModal>
@@ -483,10 +483,10 @@ export default function StockPermits() {
     <>
       <Alert
         type={detail.reversed_by ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
-        message={detail.reversed_by ? 'الإذن ده اتعكس' : 'الإذن ده اتّرحّل خلاص'}
+        message={detail.reversed_by ? 'الإذن ده اتعكس' : 'هذا الإذن مُرحَّل بالفعل'}
         description={detail.reversed_by
-          ? 'اتعمله إذن عكسي رجّع المخزون زي ما كان — الاتنين موجودين في القايمة.'
-          : 'البضاعة اتحركت على المخزن فعلاً، فالإذن مايتغيّرش في مكانه. «تعديل الإذن» بيعكسه ويفتحه تاني بمحتواه عشان تصحّح وترحّل من جديد — والتلاتة بيفضلوا في السجل.'}
+          ? 'أُنشئ له إذن عكسي أعاد المخزون إلى ما كان عليه — وكلاهما موجود في القائمة.'
+          : 'تحركت البضاعة على المخزن فعلاً، فلا يُعدَّل الإذن في مكانه. و«تعديل الإذن» يعكسه ويفتحه من جديد بمحتواه لتصحّح وتُرحِّل مرة أخرى — وتبقى الثلاثة في السجل.'}
       />
       <Descriptions column={2} size="small" bordered style={{ marginBottom: 12 }}>
         <Descriptions.Item label="النوع">
@@ -537,7 +537,7 @@ export default function StockPermits() {
                 onClick={() => editPosted(detail)}>
                 تعديل الإذن
               </Button>
-              <Popconfirm title="عكس الإذن؟" description="هيترجّع المخزون زي ما كان."
+              <Popconfirm title="عكس الإذن؟" description="سيعود المخزون إلى ما كان عليه."
                 onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
                 <Button danger size="large" icon={<RollbackOutlined />}>عكس الإذن</Button>
               </Popconfirm>

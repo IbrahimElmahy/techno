@@ -155,7 +155,7 @@ export default function Payroll() {
       const res = await api.post(`/api/v1/hr/payroll/runs/${detail.id}/${what}`,
         what === 'pay' ? {} : undefined);
       if (res.data.skipped) {
-        message.info(what === 'post' ? 'المسير مرحّل بالفعل' : 'مافيش مرتبات مستحقة للصرف');
+        message.info(what === 'post' ? 'المسير مرحّل بالفعل' : 'لا توجد رواتب مستحقة للصرف');
       } else {
         message.success({ post: 'اترحّل', reverse: 'اتعكس', pay: 'اتصرف' }[what]);
       }
@@ -203,7 +203,7 @@ export default function Payroll() {
       render: (v: string | null, r) => (
         <Space size={4}>
           <a onClick={() => openSlip(r)}>{v}</a>
-          {!r.has_attendance ? <Tag color="orange">مافيش حضور</Tag> : null}
+          {!r.has_attendance ? <Tag color="orange">لا يوجد حضور</Tag> : null}
         </Space>
       ) },
     { title: 'الأساسي', dataIndex: 'basic', key: 'basic', width: 110,
@@ -286,7 +286,7 @@ export default function Payroll() {
             rowKey="id" size="small" loading={loading}
             columns={runTable.columns} dataSource={runs}
             pagination={{ defaultPageSize: 25 }}
-            locale={{ emptyText: 'مافيش مسيرات' }}
+            locale={{ emptyText: 'لا توجد مسيّرات' }}
           />
         </>
       ) : (
@@ -300,7 +300,7 @@ export default function Payroll() {
             {detail.status === 'draft' ? (
               <Popconfirm
                 title="ترحّل المسير؟"
-                description="هيتكتب قيد في الأستاذ، والحضور بتاع الشهر هيتقفل. التصحيح بعد كده بالعكس مش بالتعديل."
+                description="سيُكتب قيد في الأستاذ، ويُغلق حضور الشهر. والتصحيح بعد ذلك يكون بالعكس لا بالتعديل."
                 okText="ترحيل" cancelText="رجوع"
                 onConfirm={() => act('post')}
               >
@@ -317,7 +317,7 @@ export default function Payroll() {
             {posted ? (
               <Popconfirm
                 title="تعكس المسير؟"
-                description="القيد هيتعكس والشهر هيرجع مفتوح. المستند بيفضل برقمه."
+                description="سيُعكس القيد ويعود الشهر مفتوحاً. ويبقى المستند برقمه."
                 okText="عكس" cancelText="رجوع" okButtonProps={{ danger: true }}
                 onConfirm={() => act('reverse')}
               >
@@ -346,8 +346,8 @@ export default function Payroll() {
             <Alert
               type="warning" showIcon style={{ marginBottom: 12 }}
               message={`${detail.without_attendance} موظف من غير سجل حضور — اتحسبوا حضور كامل`}
-              description={'«محدش رفع الملف» مش «غايب الشهر كله». اتحسبوا مرتب كامل عن قصد، '
-                + 'بس لازم حد يعرف إن ده حصل قبل الترحيل.'}
+              description={'«لم يُرفع الملف» ليست «غياب الشهر كله». احتُسب لهم راتب كامل عن قصد، '
+                + 'لكن يجب أن يعلم أحد بحدوث ذلك قبل الترحيل.'}
             />
           ) : null}
 
@@ -369,7 +369,7 @@ export default function Payroll() {
             columns={lineTable.columns} dataSource={detail.lines}
             pagination={{ defaultPageSize: 50, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
-            locale={{ emptyText: 'مافيش سطور' }}
+            locale={{ emptyText: 'لا توجد سطور' }}
           />
         </>
       )}
@@ -429,7 +429,7 @@ export default function Payroll() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message="بيقفل الالتزام من الخزنة"
-          description="من غيره الحساب بيكبر للأبد: المسير بيرحّل عليه كل شهر ومحدش بيقفله."
+          description="بدونه يكبر الحساب بلا نهاية: يُرحِّل عليه المسيّر كل شهر ولا أحد يقفله."
         />
         <Row gutter={[10, 10]}>
           <Col span={10}>

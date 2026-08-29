@@ -384,7 +384,7 @@ const Vouchers: React.FC = () => {
   const deleteVoucher = async (id: number) => {
     try {
       await api.delete(`/api/v1/vouchers/${id}`);
-      message.success('اتمسح السند');
+      message.success('تم حذف السند');
       loadVouchers();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر مسح السند');
@@ -494,7 +494,7 @@ const Vouchers: React.FC = () => {
           ) : (
           <Popconfirm
             title="مسح السند؟"
-            description="هيتشال هو وقيده، والرصيد هيرجع زي ما كان."
+            description="سيُحذف هو وقيده، ويعود الرصيد إلى ما كان عليه."
             okText="مسح"
             cancelText="إلغاء"
             okButtonProps={{ danger: true }}
@@ -587,7 +587,7 @@ const Vouchers: React.FC = () => {
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('receipt')}
                   columns={voucherCols.columns}
-                  locale={{ emptyText: 'مفيش سندات قبض' }}
+                  locale={{ emptyText: 'لا توجد سندات قبض' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
               </Card>
@@ -609,7 +609,7 @@ const Vouchers: React.FC = () => {
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('payment')}
                   columns={voucherCols.columns}
-                  locale={{ emptyText: 'مفيش سندات صرف' }}
+                  locale={{ emptyText: 'لا توجد سندات صرف' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
               </Card>
@@ -631,7 +631,7 @@ const Vouchers: React.FC = () => {
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('rep_handover')}
                   columns={voucherCols.columns}
-                  locale={{ emptyText: 'مفيش سندات توريد' }}
+                  locale={{ emptyText: 'لا توجد سندات توريد' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
               </Card>
@@ -653,7 +653,7 @@ const Vouchers: React.FC = () => {
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('expense')}
                   columns={voucherCols.columns}
-                  locale={{ emptyText: 'مفيش مصروفات' }}
+                  locale={{ emptyText: 'لا توجد مصروفات' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
                 {expenseAccounts.length === 0 && (
@@ -661,8 +661,8 @@ const Vouchers: React.FC = () => {
                     type="info"
                     showIcon
                     style={{ marginTop: 12 }}
-                    message="مفيش حسابات مصروفات"
-                    description="أضف حساب مصروف من شجرة الحسابات (طبيعة: مصروفات) عشان تقدر تصرف عليه."
+                    message="لا توجد حسابات مصروفات"
+                    description="أضف حساب مصروف من شجرة الحسابات (طبيعة: مصروفات) حتى تتمكن من الصرف عليه."
                   />
                 )}
               </Card>
@@ -684,7 +684,7 @@ const Vouchers: React.FC = () => {
                   rowKey="id" size="small" loading={loading}
                   dataSource={byKind('cash_transfer')}
                   columns={voucherCols.columns}
-                  locale={{ emptyText: 'مفيش تحويلات' }}
+                  locale={{ emptyText: 'لا توجد تحويلات' }}
                   pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
                 />
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result,
-  Row, Segmented, Select, Space, Statistic, Table, Tag, Typography, message, DatePicker,
+  Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message, DatePicker,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
@@ -9,6 +9,7 @@ import {
   PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, RollbackOutlined,
   PrinterOutlined, FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
@@ -285,6 +286,8 @@ export default function Purchases() {
 
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
+  const [viewOnly, setViewOnly] = useState(false);
+  const [viewPurchase, setViewPurchase] = useState<PurchaseDetail | null>(null);
   /**
    * الفاتورة اللي بتتعدّل دلوقتي — لسه مرحّلة، والعكس هيحصل وقت الحفظ.
    *
@@ -460,17 +463,39 @@ export default function Purchases() {
   };
 
   const openDetail = async (record: PurchaseRecord) => {
-    setCreateVisible(true);
-    setDetail(null);
-    setDetailLoading(true);
     try {
       const res = await api.get(`/api/v1/purchases/${record.id}`);
-      setDetail(res.data);
+      const det: PurchaseDetail = res.data;
+      setViewPurchase(det);
+      setEditingId(det.id);
+      setViewOnly(true);
+      form.setFieldsValue({
+        supplier_id: det.supplier_id,
+        external_document_number: (det as any).external_document_number || '',
+        notes: (det as any).notes || '',
+      });
+      setPurchaseDate((det as any).purchase_date
+        ? dayjs((det as any).purchase_date)
+        : ((det as any).created_at ? dayjs((det as any).created_at) : dayjs()));
+      setPurchaseItems((det.lines || []).map((l: any, i: number) => ({
+        key: `${Date.now()}-${i}`,
+        item_id: l.item_id,
+        quantity: Number(l.quantity) || null,
+        unit_price: Number(l.unit_price) || 0,
+        unit: l.unit ?? null,
+        discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
+        fixed_discount_pct: null,
+        warehouse_id: l.line_location_id ?? det.location_id ?? null,
+      })));
+      setStickyWarehouseId(((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
+      [...new Set((det.lines || []).map((l: any) => l.item_id))].forEach((id) => fetchUnits(id as number));
+      setCashAmount(Number(det.cash_amount) || 0);
+      setCreditAmount(Number(det.credit_amount) || 0);
+      setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
+      setCreateVisible(true);
     } catch (err: any) {
       console.error(err);
       message.error(err?.response?.data?.detail?.message || 'تعذر فتح الفاتورة');
-    } finally {
-      setDetailLoading(false);
     }
   };
 
@@ -704,6 +729,7 @@ export default function Purchases() {
   const purchaseToolbar = (): ToolbarAction[] => {
     const typed = purchaseItems.filter((i) => i.item_id !== null).length;
     const invoicesInList = purchasesFilter.filtered.filter((r) => r.kind === 'purchase');
+    const isSaved = Boolean(editingId && viewPurchase);
     const stepDoc = (step: number) => {
       if (!invoicesInList.length) return;
       const at = invoicesInList.findIndex(
@@ -713,7 +739,11 @@ export default function Purchases() {
       if (target) { closeCreate(); openDetail(target); }
     };
     return [
-      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+      {
+        key: 'new',
+        label: 'جديد',
+        shortcut: 'F2',
+        icon: <FileAddOutlined />,
         onClick: () => {
           form.resetFields();
           setPurchaseItems([
@@ -724,13 +754,35 @@ export default function Purchases() {
           setDetail(null);
           setDocResult(null);
           setEditingId(null);
+          setViewPurchase(null);
+          setViewOnly(false);
           setPartyPickerOpen(true);
-        } },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-        disabled: true },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+        },
+      },
+      {
+        key: 'edit',
+        label: 'تعديل',
+        icon: <EditOutlined />,
+        disabled: !isSaved || !viewOnly,
         onClick: () => {
-          if (editingId || purchaseItems.some((l) => l.item_id !== null)) {
+          setViewOnly(false);
+          message.info('الفاتورة مفتوحة الآن للتعديل');
+        },
+      },
+      {
+        key: 'undo',
+        label: 'تراجع',
+        icon: <UndoOutlined />,
+        // «تراجع» بيرجّع المستند، مش بيقفل الحقول وبس.
+        //
+        // كان بيعمل `setViewOnly(true)` على طول: الحقول تتقفل واللي اتكتب ومااتحفظش يفضل
+        // ظاهر — مقفول ومقروء، يعني بنفس شكل المحفوظ بالظبط. فاللي غيّر كمية من ١٠ لـ٣
+        // وضغط تراجع بيفضل قدامه ٣ وإجمالي مالوش وجود، ومافيش حاجة على الشاشة بتقول إن ده
+        // مش اللي في القاعدة. إعادة تحميل المستند هي الحاجة الوحيدة اللي بترجّع الأرقام.
+        onClick: () => {
+          if (!viewOnly && editingId) {
+            openDetail({ id: editingId } as PurchaseRecord);
+          } else if (purchaseItems.some((l) => l.item_id !== null)) {
             closeCreate();
           } else {
             setPurchaseItems([
@@ -738,121 +790,110 @@ export default function Purchases() {
                 discount_pct: null, fixed_discount_pct: null, warehouse_id: null }
             ]);
           }
-        } },
-      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
-        disabled: typed === 0,
-        onClick: () => form.submit() },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
-        disabled: invoicesInList.length === 0, onClick: () => stepDoc(1) },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-        onClick: () => setPickerOpen(true) },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
-        disabled: invoicesInList.length === 0, onClick: () => stepDoc(-1) },
-      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
-        disabled: typed === 0,
-        onClick: () => setPurchaseItems([
-          { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-            discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]) },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-        disabled: true },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
-        disabled: !party?.id && !form.getFieldValue('supplier_id'),
-        onClick: () => {
-          const sid = party?.id ?? (form.getFieldValue('supplier_id') as number | undefined);
-          if (sid) navigate(`/suppliers/${sid}`);
-        } },
-      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
-    ];
-  };
-
-  const detailToolbar = (): ToolbarAction[] => {
-    const invoicesInList = purchasesFilter.filtered.filter((r: any) => r.kind === 'purchase');
-    const stepDetail = (step: number) => {
-      if (!invoicesInList.length || !detail) return;
-      const at = invoicesInList.findIndex((r: any) => r.id === detail.id);
-      const target = at >= 0 ? invoicesInList[at + step]
-        : (step > 0 ? invoicesInList[0] : invoicesInList[invoicesInList.length - 1]);
-      if (target) { openDetail(target); }
-    };
-    return [
-      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-        onClick: () => {
-          setDetail(null);
-          setEditingId(null);
-          form.resetFields();
-          setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null, discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
-          setPurchaseDate(dayjs());
-          setPartyPickerOpen(true);
-        } },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-        onClick: () => {
-          if (detail) editPosted(detail);
-        } },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
-        onClick: () => {
-          setDetail(null);
-          closeCreate();
-        } },
-      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        },
+      },
+      {
+        key: 'save',
+        label: 'حفظ',
+        shortcut: 'F9',
+        icon: <SaveOutlined />,
+        disabled: viewOnly || typed === 0,
+        onClick: () => form.submit(),
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
         disabled: invoicesInList.length === 0,
-        onClick: () => stepDetail(1) },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-        // القفل الأول، والتركيز بعد ما الرسمة تنزل — الخانة لسه مش موجودة في نفس اللفّة.
+        onClick: () => stepDoc(1),
+      },
+      {
+        key: 'search',
+        label: 'بحث',
+        shortcut: 'F3',
+        icon: <SearchOutlined />,
         onClick: () => {
-          setDetail(null);
-          closeCreate();
-          requestAnimationFrame(() => {
-            listSearchRef.current?.focus?.();
-            listSearchRef.current?.select?.();
-          });
-        } },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+          if (viewOnly) {
+            closeCreate();
+          } else {
+            setPickerOpen(true);
+          }
+        },
+      },
+      {
+        key: 'prev',
+        label: 'السابق',
+        icon: <ArrowRightOutlined />,
         disabled: invoicesInList.length === 0,
-        onClick: () => stepDetail(-1) },
-      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+        onClick: () => stepDoc(-1),
+      },
+      {
+        key: 'delete',
+        label: 'حذف',
+        shortcut: 'F8',
+        icon: <DeleteOutlined />,
+        danger: true,
+        disabled: isSaved ? false : typed === 0,
         onClick: () => {
-          if (detail) {
+          if (isSaved && viewPurchase) {
             Modal.confirm({
-              title: 'حذف الفاتورة',
-              content: `هل أنت متأكد من حذف فاتورة الشراء ${detail.document_number || ''}؟`,
+              title: 'تأكيد حذف فاتورة الشراء',
+              icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+              content: `هل أنت متأكد من حذف فاتورة الشراء ${viewPurchase.document_number || ''}؟`,
               okText: 'نعم، احذف',
               okType: 'danger',
-              cancelText: 'تراجع',
+              cancelText: 'إلغاء',
               onOk: async () => {
                 try {
-                  await api.delete(`/api/v1/purchases/${detail.id}`);
+                  await api.delete(`/api/v1/purchases/${viewPurchase.id}`);
                   message.success('تم حذف الفاتورة بنجاح');
-                  setDetail(null);
                   closeCreate();
                   fetchPurchases();
                 } catch (err: any) {
-                  message.error(err?.response?.data?.detail?.message || 'تعذر حذف الفاتورة');
+                  console.error(err);
                 }
               },
             });
+          } else {
+            setPurchaseItems([
+              { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+                discount_pct: null, fixed_discount_pct: null, warehouse_id: null }
+            ]);
           }
-        } },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-        disabled: printing,
-        onClick: async () => {
-          setPrinting(true);
-          try {
-            const doc = purchaseDoc(detail);
-            if (doc) printInvoice(doc, printOpts);
-          } catch (err: any) {
-            message.error(err?.response?.data?.detail?.message || 'تعذر طباعة الفاتورة');
-          } finally {
-            setPrinting(false);
-          }
-        } },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
-        disabled: !detail?.supplier_id,
+        },
+      },
+      {
+        key: 'print',
+        label: 'طباعة',
+        shortcut: 'F7',
+        icon: <PrinterOutlined />,
+        disabled: !isSaved,
         onClick: () => {
-          if (detail?.supplier_id) navigate(`/suppliers/${detail.supplier_id}`);
-        } },
-      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
-        onClick: () => { if (detail) openDetail({ id: detail.id } as any); } },
+          if (viewPurchase) {
+            const doc = purchaseDoc(viewPurchase);
+            if (doc) printInvoice(doc, printOpts);
+          }
+        },
+      },
+      {
+        key: 'accounts',
+        label: 'حسابات',
+        icon: <BankOutlined />,
+        disabled: !viewPurchase?.supplier_id && !party?.id && !form.getFieldValue('supplier_id'),
+        onClick: () => {
+          const sid = viewPurchase?.supplier_id ?? party?.id ?? (form.getFieldValue('supplier_id') as number | undefined);
+          if (sid) navigate(`/suppliers/${sid}`);
+        },
+      },
+      {
+        key: 'reload',
+        label: 'تحميل',
+        icon: <ReloadOutlined />,
+        onClick: () => {
+          if (isSaved && viewPurchase) openDetail({ id: viewPurchase.id } as any);
+          else loadLookups();
+        },
+      },
     ];
   };
 
@@ -996,7 +1037,7 @@ export default function Purchases() {
         : await api.post('/api/v1/purchases', payload);
       setDocResult(res.data);
       message.success(editingId !== null
-        ? 'اتحفظت الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
+        ? 'تم حفظ الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
       setEditingId(null);
       form.resetFields();
       setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
@@ -1144,6 +1185,7 @@ export default function Purchases() {
     { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="مخزن الاستلام"
+          disabled={viewOnly}
           value={line.warehouse_id ?? undefined}
           onChange={(val) => {
             handleItemChange(line.key, 'warehouse_id', val ?? null);
@@ -1175,6 +1217,7 @@ export default function Purchases() {
     { key: 'unit', title: 'الوحدة', minWidth: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+          disabled={viewOnly}
           value={line.unit ?? '__base__'}
           onChange={(val) => handleItemChange(
             line.key, 'unit', val === '__base__' ? null : val)}
@@ -1185,6 +1228,7 @@ export default function Purchases() {
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0.001} step={1}
+          disabled={viewOnly}
           placeholder="الكمية" value={line.quantity ?? undefined}
           data-qty-key={line.key} data-grid-col="qty" keyboard={false}
           onChange={(val) => handleItemChange(line.key, 'quantity', val ?? null)}
@@ -1195,12 +1239,13 @@ export default function Purchases() {
     { key: 'price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+          disabled={viewOnly}
           placeholder="السعر" value={line.unit_price} data-price-key={line.key}
           onChange={(val) => handleItemChange(line.key, 'unit_price', val || 0)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
+    { key: 'gross', width: 115, title: 'اجمالي قبل', minWidth: 85,
       cellStyle: { whiteSpace: 'nowrap' },
       cell: (line) => fmtMoney(Number(line.quantity || 0) * (line.unit_price || 0)),
       footer: (rows) => fmtMoney(rows.reduce(
@@ -1208,6 +1253,7 @@ export default function Purchases() {
     { key: 'disc_var', title: 'خصم متغير %', minWidth: 75,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          disabled={viewOnly}
           placeholder="متغير" value={line.discount_pct ?? undefined} data-disc-key={line.key}
           onChange={(val) => handleItemChange(line.key, 'discount_pct', val ?? null)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
@@ -1216,20 +1262,21 @@ export default function Purchases() {
     { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+          disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
           onChange={(val) => handleItemChange(line.key, 'fixed_discount_pct', val ?? null)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'total', title: 'الإجمالي', minWidth: 90, locked: true,
+    { key: 'total', width: 120, title: 'الإجمالي', minWidth: 90, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
       cell: (line) => fmtMoney(lineTotal(line)),
       footer: () => fmtMoney(grossTotal) },
     { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
-      cell: (line) => (
+      cell: (line) => (viewOnly ? null : (
         <Button size="small" danger type="text" icon={<DeleteOutlined />}
           onClick={() => handleRemoveItem(line.key)} />
-      ),
+      )),
       footer: () => null },
   ];
   const lineGrid = useEntryGrid('purchase-lines', lineColumns);
@@ -1242,9 +1289,6 @@ export default function Purchases() {
           title="تم تسجيل فاتورة الشراء بنجاح"
           subTitle={`رقم مستند الفاتورة: ${docResult.document_number} | رقم قيد اليومية: ${docResult.ledger_entry_id || 'لا يوجد'}`}
           extra={[
-            // F2 على «إضافة صنف» مش هنا — زي شاشة البيع بالظبط. الزرار ده بيتضغط مرة
-            // واحدة بعد الحفظ؛ زرار إضافة الصنف بيتضغط خمستاشر مرة في الفاتورة الواحدة،
-            // وهو اللي يستاهل المفتاح.
             <Button type="primary" key="new" onClick={() => setDocResult(null)}>
               تسجيل فاتورة جديدة
             </Button>,
@@ -1252,72 +1296,29 @@ export default function Purchases() {
         />
       </Card>
     </div>
-  ) : detail ? (
-    /* فاتورة مرحّلة — نفس الصفحة، بس مقفولة، ومنها التعديل.
-       A posted purchase cannot be altered in place: the goods are on the shelf and the ledger is
-       append-only. «تعديل» reverses it in full and reopens the form on what it held. */
-    <Card
-      title={(
-        <Space>
-          <Button type="text" icon={<ArrowRightOutlined />}
-            onClick={() => setDetail(null)}>رجوع</Button>
-          <span>{`فاتورة شراء ${detail.document_number}`}</span>
-        </Space>
-      )}
-      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}
-    >
-      <DocumentToolbar actions={detailToolbar()} />
-      <InvoiceDocument doc={purchaseDoc(detail)!} />
-
-      <Divider orientation="right">المرتجعات</Divider>
-      <Table
-        dataSource={detail.returns} columns={detailReturnColumns} rowKey="id"
-        pagination={false} size="small"
-        locale={{ emptyText: 'لا توجد مرتجعات على هذه الفاتورة' }}
-      />
-
-      <div style={{
-        marginTop: 16, padding: 16, borderRadius: 10,
-        background: '#f6faf3', border: '1px solid #e6efe3',
-        display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
-        flexWrap: 'wrap',
-      }}>
-        <Button type="primary" size="large" icon={<EditOutlined />}
-          onClick={() => editPosted(detail)}>
-          تعديل الفاتورة
-        </Button>
-        <Button size="large" onClick={() => setDetail(null)}>إغلاق</Button>
-      </div>
-    </Card>
   ) : (
     <Card title={(
       <Space>
         <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
-        <Typography.Text strong style={{ fontSize: 16 }}>فاتورة شراء جديدة</Typography.Text>
-        {/* ظاهر وقابل للتغيير: اللي بيكتب لازم يشوف اليوم اللي بيكتب فيه، خصوصاً لما
-            مايكونش النهاردة. */}
+        <Typography.Text strong style={{ fontSize: 16 }}>
+          {viewPurchase ? `فاتورة شراء ${viewPurchase.document_number}` : (editingId !== null ? 'تعديل فاتورة شراء' : 'فاتورة شراء جديدة')}
+        </Typography.Text>
         <DatePicker
+          disabled={viewOnly}
           value={purchaseDate} allowClear={false} format="YYYY-MM-DD"
           onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())}
         />
       </Space>
     )}
       extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
-      {/* The same strip of verbs the sale carries, in the same places — a purchase is the same
-          job from the other side, and a hand that has learned one row should not have to learn
-          a second. */}
       <DocumentToolbar actions={purchaseToolbar()} />
-      {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — التعريف في `index.css`. */}
       <Form form={form} layout="vertical" size="small" className="doc-form"
         onFinish={handleSubmit} requiredMark={false}>
-          {/*
-            * ترويسة المستند: **التاريخ ← المورد ← المستند** — نفس ترتيب فاتورة البيع، من غير
-            * «المندوب»: المندوب بيبيع وبيتحصّل، والشحنة الواردة بيستلمها أمين المخزن.
-            */}
           <Row gutter={16}>
             <Col xs={12} md={5}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                  disabled={viewOnly}
                   value={purchaseDate}
                   onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())} />
               </Form.Item>
@@ -1326,12 +1327,10 @@ export default function Purchases() {
               <Form.Item name="supplier_id" label="المورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
                 style={{ marginBottom: 8 }}>
-                {/* The same window the first door opens — searchable, with inline create.
-                    Changing the supplier mid-document goes through the same place it was first
-                    chosen, so there is one way to answer «مين». */}
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
+                  disabled={viewOnly}
                   placeholder="اضغط لاختيار المورد"
-                  onClick={() => setPartyPickerOpen(true)}
+                  onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
                   options={suppliers.map((sp) => ({
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
               </Form.Item>
@@ -1339,7 +1338,7 @@ export default function Purchases() {
             <Col xs={12} md={5}>
               <Form.Item name="external_document_number" label="المستند"
                 style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم فاتورة المورد" />
+                <Input placeholder="رقم فاتورة المورد" disabled={viewOnly} />
               </Form.Item>
             </Col>
           </Row>
@@ -1347,38 +1346,35 @@ export default function Purchases() {
           <Row gutter={16}>
             <Col xs={24} md={6}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
-                <Input placeholder="اختياري" />
+                <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
             {([1, 2, 3] as const).map((n) => (
               <Col xs={24} md={6} key={n}>
                 <Form.Item name={`statement${n}`} label={`بيان ${n}`}
                   style={{ marginBottom: 8 }}>
-                  <Input placeholder="اختياري" />
+                  <Input placeholder="اختياري" disabled={viewOnly} />
                 </Form.Item>
               </Col>
             ))}
           </Row>
 
-          {/* فاصل من غير عنوان — الجدول اللي تحته أعمدته مكتوبة. */}
           <Divider style={{ margin: '10px 0' }} />
 
           <Row gutter={16}>
             <Col xs={24}>
-              {/* الزرار فوق السطور، كبير، وF2 عليه — نفس شاشة البيع.
-                  It used to be a small dashed button UNDERNEATH the table, which on an invoice of
-                  fifteen lines is a scroll to find and a click to choose, twice per line, all day.
-                  Above the lines it is always in the same place. */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
-                <Button data-shortcut="F2"
-                  type="primary" icon={<PlusOutlined />}
-                  style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#1677ff', borderColor: '#1677ff' }}
-                  onClick={() => setPickerOpen(true)}
-                >
-                  إضافة صنف للفاتورة (F2)
-                </Button>
-                <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
-              </div>
+              {!viewOnly && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
+                  <Button data-shortcut="F2"
+                    type="primary" icon={<PlusOutlined />}
+                    style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#1677ff', borderColor: '#1677ff' }}
+                    onClick={() => setPickerOpen(true)}
+                  >
+                    إضافة صنف للفاتورة (F2)
+                  </Button>
+                  <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
+                </div>
+              )}
 
               {purchaseItems.length === 0 ? (
                 <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
@@ -1414,13 +1410,6 @@ export default function Purchases() {
                         </React.Fragment>
                       ))}
                     </tbody>
-                    {/*
-                      * صف الإجمالي تحت السطور — زي الشاشة اللي العميل شغّال عليها.
-                      *
-                      * «الفاتورة دي كام قطعة وبكام» سؤال بيتسأل وانت بتكتب، والإجابة كانت
-                      * تحت في سلّم الإجماليات بعد تمرير. هنا في آخر الجدول، جنب الأرقام
-                      * اللي جمّعته — وكل رقم تحت عموده مهما اتحرّكت الأعمدة.
-                      */}
                     <tfoot>{lineGrid.foot(purchaseItems)}</tfoot>
                   </table>
                 </div>
@@ -1430,39 +1419,25 @@ export default function Purchases() {
 
           <Divider />
 
-          {/* Same ladder as the sales screens — the supplier side of the identical question:
-              what the goods cost, what we paid now, what we still owe him. */}
-          {/*
-            * الإجماليات لوحدها تحت السطور — من غير لوحة رصيد جنبها.
-            *
-            * كانت اللوحة واخدة تلت العرض وهي فاضية: صندوق كبير مكتوب فيه «اختر فئة أو صنف عشان
-            * تشوف رصيده»، وطالع الصفحة لتحت من غير ما يقول حاجة. وبقت مالهاش طريق أصلاً بعد ما
-            * عمود اسم الصنف اتشال — هو اللي كان بيوجّهها.
-            *
-            * الشاشة اللي العميل شغّال عليها تحت السطور فيها شريط إجماليات وبس، والصفحة كده
-            * بتخلص عند آخر رقم فيها.
-            */}
           <TotalsLadder
             tone="sale"
             inputs={(
               <>
                 <Form.Item label="خصم على الفاتورة %" style={{ marginBottom: 12 }}
-                  help="بينزل على مجموع السطور بعد خصم كل سطر — زي فاتورة البيع">
+                  help="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة البيع">
                   <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
+                    disabled={viewOnly}
                     addonAfter="%" value={variableDiscount}
                     onChange={(val) => setVariableDiscount(val || 0)} />
                 </Form.Item>
                 <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
                   help="الباقي بيتسجّل آجل على حساب المورد">
                   <InputNumber style={{ width: '100%' }} min={0} addonAfter="ج.م"
+                    disabled={viewOnly}
                     value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                 </Form.Item>
               </>
             )}
-            /* بنفس أسماء الشريط اللي تحت الفاتورة في الشاشة اللي العميل شغّال عليها:
-               اجمالي قبل · خصم فاتورة · خصم فاتورة % · الاجمالي · المدفوع · الباقي.
-               «اجمالي قبل» بيتعرض دايماً دلوقتي — الشريط عنده بيوريه حتى وهو مساوي للإجمالي،
-               لأن اللي بيراجع بيقرا الشريط من فوق لتحت وسطر ناقص بيخلّيه يعدّ. */
             rows={[
               { label: 'اجمالي قبل', value: money(grossTotal) },
               { label: 'خصم فاتورة',
@@ -1480,20 +1455,19 @@ export default function Purchases() {
             ]}
           />
 
-          <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
-            {/* من غير سؤال قبل الحفظ. السؤال كان بيقول «هيتعكس الفاتورة القديمة» —
-                وده كان بيحصل فعلاً، فكان لازم يتقال. دلوقتي الفاتورة بتتحفظ في مكانها،
-                والسؤال بقى خطوة زيادة على حاجة عادية. */}
-            <Button
-              type="primary"
-              htmlType="submit"
-              icon={<FileDoneOutlined />}
-              size="large"
-              loading={submitLoading}
-            >
-              {editingId !== null ? 'حفظ التعديل' : 'تسجيل وترحيل فاتورة الشراء'}
-            </Button>
-          </Form.Item>
+          {!viewOnly && (
+            <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<FileDoneOutlined />}
+                size="large"
+                loading={submitLoading}
+              >
+                {editingId !== null ? 'حفظ التعديل' : 'تسجيل وترحيل فاتورة الشراء'}
+              </Button>
+            </Form.Item>
+          )}
       </Form>
     </Card>
   );
@@ -1512,15 +1486,10 @@ export default function Purchases() {
    */
   const openRow = async (row: PurchaseRecord) => {
     if (row.kind === 'return') {
-      if (row.parent_id) openPrint({ ...row, id: row.parent_id });
+      navigate(`/purchase-returns?doc=${row.id}`);
       return;
     }
-    // `listLoading` مش `detailLoading`: التاني بيلوّن شاشة مش معروضة، فالضغطة كانت بتبان
-    // كأنها ماحصلتش. ده بيلوّن السجل اللي قدام الواحد فعلاً.
-    setListLoading(true);
-    const doc = await loadDocument(row.id);
-    setListLoading(false);
-    if (doc) editPosted(doc);
+    openDetail(row);
   };
 
   /** بوباب بيعرض الفاتورة زي ما هتتطبع — ومنه الطباعة. */
@@ -1553,7 +1522,6 @@ export default function Purchases() {
       title: 'نوع المستند',
       dataIndex: 'kind',
       key: 'kind',
-      fixed: 'left' as const,
       width: 100,
       filters: [{ text: 'فاتورة شراء', value: 'purchase' }, { text: 'مردود شراء', value: 'return' }],
       onFilter: (v: any, r: PurchaseRecord) => r.kind === v,
@@ -1565,7 +1533,6 @@ export default function Purchases() {
       title: 'رقم المستند',
       dataIndex: 'document_number',
       key: 'document_number',
-      fixed: 'left' as const,
       width: 140,
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
       render: (doc: string, r: PurchaseRecord) => (
@@ -1577,44 +1544,44 @@ export default function Purchases() {
         </Space>
       ),
     },
-    { title: 'التاريخ', dataIndex: 'purchase_date', key: 'purchase_date',
+    { title: 'التاريخ', dataIndex: 'purchase_date', key: 'purchase_date', width: 110,
       ...dateColumn<PurchaseRecord>((r) => r.purchase_date || r.created_at),
       defaultSortOrder: 'descend' as const,
       render: (v: string | null, r: PurchaseRecord) => fmtDate(v || r.created_at) },
     { title: 'الفاتورة رقم', dataIndex: 'external_document_number',
-      key: 'external_document_number',
+      key: 'external_document_number', ellipsis: true, width: 130,
       ...textColumn(purchases, (r: PurchaseRecord) => r.external_document_number),
       render: (v: string | null) => v || '-' },
-    { title: 'جهة التعامل', dataIndex: 'supplier_name', key: 'supplier_name',
+    { title: 'جهة التعامل', dataIndex: 'supplier_name', key: 'supplier_name', ellipsis: true, width: 190,
       ...textColumn(purchases, (r: PurchaseRecord) => r.supplier_name),
       render: (v: string) => <b>{v}</b> },
-    { title: 'الفرع', dataIndex: 'branch_name', key: 'branch_name',
+    { title: 'الفرع', dataIndex: 'branch_name', key: 'branch_name', ellipsis: true, width: 110,
       ...textColumn(purchases, (r: PurchaseRecord) => r.branch_name),
       render: (v: string | null) => v || '-' },
-    { title: 'الحساب الفرعي', dataIndex: 'expense_account_name', key: 'expense_account_name',
+    { title: 'الحساب الفرعي', dataIndex: 'expense_account_name', key: 'expense_account_name', ellipsis: true, width: 150,
       ...textColumn(purchases, (r: PurchaseRecord) => r.expense_account_name),
       render: (v: string | null) => v || '-' },
     { title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.gross),
       render: (v: string | null) => (v === null ? '-' : `${fmtMoney(v)} ج.م`) },
-    { title: 'خصم فاتورة', dataIndex: 'discount_amount', key: 'discount_amount',
+    { title: 'خصم فاتورة', dataIndex: 'discount_amount', key: 'discount_amount', width: 115,
       align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.discount_amount),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
-    { title: 'خصم فاتورة %', dataIndex: 'combined_pct', key: 'combined_pct',
+    { title: 'خصم فاتورة %', dataIndex: 'combined_pct', key: 'combined_pct', width: 110,
       align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.combined_pct),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
-    { title: 'الضرائب', dataIndex: 'tax_amount', key: 'tax_amount', align: 'left' as const,
+    { title: 'الضرائب', dataIndex: 'tax_amount', key: 'tax_amount', width: 110, align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.tax_amount),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
-    { title: 'الضرائب %', dataIndex: 'tax_pct', key: 'tax_pct', align: 'left' as const,
+    { title: 'الضرائب %', dataIndex: 'tax_pct', key: 'tax_pct', width: 100, align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.tax_pct),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
     {
       title: 'الصافي',
       dataIndex: 'net',
-      key: 'net',
+      key: 'net', width: 120,
       align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.net),
       render: (v: string | null, r: PurchaseRecord) => (v === null ? '-' : (
@@ -1626,7 +1593,7 @@ export default function Purchases() {
     { title: 'الاجمالي', dataIndex: 'total', key: 'total', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.total),
       render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong> },
-    { title: 'تم السداد', dataIndex: 'cash_amount', key: 'cash_amount', align: 'left' as const,
+    { title: 'تم السداد', dataIndex: 'cash_amount', key: 'cash_amount', width: 115, align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.cash_amount),
       render: (val: string | null) => (val === null ? '-' : `${fmtMoney(val)} ج.م`) },
     { title: 'الباقي', dataIndex: 'credit_amount', key: 'credit_amount', align: 'left' as const,
@@ -1634,22 +1601,60 @@ export default function Purchases() {
       render: (val: string | null) => (val === null ? '-' : Number(val)
         ? <b style={{ color: '#cf1322' }}>{fmtMoney(val)} ج.م</b>
         : `${fmtMoney(val)} ج.م`) },
-    { title: 'ملاحظات', dataIndex: 'notes', key: 'notes',
+    { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', width: 170, ellipsis: true,
       ...textColumn(purchases, (r: PurchaseRecord) => r.notes),
       render: (v: string | null) => v || '-' },
     {
       title: 'الإجراءات',
       key: 'actions',
+      width: 130,
       render: (_: any, record: PurchaseRecord) => (
-        <Space size="middle">
-          <Button type="dashed" icon={<EyeOutlined />} onClick={() => openRow(record)}>
-            عرض
-          </Button>
-          <Button type="link" icon={<PrinterOutlined />}
-            onClick={() => openPrint(record.kind === 'return' && record.parent_id
-              ? { ...record, id: record.parent_id } : record)}>
-            طباعة
-          </Button>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="عرض الفاتورة">
+            <Button type="text" icon={<EyeOutlined />} onClick={() => openRow(record)} />
+          </Tooltip>
+          <Tooltip title="طباعة">
+            <Button type="text" icon={<PrinterOutlined />}
+              onClick={() => {
+                if (record.kind === 'return') {
+                  if (record.parent_id) openPrint({ ...record, id: record.parent_id });
+                } else {
+                  openPrint(record);
+                }
+              }} />
+          </Tooltip>
+          {record.kind === 'purchase' && (
+            <Tooltip title="تعديل">
+              <Button type="text" icon={<EditOutlined />} onClick={async () => {
+                await openDetail(record);
+                setViewOnly(false);
+              }} />
+            </Tooltip>
+          )}
+          <Tooltip title="حذف">
+            <Button type="text" danger icon={<DeleteOutlined />} onClick={() => {
+              Modal.confirm({
+                title: record.kind === 'return' ? 'تأكيد حذف مردود الشراء' : 'تأكيد حذف فاتورة الشراء',
+                icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+                content: `هل أنت متأكد من حذف ${record.kind === 'return' ? 'مردود الشراء' : 'فاتورة الشراء'} رقم (${record.document_number})؟`,
+                okText: 'نعم، احذف',
+                okType: 'danger',
+                cancelText: 'إلغاء',
+                onOk: async () => {
+                  try {
+                    const endpoint = record.kind === 'return'
+                      ? `/api/v1/purchases/returns/${record.id}`
+                      : `/api/v1/purchases/${record.id}`;
+                    await api.delete(endpoint);
+                    message.success('تم الحذف بنجاح');
+                    fetchPurchases();
+                  } catch (err: any) {
+                    console.error(err);
+                  }
+                },
+              });
+            }} />
+          </Tooltip>
         </Space>
       ),
     },
@@ -1784,7 +1789,14 @@ export default function Purchases() {
         // فاتورة ومرتجع ممكن يكون ليهم نفس الـid — المفتاح لازم يشيل النوع كمان.
         rowKey={(r: PurchaseRecord) => `${r.kind}-${r.id}`}
         loading={listLoading}
-        scroll={{ x: 'max-content' }}
+        // نفس قاعدة باقي السجلات: كل عمود بمقاسه، والزيادة بتتمرّر — مش بتتوزّع على
+        // عمود واحد فتطلع فراغ في نص الجدول.
+        tableLayout="fixed"
+        // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
+        //
+        // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
+        // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
+        // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
         pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         locale={{ emptyText: 'لا يوجد عمليات شراء بعد' }}
         summary={(rows) => {
@@ -1921,7 +1933,7 @@ export default function Purchases() {
       >
         <Select
           style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
-          placeholder="اختار المخزن"
+          placeholder="اختر المخزن"
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
           options={lineWarehouses.map((w: any) => ({ value: w.id, label: w.name }))}

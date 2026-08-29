@@ -20,6 +20,7 @@ from src.core.db import get_db
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item
 from src.models.trade_order import OrderKind, OrderStatus, TradeOrder, TradeOrderLine
+from src.auth import branch_scope
 
 # Guarded by the read capability on purpose: an order posts nothing — no stock, no ledger, no
 # debt — so it carries none of the risk the write capabilities exist to gate. The real gate is on
@@ -195,10 +196,12 @@ def list_orders(
     status_filter: str | None = Query(None, alias="status"),
     customer_id: int | None = Query(None),
     supplier_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[OrderOut]:
-    stmt = select(TradeOrder).options(selectinload(TradeOrder.lines))
+    stmt = branch_scope.scope(
+        select(TradeOrder), TradeOrder, current
+    ).options(selectinload(TradeOrder.lines))
     try:
         if kind:
             stmt = stmt.where(TradeOrder.kind == OrderKind(kind))
@@ -217,12 +220,12 @@ def list_orders(
 @router.get("/{order_id}", response_model=OrderOut)
 def get_order(
     order_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> OrderOut:
     order = db.scalar(select(TradeOrder).options(selectinload(TradeOrder.lines))
                       .where(TradeOrder.id == order_id))
-    if order is None:
+    if order is None or not branch_scope.may_see(current, order):
         raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
     return _out(db, order)
 
@@ -231,7 +234,7 @@ def get_order(
 def mark_converted(
     order_id: int,
     body: ConvertIn,
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> OrderOut:
     """Record which invoice this order became — a one-way door.
@@ -243,7 +246,7 @@ def mark_converted(
     """
     order = db.scalar(select(TradeOrder).options(selectinload(TradeOrder.lines))
                       .where(TradeOrder.id == order_id))
-    if order is None:
+    if order is None or not branch_scope.may_see(current, order):
         raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
     if order.status == OrderStatus.converted:
         raise HTTPException(409, {"code": "already_converted",
@@ -262,13 +265,13 @@ def mark_converted(
 @router.post("/{order_id}/cancel", response_model=OrderOut)
 def cancel_order(
     order_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> OrderOut:
     """An order that was never invoiced can simply be cancelled — nothing was posted."""
     order = db.scalar(select(TradeOrder).options(selectinload(TradeOrder.lines))
                       .where(TradeOrder.id == order_id))
-    if order is None:
+    if order is None or not branch_scope.may_see(current, order):
         raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
     if order.status == OrderStatus.converted:
         raise HTTPException(409, {"code": "already_converted",

@@ -77,7 +77,7 @@ export default function DocumentAuditModal({
       title={title || 'سجل العمليات'}
     >
       {loading ? <Spin /> : rows.length === 0 ? (
-        <Empty description="مفيش عمليات متسجّلة على المستند ده" />
+        <Empty description="لا توجد عمليات مسجّلة على هذا المستند" />
       ) : (
         <Table
           size="small" rowKey="id" dataSource={rows}
@@ -94,7 +94,7 @@ export default function DocumentAuditModal({
               render: (id: number | null) => (id
                 ? (userNames?.[id] || `#${id}`)
                 : <span style={{ color: '#8c8c8c' }}>-</span>) },
-            { title: 'اللي اتغيّر', key: 'change',
+            { title: 'ما تغيّر', key: 'change',
               render: (_: any, r: any) => describe(r.before, r.after) },
           ]}
         />

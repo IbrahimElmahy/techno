@@ -20,7 +20,8 @@ interface Option {
 }
 
 export default function Settings() {
-  // «أدوات خاصة» in their menu is فحص سلامة البيانات here, a card down this page.
+  // `?section=` لسه بيشتغل لبقية أقسام الصفحة — «أدوات خاصة» اتشالت من القايمة و«الصلاحيات»
+  // بقت مكانها في شاشة مستقلة.
   useSectionParam();
   const [pages, setPages] = useState<PageGroup[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,7 +36,7 @@ export default function Settings() {
     try {
       await api.put('/api/v1/settings/stock', { costing_method: method });
       setCostingMethod(method);
-      message.success('اتحفظت طريقة التكلفة');
+      message.success('تم حفظ طريقة التكلفة');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ طريقة التكلفة');
     } finally {
@@ -117,7 +118,6 @@ export default function Settings() {
         </Space>
       </Card>
 
-      <div id="section-integrity"><IntegrityCard /></div>
 
       <BackupCard />
 
@@ -337,7 +337,7 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
           </Form.Item>
           <Form.Item name="value" label="القيمة (كود يُخزَّن)"
             rules={[{ required: true, message: 'أدخل القيمة' }]}
-            tooltip="الكود اللي بيتخزن في قاعدة البيانات — إنجليزي/بدون مسافات يُفضّل">
+            tooltip="الكود المخزَّن في قاعدة البيانات — يُفضَّل بالإنجليزية ودون مسافات">
             <Input placeholder="مثال: wholesale_vip" />
           </Form.Item>
         </Form>
@@ -411,7 +411,7 @@ function AccountRoutingCard() {
     try {
       const res = await api.put('/api/v1/account-routing', { role, account_id: accountId });
       setRows(res.data || []);
-      message.success(accountId ? 'اتحفظ التوجيه' : 'رجع للحساب الافتراضي');
+      message.success(accountId ? 'تم حفظ التوجيه' : 'رجع للحساب الافتراضي');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ التوجيه');
     } finally { setSaving(null); }
@@ -500,26 +500,6 @@ function DocumentPolicyCard() {
 }
 
 
-// ---------------------------------------------------------------------------
-// فحص سلامة البيانات
-// ---------------------------------------------------------------------------
-interface IntegrityFinding {
-  check: string;
-  subject: string;
-  expected: string;
-  found: string;
-  detail: string;
-}
-
-/**
- * Reports whether the stored data still agrees with itself. It does not repair anything.
- *
- * That is the deliberate part. Their equivalent screen recomputes and fixes balances, which it has
- * to because it caches them; ours are always summed from the movements, so there is nothing to
- * recompute. The two things that *are* stored beside the movements — expiry lots and serial numbers
- * — can drift, and if they have, the cause is a code path that wrote one side without the other.
- * Quietly correcting the numbers would hide that defect and guarantee it happens again unnoticed.
- */
 /**
  * دمج العملاء المكرّرين — الخطة الأول، والتنفيذ قرار تاني.
  *
@@ -564,7 +544,7 @@ function CustomerMergeCard() {
         setPlan(res.data);
         const n = res.data?.pairs?.length ?? 0;
         if (n) message.info(`${n} عميل متكرّر — راجع الخطة قبل التنفيذ`);
-        else message.success('مفيش عملاء مكرّرين — مافيش حاجة تتدمج');
+        else message.success('لا يوجد عملاء مكرّرون — لا شيء لدمجه');
         return;
       }
 
@@ -597,7 +577,7 @@ function CustomerMergeCard() {
       extra={<Button loading={busy} onClick={() => run(false)}>وريني الخطة</Button>}>
       <p style={{ color: '#888', marginTop: 0 }}>
         العميل اللي اتفتح مرتين — «فلان» و«تكنو فلان» — بيرجع عميل واحد بحسابين: أبيض وبولي،
-        وإجمالي. <b>مافيش حاجة بتتحذف ومافيش فلوس بتتحرك:</b> حساب الأستاذ بتاع المكرّر بيفضل
+        وإجمالي. <b>لا يُحذف شيء ولا تتحرك أي أموال:</b> حساب الأستاذ بتاع المكرّر بيفضل
         بكل حركاته وبيبقى حساب البولي. السيرفر بيجمع أرصدة العملاء قبل وبعد، ولو اختلفت بمليم
         بيرفض الدمج كله.
       </p>
@@ -610,7 +590,7 @@ function CustomerMergeCard() {
             {plan.skipped?.length ? <Tag color="orange">{plan.skipped.length} اتخطّى</Tag> : null}
             {/* الرقم اللي بيقول إن الدمج أمان. لو اتغيّر، السيرفر أصلاً رفض. */}
             <Tag color={balancesMatch ? 'green' : 'red'}>
-              الأرصدة: {plan.balance_before} {balancesMatch ? '— زي ما هي' : `← ${plan.balance_after}`}
+              الأرصدة: {plan.balance_before} {balancesMatch ? '— كما هي' : `← ${plan.balance_after}`}
             </Tag>
             {plan.applied && <Tag color="green">اتنفّذ</Tag>}
             {progress && <Tag color="processing">{progress}</Tag>}
@@ -626,11 +606,11 @@ function CustomerMergeCard() {
                 // both columns were blank: the plan showed how many would merge and never which
                 // account survives. That is the one thing it exists to show before an irreversible
                 // merge, so the id goes beside the name; two customers can share one.
-                { title: 'الحساب اللي هيفضل', key: 'keep',
+                { title: 'الحساب الذي سيبقى', key: 'keep',
                   render: (_: any, r: any) => (r.keep
                     ? <span>{r.keep.name} <span style={{ color: '#6b6b6b' }}>#{r.keep.id}</span></span>
                     : '-') },
-                { title: 'اللي هيندمج فيه', key: 'merge',
+                { title: 'الذي سيُدمج فيه', key: 'merge',
                   render: (_: any, r: any) => (r.merge
                     ? <span>{r.merge.name} <span style={{ color: '#6b6b6b' }}>#{r.merge.id}</span></span>
                     : '-') },
@@ -701,7 +681,7 @@ function BackupCard() {
         { headers: { 'Content-Type': 'multipart/form-data' } });
       const d = res.data;
       message.success(`اتستعادت ${d.restored_rows} سجل في ${d.restored_tables} جدول`
-        + (d.safety_snapshot ? ' — ونسخة أمان من اللي كان موجود اتحفظت على السيرفر' : ''));
+        + (d.safety_snapshot ? ' — وحُفظت نسخة احتياطية من البيانات السابقة على الخادم' : ''));
       setFile(null);
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذرت الاستعادة');
@@ -729,61 +709,6 @@ function BackupCard() {
           </span>
         </Space>
       </Space>
-    </Card>
-  );
-}
-
-function IntegrityCard() {
-  const [result, setResult] = useState<
-    { clean: boolean; checked: Record<string, number>; findings: IntegrityFinding[] } | null
-  >(null);
-  const [running, setRunning] = useState(false);
-
-  const run = async () => {
-    setRunning(true);
-    try {
-      const res = await api.get('/api/v1/admin/integrity');
-      setResult(res.data);
-      if (res.data?.clean) message.success('كل الأرصدة متطابقة');
-      else message.warning(`فيه ${res.data.findings.length} تعارض محتاج مراجعة`);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر تشغيل الفحص');
-    } finally { setRunning(false); }
-  };
-
-  return (
-    <Card title="فحص سلامة البيانات" size="small"
-      extra={<Button type="primary" loading={running} onClick={run}>شغّل الفحص</Button>}>
-      <p style={{ color: '#888', marginTop: 0 }}>
-        بيتأكد إن دفعات الصلاحية والأرقام التسلسلية متطابقة مع أرصدة الحركات، وإن مافيش رصيد
-        سالب، وإن كل قيد متوازن. <b>بيقرأ ويقول بس — ما بيصلّحش.</b> لو طلع تعارض، ده باج
-        في كود لازم يتتبّع؛ تصليح الأرقام كان هيخفيه.
-      </p>
-      {result && (
-        <>
-          <Space wrap style={{ marginBottom: 8 }}>
-            {result.clean
-              ? <Tag color="green">كل حاجة متطابقة</Tag>
-              : <Tag color="red">{result.findings.length} تعارض</Tag>}
-            {Object.entries(result.checked).map(([k, v]) => (
-              <Tag key={k}>{k}: {v}</Tag>
-            ))}
-          </Space>
-          {!result.clean && (
-            <Table<IntegrityFinding>
-              rowKey={(f) => `${f.check}-${f.subject}`}
-              size="small" pagination={false} dataSource={result.findings}
-              columns={[
-                { title: 'الفحص', dataIndex: 'check', width: 220 },
-                { title: 'المحل', dataIndex: 'subject', width: 220 },
-                { title: 'المتوقّع', dataIndex: 'expected', width: 110 },
-                { title: 'الموجود', dataIndex: 'found', width: 110 },
-                { title: 'التفصيل', dataIndex: 'detail' },
-              ]}
-            />
-          )}
-        </>
-      )}
     </Card>
   );
 }

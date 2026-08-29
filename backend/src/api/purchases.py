@@ -23,6 +23,7 @@ from src.models.supplier import Supplier
 from src.services import purchase_service
 from src.services.purchase_service import PurchaseError, PurchaseLine
 from src.services.stock_service import StockError
+from src.auth import branch_scope
 
 router = APIRouter(tags=["purchases"], prefix="/purchases")
 
@@ -174,11 +175,13 @@ class PurchaseReturnListOut(BaseModel):
 
 @router.get("", response_model=list[PurchaseListOut])
 def list_purchases(
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[PurchaseListOut]:
     names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
-    rows = db.scalars(select(PurchaseInvoice).order_by(PurchaseInvoice.id.desc())).all()
+    rows = db.scalars(branch_scope.scope(
+        select(PurchaseInvoice), PurchaseInvoice, current).order_by(
+            PurchaseInvoice.id.desc())).all()
 
     # الفرع مش على الفاتورة — هو على المخزن اللي البضاعة نزلت فيه، فبيتجاب منه.
     from src.models.org import Branch
@@ -222,7 +225,7 @@ def list_purchases(
 @router.get("/returns", response_model=list[PurchaseReturnListOut])
 def list_purchase_returns(
     supplier_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[PurchaseReturnListOut]:
     """Every purchase return, newest first — the register their «مردودات شراء» opens on.
@@ -233,7 +236,7 @@ def list_purchase_returns(
     """
     # المعكوس مابيظهرش: بضاعته رجعت وقيده اتعكس، فهو مستند في الدفتر ومش حركة في السجل.
     rows = db.scalars(
-        select(PurchaseReturn)
+        branch_scope.scope(select(PurchaseReturn), PurchaseReturn, current)
         .where(PurchaseReturn.reversed_at.is_(None))
         .order_by(PurchaseReturn.id.desc())
     ).all()
@@ -302,6 +305,8 @@ def get_purchase_return(
     r = db.get(PurchaseReturn, return_id)
     if r is None:
         raise HTTPException(404, {"code": "not_found", "message": "Purchase return not found"})
+    if not branch_scope.may_see(current, r):
+        raise HTTPException(404, {"code": "not_found", "message": "المردود مش موجود"})
     inv = db.get(PurchaseInvoice, r.purchase_invoice_id) if r.purchase_invoice_id else None
     # المردود المستقل شايل مورده بنفسه؛ المربوط بياخده من فاتورته.
     sup_id = r.supplier_id if r.supplier_id else (inv.supplier_id if inv else None)
@@ -343,6 +348,8 @@ def get_purchase(
     p = db.get(PurchaseInvoice, purchase_id)
     if p is None:
         raise HTTPException(404, {"code": "not_found", "message": "Purchase not found"})
+    if not branch_scope.may_see(current, p):
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة مش موجودة"})
     supplier = db.get(Supplier, p.supplier_id)
     returns = db.scalars(
         select(PurchaseReturn).where(PurchaseReturn.purchase_invoice_id == purchase_id)
@@ -385,6 +392,8 @@ def update_purchase(
     inv = db.get(PurchaseInvoice, purchase_id)
     if inv is None:
         raise HTTPException(404, {"code": "not_found", "message": "فاتورة الشراء غير موجودة"})
+    if not branch_scope.may_see(current, inv):
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة مش موجودة"})
     try:
         document_edit_service.assert_purchase_editable(db, inv)
         document_edit_service.purge_purchase(db, inv)
@@ -562,6 +571,8 @@ def update_purchase_return(
     ret = db.get(PurchaseReturn, return_id)
     if ret is None:
         raise HTTPException(404, {"code": "not_found", "message": "المردود غير موجود"})
+    if not branch_scope.may_see(current, ret):
+        raise HTTPException(404, {"code": "not_found", "message": "المردود مش موجود"})
     try:
         document_edit_service.purge_purchase_return(db, ret)
     except DocumentEditError as exc:

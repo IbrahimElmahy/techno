@@ -17,6 +17,7 @@ from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
 from src.models.sales import SalesInvoice
 from src.services import ledger_service
+from src.auth import branch_scope
 
 router = APIRouter(tags=["reports"], prefix="/reports")
 
@@ -176,20 +177,22 @@ def get_summary(
 @router.get("/export")
 def export_report(
     report_type: str = Query(..., description="Type of report: sales, purchases, treasury"),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
     output = io.StringIO()
     
     if report_type == "sales":
         output.write("رقم الفاتورة,كود العميل,الإجمالي قبل الخصم,الصافي بعد الخصم,المدفوع نقداً,المدفوع آجل\n")
-        invoices = db.scalars(select(SalesInvoice)).all()
+        invoices = db.scalars(
+            branch_scope.scope(select(SalesInvoice), SalesInvoice, current)).all()
         for inv in invoices:
             output.write(f"{inv.document_number},{inv.customer_id},{inv.gross},{inv.net},{inv.cash_amount},{inv.credit_amount}\n")
             
     elif report_type == "purchases":
         output.write("رقم الفاتورة,كود المورد,المدفوع نقداً,المدفوع آجل\n")
-        invoices = db.scalars(select(PurchaseInvoice)).all()
+        invoices = db.scalars(
+            branch_scope.scope(select(PurchaseInvoice), PurchaseInvoice, current)).all()
         for inv in invoices:
             output.write(f"{inv.document_number},{inv.supplier_id},{inv.cash_amount},{inv.credit_amount}\n")
             

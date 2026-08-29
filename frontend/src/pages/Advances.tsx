@@ -142,7 +142,7 @@ export default function Advances() {
 
   const saveAdvance = async () => {
     if (!advForm.employee_id || !advForm.amount) {
-      message.warning('اختار الموظف واكتب المبلغ'); return;
+      message.warning('اختر الموظف واكتب المبلغ'); return;
     }
     setSaving(true);
     try {
@@ -162,7 +162,7 @@ export default function Advances() {
   };
 
   const saveAdjustment = async () => {
-    if (!adjForm.employee_id) { message.warning('اختار الموظف'); return; }
+    if (!adjForm.employee_id) { message.warning('اختر الموظف'); return; }
     setSaving(true);
     try {
       await api.post('/api/v1/hr/adjustments', {
@@ -175,7 +175,7 @@ export default function Advances() {
         month: adjForm.period.month() + 1,
         reason: adjForm.reason || null,
       });
-      message.success('اتسجّل');
+      message.success('تم التسجيل');
       setAdjOpen(false);
       load();
     } catch (err: any) { fail(err, 'تعذر الحفظ'); } finally { setSaving(false); }
@@ -184,7 +184,7 @@ export default function Advances() {
   const cancel = async (what: 'advances' | 'adjustments', id: number) => {
     try {
       await api.post(`/api/v1/hr/${what}/${id}/cancel`);
-      message.success('اتلغى');
+      message.success('تم الإلغاء');
       load();
     } catch (err: any) { fail(err, 'تعذر الإلغاء'); }
   };
@@ -231,7 +231,7 @@ export default function Advances() {
     { title: 'الحالة', key: 'status', width: 130,
       render: (_: any, r) => (r.applied
         ? <Tag color="green">اتحسب في المسير</Tag>
-        : r.status === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="orange">مستني المسير</Tag>) },
+        : r.status === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="orange">بانتظار المسيّر</Tag>) },
     { title: '', key: 'actions', width: 90, render: (_: any, r) => (
       !r.applied && r.status !== 'cancelled' ? (
         <Popconfirm title="تلغيه؟" okText="إلغاء" cancelText="رجوع"
@@ -326,7 +326,7 @@ export default function Advances() {
                 columns={advCols.columns} dataSource={advances}
                 pagination={{ defaultPageSize: 25, showSizeChanger: true }}
                 scroll={{ x: 'max-content' }}
-                locale={{ emptyText: 'مافيش سلف' }}
+                locale={{ emptyText: 'لا توجد سلف' }}
                 // جدول الأقساط تحت السلفة — «هيتخصم مني كام الشهر الجاي» سؤال بيتسأل
                 // ساعة الاستلاف، والإجابة مكانها هنا مش في شاشة تانية.
                 expandable={{
@@ -360,7 +360,7 @@ export default function Advances() {
                 columns={adjCols.columns} dataSource={adjustments}
                 pagination={{ defaultPageSize: 25, showSizeChanger: true }}
                 scroll={{ x: 'max-content' }}
-                locale={{ emptyText: 'مافيش جزاءات ولا مكافآت' }}
+                locale={{ emptyText: 'لا توجد جزاءات ولا مكافآت' }}
               />
             ),
           },
@@ -373,7 +373,7 @@ export default function Advances() {
       >
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
-          message="السلفة أصل مش مصروف"
+          message="السلفة أصل لا مصروف"
           description="بتتقيد مدين «سلف العاملين» ودائن الخزنة، والمرتب بيسدّدها قسط بقسط."
         />
         <Row gutter={[10, 10]}>
@@ -433,7 +433,7 @@ export default function Advances() {
               allowClear={false} value={adjForm.period}
               onChange={(v) => setAdjForm({ ...adjForm, period: v || dayjs() })} />
             <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
-              الشهر اللي هينزل فيه — جزاء عن الشهر اللي فات بينزل في المسير المفتوح.
+              الشهر الذي سيُطبَّق فيه — وجزاء الشهر الماضي يُطبَّق في المسيّر المفتوح.
             </div>
           </Col>
           <Col span={12}>

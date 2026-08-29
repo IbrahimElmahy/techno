@@ -14,6 +14,7 @@ from src.core.db import get_db
 from src.models.contact import PhoneOwner
 from src.models.ledger import Account, AccountType, Direction
 from src.models.supplier import Supplier, SupplierAccount
+from src.auth import branch_scope
 from src.services import (
     audit_service,
     contact_service,
@@ -161,11 +162,12 @@ def list_suppliers(
     q: str | None = None,
     active: bool | None = None,
     balance_filter: str | None = None,  # all | due | settled | advance
-    _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> list[SupplierOut]:
     """List suppliers with search + filters, each carrying its payable balance."""
-    stmt = supplier_profile_service.apply_filters(select(Supplier), q=q, active=active)
+    stmt = supplier_profile_service.apply_filters(
+        branch_scope.scope(select(Supplier), Supplier, current), q=q, active=active)
     rows = list(db.scalars(stmt.order_by(Supplier.id.desc())).all())
     balances = supplier_profile_service.bulk_balances(db, [s.id for s in rows])
     rows = supplier_profile_service.filter_by_balance(rows, balances, balance_filter)

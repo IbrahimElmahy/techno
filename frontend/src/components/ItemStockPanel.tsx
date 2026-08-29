@@ -108,7 +108,7 @@ export default function ItemStockPanel({
 
           {held.length === 0 && (
             <div style={{ marginTop: 8, fontSize: 12, color: '#cf1322' }}>
-              الصنف ده مفيش منه رصيد في أي مخزن.
+              لا يوجد رصيد لهذا الصنف في أي مخزن.
             </div>
           )}
 
@@ -159,7 +159,7 @@ export default function ItemStockPanel({
     }
 
     return (
-      <Empty description="اختر فئة أو صنف عشان تشوف رصيده"
+      <Empty description="اختر فئة أو صنفاً لعرض رصيده"
         image={Empty.PRESENTED_IMAGE_SIMPLE} />
     );
   };

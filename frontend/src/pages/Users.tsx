@@ -468,7 +468,7 @@ export default function Users() {
           <Form.Item
             name="password"
             label="إعادة تعيين كلمة المرور (اختياري)"
-            extra="اتركه فارغًا للإبقاء على كلمة المرور الحالية"
+            extra="اتركه فارغاً للإبقاء على كلمة المرور الحالية"
           >
             <Input.Password prefix={<LockOutlined />} placeholder="كلمة مرور جديدة" />
           </Form.Item>

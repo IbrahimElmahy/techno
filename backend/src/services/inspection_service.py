@@ -23,6 +23,7 @@ from src.models.inspection import Inspection, InspectionItem, InspectionStatus, 
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.warehouse import Custody
 from src.services import audit_service, stock_service
+from src.auth.branch_scope import branch_for
 
 
 class InspectionError(Exception):
@@ -228,6 +229,8 @@ def create_inspection(
         purchase_shop=purchase_shop, purchase_shop_phone=purchase_shop_phone,
         visit_details=visit_details,
         total_points=_points(0), rep_user_id=rep_user_id,
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind="rep", location_id=rep_user_id),
     )
     db.add(insp)
     db.flush()

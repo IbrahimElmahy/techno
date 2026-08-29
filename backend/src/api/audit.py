@@ -1,7 +1,7 @@
 """Audit router (T059): GET /audit. FR-031."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -36,6 +36,12 @@ def list_audit(
     # it did not have. Without it a screen can ask for every transfer edit ever made and then throw
     # away all but one document's worth, which is a list nobody should be sending over the wire.
     entity_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    # السجل بيكبر ومابيتشالش. الطلب كان بيرجّع الجدول كله وبيقلبه على الشاشة، وده بيشتغل
+    # على قاعدة عندها ألف صف وبيقع على اللي عندها مليون. الأحدث الأول، وبعدد مطلوب.
+    limit: int = 500,
+    offset: int = 0,
     _: CurrentUser = Depends(require_capability(CAP_AUDIT_READ)),
     db: Session = Depends(get_db),
 ) -> list[AuditOut]:
@@ -48,6 +54,12 @@ def list_audit(
         stmt = stmt.where(AuditLogEntry.entity_type == entity_type)
     if entity_id is not None:
         stmt = stmt.where(AuditLogEntry.entity_id == entity_id)
+    if date_from is not None:
+        stmt = stmt.where(AuditLogEntry.created_at >= datetime.combine(date_from, time.min))
+    if date_to is not None:
+        stmt = stmt.where(AuditLogEntry.created_at <= datetime.combine(date_to, time.max))
+    stmt = stmt.order_by(AuditLogEntry.id.desc()).limit(
+        max(1, min(limit, 5000))).offset(max(0, offset))
     return [
         AuditOut(
             id=a.id, actor_user_id=a.actor_user_id, action=a.action,

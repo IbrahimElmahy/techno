@@ -177,7 +177,7 @@ export default function Departments() {
       const { created, linked } = res.data;
       message.success(created || linked
         ? `اتعمل ${created} قسم، واترّبط ${linked} موظف`
-        : 'مافيش أقسام جديدة — كل الموظفين مربوطين');
+        : 'لا توجد أقسام جديدة — كل الموظفين مرتبطون');
       load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر الترحيل');
@@ -204,7 +204,7 @@ export default function Departments() {
         {r.active && (
           <Popconfirm
             title="تقفل القسم؟"
-            description="بيتقفل مش بيتمسح — الاسم بيفضل مقروء على اللي مربوط بيه."
+            description="يُغلق ولا يُحذف — ويبقى الاسم مقروءاً على ما ارتبط به."
             okText="اقفل" cancelText="رجوع"
             onConfirm={() => deactivate(r)}
           >
@@ -238,9 +238,9 @@ export default function Departments() {
       {unmapped ? (
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
-          message="لسه مافيش أقسام"
+          message="لا توجد أقسام بعد"
           description={'«القسم» كان مكتوب بالإيد على كارت الموظف. اضغط «ترحيل الأقسام القديمة» '
-            + 'وهو هيعمل قسم لكل اسم متكتب ويربط الموظفين بيه — وآمن تضغطه أكتر من مرة.'}
+            + 'وسيُنشئ قسماً لكل اسم مكتوب ويربط الموظفين به — ويمكن الضغط عليه أكثر من مرة بأمان.'}
         />
       ) : null}
 
@@ -267,7 +267,7 @@ export default function Departments() {
         pagination={false}
         expandable={{ defaultExpandAllRows: true }}
         scroll={{ x: 'max-content' }}
-        locale={{ emptyText: 'مافيش أقسام' }}
+        locale={{ emptyText: 'لا توجد أقسام' }}
       />
 
       <TabModal

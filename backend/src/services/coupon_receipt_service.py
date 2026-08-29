@@ -27,6 +27,7 @@ from src.services import numbering
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon
 from src.services import audit_service
+from src.auth.branch_scope import branch_for
 
 
 class CouponReceiptError(Exception):
@@ -211,6 +212,9 @@ def create_receipt(
         declared_kind=declared_kind, declared_value=declared_value,
         customer_type=customer_type,
         client_uuid=client_uuid, actor_user_id=actor_user_id,
+        # العهدة بتقول فرع المندوب اللي استلم؛ ومن غير مندوب بيرجع لفرع اللي سجّل.
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind="rep", location_id=rep_user_id),
     )
     db.add(receipt)
     db.flush()

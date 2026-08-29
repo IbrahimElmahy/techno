@@ -342,7 +342,7 @@ export default function ItemCard() {
           {(movementType || range) && (
             <Alert
               type="info" showIcon style={{ marginBottom: 12 }}
-              message="الفلاتر بتخفي سطور، بس ما بتغيّرش الأرصدة."
+              message="الفلاتر تخفي سطوراً ولا تغيّر الأرصدة."
               description="الرصيد قبل/بعد محسوب على كل حركات الصنف، فالرصيد الحالي هو الرصيد الحقيقي مهما كان المعروض."
             />
           )}

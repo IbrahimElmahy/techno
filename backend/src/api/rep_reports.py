@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, RoleName
 from src.core.db import get_db
@@ -188,7 +189,8 @@ def rep_items(
     customer_rep = {c.id: c.rep_id for c in db.scalars(select(Customer)).all()}
 
     invoices = db.scalars(
-        select(SalesInvoice).options(selectinload(SalesInvoice.lines))
+        branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
+        .options(selectinload(SalesInvoice.lines))
     ).all()
 
     totals: dict[tuple[int, int], tuple[Decimal, Decimal]] = {}

@@ -110,7 +110,7 @@ export default function Warehouses() {
     if (!repsFor) return;
     try {
       await api.put(`/api/v1/warehouses/${repsFor.id}/reps`, { employee_ids: repsDraft });
-      message.success('اتحفظ مناديب المخزن');
+      message.success('تم حفظ مندوبي المخزن');
       setRepsFor(null);
       await fetchAll();
     } catch (err) {
@@ -196,7 +196,7 @@ export default function Warehouses() {
         // rather than guessed — but it sits after their three fields, not among them.
         warehouse_type: values.warehouse_type,
       });
-      message.success('اتسجّل المخزن');
+      message.success('تم تسجيل المخزن');
       setCreateOpen(false);
       form.resetFields();
       fetchAll();
@@ -327,7 +327,7 @@ export default function Warehouses() {
   const expandedRow = (record: WarehouseRecord) => {
     const mine = repsOf(record.id);
     if (!mine.length) {
-      return <span style={{ color: '#888' }}>مفيش مناديب على المخزن ده.</span>;
+      return <span style={{ color: '#888' }}>لا يوجد مندوبون على هذا المخزن.</span>;
     }
     return (
       <Space size={8} wrap style={{ paddingInlineStart: 8 }}>
@@ -494,14 +494,14 @@ export default function Warehouses() {
         cancelText="تراجع"
       >
         {!customersFor?.user_id ? (
-          <p>الموظف ده مالوش مستخدم، فمش ممكن يتسند له عملاء. اربطه بمستخدم من شاشة الموظفين الأول.</p>
+          <p>لا يوجد مستخدم لهذا الموظف، فلا يمكن إسناد عملاء إليه. اربطه بمستخدم من شاشة الموظفين أولاً.</p>
         ) : (
           <>
             <div style={{ marginBottom: 12 }}>
               <strong>عملاؤه حالياً ({repCustomers.length})</strong>
               <div style={{ maxHeight: 160, overflowY: 'auto', marginTop: 8 }}>
                 {repCustomers.length === 0
-                  ? <span style={{ color: '#888' }}>لسه مفيش عملاء مسندين له.</span>
+                  ? <span style={{ color: '#888' }}>لم يُسند إليه عملاء بعد.</span>
                   : (
                     <Space size={4} wrap>
                       {repCustomers.map((c) => (

@@ -92,7 +92,7 @@ export default function Branches() {
         governorate_id: values.governorate_id,
         is_head_office: !!values.is_head_office,
       });
-      message.success('اتسجّل الفرع');
+      message.success('تم تسجيل الفرع');
       setCreateOpen(false);
       form.resetFields();
       fetchAll();

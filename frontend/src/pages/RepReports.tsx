@@ -219,7 +219,7 @@ export default function RepReports() {
                   {...collectionKb.tableProps}
                   rowKey="rep_user_id" size="middle" loading={loading}
                   dataSource={collectionFilter.filtered}
-                  locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
+                  locale={{ emptyText: 'لا توجد تحصيلات في هذه الفترة' }}
                   pagination={false}
                   columns={repCollectionsCols.columns}
                 />
@@ -245,7 +245,7 @@ export default function RepReports() {
                   {...customerKb.tableProps}
                   rowKey={(r) => `${r.rep_user_id}-${r.customer_id ?? 0}`}
                   size="middle" loading={loading} dataSource={customerFilter.filtered}
-                  locale={{ emptyText: 'مفيش تحصيلات في الفترة دي' }}
+                  locale={{ emptyText: 'لا توجد تحصيلات في هذه الفترة' }}
                   pagination={{ defaultPageSize: 20, showSizeChanger: true,
                     showTotal: (t) => `الإجمالي: ${t}` }}
                   columns={repCustomersCols.columns}
@@ -272,7 +272,7 @@ export default function RepReports() {
                   {...itemKb.tableProps}
                   rowKey={(r) => `${r.rep_user_id}-${r.item_id}`}
                   size="middle" loading={loading} dataSource={itemFilter.filtered}
-                  locale={{ emptyText: 'مفيش مبيعات في الفترة دي' }}
+                  locale={{ emptyText: 'لا توجد مبيعات في هذه الفترة' }}
                   pagination={{ defaultPageSize: 20, showSizeChanger: true,
                     showTotal: (t) => `الإجمالي: ${t}` }}
                   columns={repItemsCols.columns}

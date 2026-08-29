@@ -126,7 +126,7 @@ export default function Categories() {
         await api.patch(`/api/v1/settings/lookups/${editing.id}`, {
           label: values.label, description: values.description || null,
         });
-        message.success('اتحفظت الفئة');
+        message.success('تم حفظ الفئة');
       } else {
         await api.post('/api/v1/settings/lookups', {
           category: 'item_category',

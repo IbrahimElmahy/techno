@@ -340,7 +340,19 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/users', label: 'المستخدمين', roles: OFFICE, a5: '/userscontroller' },
       { key: '/stock-permits?kind=opening', label: 'أول المدة', roles: OFFICE, a5: '/beginning' },
       { key: '/settings', label: 'اعدادات القاعدة', roles: OFFICE, a5: '/database/settings' },
-      { key: '/settings?section=integrity', label: 'أدوات خاصة', roles: ADMIN, a5: '/database/systemtools' },
+      // «الصلاحيات» مكان «أدوات خاصة».
+      //
+      // اللي كان هنا فحص سلامة بيانات — شاشة تشخيص بتتفتح مرة في السنة. ومين بيقدر يعمل
+      // إيه سؤال بيتسأل كل ما حد جديد يدخل الشركة، وماكانش ليه شاشة أصلاً: الصلاحيات
+      // كانت مكتوبة في الكود، وتغييرها كان يعني نسخة جديدة من البرنامج.
+      { key: '/permissions', label: 'الصلاحيات', roles: ADMIN },
+      // الشاشة الوحيدة اللي بتكسر عزل الفروع عن قصد — الفروع كصفوف جنب بعض، مش مجموعهم
+      // في رقم واحد. مدير الفرع بيشوف فرعه من كل شاشة تانية، ومدير الشركة كان مالوش مكان
+      // يقارن فيه.
+      { key: '/branch-overview', label: 'نظرة على الفروع', roles: ADMIN },
+      // بيتابع النظام كله — مين عمل إيه وإمتى، ناجح كان أو مرفوض. مكانه جنب المستخدمين
+      // والصلاحيات، مش جوّه قسم شغل زي خدمات ما بعد البيع.
+      { key: '/audit', label: 'سجل العمليات', roles: OFFICE },
     ],
   },
 ];
@@ -391,7 +403,6 @@ export const EXTRA_SECTIONS: NavGroup[] = [
           { key: '/ops-reports?view=inspections-by-month', label: 'المعاينات شهر بشهر', roles: R([...SALES, 'after_sales_staff']) },
         ],
       },
-      { key: '/audit', label: 'سجل العمليات', roles: OFFICE },
     ],
   },
 ];

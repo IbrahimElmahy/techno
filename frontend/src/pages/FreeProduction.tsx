@@ -149,7 +149,7 @@ export default function FreeProduction() {
   };
 
   const submit = async () => {
-    if (!productId) { message.warning('اختر المنتج اللي طلع'); return; }
+    if (!productId) { message.warning('اختر المنتج الناتج'); return; }
     if (!quantity || quantity <= 0) { message.warning('اكتب الكمية المنتجة'); return; }
     if (!warehouseId) { message.warning('اختر المخزن'); return; }
     const components = lines
@@ -158,7 +158,7 @@ export default function FreeProduction() {
     if (!components.length) { message.warning('اكتب خامة واحدة على الأقل بكميتها'); return; }
     const ids = components.map((c) => c.item_id);
     if (new Set(ids).size !== ids.length) {
-      message.warning('الصنف الواحد مايتكتبش في أكتر من سطر — اجمع كميته في سطر واحد');
+      message.warning('لا يُكتب الصنف الواحد في أكثر من سطر — اجمع كميته في سطر واحد');
       return;
     }
 
@@ -173,7 +173,7 @@ export default function FreeProduction() {
         work_order_ref: workOrderRef || null,
         notes: notes || null,
       });
-      message.success('اتسجّل الإنتاج الحر');
+      message.success('تم تسجيل الإنتاج الحر');
       reset();
       load();
     } catch (err: any) {
@@ -265,12 +265,12 @@ export default function FreeProduction() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message="إنتاج من غير وصفة"
-          description="اكتب الخامات اللي اتصرفت فعلاً والمنتج اللي طلع. الكميات بتتاخد زي ما هي — مفيش نسب بتضربها، عشان الرقم اللي اتقاس ما يتغيّرش."
+          description="اكتب الخامات المنصرفة فعلاً والمنتج الناتج. تُؤخذ الكميات كما هي دون أي نسب تضربها، حتى لا يتغيّر الرقم المقيس."
         />
 
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8}>
-            <Form.Item label="المنتج اللي طلع" required style={{ marginBottom: 0 }}>
+            <Form.Item label="المنتج الناتج" required style={{ marginBottom: 0 }}>
               <Select
                 showSearch optionFilterProp="label" placeholder="اختر المنتج"
                 value={productId} onChange={setProductId}

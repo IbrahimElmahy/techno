@@ -100,7 +100,7 @@ export default function SubAccounts() {
         nature: parent?.nature ?? v.nature,
         is_postable: true,
       });
-      message.success('اتسجّل الحساب الفرعي');
+      message.success('تم تسجيل الحساب الفرعي');
       setCreateOpen(false);
       form.resetFields();
       load();
@@ -205,7 +205,7 @@ export default function SubAccounts() {
           </Tooltip>
           <Popconfirm
             title="تقفل الحساب؟"
-            description="بيتقفل مش بيتمسح — اسمه بيفضل مقروء على القيود اللي اتكتبت عليه."
+            description="يُغلق ولا يُحذف — ويبقى اسمه مقروءاً على القيود المسجّلة عليه."
             okText="اقفل" cancelText="رجوع" okButtonProps={{ danger: true }}
             onConfirm={() => removeAccount(record)}
           >
@@ -296,7 +296,7 @@ export default function SubAccounts() {
         </Row>
 
         {loading && <Skeleton active paragraph={{ rows: 4 }} />}
-        {!loading && !sections.length && <Empty description="مفيش حسابات مطابقة" />}
+        {!loading && !sections.length && <Empty description="لا توجد حسابات مطابقة" />}
 
         <Collapse
           accordion={false}

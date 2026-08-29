@@ -152,7 +152,7 @@ export default function CouponReceipts() {
       } : e)));
       if (d.status === 'valid' && !customerId && d.customer_id) setCustomerId(d.customer_id);
       if (d.status === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
-      if (d.status === 'received') message.warning(`الكوبون ${serial} اتستلم قبل كده`);
+      if (d.status === 'received') message.warning(`الكوبون ${serial} مُستلَم من قبل`);
       if (customerId && d.status === 'valid' && d.customer_id && d.customer_id !== customerId) {
         message.warning(`الكوبون ${serial} متصرّف لعميل تاني`);
       }
@@ -183,7 +183,7 @@ export default function CouponReceipts() {
   const totalValue = (value ?? 0) * counted.length;
 
   const save = async () => {
-    if (!entries.length) { message.warning('مافيش كوبونات'); return; }
+    if (!entries.length) { message.warning('لا توجد كوبونات'); return; }
     if (rejects.length) { message.warning('شيل الكوبونات المرفوضة الأول'); return; }
     if (mismatched.length) { message.warning('فيه كوبونات لعميل تاني'); return; }
     setSaving(true);
@@ -198,7 +198,7 @@ export default function CouponReceipts() {
         declared_value: value,
         customer_type: customerType,
       });
-      message.success('اتسجّل الاستلام واترفع للسيرفر');
+      message.success('تم تسجيل الاستلام ورفعه إلى الخادم');
       setEntries([]); setNotes(''); setCustomerId(undefined);
       setValue(null); setKind(kindOptions[0]?.value ?? 'عادي'); setCustomerType('plumber');
       setReceivedDate(dayjs());
@@ -221,7 +221,7 @@ export default function CouponReceipts() {
       case 'unknown':
         return <Tag color="red">مش متصرّف من النظام</Tag>;
       case 'received':
-        return <Tag color="orange">اتستلم قبل كده</Tag>;
+        return <Tag color="orange">مُستلَم من قبل</Tag>;
       case 'checking':
         return <Tag>بيتراجع…</Tag>;
       default:
@@ -331,7 +331,7 @@ export default function CouponReceipts() {
 
       <Table<Entry>
         rowKey="serial" size="small" dataSource={entries} pagination={false}
-        locale={{ emptyText: 'مافيش كوبونات مضافة' }}
+        locale={{ emptyText: 'لا توجد كوبونات مضافة' }}
         scroll={{ y: 320 }} style={{ marginTop: 12 }}
         columns={[
           {

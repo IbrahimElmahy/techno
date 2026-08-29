@@ -244,7 +244,7 @@ export default function SupplierProfile() {
     { label: 'آخر ٧ أيام', get: () => [dayjs().subtract(6, 'day'), dayjs()] },
     { label: 'الشهر ده', get: () => [dayjs().startOf('month'), dayjs()] },
     {
-      label: 'الشهر اللي فات',
+      label: 'الشهر الماضي',
       get: () => [
         dayjs().subtract(1, 'month').startOf('month'),
         dayjs().subtract(1, 'month').endOf('month'),
@@ -364,7 +364,7 @@ export default function SupplierProfile() {
             <DocumentLink kind={l.doc_kind} id={l.doc_id}
               label={l.doc_number ? `المستند ${l.doc_number}` : 'فتح المستند'} allowEdit />
           ) : (
-            <span style={{ color: '#8c8c8c' }}>قيد يدوي — مافيش مستند وراه</span>
+            <span style={{ color: '#8c8c8c' }}>قيد يدوي — لا يوجد مستند خلفه</span>
           )}
         </span>
       </div>
@@ -411,7 +411,7 @@ export default function SupplierProfile() {
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      message.success('اتنسخ رابط ملف المورد');
+      message.success('تم نسخ رابط ملف المورد');
     } catch {
       message.error('تعذر نسخ الرابط');
     }
@@ -776,7 +776,7 @@ export default function SupplierProfile() {
                                 hideZero && 'بدون الحركات الصفرية',
                               ].filter(Boolean).join(' · ')}
                               description={`${shownLines.length} حركة من إجمالي ${statementLines.length}. `
-                                + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو اللي بيمشي مع السطور المعروضة.'}
+                                + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو الذي يسير مع السطور المعروضة.'}
                             />
                           )}
 

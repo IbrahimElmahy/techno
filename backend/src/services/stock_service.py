@@ -46,6 +46,23 @@ def _lock_locator(db: Session, item_id: int, location_kind: LocationKind, locati
         )
 
 
+
+def _branch_of(db: Session, location_kind, location_id: int) -> int | None:
+    """فرع المكان: المخزن بيقول فرعه، والعهدة بتقول فرع المندوب."""
+    kind = getattr(location_kind, "value", location_kind)
+    if kind == "warehouse":
+        from src.models.warehouse import Warehouse
+
+        wh = db.get(Warehouse, location_id)
+        return wh.branch_id if wh else None
+    if kind == "rep":
+        from src.models.user import User
+
+        rep = db.get(User, location_id)
+        return rep.branch_id if rep else None
+    return None
+
+
 def on_hand(db: Session, item_id: int, location_kind: LocationKind, location_id: int) -> Decimal:
     """Derived on-hand = Σ(in − out) for the (item × location)."""
     total = ZERO_QTY
@@ -147,6 +164,12 @@ def post_movement(
         source_doc_id=source_doc_id,
         reverses_movement_id=reverses_movement_id,
         actor_user_id=actor_user_id,
+        # (037) فرع الحركة بيتاخد من مكانها، مش من اللي سجّلها.
+        #
+        # البضاعة بتتحرك في مكان، والمكان بيتبع فرع. كل مستند بيحرّك مخزون بيعدّي من هنا،
+        # فسطر واحد بيغطّي البيع والشرا والمرتجعات والتحويلات والأذون والتصنيع — بدل ما كل
+        # خدمة تفتكر تحطه لوحدها، واللي تنساه يفضل بره العزل في صمت.
+        branch_id=_branch_of(db, location_kind, location_id),
     )
     db.add(mv)
     db.flush()

@@ -30,8 +30,26 @@ class CustomerRef {
   final String? address;
   /// فئة سعر العميل — هي اللي بتقرّر بكام الصنف يتباع له، فبتنزل معاه في حزمة البيع.
   final String? priceTier;
-  const CustomerRef(
-      {required this.id, required this.name, this.phone, this.address, this.priceTier});
+
+  /// تصنيف العميل («تاجر»، «الملّاك»، …). قائمة حرة في النظام، فبينزل نص زي ما هو.
+  final String? customerType;
+
+  /// خطوط المنتجات اللي للعميل حساب عليها — «أبيض»، «بولي».
+  ///
+  /// العميل الواحد ممكن يبقى مديون على الخطين بحسابين منفصلين، والفاتورة لازم تقول على
+  /// أنهي واحد فيهم. من غير القايمة دي التطبيق مش هيعرف يسأل، والفاتورة بتنزل على
+  /// المديونية الغلط — وده اللي بيخلّي كشف حساب العميل يطلع مالوش معنى.
+  final List<String> families;
+
+  const CustomerRef({
+    required this.id,
+    required this.name,
+    this.phone,
+    this.address,
+    this.priceTier,
+    this.customerType,
+    this.families = const [],
+  });
 }
 
 class LookupOption {

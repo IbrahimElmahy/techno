@@ -81,7 +81,7 @@ export default function DocumentItemLines({ kind, id, itemName, warehouseName, m
   }
   if (lines === null) return <Spin size="small" />;
   if (!lines.length) {
-    return <span style={{ color: '#8c8c8c' }}>المستند ده مالوش سطور أصناف</span>;
+    return <span style={{ color: '#8c8c8c' }}>لا توجد لهذا المستند سطور أصناف</span>;
   }
 
   const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });

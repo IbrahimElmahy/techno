@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { allScreens } from './navigation';
 
@@ -56,6 +56,8 @@ const BASE_TITLES: Record<string, string> = {
   '/ops-reports': 'تقارير التشغيل',
   '/profitability': 'تحليل الربحية',
   '/settings': 'إعدادات القوائم',
+  '/permissions': 'الصلاحيات',
+  '/branch-overview': 'نظرة على الفروع',
 };
 
 /**
@@ -166,8 +168,20 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [navigate]);
 
+  // القيمة متمسّكة، مش كائن جديد كل رندر.
+  //
+  // الـProvider ده بيقرا `useLocation`، يعني بيتعمله رندر مع **أي** حركة في العنوان. وكل
+  // رندر كان بيطلّع `{...}` جديد، والسياق بيقارن بالهوية — فكل حاجة بتستعمل `useTabs()`
+  // كانت بتتعمل رندر تاني، وفي مقدمتهم `TabWorkspace` اللي بيرندر **كل تبويب مفتوح**.
+  // فتح فاتورة وانت فاتح ٥ تبويبات كان بيرندر الخمسة من الأول. الدوال كلها `useCallback`
+  // أصلاً، فالحاجة الوحيدة اللي كانت بتتغير هي غلاف الكائن.
+  const value = useMemo(
+    () => ({ tabs, activeId, openTab, activateTab, closeTab }),
+    [tabs, activeId, openTab, activateTab, closeTab],
+  );
+
   return (
-    <TabsContext.Provider value={{ tabs, activeId, openTab, activateTab, closeTab }}>
+    <TabsContext.Provider value={value}>
       {children}
     </TabsContext.Provider>
   );

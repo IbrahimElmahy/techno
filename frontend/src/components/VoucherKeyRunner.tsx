@@ -507,7 +507,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
           </Descriptions>
           <Alert
             type="warning" showIcon style={{ marginTop: 12 }}
-            message="السند بيترحّل على طول زي أي سند اتكتب بالإيد — لو غلط بيتعكس من صفحة السندات."
+            message="يُرحَّل السند فوراً كأي سند يُكتب يدوياً — وإن كان خطأ فيُعكس من صفحة السندات."
           />
         </>
       )}

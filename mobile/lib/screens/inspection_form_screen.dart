@@ -26,6 +26,17 @@ class InspectionFormScreen extends StatefulWidget {
 /// إشارة «احذف» الراجعة من بوباب التعديل — مش كمية، فمش هتتلخبط مع رقم.
 const Object _kDelete = Object();
 
+
+/// تصنيف العميل اللي خانة المالك بتقترح منه.
+///
+/// **المفتاح مش الاسم.** كارت العميل بيخزّن `owner` مش «الملّاك» — القايمة في الإعدادات
+/// بتربط المفتاح باسم عربي، والاسم ده بيتغيّر من غير ما البيانات تتغيّر. المطابقة على
+/// المفتاح هي اللي بتصمد لما حد يعيد تسمية التصنيف.
+///
+/// ولو التصنيف اتشال من القايمة خالص، الخانة بترجع تقترح من غير فلتر — بتفقد التضييق،
+/// مش بتقع.
+const String kOwnerCustomerType = 'owner';
+
 class _InspectionFormScreenState extends State<InspectionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _ownerName = TextEditingController();
@@ -266,7 +277,11 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
               _nameSearch(
                 label: 'اسم صاحب الشقة *',
                 controller: _ownerName,
-                helper: 'اكتب الاسم — لو عميل موجود هيظهر لتختاره وتتملأ بياناته',
+                // الاقتراح من تصنيف «الملّاك» بس — دول ناس بيتعمل لهم معاينة، مش تجار
+                // ولا موردين. من غير الفلتر ده الخانة بتقلّب في العملاء كلهم فبتقترح
+                // تاجر اسمه قريب من اسم المالك، والمعاينة بتترّبط بالكارت الغلط.
+                customerType: kOwnerCustomerType,
+                helper: 'اكتب الاسم — لو مالك مسجّل هيظهر لتختاره وتتملأ بياناته',
                 onPick: (c) {
                   _selectedCustomerId = c.id;
                   if ((c.phone ?? '').isNotEmpty) _ownerPhone.text = c.phone!;
@@ -616,13 +631,15 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     String? helper,
     IconData leading = Icons.person_outline,
     String? Function(String?)? validator,
+    /// لما يتحدد، الاقتراح بيتقلّب في التصنيف ده بس — «الملّاك» لخانة المالك.
+    String? customerType,
   }) {
     return Autocomplete<CustomerRef>(
       displayStringForOption: (c) => c.name,
       optionsBuilder: (value) async {
         final q = value.text.trim();
         if (q.length < 2) return const Iterable<CustomerRef>.empty();
-        return LocalDb.instance.customers(query: q, limit: 8);
+        return LocalDb.instance.customers(query: q, limit: 8, customerType: customerType);
       },
       onSelected: (c) {
         controller.text = c.name;

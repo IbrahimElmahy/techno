@@ -253,7 +253,7 @@ export default function MovementHistoryLog({
 
         {loading ? <Spin /> : items.length
           ? <Collapse accordion items={items} />
-          : <Empty description="مفيش حركات في الفترة دي" />}
+          : <Empty description="لا توجد حركات في هذه الفترة" />}
       </Card>
     </div>
   );

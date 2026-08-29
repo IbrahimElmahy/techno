@@ -40,6 +40,13 @@ class StockMovement(Base):
     """Immutable quantity change for an (item × location). On-hand = Σ(in − out)."""
 
     __tablename__ = "stock_movement"
+
+    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
+    #
+    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
+    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
+                                                  index=True)
     __table_args__ = (CheckConstraint("quantity > 0", name="ck_stock_movement_qty_positive"),)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)

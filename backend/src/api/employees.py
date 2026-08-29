@@ -20,6 +20,7 @@ from src.core.db import get_db
 from src.models.employee import Employee, JobTitle
 from src.models.hr_org import Department
 from src.services import numbering
+from src.auth import branch_scope
 
 router = APIRouter(tags=["employees"], prefix="")
 
@@ -170,10 +171,10 @@ def list_employees(
     active: bool | None = Query(None),
     branch_id: int | None = Query(None),
     job_title_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_USER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_USER_READ)),
     db: Session = Depends(get_db),
 ) -> list[EmployeeOut]:
-    stmt = select(Employee)
+    stmt = branch_scope.scope(select(Employee), Employee, current)
     if active is not None:
         stmt = stmt.where(Employee.active.is_(active))
     if branch_id:

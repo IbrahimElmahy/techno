@@ -152,7 +152,7 @@ export default function StockCounts() {
         })),
       });
       setSheet(res.data);
-      message.success('اتحفظ العدّ');
+      message.success('تم حفظ العدّ');
       load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ العدّ');
@@ -175,7 +175,7 @@ export default function StockCounts() {
   const cancelSheet = async (id: number) => {
     try {
       await api.post(`/api/v1/stock-counts/${id}/cancel`);
-      message.success('اتلغى الكشف');
+      message.success('تم إلغاء الكشف');
       setDetailVisible(false);
       load();
     } catch (err: any) {
@@ -326,7 +326,7 @@ export default function StockCounts() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message="الجرد بيسوّي الفرق لحد ما الرصيد يساوي المعدود"
-          description="الكشف بيفتح بأرصدة الدفاتر وقتها. لو حصلت بيعة أو صرف أثناء العدّ، التسوية بتتحسب على الرصيد الحالي مش على الفرق القديم — فالحركة دي ماتتحسبش مرتين."
+          description="يفتح الكشف بأرصدة الدفاتر حينها. وإن حدث بيع أو صرف أثناء العدّ، تُحتسب التسوية على الرصيد الحالي لا على الفرق القديم — فلا تُحتسب تلك الحركة مرتين."
         />
 
         <ListToolbar
@@ -345,7 +345,7 @@ export default function StockCounts() {
               { value: 'cycle', label: 'دوري' },
               { value: 'spot', label: 'عينة' }] },
             { key: 'progress', placeholder: 'حالة العد', span: 5, options: [
-              { value: 'incomplete', label: 'لسه ماخلصش عد' },
+              { value: 'incomplete', label: 'لم ينتهِ العدّ بعد' },
               { value: 'complete', label: 'العد خلص' }] },
           ]}
         />
@@ -354,7 +354,7 @@ export default function StockCounts() {
           dataSource={filter.filtered} rowKey="id" loading={loading} size="middle"
           tableLayout="fixed"
           onRow={(r) => ({ onClick: () => openDetail(r), style: { cursor: 'pointer' } })}
-          locale={{ emptyText: 'مفيش كشوف جرد' }}
+          locale={{ emptyText: 'لا توجد كشوف جرد' }}
           pagination={{ defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}` }}
           columns={tableCols.columns}
@@ -380,9 +380,9 @@ export default function StockCounts() {
               ]}
             />
             <div style={{ color: '#6b6b6b', fontSize: 12, marginTop: 6 }}>
-              {kind === 'full' && 'كل صنف ليه رصيد في المخزن — الجردة اللي بتتقفل عندها الأرفف.'}
+              {kind === 'full' && 'كل صنف له رصيد في المخزن — الجردة التي تُغلق عندها الأرفف.'}
               {kind === 'cycle' && 'دفعة بالتناوب، الأقدم عدّاً الأول — بتغطي المخزن مع الوقت من غير ما الشغل يقف.'}
-              {kind === 'spot' && 'الأصناف اللي تحددها بس — حتى لو الدفاتر بتقول إنها خلصت.'}
+              {kind === 'spot' && 'الأصناف التي تحددها فقط — حتى لو كانت الدفاتر تقول إنها نفدت.'}
             </div>
           </Form.Item>
 
@@ -396,7 +396,7 @@ export default function StockCounts() {
           )}
           {kind === 'spot' && (
             <Form.Item label="الأصناف" required
-              extra="جرد العينة لازم تحدد فيه الأصناف — «عينة» من غير أصناف مش جردة.">
+              extra="جرد العينة يلزمه تحديد الأصناف — و«عينة» بلا أصناف ليست جرداً.">
               <Select mode="multiple" allowClear showSearch optionFilterProp="label"
                 style={{ width: '100%' }} placeholder="اختر الأصناف"
                 value={spotItems} onChange={setSpotItems}
@@ -444,7 +444,7 @@ export default function StockCounts() {
             <Button data-shortcut="F9" onClick={saveCounts} loading={busy}>حفظ العدّ</Button>
             <Popconfirm
               title="ترحيل الجرد؟"
-              description="الفروق هتتسوّى في المخزن. السطور اللي مفيهاش رقم مش هتتغيّر."
+              description="ستُسوّى الفروق في المخزن. والسطور التي بلا رقم لن تتغيّر."
               okText="ترحيل" cancelText="رجوع" onConfirm={postSheet}>
               <Button type="primary" icon={<CheckOutlined />} loading={busy}>ترحيل الجرد</Button>
             </Popconfirm>
@@ -592,7 +592,7 @@ export default function StockCounts() {
                     [{ text: 'مطابق', value: 'match' },
                      { text: 'عجز', value: 'short' },
                      { text: 'زيادة', value: 'over' },
-                     { text: 'لسه ماتعدش', value: 'none' }],
+                     { text: 'لم يُعدّ بعد', value: 'none' }],
                     (ln, v) => {
                       const d = isDraft ? diffOf(ln)
                         : (ln.difference === null ? null : Number(ln.difference));

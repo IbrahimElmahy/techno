@@ -111,10 +111,10 @@ export default function Employees() {
     try {
       if (editing) {
         await api.patch(`/api/v1/employees/${editing.id}`, payload);
-        message.success('اتحفظ التعديل');
+        message.success('تم حفظ التعديل');
       } else {
         await api.post('/api/v1/employees', payload);
-        message.success('اتسجّل الموظف');
+        message.success('تم تسجيل الموظف');
       }
       setOpen(false); load();
     } catch (err: any) {
@@ -246,7 +246,7 @@ export default function Employees() {
 
           <Col xs={24} md={6}>
             <DatePicker style={{ width: '100%' }} value={hireDate} onChange={setHireDate}
-              placeholder="يوم بدايه العمل" />
+              placeholder="يوم بداية العمل" />
           </Col>
           <Col xs={24} md={6}>
             {/* Free text, not a time picker: what gets written is «٨ ص» as often as a clean time,

@@ -642,7 +642,7 @@ function RecipesTab({
           </Form.Item>
           <Form.Item name="output_quantity" label="كمية الناتج من الوصفة (batch)"
             rules={[{ required: true, message: 'أدخل كمية الناتج' }]}
-            tooltip="عدد وحدات المنتج اللي بتطلع من تشغيل الوصفة مرة واحدة">
+            tooltip="عدد وحدات المنتج الناتجة من تشغيل الوصفة مرة واحدة">
             <InputNumber min={0.001} style={{ width: '100%' }} />
           </Form.Item>
 

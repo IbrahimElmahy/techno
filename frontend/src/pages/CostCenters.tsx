@@ -62,7 +62,7 @@ export default function CostCenters() {
       await api.post('/api/v1/cost-centers', {
         code: v.code, name: v.name, parent_id: v.parent_id ?? null,
       });
-      message.success('اتسجّل مركز التكلفة');
+      message.success('تم تسجيل مركز التكلفة');
       setCreateOpen(false);
       form.resetFields();
       load();
@@ -265,13 +265,13 @@ export default function CostCenters() {
             <Row gutter={12}>
               <Col span={12}>
                 <Form.Item label="الكود"
-                  extra="الكود مايتغيّرش — القيود اتسجّلت عليه.">
+                  extra="الكود لا يتغيّر — فقد سُجّلت عليه القيود.">
                   <Input value={editing.code} disabled />
                 </Form.Item>
               </Col>
               <Col span={12}>
                 <Form.Item label="المركز التابع له"
-                  extra="المستوى بيتحسب منه، فمابيتغيّرش بعد الإنشاء.">
+                  extra="يُحتسب المستوى منه، فلا يتغيّر بعد الإنشاء.">
                   <Input value={parentName(editing.parent_id)} disabled />
                 </Form.Item>
               </Col>

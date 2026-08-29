@@ -20,6 +20,7 @@ from src.models.ledger import Account
 from src.models.role import RoleName
 from src.models.treasury import TreasuryKind
 from src.models.voucher import Voucher, VoucherKind
+from src.auth import branch_scope
 from src.services import (
     chart_service,
     document_resolver,
@@ -536,7 +537,7 @@ def list_vouchers(
     if current.role == RoleName.sales_rep:
         rows = [v for v in rows
                 if v.actor_user_id == current.id or v.rep_user_id == current.id]
-    return [_out(v) for v in rows]
+    return [_out(v) for v in branch_scope.visible(current, rows)]
 
 
 @router.get("/customers/{customer_id}/statement", response_model=StatementOut)

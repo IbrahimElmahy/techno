@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
+  Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
 } from 'antd';
+import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
-  ClearOutlined, ArrowLeftOutlined, CloseCircleOutlined, FileSearchOutlined, EditOutlined,
-  PrinterOutlined,
+  ClearOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined,
+  FileSearchOutlined, EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -54,6 +56,7 @@ interface TransferRecord {
   dest_location_kind: string | null;
   dest_location_id: number | null;
   created_at: string | null;
+  transfer_date: string | null;
 }
 
 interface StockRow {
@@ -115,6 +118,10 @@ const routeFor = (srcKind: string, dstKind: string): string | null => {
   return null;
 };
 
+/** التاريخ اللي المستند بيتكلم عنه: تاريخ الحركة، وللقديم اللي مالوش واحد تاريخ تسجيله. */
+const docDate = (t: { transfer_date?: string | null; created_at?: string | null }) =>
+  String(t.transfer_date || t.created_at || '').slice(0, 10);
+
 export default function Transfers() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { options: categoryOptions } = useLookup('item_category');
@@ -135,6 +142,7 @@ export default function Transfers() {
   // The product window, so a line is added by typing rather than by hunting a grid.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
+  const [transferDate, setTransferDate] = useState<Dayjs>(dayjs());
   const [source, setSource] = useState<string | null>(null);
   const [dest, setDest] = useState<string | null>(null);
   const [sourceStock, setSourceStock] = useState<StockRow[]>([]);
@@ -159,6 +167,7 @@ export default function Transfers() {
    * the place to read it is the place it was written.
    */
   const [editing, setEditing] = useState<TransferRecord | null>(null);
+  const [viewOnly, setViewOnly] = useState(false);
 
   const fetchTransfers = async () => {
     setLoading(true);
@@ -215,7 +224,7 @@ export default function Transfers() {
       status: (t, v) => t.status === v,
       route: (t, v) => t.route === v,
     },
-    dateOf: (t) => t.created_at,
+    dateOf: (t) => docDate(t) || t.created_at,
   });
 
   const route = source && dest
@@ -312,11 +321,13 @@ export default function Transfers() {
 
   /** One way in, whichever button was pressed — the list's «جديد» and the toolbar's F2. */
   const startNew = () => {
-    setSource(null); setDest(null); setLines([]); setCreateVisible(false); setNewStep('source');
+    setSource(null); setDest(null); setLines([]); setCreateVisible(false);
+    setViewOnly(false); setEditing(null);
+    setNewStep('source');
   };
 
   const closeCreate = () => {
-    setCreateVisible(false); setEditing(null); setDraftQty({});
+    setCreateVisible(false); setEditing(null); setDraftQty({}); setViewOnly(false);
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
   };
 
@@ -349,6 +360,8 @@ export default function Transfers() {
   const openTransfer = async (t: TransferRecord) => {
     setEditing(t);
     setDraftQty({});
+    setViewOnly(true);
+    setTransferDate(dayjs(t.transfer_date || t.created_at || undefined));
     // A permit written before the lines table carries its item on the DOCUMENT and has no line
     // row, so there is nothing to PATCH and nothing to DELETE — and the page ended up inviting an
     // edit it could not offer: «عدّل الكميات أو شيل صنف» printed above a quantity that was plain
@@ -396,7 +409,7 @@ export default function Transfers() {
   const handleSubmit = async () => {
     if (!source || !dest) { message.warning('اختر المصدر والوجهة أولاً'); return; }
     if (sameLocation) { message.error('لا يمكن التحويل إلى نفس الموقع'); return; }
-    if (!route) { message.error('الاتجاه ده مش متاح للتحويل'); return; }
+    if (!route) { message.error('هذا الاتجاه غير متاح للتحويل'); return; }
     const valid = lines.filter((l) => Number(l.quantity || 0) > 0);
     if (!valid.length) { message.warning('أضف صنفاً واحداً على الأقل بكمية أكبر من صفر'); return; }
     const over = valid.find((l) => Number(l.quantity || 0) > l.available);
@@ -423,6 +436,7 @@ export default function Transfers() {
         item_id: first.item_id, quantity: Number(first.quantity || 0), route,
         source: { location_kind: src.kind, location_id: src.id },
         dest: { location_kind: dst.kind, location_id: dst.id },
+        transfer_date: transferDate.format('YYYY-MM-DD'),
       });
       // The header line is already on the document; add it as a real line too, so every item
       // lives in the same place and the approver's table has no special first row.
@@ -446,8 +460,8 @@ export default function Transfers() {
         approved = r.data?.status === 'approved';
       } catch { /* الإذن اتكتب؛ الاعتماد هيحصل من حد تاني */ }
       message.success(approved
-        ? `اتحوّل ${valid.length} صنف واتحرّك المخزون`
-        : `اتسجّل طلب التحويل بـ${valid.length} صنف — مستني الاعتماد`);
+        ? `تم اعتماد إذن التحويل بـ${valid.length} صنف واتحرّك المخزون`
+        : `اتسجّل طلب التحويل بـ${valid.length} صنف — بانتظار المراجعة والاعتماد`);
       closeCreate();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذّر تسجيل طلب التحويل');
@@ -565,7 +579,7 @@ export default function Transfers() {
     try {
       await api.post(`/api/v1/transfers/${editing.id}/reject`,
         { reason: rejectReason || null });
-      message.success('اترفض الإذن — مافيش بضاعة اتحركت');
+      message.success('تم رفض الإذن — لم تتحرك أي بضاعة');
       setRejectOpen(false); setRejectReason('');
       closeCreate();
       fetchTransfers();
@@ -605,7 +619,7 @@ export default function Transfers() {
       message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الإذن');
       return;
     }
-    message.success('اتلغى الإذن — عدّل وابعته للاعتماد من جديد');
+    message.success('تم إلغاء الإذن — عدّله وأرسله للاعتماد من جديد');
 
     // Refill from what it actually moved — including a legacy permit whose item is on the
     // document rather than in a lines row.
@@ -656,7 +670,7 @@ export default function Transfers() {
       status: t.status,
       source: locationName(t.source_location_kind, t.source_location_id),
       dest: locationName(t.dest_location_kind, t.dest_location_id),
-      date: (t.created_at || '').slice(0, 10) || null,
+      date: docDate(t) || null,
       approvedBy: t.approved_by ? (userNames[t.approved_by] || null) : null,
       lines: docLines(t).map((l: any) => ({
         name: nameOfItem(l.item_id),
@@ -672,14 +686,19 @@ export default function Transfers() {
    * بتدوّر على واحدة مااتحركتش أصلاً. دلوقتي الحركة بتتشال والرصيد بيرجع لوحده.
    */
   const handleCancel = (record: TransferRecord) => {
-    showReversalConfirm({
-      title: 'إلغاء إذن التحويل',
-      content: `هتلغي إذن التحويل «${record.document_number}»؟ الكميات هترجع لمخزنها الأصلي، والإذن هيفضل في السجل مكتوب عليه إنه اتلغى.`,
+    Modal.confirm({
+      title: 'تأكيد إلغاء إذن التحويل',
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: `هل تريد إلغاء إذن التحويل «${record.document_number}»؟ ستعود الكميات لمخزنها الأصلي وسيبقى الإذن ملغياً.`,
+      okText: 'نعم، إلغاء الإذن',
+      okType: 'danger',
+      cancelText: 'تراجع',
       onOk: async () => {
         try {
           await api.post(`/api/v1/transfers/${record.id}/cancel`, { reason: null });
-          message.success('اتلغى الإذن ورجعت الكميات');
+          message.success('تم إلغاء الإذن وإرجاع الكميات بنجاح');
           fetchTransfers();
+          if (editing?.id === record.id) refreshEditing(record.id);
         } catch (err: any) {
           message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الإذن');
         }
@@ -689,14 +708,19 @@ export default function Transfers() {
 
   /** حذف الإذن — بيروح هو وحركته، مايفضلش منه أثر في السجل. */
   const handleDelete = (record: TransferRecord) => {
-    showReversalConfirm({
-      title: 'حذف إذن التحويل',
-      content: `هتمسح إذن التحويل «${record.document_number}» خالص؟ لو كان معتمد، الكميات هترجع لمخزنها الأصلي.`,
+    Modal.confirm({
+      title: 'تأكيد حذف إذن التحويل',
+      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+      content: `هل أنت متأكد من حذف إذن التحويل «${record.document_number}»؟ لو كان معتمداً، سيتم إلغاء الحركات وإرجاع الكميات لمخزنها الأصلي.`,
+      okText: 'نعم، احذف',
+      okType: 'danger',
+      cancelText: 'إلغاء',
       onOk: async () => {
         try {
           await api.delete(`/api/v1/transfers/${record.id}`);
-          message.success('اتمسح الإذن');
+          message.success('تم حذف إذن التحويل بنجاح');
           setEditing(null);
+          closeCreate();
           fetchTransfers();
         } catch (err: any) {
           message.error(err?.response?.data?.detail?.message || 'تعذر مسح الإذن');
@@ -707,9 +731,6 @@ export default function Transfers() {
 
   const totalUnits = lines.reduce((s, l) => s + (l.quantity || 0), 0);
 
-  // ---------------------------------------------------------------- create page
-  /** The two doors and the product window. A transfer's «who» is two places, so it asks them one
-   *  at a time in the order the goods move: out of here, into there — and only then what. */
   const doors = (
     <>
       <ProductPickerModal
@@ -726,7 +747,7 @@ export default function Transfers() {
 
       <TabModal
         open={newStep === 'source'}
-        title="التحويل من فين؟"
+        title="التحويل من أين؟"
         okText="التالي" cancelText="إلغاء"
         onCancel={() => setNewStep(null)}
         onOk={() => { if (source) setNewStep('dest'); }}
@@ -745,7 +766,7 @@ export default function Transfers() {
 
       <TabModal
         open={newStep === 'dest'}
-        title="التحويل لفين؟"
+        title="التحويل إلى أين؟"
         okText="ابدأ" cancelText="رجوع"
         onCancel={() => setNewStep('source')}
         onOk={() => { if (dest) { setNewStep(null); setCreateVisible(true); } }}
@@ -763,47 +784,42 @@ export default function Transfers() {
     </>
   );
 
-  /** The same strip the sale, the return and the purchase carry — same verbs, same places, and
-   *  the keys it advertises are bound by the toolbar itself. */
   const transferToolbar = (): ToolbarAction[] => {
     const pending = editing?.status === 'pending';
+    const isSaved = Boolean(editing);
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
         onClick: startNew },
-      // On a saved permit «حفظ» has nothing to save: the lines are written the moment they are
-      // changed, because editing them is what the approver does while deciding.
+      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+        disabled: !isSaved || !viewOnly,
+        onClick: () => {
+          if (editing?.status === 'approved' && canApprove) {
+            editApproved(editing);
+          } else {
+            setViewOnly(false);
+            message.info('إذن التحويل مفتوح الآن للتعديل');
+          }
+        } },
       ...(editing ? [] : [{
         key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         onClick: handleSubmit,
-        disabled: !source || !dest || lines.length === 0,
+        disabled: viewOnly || !source || !dest || lines.length === 0,
       } as ToolbarAction]),
-      // اعتماد / رفض live HERE, on the document, and only while it is still a question. This is
-      // the whole point: the approver reads and fixes the permit on the page it was written on,
-      // instead of deciding from a read-only sheet that opened over the list.
-      ...(editing && pending && canApprove ? [
-        // No shortcut, deliberately. F4 is the system-wide screen search, and approving moves
-        // goods across two warehouses — a decision somebody makes once, not a keystroke worth
-        // racing to.
+      ...(editing && pending && canApprove && !viewOnly ? [
         { key: 'approve', label: 'اعتماد', icon: <CheckCircleOutlined />,
           onClick: () => handleApprove(editing.id),
           disabled: (editing.lines?.length ?? 0) === 0 && !editing.item_id },
         { key: 'reject', label: 'رفض', danger: true, icon: <CloseCircleOutlined />,
           onClick: () => setRejectOpen(true) },
       ] as ToolbarAction[] : []),
-      // الإذن المعتمد بيتصلّح بالإلغاء وإعادة الكتابة — مافيش عكس في النظام.
-      ...(editing && editing.status === 'approved' && canApprove ? [
-        { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-          onClick: () => editApproved(editing) },
+      ...(editing && editing.status === 'approved' && canApprove && !viewOnly ? [
         { key: 'cancel', label: 'إلغاء', danger: true, icon: <CloseCircleOutlined />,
           onClick: () => handleCancel(editing) },
       ] as ToolbarAction[] : []),
-      // والحذف على أي إذن محفوظ — المعلّق والمرفوض والمعتمد.
       ...(editing && canApprove ? [
         { key: 'delete', label: 'حذف', danger: true, icon: <DeleteOutlined />,
           onClick: () => handleDelete(editing) },
       ] as ToolbarAction[] : []),
-      // Printing is offered on any saved permit, whatever its state: a pending one is the picking
-      // list somebody walks to the store, and an approved one is the delivery note they sign.
       ...(editing ? [{
         key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
         onClick: () => printOpenTransfer(editing),
@@ -815,17 +831,19 @@ export default function Transfers() {
         key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
         onClick: () => setLines([]), disabled: lines.length === 0,
       } as ToolbarAction]),
-      { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowLeftOutlined />,
+      { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowRightOutlined />,
         onClick: closeCreate },
     ];
   };
 
   const columns = [
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number',
+      sorter: (a: TransferRecord, b: TransferRecord) => (a.document_number || '').localeCompare(b.document_number || ''),
       render: (doc: string) => <Tag color="blue">{doc}</Tag> },
     { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
       render: (id: number | null) => nameOfItem(id) },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity',
+      sorter: (a: TransferRecord, b: TransferRecord) => Number(a.quantity || 0) - Number(b.quantity || 0),
       render: (q: string | null) => <b>{qty(q)}</b> },
     { title: 'من', key: 'src',
       render: (_: any, r: TransferRecord) => locationName(r.source_location_kind, r.source_location_id) },
@@ -834,140 +852,134 @@ export default function Transfers() {
     { title: 'نوع المناقلة', dataIndex: 'route', key: 'route',
       render: (r: string) => ROUTE_LABELS[r] || r },
     { title: 'الحالة', dataIndex: 'status', key: 'status',
+      sorter: (a: TransferRecord, b: TransferRecord) => (a.status || '').localeCompare(b.status || ''),
       render: (s: string) => {
         const tag = STATUS_TAGS[s] || { color: 'default', text: s };
         return <Tag color={tag.color}>{tag.text}</Tag>;
       } },
-    { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at',
-      render: (v: string | null) => (v ? String(v).slice(0, 10) : '-') },
+    // تاريخ الحركة، مش تاريخ الكتابة. المستند القديم مالوش واحد فبيرجع لتاريخ تسجيله.
+    { title: 'التاريخ', dataIndex: 'transfer_date', key: 'transfer_date',
+      sorter: (a: TransferRecord, b: TransferRecord) =>
+        docDate(a).localeCompare(docDate(b)),
+      render: (_: any, r: TransferRecord) => docDate(r) || '-' },
     {
-      title: 'الإجراءات', key: 'actions',
+      title: 'الإجراءات', key: 'actions', width: 140, fixed: 'left' as const,
       render: (_: any, record: TransferRecord) => (
-        <Space size="middle">
-          {/* Opens the document — the decision is taken on the permit, not on a sheet ABOUT the
-              permit. Same page it was written on, same page it is fixed on. */}
-          {record.status === 'pending' && canApprove && (
-            <Button type="primary" size="small" icon={<CheckCircleOutlined />}
-              onClick={() => openTransfer(record)}>
-              اعتماد
-            </Button>
-          )}
-          {record.status === 'approved' && canApprove && (
-            <Button type="primary" danger size="small" icon={<CloseCircleOutlined />}
-              onClick={() => handleCancel(record)}>
-              إلغاء
-            </Button>
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="عرض إذن التحويل">
+            <Button type="text" icon={<EyeOutlined />}
+              onClick={() => openTransfer(record)} />
+          </Tooltip>
+          <Tooltip title="طباعة">
+            <Button type="text" icon={<PrinterOutlined />}
+              onClick={() => printOpenTransfer(record)} />
+          </Tooltip>
+          {canApprove && (
+            <Tooltip title="تعديل">
+              <Button type="text" icon={<EditOutlined />}
+                onClick={async () => {
+                  if (record.status === 'approved') {
+                    editApproved(record);
+                  } else {
+                    await openTransfer(record);
+                    setViewOnly(false);
+                    message.info('إذن التحويل مفتوح الآن للتعديل');
+                  }
+                }} />
+            </Tooltip>
           )}
           {canApprove && (
-            <Button danger size="small" icon={<DeleteOutlined />}
-              onClick={() => handleDelete(record)}>
-              حذف
-            </Button>
+            <Tooltip title="حذف">
+              <Button type="text" danger icon={<DeleteOutlined />}
+                onClick={() => handleDelete(record)} />
+            </Tooltip>
           )}
         </Space>
       ),
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  /**
-   * أعمدة سطور الإذن — بتتخفي وبتترتّب زي أي جدول تاني في النظام.
-   *
-   * كانت مكتوبة inline جوّه `columns={[...]}`، فمافيش حاجة تقدر توصلها. `useTableColumns`
-   * هو نفس المحرك اللي القوايم بتستعمله.
-   */
-  /** أعمدة سطور الإذن المفتوح — نفس المحرك، وتفضيلاتها لوحدها. */
   const docLineColumns = [
-                { title: 'الصنف', dataIndex: 'item_id',
-                  render: (id: number) => <b>{nameOfItem(id)}</b> },
-                { title: 'المتاح في المصدر',
-                  render: (_: any, r: any) => {
-                    // Red the moment the line asks for more than is on the shelf — the ordinary
-                    // reason an approver hesitates, said before he presses اعتماد rather than by
-                    // the negative-stock guard afterwards.
-                    const have = reviewStock[r.item_id] ?? 0;
-                    const short = Number(r.quantity || 0) > have;
-                    return (
-                      <span style={{ color: short ? '#cf1322' : '#6AB42D', fontWeight: 600 }}>
-                        {qty(have)}
-                      </span>
-                    );
-                  } },
-                { title: 'الكمية المحوّلة', dataIndex: 'quantity',
-                  render: (v: any, r: any) => (editing?.status === 'pending' && !r._header ? (
-                    <InputNumber size="small" min={0} step={1}
-                      value={draftQty[r.id] ?? Number(v)}
-                      style={{ width: 120 }} keyboard={false} data-grid-col="qty"
-                      onChange={(val) => setDraftQty(
-                        (d) => ({ ...d, [r.id]: Number(val) }))}
-                      onPressEnter={() => setReviewLineQty(r.id, guardQuantity({
-                        value: draftQty[r.id] ?? Number(v),
-                        available: reviewStock[r.item_id] ?? 0,
-                        itemName: nameOfItem(r.item_id),
-                      }, Number(v)) as number)}
-                      onBlur={() => setReviewLineQty(r.id, guardQuantity({
-                        value: draftQty[r.id] ?? Number(v),
-                        available: reviewStock[r.item_id] ?? 0,
-                        itemName: nameOfItem(r.item_id),
-                      }, Number(v)) as number)} />
-                  ) : <b>{qty(Number(v))}</b>) },
-                ...(editing?.status === 'pending' ? [{
-                  title: '', width: 50,
-                  render: (_: any, r: any) => (r._header ? null : (
-                    <Popconfirm title="تشيل الصنف ده من الإذن؟" okText="شيل" cancelText="لأ"
-                      onConfirm={() => removeReviewLine(r.id)}>
-                      <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  )),
-                }] : []),
-              ];
+    { key: 'name', title: 'الصنف', dataIndex: 'item_id',
+      render: (id: number) => <b>{nameOfItem(id)}</b> },
+    { key: 'available', title: 'المتاح في المصدر', dataIndex: 'available',
+      render: (_: any, r: any) => {
+        const have = reviewStock[r.item_id] ?? 0;
+        const short = Number(r.quantity || 0) > have;
+        return (
+          <span style={{ color: short ? '#cf1322' : '#6AB42D', fontWeight: 600 }}>
+            {qty(have)}
+          </span>
+        );
+      } },
+    { key: 'quantity', title: 'الكمية المحوّلة', dataIndex: 'quantity',
+      render: (v: any, r: any) => (editing?.status === 'pending' && !r._header && !viewOnly ? (
+        <InputNumber size="small" min={0} step={1}
+          value={draftQty[r.id] ?? Number(v)}
+          style={{ width: 120 }} keyboard={false} data-grid-col="qty"
+          onChange={(val) => setDraftQty(
+            (d) => ({ ...d, [r.id]: Number(val) }))}
+          onPressEnter={() => setReviewLineQty(r.id, guardQuantity({
+            value: draftQty[r.id] ?? Number(v),
+            available: reviewStock[r.item_id] ?? 0,
+            itemName: nameOfItem(r.item_id),
+          }, Number(v)) as number)}
+          onBlur={() => setReviewLineQty(r.id, guardQuantity({
+            value: draftQty[r.id] ?? Number(v),
+            available: reviewStock[r.item_id] ?? 0,
+            itemName: nameOfItem(r.item_id),
+          }, Number(v)) as number)} />
+      ) : <b>{qty(Number(v))}</b>) },
+    ...(editing?.status === 'pending' && !viewOnly ? [{
+      key: 'actions', title: '', width: 50,
+      render: (_: any, r: any) => (r._header ? null : (
+        <Popconfirm title="تشيل الصنف ده من الإذن؟" okText="شيل" cancelText="لأ"
+          onConfirm={() => removeReviewLine(r.id)}>
+          <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+        </Popconfirm>
+      )),
+    }] : []),
+  ];
   const docCols = useTableColumns('transfer-doc-lines', docLineColumns);
 
   const draftLineColumns = [
-                { title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
-                { title: 'الفئة', dataIndex: 'category',
-                  render: (c: string | null) => (c ? <Tag>{categoryLabels[c] || c}</Tag> : '-') },
-                { title: 'المتاح في المصدر', dataIndex: 'available',
-                  render: (v: number, r: TransferLine) => (
-                    <span style={{ color: '#6AB42D', fontWeight: 600 }}>
-                      {qty(v)} {r.unit || ''}
-                    </span>
-                  ) },
-                { title: 'الكمية المحوّلة', dataIndex: 'quantity',
-                  onCell: (r: TransferLine) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
-                  // No `max` — see `quantityGuard`: capping silently rewrites the number
-                  // somebody typed, and they never learn it was changed.
-                  render: (v: number, r: TransferLine) => (
-                    <InputNumber size="small" step={1} value={v}
-                      style={{ width: 120 }}
-                      data-qty-key={r.key}
-                      data-grid-col="qty" keyboard={false}
-                      onBlur={() => setLineQty(r.key, guardQuantity(
-                        { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
-                        null) as number)}
-                      // Enter means «this line is done» — the window opens for the next item,
-                      // exactly as on the sale, the return and the purchase.
-                      onPressEnter={(e) => {
-                        e.preventDefault();
-                        const kept = guardQuantity(
-                          { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
-                          null);
-                        setLineQty(r.key, kept as number);
-                        // Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح الشباك — كان بيفتح
-                        // الشباك على طول، فاللي عنده خمس سطور مكتوبة كان لازم يرجع للماوس
-                        // عشان يوصل للسطر التاني.
-                        if (kept !== null) advance(r.key);
-                      }}
-                      onChange={(val) => setLineQty(r.key, Number(val))} />
-                  ) },
-                { title: 'المتبقي بعد التحويل',
-                  render: (_: any, r: TransferLine) => qty(r.available - Number(r.quantity || 0)) },
-                { title: '', width: 50,
-                  render: (_: any, r: TransferLine) => (
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                      onClick={() => removeLine(r.key)} />
-                  ) },
-              ];
+    { key: 'name', title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
+    { key: 'category', title: 'الفئة', dataIndex: 'category',
+      render: (c: string | null) => (c ? <Tag>{categoryLabels[c] || c}</Tag> : '-') },
+    { key: 'available', title: 'المتاح في المصدر', dataIndex: 'available',
+      render: (v: number, r: TransferLine) => (
+        <span style={{ color: '#6AB42D', fontWeight: 600 }}>
+          {qty(v)} {r.unit || ''}
+        </span>
+      ) },
+    { key: 'quantity', title: 'الكمية المحوّلة', dataIndex: 'quantity',
+      onCell: (r: TransferLine) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
+      render: (v: number, r: TransferLine) => (
+        <InputNumber size="small" step={1} value={v}
+          style={{ width: 120 }}
+          data-qty-key={r.key}
+          data-grid-col="qty" keyboard={false}
+          onBlur={() => setLineQty(r.key, guardQuantity(
+            { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
+            null) as number)}
+          onPressEnter={(e) => {
+            e.preventDefault();
+            const kept = guardQuantity(
+              { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
+              null);
+            setLineQty(r.key, kept as number);
+            if (kept !== null) advance(r.key);
+          }}
+          onChange={(val) => setLineQty(r.key, Number(val))} />
+      ) },
+    { key: 'remaining', title: 'المتبقي بعد التحويل', dataIndex: 'remaining',
+      render: (_: any, r: TransferLine) => qty(r.available - Number(r.quantity || 0)) },
+    { key: 'actions', title: '', width: 50,
+      render: (_: any, r: TransferLine) => (
+        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+          onClick={() => removeLine(r.key)} />
+      ) },
+  ];
   const draftCols = useTableColumns('transfer-draft-lines', draftLineColumns);
 
   const tableCols = useTableColumns('transfer-requests', columns);
@@ -981,10 +993,12 @@ export default function Transfers() {
         <DocumentToolbar actions={transferToolbar()} />
         <Card title={(
           <Space>
-            <Button type="text" icon={<ArrowLeftOutlined />} onClick={closeCreate}>رجوع</Button>
-            <span>{editing
-              ? `إذن تحويل ${editing.document_number}`
-              : 'طلب تحويل مخزني جديد'}</span>
+            <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+            <Typography.Text strong style={{ fontSize: 16 }}>
+              {editing
+                ? `إذن تحويل ${editing.document_number}`
+                : 'طلب تحويل مخزني جديد'}
+            </Typography.Text>
             {editing && (
               <Tag color={(STATUS_TAGS[editing.status] || {}).color}>
                 {(STATUS_TAGS[editing.status] || {}).text || editing.status}
@@ -992,48 +1006,49 @@ export default function Transfers() {
             )}
           </Space>
         )}>
-          {/* An open permit says what happens next, on the document, before anything else. The
-              approver arrives here to answer a question and should not have to infer it from
-              which buttons are lit. */}
-          {editing && editing.status === 'pending' && (
+          {editing && editing.status === 'pending' && !viewOnly && (
             <Alert type="info" showIcon style={{ marginBottom: 12 }}
               message={canApprove
-                ? 'الإذن ده لسه مستني الاعتماد'
-                : 'الإذن ده لسه مستني اعتماد مدير المخزن'}
+                ? 'هذا الإذن ما زال بانتظار الاعتماد'
+                : 'هذا الإذن ما زال بانتظار اعتماد مدير المخزن'}
               description={canApprove
-                ? 'عدّل الكميات أو شيل صنف لو محتاج، وبعدين اعتمد أو ارفض من فوق. مافيش بضاعة اتحركت لحد دلوقتي.'
-                : 'تقدر تشوفه وتراجعه — الاعتماد نفسه من صلاحية مدير المخزن.'} />
+                ? 'عدّل الكميات أو احذف صنفاً عند الحاجة، ثم اعتمد أو ارفض من الأعلى. ولم تتحرك أي بضاعة حتى الآن.'
+                : 'يمكنك عرضه ومراجعته — أما الاعتماد فمن صلاحية مدير المخزن.'} />
           )}
-          {editing && editing.status !== 'pending' && (
+          {editing && editing.status !== 'pending' && !viewOnly && (
             <Alert type="warning" showIcon style={{ marginBottom: 12 }}
               message={editing.status === 'approved' ? 'الإذن ده اتعتمد واتشحن' : 'الإذن ده اترفض'}
               description={editing.status === 'approved'
-                ? 'الاعتماد رحّل حركات على مخزنين، فالإذن مايتغيّرش في مكانه. «تعديل الإذن» بيعكسه ويفتح طلب جديد بمحتواه عشان تصحّح وتبعته للاعتماد من جديد — والتلاتة بيفضلوا في السجل.'
-                : 'الإذن المرفوض مافيهوش بضاعة اتحركت. لو لسه محتاجه، اعمل طلب جديد.'}
+                ? 'الاعتماد رحَّل حركات على مخزنين، فلا يُعدَّل الإذن في مكانه. و«تعديل الإذن» يعكسه ويفتح طلباً جديداً بمحتواه لتصحّحه وترسله للاعتماد من جديد — وتبقى الثلاثة في السجل.'
+                : 'الإذن المرفوض لم تتحرك فيه أي بضاعة. وإن كنت ما زلت بحاجة إليه، أنشئ طلباً جديداً.'}
               action={editing.reject_reason
                 ? <span>سبب الرفض: <b>{editing.reject_reason}</b></span> : undefined} />
           )}
 
-          {/* 1) من أين وإلى أين */}
-          <Divider orientation="right" style={{ fontWeight: 700 }}>١) التحويل من أين إلى أين</Divider>
+          {/* 1) التاريخ ومن أين وإلى أين */}
+          <Divider orientation="right" style={{ fontWeight: 700 }}>١) بيانات الإذن والمواقع</Divider>
           <Row gutter={16}>
-            <Col xs={24} md={12}>
+            <Col xs={24} md={8}>
+              <div style={{ marginBottom: 6, fontWeight: 600 }}>التاريخ</div>
+              <DatePicker size="large" style={{ width: '100%' }}
+                disabled={!!editing || viewOnly}
+                value={transferDate} onChange={(v) => setTransferDate(v || dayjs())} format="YYYY-MM-DD" allowClear={false} />
+            </Col>
+            <Col xs={24} md={8}>
               <div style={{ marginBottom: 6, fontWeight: 600 }}>من (المصدر)</div>
               <Select showSearch size="large" style={{ width: '100%' }}
                 placeholder="اختر المخزن أو العهدة المصدر"
                 optionFilterProp="label"
-                // Fixed once the permit exists: «from here to there» IS the permit, and changing
-                // it is a different one rather than an edit of this one.
-                disabled={!!editing}
+                disabled={!!editing || viewOnly}
                 value={source ?? undefined} onChange={onSourceChange}
                 options={locationOptions} />
             </Col>
-            <Col xs={24} md={12}>
+            <Col xs={24} md={8}>
               <div style={{ marginBottom: 6, fontWeight: 600 }}>إلى (الوجهة)</div>
               <Select showSearch size="large" style={{ width: '100%' }}
                 placeholder="اختر المخزن أو العهدة الوجهة"
                 optionFilterProp="label"
-                disabled={!!editing}
+                disabled={!!editing || viewOnly}
                 value={dest ?? undefined} onChange={(v) => setDest(v)}
                 options={locationOptions} />
             </Col>
@@ -1069,12 +1084,13 @@ export default function Transfers() {
                 <Select showSearch size="large" style={{ width: '100%' }}
                   placeholder="اختر الفئة" value={activeCategory ?? undefined}
                   optionFilterProp="label"
+                  disabled={viewOnly}
                   onChange={(v) => setActiveCategory(v ?? null)}
                   options={categories} />
               </Col>
               <Col xs={24} md={17}>
                 <Select showSearch size="large" style={{ width: '100%' }} value={null}
-                  disabled={!activeCategory}
+                  disabled={!activeCategory || viewOnly}
                   placeholder={activeCategory ? 'اختر صنفاً لإضافته (المتاح فقط)' : 'اختر الفئة أولاً'}
                   optionFilterProp="label"
                   onChange={(v) => { if (v) addItem(v as number); }}
@@ -1094,7 +1110,7 @@ export default function Transfers() {
             <Table
               style={{ marginTop: 16 }} size="small" rowKey="id" pagination={false}
               dataSource={docLines(editing)}
-              locale={{ emptyText: 'مفيش أصناف على الإذن — ارفضه بدل ما تعتمده' }}
+              locale={{ emptyText: 'لا توجد أصناف على الإذن — ارفضه بدلاً من اعتماده' }}
               columns={docCols.columns}
               title={() => <div style={{ textAlign: 'left' }}>{docCols.control}</div>}
             />
@@ -1141,9 +1157,9 @@ export default function Transfers() {
               )}
             </Space>
             <Space>
-              {/* The decision sits at the bottom of the document it is a decision about — the
-                  same place «إرسال طلب التحويل» sits when the document is new. */}
-              {editing ? (
+              {viewOnly ? (
+                <Button size="large" onClick={closeCreate}>إغلاق</Button>
+              ) : editing ? (
                 <>
                   {editing.status === 'pending' && canApprove && (
                     <>
@@ -1226,10 +1242,10 @@ export default function Transfers() {
       destroyOnHidden
     >
       <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message="مافيش بضاعة هتتحرك"
-        description="الرفض مش زي «اعتمد وبعدين اعكس» — مافيش حاجة نزلت من الرف عشان ترجع تاني." />
+        message="لن تتحرك أي بضاعة"
+        description="الرفض ليس كـ«اعتمد ثم اعكس» — فلم ينزل شيء من الرف حتى يعود إليه." />
       <Input.TextArea rows={3} value={rejectReason} autoFocus
-        placeholder="سبب الرفض — أول سؤال هيسأله اللي طلب التحويل"
+        placeholder="سبب الرفض — أول ما سيسأل عنه طالب التحويل"
         onChange={(e: any) => setRejectReason(e.target.value)} />
     </TabModal>
   );

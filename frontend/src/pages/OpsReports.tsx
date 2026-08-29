@@ -461,7 +461,7 @@ export default function OpsReports() {
             onChange={(v) => setOnlyOpen(v === 'open')}
             options={[
               { value: 'all', label: 'الكل' },
-              { value: 'open', label: 'المفتوح بس' },
+              { value: 'open', label: 'المفتوح فقط' },
             ]}
           />
         </Col>
@@ -471,7 +471,7 @@ export default function OpsReports() {
         <Alert
           type="warning" showIcon style={{ marginBottom: 12 }}
           message="مالكش صلاحية على التقرير ده"
-          description="كل موضوع بيتقفل على صلاحية القسم اللي بيقرا منه. اختار موضوع تاني، أو اطلب الصلاحية من مدير النظام."
+          description="كل موضوع مقيَّد بصلاحية القسم الذي يقرأ منه. اختر موضوعاً آخر، أو اطلب الصلاحية من مدير النظام."
         />
       )}
 
@@ -507,7 +507,7 @@ export default function OpsReports() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message={`${totals.excluded} سطر ملغي معروض وغير محسوب في الإجماليات`}
-          description="الملغي بيفضل على الشاشة عشان اللي بيدوّر على سبب اختفائه يلاقيه، ومابيتحسبش في الأرقام عشان ما يقولش إن فيه التزام مش موجود."
+          description="يبقى الملغى على الشاشة ليجده من يبحث عن سبب اختفائه، ولا يُحتسب في الأرقام حتى لا يوهم بوجود التزام غير قائم."
         />
       )}
 
@@ -515,7 +515,7 @@ export default function OpsReports() {
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
           message={`معروض ${rows.length} سطر من ${page.total_rows}`}
-          description="الإجماليات فوق محسوبة على كل السطور في المدى المحدد، مش على المعروض. ضيّق الفترة أو الفلاتر عشان تشوف الباقي."
+          description="الإجماليات أعلاه محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
         />
       )}
 

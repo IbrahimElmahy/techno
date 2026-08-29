@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, func
+from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -44,6 +44,19 @@ class StockTransfer(Base):
     status: Mapped[TransferStatus] = mapped_column(
         Enum(TransferStatus), default=TransferStatus.pending, nullable=False
     )
+    # (036) اليوم اللي البضاعة اتحركت فيه — مش يوم ما الورقة اتكتبت.
+    #
+    # `created_at` هو وقت التسجيل، وده كتير بيبقى بعد الحركة بيوم أو اتنين. إذن اتعمل يوم
+    # السبت واتكتب يوم الاتنين كان بينزل في أسبوع غلط على كل تقرير بيجمّع بالتاريخ. باقي
+    # المستندات (الفاتورة، المرتجع، مردود الشرا) ليها تاريخها المختار من زمان؛ ده كان
+    # الوحيد اللي فاضل من غير.
+    #
+    # NULL = مستند قديم اتكتب قبل الحقل ده — بيقرا بـ`created_at` زي ما كان.
+    transfer_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # (037) فرع الإذن = فرع المصدر. البضاعة بتخرج من مكان، والمكان بيتبع فرع؛ والتحويل
+    # لفرع تاني بيفضل مقروء عند المصدر لأنه هو اللي صرفه.
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
+                                                  index=True)
     initiated_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -17,6 +17,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_COUPON_RECEIVE
 from src.core.db import get_db
 from src.models.role import RoleName
+from src.auth import branch_scope
 from src.services import coupon_receipt_service
 from src.services.coupon_receipt_service import CouponReceiptError
 
@@ -135,7 +136,7 @@ def list_receipts(
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_user_id
     rows = coupon_receipt_service.list_receipts(
         db, customer_id=customer_id, rep_user_id=scope_rep)
-    return [_out(r) for r in rows]
+    return [_out(r) for r in branch_scope.visible(current, rows)]
 
 
 @router.get("/{receipt_id}", response_model=ReceiptOut)

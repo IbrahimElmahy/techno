@@ -602,8 +602,8 @@ export default function Customers() {
                   an item that gives 10% is on twenty, not twenty-eight. Empty is what makes that
                   readable — «مفيش اتفاق» and «اتفقنا على صفر» are different instructions. */}
               <Form.Item name="discount_pct" label="خصم %"
-                tooltip="لو محدد، بيحل محل خصم الصنف — مش بيتزود عليه. سيبه فاضي والصنف ياخد خصمه."
-                extra="فاضي = مفيش اتفاق">
+                tooltip="إن حُدِّد فإنه يحل محل خصم الصنف ولا يُضاف إليه. اتركه فارغاً ليأخذ الصنف خصمه."
+                extra="فارغ = لا يوجد اتفاق">
                 <InputNumber min={0} max={100} step={0.01} style={{ width: '100%' }} />
               </Form.Item>
             </Col>

@@ -17,13 +17,14 @@ from src.auth.rbac import (
     CAP_SALE_DELETE,
     CAP_SALE_EDIT,
     CAP_SALE_WRITE,
+    CAP_SALES_READ,
     CAP_SELL_BELOW_PRICE,
     role_has_capability,
 )
 from src.core import clock
 from src.core.db import get_db
 from src.models.catalog import Item, ItemPrice, PriceTier
-from src.models.customer import Customer
+from src.models.customer import Customer, CustomerAccount
 from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
@@ -35,6 +36,7 @@ from src.services.sales_service import ReturnLine, SaleLine, SalesError
 from src.services import document_edit_service
 from src.services.document_edit_service import DocumentEditError
 from src.services.stock_service import StockError
+from src.auth import branch_scope
 
 router = APIRouter(tags=["sales"], prefix="/sales")
 
@@ -176,7 +178,7 @@ class SalesInvoiceOut(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     cash_account_id: int
-    ledger_entry_id: int
+    ledger_entry_id: int | None = None
     created_at: str | None = None
     # (030)
     rep_id: int | None = None
@@ -221,7 +223,7 @@ class SalesInvoiceDetail(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     cash_account_id: int
-    ledger_entry_id: int
+    ledger_entry_id: int | None = None
     lines: list[InvoiceLineOut]
     # The coupon books handed over, one row per kind — read back so the printed invoice can name
     # them instead of showing a bare range.
@@ -249,7 +251,7 @@ def _rep_scope_check(db: Session, current: CurrentUser, customer_id: int, origin
 
 @router.get("/rep-bundle", response_model=dict)
 def rep_bundle(
-    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     """كل اللي المندوب محتاجه عشان يبيع وهو من غير شبكة — في نداء واحد.
@@ -278,6 +280,15 @@ def rep_bundle(
         select(Customer).where(Customer.rep_id == current.rep_id, Customer.active.is_(True))
         .order_by(Customer.name)
     ).all()
+
+    # حسابات العملاء دول — استعلام واحد، مش واحد لكل عميل.
+    accounts_by_customer: dict[int, list[CustomerAccount]] = {}
+    if customers:
+        for acc in db.scalars(
+            select(CustomerAccount).where(
+                CustomerAccount.customer_id.in_([c.id for c in customers]))
+        ).all():
+            accounts_by_customer.setdefault(acc.customer_id, []).append(acc)
 
     # اللي في العربية دلوقتي: مجموع الداخل ناقص الخارج على العهدة دي.
     signed = case(
@@ -330,6 +341,15 @@ def rep_bundle(
                 "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,
                 # الفئة بتقرّر السعر، فلازم تنزل مع العميل عشان الجهاز يسعّر زي السيرفر.
                 "price_tier": c.default_price_tier.value if c.default_price_tier else None,
+                # التصنيف — «الملّاك» وغيره. قائمة حرة، فبينزل زي ما هو من غير ما نعدّه هنا.
+                "customer_type": c.customer_type,
+                # خطوط المنتجات اللي للعميل حساب عليها («أبيض»، «بولي»).
+                #
+                # العميل الواحد ممكن يبقى مديون على خطين بحسابين منفصلين، والمندوب لازم يقول
+                # الفاتورة دي على أنهي واحد فيهم — زي ما بيحصل في النظام بالظبط. من غير
+                # القايمة دي التطبيق مش هيعرف يسأل، والفاتورة بتنزل على المديونية الغلط.
+                "families": sorted(
+                    {a.family for a in accounts_by_customer.get(c.id, []) if a.family}),
             }
             for c in customers
         ],
@@ -418,6 +438,8 @@ def update_sale(
     """
     inv = db.get(SalesInvoice, sale_id)
     if inv is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
+    if not branch_scope.may_see(current, inv):
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     try:
         document_edit_service.assert_sale_editable(db, inv)
@@ -513,14 +535,17 @@ def list_sales(
     date_to: date | None = None,
     payment: str | None = None,   # cash | credit | partial
     rep_id: int | None = None,            # (030)
+    family: str | None = None,
     external_document_number: str | None = None,  # (030)
-    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[SalesInvoiceOut]:
     """List sales invoices with search + filters, newest first."""
-    stmt = select(SalesInvoice)
+    stmt = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
     if rep_id is not None:
         stmt = stmt.where(SalesInvoice.rep_id == rep_id)
+    if family:
+        stmt = stmt.where(SalesInvoice.family == family)
     if external_document_number:
         stmt = stmt.where(SalesInvoice.external_document_number.like(
             f"%{external_document_number.strip()}%"))
@@ -581,7 +606,7 @@ def _standalone_return_out(r: SalesReturn, db: Session | None = None) -> dict:
 def customer_item_history(
     customer_id: int,
     item_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Last price this customer paid for this item + short purchase history (028). Empty if never
@@ -596,17 +621,18 @@ def list_standalone_returns(
     customer_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    rep_id: int | None = None,
+    family: str | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """List standalone sales returns (customer-based), newest first.
-
-    والمعكوس مابيظهرش — زي سجل مردودات الشرا بالظبط. السند اللي اتعكس أثره اتشال بالكامل:
-    البضاعة خرجت تاني والقيد اتعكس، فعرضه في سجل بيتجمع بيخلّي مجموع المرتجعات يعدّ حاجة
-    مالهاش وجود. الصف نفسه بيفضل في الداتا برقمه وقيده المضاد لأي مراجعة.
-    """
-    stmt = select(SalesReturn).where(
+    """List standalone sales returns (customer-based), newest first."""
+    stmt = branch_scope.scope(select(SalesReturn), SalesReturn, current).where(
         SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
+    if rep_id is not None:
+        stmt = stmt.where(SalesReturn.rep_id == rep_id)
+    if family:
+        stmt = stmt.where(SalesReturn.family == family)
     if current.rep_id is not None:
         stmt = stmt.where(SalesReturn.customer_id.in_(
             select(Customer.id).where(Customer.rep_id == current.rep_id)
@@ -685,6 +711,8 @@ def update_standalone_return(
     ret = db.get(SalesReturn, return_id)
     if ret is None:
         raise HTTPException(404, {"code": "not_found", "message": "المرتجع غير موجود"})
+    if not branch_scope.may_see(current, ret):
+        raise HTTPException(404, {"code": "not_found", "message": "المرتجع مش موجود"})
     _rep_scope_check(db, current, body.customer_id, body.origin)
     try:
         document_edit_service.purge_sales_return(db, ret)
@@ -741,12 +769,14 @@ def delete_sales_return(
 @router.get("/returns/{return_id}", response_model=dict)
 def get_standalone_return(
     return_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     r = db.get(SalesReturn, return_id)
     if r is None:
         raise HTTPException(404, {"code": "not_found", "message": "Return not found"})
+    if not branch_scope.may_see(current, r):
+        raise HTTPException(404, {"code": "not_found", "message": "المرتجع مش موجود"})
     out = _standalone_return_out(r)
     out["origin_location_kind"] = r.origin_location_kind.value if r.origin_location_kind else None
     out["origin_location_id"] = r.origin_location_id
@@ -766,12 +796,14 @@ def get_standalone_return(
 @router.get("/{sale_id}", response_model=SalesInvoiceDetail)
 def get_sale(
     sale_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> SalesInvoiceDetail:
     inv = db.get(SalesInvoice, sale_id)
     if inv is None:
         raise HTTPException(404, {"code": "not_found", "message": "Sale not found"})
+    if not branch_scope.may_see(current, inv):
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     return SalesInvoiceDetail(
         coupons=_inv_out(inv, db).coupons,
         id=inv.id,
@@ -805,7 +837,7 @@ def get_sale(
 @router.get("/{sale_id}/returns", response_model=list[dict])
 def list_sale_returns(
     sale_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_SALE_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     rows = db.scalars(

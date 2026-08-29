@@ -69,7 +69,7 @@ function SideFields({
       {() => {
         const main: string | undefined = form.getFieldValue(`${side}_main`);
         const subs = subsOf(main);
-        const why = !main ? 'اختار الحساب الرئيسي الأول'
+        const why = !main ? 'اختر الحساب الرئيسي أولاً'
           : subs.length === 0 ? 'الحساب ده مافيهوش حسابات فرعية' : null;
         return (
           <>
@@ -213,7 +213,7 @@ export default function VoucherKeys() {
       };
       if (editing?.id) await api.put(`/api/v1/voucher-keys/${editing.id}`, body);
       else await api.post('/api/v1/voucher-keys', body);
-      message.success(editing?.id ? 'المفتاح اتعدّل' : 'المفتاح اتعمل');
+      message.success(editing?.id ? 'المفتاح اتعدّل' : 'تم إنشاء المفتاح');
       setEditing(null);
       load();
     } catch (err: any) {
@@ -301,8 +301,8 @@ export default function VoucherKeys() {
     >
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message="كل مفتاح ربط بين حسابين رئيسيين — دوس عليه واكتب المبلغ بس."
-        description="اتجاه الربط هو اللي بيحدد نوع السند: مدين الخزينة ودائن العملاء يبقى سند قبض، والعكس حاجة تانية. السند بيترحّل زي أي سند اتكتب بالإيد."
+        message="كل مفتاح ربط بين حسابين رئيسيين — اضغط عليه واكتب المبلغ فقط."
+        description="اتجاه الربط هو ما يحدد نوع السند: مدين الخزينة ودائن العملاء يعني سند قبض، والعكس نوع آخر. ويُرحَّل السند كأي سند يُكتب يدوياً."
       />
 
       <Row style={{ marginBottom: 12 }}>
@@ -315,8 +315,8 @@ export default function VoucherKeys() {
 
       {!loading && !shown.length && (
         <Empty description={keys.length
-          ? 'مفيش مفتاح مطابق للبحث'
-          : 'مفيش مفاتيح لسه — دوس «إعداد المفاتيح» وابدأ بواحد'} />
+          ? 'لا يوجد مفتاح مطابق للبحث'
+          : 'لا توجد مفاتيح بعد — اضغط «إعداد المفاتيح» وابدأ بواحد'} />
       )}
 
       <Row gutter={[12, 12]}>
@@ -346,7 +346,7 @@ export default function VoucherKeys() {
                     onClick={(e) => { e.stopPropagation(); openEditor(k); }}>تعديل</Button>
                   <Popconfirm
                     title="تشيل المفتاح؟"
-                    description="السندات اللي اتعملت منه مش بتتأثر — كل سند مستند لوحده."
+                    description="السندات المنشأة منه لا تتأثر — كل سند مستند قائم بذاته."
                     okText="شيله" cancelText="سيبه"
                      onConfirm={() => remove(k)}
                    >
@@ -374,11 +374,11 @@ export default function VoucherKeys() {
         <Form form={form} layout="vertical" onFinish={save} requiredMark={false}>
           <Form.Item name="name" label="اسم المفتاح"
             rules={[{ required: true, message: 'اكتب اسم المفتاح' }]}>
-            <Input placeholder="زي «تحصيل نقدي» أو «إيجار المقر»" />
+            <Input placeholder="مثل «تحصيل نقدي» أو «إيجار المقر»" />
           </Form.Item>
 
           <SideFields
-            side="debit" title="الطرف المدين" hint="اللي بياخد"
+            side="debit" title="الطرف المدين" hint="المستلِم"
             mainOptions={mainOptions} subsOf={subsOf} form={form} onChange={refreshPreview} />
 
           <div style={{ textAlign: 'center', marginBottom: 8 }}>
@@ -388,7 +388,7 @@ export default function VoucherKeys() {
           </div>
 
           <SideFields
-            side="credit" title="الطرف الدائن" hint="اللي بيدي"
+            side="credit" title="الطرف الدائن" hint="المسلِّم"
             mainOptions={mainOptions} subsOf={subsOf} form={form} onChange={refreshPreview} />
 
           {preview && (
@@ -408,19 +408,19 @@ export default function VoucherKeys() {
                   debit_account: 'الحساب المدين تحت المجموعة',
                   credit_account: 'الحساب الدائن تحت المجموعة',
                 } as Record<string, string>)[a] || a).join('، ')} — والمبلغ`
-                : 'مش هيسأل غير عن المبلغ.'}
+                : 'لن يسأل إلا عن المبلغ.'}
             />
           )}
 
           <Form.Item name="payment_method" label="طريقة الدفع (اختياري)">
-            <Select allowClear placeholder="سيبها فاضية عشان يسأل كل مرة" options={[
+            <Select allowClear placeholder="اتركها فارغة ليسأل في كل مرة" options={[
               { value: 'cash', label: 'نقدي' },
               { value: 'bank', label: 'تحويل بنكي' },
               { value: 'cheque', label: 'شيك' },
             ]} />
           </Form.Item>
           <Form.Item name="family" label="العيلة (اختياري)"
-            tooltip="لو المفتاح ده لخط منتجات بعينه — سيبها فاضية عشان السند يمشي على كل المديونية">
+            tooltip="إن كان هذا المفتاح لخط منتجات بعينه — اتركها فارغة ليسري السند على كامل المديونية">
             <Input placeholder="أبيض / بولي" />
           </Form.Item>
           <Form.Item name="description" label="البيان الجاهز (اختياري)">

@@ -109,11 +109,12 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
   const reset = () => save({ hidden: [], order: undefined });
 
   const apply = <T extends { key?: React.Key; dataIndex?: any }>(columns: T[]): T[] => {
-    const keyOf = (c: T) => String(c.key ?? c.dataIndex ?? '');
-    const visible = columns.filter((c) => !prefs.hidden.includes(keyOf(c)));
-    const ranked = orderKeys(visible.map(keyOf), prefs.order);
-    const byKey = new Map(visible.map((c) => [keyOf(c), c]));
-    return ranked.map((k) => byKey.get(k)!).filter(Boolean);
+    const keyOf = (c: T, idx: number) => String(c.key ?? c.dataIndex ?? `__col_${idx}__`);
+    const decorated = columns.map((c, idx) => ({ col: c, key: keyOf(c, idx) }));
+    const visible = decorated.filter(({ key }) => !prefs.hidden.includes(key));
+    const rankedKeys = orderKeys(visible.map(({ key }) => key), prefs.order);
+    const byKey = new Map(visible.map(({ key, col }) => [key, col]));
+    return rankedKeys.map((k) => byKey.get(k)!).filter(Boolean);
   };
 
   return { hidden: prefs.hidden, order: prefs.order, setHidden, move, reset, apply };
@@ -136,9 +137,10 @@ interface Props {
   /** بيفعّل قسم الترتيب. سيبها فاضية على أي جدول لسه بس بيخفي/يظهر. */
   order?: string[];
   onMove?: (key: string, direction: -1 | 1) => void;
+  onResetOrder?: () => void;
 }
 
-export default function ColumnSettings({ choices, hidden, onChange, order, onMove }: Props) {
+export default function ColumnSettings({ choices, hidden, onChange, order, onMove, onResetOrder }: Props) {
   const toggle = (key: string, show: boolean) =>
     onChange(show ? hidden.filter((k) => k !== key) : [...hidden, key]);
 
@@ -157,7 +159,7 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: '60vh', overflowY: 'auto',
           minWidth: 220,
         }}>
-          <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 8, fontWeight: 600 }}>
             الأعمدة الظاهرة{onMove ? ' وترتيبها' : ''}
           </div>
           <Space direction="vertical" style={{ width: '100%' }}>
@@ -187,8 +189,15 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
               </div>
             ))}
           </Space>
-          <div style={{ marginTop: 10 }}>
-            <Button size="small" onClick={() => onChange([])}>إظهار الكل</Button>
+          <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 6, borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
+            <Button size="small" type="primary" ghost onClick={() => { onChange([]); if (onResetOrder) onResetOrder(); }}>
+              إظهار الكل
+            </Button>
+            {onResetOrder && (
+              <Button size="small" onClick={onResetOrder}>
+                استعادة الترتيب
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -203,23 +212,6 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
 
 /**
  * سطر واحد بيدّي الجدول أعمدته والزرار بتاعه.
- *
- * The hook and the dropdown are the engine, but adopting them still meant a dozen lines per table:
- * derive the keys, build the `choices` array, wire `hidden`/`order`/`onMove`, then remember to run
- * `apply` on the columns. Written out at every table that is a dozen lines to get subtly wrong
- * forty times over — and the one that is easiest to forget is `apply`, which fails silently: the
- * dropdown works, the user hides a column, and the table ignores it.
- *
- * So the wiring lives here once. A screen says which table it is and what it must not lose, and
- * gets back the columns to render and the control to drop in the toolbar.
- *
- *     const cols = useTableColumns('customers', columns, { locked: ['name'] });
- *     …
- *     extra={<Space>{cols.control}<Button…/></Space>}
- *     <Table columns={cols.columns} … />
- *
- * `storageKey` names the TABLE, not the screen — a page with two tables needs two keys, or the two
- * of them fight over one saved arrangement.
  */
 export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; title?: any }>(
   storageKey: string,
@@ -227,26 +219,22 @@ export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; ti
   opts: { defaultHidden?: string[]; locked?: string[] } = {},
 ) {
   const prefs = useHiddenColumns(storageKey, opts.defaultHidden);
-  const keyOf = (c: T) => String(c.key ?? c.dataIndex ?? '');
-  const allKeys = columns.map(keyOf);
-  // Nothing otherwise stops somebody unticking every column and being left with a table of blank
-  // rows and no way back except «إظهار الكل» — which is not obvious when there is nothing on screen
-  // to read. The first column is the row's own identity on essentially every table here, so it
-  // anchors by default; a screen whose first column is not that says so itself.
+  const keyOf = (c: T, idx: number) => String(c.key ?? c.dataIndex ?? `__col_${idx}__`);
+  const allKeys = columns.map((c, idx) => keyOf(c, idx));
   const locked = opts.locked ?? allKeys.slice(0, 1);
 
   const control = (
     <ColumnSettings
-      choices={columns.map((c) => ({
-        key: keyOf(c),
-        // An «إجراءات» column's title is usually a node, not a word; the list still has to name it.
+      choices={columns.map((c, idx) => ({
+        key: keyOf(c, idx),
         title: typeof c.title === 'string' && c.title ? c.title : 'إجراءات',
-        locked: locked.includes(keyOf(c)),
+        locked: locked.includes(keyOf(c, idx)),
       }))}
       hidden={prefs.hidden}
       onChange={prefs.setHidden}
       order={prefs.order}
       onMove={(k, d) => prefs.move(k, d, allKeys)}
+      onResetOrder={prefs.reset}
     />
   );
 

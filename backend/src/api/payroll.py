@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PAYROLL_POST, CAP_PAYROLL_READ, CAP_SALARY_VIEW
 from src.core.db import get_db
@@ -118,11 +119,13 @@ def _line_out(db: Session, line: PayrollLine, names: dict | None = None) -> dict
 @router.get("/runs")
 def list_runs(
     year: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_PAYROLL_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     """وجود المسير وحالته — من غير مبالغ باسم حد. الأرقام محتاجة `salary.view`."""
-    stmt = select(PayrollRun).order_by(PayrollRun.year.desc(), PayrollRun.month.desc())
+    stmt = branch_scope.scope(
+        select(PayrollRun), PayrollRun, current
+    ).order_by(PayrollRun.year.desc(), PayrollRun.month.desc())
     if year:
         stmt = stmt.where(PayrollRun.year == year)
     return [{
@@ -239,11 +242,12 @@ def payslip(
 
 @router.get("/remittances")
 def list_remittances(
-    _: CurrentUser = Depends(require_capability(CAP_PAYROLL_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    rows = db.scalars(
-        select(PayrollRemittance).order_by(PayrollRemittance.remit_date.desc())).all()
+    rows = db.scalars(branch_scope.scope(
+        select(PayrollRemittance), PayrollRemittance, current)
+        .order_by(PayrollRemittance.remit_date.desc())).all()
     return [{
         "id": r.id, "document_number": r.document_number, "kind": r.kind,
         "amount": str(r.amount), "remit_date": r.remit_date, "notes": r.notes,

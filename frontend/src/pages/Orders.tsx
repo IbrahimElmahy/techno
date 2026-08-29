@@ -72,7 +72,7 @@ const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFraction
 
 const STATUS_LABELS: Record<string, { text: string; color?: string }> = {
   open: { text: 'مفتوح', color: 'blue' },
-  converted: { text: 'اتحوّل لفاتورة', color: 'green' },
+  converted: { text: 'تم التحويل إلى فاتورة', color: 'green' },
   cancelled: { text: 'ملغي' },
 };
 
@@ -376,7 +376,7 @@ export default function Orders() {
             : []),
           ...(o.notes ? [['ملاحظات', o.notes]] as [string, string][] : []),
         ],
-        note: 'شيت تسعير — مش بيحرّك مخزون ولا خزينة.',
+        note: 'ورقة تسعير — لا تحرّك مخزوناً ولا خزينة.',
       },
       [
         { title: '#', value: 'no' },
@@ -491,7 +491,7 @@ export default function Orders() {
         variable_discount_pct: String(discountPct || 0),
         notes: notes || null, lines: payload,
       });
-      message.success('اتسجّل الطلب');
+      message.success('تم تسجيل الطلب');
       setCreating(false);
       setLines([]); setNotes(''); setDueDate(null); setDiscountPct(0);
       load();
@@ -514,7 +514,7 @@ export default function Orders() {
   const cancel = async (o: Order) => {
     try {
       await api.post(`/api/v1/orders/${o.id}/cancel`);
-      message.success('اتلغى الطلب');
+      message.success('تم إلغاء الطلب');
       setDetail(null); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الطلب');
@@ -578,8 +578,8 @@ export default function Orders() {
     >
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
-        message="شيت تسعير — مش بيحرّك مخزون ولا خزينة ولا أي حاجة تانية."
-        description="اكتب أي كمية، بغض النظر عن المتاح في المخزن — الغرض إنك تسعّر أو تعرض، مش إنك ترحّل. لما البيع يتأكد، اعمل الفاتورة واربطها بالطلب ده."
+        message="ورقة تسعير — لا تحرّك مخزوناً ولا خزينة ولا أي شيء آخر."
+        description="اكتب أي كمية بغض النظر عن المتاح في المخزن — الغرض التسعير أو العرض، لا الترحيل. وعند تأكيد البيع أنشئ الفاتورة واربطها بهذا الطلب."
       />
 
       <ListToolbar
@@ -593,7 +593,7 @@ export default function Orders() {
           // مساحة ويورّي إن فيه اختيار مالهوش وجود.
           { key: 'status', placeholder: 'الحالة', options: [
             { value: 'open', label: 'مفتوح' },
-            { value: 'converted', label: 'اتحوّل' },
+            { value: 'converted', label: 'تم التحويل' },
             { value: 'cancelled', label: 'ملغي' }] },
         ]}
       />
@@ -681,7 +681,7 @@ export default function Orders() {
           </Button>
 
           {lines.length === 0 ? (
-            <Empty description="اختر الفئة ثم الأصناف اللي عايز تسعّرها"
+            <Empty description="اختر الفئة ثم الأصناف المراد تسعيرها"
               style={{ margin: '12px 0' }} />
           ) : (
             <div style={{ border: '1px solid #e6efe3', borderRadius: 10, overflowX: 'auto' }}>
@@ -717,7 +717,7 @@ export default function Orders() {
               { label: 'الإجمالي', value: money(draftTotal), big: true, strong: true,
                 rule: true, highlight: true },
             ]}
-            notes={['ورقة تسعير — مفيش مخزون بيتحرّك ولا فلوس بتتقيّد.']}
+            notes={['ورقة تسعير — لا مخزون يتحرك ولا أموال تُقيَّد.']}
           />
 
           <div style={{

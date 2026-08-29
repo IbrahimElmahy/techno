@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 14, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 15, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -71,6 +71,16 @@ class LocalDb {
           try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN $col'); } catch (_) {}
         }
       }
+      if (from < 15) {
+        // v15: تصنيف العميل وخطوط منتجاته — «أبيض» و«بولي» بينزلوا مع الحزمة عشان
+        // الفاتورة تقول على أنهي مديونية، وعشان حقل المالك في المعاينة يتفلتر بالتصنيف.
+        for (final col in ['customer_type TEXT', 'families TEXT']) {
+          try { await d.execute('ALTER TABLE customer ADD COLUMN $col'); } catch (_) {}
+        }
+        try {
+          await d.execute('ALTER TABLE sale_invoice ADD COLUMN family TEXT');
+        } catch (_) {}
+      }
       if (from < 14) {
         // v14: المخازن، وإذن التحويل اللي المندوب بيكتبه على الجهاز.
         for (final ddl in [_warehouseTable, _transferTable, _transferLineTable]) {
@@ -105,7 +115,7 @@ class LocalDb {
           created_at TEXT NOT NULL
         )''');
       await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, '
-          'address TEXT, price_tier TEXT)');
+          'address TEXT, price_tier TEXT, customer_type TEXT, families TEXT)');
       await d.execute(
           'CREATE TABLE insp_item_type(id INTEGER PRIMARY KEY, name TEXT, points REAL)');
       await d.execute('''
@@ -193,18 +203,42 @@ class LocalDb {
         batch.insert('customer', {
           'id': c.id, 'name': c.name, 'phone': c.phone, 'address': c.address,
           'price_tier': c.priceTier,
+          'customer_type': c.customerType,
+          // مفصولة بفاصلة: قايمة قصيرة (خط أو اتنين) ومحدش بيبحث جوّاها، فجدول تاني
+          // ليها هيبقى تكلفة من غير مقابل.
+          'families': c.families.join(','),
         });
       }
       await batch.commit(noResult: true);
     });
   }
 
-  Future<List<CustomerRef>> customers({String query = '', int limit = 40}) async {
+  /// عملاء الجهاز — بفلتر اسم، وبفلتر تصنيف اختياري.
+  ///
+  /// `customerType` بيخدم حقل المالك في المعاينة: «الملّاك» تصنيف في كارت العميل، والحقل
+  /// بيقترح منه هو بس بدل ما يقلّب في العملاء كلهم. والاقتراح بيفضل اقتراح — الاسم اللي
+  /// مش في القايمة بيتكتب زي ما هو، لأن المندوب بيقابل ناس المكتب لسه ماعملّهمش كارت،
+  /// ورفض الزيارة عشان كده معناه خسارة الزيارة.
+  Future<List<CustomerRef>> customers({
+    String query = '',
+    int limit = 40,
+    String? customerType,
+  }) async {
     final d = await db;
-    final rows = query.isEmpty
-        ? await d.query('customer', orderBy: 'name', limit: limit)
-        : await d.query('customer',
-            where: 'name LIKE ?', whereArgs: ['%$query%'], orderBy: 'name', limit: limit);
+    final where = <String>[];
+    final args = <Object?>[];
+    if (query.isNotEmpty) {
+      where.add('name LIKE ?');
+      args.add('%$query%');
+    }
+    if (customerType != null && customerType.isNotEmpty) {
+      where.add('customer_type = ?');
+      args.add(customerType);
+    }
+    final rows = await d.query('customer',
+        where: where.isEmpty ? null : where.join(' AND '),
+        whereArgs: where.isEmpty ? null : args,
+        orderBy: 'name', limit: limit);
     return rows.map(_customerFromRow).toList();
   }
 
@@ -214,6 +248,11 @@ class LocalDb {
         phone: r['phone'] as String?,
         address: r['address'] as String?,
         priceTier: r['price_tier'] as String?,
+        customerType: r['customer_type'] as String?,
+        families: ((r['families'] as String?) ?? '')
+            .split(',')
+            .where((x) => x.trim().isNotEmpty)
+            .toList(),
       );
 
   // --- inspection point-items catalog (أصناف المعاينة) ---
@@ -522,6 +561,8 @@ class LocalDb {
     required double creditAmount,
     required double total,
     String? notes,
+    /// خط المنتجات اللي الفاتورة دي عليه — «أبيض» أو «بولي». `null` = على المديونية كلها.
+    String? family,
     required List<SaleDraftLine> lines,
   }) async {
     final d = await db;
@@ -535,6 +576,7 @@ class LocalDb {
         'credit_amount': creditAmount,
         'total': total,
         'notes': notes,
+        'family': family,
         'synced': 0,
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -802,6 +844,7 @@ CREATE TABLE sale_invoice(
   credit_amount REAL NOT NULL DEFAULT 0,
   total REAL NOT NULL DEFAULT 0,
   notes TEXT,
+  family TEXT,
   synced INTEGER NOT NULL DEFAULT 0,
   document_number TEXT,
   created_at TEXT NOT NULL

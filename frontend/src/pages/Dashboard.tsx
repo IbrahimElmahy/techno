@@ -27,7 +27,7 @@ import { api } from '../api/client';
  *   entry that does not balance.
  * * **Every finding goes somewhere.** A count with nowhere to click is a complaint. Each card
  *   carries the screen that fixes it.
- * * **Clean is a real answer.** An empty page has to say «مفيش حاجة غلط» in as many words —
+ * * **Clean is a real answer.** An empty page has to say «لا يوجد خطأ» in as many words —
  *   otherwise a healthy system and a broken endpoint look identical, and the healthy day is the
  *   common one.
  */
@@ -60,13 +60,13 @@ const SEVERITY: Record<Issue['severity'], {
     label: 'خطر',
     color: '#cf1322',
     icon: <CloseCircleFilled />,
-    note: 'فيه رقم في النظام بقى غلط',
+    note: 'هناك رقم في النظام أصبح خاطئاً',
   },
   medium: {
     label: 'محتاج تظبيط',
     color: '#d46b08',
     icon: <WarningFilled />,
-    note: 'مفيش حاجة بايظة، بس فيه قرار بيتاخد على بيانات ناقصة',
+    note: 'لا يوجد خلل، لكن هناك قراراً يُتَّخذ على بيانات ناقصة',
   },
   low: {
     label: 'للعلم',
@@ -125,7 +125,7 @@ export default function Dashboard() {
         {header}
         <Alert type="error" showIcon
           message="الفحص نفسه مانجحش"
-          description="مش معناه إن مفيش مشاكل — معناه إننا مانعرفش. جرّب إعادة الفحص."
+          description="لا يعني ذلك عدم وجود مشكلات — بل يعني أننا لا نعلم. أعد الفحص."
           action={<Button size="small" onClick={load}>إعادة المحاولة</Button>} />
       </div>
     );
@@ -140,9 +140,9 @@ export default function Dashboard() {
         <Card>
           <div style={{ textAlign: 'center', padding: '48px 0' }}>
             <CheckCircleFilled style={{ fontSize: 56, color: '#6AB42D' }} />
-            <h3 style={{ marginTop: 16, marginBottom: 4 }}>مفيش حاجة غلط</h3>
+            <h3 style={{ marginTop: 16, marginBottom: 4 }}>لا يوجد خطأ</h3>
             <div style={{ color: '#6b6b6b' }}>
-              كل الفحوصات عدّت: مفيش رصيد سالب، ولا قيد مش متوازن، ولا فاتورة ناقصة تكلفة.
+              اجتازت كل الفحوصات: لا رصيد سالب، ولا قيد غير متوازن، ولا فاتورة ناقصة التكلفة.
             </div>
           </div>
         </Card>
@@ -197,7 +197,7 @@ export default function Dashboard() {
                   </Space>
                 }
                 extra={
-                  <Tooltip title="روح للصفحة اللي بتتصلّح منها">
+                  <Tooltip title="انتقل إلى الصفحة التي تُصحَّح منها">
                     <Button type="link" size="small" icon={<ArrowLeftOutlined />}
                       onClick={() => navigate(issue.link)}>
                       افتح

@@ -49,6 +49,7 @@ from src.services.ledger_service import LineInput
 from src.services.pricing_service import PricingError
 from src.services.serial_service import SerialError
 from src.services.uom_service import UomError
+from src.auth.branch_scope import branch_for
 
 
 class SalesError(Exception):
@@ -339,6 +340,9 @@ def create_sale(
         variable_discount_pct=variable, combined_pct=combined, net=net, tax_amount=tax,
         cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         cash_account_id=cash_acc.id, ledger_entry_id=None, actor_user_id=actor_user_id,
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=origin_location_kind,
+                             location_id=origin_location_id),
         # (030) Falls back to the seller's own rep id, so the document always names someone.
         rep_id=rep_id if rep_id is not None else (
             actor_user_id if actor_role == RoleName.sales_rep else None),
@@ -449,8 +453,9 @@ def create_sale(
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, -credit))
     # (030) Revenue posts to the account chosen on the document when there is one, so a company
     # can split sales across several revenue accounts; otherwise the system's default.
-    entry_lines.append(LineInput(_revenue_account_id(db, revenue_account_id),
-                                 Direction.credit, net))
+    if net > ZERO:
+        entry_lines.append(LineInput(_revenue_account_id(db, revenue_account_id),
+                                     Direction.credit, net))
     if tax > ZERO:  # output VAT is owed to the authority, not revenue
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id,
                                      Direction.credit, tax, statement="ضريبة القيمة المضافة"))
@@ -471,14 +476,17 @@ def create_sale(
             # Charged to him: he already pays it via cash/credit above, so this is the other side.
             entry_lines.append(LineInput(account_id, Direction.credit, amount,
                                          statement=exp.get("description") or "مصروف على العميل"))
-    entry = ledger_service.post_entry(
-        db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
-        rep_id=invoice.rep_id,
-        description=f"Sale {invoice.document_number}",
-        # Same date as the document: the books and the paper have to agree.
-        entry_date=invoice_date,
-    )
-    invoice.ledger_entry_id = entry.id
+    if entry_lines:
+        entry = ledger_service.post_entry(
+            db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
+            rep_id=invoice.rep_id,
+            description=f"Sale {invoice.document_number}",
+            # Same date as the document: the books and the paper have to agree.
+            entry_date=invoice_date,
+        )
+        invoice.ledger_entry_id = entry.id
+    else:
+        invoice.ledger_entry_id = None
     for exp in (expenses or []):
         amount = to_money(exp.get("amount") or 0)
         if amount <= ZERO:
@@ -749,6 +757,8 @@ def return_sale(
         # sale raised, even for a customer whose accounts were split afterwards.
         family=getattr(inv, "family", None),
         credit_reduction=credit_reduction, ledger_entry_id=None, actor_user_id=actor_user_id,
+        # المرتجع بياخد فرع فاتورته: البضاعة رجعت للمكان اللي خرجت منه.
+        branch_id=getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id),
     )
     db.add(ret)
     db.flush()
@@ -926,6 +936,9 @@ def create_standalone_return(
         document_number=_doc_number(db, SalesReturn, "SRET"),
         sales_invoice_id=None, customer_id=customer_id, family=family,
         origin_location_kind=origin_location_kind, origin_location_id=origin_location_id,
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=origin_location_kind,
+                             location_id=origin_location_id),
         gross=gross, combined_pct=variable, value=net, tax_amount=tax,
         cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),
         cash_account_id=cash_acc.id if cash_acc else None,

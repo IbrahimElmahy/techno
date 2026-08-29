@@ -479,7 +479,7 @@ const Inspections: React.FC = () => {
                 {detail.status !== 'rejected' && (
                   <Popconfirm
                     title="رفض المعاينة؟"
-                    description="هيتم إرجاع البضاعة لعهدة المندوب — الرفض نهائي."
+                    description="ستُعاد البضاعة إلى عهدة المندوب — والرفض نهائي."
                     okText="رفض"
                     cancelText="إلغاء"
                     okButtonProps={{ danger: true }}

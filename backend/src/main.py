@@ -57,6 +57,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
 from src.api import (
     settings as sales_settings,
 )
+from src.api import branch_overview, permissions
 
 
 def create_app() -> FastAPI:
@@ -69,6 +70,12 @@ def create_app() -> FastAPI:
     # Local dev origins + any deployed frontend origins from FRONTEND_ORIGINS (comma-separated),
     # plus a regex allowing Vercel preview/prod domains and the production technothermeg.com domain.
     from src.core.config import settings as _settings
+
+    # قبل CORS في الكود عشان يبقى تحتها في التنفيذ: الـCORS لازم تفضل الطبقة الخارجية
+    # عشان الرد اللي بيقع يخرج بترويستها. والسجل بيشوف الطلب زي ما وصل للراوتر بالظبط.
+    from src.core.request_audit import RequestAuditMiddleware
+
+    app.add_middleware(RequestAuditMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -96,6 +103,8 @@ def create_app() -> FastAPI:
     app.include_router(treasury.router, prefix=prefix)
     app.include_router(customers.router, prefix=prefix)
     app.include_router(audit.router, prefix=prefix)
+    app.include_router(permissions.router, prefix=prefix)
+    app.include_router(branch_overview.router, prefix=prefix)
     # Sales & Inventory (002)
     app.include_router(catalog.router, prefix=prefix)
     app.include_router(serials.router, prefix=prefix)
@@ -203,12 +212,29 @@ def create_app() -> FastAPI:
         _backfill_branch(engine)
         _migrate_appears_in(engine)
         _ensure_coupon_kind_tiers(engine)
+        _load_permission_overrides()
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
 
         logging.getLogger("uvicorn.error").warning("startup schema sync skipped: %s", exc)
 
     return app
+
+
+def _load_permission_overrides() -> None:
+    """الصلاحيات المضبوطة من الشاشة بتتقرا مرة واحدة عند الإقلاع.
+
+    الفحص بيتنادى كذا مرة في الطلب الواحد، فقراءة الجدول في كل مرة بتحوّل حارس رخيص لحمل.
+    الحفظ من الشاشة بيعيد بناء الكاش بنفسه، فمافيش حاجة بتفضل قديمة.
+    """
+    from src.auth import rbac
+    from src.core.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        rbac.refresh_overrides(db)
+    finally:
+        db.close()
 
 
 # Columns added to EXISTING tables after their first release. create_all only creates missing
@@ -288,6 +314,22 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("voucher", "family", "VARCHAR(40)"),
     ("customer", "default_return_warehouse_id", "BIGINT"),
     ("stock_transfer", "reject_reason", "VARCHAR(240)"),
+    # (036) تاريخ حركة البضاعة على إذن التحويل — زي `return_date` و`purchase_date`.
+    ("stock_transfer", "transfer_date", "DATE"),
+    # (037) عزل الفروع. المستند بيقول هو بتاع أنهي فرع، والقوايم بتفلتر بيه.
+    #
+    # nullable عن قصد: المستند القديم مالوش فرع لحد ما يتعبّى، و«مالوش فرع» بيتشاف من
+    # الكل. الاختيار التاني كان NOT NULL بقيمة افتراضية، وده بيحط كل تاريخ الشركة في فرع
+    # واحد بالغلط ومحدش هيلاحظ.
+    ("sales_invoice", "branch_id", "BIGINT"),
+    ("sales_return", "branch_id", "BIGINT"),
+    ("purchase_invoice", "branch_id", "BIGINT"),
+    ("purchase_return", "branch_id", "BIGINT"),
+    ("stock_movement", "branch_id", "BIGINT"),
+    ("voucher", "branch_id", "BIGINT"),
+    ("coupon_receipt", "branch_id", "BIGINT"),
+    ("inspection", "branch_id", "BIGINT"),
+    ("stock_transfer", "branch_id", "BIGINT"),
     ("stock_count", "kind", "VARCHAR(16) NOT NULL DEFAULT 'full'"),
     ("purchase_return", "notes", "VARCHAR(500)"),
     # Customer card fields read off their العملاء form. discount/VAT stay nullable on purpose:
@@ -715,7 +757,13 @@ def _relax_configurable_enum_columns(engine) -> None:
     from sqlalchemy import inspect as sa_inspect
 
     # (table, column, varchar length) pairs that are configurable free lists.
-    targets = [("customer", "customer_type", 32)]
+    #
+    # `role.name` مش قايمة حرة — بس نفس العطل بالظبط. «قارئ» اتضاف للأدوار في الكود
+    # والـENUM في القاعدة ماتوسّعش، فالدور بقى موجود ومستحيل يتسجّل: MySQL بيقصّ القيمة
+    # والصف بيترفض. والتوسعة بالـENUM كانت هتحتاج سطر جديد مع كل دور، وتفضل تُنسى؛ VARCHAR
+    # بيخلّي الأدوار تتعرّف من الكود مرة واحدة وخلاص. والقيم لسه محكومة بـ`RoleName` في
+    # طبقة التطبيق، اللي هي اللي بتفحص فعلاً.
+    targets = [("customer", "customer_type", 32), ("role", "name", 40)]
     inspector = sa_inspect(engine)
     for table, column, length in targets:
         try:

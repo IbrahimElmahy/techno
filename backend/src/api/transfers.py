@@ -1,6 +1,7 @@
 """Transfers router (T042). FR-022–024, FR-027."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,6 +22,7 @@ from src.services.transfer_service import TransferDenied, TransferError
 from src.auth.rbac import role_has_capability
 from src.models.role import RoleName
 from src.models.transfer import StockTransfer, TransferStatus
+from src.auth import branch_scope
 router = APIRouter(tags=["transfers"], prefix="/transfers")
 
 
@@ -35,6 +37,8 @@ class TransferCreate(BaseModel):
     route: TransferRoute
     source: LocationIn
     dest: LocationIn
+    # (036) اليوم اللي البضاعة اتحركت فيه. مابيتبعتش ⇒ المستند بيقرا بتاريخ تسجيله.
+    transfer_date: date | None = None
 
 
 class TransferOut(BaseModel):
@@ -50,6 +54,7 @@ class TransferOut(BaseModel):
     source_location_id: int | None = None
     dest_location_kind: str | None = None
     dest_location_id: int | None = None
+    transfer_date: str | None = None
     created_at: str | None = None
     # (031) ليه اترفض، والأصناف اللي عليه.
     reject_reason: str | None = None
@@ -93,6 +98,7 @@ def _out(t) -> TransferOut:
         dest_location_kind=t.dest_location_kind.value,
         dest_location_id=t.dest_location_id,
         created_at=str(t.created_at) if t.created_at else None,
+        transfer_date=str(t.transfer_date) if getattr(t, "transfer_date", None) else None,
         reject_reason=getattr(t, "reject_reason", None),
         # The lines the approver acts on. An old document has none and keeps answering through
         # its own item/quantity above, so nothing already posted has to be migrated.
@@ -105,11 +111,11 @@ def _out(t) -> TransferOut:
 def list_transfers(
     status_filter: str | None = None,   # pending | approved | rejected | reversed
     item_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> list[TransferOut]:
     """Transfer documents, newest first, optionally narrowed by status or item."""
-    stmt = select(StockTransfer)
+    stmt = branch_scope.scope(select(StockTransfer), StockTransfer, current)
     if status_filter:
         stmt = stmt.where(StockTransfer.status == status_filter)
     if item_id is not None:
@@ -128,7 +134,7 @@ def create_transfer(
             db, item_id=body.item_id, quantity=body.quantity, route=body.route,
             source_kind=body.source.location_kind, source_id=body.source.location_id,
             dest_kind=body.dest.location_kind, dest_id=body.dest.location_id,
-            initiated_by=current.id)
+            initiated_by=current.id, transfer_date=body.transfer_date)
     except TransferError as exc:
         # Covers an illegal route, a non-positive quantity, same source/destination, and asking
         # for more than the source holds.

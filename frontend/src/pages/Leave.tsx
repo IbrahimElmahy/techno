@@ -61,7 +61,7 @@ interface BalanceRow {
 
 const STATUS: Record<string, { label: string; color?: string }> = {
   draft: { label: 'مسودة' },
-  submitted: { label: 'مستنية الاعتماد', color: 'orange' },
+  submitted: { label: 'بانتظار الاعتماد', color: 'orange' },
   approved: { label: 'معتمدة', color: 'green' },
   rejected: { label: 'مرفوضة', color: 'red' },
   cancelled: { label: 'ملغية' },
@@ -128,7 +128,7 @@ export default function Leave() {
 
   const submit = async () => {
     if (!form.employee_id || !form.leave_type_id || !form.range) {
-      message.warning('اختار الموظف والنوع والمدة'); return;
+      message.warning('اختر الموظف والنوع والمدة'); return;
     }
     setSaving(true);
     try {
@@ -139,7 +139,7 @@ export default function Leave() {
         date_to: form.range[1].format('YYYY-MM-DD'),
         reason: form.reason || null,
       });
-      message.success('اتسجّل الطلب');
+      message.success('تم تسجيل الطلب');
       setCreating(false);
       load();
     } catch (err: any) { fail(err, 'تعذر تسجيل الطلب'); } finally { setSaving(false); }
@@ -149,7 +149,7 @@ export default function Leave() {
     try {
       await api.post(`/api/v1/hr/leave/requests/${row.id}/${what}`,
         what === 'reject' ? { reason: null } : undefined);
-      message.success({ approve: 'اتعتمد', reject: 'اترفض', cancel: 'اتلغى' }[what]);
+      message.success({ approve: 'اتعتمد', reject: 'اترفض', cancel: 'تم الإلغاء' }[what]);
       load();
     } catch (err: any) { fail(err, 'تعذر تنفيذ الطلب'); }
   };
@@ -286,7 +286,7 @@ export default function Leave() {
       {!types.length ? (
         <Alert
           type="info" showIcon style={{ marginBottom: 12 }}
-          message="لسه مافيش أنواع أجازات"
+          message="لا توجد أنواع إجازات بعد"
           description="ابدأ من تبويب «الأنواع» — سنوية، عارضة، مرضية، بدون أجر."
         />
       ) : null}
@@ -313,7 +313,7 @@ export default function Leave() {
                   columns={reqTable.columns} dataSource={requests}
                   pagination={{ defaultPageSize: 25, showSizeChanger: true }}
                   scroll={{ x: 'max-content' }}
-                  locale={{ emptyText: 'مافيش طلبات' }}
+                  locale={{ emptyText: 'لا توجد طلبات' }}
                 />
               </>
             ),
@@ -336,7 +336,7 @@ export default function Leave() {
                   columns={balTable.columns} dataSource={balances}
                   pagination={{ defaultPageSize: 50, showSizeChanger: true }}
                   scroll={{ x: 'max-content' }}
-                  locale={{ emptyText: 'مافيش أرصدة' }}
+                  locale={{ emptyText: 'لا توجد أرصدة' }}
                 />
               </>
             ),
@@ -427,13 +427,13 @@ export default function Leave() {
               <Select style={{ width: 260 }} value={typeForm.deducts_salary}
                 onChange={(v) => setTypeForm({ ...typeForm, deducts_salary: v })}
                 options={[
-                  { value: false, label: 'مابتخصمش من المرتب' },
+                  { value: false, label: 'لا تُخصم من الراتب' },
                   { value: true, label: 'بتخصم من المرتب' },
                 ]} />
               <Select style={{ width: 260 }} value={typeForm.counts_weekend}
                 onChange={(v) => setTypeForm({ ...typeForm, counts_weekend: v })}
                 options={[
-                  { value: false, label: 'أيام الشغل بس' },
+                  { value: false, label: 'أيام العمل فقط' },
                   { value: true, label: 'بتحسب الجمعة والسبت' },
                 ]} />
               <Select style={{ width: 260 }} value={typeForm.requires_approval}

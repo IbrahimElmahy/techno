@@ -16,6 +16,7 @@ from src.models.employee import Employee
 from src.models.hr_org import Department, EmployeeTermination, TerminationKind
 from src.services import hr_service
 from src.services.hr_service import HrError
+from src.auth import branch_scope
 
 router = APIRouter(tags=["hr"], prefix="/hr")
 
@@ -117,10 +118,12 @@ def _term_out(db: Session, t: EmployeeTermination) -> TerminationOut:
 @router.get("/departments", response_model=list[DepartmentOut])
 def list_departments(
     active_only: bool = Query(False),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[DepartmentOut]:
-    stmt = select(Department).order_by(Department.code)
+    stmt = branch_scope.scope(
+        select(Department), Department, current
+    ).order_by(Department.code)
     if active_only:
         stmt = stmt.where(Department.active.is_(True))
     counts = _counts(db)

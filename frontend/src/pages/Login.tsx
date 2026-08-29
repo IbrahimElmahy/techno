@@ -1,19 +1,51 @@
 import React, { useState } from 'react';
-import { Form, Input, Button, Card, Typography, message } from 'antd';
+import { Form, Input, Button, Card, Checkbox, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, User, RoleName } from '../components/AuthProvider';
 import { api } from '../api/client';
 import Logo from '../components/Logo';
 
+/**
+ * بيانات الدخول المحفوظة على الجهاز ده.
+ *
+ * **الباسورد بيتخزّن نص صريح.** مافيش تشفير هنا، ومكانش ينفع يبقى فيه: أي مفتاح الصفحة
+ * تقدر تفكّ بيه، الصفحة نفسها بتقدر تفكّ بيه — والنتيجة تشفير شكله أمان وهو مش أمان، وده
+ * أسوأ من الوضوح. اللي بيفتح أدوات المطوّر على الجهاز ده بيقرا الباسورد.
+ *
+ * فالخيار مطفي بالافتراضي، ومكتوب على الشاشة إنه بيحفظ الباسورد كمان — عشان اللي بيعلّمه
+ * يبقى عارف هو بيوافق على إيه. وقفله بيمسح المحفوظ في نفس اللحظة، مش بعدين.
+ *
+ * وده مالوش علاقة بالبقاء مسجّل الدخول: التوكن عايش ٣٠ يوم أصلاً، فالشاشة دي مابتظهرش
+ * كل يوم — بتظهر بعد الخروج.
+ */
+const REMEMBER_KEY = 'techno.remember_username';
+const REMEMBER_PWD_KEY = 'techno.remember_password';
+
+const readKey = (k: string) => {
+  try { return localStorage.getItem(k) || ''; } catch { return ''; }
+};
+
 export default function Login() {
   const [loading, setLoading] = useState(false);
+  const [remembered] = useState(() => readKey(REMEMBER_KEY));
+  const [rememberedPwd] = useState(() => readKey(REMEMBER_PWD_KEY));
+  const [remember, setRemember] = useState(() => Boolean(remembered));
   const { login } = useAuth();
   const navigate = useNavigate();
 
   const onFinish = async (values: any) => {
     setLoading(true);
     try {
+      try {
+        if (remember) {
+          localStorage.setItem(REMEMBER_KEY, values.username);
+          localStorage.setItem(REMEMBER_PWD_KEY, values.password);
+        } else {
+          localStorage.removeItem(REMEMBER_KEY);
+          localStorage.removeItem(REMEMBER_PWD_KEY);
+        }
+      } catch { /* متصفح مقفّل التخزين — الدخول أهم من التذكّر */ }
       // 1. Authenticate with backend (consumes POST /auth/login)
       const loginRes = await api.post('/api/v1/auth/login', {
         username: values.username,
@@ -89,7 +121,8 @@ export default function Login() {
           تسجيل الدخول
         </h2>
 
-        <Form name="login_form" layout="vertical" onFinish={onFinish} requiredMark={false}>
+        <Form name="login_form" layout="vertical" onFinish={onFinish} requiredMark={false}
+          initialValues={{ username: remembered, password: rememberedPwd }}>
           <Form.Item
             name="username"
             rules={[{ required: true, message: 'يرجى إدخال اسم المستخدم!' }]}
@@ -98,6 +131,7 @@ export default function Login() {
               prefix={<UserOutlined style={{ color: '#bfbfbf' }} />}
               placeholder="اسم المستخدم"
               size="large"
+              autoFocus={!remembered}
             />
           </Form.Item>
 
@@ -109,7 +143,29 @@ export default function Login() {
               prefix={<LockOutlined style={{ color: '#bfbfbf' }} />}
               placeholder="كلمة المرور"
               size="large"
+              autoFocus={Boolean(remembered) && !rememberedPwd}
             />
+          </Form.Item>
+
+          <Form.Item style={{ marginBottom: 12 }}>
+            <Checkbox
+              checked={remember}
+              onChange={(e) => {
+                setRemember(e.target.checked);
+                // القفل بيمسح على طول — مش بيستنى الدخول الجاي.
+                if (!e.target.checked) {
+                  try {
+                    localStorage.removeItem(REMEMBER_KEY);
+                    localStorage.removeItem(REMEMBER_PWD_KEY);
+                  } catch { /* لا شيء */ }
+                }
+              }}
+            >
+              تذكّر بيانات الدخول
+            </Checkbox>
+            <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 2 }}>
+              يُحفظ اسم المستخدم وكلمة المرور على هذا الجهاز — اتركها غير مفعّلة على جهاز مشترك.
+            </div>
           </Form.Item>
 
           <Form.Item style={{ marginBottom: 0 }}>

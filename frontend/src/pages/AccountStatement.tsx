@@ -261,7 +261,7 @@ export default function AccountStatement() {
     { label: 'آخر ٧ أيام', get: () => [dayjs().subtract(6, 'day'), dayjs()] },
     { label: 'الشهر ده', get: () => [dayjs().startOf('month'), dayjs()] },
     {
-      label: 'الشهر اللي فات',
+      label: 'الشهر الماضي',
       get: () => [
         dayjs().subtract(1, 'month').startOf('month'),
         dayjs().subtract(1, 'month').endOf('month'),
@@ -298,7 +298,7 @@ export default function AccountStatement() {
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      message.success('اتنسخ رابط الكشف بالفلاتر زي ما هي — ابعتّه لأي حد يفتحه');
+      message.success('نُسخ رابط الكشف بالفلاتر كما هي — أرسله لمن يريد فتحه');
     } catch {
       message.error('المتصفح رفض النسخ — انسخ العنوان من شريط العناوين');
     }
@@ -561,7 +561,7 @@ export default function AccountStatement() {
             <DocumentLink kind={l.doc_kind} id={l.doc_id}
               label={l.doc_number ? `المستند ${l.doc_number}` : 'فتح المستند'} allowEdit />
           ) : (
-            <span style={{ color: '#8c8c8c' }}>قيد يدوي — مافيش مستند وراه</span>
+            <span style={{ color: '#8c8c8c' }}>قيد يدوي — لا يوجد مستند خلفه</span>
           )}
         </span>
       </div>
@@ -602,7 +602,7 @@ export default function AccountStatement() {
               ))}
             </Descriptions>
           ) : (
-            <span style={{ color: '#8c8c8c' }}>الحركة دي مالهاش تفاصيل زيادة عن اللي في السطر</span>
+            <span style={{ color: '#8c8c8c' }}>لا توجد لهذه الحركة تفاصيل زائدة عمّا في السطر</span>
           )}
         </div>
       );
@@ -771,7 +771,7 @@ export default function AccountStatement() {
 
       {((isItem && !itemId) || (!isItem && !accountId && !mainKey)) && (
         <Empty description={isItem ? 'اختر صنفاً لعرض كشفه'
-          : 'اختر حساباً — أو حساباً رئيسياً بس لكشف مجمّع لكل اللي تحته'} />
+          : 'اختر حساباً — أو حساباً رئيسياً فقط لكشف مجمّع لكل ما تحته'} />
       )}
 
       {statement && (
@@ -826,8 +826,8 @@ export default function AccountStatement() {
                 hideZero && 'بدون الحركات الصفرية',
               ].filter(Boolean).join(' · ')}
               description={`${shownLines.length} حركة من إجمالي ${lines.length}. `
-                + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو اللي بيمشي '
-                + 'مع السطور اللي قدامك.'}
+                + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو الذي يسير '
+                + 'مع السطور المعروضة أمامك.'}
             />
           )}
 

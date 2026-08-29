@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag,
   Tooltip, Typography, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, PrinterOutlined, DeleteOutlined,
-  EditOutlined, RollbackOutlined,
+  EditOutlined, RollbackOutlined, EyeOutlined, ExclamationCircleOutlined,
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
@@ -129,6 +129,8 @@ interface InvoiceFilters {
   date_from?: string;
   date_to?: string;
   payment?: string;   // cash | credit | partial
+  rep_id?: number;
+  family?: string;
 }
 
 /**
@@ -212,6 +214,7 @@ export default function Invoices() {
 
   // Drawers
   const [createVisible, setCreateVisible] = useState(false);
+  const [viewOnly, setViewOnly] = useState(false);
 
   // Standalone invoice detail/view (separate from the return wizard)
   // Each user hides the columns they never read; the choice is theirs alone and per screen.
@@ -226,7 +229,6 @@ export default function Invoices() {
     'external_document_number', 'revenue_account_id', 'gross', 'discount_value',
     'combined_pct', 'notes',
   ]);
-  const [detailVisible, setDetailVisible] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
   const [editingInvoice, setEditingInvoice] = useState<{ id: number; voided: boolean } | null>(null);
@@ -425,7 +427,7 @@ export default function Invoices() {
       customer_id: r.customer_id,
       rep_id: r.rep_id,
       revenue_account_id: null,
-      family: null,
+      family: r.family || null,
       gross: Number(r.gross || 0),
       combined_pct: Number(r.combined_pct || 0),
       discount_value: Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100),
@@ -620,15 +622,24 @@ export default function Invoices() {
   const lineColumns: EntryColumn<SaleLineItem>[] = [
     { key: 'idx', title: '#', width: 28, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
+    // المخزن بيتغيّر من السطر — بالإيد، ولوحده أبداً.
+    //
+    // تغييره هنا بيغيّر مخزن الفاتورة كمان، فالأصناف اللي بتتضاف بعده بتنزل على نفس
+    // المخزن من غير ما تتقال تاني. السطور اللي اتكتبت قبل كده بتفضل مكانها: اللي اتقال
+    // مرة مايتغيّرش من ورا اللي كتبه.
     { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
-        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
-          value={line.warehouse_id ?? undefined}
-          onChange={(v) => {
-            handleLineChange(line.key, 'warehouse_id', v ?? null);
-            if (v != null) setDocWarehouseId(v as number);
-          }}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+        viewOnly ? (
+          <span style={{ fontSize: 12 }}>{warehouses.find((w) => w.id === line.warehouse_id)?.name || '-'}</span>
+        ) : (
+          <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+            value={line.warehouse_id ?? undefined}
+            onChange={(v) => {
+              handleLineChange(line.key, 'warehouse_id', v ?? null);
+              if (v != null) setDocWarehouseId(v as number);
+            }}
+            options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+        )
       ) },
     { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
       cell: (line) => (
@@ -638,34 +649,46 @@ export default function Invoices() {
       ) },
     { key: 'unit', title: 'الوحدة', minWidth: 80,
       cell: (line) => (
-        <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
-          value={line.unit ?? '__base__'}
-          onChange={(v) => handleLineChange(line.key, 'unit', v === '__base__' ? null : v)}
-          options={saleUnitOptions(line.item_id)} />
+        viewOnly ? (
+          <span style={{ fontSize: 12 }}>{line.unit || 'أساسية'}</span>
+        ) : (
+          <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+            value={line.unit ?? '__base__'}
+            onChange={(v) => handleLineChange(line.key, 'unit', v === '__base__' ? null : v)}
+            options={saleUnitOptions(line.item_id)} />
+        )
       ) },
     { key: 'quantity', title: 'الكمية', minWidth: 70, locked: true,
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
-        <InputNumber size="small" style={{ width: '100%' }} min={0.001}
-          data-qty-key={line.key} data-grid-col="qty" keyboard={false}
-          placeholder="الكمية" value={line.quantity ?? undefined}
-          onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
-          onBlur={() => handleLineChange(line.key, 'quantity', checkedQuantity(line))}
-          onPressEnter={(e) => {
-            e.preventDefault();
-            handleLineChange(line.key, 'quantity', checkedQuantity(line));
-            advanceFrom(line.key);
-          }} />
+        viewOnly ? (
+          <b>{Number(line.quantity || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b>
+        ) : (
+          <InputNumber size="small" style={{ width: '100%' }} min={0.001}
+            data-qty-key={line.key} data-grid-col="qty" keyboard={false}
+            placeholder="الكمية" value={line.quantity ?? undefined}
+            onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
+            onBlur={() => handleLineChange(line.key, 'quantity', checkedQuantity(line))}
+            onPressEnter={(e) => {
+              e.preventDefault();
+              handleLineChange(line.key, 'quantity', checkedQuantity(line));
+              advanceFrom(line.key);
+            }} />
+        )
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
         .toLocaleString('ar-EG', { maximumFractionDigits: 3 }) },
     { key: 'unit_price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
-        <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-          placeholder="السعر" value={line.unit_price}
-          onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
-          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+        viewOnly ? (
+          <span>{money(line.unit_price)} ج.م</span>
+        ) : (
+          <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+            placeholder="السعر" value={line.unit_price}
+            onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
+            onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+        )
       ),
       footer: () => null },
     { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
@@ -675,18 +698,26 @@ export default function Invoices() {
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
     { key: 'variable_discount', title: 'خصم متغير %', minWidth: 75,
       cell: (line) => (
-        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
-          placeholder="متغير" value={line.variable_discount ?? undefined}
-          onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}
-          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+        viewOnly ? (
+          <span>{line.variable_discount != null ? `${line.variable_discount}%` : '-'}</span>
+        ) : (
+          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+            placeholder="متغير" value={line.variable_discount ?? undefined}
+            onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}
+            onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+        )
       ),
       footer: () => null },
     { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
-        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
-          placeholder="ثابت" value={line.fixed_discount ?? undefined}
-          onChange={(v) => handleLineChange(line.key, 'fixed_discount', (v as number) ?? 0)}
-          onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+        viewOnly ? (
+          <span>{line.fixed_discount ? `${line.fixed_discount}%` : '-'}</span>
+        ) : (
+          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+            placeholder="ثابت" value={line.fixed_discount ?? undefined}
+            onChange={(v) => handleLineChange(line.key, 'fixed_discount', (v as number) ?? 0)}
+            onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+        )
       ),
       footer: () => null },
     { key: 'total', title: 'الإجمالي', minWidth: 90, locked: true,
@@ -705,8 +736,10 @@ export default function Invoices() {
       ) },
     { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
       cell: (line) => (
-        <Button size="small" danger type="text" icon={<DeleteOutlined />}
-          onClick={() => handleRemoveLine(line.key)} />
+        viewOnly ? null : (
+          <Button size="small" danger type="text" icon={<DeleteOutlined />}
+            onClick={() => handleRemoveLine(line.key)} />
+        )
       ),
       footer: () => null },
   ];
@@ -724,6 +757,10 @@ export default function Invoices() {
   // Close the create page and clear it, so reopening starts fresh.
   const closeCreate = () => {
     setCreateVisible(false);
+    setViewOnly(false);
+    setViewInvoice(null);
+    setViewReturns([]);
+    setEditingInvoice(null);
     setLines([]);
     setActiveCategory(null);
     setCashAmount(0);
@@ -737,7 +774,9 @@ export default function Invoices() {
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
-    setEditingInvoice(null);
+    setPendingItems([]);
+    setPendingWarehouse(null);
+    setNewStep(null);
     createForm.resetFields();
   };
 
@@ -750,14 +789,10 @@ export default function Invoices() {
    * المشكلة اللي بنحلها أصلاً.
    */
   /**
-   * أنهي مخزن ينزل عليه السطر.
+   * أنهي مخزن ينزل عليه السطر: المخزن المختار، وبس.
    *
-   * مخزن الفاتورة هو الافتراضي — طالما الصنف موجود فيه. لو مش موجود، بندوّر على مخزن
-   * تاني فيه منه حاجة ونحط السطر عليه ونقول.
-   *
-   * ليه: الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن (٠٣٠)، والصنف اللي مش في العربية
-   * بيبقى في المخزن الرئيسي. المنع كان بيوقّف بيع بضاعة موجودة، والسكوت كان بينزّل السطر
-   * على مخزن فاضي وبيقول «المتاح ٠» عن حاجة في الدور اللي تحت.
+   * مافيش تدوير أوتوماتيكي على مخزن تاني فيه الصنف. اللي عايز يصرف من مخزن غير ده بيغيّره
+   * من عمود «المخزن» على السطر، واللي بعده بينزل على اللي هو اختاره.
    */
   const addProductByIdWith = async (itemId: number, warehouseId: number) => {
     const fresh = await fetchPrices(itemId);
@@ -1087,8 +1122,9 @@ export default function Invoices() {
     }
 
     const validLines = lines.filter((l) => l.item_id !== null);
-    if (validLines.length === 0) {
-      message.error('يرجى إضافة منتج واحد صالح على الأقل!');
+    const validCoupons = couponRows.filter((r) => Boolean(r.coupon_type_id || r.serial_from || r.serial_to));
+    if (validLines.length === 0 && validCoupons.length === 0) {
+      message.error('يرجى إضافة منتج أو تسجيل كوبونات لحفظ الفاتورة!');
       return;
     }
     // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has
@@ -1150,11 +1186,9 @@ export default function Invoices() {
         // Who sold it. Recorded on the document so a commission report and a rep's own list of
         // invoices do not have to re-derive it from whoever owns the customer today.
         rep_id: values.rep_id ?? null,
-        // مخزن المستند بقى مخزن أول سطر — المخزن اتشال من الترويسة وبقى على السطر. السيرفر
-        // لسه محتاج مكان على المستند، والسطر اللي اتصرف من مخزن تاني شايل مخزنه بنفسه.
         origin: {
           location_kind: 'warehouse',
-          location_id: validLines[0]?.warehouse_id ?? docWarehouseId,
+          location_id: validLines[0]?.warehouse_id ?? docWarehouseId ?? warehouses[0]?.id ?? 1,
         },
         variable_discount_pct: discountPct,
         cash_amount: cashAmount,
@@ -1225,10 +1259,20 @@ export default function Invoices() {
   const handleDeleteInvoice = async (record: InvoiceRecord) => {
     try {
       await api.delete(`/api/v1/sales/${record.id}`);
-      message.success('اتمسحت الفاتورة');
+      message.success('تم حذف الفاتورة بنجاح');
       fetchInvoices();
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر مسح الفاتورة');
+      console.error(err);
+    }
+  };
+
+  const handleDeleteReturn = async (record: any) => {
+    try {
+      await api.delete(`/api/v1/sales/returns/${record.id}`);
+      message.success('تم حذف سند المرتجع بنجاح');
+      fetchInvoices();
+    } catch (err: any) {
+      console.error(err);
     }
   };
 
@@ -1239,55 +1283,13 @@ export default function Invoices() {
    * وبسؤال صريح قبل العكس. اللي فتح وغيّر رأيه وقفل، سيب المخزون والقيد زي ما هم.
    */
   const handleEditInvoice = async (record: InvoiceRecord) => {
-    let det: any;
-    try {
-      det = (await api.get(`/api/v1/sales/${record.id}`)).data;
-    } catch {
-      message.error('تعذر قراءة الفاتورة');
+    await openDetail(record);
+    if (!canEditInvoice) {
+      message.warning('ليس لديك صلاحية تعديل الفواتير');
       return;
     }
-
-    // Read from `/returns` rather than off the detail: the sale's detail payload carries no
-    // returns (the purchase's does), so `det.returns` would have been permanently empty and this
-    // check would have looked present while never once firing.
-    let returned = 0;
-    try {
-      const rets = (await api.get(`/api/v1/sales/${record.id}/returns`)).data || [];
-      returned = rets.reduce((t: number, r: any) => t + Number(r.value ?? r.net ?? 0), 0);
-    } catch { /* unreadable returns must not block an edit that would have worked */ }
-    const alreadyVoid = returned > 0 && Math.abs(returned - Number(det.net || 0)) < 0.01;
-
-    message.info(`${record.document_number} مفتوحة للتعديل`);
-    setEditingInvoice({ id: record.id, voided: alreadyVoid });
-
-    // Refill the form from what the invoice actually held, line by line.
-    const refilled: SaleLineItem[] = (det.lines || []).map((l: any, idx: number) => {
-      const product = products.find((p) => p.id === l.item_id);
-      return {
-        key: `${Date.now()}-${idx}`,
-        item_id: l.item_id,
-        category: product?.category ?? null,
-        tier: l.price_tier ?? null,
-        unit: l.unit ?? null,
-        quantity: Number(l.quantity) || 1,
-        unit_price: Number(l.unit_price) || 0,
-        serials: '',
-        // The invoice stored ONE combined discount; it comes back as the fixed part so the
-        // number the user sees is the number the line actually carried.
-        fixed_discount: Number(l.discount_pct) || 0,
-        variable_discount: 0,
-        warehouse_id: l.warehouse_id ?? null,
-      } as SaleLineItem;
-    });
-
-    setCreateVisible(true);
-    setLines(refilled);
-    setDiscountPct(0);
-    setCashAmount(Number(det.cash_amount) || 0);
-    createForm.setFieldsValue({ customer_id: det.customer_id });
-    onCustomerChange(det.customer_id);
-    const first = (det.lines || [])[0];
-    if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
+    setViewOnly(false);
+    message.info(`الفاتورة ${record.document_number} مفتوحة الآن للتعديل`);
   };
 
   // A deep link (`?doc=5` / `?edit=5`) is captured into a ref the moment it is seen, and acted on
@@ -1301,8 +1303,9 @@ export default function Invoices() {
   useEffect(() => {
     const doc = searchParams.get('doc');
     const edit = searchParams.get('edit');
-    if (doc || edit) {
-      pendingIntent.current = { id: Number(doc || edit), mode: doc ? 'view' : 'edit' };
+    const id = searchParams.get('id');
+    if (doc || edit || id) {
+      pendingIntent.current = { id: Number(doc || edit || id), mode: edit ? 'edit' : 'view' };
       // Cleared immediately so a refresh, or returning to this tab later, cannot replay it.
       setSearchParams({}, { replace: true });
     }
@@ -1314,68 +1317,7 @@ export default function Invoices() {
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
 
-  /** The toolbar over a SAVED invoice. Here التالى/السابق are what they are on their screen:
-   *  a step to the neighbouring document, in the order the list is currently showing. */
-  const viewToolbar = (): ToolbarAction[] => [
-    { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
-      onClick: () => {
-        setDetailVisible(false);
-        closeCreate();
-        setInvoiceDate(dayjs());
-        setNewStep('party');
-        setPartyPickerOpen(true);
-      } },
-    { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-      disabled: !canEditInvoice,
-      onClick: () => { if (viewInvoice) { setDetailVisible(false); handleEditInvoice(viewInvoice); } } },
-    { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
-      onClick: () => setDetailVisible(false) },
-    { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />, disabled: true },
-    { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
-      disabled: !neighbour(1),
-      onClick: () => { const n = neighbour(1); if (n) openDetail(n); } },
-    { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-      // القفل الأول، والتركيز بعد ما الرسمة تنزل — الخانة لسه مش موجودة في نفس اللفّة.
-      onClick: () => {
-        setDetailVisible(false);
-        requestAnimationFrame(() => {
-          listSearchRef.current?.focus?.();
-          listSearchRef.current?.select?.();
-        });
-      } },
-    { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
-      disabled: !neighbour(-1),
-      onClick: () => { const n = neighbour(-1); if (n) openDetail(n); } },
-    { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
-      disabled: !canDeleteInvoice,
-      onClick: () => {
-        if (viewInvoice) {
-          Modal.confirm({
-            title: 'حذف الفاتورة',
-            content: `هل أنت متأكد من حذف الفاتورة ${viewInvoice.document_number || ''}؟`,
-            okText: 'نعم، احذف',
-            okType: 'danger',
-            cancelText: 'تراجع',
-            onOk: async () => {
-              setDetailVisible(false);
-              await handleDeleteInvoice(viewInvoice);
-            },
-          });
-        }
-      } },
-    { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-      onClick: () => { const doc = invoiceDoc(viewInvoice); if (doc) printInvoice(doc, printOpts); } },
-    { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
-      disabled: !viewInvoice?.customer_id,
-      onClick: () => {
-        if (viewInvoice?.customer_id) {
-          setDetailVisible(false);
-          navigate(`/customers/${viewInvoice.customer_id}`);
-        }
-      } },
-    { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
-      onClick: () => { if (viewInvoice) openDetail(viewInvoice); } },
-  ];
+
 
   /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
   const neighbour = (step: number) => {
@@ -1455,19 +1397,99 @@ export default function Invoices() {
     return raw ? (categoryLabels[raw] || raw) : '';
   };
 
-  // Open a read-only detail view: invoice header + lines + its returns.
+  // Open a read-only detail view inside the full document page: invoice header + lines + its returns.
   const openDetail = async (record: InvoiceRecord) => {
     try {
+      setLoading(true);
       const [detRes, retRes] = await Promise.all([
         api.get(`/api/v1/sales/${record.id}`),
-        api.get(`/api/v1/sales/${record.id}/returns`),
+        api.get(`/api/v1/sales/${record.id}/returns`).catch(() => ({ data: [] })),
       ]);
-      setViewInvoice({ ...record, ...detRes.data });
-      setViewReturns(retRes.data);
-      setDetailVisible(true);
+      const det = detRes.data;
+      const rets = retRes.data || [];
+      const returned = rets.reduce((t: number, r: any) => t + Number(r.value ?? r.net ?? 0), 0);
+      const alreadyVoid = returned > 0 && Math.abs(returned - Number(det.net || 0)) < 0.01;
+
+      const loadedInvoice = { ...record, ...det };
+      setViewInvoice(loadedInvoice);
+      setViewReturns(rets);
+      setEditingInvoice({ id: record.id, voided: alreadyVoid });
+      setViewOnly(true);
+
+      // Refill lines
+      const refilled: SaleLineItem[] = (det.lines || []).map((l: any, idx: number) => {
+        const product = products.find((p) => p.id === l.item_id);
+        return {
+          key: `${Date.now()}-${idx}`,
+          item_id: l.item_id,
+          category: product?.category ?? null,
+          tier: l.price_tier ?? null,
+          unit: l.unit ?? null,
+          quantity: Number(l.quantity) || 1,
+          unit_price: Number(l.unit_price) || 0,
+          serials: '',
+          fixed_discount: Number(l.discount_pct) || 0,
+          variable_discount: 0,
+          warehouse_id: l.warehouse_id ?? null,
+        } as SaleLineItem;
+      });
+
+      setLines(refilled);
+      setDiscountPct(Number(det.variable_discount_pct ?? det.discount_pct ?? 0));
+      setCashAmount(Number(det.cash_amount) || 0);
+      setInvoiceDate(dayjs(det.invoice_date || det.created_at || undefined));
+      setInvoiceFamily(det.family || null);
+      createForm.setFieldsValue({
+        customer_id: det.customer_id,
+        rep_id: det.rep_id,
+        external_document_number: det.external_document_number,
+        notes: det.notes,
+        statement1: det.statement1,
+        statement2: det.statement2,
+        statement3: det.statement3,
+      });
+
+      setSelectedCustomerId(det.customer_id);
+      const first = (det.lines || [])[0];
+      if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
+
+      if (det.customer_id) {
+        api.get(`/api/v1/customers/${det.customer_id}/accounts`)
+          .then((res) => {
+            const rows = res.data?.accounts || [];
+            setFamilyAccounts(rows);
+            setCustomerBalance(Number(res.data?.total_balance || 0));
+          })
+          .catch(() => {});
+      }
+
+      // Coupons
+      if (det.coupon_rows && det.coupon_rows.length) {
+        setCouponRows(det.coupon_rows.map((cr: any) => ({
+          key: cr.id || String(Math.random()),
+          coupon_type_id: cr.coupon_type_id,
+          count: cr.count,
+          serial_from: cr.serial_from,
+          serial_to: cr.serial_to,
+        })));
+      } else if (det.coupon_serial_from || det.coupon_serial_to) {
+        setCouponRows([{
+          key: '1',
+          coupon_type_id: det.coupon_type_id || undefined,
+          count: det.coupon_count,
+          serial_from: det.coupon_serial_from,
+          serial_to: det.coupon_serial_to,
+        }]);
+      } else {
+        setCouponRows([blankCoupon()]);
+      }
+
+      setCreateVisible(true);
     } catch (err: any) {
       console.error(err);
       message.error(err?.response?.data?.detail?.message || 'تعذر فتح الفاتورة');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1559,20 +1581,23 @@ export default function Invoices() {
       dataIndex: 'date',
       key: 'date',
       width: 95,
+      sorter: (a: any, b: any) => (a.date || '').localeCompare(b.date || ''),
       render: (d: string) => d || '-',
     },
     {
       title: 'مستند رقم',
       dataIndex: 'external_document_number',
-      key: 'external_document_number',
+      key: 'external_document_number', ellipsis: true,
       width: 120,
+      sorter: (a: any, b: any) => (a.external_document_number || '').localeCompare(b.external_document_number || ''),
       render: (v: string | null) => v || '-',
     },
     {
       title: 'رقم المستند',
       dataIndex: 'document_number',
-      key: 'document_number',
+      key: 'document_number', ellipsis: true,
       width: 130,
+      sorter: (a: any, b: any) => (a.document_number || '').localeCompare(b.document_number || ''),
       render: (doc: string, r: any) => (
         <Space direction="vertical" size={0}>
           <Tag color={r.doc_type === 'sale' ? 'blue' : 'volcano'}>{doc}</Tag>
@@ -1598,7 +1623,13 @@ export default function Invoices() {
       title: 'جهه التعامل',
       dataIndex: 'customer_id',
       key: 'customer_id',
+      width: 190,
       ellipsis: true,
+      sorter: (a: any, b: any) => {
+        const cA = customers.find((c) => c.id === a.customer_id)?.name || '';
+        const cB = customers.find((c) => c.id === b.customer_id)?.name || '';
+        return cA.localeCompare(cB);
+      },
       render: (cId: number) => {
         const c = customers.find((cust) => cust.id === cId);
         return (
@@ -1613,6 +1644,7 @@ export default function Invoices() {
       dataIndex: 'family',
       key: 'family',
       width: 90,
+      sorter: (a: any, b: any) => (a.family || '').localeCompare(b.family || ''),
       render: (f: string | null) => f ? <Tag color="geekblue">{f}</Tag> : '-',
     },
     {
@@ -1629,6 +1661,7 @@ export default function Invoices() {
       key: 'gross',
       width: 115,
       align: 'left' as const,
+      sorter: (a: any, b: any) => a.gross - b.gross,
       render: (val: number) => `${money(val)} ج.م`,
     },
     {
@@ -1637,6 +1670,7 @@ export default function Invoices() {
       key: 'discount_value',
       width: 105,
       align: 'left' as const,
+      sorter: (a: any, b: any) => a.discount_value - b.discount_value,
       render: (val: number) => `${money(val)} ج.م`,
     },
     {
@@ -1644,6 +1678,7 @@ export default function Invoices() {
       dataIndex: 'combined_pct',
       key: 'combined_pct',
       width: 80,
+      sorter: (a: any, b: any) => a.combined_pct - b.combined_pct,
       render: (val: number) => `${Number(val || 0).toFixed(0)}%`,
     },
     {
@@ -1652,6 +1687,7 @@ export default function Invoices() {
       key: 'net',
       width: 115,
       align: 'left' as const,
+      sorter: (a: any, b: any) => a.net - b.net,
       render: (val: number, r: any) => (
         <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#c41d7f' }}>
           {r.doc_type === 'return' ? '-' : ''}{money(val)} ج.م
@@ -1664,6 +1700,7 @@ export default function Invoices() {
       key: 'cash_amount',
       width: 100,
       align: 'left' as const,
+      sorter: (a: any, b: any) => a.cash_amount - b.cash_amount,
       render: (val: number) => `${money(val)} ج.م`,
     },
     {
@@ -1672,6 +1709,7 @@ export default function Invoices() {
       key: 'credit_amount',
       width: 100,
       align: 'left' as const,
+      sorter: (a: any, b: any) => a.credit_amount - b.credit_amount,
       render: (val: number) => {
         const n = Number(val || 0);
         return <span style={{ color: n > 0 ? '#cf1322' : undefined, fontWeight: n > 0 ? 600 : undefined }}>{money(n)} ج.م</span>;
@@ -1681,48 +1719,85 @@ export default function Invoices() {
       title: 'ملاحظات',
       dataIndex: 'notes',
       key: 'notes',
+      width: 170,
       ellipsis: true,
       render: (v: string | null) => v || '-',
     },
     {
-      title: '',
+      // العمود كان بلا اسم وبلا تثبيت، وسط جدول أعمدته مامتقاسّهاش الفاضي كله. النتيجة
+      // كانت شريط أبيض في نص السجل والأيقونات سايبة فيه — نفس السجلات التانية بتسمّيه
+      // وبتثبّته على الحافة، فالإيد بتلاقيه في نفس المكان في كل شاشة.
+      title: 'الإجراءات',
       key: 'actions',
-      width: 120,
+      width: 130,
       // Icons, like the row icons on their own lists. Four words apiece cost more width than
       // «الصافى» and «الباقى» together — and those are the two numbers the list exists for.
-      render: (_: any, record: InvoiceRecord) => (
-        <Space size={2} onClick={(e) => e.stopPropagation()}>
-          {/* Loads the lines first, then prints — the list row alone has no line detail. */}
-          <Tooltip title="طباعة">
-            <Button type="text" icon={<PrinterOutlined />}
-              onClick={async () => { await openDetail(record); }} />
-          </Tooltip>
-          {/* «إرجاع الفاتورة» اتشال من هنا بطلب صاحب النظام: المرتجع بيتعمل من شاشة مردود
-              المبيعات وبس. كان في مكانين بيعملوا نفس الحاجة بشكلين مختلفين — بوباب سريع
-              جنب السطر، وشاشة مستند كاملة — واللي بيتعمل من هنا كان بيطلع سند ناقص:
-              من غير مندوب ولا بيان ولا خصم ولا مخزن استلام. مدخل واحد يعني سند واحد كامل. */}
-          {/* التعديل بيفتح المحرّر بس — العكس سؤاله على الحفظ، في مهما بلغت الطرق اللي
-              وصلت بيه: الزرار ده أو الشريط أو لينك من شاشة تانية. */}
-          {canEditInvoice && (
-            <Tooltip title="تعديل">
-              <Button type="text" icon={<EditOutlined />}
-                onClick={() => handleEditInvoice(record)} />
+      render: (_: any, record: any) => {
+        const isSale = record.doc_type === 'sale';
+        return (
+          <Space size={2} onClick={(e) => e.stopPropagation()}>
+            <Tooltip title={isSale ? 'عرض الفاتورة' : 'عرض المرتجع'}>
+              <Button type="text" icon={<EyeOutlined />}
+                onClick={() => {
+                  if (isSale) {
+                    openDetail(record.raw || record);
+                  } else {
+                    navigate(`/returns?id=${record.id}`);
+                  }
+                }} />
             </Tooltip>
-          )}
-          {canDeleteInvoice && (
-            <Popconfirm
-              title="حذف الفاتورة؟"
-              description="الفاتورة المرحّلة بتتعكس مش بتتمسح — المخزون والقيد والمديونية بيرجعوا زي ما كانوا، والمستندين بيفضلوا ظاهرين."
-              okText="عكس الفاتورة" cancelText="إلغاء"
-              onConfirm={() => handleDeleteInvoice(record)}
-            >
-              <Tooltip title="حذف">
-                <Button type="text" danger icon={<DeleteOutlined />} />
+            {isSale && (
+              <Tooltip title="طباعة">
+                <Button type="text" icon={<PrinterOutlined />}
+                  onClick={async () => {
+                    const detRes = await api.get(`/api/v1/sales/${record.id}`).catch(() => null);
+                    if (detRes?.data) {
+                      const doc = invoiceDoc({ ...record, ...detRes.data });
+                      if (doc) printInvoice(doc, printOpts);
+                    }
+                  }} />
               </Tooltip>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+            )}
+            {isSale && canEditInvoice && (
+              <Tooltip title="تعديل">
+                <Button type="text" icon={<EditOutlined />}
+                  onClick={() => handleEditInvoice(record.raw || record)} />
+              </Tooltip>
+            )}
+            {canDeleteInvoice && (
+              <Tooltip title="حذف">
+                <Button
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: isSale ? 'تأكيد حذف فاتورة البيع' : 'تأكيد حذف سند المرتجع',
+                      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+                      content: (
+                        <div>
+                          <p>هل أنت متأكد من حذف {isSale ? 'فاتورة البيع' : 'سند المرتجع'} رقم: <b>{record.document_number}</b>؟</p>
+                          <p style={{ color: '#8c8c8c', fontSize: 13 }}>سيتم حذف المستند بالكامل وإلغاء أثره المحاسبي والمخزني.</p>
+                        </div>
+                      ),
+                      okText: 'نعم، احذف',
+                      okType: 'danger',
+                      cancelText: 'إلغاء',
+                      onOk: async () => {
+                        if (isSale) {
+                          await handleDeleteInvoice(record.raw || record);
+                        } else {
+                          await handleDeleteReturn(record.raw || record);
+                        }
+                      },
+                    });
+                  }}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
@@ -1747,6 +1822,15 @@ export default function Invoices() {
     openDetail(target);
   };
 
+  const startNew = () => {
+    closeCreate();
+    setInvoiceDate(dayjs());
+    setCreateVisible(true);
+    setViewOnly(false);
+    setNewStep('party');
+    setPartyPickerOpen(true);
+  };
+
   /**
    * The toolbar over the document — the row of verbs their old system puts there.
    *
@@ -1756,51 +1840,143 @@ export default function Invoices() {
    * are the same commands and neither should teach a different set.
    */
   const docToolbar = (): ToolbarAction[] => {
+    const isSaved = Boolean(viewInvoice || editingInvoice);
     const lineCount = lines.filter((l) => l.item_id !== null).length;
+    const couponCountVal = couponRows.filter((r) => Boolean(r.coupon_type_id || r.serial_from || r.serial_to)).length;
+    const hasContent = lineCount > 0 || couponCountVal > 0;
     return [
-      { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />,
+      {
+        key: 'new',
+        label: 'جديد',
+        shortcut: 'F2',
+        icon: <FileAddOutlined />,
+        onClick: startNew,
+      },
+      {
+        key: 'edit',
+        label: 'تعديل',
+        icon: <EditOutlined />,
+        disabled: !isSaved || !viewOnly,
         onClick: () => {
-          setEditingInvoice(null);
-          createForm.resetFields();
-          setLines([]);
-          setActiveCategory(null);
-          setInvoiceDate(dayjs());
-          setNewStep('party');
-          setPartyPickerOpen(true);
-        } },
-      { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
-        // The open document IS the editable one; on a saved invoice this is «reverse and reopen».
-        disabled: true },
-      { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+          setViewOnly(false);
+          message.info(`الفاتورة ${viewInvoice?.document_number || ''} مفتوحة الآن للتعديل`);
+        },
+      },
+      {
+        key: 'undo',
+        label: 'تراجع',
+        icon: <UndoOutlined />,
+        // «تراجع» بيرجّع المستند، مش بيقفل الحقول وبس.
+        //
+        // كان بيعمل `setViewOnly(true)` على طول: الحقول تتقفل واللي اتكتب ومااتحفظش يفضل
+        // ظاهر — مقفول ومقروء، يعني بنفس شكل المحفوظ بالظبط. فاللي غيّر كمية من ١٠ لـ٣
+        // وضغط تراجع بيفضل قدامه ٣ وإجمالي مالوش وجود، ومافيش حاجة على الشاشة بتقول إن ده
+        // مش اللي في القاعدة. إعادة تحميل المستند هي الحاجة الوحيدة اللي بترجّع الأرقام.
         onClick: () => {
-          if (editingInvoice || lines.length > 0) {
+          if (!viewOnly && viewInvoice) {
+            openDetail(viewInvoice);   // بيقرا من السيرفر وبيقفل على المحفوظ
+          } else {
             closeCreate();
+          }
+        },
+      },
+      {
+        key: 'save',
+        label: 'حفظ',
+        shortcut: 'F9',
+        icon: <SaveOutlined />,
+        disabled: viewOnly || !hasContent || loading,
+        onClick: () => { createForm.submit(); },
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
+        disabled: !isSaved ? invoices.length === 0 : !neighbour(1),
+        onClick: () => {
+          if (isSaved) {
+            const n = neighbour(1);
+            if (n) openDetail(n);
+          } else {
+            stepFromDraft(0);
+          }
+        },
+      },
+      {
+        key: 'search',
+        label: 'بحث',
+        shortcut: 'F3',
+        icon: <SearchOutlined />,
+        disabled: viewOnly,
+        onClick: () => setPickerOpen(true),
+      },
+      {
+        key: 'prev',
+        label: 'السابق',
+        icon: <ArrowRightOutlined />,
+        disabled: !isSaved ? invoices.length === 0 : !neighbour(-1),
+        onClick: () => {
+          if (isSaved) {
+            const n = neighbour(-1);
+            if (n) openDetail(n);
+          } else {
+            stepFromDraft(1);
+          }
+        },
+      },
+      {
+        key: 'delete',
+        label: 'حذف',
+        shortcut: 'F8',
+        icon: <DeleteOutlined />,
+        danger: true,
+        disabled: isSaved ? (!canDeleteInvoice || Boolean(editingInvoice?.voided)) : lineCount === 0,
+        onClick: () => {
+          if (isSaved && (viewInvoice || editingInvoice)) {
+            const inv = viewInvoice || editingInvoice;
+            Modal.confirm({
+              title: 'حذف الفاتورة',
+              content: `هل أنت متأكد من حذف الفاتورة ${inv.document_number || ''}؟`,
+              okText: 'نعم، احذف',
+              okType: 'danger',
+              cancelText: 'تراجع',
+              onOk: async () => {
+                await handleDeleteInvoice(inv);
+                closeCreate();
+              },
+            });
           } else {
             setLines([]);
-            setActiveCategory(null);
           }
-        } },
-      { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
-        disabled: lineCount === 0,
-        onClick: () => { createForm.submit(); } },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
-        disabled: invoices.length === 0,
-        onClick: () => stepFromDraft(0) },
-      { key: 'search', label: 'بحث', shortcut: 'F3', icon: <SearchOutlined />,
-        onClick: () => setPickerOpen(true) },
-      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
-        disabled: invoices.length === 0,
-        onClick: () => stepFromDraft(1) },
-      { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
-        disabled: lineCount === 0,
-        onClick: () => { setLines([]); } },
-      { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
-        // Nothing to print until it is saved — a document that does not exist has no paper.
-        disabled: true },
-      { key: 'accounts', label: 'حسابات', icon: <BankOutlined />,
+        },
+      },
+      {
+        key: 'print',
+        label: 'طباعة',
+        shortcut: 'F7',
+        icon: <PrinterOutlined />,
+        disabled: !isSaved,
+        onClick: () => {
+          const doc = invoiceDoc(viewInvoice || editingInvoice);
+          if (doc) printInvoice(doc, printOpts);
+        },
+      },
+      {
+        key: 'accounts',
+        label: 'حسابات',
+        icon: <BankOutlined />,
         disabled: !selectedCustomerId,
-        onClick: () => selectedCustomerId && navigate(`/customers/${selectedCustomerId}`) },
-      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: () => loadLookups() },
+        onClick: () => selectedCustomerId && navigate(`/customers/${selectedCustomerId}`),
+      },
+      {
+        key: 'reload',
+        label: 'تحميل',
+        icon: <ReloadOutlined />,
+        onClick: () => {
+          if (isSaved && viewInvoice) openDetail(viewInvoice);
+          else loadLookups();
+        },
+      },
     ];
   };
 
@@ -1809,16 +1985,25 @@ export default function Invoices() {
       <div>
       <Card
           title={
-            <Space>
+            <Space wrap>
               <Button type="text" icon={<ArrowRightOutlined />}
                 onClick={closeCreate}>رجوع</Button>
               <Typography.Text strong style={{ fontSize: 16 }}>
-                تسجيل فاتورة بيع جديدة
+                {viewInvoice
+                  ? `فاتورة بيع رقم: ${viewInvoice.document_number || ''}`
+                  : editingInvoice
+                    ? `تعديل فاتورة بيع #${editingInvoice.id}`
+                    : 'تسجيل فاتورة بيع جديدة'}
               </Typography.Text>
-              {/* Kept visible and changeable: the person typing should see the day they are
-                  writing into, especially when it is not today. */}
+              {viewInvoice && !viewOnly && (
+                <Tag color="orange" style={{ fontWeight: 600 }}>وضع التعديل</Tag>
+              )}
+              {editingInvoice?.voided && (
+                <Tag color="volcano">مردود / ملغي</Tag>
+              )}
               <DatePicker
                 value={invoiceDate} allowClear={false} format="YYYY-MM-DD"
+                disabled={viewOnly}
                 onChange={(v) => setInvoiceDate(v || dayjs())}
               />
             </Space>
@@ -1836,9 +2021,15 @@ export default function Invoices() {
             * بيخلّي الواحد يرجع لورا كل شوية.
             */}
           <Row gutter={16}>
-            <Col xs={12} md={5}>
+            <Col xs={12} md={4}>
+              <Form.Item label="نوع المستند" style={{ marginBottom: 8 }}>
+                <Input value="فاتورة بيع" readOnly style={{ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff', textAlign: 'center' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={4}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
+                  disabled={viewOnly}
                   value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())} />
               </Form.Item>
             </Col>
@@ -1847,24 +2038,46 @@ export default function Invoices() {
                   so a new walk-in never costs the half-entered invoice. */}
               <Form.Item
                 name="customer_id"
-                label="العميل"
+                label="اسم العميل"
                 rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
                 style={{ marginBottom: 8 }}
               >
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                   placeholder="اضغط لاختيار العميل"
-                  onClick={() => setPartyPickerOpen(true)}
+                  disabled={viewOnly}
+                  onClick={() => !viewOnly && setPartyPickerOpen(true)}
                   options={customers.map((c) => ({
                     value: c.id,
                     label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
                   }))} />
               </Form.Item>
             </Col>
+            <Col xs={24} md={8}>
+              <Form.Item label="المخزن (المخزن الذي سأبيع منه)" required style={{ marginBottom: 8 }}>
+                <Select
+                  showSearch
+                  placeholder="اختر المخزن للبيع منه"
+                  optionFilterProp="label"
+                  disabled={viewOnly}
+                  value={docWarehouseId ?? undefined}
+                  // `onWarehouseChange` مش `setDocWarehouseId` لوحدها: الرصيد بتاع المخزن
+                  // بيتجاب من السيرفر أول ما يتقال. من غيرها المخزن بيتغيّر والرصيد بيفضل
+                  // فاضي، فكل صنف بيقرا صفر — والشباك بيقفل الأصناف كلها ويقول «غير متوفر»
+                  // عن مخزن مليان.
+                  onChange={(v) => onWarehouseChange(v as number)}
+                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col xs={12} md={6}>
               {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
               <Form.Item name="rep_id" label="المندوب" style={{ marginBottom: 8 }}>
                 <Select allowClear showSearch placeholder="من العميل"
                   optionFilterProp="label"
+                  disabled={viewOnly}
                   onChange={(v) => {
                     const store = storeOfRep(v as number);
                     if (store) setDocWarehouseId(store);
@@ -1872,41 +2085,35 @@ export default function Invoices() {
                   options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
-              <Form.Item name="external_document_number" label="المستند"
+            <Col xs={12} md={6}>
+              <Form.Item label="نوع الفاتورة (الخط)" style={{ marginBottom: 8 }}>
+                <Select
+                  allowClear
+                  placeholder="أبيض / بولي"
+                  disabled={viewOnly}
+                  value={invoiceFamily ?? undefined}
+                  onChange={(v) => setInvoiceFamily(v ? String(v) : null)}
+                  options={[
+                    { value: 'أبيض', label: 'أبيض' },
+                    { value: 'بولي', label: 'بولي' },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="external_document_number" label="رقم المستند"
                 style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم فاتورة العميل" />
+                <Input placeholder="رقم فاتورة العميل" disabled={viewOnly} />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col xs={24} md={6}>
+            <Col xs={12} md={6}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
-                <Input placeholder="اختياري" />
+                <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
-            {[0, 1, 2].map((i) => (
-              <Col xs={24} md={6} key={i}>
-                <Form.Item name={`statement${i + 1}`} label={`بيان ${i + 1}`}
-                  style={{ marginBottom: 8 }}>
-                  <Input placeholder="اختياري" />
-                </Form.Item>
-              </Col>
-            ))}
           </Row>
 
-          {/* الكوبونات المصروفة — صف لكل نوع، والخانات قدام الواحد على طول.
-              *
-              * كان فوقهم عنوان «الكوبونات المصروفة» وزرار «إضافة نوع»، والخانات نفسها
-              * مابتظهرش غير لما يدوس الزرار. يعني اللي بيسلّم كوبونات مع كل فاتورة كان
-              * لازم يدوس زرار الأول كل مرة عشان يوصل لخانة. دلوقتي في صف فاضي مستني، وزرار
-              * الإضافة جنب الخانات لمّا يكون عنده أكتر من نوع يسلّمه.
-              *
-              * الخانات بتشرح نفسها بالكلام اللي جواها (نوع الكوبون · العدد · من رقم · إلى
-              * رقم)، فالعنوان اللي فوقهم كان بيقول اللي هما بيقولوه.
-              *
-              * والمدى فضل على كل صف لأنه هو اللي تطبيق المرتجعات بيراجع عليه الرقم الراجع. */}
+          {/* الكوبونات المصروفة */}
           <div style={{ marginTop: 14, marginBottom: 12 }}>
             <Row gutter={8} className="mini-head">
               <Col xs={24} md={7}>الكوبون</Col>
@@ -1920,44 +2127,42 @@ export default function Invoices() {
                 <Col xs={24} md={7}>
                   <Select allowClear showSearch style={{ width: '100%' }}
                     optionFilterProp="label"
+                    disabled={viewOnly}
                     value={row.coupon_type_id}
                     onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                       ? { ...x, coupon_type_id: v as number } : x)))}
                     options={couponTypes.map((t) => ({ value: t.id, label: t.name }))} />
                 </Col>
                 <Col xs={8} md={4}>
-                  {/* Derived from the range, never typed. Read-only rather than hidden: the
-                      number is what the person is checking against the book in their hand. */}
                   <InputNumber style={{ width: '100%' }} disabled
                     value={couponCount(row.serial_from, row.serial_to) ?? undefined} />
                 </Col>
                 <Col xs={8} md={5}>
-                  <Input value={row.serial_from || ''}
+                  <Input value={row.serial_from || ''} disabled={viewOnly}
                     onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                       ? { ...x, serial_from: e.target.value } : x)))} />
                 </Col>
                 <Col xs={8} md={5}>
-                  <Input value={row.serial_to || ''}
+                  <Input value={row.serial_to || ''} disabled={viewOnly}
                     onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                       ? { ...x, serial_to: e.target.value } : x)))} />
                 </Col>
                 <Col xs={24} md={3}>
-                  {/* زرار الإضافة على آخر صف بس — على كل صف كان هيبقى نفس الزرار مكرر
-                      بيعمل نفس الحاجة. */}
-                  {i === couponRows.length - 1 && (
-                    <Button size="small" icon={<PlusOutlined />} title="نوع كوبون تاني"
-                      onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
+                  {!viewOnly && (
+                    <>
+                      {i === couponRows.length - 1 && (
+                        <Button size="small" icon={<PlusOutlined />} title="نوع كوبون تاني"
+                          onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
+                      )}
+                      <Button type="text" danger icon={<DeleteOutlined />} title="امسح الصف"
+                        onClick={() => setCouponRows((rs) => (rs.length === 1
+                          ? [blankCoupon()]
+                          : rs.filter((x) => x.key !== row.key)))} />
+                    </>
                   )}
-                  {/* المسح على آخر صف فاضي بيفضّي الخانات مايشيلهاش — الخانات المفروض
-                      تفضل قدام الواحد. */}
-                  <Button type="text" danger icon={<DeleteOutlined />} title="امسح الصف"
-                    onClick={() => setCouponRows((rs) => (rs.length === 1
-                      ? [blankCoupon()]
-                      : rs.filter((x) => x.key !== row.key)))} />
                 </Col>
               </Row>
             ))}
-            {/* الإجمالي بيبان لما يبقى فيه كوبونات فعلاً — رقم بيتقارن بالدفتر اللي في إيده. */}
             {couponRows.some((r) => couponCount(r.serial_from, r.serial_to)) && (
               <div style={{ fontSize: 12, color: '#4a4a4a' }}>
                 الإجمالي: {couponRows.reduce(
@@ -1966,30 +2171,12 @@ export default function Invoices() {
             )}
           </div>
 
-          {/*
-            * شريط بيانات العميل (الاسم · رصيده · الهاتف · العنوان) اتشال بطلب صاحب النظام.
-            *
-            * نفس السبب اللي اتشالوا بيه من الترويسة: البيانات دي متسجّلة في النظام أصلاً
-            * وبتطلع على الورقة المطبوعة لما تتطلب، وعرضها هنا كان بياخد صف كامل فوق السطور.
-            *
-            * **«نوع الفاتورة» فضل** — ده مش عرض، ده اختيار بيقرّر الفاتورة بتترحّل على أنهي
-            * حساب من حسابات العميل. وبيبان بس لما يكون عنده أكتر من حساب؛ اللي عنده واحد
-            * مابيتسألش سؤال إجابته واحدة.
-            */}
-          {/* نوع الفاتورة — زرارين بعرض الصفحة، من غير عنوان فوقهم.
-              *
-              * كان فوقهم سطر مكتوب فيه «اختار»؛ كلمة بتوصف الزرار اللي جنبها، والزرار
-              * الفاضي بيقول نفس الكلام. وكانوا صغيرين على جنب الشاشة، والاختيار ده هو اللي
-              * بيقرّر الفاتورة بتترحّل على أنهي حساب من حسابات العميل — يعني أهم قرار في
-              * الترويسة كان أصغر حاجة فيها. بقوا زرارين كبار مقسومين على العرض.
-              *
-              * وبيبانوا بس لما يكون عنده أكتر من حساب؛ اللي عنده واحد مابيتسألش سؤال
-              * إجابته واحدة. وبيبتدوا فاضيين — الاختيار عنه هو اختيار أنهي رصيد يتحرّك. */}
           {families.length > 1 && (
             <div style={{ marginBottom: 10 }}>
               <Segmented
                 block
                 size="large"
+                disabled={viewOnly}
                 value={invoiceFamily ?? ''}
                 onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
                 options={families.map((a) => ({
@@ -2012,13 +2199,15 @@ export default function Invoices() {
           <Col xs={24}>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
-            <Button data-shortcut="F2"
-              type="primary" icon={<PlusOutlined />}
-              style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#6AB42D', borderColor: '#6AB42D' }}
-              onClick={() => setPickerOpen(true)}
-            >
-              إضافة صنف للفاتورة (F2)
-            </Button>
+            {!viewOnly && (
+              <Button data-shortcut="F2"
+                type="primary" icon={<PlusOutlined />}
+                style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#6AB42D', borderColor: '#6AB42D' }}
+                onClick={() => setPickerOpen(true)}
+              >
+                إضافة صنف للفاتورة (F2)
+              </Button>
+            )}
             <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
           </div>
 
@@ -2051,7 +2240,7 @@ export default function Invoices() {
           >
             <Select
               style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
-              placeholder="اختار المخزن"
+              placeholder="اختر المخزن"
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
               options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
@@ -2068,14 +2257,9 @@ export default function Invoices() {
             products={products}
             activeCategory={activeCategory}
             onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
-            // المتاح بيتعرض ومابيمنعش — الصفر بيتقال ومابيوقفش الإضافة.
-            //
-            // وكان بيوجّه كمان: السطر بينزل على المخزن اللي فيه الصنف فعلاً لو المختار
-            // فاضي منه. ده اتشال بطلب صاحب النظام — الفاتورة بتتصرف من المخزن اللي
-            // اتحدّد وبس، والتبديل من ورا اللي بيكتب كان بيخلّي الورقة تقول مخزن
-            // والبضاعة تطلع من غيره.
             availableFor={(id) => (docWarehouseId === null
               ? null : availableFor(id, null, docWarehouseId))}
+            disableOutOfStock
             onCancel={() => setPickerOpen(false)}
             onPick={(id) => {
               setPickerOpen(false);
@@ -2161,11 +2345,13 @@ export default function Invoices() {
                   <>
                     <Form.Item label="خصم على إجمالي الفاتورة" style={{ marginBottom: 12 }}>
                       <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
+                        disabled={viewOnly}
                         value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
                     </Form.Item>
                     <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
                       help={hasParty ? 'ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة' : undefined}>
                       <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
+                        disabled={viewOnly}
                         value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                     </Form.Item>
                   </>
@@ -2224,17 +2410,34 @@ export default function Invoices() {
             );
           })()}
 
-          <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
-            {/* Aligned to the physical left of the page (flex-end under RTL). */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Space>
-                <Button type="primary" htmlType="submit">
-                    تسجيل وحفظ فاتورة البيع
+          {!viewOnly && (
+            <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Space>
+                  <Button type="primary" htmlType="submit">
+                    {editingInvoice ? 'حفظ تعديلات الفاتورة' : 'تسجيل وحفظ فاتورة البيع'}
                   </Button>
-                <Button onClick={closeCreate}>إلغاء</Button>
-              </Space>
+                  <Button onClick={closeCreate}>إلغاء</Button>
+                </Space>
+              </div>
+            </Form.Item>
+          )}
+
+          {viewReturns.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <Divider orientation="right">المرتجعات المسجلة على هذه الفاتورة</Divider>
+              <Table
+                size="small" pagination={false} rowKey="id"
+                dataSource={viewReturns}
+                columns={[
+                  { title: 'سند المرتجع', dataIndex: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
+                  { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${money(v)} ج.م` },
+                  { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${money(v)} ج.م` },
+                  { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${money(v)} ج.م` },
+                ]}
+              />
             </div>
-          </Form.Item>
+          )}
         </Form>
         </Card>
 
@@ -2335,7 +2538,7 @@ export default function Invoices() {
 
         {/* --- Search + filters (server-side, so they cover every invoice) --- */}
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={6}>
+          <Col xs={24} sm={12} md={5}>
             <Input
               allowClear
               ref={listSearchRef}
@@ -2347,14 +2550,30 @@ export default function Invoices() {
               onBlur={applySearch}
             />
           </Col>
-          <Col xs={24} md={6}>
+          <Col xs={24} sm={12} md={4}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="العميل"
               value={filters.customer_id}
               onChange={(v) => setFilter('customer_id', v)}
               filterOption={(i, o) => String(o?.label ?? '').includes(i)}
               options={customers.map((c) => ({ value: c.id, label: c.name }))} />
           </Col>
-          <Col xs={12} md={6}>
+          <Col xs={12} sm={12} md={3}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
+              value={filters.rep_id}
+              onChange={(v) => setFilter('rep_id', v)}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+          </Col>
+          <Col xs={12} sm={12} md={3}>
+            <Select allowClear style={{ width: '100%' }} placeholder="نوع الفاتورة"
+              value={filters.family}
+              onChange={(v) => setFilter('family', v)}
+              options={[
+                { value: 'أبيض', label: 'أبيض' },
+                { value: 'بولي', label: 'بولي' },
+              ]} />
+          </Col>
+          <Col xs={12} sm={12} md={4}>
             <DateRangeFilter
               value={filters.date_from && filters.date_to
                 ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
@@ -2369,7 +2588,7 @@ export default function Invoices() {
               }}
             />
           </Col>
-          <Col xs={12} md={4}>
+          <Col xs={12} sm={12} md={3}>
             <Select allowClear style={{ width: '100%' }} placeholder="طريقة السداد"
               value={filters.payment}
               onChange={(v) => setFilter('payment', v)}
@@ -2379,7 +2598,7 @@ export default function Invoices() {
                 { value: 'partial', label: 'جزئي (نقدي + آجل)' },
               ]} />
           </Col>
-          <Col xs={24} md={2}>
+          <Col xs={24} sm={24} md={2}>
             <Button icon={<ClearOutlined />} onClick={resetFilters} block>مسح</Button>
           </Col>
         </Row>
@@ -2387,14 +2606,20 @@ export default function Invoices() {
         <Table
           dataSource={unifiedRecords}
           columns={invoiceCols.apply(columns)}
+          size="small"
           tableLayout="fixed"
+          // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
+          //
+          // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
+          // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
+          // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           rowKey="rowKey"
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           onRow={(record: any) => ({
             onClick: () => {
               if (record.doc_type === 'sale') {
-                canEditInvoice ? handleEditInvoice(record.raw) : openDetail(record.raw);
+                openDetail(record.raw);
               } else {
                 navigate(`/returns?id=${record.id}`);
               }
@@ -2404,51 +2629,7 @@ export default function Invoices() {
         />
       </Card>
 
-      {/* بوباب المرتجع السريع اتشال مع زراره — مكانه شاشة مردود المبيعات. */}
 
-      {/* Invoice detail / view */}
-      <TabModal centered
-        title={(
-          <Space>
-            {/* Stepping between neighbours moved into the toolbar below, under التالى/السابق —
-                the same verbs their old screen puts there. Two sets of arrows for one action is
-                one set too many, and the toolbar is the one that keeps its place on every
-                document. */}
-            <span>{`تفاصيل الفاتورة ${viewInvoice?.document_number ?? ''}`}</span>
-          </Space>
-        )}
-        width={640}
-        open={detailVisible}
-        onCancel={() => setDetailVisible(false)}
-        destroyOnHidden
-        footer={invoiceFooter(invoiceDoc(viewInvoice), () => setDetailVisible(false))}
-      >
-        {viewInvoice && <DocumentToolbar actions={viewToolbar()} />}
-        {viewInvoice && (
-          <>
-            <InvoiceDocument doc={invoiceDoc(viewInvoice)!}
-              onItemClick={(id) => { setDetailVisible(false); navigate(`/catalog/${id}`); }}
-              onPartyClick={(id) => { setDetailVisible(false); navigate(`/customers/${id}`); }} />
-
-            <Divider orientation="right">المرتجعات</Divider>
-            <Table
-              size="small" pagination={false} rowKey="id"
-              dataSource={viewReturns}
-              locale={{ emptyText: 'لا يوجد مرتجعات على هذه الفاتورة' }}
-              columns={[
-                { title: 'سند المرتجع', dataIndex: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
-                { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${money(v)} ج.م` },
-                { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${money(v)} ج.م` },
-                { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${money(v)} ج.م` },
-              ]}
-            />
-
-            {viewInvoice.customer_id && (
-              <CustomerAccountPanel customerId={viewInvoice.customer_id} />
-            )}
-          </>
-        )}
-      </TabModal>
 
       {/*
         * باب واحد بيفتح الفاتورة — الفرع والتاريخ والتصنيف والبحث والقايمة في نافذة واحدة.

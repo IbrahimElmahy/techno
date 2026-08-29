@@ -464,7 +464,7 @@ export default function Catalog() {
         }
       }
 
-      message.success(editingItem ? 'اتعدّل الصنف' : 'اتسجّل الصنف');
+      message.success(editingItem ? 'اتعدّل الصنف' : 'تم تسجيل الصنف');
       setDrawerVisible(false);
       setEditingItem(null);
       form.resetFields();
@@ -771,7 +771,7 @@ export default function Catalog() {
         + (d.failed ? ` · فشل ${d.failed}` : ''));
       if (d.errors?.length) {
         Modal.warning({
-          title: 'صفوف ما اتعملتش',
+          title: 'صفوف لم تُنشأ',
           width: 560,
           content: (
             <ul style={{ maxHeight: 260, overflowY: 'auto', paddingRight: 18 }}>
@@ -1040,7 +1040,7 @@ export default function Catalog() {
               ) : canEditPoints ? (
                 <Col span={8}>
                   <Form.Item name="point_value" label="نقاط المنتج"
-                    tooltip="النقاط اللي العميل بياخدها على القطعة الواحدة — ممكن تبقى كسر (٦ قطع = نقطة ← 0.167)">
+                    tooltip="النقاط التي يحصل عليها العميل عن القطعة الواحدة — وقد تكون كسراً (٦ قطع = نقطة ← 0.167)">
                     <InputNumber min={0} step={0.001} style={{ width: '100%' }} placeholder="0" />
                   </Form.Item>
                 </Col>
@@ -1051,7 +1051,7 @@ export default function Catalog() {
                   answer — and the CUSTOMER's rate replaces it when he has one. «Nothing agreed»
                   is a state that belongs to the customer's card, not here. */}
               <Form.Item name="default_discount_pct" label="خصم الصنف %"
-                tooltip="الخصم الثابت على الصنف. لو العميل ليه خصم متحدد في كارت العميل، خصمه بيحل محل ده — مش بيتجمعوا.">
+                tooltip="الخصم الثابت على الصنف. وإن كان للعميل خصم محدد في كارت العميل فإنه يحل محل هذا الخصم ولا يُجمع معه.">
                 <InputNumber min={0} max={99.99} step={0.01} style={{ width: '100%' }}
                   placeholder="0" />
               </Form.Item>
@@ -1123,7 +1123,7 @@ export default function Catalog() {
             وحدات القياس البديلة
           </Divider>
           <div style={{ color: '#888', marginBottom: 8, fontSize: 13 }}>
-            الوحدة الأساسية هي اللي فوق. ضيف الوحدات الأكبر بمعاملها (مثلاً: كرتونة = ١٢).
+            الوحدة الأساسية هي الأولى. أضف الوحدات الأكبر بمعاملاتها (مثلاً: كرتونة = ١٢).
           </div>
           {unitRows.map((r, i) => (
             <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8 }}>

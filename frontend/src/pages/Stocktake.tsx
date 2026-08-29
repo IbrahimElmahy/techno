@@ -128,7 +128,7 @@ export default function Stocktake() {
   /** سجل كل صنف في اللي هيطلع — أو `null` لو العدد أكبر من الحد. كل صنف = نداء. */
   const withLogs = async (data: any[]) => {
     if (data.length > LOG_LIMIT) {
-      message.info(`السجل بيتطلع لحد ${LOG_LIMIT} صنف — حدّد الأصناف اللي عايز سجلها.`);
+      message.info(`يُستخرج السجل لما لا يزيد عن ${LOG_LIMIT} صنف — حدّد الأصناف المطلوب سجلها.`);
       return null;
     }
     return Promise.all(data.map(async (r: any) => ({
@@ -172,7 +172,7 @@ export default function Stocktake() {
    */
   const printIt = async () => {
     const data = forOutput();
-    if (!data.length) { message.info('مفيش صفوف للطباعة'); return; }
+    if (!data.length) { message.info('لا توجد صفوف للطباعة'); return; }
     const cols: PrintColumn<any>[] = [
       { title: 'الكود', value: 'code' },
       { title: 'الصنف', value: 'name' },
@@ -189,7 +189,7 @@ export default function Stocktake() {
           meta: [
             ['حتى تاريخ', asOf.format('YYYY/MM/DD')],
             ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
-            ['المطبوع', picked.length ? `${picked.length} صنف محدّد` : 'كل اللي في الفلتر'],
+            ['المطبوع', picked.length ? `${picked.length} صنف محدّد` : 'كل ما في الفلتر'],
           ] },
         cols, data,
       );
@@ -249,7 +249,7 @@ export default function Stocktake() {
         [{ text: 'عجز', value: 'short' },
          { text: 'زيادة', value: 'over' },
          { text: 'مطابق', value: 'match' },
-         { text: 'لسه ماتعدش', value: 'none' }],
+         { text: 'لم يُعدّ بعد', value: 'none' }],
         (r: Row, v: string) => {
           const d = diffOf(r);
           if (v === 'none') return d === null;

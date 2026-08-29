@@ -21,6 +21,7 @@ from src.models.transfer import (
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse
 from src.models.catalog import Item
+from src.auth.branch_scope import branch_for
 from src.services import (
     audit_service, batch_service, reservation_service, serial_service, stock_service,
 )
@@ -61,7 +62,7 @@ def _location_branch(db: Session, kind: LocationKind, location_id: int) -> int |
 
 
 def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source_id,
-             dest_kind, dest_id, initiated_by) -> StockTransfer:
+             dest_kind, dest_id, initiated_by, transfer_date=None) -> StockTransfer:
     want_src, want_dst = _ROUTE_KINDS[route]
     if source_kind != want_src or dest_kind != want_dst:
         raise TransferError("نوع التحويل ده مش متاح بين المكانين دول.")
@@ -93,6 +94,9 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         source_location_kind=source_kind, source_location_id=source_id,
         dest_location_kind=dest_kind, dest_location_id=dest_id,
         status=TransferStatus.pending, initiated_by=initiated_by,
+        transfer_date=transfer_date,
+        branch_id=branch_for(db, actor_user_id=initiated_by,
+                             location_kind=source_kind, location_id=source_id),
     )
     db.add(transfer)
     db.flush()
