@@ -218,7 +218,38 @@ def create_app() -> FastAPI:
 
         logging.getLogger("uvicorn.error").warning("startup schema sync skipped: %s", exc)
 
+    _mount_frontend(app)
     return app
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    """يقدّم ملفات الواجهة من نفس الخدمة — لو كانت مبنية جنبها.
+
+    على الاستضافة السحابية الواجهة على Vercel والـAPI على Render، فالدالة دي بتلاقي
+    المجلد مش موجود وبتسيبه. وعلى سيرفر الشركة الاتنين في مكان واحد، فبدل ما نركّب IIS
+    أو Nginx ونصونه، نفس الخدمة بتقدّم الاتنين — سيرفر أقل يعني حاجة أقل تقع.
+
+    الترتيب مهم: بيتنادى **بعد** كل المسارات، فأي `/api/v1/...` بيمسكه راوتره الأول.
+    واللي مش ملف موجود بيرجع `index.html` — التطبيق صفحة واحدة، والمسارات جوّاه بتتحل
+    في المتصفح، فطلب `/invoices` مباشرةً لازم يلاقي الصفحة مش ٤٠٤.
+    """
+    from pathlib import Path
+
+    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if not (dist / "index.html").exists():
+        return
+
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def _spa(full_path: str):
+        candidate = dist / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(dist / "index.html")
 
 
 def _load_permission_overrides() -> None:
