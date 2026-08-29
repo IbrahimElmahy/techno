@@ -43,7 +43,7 @@ from src.core.db import SessionLocal
 from src.core.money import to_money, to_qty
 from src.models.catalog import Item
 from src.models.customer import Customer
-from src.models.org import Branch
+from src.models.org import Branch, Territory
 from src.models.purchasing import (
     PurchaseInvoice,
     PurchaseInvoiceLine,
@@ -151,11 +151,56 @@ class Ctx:
                       StockTransfer, StockPermit):
             self.taken |= {n for (n,) in db.execute(select(model.document_number)).all()}
 
+        # الطرف اللي هيتعمل من الفاتورة محتاج مندوب ومنطقة — إجباريين عندنا.
+        self.fallback_rep = next(iter(self.rep.values()), None) or self.admin
+        self.fallback_terr = db.scalars(select(Territory).where(
+            Territory.branch_id == branch.id).order_by(Territory.id)).first()
+        # الأكواد الموجودة — عشان تشغيلة تانية ماتقعش على قيد التفرّد.
+        self.codes = {c for (c,) in db.execute(select(Customer.code)).all()}
+        self.codes |= {c for (c,) in db.execute(select(Supplier.code)).all()}
+        self.serial = 0
+
         self.skipped: list[str] = []
         self.made: dict[str, int] = defaultdict(int)
 
     def number(self, tag: str, a5_id: str) -> str:
         return f"{self.prefix}{tag}{a5_id}"
+
+    def party(self, name: str, *, supplier: bool):
+        """الطرف اللي على الفاتورة، وبيتعمل لو مش موجود في كشف العملاء/الموردين.
+
+        فيه ٢٢٦ فاتورة في العلياء طرفها مش في `Cust` ولا `Mourd`: «تكنووو ثيرم» و«فرع
+        اكتوبر» (الشركة الشقيقة) وأسماء موظفين (بيع بالعهدة). عندهم دول حسابات في شجرة
+        الحسابات مش عملاء، وعندنا الفاتورة لازم يكون ليها طرف.
+
+        وتخطّيها مش خيار: البضاعة خرجت من المخزن فعلاً، فتخطّي الفاتورة معناه رصيد غلط.
+        """
+        name = _clean(name)
+        if not name:
+            return None
+        book = self.supp if supplier else self.cust
+        if name in book:
+            return book[name]
+        note = "اتعمل من فاتورة a5 — مش في كشف العملاء/الموردين عندهم."
+        self.serial += 1
+        code = f"{self.prefix}A5X{self.serial}"
+        while code in self.codes:
+            self.serial += 1
+            code = f"{self.prefix}A5X{self.serial}"
+        self.codes.add(code)
+        if supplier:
+            row = Supplier(code=code, name=name, branch_id=self.branch.id, active=True)
+        else:
+            if self.fallback_rep is None or self.fallback_terr is None:
+                return None
+            row = Customer(code=code, name=name, customer_type="trader",
+                           rep_id=self.fallback_rep.id, territory_id=self.fallback_terr.id,
+                           branch_id=self.branch.id, address=note[:240], active=True)
+        self.db.add(row)
+        self.db.flush()
+        book[name] = row
+        self.made["أطراف من الفواتير"] += 1
+        return row
 
     def item(self, r: list[str]) -> Item | None:
         return (self.item_by_code.get(f"{self.prefix}{_clean(r[L_CODE])}")
@@ -197,7 +242,7 @@ def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("S", h[H_ID])
     if num in c.taken:
         return
-    cust = c.cust.get(_clean(h[H_PARTY]))
+    cust = c.party(h[H_PARTY], supplier=False)
     if cust is None:
         c.skipped.append(f"فاتورة بيع: عميل مش موجود «{_clean(h[H_PARTY])}»")
         return
@@ -237,7 +282,7 @@ def _sale_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("SR", h[H_ID])
     if num in c.taken:
         return
-    cust = c.cust.get(_clean(h[H_PARTY]))
+    cust = c.party(h[H_PARTY], supplier=False)
     ls = _lines_of(c, rows, L_IN, "مردود بيع")
     if not ls:
         return
@@ -271,7 +316,7 @@ def _purchase(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("P", h[H_ID])
     if num in c.taken:
         return
-    supp = c.supp.get(_clean(h[H_PARTY]))
+    supp = c.party(h[H_PARTY], supplier=True)
     if supp is None:
         c.skipped.append(f"فاتورة شراء: مورد مش موجود «{_clean(h[H_PARTY])}»")
         return
@@ -311,7 +356,7 @@ def _purchase_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("PR", h[H_ID])
     if num in c.taken:
         return
-    supp = c.supp.get(_clean(h[H_PARTY]))
+    supp = c.party(h[H_PARTY], supplier=True)
     ls = _lines_of(c, rows, L_OUT, "مردود شراء")
     if not ls:
         return
