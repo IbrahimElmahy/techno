@@ -30,14 +30,18 @@ def run(*, execute: bool) -> None:
     try:
         existing = {b.name: b for b in db.scalars(select(Branch)).all()}
         plan: list[str] = []
+        # الملخّص بيتحسب على الحالة **بعد** التسمية، مش قبلها — وإلا بيقول إنه هيعمل فرع
+        # «أكتوبر» وهو أصلاً الفرع اللي اتسمّى.
+        after = set(existing)
         for old, new in RENAME.items():
-            if old in existing and new not in existing:
+            if old in after and new not in after:
                 plan.append(f"يسمّي «{old}» ← «{new}» (الداتا مابتتحركش)")
+                after.discard(old)
+                after.add(new)
         for name, gov in BRANCHES:
-            if name not in existing and name not in RENAME.values():
+            if name not in after:
                 plan.append(f"يعمل فرع «{name}» في «{gov}»")
-            elif name not in existing:
-                plan.append(f"يعمل فرع «{name}» في «{gov}»")
+                after.add(name)
 
         print("الفروع دلوقتي:")
         for b in db.scalars(select(Branch).order_by(Branch.id)).all():
