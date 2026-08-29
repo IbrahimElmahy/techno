@@ -128,8 +128,13 @@ class CustomerAccountsOut(BaseModel):
     total_balance: Decimal
 
 
-def _out(c: Customer, db: Session | None = None) -> CustomerOut:
-    extra = contact_service.phone_values(db, PhoneOwner.customer, c.id) if db is not None else []
+def _out(c: Customer, db: Session | None = None,
+         phones: dict[int, list[str]] | None = None) -> CustomerOut:
+    if phones is not None:
+        extra = phones.get(c.id, [])
+    else:
+        extra = (contact_service.phone_values(db, PhoneOwner.customer, c.id)
+                 if db is not None else [])
     return CustomerOut(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type,
         phone=c.phone, rep_id=c.rep_id, territory_id=c.territory_id,
@@ -195,9 +200,12 @@ def list_customers(
     rows = list(db.scalars(stmt.order_by(Customer.id.desc())).all())
     balances = customer_profile_service.bulk_balances(db, [c.id for c in rows])
     rows = customer_profile_service.filter_by_balance(rows, balances, balance_filter)
+    # الأرقام الإضافية للصفحة كلها في نداء واحد بدل نداء لكل عميل.
+    phones = contact_service.bulk_phone_values(
+        db, PhoneOwner.customer, [c.id for c in rows])
     out = []
     for c in rows:
-        item = _out(c, db)
+        item = _out(c, db, phones)
         item.balance = balances.get(c.id, Decimal("0.00"))
         out.append(item)
     return out

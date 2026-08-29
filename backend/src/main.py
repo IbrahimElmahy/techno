@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
 from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
@@ -220,6 +221,15 @@ def create_app() -> FastAPI:
         import logging
 
         logging.getLogger("uvicorn.error").warning("startup schema sync skipped: %s", exc)
+
+    # الضغط. الردود JSON عربي، وبيصغر لعُشر حجمه تقريباً.
+    #
+    # الشبكة هي الجزء الأكبر من زمن أي شاشة هنا: كشف الأصناف ١.١ ميجا بياخد ثانية على
+    # السيرفر و٢١ ثانية لحد المتصفح. الضغط بيشتغل على الرحلة كلها — من الخدمة لحد الجهاز
+    # — مش على آخر خطوة بس زي ما بيعمل الوسيط.
+    #
+    # `minimum_size` عشان الردود الصغيرة ماتدفعش تكلفة ضغط مالهاش لازمة.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     _mount_frontend(app)
     return app

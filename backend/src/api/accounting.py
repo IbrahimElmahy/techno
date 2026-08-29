@@ -170,13 +170,19 @@ class TrialBalanceOut(BaseModel):
 # --- Serialization helpers -------------------------------------------------------------------
 
 def _account_out(db: Session, acc: Account, *, with_children: bool = False,
-                 owner_names: dict[int, str] | None = None) -> AccountOut:
+                 owner_names: dict[int, str] | None = None,
+                 balances: dict[int, Decimal] | None = None,
+                 kids_by_parent: dict[int, list[Account]] | None = None) -> AccountOut:
     children = None
     if with_children:
-        kids = db.scalars(
-            select(Account).where(Account.parent_id == acc.id).order_by(Account.code)
-        ).all()
-        children = [_account_out(db, k, with_children=True, owner_names=owner_names)
+        if kids_by_parent is not None:
+            kids = kids_by_parent.get(acc.id, [])
+        else:
+            kids = db.scalars(
+                select(Account).where(Account.parent_id == acc.id).order_by(Account.code)
+            ).all()
+        children = [_account_out(db, k, with_children=True, owner_names=owner_names,
+                                 balances=balances, kids_by_parent=kids_by_parent)
                     for k in kids]
     return AccountOut(
         id=acc.id, code=acc.code, name=acc.name, parent_id=acc.parent_id,
@@ -184,7 +190,8 @@ def _account_out(db: Session, acc: Account, *, with_children: bool = False,
         normal_side=acc.normal_side, is_postable=acc.is_postable, is_system=acc.is_system,
         active=acc.active, appears_in=acc.appears_in,
         main_level=getattr(acc, "main_level", None),
-        balance=chart_service.account_balance(db, acc.id), children=children,
+        balance=(balances.get(acc.id, Decimal("0.00")) if balances is not None
+                 else chart_service.account_balance(db, acc.id)), children=children,
         owner_name=(owner_names or {}).get(acc.id),
         owner_group=chart_service.owner_group_label(acc.account_type),
     )
@@ -229,7 +236,21 @@ def list_accounts(
     # customer, so per-row lookups would be a query per customer on every load.
     scope = accounts if not tree else list(db.scalars(select(Account)).all())
     owner_names = chart_service.bulk_owner_names(db, scope)
-    return [_account_out(db, a, with_children=tree, owner_names=owner_names) for a in accounts]
+    # الأرصدة والأبناء بيتجابوا للشجرة كلها مرة واحدة.
+    #
+    # كانت بتتحسب لكل حساب لوحده، وكل حساب بيقرا سطوره من الدفتر صف صف. شجرة فيها حساب
+    # لكل عميل بقت ٣٧٦٧ حساب و٤٨ ألف سطر — يعني الشاشة كانت بتاخد ١٠.٧ ثانية على السيرفر
+    # نفسه قبل ما الشبكة تشوف حاجة.
+    balances = chart_service.bulk_balances(db)
+    kids_by_parent: dict[int, list[Account]] | None = None
+    if tree:
+        kids_by_parent = {}
+        for a in sorted(scope, key=lambda x: x.code or ""):
+            if a.parent_id is not None:
+                kids_by_parent.setdefault(a.parent_id, []).append(a)
+    return [_account_out(db, a, with_children=tree, owner_names=owner_names,
+                         balances=balances, kids_by_parent=kids_by_parent)
+            for a in accounts]
 
 
 @router.post("/accounts", response_model=AccountOut, status_code=status.HTTP_201_CREATED)

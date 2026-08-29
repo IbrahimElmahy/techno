@@ -23,6 +23,26 @@ def phone_values(db: Session, owner_type: PhoneOwner, owner_id: int) -> list[str
     return [p.phone for p in list_phones(db, owner_type, owner_id)]
 
 
+def bulk_phone_values(db: Session, owner_type: PhoneOwner,
+                      owner_ids: list[int]) -> dict[int, list[str]]:
+    """أرقام إضافية لمجموعة أصحاب — نداء واحد مش نداء لكل واحد.
+
+    `phone_values` بتتنده مرة لكل صف في الشاشة، وكشف العملاء بقى ١٣٢٧ صف — يعني ١٣٢٧
+    نداء على القاعدة لكل فتحة، وتلات ثواني قبل ما الشبكة تشوف حاجة.
+    """
+    if not owner_ids:
+        return {}
+    out: dict[int, list[str]] = {}
+    rows = db.scalars(
+        select(ContactPhone)
+        .where(ContactPhone.owner_type == owner_type,
+               ContactPhone.owner_id.in_(owner_ids))
+        .order_by(ContactPhone.id)).all()
+    for row in rows:
+        out.setdefault(row.owner_id, []).append(row.phone)
+    return out
+
+
 def set_phones(db: Session, owner_type: PhoneOwner, owner_id: int, phones) -> None:
     """Replace the owner's extra numbers with `phones` (list of strings). None = leave unchanged."""
     if phones is None:

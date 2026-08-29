@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
-from src.models.ledger import Account, AccountNature, AccountType
+from src.models.ledger import Account, AccountNature, AccountType, LedgerLine
 from src.services import ledger_service
 from src.services.account_resolver import (
     NATURE_NORMAL_SIDE,
@@ -269,6 +269,51 @@ def account_balance(db: Session, account_id: int) -> Decimal:
     for child in db.scalars(select(Account).where(Account.parent_id == account_id)).all():
         total += account_balance(db, child.id)
     return to_money(total)
+
+
+def bulk_balances(db: Session) -> dict[int, Decimal]:
+    """رصيد كل حساب في الشجرة — استعلامين، مش استعلام لكل حساب.
+
+    `account_balance` بتقرا سطور الحساب واحد واحد وبتتنده مرة لكل صف في الشاشة. شجرة
+    فيها حساب لكل عميل بقت ٣٧٦٧ حساب و٤٨ ألف سطر، فشاشة الحسابات كانت بتاخد ١٠.٧ ثانية
+    على السيرفر نفسه — من غير الشبكة. الجمع هنا بيحصل في القاعدة مرة واحدة.
+
+    المجموعة = مجموع اللي تحتها، محسوبة من الورق لفوق عشان الشجرة تتمشي مرة واحدة.
+    """
+    rows = db.execute(
+        select(LedgerLine.account_id, LedgerLine.direction, func.sum(LedgerLine.amount))
+        .group_by(LedgerLine.account_id, LedgerLine.direction)).all()
+    accounts = db.execute(
+        select(Account.id, Account.parent_id, Account.is_postable, Account.normal_side)).all()
+    side = {a_id: normal for a_id, _p, _post, normal in accounts}
+
+    out: dict[int, Decimal] = {}
+    for account_id, direction, total in rows:
+        signed = to_money(total or ZERO)
+        if direction != side.get(account_id):
+            signed = -signed
+        out[account_id] = out.get(account_id, ZERO) + signed
+
+    # المجموعات: بنجمع من الابن لأبوه لحد الجذر. الترتيب بالعمق عشان الابن يخلص الأول.
+    parent = {a_id: pid for a_id, pid, _post, _n in accounts}
+    depth: dict[int, int] = {}
+
+    def _depth(a_id: int) -> int:
+        seen = set()
+        d, cur = 0, a_id
+        while parent.get(cur) is not None and cur not in seen:
+            seen.add(cur)
+            cur = parent[cur]
+            d += 1
+        return d
+
+    for a_id, _pid, _post, _n in accounts:
+        depth[a_id] = _depth(a_id)
+    for a_id in sorted(depth, key=lambda x: -depth[x]):
+        pid = parent.get(a_id)
+        if pid is not None:
+            out[pid] = out.get(pid, ZERO) + out.get(a_id, ZERO)
+    return {k: to_money(v) for k, v in out.items()}
 
 
 def is_postable_leaf(db: Session, account_id: int) -> bool:
