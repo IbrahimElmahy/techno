@@ -28,6 +28,7 @@ from src.models.customer import Customer, CustomerAccount
 from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.user import User
 from src.models.warehouse import Custody, Warehouse
 from src.services import coupon_receipt_service, sales_service
 from src.services.rep_store_service import rep_store
@@ -198,6 +199,13 @@ class SalesInvoiceOut(BaseModel):
     coupon_count: int | None = None
     coupons: list[InvoiceCouponOut] = []
     invoice_date: date | None = None
+    # الاسم بيتبعت مع الصف مش بيتحل في الشاشة.
+    #
+    # كانت الشاشة بتحمّل كشف العملاء والمناديب وتدوّر على الـid جوّاه. بعد نقل داتا a5 بقى
+    # الكشف 1327 عميل و2640 صنف، والتحميل ده بيقع على الشبكة — فالجدول كان بيعرض
+    # «عميل #1841» و«-» مكان المندوب، مع إن الصف نفسه سليم.
+    customer_name: str | None = None
+    rep_name: str | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
 
@@ -493,7 +501,19 @@ def create_sale(
     return _inv_out(inv, db)
 
 
-def _inv_out(inv: SalesInvoice, db: Session | None = None) -> SalesInvoiceOut:
+def _row_names(db: Session, rows: list) -> tuple[dict[int, str], dict[int, str]]:
+    """اسم العميل واسم المندوب لصفوف الصفحة — نداءين مجمّعين مش نداء لكل صف."""
+    cust_ids = {r.customer_id for r in rows if r.customer_id}
+    rep_ids = {r.rep_id for r in rows if getattr(r, "rep_id", None)}
+    custs = dict(db.execute(select(Customer.id, Customer.name)
+                            .where(Customer.id.in_(cust_ids))).all()) if cust_ids else {}
+    reps = dict(db.execute(select(User.id, User.full_name)
+                           .where(User.id.in_(rep_ids))).all()) if rep_ids else {}
+    return custs, {k: v for k, v in reps.items() if v}
+
+
+def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
+             names: tuple[dict[int, str], dict[int, str]] | None = None) -> SalesInvoiceOut:
     coupons: list[InvoiceCouponOut] = []
     if db is not None:
         rows = db.scalars(
@@ -513,7 +533,10 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None) -> SalesInvoiceOut:
             )
             for r in rows
         ]
+    cust_names, rep_names = names or ({}, {})
     return SalesInvoiceOut(
+        customer_name=cust_names.get(inv.customer_id),
+        rep_name=rep_names.get(inv.rep_id) if inv.rep_id else None,
         coupons=coupons,
         id=inv.id, document_number=inv.document_number, customer_id=inv.customer_id,
         gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net, cash_amount=inv.cash_amount,
@@ -581,7 +604,8 @@ def list_sales(
     stmt = stmt.order_by(SalesInvoice.id.desc())
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
-    return [_inv_out(i) for i in db.scalars(stmt).all()]
+    rows = list(db.scalars(stmt).all())
+    return [_inv_out(i, names=_row_names(db, rows)) for i in rows]
 
 
 @router.get("/summary", response_model=dict)

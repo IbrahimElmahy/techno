@@ -1645,15 +1645,16 @@ export default function Invoices() {
       width: 190,
       ellipsis: true,
       sorter: (a: any, b: any) => {
-        const cA = customers.find((c) => c.id === a.customer_id)?.name || '';
-        const cB = customers.find((c) => c.id === b.customer_id)?.name || '';
+        const cA = a.customer_name || customers.find((c) => c.id === a.customer_id)?.name || '';
+        const cB = b.customer_name || customers.find((c) => c.id === b.customer_id)?.name || '';
         return cA.localeCompare(cB);
       },
-      render: (cId: number) => {
-        const c = customers.find((cust) => cust.id === cId);
+      render: (cId: number, row: any) => {
+        // الاسم جاي مع الصف؛ الكشف المحلي فاضل كخطة بديلة للصفوف القديمة.
+        const name = row.customer_name || customers.find((cust) => cust.id === cId)?.name;
         return (
           <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
-            {c ? c.name : `عميل #${cId}`}
+            {name || `عميل #${cId}`}
           </a>
         );
       },
@@ -1672,7 +1673,8 @@ export default function Invoices() {
       key: 'rep_id',
       width: 95,
       ellipsis: true,
-      render: (id: number | null) => reps.find((r) => r.id === id)?.full_name || '-',
+      render: (id: number | null, row: any) =>
+        row.rep_name || reps.find((r) => r.id === id)?.full_name || '-',
     },
     {
       title: 'اجمالي قبل',
