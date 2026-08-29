@@ -417,6 +417,12 @@ export default function Invoices() {
       date: String(s.invoice_date || s.created_at || '').slice(0, 10),
       customer_id: s.customer_id,
       rep_id: s.rep_id,
+      // الأسماء والتصنيف جايين مع الصف من السيرفر. الصف الموحّد بينسخ الحقول
+      // بالاسم، فاللي مش مكتوب هنا بيوصل للجدول فاضي مهما كان الرد كامل — وده
+      // اللي كان بيخلّي «النوع» فاضي والأسماء تستنى كشف العملاء يتحمّل.
+      customer_name: s.customer_name,
+      rep_name: s.rep_name,
+      customer_type: s.customer_type,
       revenue_account_id: s.revenue_account_id,
       family: s.family,
       gross: Number(s.gross || 0),
@@ -439,6 +445,9 @@ export default function Invoices() {
       date: String(r.return_date || r.created_at || '').slice(0, 10),
       customer_id: r.customer_id,
       rep_id: r.rep_id,
+      customer_name: r.customer_name,
+      rep_name: r.rep_name,
+      customer_type: r.customer_type,
       revenue_account_id: null,
       family: r.family || null,
       gross: Number(r.gross || 0),
