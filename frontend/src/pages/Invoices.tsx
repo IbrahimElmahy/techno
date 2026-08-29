@@ -32,6 +32,11 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
+// حجم الصفحة في شاشة الفواتير. الكشف كله بقى 6163 فاتورة بعد نقل داتا a5،
+// و«اعرض كل حاجة» بقى معناه 2.9 ميجا في كل فتحة. الفلترة والبحث على السيرفر
+// فالصفحة دي مش بتخفي حاجة عن اللي بيدوّر.
+const PAGE_SIZE = 300;
+
 interface InvoiceRecord {
   id: number;
   document_number: string;
@@ -353,6 +358,8 @@ export default function Invoices() {
 
   // Sales returns list for the unified sales register
   const [salesReturns, setSalesReturns] = useState<any[]>([]);
+  // إجماليات الكشف كله زي ما السيرفر حسبها — مش مجموع الصفحة اللي ظاهرة.
+  const [serverSummary, setServerSummary] = useState<any>(null);
   const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return'>('all');
 
   // Filtering happens on the server so it covers ALL invoices, not just the loaded page.
@@ -364,12 +371,18 @@ export default function Invoices() {
       Object.entries(active).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
       });
-      const [salesRes, returnsRes] = await Promise.all([
-        api.get('/api/v1/sales', { params }),
-        api.get('/api/v1/sales/returns').catch(() => ({ data: [] })),
+      // صفحة واحدة مش الكشف كله: 6163 فاتورة = 2.9 ميجا و47 ثانية على الشبكة، والمهلة
+      // 30 ثانية — فالشاشة كانت بتفصل وتقول «فشل الاتصال». الإجماليات جاية من السيرفر
+      // عشان تفضل على الكشف كله مش على الصفحة.
+      const [salesRes, returnsRes, sumRes] = await Promise.all([
+        api.get('/api/v1/sales', { params: { ...params, limit: PAGE_SIZE } }),
+        api.get('/api/v1/sales/returns', { params: { limit: PAGE_SIZE } })
+          .catch(() => ({ data: [] })),
+        api.get('/api/v1/sales/summary', { params }).catch(() => ({ data: null })),
       ]);
       setInvoices(salesRes.data);
       setSalesReturns(returnsRes.data || []);
+      setServerSummary(sumRes.data || null);
     } catch (err: any) {
       console.error(err);
       message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفواتير والمرتجعات');
@@ -460,16 +473,18 @@ export default function Invoices() {
     const totalCredit = (invoices || []).reduce((s: number, i: any) => s + Number(i.credit_amount || 0), 0)
       - (salesReturns || []).reduce((s: number, r: any) => s + Number(r.credit_reduction || 0), 0);
 
+    // السيرفر بيحسب على الكشف كله؛ الجمع المحلي فاضل كخطة بديلة لو النداء وقع.
+    const s = serverSummary;
     return {
-      totalSalesCount,
-      totalReturnsCount,
-      totalSalesNet,
-      totalReturnsNet,
-      netSales,
-      totalCredit,
+      totalSalesCount: s ? Number(s.sales_count) : totalSalesCount,
+      totalReturnsCount: s ? Number(s.returns_count) : totalReturnsCount,
+      totalSalesNet: s ? Number(s.sales_net) : totalSalesNet,
+      totalReturnsNet: s ? Number(s.returns_net) : totalReturnsNet,
+      netSales: s ? Number(s.net_sales) : netSales,
+      totalCredit: s ? Number(s.credit_outstanding) : totalCredit,
       filteredCount: unifiedRecords.length,
     };
-  }, [invoices, salesReturns, unifiedRecords]);
+  }, [invoices, salesReturns, unifiedRecords, serverSummary]);
 
   const loadLookups = async () => {
     try {

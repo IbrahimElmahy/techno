@@ -540,10 +540,18 @@ def list_sales(
     rep_id: int | None = None,            # (030)
     family: str | None = None,
     external_document_number: str | None = None,  # (030)
+    limit: int | None = None,
+    offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[SalesInvoiceOut]:
-    """List sales invoices with search + filters, newest first."""
+    """List sales invoices with search + filters, newest first.
+
+    `limit` بيتساب فاضي افتراضياً عشان اللي بيندهه دلوقتي مايتقطعش عليه الرد في صمت.
+    الشاشة بتبعته: ٦١٦٣ فاتورة = ٢.٩ ميجا، والشبكة بتاخد ٤٧ ثانية توصّلها فالشاشة بتفصل
+    قبلها وبتقول «فشل الاتصال». الإجماليات بقت من `/sales/summary` عشان الصفحة الواحدة
+    ماتخليش الأرقام تكدب.
+    """
     stmt = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
     if rep_id is not None:
         stmt = stmt.where(SalesInvoice.rep_id == rep_id)
@@ -570,7 +578,82 @@ def list_sales(
         stmt = stmt.where(SalesInvoice.cash_amount == 0)
     elif payment == "partial":  # a mix
         stmt = stmt.where(SalesInvoice.cash_amount > 0, SalesInvoice.credit_amount > 0)
-    return [_inv_out(i) for i in db.scalars(stmt.order_by(SalesInvoice.id.desc())).all()]
+    stmt = stmt.order_by(SalesInvoice.id.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit).offset(offset)
+    return [_inv_out(i) for i in db.scalars(stmt).all()]
+
+
+@router.get("/summary", response_model=dict)
+def sales_summary(
+    q: str | None = None,
+    customer_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    payment: str | None = None,
+    rep_id: int | None = None,
+    family: str | None = None,
+    external_document_number: str | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """إجماليات شاشة المبيعات — محسوبة على السيرفر بنفس فلاتر القايمة.
+
+    كانت بتتحسب في الشاشة بجمع الصفوف اللي اتحمّلت، وده كان بيلزم إن الصفوف **كلها**
+    تتحمّل: ٦١٦٣ فاتورة = ٢.٩ ميجا في كل فتحة، ٤٧ ثانية على الشبكة، والشاشة بتفصل قبلها.
+    الجمع هنا بيخلّي القايمة تجيب صفحة والأرقام تفضل صح.
+    """
+    inv = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
+    ret = branch_scope.scope(select(SalesReturn), SalesReturn, current).where(
+        SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
+
+    if rep_id is not None:
+        inv = inv.where(SalesInvoice.rep_id == rep_id)
+        ret = ret.where(SalesReturn.rep_id == rep_id)
+    if family:
+        inv = inv.where(SalesInvoice.family == family)
+        ret = ret.where(SalesReturn.family == family)
+    if external_document_number:
+        inv = inv.where(SalesInvoice.external_document_number.like(
+            f"%{external_document_number.strip()}%"))
+    if current.rep_id is not None:
+        mine = select(Customer.id).where(Customer.rep_id == current.rep_id)
+        inv = inv.where(SalesInvoice.customer_id.in_(mine))
+        ret = ret.where(SalesReturn.customer_id.in_(mine))
+    if q:
+        inv = inv.where(SalesInvoice.document_number.like(f"%{q.strip()}%"))
+        ret = ret.where(SalesReturn.document_number.like(f"%{q.strip()}%"))
+    if customer_id is not None:
+        inv = inv.where(SalesInvoice.customer_id == customer_id)
+        ret = ret.where(SalesReturn.customer_id == customer_id)
+    if date_from is not None:
+        inv = inv.where(SalesInvoice.created_at >= clock.day_start_utc(date_from))
+        ret = ret.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
+    if date_to is not None:
+        inv = inv.where(SalesInvoice.created_at < clock.day_end_utc(date_to))
+        ret = ret.where(SalesReturn.created_at < clock.day_end_utc(date_to))
+    if payment == "cash":
+        inv = inv.where(SalesInvoice.credit_amount == 0)
+    elif payment == "credit":
+        inv = inv.where(SalesInvoice.cash_amount == 0)
+    elif payment == "partial":
+        inv = inv.where(SalesInvoice.cash_amount > 0, SalesInvoice.credit_amount > 0)
+
+    def totals(stmt, *cols):
+        sub = stmt.subquery()
+        row = db.execute(select(func.count(), *[func.coalesce(func.sum(sub.c[c]), 0)
+                                                for c in cols])
+                         .select_from(sub)).one()
+        return row
+
+    inv_count, inv_net, inv_credit = totals(inv, "net", "credit_amount")
+    ret_count, ret_net, ret_credit = totals(ret, "value", "credit_reduction")
+    return {
+        "sales_count": inv_count, "sales_net": inv_net,
+        "returns_count": ret_count, "returns_net": ret_net,
+        "net_sales": inv_net - ret_net,
+        "credit_outstanding": inv_credit - ret_credit,
+    }
 
 
 # --- Standalone returns (028): "return like a sale, reversed" ---------------------------------
@@ -626,6 +709,8 @@ def list_standalone_returns(
     date_to: date | None = None,
     rep_id: int | None = None,
     family: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
@@ -648,8 +733,10 @@ def list_standalone_returns(
         stmt = stmt.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
     if date_to is not None:
         stmt = stmt.where(SalesReturn.created_at < clock.day_end_utc(date_to))
-    return [_standalone_return_out(r, db)
-            for r in db.scalars(stmt.order_by(SalesReturn.id.desc())).all()]
+    stmt = stmt.order_by(SalesReturn.id.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit).offset(offset)
+    return [_standalone_return_out(r, db) for r in db.scalars(stmt).all()]
 
 
 @router.post("/returns", response_model=dict, status_code=status.HTTP_201_CREATED)
