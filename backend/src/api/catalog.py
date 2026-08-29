@@ -140,6 +140,8 @@ def list_items(
     active: bool | None = None,
     warehouse_id: int | None = None,
     stock_filter: str | None = None,  # all | in_stock | out_of_stock | negative | moved
+    limit: int | None = None,
+    offset: int = 0,
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemOut]:
@@ -152,11 +154,17 @@ def list_items(
         select(Item), q=q, kind=kind.value if kind else None, category=category,
         active=active, warehouse_id=warehouse_id,
     )
+    # فلتر المخزون بيشتغل على الصفوف بعد ما تتحمّل، فالتقطيع بيتم بعده مش قبله — وإلا
+    # «الأصناف اللي رصيدها صفر» بترجع أقل من اللي فيه فعلاً.
+    if limit is not None and not stock_filter:
+        stmt = stmt.limit(limit).offset(offset)
     rows = list(db.scalars(stmt).all())
     on_hand = item_profile_service.bulk_on_hand(db, [i.id for i in rows])
     moved = (item_profile_service.bulk_has_movement(db, [i.id for i in rows])
              if stock_filter == "moved" else None)
     rows = item_profile_service.filter_by_stock(rows, on_hand, stock_filter, moved)
+    if limit is not None and stock_filter:
+        rows = rows[offset:offset + limit]
     # Looked up after the stock filter, so the extra two queries only cover rows that survive it.
     ids = [i.id for i in rows]
     consumer = item_profile_service.bulk_tier_price(db, ids, PriceTier.consumer)
