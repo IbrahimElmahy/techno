@@ -63,7 +63,9 @@ def _norm(s: str) -> str:
 
 
 def _words(s: str) -> list[str]:
-    return [w for w in _norm(s).split() if w not in NOISE]
+    # الأقواس بتتشال مش بتتفصل: «( د )» و«(د)» نفس الشيء، والداتا فيها الشكلين.
+    s = re.sub(r"[()\[\]{}.,\-_/]+", " ", _norm(s))
+    return [w for w in s.split() if w not in NOISE]
 
 
 def _same_person(emp_name: str, wh_name: str) -> bool:
