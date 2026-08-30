@@ -430,6 +430,25 @@ def _inspection_point_record(db: Session, inspection_id: int, kind):
         PointRecord.inspection_id == inspection_id, PointRecord.kind == kind))
 
 
+def _has_live_deduction(db: Session, inspection_id: int) -> bool:
+    """هل فيه خصم شغّال على المعاينة دي دلوقتي — يعني اتخصم ومااترجعش؟
+
+    السؤال مش «هل اتخصم قبل كده». الدفتر مابيتمسحش، فالخصم القديم بيفضل مكانه حتى بعد
+    ما الرفض يرجّعه بسطر موجب. سؤال «هل فيه سطر خصم» بيقول أيوه في الحالتين — واللي
+    حصل إن معاينة اتقبلت ← اترفضت ← اتقبلت تاني كانت بتعدّي من غير خصم: الدفتر يقول
+    ‑٢٨٤٫٥ و+٢٨٤٫٥ وخلاص، والمعاينة مقبولة والتاجر ماخدش عليها حاجة.
+
+    فالعدّ بيقارن الخصومات بالرجوعات: أكتر خصومات من رجوعات = فيه واحد شغّال.
+    """
+    from src.models.loyalty import PointKind, PointRecord
+
+    def _count(kind) -> int:
+        return db.scalar(select(func.count(PointRecord.id)).where(
+            PointRecord.inspection_id == inspection_id, PointRecord.kind == kind)) or 0
+
+    return _count(PointKind.inspection) > _count(PointKind.inspection_reverse)
+
+
 def sync_inspection_points(db: Session, inspection: Inspection, *, actor_user_id: int | None = None):
     """يخصم نقط المعاينة من رصيد التاجر — مرة واحدة مهما اتنادت.
 
@@ -451,7 +470,7 @@ def sync_inspection_points(db: Session, inspection: Inspection, *, actor_user_id
             "inspection %s (%s) بـ%s نقطة من غير تاجر مربوط — مافيش خصم نقاط.",
             inspection.id, inspection.document_number, total)
         return None
-    if _inspection_point_record(db, inspection.id, PointKind.inspection) is not None:
+    if _has_live_deduction(db, inspection.id):
         return None
     return points_service.post(
         db, customer_id=inspection.merchant_customer_id, kind=PointKind.inspection,
@@ -464,15 +483,22 @@ def _reverse_inspection_points(db: Session, inspection: Inspection, *, actor_use
     الدفتر بيحكي اللي حصل: اتخصم، وبعدين اترجع. مسح السطر الأصلي كان هيخلّي الرصيد صح
     وتاريخه كدّاب، ومحدش يعرف إن المعاينة دي خصمت أصلاً.
     """
-    from src.models.loyalty import PointKind
+    from src.models.loyalty import PointKind, PointRecord
 
     from src.services import points_service
 
-    original = _inspection_point_record(db, inspection.id, PointKind.inspection)
+    # نفس سؤال `_has_live_deduction`: «فيه خصم شغّال؟» مش «فيه سطر خصم؟». الفحص القديم
+    # كان بيقف عند أول سطر رجوع، فالرفض التاني في دورة (قبول ← رفض ← قبول ← رفض)
+    # ماكانش بيرجّع حاجة — المعاينة مرفوضة والخصم لسه واقع على التاجر.
+    if not _has_live_deduction(db, inspection.id):
+        return None
+    original = db.scalar(
+        select(PointRecord)
+        .where(PointRecord.inspection_id == inspection.id,
+               PointRecord.kind == PointKind.inspection)
+        .order_by(PointRecord.id.desc()))
     if original is None:
         return None  # ماخصمتش أصلاً (معاينة قديمة أو من غير تاجر) — مافيش حاجة ترجع
-    if _inspection_point_record(db, inspection.id, PointKind.inspection_reverse) is not None:
-        return None
     return points_service.post(
         db, customer_id=original.customer_id, kind=PointKind.inspection_reverse,
         delta=-_points(original.delta), inspection_id=inspection.id,
@@ -511,6 +537,57 @@ def reject_inspection(db: Session, inspection: Inspection, *, actor_user_id: int
     inspection.status = InspectionStatus.rejected
     db.flush()
     audit_service.record(db, action="inspection.reject", actor_user_id=actor_user_id,
+                         entity_type="inspection", entity_id=inspection.id,
+                         after={"doc": inspection.document_number})
+    return inspection
+
+
+def _deduct_stock_again(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
+    """يخصم من عهدة المندوب تاني بعد ما الرفض رجّعها — للقبول بعد رفض.
+
+    السطر اللي مالوش `stock_movement_id` أصلاً مالهوش عهدة (المعاينة نقاط بس، وهي
+    الحالة الغالبة هنا)، فبيتعدّى. واللي له بيتخصم بنفس نداء الإنشاء عشان يمرّ من
+    نفس بوابة الرصيد — من غير كده الرصيد بيبقى سالب في صمت.
+    """
+    stock_loc = rep_stock_location(db, inspection.rep_user_id)
+    if stock_loc is None:
+        return
+    for line in inspection.items:
+        if line.stock_movement_id is None or line.item_id is None:
+            continue
+        try:
+            mv = stock_service.post_movement(
+                db, item_id=line.item_id, location_kind=stock_loc[0],
+                location_id=stock_loc[1], movement_type="inspection_out",
+                direction=StockDirection.out, quantity=to_qty(line.quantity),
+                actor_user_id=actor_user_id,
+                source_doc_type="inspection", source_doc_id=inspection.id,
+            )
+        except stock_service.StockError as exc:
+            raise InspectionError(
+                f"الرصيد غير كافٍ في العهدة للصنف «{line.item_name}» — القبول محتاج "
+                f"يخصم {to_qty(line.quantity)} تاني."
+            ) from exc
+        line.stock_movement_id = mv.id
+
+
+def accept_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> Inspection:
+    """قبول معاينة مرفوضة — الرجوع عن الرفض.
+
+    الرفض كان طريق باتجاه واحد: الشاشة بتوري «مرفوضة» ومافيش طريق يرجّعها، فالمراجع
+    اللي رفض بالغلط ماكانش قدامه غير الحذف — وده بيمسح شغل حصل بدل ما يصحّح قرار.
+
+    بيرجّع البضاعة لعهدة الشركة تاني (زي القبول الأول) وبيخصم النقط من التاجر من جديد.
+    الخصم بيمرّ من `sync_inspection_points` اللي بيفحص وجود سطر غير معكوس الأول، فالقبول
+    مرتين بيكتب سطر واحد.
+    """
+    if inspection.status == InspectionStatus.accepted:
+        raise InspectionError("المعاينة مقبولة بالفعل.")
+    _deduct_stock_again(db, inspection, actor_user_id=actor_user_id)
+    inspection.status = InspectionStatus.accepted
+    db.flush()
+    sync_inspection_points(db, inspection, actor_user_id=actor_user_id)
+    audit_service.record(db, action="inspection.accept", actor_user_id=actor_user_id,
                          entity_type="inspection", entity_id=inspection.id,
                          after={"doc": inspection.document_number})
     return inspection

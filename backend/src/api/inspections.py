@@ -451,6 +451,28 @@ def reject_inspection(
     return _out_single(db, insp)
 
 
+@router.post("/{inspection_id}/accept", response_model=InspectionOut)
+def accept_inspection(
+    inspection_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
+    db: Session = Depends(get_db),
+) -> InspectionOut:
+    """قبول معاينة مرفوضة — الرجوع عن الرفض، وبيخصم نقطها من التاجر تاني.
+
+    الرفض كان طريق باتجاه واحد: اللي رفض بالغلط ماكانش قدامه غير الحذف — يمسح شغل
+    حصل عشان يصحّح قرار.
+    """
+    _reviewer(current)
+    insp = _get_or_404(db, inspection_id)
+    try:
+        inspection_service.accept_inspection(db, insp, actor_user_id=current.id)
+    except InspectionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "accept_conflict", "message": str(exc)})
+    db.commit()
+    return _out_single(db, insp)
+
+
 @router.post("/{inspection_id}/mark-printed", response_model=InspectionOut)
 def mark_printed(
     inspection_id: int,

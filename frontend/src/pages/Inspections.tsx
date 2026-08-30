@@ -9,6 +9,7 @@ import {
   MobileOutlined,
   PrinterOutlined,
   FilePdfOutlined,
+  CheckCircleOutlined,
   CloseCircleOutlined,
   SaveOutlined,
   ArrowLeftOutlined,
@@ -229,6 +230,21 @@ const Inspections: React.FC = () => {
       message.success('تم رفض المعاينة وإرجاع البضاعة لعهدة المندوب');
     } catch (e: any) {
       message.error(e?.response?.data?.detail?.message || 'فشل الرفض');
+    }
+  };
+
+  /** قبول معاينة مرفوضة — الرجوع عن الرفض. الرفض كان طريق باتجاه واحد، فاللي رفض
+   *  بالغلط ماكانش قدامه غير الحذف: يمسح شغل حصل عشان يصحّح قرار.
+   *
+   *  القبول بيخصم نقط المعاينة من التاجر تاني، فبيتقال قبل التأكيد بكام هيتخصم. */
+  const acceptInspection = async () => {
+    if (!detail) return;
+    try {
+      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/accept`);
+      patchDetail(data);
+      message.success('تم قبول المعاينة');
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail?.message || 'فشل القبول');
     }
   };
 
@@ -571,10 +587,18 @@ const Inspections: React.FC = () => {
                 <Button icon={<FilePdfOutlined />} onClick={printCertificate}>
                   تصدير PDF
                 </Button>
-                {detail.status !== 'rejected' && (
+                {detail.status !== 'rejected' ? (
                   <Popconfirm
                     title="رفض المعاينة؟"
-                    description="ستُعاد البضاعة إلى عهدة المندوب — والرفض نهائي."
+                    description={(
+                      <div style={{ maxWidth: 280 }}>
+                        ستُعاد البضاعة إلى عهدة المندوب
+                        {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
+                          <>، وترجع <b>{Number(detail.total_points).toLocaleString('ar-EG')}</b>
+                          {' '}نقطة لرصيد <b>{detail.merchant_name}</b></>
+                        ) : null}.
+                      </div>
+                    )}
                     okText="رفض"
                     cancelText="إلغاء"
                     okButtonProps={{ danger: true }}
@@ -582,6 +606,27 @@ const Inspections: React.FC = () => {
                   >
                     <Button danger icon={<CloseCircleOutlined />}>
                       رفض المعاينة
+                    </Button>
+                  </Popconfirm>
+                ) : (
+                  <Popconfirm
+                    title="قبول المعاينة؟"
+                    description={(
+                      <div style={{ maxWidth: 280 }}>
+                        {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
+                          <>هتتخصم <b>{Number(detail.total_points).toLocaleString('ar-EG')}</b>
+                          {' '}نقطة من رصيد <b>{detail.merchant_name}</b>.</>
+                        ) : (
+                          <>المعاينة دي مالهاش تاجر مربوط — مافيش نقط هتتخصم.</>
+                        )}
+                      </div>
+                    )}
+                    okText="قبول"
+                    cancelText="إلغاء"
+                    onConfirm={acceptInspection}
+                  >
+                    <Button type="primary" icon={<CheckCircleOutlined />}>
+                      قبول المعاينة
                     </Button>
                   </Popconfirm>
                 )}

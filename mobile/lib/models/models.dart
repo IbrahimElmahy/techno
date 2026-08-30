@@ -98,6 +98,12 @@ class Inspection {
   String? technicianPhone;
   String? purchaseShop;
   String? purchaseShopPhone;
+  /// التاجر اللي «محل الشراء» بيشاور عليه — رقمه عندنا مش اسمه.
+  ///
+  /// الاسم كان بيتبعت لوحده، فالمعاينة توصل السيرفر ومعاها نص مالوش طرف. ومن غير
+  /// الطرف ده مافيش حد تتخصم منه نقط المعاينة وقت القبول: الخصم بيدوّر على
+  /// `merchant_customer_id` ويلاقيه فاضي ويعدّي بتحذير في اللوج.
+  int? merchantCustomerId;
   String? visitDetails;
   int? customerId; // الزيارة العادية مرتبطة بعميل
   List<InspectionLine> lines;
@@ -122,6 +128,7 @@ class Inspection {
     this.technicianPhone,
     this.purchaseShop,
     this.purchaseShopPhone,
+    this.merchantCustomerId,
     this.visitDetails,
     this.customerId,
     List<InspectionLine>? lines,
@@ -149,6 +156,7 @@ class Inspection {
         'technician_name': technicianName,
         'technician_phone': technicianPhone,
         'purchase_shop': purchaseShop,
+        'merchant_customer_id': merchantCustomerId,
         'purchase_shop_phone': purchaseShopPhone,
         'visit_details': visitDetails,
         'customer_id': customerId,

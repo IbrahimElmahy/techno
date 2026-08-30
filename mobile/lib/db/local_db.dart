@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 15, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 16, onUpgrade: (d, from, to) async {
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -55,6 +55,11 @@ class LocalDb {
         try { await d.execute('ALTER TABLE customer ADD COLUMN price_tier TEXT'); } catch (_) {}
       }
       if (from < 9) {
+        // v16: رقم التاجر مع اسمه. الاسم لوحده مابيوصّلش لطرف، والخصم بيحتاج الطرف.
+        if (from < 16) {
+          await d.execute(
+              'ALTER TABLE inspection ADD COLUMN merchant_customer_id INTEGER');
+        }
         // v9: تليفون محل الشراء — «محل الشراء» بقى تاجر مختار من قايمة المندوب.
         try {
           await d.execute('ALTER TABLE inspection ADD COLUMN purchase_shop_phone TEXT');
@@ -107,7 +112,8 @@ class LocalDb {
           owner_phone TEXT, national_id TEXT, owner_address TEXT, floor_number TEXT,
           description TEXT, inspection_type TEXT, visit_type TEXT,
           technician_name TEXT, technician_phone TEXT,
-          purchase_shop TEXT, purchase_shop_phone TEXT, visit_details TEXT,
+          purchase_shop TEXT, purchase_shop_phone TEXT,
+          merchant_customer_id INTEGER, visit_details TEXT,
           customer_id INTEGER,
           total_points REAL NOT NULL DEFAULT 0,
           synced INTEGER NOT NULL DEFAULT 0,
@@ -301,6 +307,7 @@ class LocalDb {
         'technician_name': insp.technicianName,
         'technician_phone': insp.technicianPhone,
         'purchase_shop': insp.purchaseShop,
+        'merchant_customer_id': insp.merchantCustomerId,
         'purchase_shop_phone': insp.purchaseShopPhone,
         'visit_details': insp.visitDetails,
         'customer_id': insp.customerId,
@@ -380,6 +387,7 @@ class LocalDb {
       technicianName: r['technician_name'] as String?,
       technicianPhone: r['technician_phone'] as String?,
       purchaseShop: r['purchase_shop'] as String?,
+      merchantCustomerId: r['merchant_customer_id'] as int?,
       purchaseShopPhone: r['purchase_shop_phone'] as String?,
       visitDetails: r['visit_details'] as String?,
       customerId: r['customer_id'] as int?,

@@ -47,6 +47,9 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   final _technicianName = TextEditingController();
   final _technicianPhone = TextEditingController();
   final _purchaseShop = TextEditingController();
+  /// رقم التاجر اللي اتاختار من القايمة. بيتفضّى لو الاسم اتكتب بالإيد بعد الاختيار،
+  /// عشان مايفضلش رقم راجل والاسم بتاع راجل تاني.
+  int? _merchantCustomerId;
   final _purchaseShopPhone = TextEditingController();
   final _visitDetails = TextEditingController();
 
@@ -89,6 +92,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     _technicianName.text = e.technicianName ?? '';
     _technicianPhone.text = e.technicianPhone ?? '';
     _purchaseShop.text = e.purchaseShop ?? '';
+    _merchantCustomerId = e.merchantCustomerId;
     _purchaseShopPhone.text = e.purchaseShopPhone ?? '';
     _visitDetails.text = e.visitDetails ?? '';
     _selectedCustomerId = e.customerId;
@@ -217,6 +221,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       technicianName: _nullable(_technicianName),
       technicianPhone: _nullable(_technicianPhone),
       purchaseShop: _nullable(_purchaseShop),
+      merchantCustomerId: _merchantCustomerId,
       purchaseShopPhone: _nullable(_purchaseShopPhone),
       visitDetails: _nullable(_visitDetails),
       customerId: _selectedCustomerId,
@@ -367,9 +372,12 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 helper: 'اكتب اسم التاجر — لو متسجّل هيظهر ويجيب تليفونه',
                 leading: Icons.store_outlined,
                 onPick: (c) {
+                  _merchantCustomerId = c.id;
                   if ((c.phone ?? '').isNotEmpty) _purchaseShopPhone.text = c.phone!;
                 },
-                onType: () {},
+                // الكتابة بالإيد بعد الاختيار بتفكّ الربط: الاسم بقى بتاع حد تاني،
+                // والرقم القديم لو فضل بيوَدّي الخصم لتاجر غلط.
+                onType: () => _merchantCustomerId = null,
               ),
               TextFormField(
                 controller: _purchaseShopPhone,
