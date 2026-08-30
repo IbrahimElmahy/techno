@@ -16,22 +16,30 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 
-type Status = 'valid' | 'unknown' | 'received' | 'checking' | 'pending';
+// `wrong_kind` = الرقم متصرّف فعلاً، بس تحت فئة تانية. مش «مش موجود»، والفرق ده
+// هو اللي بيخلّي اللي بيدخل يبص على الورقة تاني بدل ما يفتكر إنها مزوّرة.
+type Status = 'valid' | 'unknown' | 'received' | 'checking' | 'pending'
+  | 'wrong_kind' | 'ambiguous';
 
 interface Entry {
   serial: string;
   status: Status;
-  customerId?: number | null;
-  customerName?: string | null;
+  // الطرف اللي **اتصرفت له** الورقة — التاجر غالباً. مش اللي بيسلّمها دلوقتي.
+  issuedToId?: number | null;
+  issuedToName?: string | null;
   documentNumber?: string | null;
-  // فئة الورقة زي ما النظام استنتجها من الدفتر اللي اتصرفت منه.
+  // الفئة اللي الرقم اتفحص تحتها (اللي المستخدم اختارها).
   couponKind?: string | null;
+  // الفئات اللي الرقم متصرّف تحتها فعلاً — بتتقال في رسالة الرفض.
+  kinds?: string[];
 }
 
 interface ReceiptLineOut {
   id: number;
   serial: string;
+  coupon_kind?: string | null;
   sales_invoice_id?: number | null;
+  coupon_issue_id?: number | null;
 }
 
 interface Receipt {
@@ -41,6 +49,9 @@ interface Receipt {
   received_date: string;
   coupon_count: number;
   notes?: string | null;
+  declared_kind?: string | null;
+  declared_value?: string | number | null;
+  customer_type?: string | null;
   lines: ReceiptLineOut[];
 }
 
@@ -79,18 +90,11 @@ export default function CouponReceipts() {
     })),
     [kindLookup]);
 
-  useEffect(() => {
-    if (kindOptions.length > 0) {
-      const exists = kindOptions.some((o) => o.value === kind);
-      if (!exists) {
-        const first = kindOptions[0];
-        setKind(first.value);
-        if (first.defaultValue && (!value || value === 0)) {
-          setValue(first.defaultValue);
-        }
-      }
-    }
-  }, [kindOptions, kind]);
+  // ⛔ مافيش فئة افتراضية بتتحط لوحدها.
+  //
+  // الفئة مكتوبة على الورقة اللي في إيد اللي بيستلم، والنظام مايعرفهاش. لما كانت
+  // بتتحط على أول فئة في القايمة، أول رقم يتدخّل كان بيتفحص تحت «عادي» وهو ذهبي —
+  // والورقة تتحسب على دفتر مش بتاعها ومحدش ياخد باله. الفاضي هنا سؤال مقصود.
 
   const handleKindChange = (newKind: string) => {
     setKind(newKind);
@@ -127,31 +131,39 @@ export default function CouponReceipts() {
   const addSerial = async (raw: string) => {
     const serial = String(raw).trim();
     if (!serial) return;
+    if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
     if (entries.some((e) => e.serial === serial)) {
       message.warning('الكوبون ده مضاف بالفعل');
       return;
     }
-    setEntries((prev) => [{ serial, status: 'checking' }, ...prev]);
+    setEntries((prev) => [{ serial, status: 'checking', couponKind: kind }, ...prev]);
     try {
-      const res = await api.get('/api/v1/coupon-receipts/check', { params: { serial } });
+      // الفئة بتتبعت مع كل رقم: البحث بيتضيّق عليها، فـ«٥ فضي» مابيلاقيش دفتر الذهبي.
+      const res = await api.get('/api/v1/coupon-receipts/check',
+        { params: { serial, coupon_kind: kind } });
       const d = res.data;
+      const st = (d.status as Status) || 'unknown';
       setEntries((prev) => prev.map((e) => (e.serial === serial ? {
         serial,
-        status: (d.status as Status) || 'unknown',
-        customerId: d.customer_id,
-        customerName: d.customer_name,
+        status: st,
+        issuedToId: d.issued_to_id ?? d.customer_id ?? null,
+        issuedToName: d.issued_to_name ?? d.customer_name ?? null,
         documentNumber: d.document_number,
-        couponKind: d.coupon_kind,
+        couponKind: d.coupon_kind || kind,
+        kinds: (d.kinds || []) as string[],
       } : e)));
-      if (d.status === 'valid' && !customerId && d.customer_id) setCustomerId(d.customer_id);
-      if (d.status === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
-      if (d.status === 'received') message.warning(`الكوبون ${serial} مُستلَم من قبل`);
-      if (d.status === 'ambiguous') {
-        // نفس الرقم اتصرف تحت أكتر من فئة — التخمين هنا بيحطّ الكوبون على فاتورة مش بتاعته.
-        message.warning(`الكوبون ${serial} متصرّف تحت أكتر من فئة — حدّد الفئة`);
+      if (st === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
+      if (st === 'received') message.warning(`الكوبون ${serial} مُستلَم من قبل`);
+      if (st === 'wrong_kind') {
+        // ❌ الرفض مقصود، والتصحيح الأوتوماتيكي ممنوع: لو غيّرنا الفئة لوحدنا
+        // رجعنا لنفس المشكلة — ورقة بتتحسب على دفتر مش بتاعها ومحدش واخد باله.
+        const where = ((d.kinds || []) as string[]).map(kindLabel).join(' + ');
+        message.error(
+          `الكوبون ${serial} مش متصرّف تحت فئة ${kindLabel(kind)}`
+          + (where ? `. موجود تحت: ${where}` : ''));
       }
-      if (customerId && d.status === 'valid' && d.customer_id && d.customer_id !== customerId) {
-        message.warning(`الكوبون ${serial} متصرّف لعميل تاني`);
+      if (st === 'ambiguous') {
+        message.warning(`الكوبون ${serial} متصرّف تحت أكتر من فئة — راجع الورقة`);
       }
     } catch (err: any) {
       setEntries((prev) => prev.map((e) => (e.serial === serial ? { ...e, status: 'pending' } : e)));
@@ -160,6 +172,7 @@ export default function CouponReceipts() {
   };
 
   const addRange = async () => {
+    if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
     if (rangeFrom === null || rangeTo === null) { message.warning('النطاق لازم يكون أرقام'); return; }
     if (rangeTo < rangeFrom) { message.warning('رقم النهاية أصغر من البداية'); return; }
     if (rangeTo - rangeFrom + 1 > 2000) { message.warning('النطاق كبير — أقصى ٢٠٠٠ كوبون في المرة'); return; }
@@ -171,21 +184,36 @@ export default function CouponReceipts() {
   };
 
   const good = entries.filter((e) => e.status === 'valid');
-  const rejects = entries.filter((e) => e.status === 'unknown' || e.status === 'received');
+  const rejects = entries.filter((e) => e.status === 'unknown' || e.status === 'received'
+    || e.status === 'wrong_kind' || e.status === 'ambiguous');
   const offline = entries.filter((e) => e.status === 'pending' || e.status === 'checking');
   const counted = [...good, ...offline];
-  // الفئات اللي طلعت من الكوبونات المدخلة. أكتر من واحدة = الاستلام فيه أكتر من دفتر.
-  const detectedKinds = Array.from(
-    new Set(counted.map((e) => e.couponKind).filter(Boolean) as string[]));
-  const mismatched = customerId
-    ? good.filter((e) => e.customerId && e.customerId !== customerId)
-    : [];
+  // ⛔ مافيش تحقّق «كوبونات متصرّفة لعميل تاني» هنا، وده مقصود.
+  //
+  // الدورة: الشركة بتصرف للتاجر ← التاجر بيدّي الفني ← الفني بيرجّع لينا. يبقى
+  // الاستلام من سباك لورقة اتصرفت لتاجر هو **الحالة الطبيعية** مش خطأ. التحقق اللي
+  // كان هنا كان بيرفض أكتر استلام بيحصل فعلاً، وبيجبر اللي بيدخل يحط اسم التاجر
+  // مكان اللي واقف قدامه.
+  const issuedToNames = Array.from(
+    new Set(counted.map((e) => e.issuedToName).filter(Boolean) as string[]));
+  const issuedToText = issuedToNames.length === 0 ? ''
+    : issuedToNames.length <= 2 ? issuedToNames.join(' + ')
+      : `أكتر من تاجر (${issuedToNames.length})`;
   const totalValue = (value ?? 0) * counted.length;
+
+  // «بستلم منه» بيتفلتر على النوع المختار: سباك ⇒ السباكين بس. «تاجر» في الشاشة
+  // هو `trader` في كارت العميل — نفس الراجل باسمين، فالاتنين بيتقبلوا.
+  const receiverTypes = customerType === 'plumber' ? ['plumber'] : ['trader', 'merchant'];
+  const receiverOptions = customers
+    .filter((c) => receiverTypes.includes(String(c.customer_type)))
+    .map((c) => ({ value: c.id as number, label: String(c.name) }));
 
   const save = async () => {
     if (!entries.length) { message.warning('لا توجد كوبونات'); return; }
     if (rejects.length) { message.warning('شيل الكوبونات المرفوضة الأول'); return; }
-    if (mismatched.length) { message.warning('فيه كوبونات لعميل تاني'); return; }
+    if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
+    // اللي بنستلم منه لازم يتقال. مش استنتاج — هو الواقف قدام اللي بيدخل دلوقتي.
+    if (!customerId) { message.warning('حدد بتستلم من مين'); return; }
     setSaving(true);
     try {
       await api.post('/api/v1/coupon-receipts', {
@@ -195,12 +223,15 @@ export default function CouponReceipts() {
         client_uuid: clientUuid.current,
         received_date: receivedDate.format('YYYY-MM-DD'),
         declared_kind: kind,
+        // الفئة دي هوية الورقة مش تصريح وخلاص — من غيرها بتتخزن السطور بفئة فاضية
+        // وقيد التفرّد (فئة، رقم) بيرجع يشتغل على الرقم لوحده.
+        coupon_kind: kind,
         declared_value: value,
         customer_type: customerType,
       });
       message.success('تم تسجيل الاستلام ورفعه إلى الخادم');
       setEntries([]); setNotes(''); setCustomerId(undefined);
-      setValue(null); setKind(kindOptions[0]?.value ?? 'عادي'); setCustomerType('plumber');
+      setValue(null); setCustomerType('plumber');
       setReceivedDate(dayjs());
       clientUuid.current = crypto.randomUUID();
       loadReceipts();
@@ -217,9 +248,19 @@ export default function CouponReceipts() {
   const statusChip = (e: Entry) => {
     switch (e.status) {
       case 'valid':
-        return <Tag color="green">{e.customerName || 'سليم'}</Tag>;
+        return <Tag color="green">سليم</Tag>;
       case 'unknown':
         return <Tag color="red">مش متصرّف من النظام</Tag>;
+      case 'wrong_kind':
+        return (
+          <Tag color="red">
+            مش تحت فئة {kindLabel(e.couponKind || kind)}
+            {e.kinds && e.kinds.length
+              ? ` — موجود تحت ${e.kinds.map(kindLabel).join(' + ')}` : ''}
+          </Tag>
+        );
+      case 'ambiguous':
+        return <Tag color="volcano">متصرّف تحت أكتر من فئة</Tag>;
       case 'received':
         return <Tag color="orange">مُستلَم من قبل</Tag>;
       case 'checking':
@@ -232,8 +273,10 @@ export default function CouponReceipts() {
   const listColumns = [
     { title: 'رقم المستند', dataIndex: 'document_number',
       render: (v: string) => <Tag>{v}</Tag> },
-    { title: 'العميل', dataIndex: 'customer_id',
+    { title: 'اتستلم من', dataIndex: 'customer_id',
       render: (id: number | null) => customerName(id) },
+    { title: 'الفئة', dataIndex: 'declared_kind',
+      render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag> : '-') },
     { title: 'التاريخ', dataIndex: 'received_date',
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'عدد الكوبونات', dataIndex: 'coupon_count',
@@ -255,7 +298,7 @@ export default function CouponReceipts() {
             تفريغ
           </Button>
           <Button type="primary" icon={<SaveOutlined />} loading={saving}
-            disabled={!counted.length || !!rejects.length || !!mismatched.length}
+            disabled={!counted.length || !!rejects.length || !kind || !customerId}
             onClick={save}>
             تسجيل الاستلام
           </Button>
@@ -272,67 +315,96 @@ export default function CouponReceipts() {
           />
         </Col>
         <Col xs={12} md={5}>
-          {/* الفئة بتتقرا من الكوبون مش بتتاخد من اللي بيستلم. الحقل ده كان بيخلّيه
-              يقول إن الذهبي عادي، والرقم يتحسب على فاتورة مش بتاعته. */}
-          <Input
-            style={{ width: '100%' }} readOnly
-            placeholder="فئة الكوبون — بتظهر بعد إدخال أول رقم"
-            value={detectedKinds.length === 0 ? ''
-              : detectedKinds.length === 1 ? kindLabel(detectedKinds[0])
-                : detectedKinds.map(kindLabel).join(' + ')}
+          {/* ✏️ اختيار — المستخدم هو اللي بيقول الفئة.
+              «٥ ذهبي» و«٥ فضي» ورقتين مختلفتين، والرقم لوحده مش هوية. المكتوب على
+              الورقة مايعرفوش غير اللي ماسكها، فالحقل ده سؤال ليه مش عرض عليه.
+              وبيتقفل بعد أول كوبون: المستند الواحد دفتر واحد. */}
+          <Select
+            style={{ width: '100%' }} showSearch optionFilterProp="label"
+            placeholder="فئة الكوبون — اختر قبل الإدخال"
+            status={!kind ? 'warning' : undefined}
+            disabled={entries.length > 0}
+            value={kind || undefined} onChange={handleKindChange}
+            options={kindOptions.map((k) => ({ value: k.value, label: k.label }))}
           />
         </Col>
-        <Col xs={12} md={5}>
+        <Col xs={12} md={4}>
           <InputNumber
             style={{ width: '100%' }} placeholder="قيمة الكوبون" min={0}
             addonAfter="ج.م" value={value} onChange={(v) => setValue(v as number | null)}
           />
         </Col>
-        <Col xs={24} md={9}>
-          <Segmented
-            style={{ width: '100%', display: 'flex' }}
-            value={customerType} onChange={(v) => setCustomerType(v as string)}
-            options={[
-              { value: 'plumber', label: 'سباك' },
-              { value: 'merchant', label: 'تاجر' },
-            ]}
+        <Col xs={24} md={10}>
+          {/* 👁️ عرض فقط — استنتاج مش إدخال.
+              ده الطرف اللي الشركة صرفت له الورقة (التاجر). غير اللي بيسلّمها دلوقتي
+              (السباك غالباً)، والاتنين بيتعرضوا مع بعض عشان اللي بيدخل يشوف الفرق. */}
+          <Input
+            style={{ width: '100%' }} readOnly addonBefore="اتصرف له"
+            placeholder="التاجر اللي اتصرف له — بيظهر بعد أول كوبون سليم"
+            value={issuedToText}
           />
         </Col>
       </Row>
 
       <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
         <Col xs={24} md={8}>
-          <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
-            placeholder="العميل — بيتحدد لوحده من أول كوبون سليم"
-            value={customerId} onChange={setCustomerId}
-            options={customers.map((c) => ({ value: c.id, label: c.name }))}
+          <Segmented
+            style={{ width: '100%', display: 'flex' }}
+            value={customerType}
+            onChange={(v) => { setCustomerType(v as string); setCustomerId(undefined); }}
+            options={[
+              { value: 'plumber', label: 'بستلم من سباك' },
+              { value: 'merchant', label: 'بستلم من تاجر' },
+            ]}
           />
         </Col>
+        <Col xs={24} md={16}>
+          {/* ✏️ اختيار — ده اللي واقف قدامي بيسلّم الورق دلوقتي.
+              كان بيتكتب لوحده من أول كوبون سليم، يعني اسم التاجر اللي اتصرف له —
+              وده طرف تاني خالص. الملء الأوتوماتيكي اتشال عن قصد. */}
+          <Select
+            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            placeholder="بستلم من مين"
+            status={!customerId ? 'warning' : undefined}
+            value={customerId} onChange={setCustomerId}
+            options={receiverOptions}
+            notFoundContent={customerType === 'plumber' ? 'مافيش سباكين بالاسم ده'
+              : 'مافيش تجار بالاسم ده'}
+          />
+        </Col>
+      </Row>
+
+      <Row gutter={[8, 8]} style={{ marginTop: 8 }}>
         <Col xs={8} md={4}>
           <InputNumber
             style={{ width: '100%' }} placeholder="من رقم" precision={0}
             value={rangeFrom} onChange={(v) => setRangeFrom(v as number | null)}
-            onPressEnter={addRange}
+            onPressEnter={addRange} disabled={!kind}
           />
         </Col>
         <Col xs={8} md={4}>
           <InputNumber
             style={{ width: '100%' }} placeholder="إلى رقم" precision={0}
             value={rangeTo} onChange={(v) => setRangeTo(v as number | null)}
-            onPressEnter={addRange}
+            onPressEnter={addRange} disabled={!kind}
           />
         </Col>
         <Col xs={8} md={4}>
-          <Button type="primary" icon={<PlusOutlined />} onClick={addRange} block>
+          <Button type="primary" icon={<PlusOutlined />} onClick={addRange} block
+            disabled={!kind}>
             إضافة النطاق
           </Button>
         </Col>
       </Row>
 
+      {!kind && (
+        <Alert type="warning" showIcon style={{ marginTop: 8 }}
+          message="اختر فئة الكوبون الأول"
+          description="الرقم لوحده مش بيحدد ورقة — «٥ ذهبي» غير «٥ فضي»." />
+      )}
       {customerId != null && (
         <Alert type="success" showIcon={false} style={{ marginTop: 8 }}
-          message={`العميل: ${customerName(customerId)}`} />
+          message={`بستلم من: ${customerName(customerId)}`} />
       )}
 
       <Table<Entry>
@@ -347,10 +419,10 @@ export default function CouponReceipts() {
             render: (v: string) => <b style={{ color: '#1677ff' }}>{v}</b>,
           },
           {
-            title: 'التاجر / العميل (المستلم الأصلي)',
-            key: 'customer',
+            title: 'التاجر اللي اتصرف له',
+            key: 'issued_to',
             render: (_: any, r: Entry) => {
-              const name = r.customerName || (r.customerId ? customerName(r.customerId) : null);
+              const name = r.issuedToName || (r.issuedToId ? customerName(r.issuedToId) : null);
               if (!name) return <span style={{ color: '#8c8c8c' }}>-</span>;
               return (
                 <Tag color="cyan" style={{ fontSize: 13, padding: '2px 8px' }}>
@@ -387,17 +459,16 @@ export default function CouponReceipts() {
       />
 
       <div style={{ marginTop: 16 }}>
-        {/* عرض مش اختيار. فئة الورقة مكتوبة عليها وبتتحدد من الدفتر اللي اتصرفت منه —
-            واللي بيستلم مايقدرش يقول إن الذهبي عادي. النظام بيستنتجها من كل رقم. */}
+        {/* المستند الواحد دفتر واحد: الفئة اللي فوق هي فئة كل الأرقام اللي تحت،
+            لأن أي رقم مش متصرّف تحتها بيترفض ومابيدخلش أصلاً. */}
         <CouponStatsOverview
           totalCount={counted.length}
           totalValue={totalValue}
-          currentKind={detectedKinds.length === 1 ? kindLabel(detectedKinds[0])
-            : detectedKinds.length > 1 ? 'أكتر من فئة' : undefined}
+          currentKind={kind ? kindLabel(kind) : undefined}
           kinds={kindOptions.map((k) => ({
             key: k.value,
             label: k.label,
-            count: counted.filter((e: any) => e.couponKind === k.value).length,
+            count: counted.filter((e) => (e.couponKind || kind) === k.value).length,
           }))}
         />
       </div>
@@ -410,10 +481,10 @@ export default function CouponReceipts() {
           message={`فيه ${rejects.length} كوبون مرفوض`}
           description="شيلهم من القائمة الأول — الكوبون الواحد الغلط بيرفض الاستلام كله." />
       )}
-      {mismatched.length > 0 && (
-        <Alert type="warning" showIcon style={{ marginTop: 12 }}
-          message="فيه كوبونات متصرّفة لعميل تاني"
-          description="الاستلام الواحد لعميل واحد؛ اعمل استلام منفصل للباقي." />
+      {issuedToNames.length > 1 && (
+        <Alert type="info" showIcon style={{ marginTop: 12 }}
+          message="الورق ده متصرّف لأكتر من تاجر"
+          description="ده مش خطأ — السباك بيجمّع ورق من أكتر من تاجر. متسجّل للعلم بس." />
       )}
 
       <div style={{ marginTop: 12 }}>
@@ -432,8 +503,16 @@ export default function CouponReceipts() {
         <Descriptions.Item label="رقم المستند">
           <Tag>{detail.document_number}</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="العميل">
+        <Descriptions.Item label="اتستلم من">
           {customerName(detail.customer_id)}
+          {detail.customer_type ? (
+            <Tag style={{ marginInlineStart: 6 }}>
+              {detail.customer_type === 'plumber' ? 'سباك' : 'تاجر'}
+            </Tag>
+          ) : null}
+        </Descriptions.Item>
+        <Descriptions.Item label="فئة الكوبون">
+          {detail.declared_kind ? <Tag color="gold">{kindLabel(detail.declared_kind)}</Tag> : '-'}
         </Descriptions.Item>
         <Descriptions.Item label="التاريخ">
           {detail.received_date ? String(detail.received_date).slice(0, 10) : '-'}
@@ -447,11 +526,15 @@ export default function CouponReceipts() {
           columns={[
             { title: 'رقم الكوبون', dataIndex: 'serial',
               render: (v: string) => <b>{v}</b> },
+            { title: 'الفئة', dataIndex: 'coupon_kind',
+              render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag>
+                : <Tag>غير محددة</Tag>) },
             { title: 'من فاتورة', dataIndex: 'sales_invoice_id',
-              render: (v: number) => (v
+              render: (v: number | null, r: ReceiptLineOut) => (v
                 ? <DocumentLink kind="invoice" id={v} size="small" label={`#${v}`}
                     onNavigate={() => setDetail(null)} />
-                : <Tag>غير معروفة</Tag>) },
+                : r.coupon_issue_id ? <Tag color="blue">مستند صرف #{r.coupon_issue_id}</Tag>
+                  : <Tag>غير معروفة</Tag>) },
           ]}
         />
       ) : <Empty description="لا توجد سطور" />}
@@ -483,11 +566,12 @@ export default function CouponReceipts() {
       )}>
       <CouponStatsOverview
         totalCount={receipts.reduce((s, r) => s + (r.coupon_count || 0), 0)}
-        totalValue={receipts.reduce((s, r) => s + ((r as any).declared_value ? Number((r as any).declared_value) * (r.coupon_count || 0) : 0), 0)}
+        totalValue={receipts.reduce((s, r) => s
+          + (r.declared_value ? Number(r.declared_value) * (r.coupon_count || 0) : 0), 0)}
         kinds={kindOptions.map((k) => ({
           key: k.value,
           label: k.label,
-          count: receipts.filter((r: any) => (r.declared_kind || 'عادي') === k.value)
+          count: receipts.filter((r) => r.declared_kind === k.value)
             .reduce((s, r) => s + (r.coupon_count || 0), 0),
         }))}
       />

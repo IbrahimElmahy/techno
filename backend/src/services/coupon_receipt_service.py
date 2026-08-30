@@ -39,6 +39,40 @@ def _as_int(value) -> int | None:
         return None
 
 
+def _kindless_invoice(db: Session, serial: str) -> SalesInvoice | None:
+    """الفاتورة اللي عليها نطاق كوبونات قديم — النطاق ده مالوش فئة أصلاً.
+
+    `coupon_serial_from/to` على الفاتورة نفسها هو تسجيل ما قبل ٠٠٤٩، واتكتب في وقت
+    ماكانش فيه فئات. فهو زي سطور الاستلام القديمة اللي `coupon_kind` بتاعها NULL:
+    **بيتحسب على أي فئة**، لأنه مابيدّعيش إنه بتاع فئة معيّنة.
+
+    ده مش تساهل: لو استثنيناه لما الفئة تتحدد — والشاشة بقت بتبعت الفئة في كل نداء —
+    كل كوبون قديم كان هيرجع «مش متصرّف من النظام» وهو في إيد الراجل فعلاً.
+    """
+    exact = db.scalar(
+        select(SalesInvoice).where(
+            (SalesInvoice.coupon_serial_from == serial)
+            | (SalesInvoice.coupon_serial_to == serial)
+        )
+    )
+    if exact is not None:
+        return exact
+    number = _as_int(serial)
+    if number is None:
+        return None
+    candidates = db.scalars(
+        select(SalesInvoice).where(SalesInvoice.coupon_serial_from.isnot(None))
+    ).all()
+    for invoice in candidates:
+        first = _as_int(invoice.coupon_serial_from)
+        last = _as_int(invoice.coupon_serial_to)
+        if first is None or last is None:
+            continue
+        if first <= number <= last:
+            return invoice
+    return None
+
+
 def find_issuing_invoice(db: Session, serial: str,
                          coupon_kind: str | None = None) -> SalesInvoice | None:
     """The invoice whose issued range covers this serial, or None if nothing issued it.
@@ -50,14 +84,17 @@ def find_issuing_invoice(db: Session, serial: str,
 
     **والفئة جزء من هوية الرقم.** دفتر الذهبي مرقّم ١..٥٠ ودفتر الفضي مرقّم ١..٥٠، فرقم «٥»
     لوحده مش بيحدد كوبون. من غير الفئة البحث بيرجّع أول فاتورة فيها الرقم ده مهما كانت
-    فئتها — يعني كوبون فضي بيتحسب على فاتورة صرفت ذهبي. الحقل الأقدم على الفاتورة نفسها
-    (`coupon_serial_from/to`) مالوش فئة، فبيتشاف بس لما ماتتحددش فئة.
+    فئتها — يعني كوبون فضي بيتحسب على فاتورة صرفت ذهبي.
+
+    الترتيب لما الفئة تتحدد: الفئة الأول، والنطاق القديم اللي مالوش فئة **آخر حاجة**.
+    كده الرقم اللي ليه سطر بفئته الصح بيتربط بيه، واللي مالوش غير تسجيل قديم بيلاقي
+    طريقه بدل ما يترفض.
     """
     serial = str(serial).strip()
     if not serial:
         return None
 
-    # النطاق القديم على الفاتورة نفسها مالوش نوع، فمابيتشافش لما النوع متحدد.
+    # النطاق القديم مالوش فئة، فلما مافيش فئة متحددة هو أقرب إجابة موجودة.
     if coupon_kind is None:
         exact = db.scalar(
             select(SalesInvoice).where(
@@ -80,13 +117,11 @@ def find_issuing_invoice(db: Session, serial: str,
         return db.get(SalesInvoice, exact_row.invoice_id)
 
     number = _as_int(serial)
-    if number is None:
-        return None
 
     # Numeric containment. The ranges are short and few per customer, so this is checked in
     # Python rather than as a cast in SQL — the column is a string precisely because not every
     # book is numeric, and casting the lettered ones would raise on some engines.
-    if coupon_kind is None:
+    if coupon_kind is None and number is not None:
         candidates = db.scalars(
             select(SalesInvoice).where(SalesInvoice.coupon_serial_from.isnot(None))
         ).all()
@@ -98,16 +133,20 @@ def find_issuing_invoice(db: Session, serial: str,
             if first <= number <= last:
                 return invoice
 
-    ranged = select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.serial_from.isnot(None))
+    if number is not None:
+        ranged = select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.serial_from.isnot(None))
+        if coupon_kind:
+            ranged = ranged.where(SalesInvoiceCoupon.coupon_kind == coupon_kind)
+        for row in db.scalars(ranged).all():
+            first = _as_int(row.serial_from)
+            last = _as_int(row.serial_to)
+            if first is None or last is None:
+                continue
+            if first <= number <= last:
+                return db.get(SalesInvoice, row.invoice_id)
+
     if coupon_kind:
-        ranged = ranged.where(SalesInvoiceCoupon.coupon_kind == coupon_kind)
-    for row in db.scalars(ranged).all():
-        first = _as_int(row.serial_from)
-        last = _as_int(row.serial_to)
-        if first is None or last is None:
-            continue
-        if first <= number <= last:
-            return db.get(SalesInvoice, row.invoice_id)
+        return _kindless_invoice(db, serial)
     return None
 
 
@@ -132,42 +171,72 @@ def find_issuing_issue(db: Session, serial: str,
     ده الورقة دي بترجع «مش متصرّفة من النظام» وقت الاستلام، والاستلام بيترفض على ورقة
     حقيقية في إيد الراجل.
     """
-    stmt = (select(CouponIssue).join(CouponIssueLine,
+    base = (select(CouponIssue).join(CouponIssueLine,
                                      CouponIssueLine.issue_id == CouponIssue.id)
             .where(CouponIssueLine.serial == str(serial).strip()))
-    if coupon_kind:
-        stmt = stmt.where(CouponIssueLine.coupon_kind == coupon_kind)
-    return db.scalar(stmt)
+    if not coupon_kind:
+        return db.scalar(base)
+    hit = db.scalar(base.where(CouponIssueLine.coupon_kind == coupon_kind))
+    if hit is not None:
+        return hit
+    # سطر صرف قديم مالوش فئة بيتحسب على أي فئة — زي سطور الاستلام القديمة بالظبط.
+    # بيتشاف بعد الفئة المطلوبة عشان الورقة اللي ليها سطر بفئتها الصح تتربط بيه هو.
+    return db.scalar(base.where(CouponIssueLine.coupon_kind.is_(None)))
+
+
+def kinds_for_serials(db: Session, serials: list[str]) -> dict[str, list[str]]:
+    """كل فئة صُرف تحتها كل رقم من الأرقام دي — **مسحة واحدة** للجدولين.
+
+    الاستلام بيوصل ٥٠٠ رقم في المرة، وسؤال كل رقم لوحده معناه ٥٠٠ مسحة كاملة
+    للجدولين. المسحة هنا واحدة والمقارنة في الذاكرة.
+    """
+    wanted = {str(s).strip() for s in serials if str(s).strip()}
+    if not wanted:
+        return {}
+    numbers = {s: _as_int(s) for s in wanted}
+    found: dict[str, set[str]] = {s: set() for s in wanted}
+
+    for row in db.scalars(select(CouponIssueLine)).all():
+        if row.coupon_kind and row.serial in found:
+            found[row.serial].add(row.coupon_kind)
+
+    for row in db.scalars(select(SalesInvoiceCoupon)).all():
+        if not row.coupon_kind:
+            continue
+        first, last = _as_int(row.serial_from), _as_int(row.serial_to)
+        for serial in wanted:
+            if serial in (row.serial_from, row.serial_to):
+                found[serial].add(row.coupon_kind)
+                continue
+            number = numbers[serial]
+            if first is None or last is None or number is None:
+                continue
+            if first <= number <= last:
+                found[serial].add(row.coupon_kind)
+
+    return {serial: sorted(kinds) for serial, kinds in found.items()}
 
 
 def kinds_for_serial(db: Session, serial: str) -> list[str]:
     """كل فئة صُرف تحتها الرقم ده. أكتر من واحدة = الرقم لوحده مش بيحدد كوبون."""
-    found: set[str] = set()
-    number = _as_int(str(serial).strip())
-    rows = list(db.scalars(select(SalesInvoiceCoupon)).all())
-    for row in db.scalars(select(CouponIssueLine)).all():
-        if row.coupon_kind and str(serial).strip() == row.serial:
-            found.add(row.coupon_kind)
-    for row in rows:
-        if not row.coupon_kind:
-            continue
-        if str(serial).strip() in (row.serial_from, row.serial_to):
-            found.add(row.coupon_kind)
-            continue
-        first, last = _as_int(row.serial_from), _as_int(row.serial_to)
-        if first is None or last is None or number is None:
-            continue
-        if first <= number <= last:
-            found.add(row.coupon_kind)
-    return sorted(found)
+    return kinds_for_serials(db, [serial]).get(str(serial).strip(), [])
 
 
 def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> dict:
     """What the app calls per coupon: is this real, whose was it, and has it come back already?
 
-    وبيرجّع **فئة الورقة** كمان. الفئة مش حاجة اللي بيستلم بيختارها — هي مكتوبة على الورقة
-    وبتتحدد من الدفتر اللي اتصرف منه. الشاشة بتعرضها، ولو الرقم اتصرف تحت فئتين بيتقال
-    إنه ملتبس بدل ما نختار واحدة ونحطّ الكوبون على فاتورة مش بتاعته.
+    **الفئة بتيجي من اللي ماسك الورقة، مش من النظام.** الرقم لوحده مش هوية: «٥ ذهبي»
+    و«٥ فضي» ورقتين مختلفتين، والمكتوب على الورقة مايعرفوش غير اللي شايلها. فالشاشة
+    بتبعت `coupon_kind` مع كل رقم، والفحص ده بيدوّر تحت الفئة دي بس.
+
+    والاختيار **بيضيّق البحث، مابيكتبش على الورقة**: رقم مش متصرّف تحت الفئة اللي
+    اتقالت بيرجع `wrong_kind` ومعاه `kinds` — الفئات اللي الرقم متصرّف تحتها فعلاً —
+    عشان اللي بيدخل يشوف الفئة الصح موجودة فين ويقرر هو. التصحيح الأوتوماتيكي هنا
+    معناه إن الورقة تتحسب على دفتر مش بتاعها ومحدش ياخد باله.
+
+    و`issued_to_*` هو **الطرف اللي اتصرفت له الورقة** — التاجر غالباً. ده غير اللي
+    بيسلّمها دلوقتي (السباك عادةً)، فبيترجع بأسماء مستقلة بدل ما يتلخبط مع العميل
+    اللي بيتحدد على المستند.
     """
     serial = str(serial).strip()
     invoice = find_issuing_invoice(db, serial, coupon_kind)
@@ -175,21 +244,27 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> di
     taken = already_received(db, serial, coupon_kind)
     known = invoice is not None or issue is not None
     status = "valid" if known and not taken else ("received" if taken else "unknown")
-    customer_name = None
-    if invoice is None and issue is not None and issue.customer_id:
-        from src.models.customer import Customer as _C
 
-        owner = db.get(_C, issue.customer_id)
-        customer_name = owner.name if owner else None
-    if invoice is not None:
+    issued_to_id = (invoice.customer_id if invoice is not None
+                    else issue.customer_id if issue is not None else None)
+    issued_to_name = None
+    if issued_to_id:
         from src.models.customer import Customer
 
-        customer = db.get(Customer, invoice.customer_id)
-        customer_name = customer.name if customer else None
+        owner = db.get(Customer, issued_to_id)
+        issued_to_name = owner.name if owner else None
+
     kinds = kinds_for_serial(db, serial)
     resolved = coupon_kind or (kinds[0] if len(kinds) == 1 else None)
     if len(kinds) > 1 and coupon_kind is None:
         status = "ambiguous"
+    # الرقم متصرّف — بس تحت فئة تانية. ارفضه وقول الفئة الصح فين؛ متصلّحش لوحدك.
+    #
+    # وده بيسبق حتى نتيجة «سليم»: الرقم ممكن يقع جوّه نطاق قديم مالوش فئة، والنطاق ده
+    # بيتقبل تحت أي فئة. لكن طول ما فيه سطر بفئة صريحة بيقول الرقم ده بتاع دفتر تاني،
+    # السطر ده أدق من نطاق مالوش فئة أصلاً.
+    if coupon_kind and kinds and coupon_kind not in kinds and status != "received":
+        status = "wrong_kind"
     return {
         "serial": serial,
         "status": status,
@@ -199,9 +274,12 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> di
         "coupon_issue_id": issue.id if issue else None,
         "document_number": (invoice.document_number if invoice
                             else issue.document_number if issue else None),
-        "customer_id": (invoice.customer_id if invoice
-                        else issue.customer_id if issue else None),
-        "customer_name": customer_name,
+        # الطرف اللي اتصرفت له الورقة. `customer_*` سايبينهم زي ما هما عشان تطبيق
+        # الموبايل بيقراهم، بس الاسم الواضح هو اللي الشاشة بتعرضه.
+        "issued_to_id": issued_to_id,
+        "issued_to_name": issued_to_name,
+        "customer_id": issued_to_id,
+        "customer_name": issued_to_name,
         "received_receipt_id": taken.receipt_id if taken else None,
     }
 
@@ -261,8 +339,17 @@ def create_receipt(
     matched: list[tuple[str, SalesInvoice | None, CouponIssue | None]] = []
     unknown: list[str] = []
     seen_before: list[str] = []
-    wrong_customer: list[str] = []
+    wrong_kind: list[str] = []
+    # الفئات الحقيقية لكل رقم، مسحة واحدة للكل — نفس ترتيب الفحص اللي في الشاشة.
+    kind_map = kinds_for_serials(db, cleaned) if coupon_kind else {}
     for serial in cleaned:
+        # الفئة الغلط بتترفض الأول، حتى قبل «مش متصرّف»: الرقم موجود فعلاً بس في دفتر
+        # تاني، واللي بيستلم لازم يعرف الفرق عشان يبص على الورقة تاني بدل ما يفتكرها
+        # مزوّرة. ومترفعش الرفض ده لمجرد إن الرقم واقع في نطاق قديم مالوش فئة.
+        other = kind_map.get(serial) or []
+        if coupon_kind and other and coupon_kind not in other:
+            wrong_kind.append(f"{serial} (موجود تحت: {'، '.join(other)})")
+            continue
         invoice = find_issuing_invoice(db, serial, coupon_kind)
         issue = None if invoice is not None else find_issuing_issue(db, serial, coupon_kind)
         if invoice is None and issue is None:
@@ -271,21 +358,22 @@ def create_receipt(
         if already_received(db, serial, coupon_kind) is not None:
             seen_before.append(serial)
             continue
-        owner = invoice.customer_id if invoice is not None else issue.customer_id
-        if customer_id is not None and owner != customer_id:
-            wrong_customer.append(serial)
-            continue
+        # مين اتصرفت له الورقة مش شرط يكون مين بيسلّمها.
+        #
+        # الدورة نفسها بتقول كده: الشركة بتصرف للتاجر، والتاجر بيدّي الفني، والفني
+        # بيرجّع لينا. فاستلام من سباك لورقة اتصرفت لتاجر هو **الحالة الطبيعية**.
+        # التحقق اللي كان هنا كان بيرفضها كأنها غلط، وبيمنع أكتر الاستلامات شيوعاً.
         matched.append((serial, invoice, issue))
 
     if unknown:
         raise CouponReceiptError(
             f"كوبونات مش متصرّفة من النظام: {', '.join(unknown)}")
+    if wrong_kind:
+        raise CouponReceiptError(
+            f"كوبونات مش متصرّفة تحت فئة «{coupon_kind}»: {', '.join(wrong_kind)}")
     if seen_before:
         raise CouponReceiptError(
             f"كوبونات اتستلمت قبل كده: {', '.join(seen_before)}")
-    if wrong_customer:
-        raise CouponReceiptError(
-            f"كوبونات متصرّفة لعميل تاني: {', '.join(wrong_customer)}")
 
     receipt = CouponReceipt(
         document_number=_doc_number(db), customer_id=customer_id, rep_user_id=rep_user_id,
