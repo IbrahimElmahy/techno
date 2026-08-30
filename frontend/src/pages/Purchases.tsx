@@ -1658,7 +1658,18 @@ export default function Purchases() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const listCols = useTableColumns('purchase-list', listColumns);
+  /** الأعمدة الثانوية مخفية افتراضياً — متاحة كلها من زرار «الأعمدة».
+   *
+   *  الجدول `tableLayout: fixed` ومن غير تمرير أفقي عن قصد، فمجموع عروض الأعمدة لما
+   *  يعدّي عرض الشاشة المتصفح بيضغطهم بالنسبة — والضغط بيوصل لحد إن العنوان العربي
+   *  يتلف حرف في السطر ويبقى عمود من حروف مركّبة فوق بعض. ١٧ عمود × متوسط ١٢٠px
+   *  بيعدّوا ٢٠٠٠px، والشاشة العادية أقل من كده.
+   *
+   *  المخفي هنا نسب ومشتقات (الخصم % والضريبة % والإجمالي قبل الخصم) — بتتحسب من
+   *  أعمدة معروضة أصلاً، فاللي محتاجها بيفتحها واللي مش محتاجها بيقرا جدول مقروء. */
+  const listCols = useTableColumns('purchase-list', listColumns, {
+    defaultHidden: ['gross', 'combined_pct', 'tax_pct', 'expense_account_name', 'notes'],
+  });
 
   const listContent = (
     <Card

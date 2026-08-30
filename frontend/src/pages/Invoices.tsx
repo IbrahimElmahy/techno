@@ -785,9 +785,22 @@ export default function Invoices() {
       footer: (rows) => money(rows.reduce((n, l) => n + saleLineNet(l), 0)) },
     { key: 'points', title: 'النقاط', minWidth: 65,
       cellStyle: { whiteSpace: 'nowrap', color: '#b26a00' },
-      cell: (line) => (linePoints(line)
-        ? linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })
-        : '-'),
+      // «مالوش نقط» و«لسه ماكتبتش الكمية» كانوا شكلهم واحد: شرطة. النقط = نقطة الصنف
+      // × الكمية، فسطر لسه كميته فاضية بيطلع صفر — واللي بيبص بيفتكر إن الصنف مالوش
+      // نقط أصلاً ويسأل ليه.
+      cell: (line) => {
+        const v = linePoints(line);
+        if (v) return v.toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+        const per = line.item_id ? (pointValues[line.item_id] || 0) : 0;
+        if (per > 0) {
+          return (
+            <span style={{ color: '#b0b0b0' }} title={`${per} نقطة للوحدة`}>
+              × {per.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+            </span>
+          );
+        }
+        return '-';
+      },
       footer: () => (
         <span style={{ color: '#b26a00' }}>
           {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}

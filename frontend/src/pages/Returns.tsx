@@ -898,11 +898,26 @@ export default function Returns() {
           onChange={(val) => handleLineChange(line.key, 'fixed_discount', val || 0)} />
       ) },
     { key: 'points', title: 'النقاط', span: 2, xs: 12, align: 'center',
-      cell: (line) => (
-        <span style={{ color: '#F5A11D', fontWeight: 600 }}>
-          {linePoints(line).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
-        </span>
-      ) },
+      // زي الفاتورة: الصفر ممكن يكون «الصنف مالوش نقط» أو «الكمية لسه فاضية».
+      // التاني بيتقال بنقطة الوحدة عشان اللي بيبص يعرف إن النقط جاية.
+      cell: (line) => {
+        const v = linePoints(line);
+        if (v) {
+          return (
+            <span style={{ color: '#F5A11D', fontWeight: 600 }}>
+              {v.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+            </span>
+          );
+        }
+        const per = line.item_id ? (pointValues[line.item_id] || 0) : 0;
+        return per > 0
+          ? (
+            <span style={{ color: '#b0b0b0' }} title={`${per} نقطة للوحدة`}>
+              × {per.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+            </span>
+          )
+          : <span style={{ color: '#b0b0b0' }}>-</span>;
+      } },
     { key: 'total', title: 'الإجمالي', span: 3, xs: 12, align: 'center', locked: true,
       cell: (line) => <b style={{ color: '#cf4b1a' }}>{money(lineTotal(line))}</b> },
     { key: 'actions', title: '', label: 'حذف السطر', span: 1, xs: 4, align: 'center',
