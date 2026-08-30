@@ -77,6 +77,19 @@ interface RepEmployee {
 }
 
 
+/**
+ * «نوع الفاتورة» — خط المنتجات: أبيض ولا بولي.
+ *
+ * القايمة دي كانت مكتوبة بإيدها في تلات حتت: خانة الترويسة، وفلتر الكشف، وعمود الكشف.
+ * تلات نسخ لحاجة واحدة معناها إن اللي هيضيف خط رابع هيلاقي الشاشة بتقول حاجتين مختلفتين
+ * على حسب إنت بتبص من فين. فبقت مصدر واحد، والبوّابة الجديدة بتقرا منه هي كمان بدل ما
+ * تعمل نسخة رابعة.
+ */
+const FAMILY_OPTIONS = [
+  { value: 'أبيض', label: 'أبيض' },
+  { value: 'بولي', label: 'بولي' },
+];
+
 const TIER_LABELS: Record<string, string> = {
   commercial: 'تجاري',
   semi_commercial: 'نصف تجاري',
@@ -338,7 +351,17 @@ export default function Invoices() {
    * be answered with Enter and nothing else, which is the point of the whole keyboard pass: from
    * the button to the first product without touching the mouse.
    */
-  const [newStep, setNewStep] = useState<null | 'date' | 'party'>(null);
+  /**
+   * وبعد العميل بابين كمان: **المخزن** وبعده **نوع الفاتورة**.
+   *
+   * الاتنين كانوا خانتين في الترويسة بيتعدّى عليهم اللي مستعجل من غير ما يملاهم — والمخزن
+   * من غير إجابة معناه إن كل سطر بيقرا متاح صفر، ونوع الفاتورة من غير إجابة معناه فاتورة
+   * مش على خط. فبقوا سؤالين لازم يتقفلوا قبل أول سطر، زي التاريخ والعميل بالظبط.
+   *
+   * الخانتين في الترويسة زي ما هما وبيتغيّروا في أي وقت بعد كده — الباب بيسأل مرة، مش بيقفل
+   * على حد. و«رجوع» في كل باب بيرجّع للسؤال اللي قبله، فاللي جاوب غلط مايبقاش محبوس.
+   */
+  const [newStep, setNewStep] = useState<null | 'date' | 'party' | 'warehouse' | 'family'>(null);
   const [party, setParty] = useState<Party | null>(null);
   // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
@@ -1024,7 +1047,10 @@ export default function Invoices() {
     // the second door, so it hands over to the third rather than opening the document.
     // The customer is the last question. His rep fills in المندوب and the rep's store fills in
     // المستودع, so the document opens knowing all three.
-    if (newStep === 'party') { setNewStep(null); setCreateVisible(true); }
+    //
+    // الصفحة بتتفتح ورا الباب مش بعده: الاختيار بينزل في الترويسة قدام اللي بيختار وهو
+    // لسه في الدورة، فيشوف اللي قاله بدل ما يستنى لحد ما تخلص عشان يتأكد.
+    if (newStep === 'party') { setNewStep('warehouse'); setCreateVisible(true); }
     createForm.setFieldsValue({ customer_id: picked.id });
     // A brand-new customer isn't in the loaded list yet; add it so the field renders its name.
     setCustomers((prev) => (prev.some((c) => c.id === picked.id) ? prev : [
@@ -2139,10 +2165,7 @@ export default function Invoices() {
                   disabled={viewOnly}
                   value={invoiceFamily ?? undefined}
                   onChange={(v) => setInvoiceFamily(v ? String(v) : null)}
-                  options={[
-                    { value: 'أبيض', label: 'أبيض' },
-                    { value: 'بولي', label: 'بولي' },
-                  ]}
+                  options={FAMILY_OPTIONS}
                 />
               </Form.Item>
             </Col>
@@ -2490,9 +2513,72 @@ export default function Invoices() {
 
         <PartyPickerModal
           open={partyPickerOpen} kind="customer"
-          onPick={handlePartyPicked} onCancel={() => setPartyPickerOpen(false)}
+          onPick={handlePartyPicked}
+          // `setNewStep(null)` مش زيادة: من غيرها الإلغاء بيقفل الشباك ويسيب الدورة واقفة على
+          // خطوة «العميل» — والمستند مفتوح قدامك بس Enter مش بيفتح منتقي الأصناف لأن الحارس
+          // شايف إن فيه خطوة لسه شغالة.
+          onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }}
           date={createVisible ? undefined : invoiceDate}
           onDateChange={setInvoiceDate} />
+
+        {/*
+          * الباب التالت: **المخزن**.
+          *
+          * بيختار المخزن **الافتراضي للسطور الجديدة** — مش مخزن المستند. المخزن على السطر
+          * (سبيك ٠٣٠) وبيفضل كده: الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن، واللي عايز
+          * كده بيغيّر مخزن أي سطر من عموده بعدين. الباب بيجاوب على «أغلب السطور من فين».
+          *
+          * القيمة مربوطة بنفس خانة الترويسة، فاللي بيتقال هنا بيبان هناك على طول، والعكس.
+          * و`onWarehouseChange` مش `setDocWarehouseId` لوحدها عشان رصيد المخزن يتجاب معاه —
+          * من غيره كل صنف بيقرا صفر والمنتقي بيقفل بضاعة موجودة.
+          */}
+        <TabModal
+          open={newStep === 'warehouse' && !viewOnly && !editingInvoice}
+          title="الفاتورة دي هتتصرف من أنهي مخزن؟"
+          okText="التالي" cancelText="رجوع"
+          okButtonProps={{ disabled: docWarehouseId === null }}
+          // الرجوع بيرجّع للعميل، وبيمسح المخزن عشان مندوب العميل الجديد يملاه من تاني —
+          // اللي رجع رجع لأن اللي قاله كان غلط، فتثبيت الغلط على العميل اللي بعده مالوش لازمة.
+          onCancel={() => { setDocWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
+          onOk={() => setNewStep('family')}
+        >
+          <Select
+            style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+            placeholder="اختر المخزن"
+            value={docWarehouseId ?? undefined}
+            onChange={(v) => onWarehouseChange(v as number)}
+            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+          />
+          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+            ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+          </div>
+        </TabModal>
+
+        {/*
+          * الباب الرابع: **نوع الفاتورة** — الخط اللي الفاتورة عليه.
+          *
+          * نفس مصدر خانة الترويسة وعمود الكشف (`FAMILY_OPTIONS`) — مش قايمة تانية، عشان
+          * الشاشة ماتقولش حاجتين.
+          */}
+        <TabModal
+          open={newStep === 'family' && !viewOnly && !editingInvoice}
+          title="نوع الفاتورة (الخط)"
+          okText="ابدأ الفاتورة" cancelText="رجوع"
+          okButtonProps={{ disabled: !invoiceFamily }}
+          onCancel={() => setNewStep('warehouse')}
+          onOk={() => setNewStep(null)}
+        >
+          <Segmented
+            block
+            size="large"
+            value={invoiceFamily ?? ''}
+            onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
+            options={FAMILY_OPTIONS.map((f) => ({ value: f.value, label: f.label }))}
+          />
+          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+            بيتغيّر من خانة «نوع الفاتورة» في الترويسة في أي وقت.
+          </div>
+        </TabModal>
       </div>
     );
   }
@@ -2615,10 +2701,7 @@ export default function Invoices() {
             <Select allowClear style={{ width: '100%' }} placeholder="نوع الفاتورة"
               value={filters.family}
               onChange={(v) => setFilter('family', v)}
-              options={[
-                { value: 'أبيض', label: 'أبيض' },
-                { value: 'بولي', label: 'بولي' },
-              ]} />
+              options={FAMILY_OPTIONS} />
           </Col>
           <Col xs={12} sm={12} md={4}>
             <DateRangeFilter
