@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -314,8 +314,22 @@ def my_stock(
     return [MyStockOut(item_id=i, quantity=q) for i, q in sorted(holdings.items())]
 
 
-@router.get("", response_model=list[InspectionOut])
-def list_inspections(
+class PaginatedInspectionsOut(BaseModel):
+    rows: list[InspectionOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class InspectionSummaryOut(BaseModel):
+    total_count: int
+    accepted_count: int
+    rejected_count: int
+    accepted_points: Decimal
+
+
+@router.get("/summary", response_model=InspectionSummaryOut)
+def get_inspections_summary(
     visit_kind: VisitKind | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
@@ -327,21 +341,56 @@ def list_inspections(
     owner: str | None = Query(default=None),
     technician: str | None = Query(default=None),
     trader: str | None = Query(default=None),
+    q: str | None = Query(default=None),
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
-) -> list[InspectionOut]:
-    # Reps only ever see their own inspections; managers may filter by rep.
+) -> InspectionSummaryOut:
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
-    rows = inspection_service.list_inspections(
+    summary = inspection_service.inspections_summary(
         db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to,
         status=status_filter, visit_type=visit_type, printed=printed,
-        certificate_number=certificate_number, owner=owner, technician=technician, trader=trader)
+        certificate_number=certificate_number, owner=owner, technician=technician, trader=trader, q=q)
+    return InspectionSummaryOut(**summary)
+
+
+@router.get("", response_model=None)
+def list_inspections(
+    response: Response,
+    visit_kind: VisitKind | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    rep_id: int | None = Query(default=None),
+    status_filter: InspectionStatus | None = Query(default=None, alias="status"),
+    visit_type: str | None = Query(default=None),
+    printed: bool | None = Query(default=None),
+    certificate_number: int | None = Query(default=None),
+    owner: str | None = Query(default=None),
+    technician: str | None = Query(default=None),
+    trader: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int | None = Query(default=None),
+    offset: int = Query(default=0),
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
+    db: Session = Depends(get_db),
+):
+    # Reps only ever see their own inspections; managers may filter by rep.
+    scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
+    rows, total = inspection_service.list_inspections(
+        db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to,
+        status=status_filter, visit_type=visit_type, printed=printed,
+        certificate_number=certificate_number, owner=owner, technician=technician, trader=trader,
+        q=q, limit=limit, offset=offset)
 
     m_ids = {i.merchant_customer_id for i in rows if i.merchant_customer_id is not None}
     m_map = {c.id: c.name for c in db.scalars(
         select(Customer).where(Customer.id.in_(m_ids))).all()} if m_ids else {}
 
-    return [_out(i, merchant_name=m_map.get(i.merchant_customer_id) or i.purchase_shop) for i in rows]
+    items_out = [_out(i, merchant_name=m_map.get(i.merchant_customer_id) or i.purchase_shop) for i in rows]
+    response.headers["X-Total-Count"] = str(total)
+
+    if limit is not None:
+        return PaginatedInspectionsOut(rows=items_out, total=total, limit=min(limit, 500), offset=offset)
+    return items_out
 
 
 class InspectionPatch(BaseModel):

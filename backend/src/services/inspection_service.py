@@ -6,6 +6,7 @@ mobile app can safely retry a batch after a dropped connection.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -24,6 +25,8 @@ from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.warehouse import Custody
 from src.services import audit_service, stock_service
 from src.auth.branch_scope import branch_for
+
+_log = logging.getLogger("uvicorn.error")
 
 
 class InspectionError(Exception):
@@ -197,6 +200,7 @@ def create_inspection(
     purchase_shop: str | None = None, purchase_shop_phone: str | None = None,
     visit_details: str | None = None,
     customer_id: int | None = None, owner_id: int | None = None, client_uuid: str | None = None,
+    merchant_customer_id: int | None = None,
 ) -> Inspection:
     # A regular visit is tied to a chosen customer; its owner_name is filled from the customer,
     # so a technician inspection needs a typed owner while a regular visit needs a customer.
@@ -236,6 +240,7 @@ def create_inspection(
         visit_type=(visit_type or "معاينة"),
         technician_name=technician_name, technician_phone=technician_phone,
         purchase_shop=purchase_shop, purchase_shop_phone=purchase_shop_phone,
+        merchant_customer_id=merchant_customer_id,
         visit_details=visit_details,
         total_points=_points(0), rep_user_id=rep_user_id,
         branch_id=branch_for(db, actor_user_id=actor_user_id,
@@ -286,20 +291,26 @@ def create_inspection(
         total += line_total
     insp.total_points = _points(total)
     db.flush()
+    # بعد ما الإجمالي يخلص — الخصم بيتحسب على `total_points` النهائي مش على المجموع الجاري.
+    sync_inspection_points(db, insp, actor_user_id=actor_user_id)
     audit_service.record(db, action="inspection.create", actor_user_id=actor_user_id,
                          entity_type="inspection", entity_id=insp.id,
                          after={"doc": insp.document_number, "points": str(insp.total_points)})
     return insp
 
 
-def list_inspections(
-    db: Session, *, visit_kind: VisitKind | None = None, rep_user_id: int | None = None,
+def _build_inspection_stmt(
+    *, visit_kind: VisitKind | None = None, rep_user_id: int | None = None,
     date_from: date | None = None, date_to: date | None = None,
     status: InspectionStatus | None = None, visit_type: str | None = None,
     printed: bool | None = None, certificate_number: int | None = None,
     owner: str | None = None, technician: str | None = None, trader: str | None = None,
-) -> list[Inspection]:
-    stmt = select(Inspection).options(selectinload(Inspection.items))
+    q: str | None = None,
+):
+    from src.models.customer import Customer
+    stmt = select(Inspection)
+    joined_customer = False
+
     if visit_kind is not None:
         stmt = stmt.where(Inspection.visit_kind == visit_kind)
     if rep_user_id is not None:
@@ -317,16 +328,164 @@ def list_inspections(
     if certificate_number is not None:
         stmt = stmt.where(Inspection.certificate_number == certificate_number)
     if owner:
-        stmt = stmt.where(Inspection.owner_name.contains(owner))
+        stmt = stmt.where(Inspection.owner_name.contains(owner.strip()))
     if technician:
-        stmt = stmt.where(Inspection.technician_name.contains(technician))
-    if trader:  # التاجر في الشاشة: محل الشراء أو اسم التاجر المربوط
-        from src.models.customer import Customer
-        stmt = stmt.outerjoin(Customer, Inspection.merchant_customer_id == Customer.id)
+        stmt = stmt.where(Inspection.technician_name.contains(technician.strip()))
+    if trader:
+        if not joined_customer:
+            stmt = stmt.outerjoin(Customer, Inspection.merchant_customer_id == Customer.id)
+            joined_customer = True
         stmt = stmt.where(
-            Inspection.purchase_shop.contains(trader) | Customer.name.contains(trader)
+            Inspection.purchase_shop.contains(trader.strip()) | Customer.name.contains(trader.strip())
         )
-    return db.scalars(stmt.order_by(Inspection.inspection_date.desc(), Inspection.id.desc())).all()
+    if q:
+        q_str = q.strip()
+        if not joined_customer:
+            stmt = stmt.outerjoin(Customer, Inspection.merchant_customer_id == Customer.id)
+            joined_customer = True
+        conds = [
+            Inspection.document_number.contains(q_str),
+            Inspection.owner_name.contains(q_str),
+            Inspection.technician_name.contains(q_str),
+            Inspection.purchase_shop.contains(q_str),
+            Customer.name.contains(q_str),
+        ]
+        if q_str.isdigit():
+            conds.append(Inspection.certificate_number == int(q_str))
+        from sqlalchemy import or_
+        stmt = stmt.where(or_(*conds))
+
+    return stmt
+
+
+def list_inspections(
+    db: Session, *, visit_kind: VisitKind | None = None, rep_user_id: int | None = None,
+    date_from: date | None = None, date_to: date | None = None,
+    status: InspectionStatus | None = None, visit_type: str | None = None,
+    printed: bool | None = None, certificate_number: int | None = None,
+    owner: str | None = None, technician: str | None = None, trader: str | None = None,
+    q: str | None = None,
+    limit: int | None = None, offset: int = 0,
+) -> tuple[list[Inspection], int]:
+    stmt = _build_inspection_stmt(
+        visit_kind=visit_kind, rep_user_id=rep_user_id, date_from=date_from, date_to=date_to,
+        status=status, visit_type=visit_type, printed=printed,
+        certificate_number=certificate_number, owner=owner, technician=technician,
+        trader=trader, q=q,
+    )
+    # Total count after filters
+    total_count = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
+
+    query = stmt.options(selectinload(Inspection.items)).order_by(
+        Inspection.inspection_date.desc(), Inspection.id.desc()
+    )
+    if limit is not None:
+        query = query.limit(min(limit, 500)).offset(offset)
+
+    rows = list(db.scalars(query).all())
+    return rows, total_count
+
+
+def inspections_summary(
+    db: Session, *, visit_kind: VisitKind | None = None, rep_user_id: int | None = None,
+    date_from: date | None = None, date_to: date | None = None,
+    status: InspectionStatus | None = None, visit_type: str | None = None,
+    printed: bool | None = None, certificate_number: int | None = None,
+    owner: str | None = None, technician: str | None = None, trader: str | None = None,
+    q: str | None = None,
+) -> dict:
+    from sqlalchemy import case
+    base_stmt = _build_inspection_stmt(
+        visit_kind=visit_kind, rep_user_id=rep_user_id, date_from=date_from, date_to=date_to,
+        status=status, visit_type=visit_type, printed=printed,
+        certificate_number=certificate_number, owner=owner, technician=technician,
+        trader=trader, q=q,
+    )
+    subq = base_stmt.order_by(None).subquery()
+    summary_stmt = select(
+        func.count(subq.c.id).label("total_count"),
+        func.coalesce(func.sum(case((subq.c.status == InspectionStatus.accepted.value, 1), else_=0)), 0).label("accepted_count"),
+        func.coalesce(func.sum(case((subq.c.status == InspectionStatus.rejected.value, 1), else_=0)), 0).label("rejected_count"),
+        func.coalesce(func.sum(case((subq.c.status == InspectionStatus.accepted.value, subq.c.total_points), else_=0)), Decimal("0.000")).label("accepted_points"),
+    )
+    row = db.execute(summary_stmt).one()
+    return {
+        "total_count": int(row.total_count or 0),
+        "accepted_count": int(row.accepted_count or 0),
+        "rejected_count": int(row.rejected_count or 0),
+        "accepted_points": Decimal(str(row.accepted_points or 0)),
+    }
+
+
+# --- نقاط المعاينة: الخصم من رصيد التاجر ---
+#
+# 🔴 من دلوقتي بس. المعاينات القديمة (١٠٩٢٢ معاينة) **مابتخصمش** — قرار المستخدم.
+# مافيش سكربت ترحيل خصم، ومتكتبش واحد: خصم رجعي بيحوّل أرصدة تجار موجودة لسالب كبير في
+# يوم وليلة، والتاجر اللي استلم كوبوناته من سنتين مش هيفهم الرقم الجديد.
+
+def _inspection_point_record(db: Session, inspection_id: int, kind):
+    from src.models.loyalty import PointRecord
+
+    return db.scalar(select(PointRecord).where(
+        PointRecord.inspection_id == inspection_id, PointRecord.kind == kind))
+
+
+def sync_inspection_points(db: Session, inspection: Inspection, *, actor_user_id: int | None = None):
+    """يخصم نقط المعاينة من رصيد التاجر — مرة واحدة مهما اتنادت.
+
+    idempotent عن قصد: القبول بيعدّي من أكتر من طريق (إنشاء من الشاشة، مزامنة من تطبيق
+    المندوب اللي بيعيد إرسال الدفعة بعد قطع الشبكة، وتعبئة التاجر بعدين). سطرين خصم لنفس
+    المعاينة = رصيد التاجر ناقص ضعف اللي عليه فعلاً، ومحدش بيلاحظ غير لما يشتكي.
+
+    معاينة من غير تاجر مربوط مافيهاش خصم — مفيش رصيد نخصم منه. بتتسجّل تحذير بدل ما
+    تعدّي في صمت، لأن ده يبقى إما ربط ناقص أو معاينة اتكتبت غلط.
+    """
+    from src.models.loyalty import PointKind
+    from src.services import points_service
+
+    total = _points(inspection.total_points or 0)
+    if total <= 0:
+        return None
+    if inspection.merchant_customer_id is None:
+        _log.warning(
+            "inspection %s (%s) بـ%s نقطة من غير تاجر مربوط — مافيش خصم نقاط.",
+            inspection.id, inspection.document_number, total)
+        return None
+    if _inspection_point_record(db, inspection.id, PointKind.inspection) is not None:
+        return None
+    return points_service.post(
+        db, customer_id=inspection.merchant_customer_id, kind=PointKind.inspection,
+        delta=-total, inspection_id=inspection.id, actor_user_id=actor_user_id)
+
+
+def _reverse_inspection_points(db: Session, inspection: Inspection, *, actor_user_id: int | None):
+    """الرفض بعد القبول بيرجّع الخصم بسطر جديد موجب — والأصلي بيفضل مكانه.
+
+    الدفتر بيحكي اللي حصل: اتخصم، وبعدين اترجع. مسح السطر الأصلي كان هيخلّي الرصيد صح
+    وتاريخه كدّاب، ومحدش يعرف إن المعاينة دي خصمت أصلاً.
+    """
+    from src.models.loyalty import PointKind
+
+    from src.services import points_service
+
+    original = _inspection_point_record(db, inspection.id, PointKind.inspection)
+    if original is None:
+        return None  # ماخصمتش أصلاً (معاينة قديمة أو من غير تاجر) — مافيش حاجة ترجع
+    if _inspection_point_record(db, inspection.id, PointKind.inspection_reverse) is not None:
+        return None
+    return points_service.post(
+        db, customer_id=original.customer_id, kind=PointKind.inspection_reverse,
+        delta=-_points(original.delta), inspection_id=inspection.id,
+        actor_user_id=actor_user_id)
+
+
+def _delete_inspection_points(db: Session, inspection: Inspection) -> None:
+    from src.models.loyalty import PointRecord
+
+    for record in db.scalars(select(PointRecord).where(
+            PointRecord.inspection_id == inspection.id)).all():
+        db.delete(record)
+    db.flush()
 
 
 def _return_stock(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
@@ -348,6 +507,7 @@ def reject_inspection(db: Session, inspection: Inspection, *, actor_user_id: int
     if inspection.status == InspectionStatus.rejected:
         raise InspectionError("المعاينة مرفوضة بالفعل.")
     _return_stock(db, inspection, actor_user_id=actor_user_id)
+    _reverse_inspection_points(db, inspection, actor_user_id=actor_user_id)
     inspection.status = InspectionStatus.rejected
     db.flush()
     audit_service.record(db, action="inspection.reject", actor_user_id=actor_user_id,
@@ -363,6 +523,10 @@ def delete_inspection(db: Session, inspection: Inspection, *, actor_user_id: int
     """
     if inspection.status != InspectionStatus.rejected:
         _return_stock(db, inspection, actor_user_id=actor_user_id)
+    # سطور الدفتر بتتشال مع المستند. مش استثناء من «الدفتر مابيتمسحش»: المعاينة اللي
+    # اتمسحت مابقاش ليها وجود، فسطر خصم مربوط بيها بـFK هيمنع المسح أصلاً — وهي نفس
+    # القاعدة المتبعة مع الفاتورة اللي بتتمسح وبتاخد نقاطها معاها.
+    _delete_inspection_points(db, inspection)
     audit_service.record(db, action="inspection.delete", actor_user_id=actor_user_id,
                          entity_type="inspection", entity_id=inspection.id,
                          before={"doc": inspection.document_number})

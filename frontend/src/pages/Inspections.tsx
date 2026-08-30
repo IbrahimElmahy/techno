@@ -75,11 +75,28 @@ const fmt = (v: string) => {
   return Number.isNaN(n) ? v : String(n);
 };
 
+interface InspectionSummary {
+  total_count: number;
+  accepted_count: number;
+  rejected_count: number;
+  accepted_points: number;
+}
+
 const Inspections: React.FC = () => {
   const [rows, setRows] = useState<InspectionRecord[]>([]);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<InspectionRecord | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [totalCount, setTotalCount] = useState(0);
+  const [summary, setSummary] = useState<InspectionSummary>({
+    total_count: 0,
+    accepted_count: 0,
+    rejected_count: 0,
+    accepted_points: 0,
+  });
+
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([
     dayjs().subtract(30, 'day'),
     dayjs(),
@@ -97,33 +114,74 @@ const Inspections: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const { options: visitTypeOptions } = useLookup('visit_type');
 
-  const load = useCallback(async () => {
+  const buildParams = useCallback(() => {
+    const params: Record<string, string> = {};
+    if (range?.[0]) params.date_from = range[0].format('YYYY-MM-DD');
+    if (range?.[1]) params.date_to = range[1].format('YYYY-MM-DD');
+    if (kind) params.visit_kind = kind;
+    if (repId) params.rep_id = String(repId);
+    if (statusF) params.status = statusF;
+    if (printedF) params.printed = printedF;
+    if (visitTypeF) params.visit_type = visitTypeF;
+    if (certNo) params.certificate_number = String(certNo);
+    if (ownerF.trim()) params.owner = ownerF.trim();
+    if (technicianF.trim()) params.technician = technicianF.trim();
+    if (traderF.trim()) params.trader = traderF.trim();
+    return params;
+  }, [range, kind, repId, statusF, printedF, visitTypeF, certNo, ownerF, technicianF, traderF]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const params = buildParams();
+      const res = await api.get<InspectionSummary>('/api/v1/inspections/summary', { params });
+      setSummary({
+        total_count: Number(res.data.total_count || 0),
+        accepted_count: Number(res.data.accepted_count || 0),
+        rejected_count: Number(res.data.rejected_count || 0),
+        accepted_points: Number(res.data.accepted_points || 0),
+      });
+    } catch {
+      // summary failure shouldn't block table
+    }
+  }, [buildParams]);
+
+  const load = useCallback(async (targetPage = page, targetPageSize = pageSize) => {
     setLoading(true);
     try {
-      const params: Record<string, string> = {};
-      if (range?.[0]) params.date_from = range[0].format('YYYY-MM-DD');
-      if (range?.[1]) params.date_to = range[1].format('YYYY-MM-DD');
-      if (kind) params.visit_kind = kind;
-      if (repId) params.rep_id = String(repId);
-      if (statusF) params.status = statusF;
-      if (printedF) params.printed = printedF;
-      if (visitTypeF) params.visit_type = visitTypeF;
-      if (certNo) params.certificate_number = String(certNo);
-      if (ownerF.trim()) params.owner = ownerF.trim();
-      if (technicianF.trim()) params.technician = technicianF.trim();
-      if (traderF.trim()) params.trader = traderF.trim();
-      const { data } = await api.get<InspectionRecord[]>('/api/v1/inspections', { params });
-      setRows(data);
+      const params: Record<string, any> = {
+        ...buildParams(),
+        limit: targetPageSize,
+        offset: (targetPage - 1) * targetPageSize,
+      };
+      const res = await api.get<any>('/api/v1/inspections', { params });
+      if (Array.isArray(res.data)) {
+        setRows(res.data);
+        const headerTotal = res.headers['x-total-count'];
+        setTotalCount(headerTotal ? Number(headerTotal) : res.data.length);
+      } else {
+        setRows(res.data.rows || []);
+        setTotalCount(Number(res.data.total || 0));
+      }
     } catch (e: any) {
       message.error(e?.message || 'تعذر تحميل المعاينات');
     } finally {
       setLoading(false);
     }
+  }, [buildParams, page, pageSize]);
+
+  // Load summary and reset page on filter change
+  useEffect(() => {
+    setPage(1);
+    load(1, pageSize);
+    loadSummary();
   }, [range, kind, repId, statusF, printedF, visitTypeF, certNo, ownerF, technicianF, traderF]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Reload when page changes without changing filters
+  const handlePageChange = (newPage: number, newPageSize: number) => {
+    setPage(newPage);
+    setPageSize(newPageSize);
+    load(newPage, newPageSize);
+  };
 
   useEffect(() => {
     api
@@ -225,17 +283,6 @@ const Inspections: React.FC = () => {
     }
   };
 
-  const totalPoints = rows
-    .filter((r) => r.status === 'accepted')
-    .reduce((s, r) => s + Number(r.total_points || 0), 0);
-
-  /**
-   * صفحة الشهادة — نفس الصفحة اللي المعاينة بتتراجع منها.
-   *
-   * The certificate opened in a Modal over the list: a review sheet that carried real decisions —
-   * accept, reject, change the visit type — inside a popup. The list steps aside while one is
-   * open, so the decision is taken on the document rather than on top of the register.
-   */
   const columns: ColumnsType<InspectionRecord> = [
     {
       title: 'رقم الشهادة',
@@ -325,14 +372,14 @@ const Inspections: React.FC = () => {
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={6}>
           <Card>
-            <Statistic title="عدد المعاينات" value={rows.length} prefix={<MobileOutlined />} />
+            <Statistic title="عدد المعاينات" value={summary.total_count} prefix={<MobileOutlined />} />
           </Card>
         </Col>
         <Col span={6}>
           <Card>
             <Statistic
               title="مقبولة"
-              value={rows.filter((r) => r.status === 'accepted').length}
+              value={summary.accepted_count}
               valueStyle={{ color: '#2e9e6b' }}
             />
           </Card>
@@ -341,14 +388,14 @@ const Inspections: React.FC = () => {
           <Card>
             <Statistic
               title="مرفوضة"
-              value={rows.filter((r) => r.status === 'rejected').length}
+              value={summary.rejected_count}
               valueStyle={{ color: '#d64545' }}
             />
           </Card>
         </Col>
         <Col span={6}>
           <Card>
-            <Statistic title="نقاط المقبولة" value={totalPoints} precision={3} />
+            <Statistic title="نقاط المقبولة" value={summary.accepted_points} precision={3} />
           </Card>
         </Col>
       </Row>
@@ -374,7 +421,7 @@ const Inspections: React.FC = () => {
             value={ownerF}
             onChange={(e) => setOwnerF(e.target.value)}
             allowClear
-            onPressEnter={load}
+            onPressEnter={() => { setPage(1); load(1, pageSize); loadSummary(); }}
           />
           <Input
             placeholder="الفني"
@@ -382,7 +429,7 @@ const Inspections: React.FC = () => {
             value={technicianF}
             onChange={(e) => setTechnicianF(e.target.value)}
             allowClear
-            onPressEnter={load}
+            onPressEnter={() => { setPage(1); load(1, pageSize); loadSummary(); }}
           />
           <Input
             placeholder="التاجر"
@@ -390,7 +437,7 @@ const Inspections: React.FC = () => {
             value={traderF}
             onChange={(e) => setTraderF(e.target.value)}
             allowClear
-            onPressEnter={load}
+            onPressEnter={() => { setPage(1); load(1, pageSize); loadSummary(); }}
           />
           <Select
             placeholder="المندوب"
@@ -443,7 +490,7 @@ const Inspections: React.FC = () => {
               { value: 'regular', label: 'زيارة عادية' },
             ]}
           />
-          <Button icon={<ReloadOutlined />} onClick={load}>
+          <Button icon={<ReloadOutlined />} onClick={() => { setPage(1); load(1, pageSize); loadSummary(); }}>
             تحديث
           </Button>
         </Space>
@@ -453,7 +500,15 @@ const Inspections: React.FC = () => {
           loading={loading}
           dataSource={rows}
           onRow={(record) => ({ onClick: () => openDetail(record), style: { cursor: 'pointer' } })}
-          pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
+          pagination={{
+            current: page,
+            pageSize: pageSize,
+            total: totalCount,
+            showSizeChanger: true,
+            pageSizeOptions: ['20', '50', '100', '200'],
+            onChange: handlePageChange,
+            showTotal: (t) => `إجمالي ${t} معاينة`,
+          }}
           columns={tableCols.columns}
         />
       </Card>
