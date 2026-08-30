@@ -397,11 +397,6 @@ export default function CouponReceipts() {
         </Col>
       </Row>
 
-      {!kind && (
-        <Alert type="warning" showIcon style={{ marginTop: 8 }}
-          message="اختر فئة الكوبون الأول"
-          description="الرقم لوحده مش بيحدد ورقة — «٥ ذهبي» غير «٥ فضي»." />
-      )}
       {customerId != null && (
         <Alert type="success" showIcon={false} style={{ marginTop: 8 }}
           message={`بستلم من: ${customerName(customerId)}`} />
