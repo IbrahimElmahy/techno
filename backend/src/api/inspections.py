@@ -56,6 +56,10 @@ class InspectionIn(BaseModel):
     technician_phone: str | None = None
     purchase_shop: str | None = None
     purchase_shop_phone: str | None = None
+    # التاجر اللي العميل اشترى منه — هو اللي بتتخصم منه نقط المعاينة عند القبول.
+    # كان مكتوب في `InspectionOut` بس، فالحقل كان بيتقري ومابيتكتبش: كل معاينة جديدة
+    # تدخل بـNULL، والخصم يفضل كود ميت بيسجّل تحذير في اللوج والشاشة تقول اتسجّلت عادي.
+    merchant_customer_id: int | None = None
     visit_details: str | None = None
     client_uuid: str | None = Field(default=None, max_length=40)
     items: list[InspectionLineIn] = []
@@ -184,6 +188,7 @@ def _create(db: Session, body: InspectionIn, current: CurrentUser):
         visit_type=body.visit_type,
         technician_name=body.technician_name, technician_phone=body.technician_phone,
         purchase_shop=body.purchase_shop, purchase_shop_phone=body.purchase_shop_phone,
+        merchant_customer_id=body.merchant_customer_id,
         visit_details=body.visit_details,
         client_uuid=body.client_uuid,
         lines=[LineIn(item_id=ln.item_id, item_name=ln.item_name,

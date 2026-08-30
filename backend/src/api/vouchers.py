@@ -188,7 +188,9 @@ class FamilyBalanceOut(BaseModel):
 
 
 class StatementOut(BaseModel):
-    account_id: int
+    # NULL = العميل لسه مالوش حساب ذمم. مش خطأ — عميل اتسجّل ومااتعاملش معاه مالياً
+    # بعد. الكشف بيرجع فاضي بأصفار، والشاشة تقول «مافيش حركة».
+    account_id: int | None = None
     account_name: str = ""
     # الحساب الرئيسي beside الحساب الفرعي, as their screen names them. Empty for a top-level
     # account, which is its own book.
@@ -581,8 +583,13 @@ def customer_statement(
     """
     accounts = voucher_service._customer_accounts(db, customer_id)
     if not accounts:
-        raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "العميل ليس له حساب ذمم."})
+        # مالوش حساب = مااتعاملش معاه مالياً لسه، مش خطأ. كان بيرمي 404 فالكارت
+        # بيفتح على توست أحمر لـ٢٤١٩ عميل — نفس العطل اللي الفقرة اللي فوق بتحكي عنه،
+        # بس على الحالة الفاضية بدل الحالة المتعددة.
+        zero = Decimal("0")
+        return StatementOut(
+            account_id=None, account_name="", opening_balance=zero, closing_balance=zero,
+            total_debit=zero, total_credit=zero, lines=[], family=family, families=[])
 
     if family:
         chosen = [a for a in accounts if (a.family or "") == family]

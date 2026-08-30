@@ -115,28 +115,43 @@ def _within(when: date | None, date_from: date | None, date_to: date | None) -> 
 # ------------------------------------------------------------------ المواضيع
 
 
-_POINT_LABEL = {
-    "earn": "اكتساب", "reverse": "عكس", "converted": "استبدال",
-    "void_reclaim": "استرداد إلغاء", "adjustment": "تسوية",
-}
+def _point_label(kind: str) -> str:
+    """اسم نوع الحركة بالعربي — من `points_service` عشان مايبقاش فيه نسختين.
+
+    كانت هنا قايمة تانية ناقصة `inspection` و`inspection_reverse`، فأول ما الخصم
+    يشتغل كانوا هيتعرضوا بالإنجليزي الخام في التقرير.
+    """
+    from src.services.points_service import KIND_LABELS
+
+    return KIND_LABELS.get(kind, kind)
 
 
 def _collect_points(db, look, filters) -> list[dict]:
-    """حركة النقاط — الرصيد هو مجموع الحركة، مش عمود محفوظ في مكان تاني."""
+    """حركة النقاط — الرصيد هو مجموع الحركة، مش عمود محفوظ في مكان تاني.
+
+    الفلترة في `WHERE` مش في حلقة بايثون. كانت بتجيب الجدول كله وتفلتره في الذاكرة،
+    وده عدّى من غير ما حد ياخد باله لأن الجدول كان صفر صف — أول ما اتعبّى بقى
+    كل فتحة للشاشة بتقرا الدفتر كامل عشان تعرض شهر.
+    """
     date_from, date_to = filters["date_from"], filters["date_to"]
+    stmt = select(PointRecord)
+    if date_from:
+        stmt = stmt.where(PointRecord.created_at >= date_from)
+    if date_to:
+        # `created_at` وقت مش تاريخ — المقارنة بـ`<= date_to` بتقص يوم النهاية كله.
+        stmt = stmt.where(PointRecord.created_at < date_to + timedelta(days=1))
+    if filters.get("customer_id"):
+        stmt = stmt.where(PointRecord.customer_id == filters["customer_id"])
+
     rows = []
-    for record in db.scalars(select(PointRecord).order_by(PointRecord.created_at)).all():
+    for record in db.scalars(stmt.order_by(PointRecord.created_at)).all():
         when = record.created_at.date() if record.created_at else None
-        if not _within(when, date_from, date_to):
-            continue
-        if filters.get("customer_id") and record.customer_id != filters["customer_id"]:
-            continue
         kind = record.kind.value
         rows.append(_row(
             when=when,
             party_id=record.customer_id, party=look["customers"].get(record.customer_id),
             rep_id=record.actor_user_id, rep=look["users"].get(record.actor_user_id),
-            kind=kind, label=_POINT_LABEL.get(kind, kind), status=kind,
+            kind=kind, label=_point_label(kind), status=kind,
             # النقاط بتتحط في `quantity` مش `amount` — دي مش فلوس، والعمود بيقول كده.
             quantity=record.delta,
             extra={"delta": str(record.delta),
