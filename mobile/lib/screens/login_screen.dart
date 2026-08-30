@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../db/local_db.dart';
 import '../theme.dart';
 import 'home_screen.dart';
 
@@ -30,6 +31,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   final _username = TextEditingController();
   final _password = TextEditingController();
+  final _server = TextEditingController();
+  /// خانة السيرفر مقفولة افتراضياً — سؤال مالوش لازمة في الاستعمال العادي.
+  /// بتتفتح لما العنوان محتاج يتغيّر، وده بيحصل: النشر بيتنقل والدومين بيموت،
+  /// والخانة كانت جوّه التطبيق بعد الدخول — يعني ورا نفس الباب اللي هي بتفتحه.
+  bool _showServer = false;
   bool _busy = false;
   bool _hide = true;
   String? _error;
@@ -64,6 +70,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _enter.dispose();
     _username.dispose();
     _password.dispose();
+    _server.dispose();
     super.dispose();
   }
 
@@ -143,6 +150,39 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 style: const TextStyle(color: AppColors.danger),
                                 textAlign: TextAlign.center),
                           ],
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: TextButton.icon(
+                              onPressed: () async {
+                                if (!_showServer) {
+                                  _server.text = await ApiClient.instance.baseUrl();
+                                }
+                                setState(() => _showServer = !_showServer);
+                              },
+                              icon: Icon(
+                                  _showServer ? Icons.keyboard_arrow_up : Icons.dns_outlined,
+                                  size: 18),
+                              label: const Text('عنوان السيرفر'),
+                            ),
+                          ),
+                          if (_showServer)
+                            TextField(
+                              controller: _server,
+                              keyboardType: TextInputType.url,
+                              autocorrect: false,
+                              decoration: const InputDecoration(
+                                labelText: 'عنوان السيرفر',
+                                helperText: 'https://local.technothermeg.com',
+                                prefixIcon: Icon(Icons.link),
+                              ),
+                              onChanged: (v) {
+                                final t = v.trim();
+                                if (t.isEmpty) return;
+                                LocalDb.instance.setKv('api_base',
+                                    t.endsWith('/') ? t.substring(0, t.length - 1) : t);
+                              },
+                            ),
                           const SizedBox(height: 20),
                           FilledButton.icon(
                             style: FilledButton.styleFrom(

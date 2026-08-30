@@ -21,7 +21,12 @@ class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
-  static const defaultBase = 'https://api.technothermeg.com';
+  /// العنوان اللي التطبيق بينده عليه لو محدش غيّره.
+  ///
+  /// كان `api.technothermeg.com` — نشر سحابي قديم اتوقف، والدومين نفسه مابقاش
+  /// بيتحل أصلاً (`No address associated with hostname`)، فالتطبيق كان بيقف على
+  /// شاشة الدخول ومافيش طريقة تعديه: خانة السيرفر كانت جوّه التطبيق بعد الدخول.
+  static const defaultBase = 'https://local.technothermeg.com';
 
   Future<String> baseUrl() async =>
       (await LocalDb.instance.getKv('api_base')) ?? defaultBase;

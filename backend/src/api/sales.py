@@ -37,6 +37,7 @@ from src.services.coupon_receipt_service import CouponReceiptError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
 from src.services import document_edit_service
 from src.services.document_edit_service import DocumentEditError
+from src.services.account_resolver import AccountResolutionError
 from src.services.stock_service import StockError
 from src.auth import branch_scope
 
@@ -427,6 +428,12 @@ def _build_sale(
     except StockError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "no_negative_stock", "message": str(exc)})
+    except AccountResolutionError as exc:
+        # «المندوب مالوش حساب عهدة» إعداد ناقص، مش عطل في السيرفر — وكان بيطلع 500،
+        # فتطبيق المندوب يقول «خطأ في الخادم» والرسالة اللي بتقول إيه الناقص بالظبط
+        # تضيع في اللوج. الرسالة نفسها مكتوبة بالعربي ومفيدة من الأول.
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "account_missing", "message": str(exc)})
 
     # Written after the sale so they hang off a document that exists. A row with nothing in it at
     # all is dropped rather than stored: an empty coupon line is one somebody started and left,
@@ -856,6 +863,12 @@ def create_standalone_return(
     except StockError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "no_negative_stock", "message": str(exc)})
+    except AccountResolutionError as exc:
+        # «المندوب مالوش حساب عهدة» إعداد ناقص، مش عطل في السيرفر — وكان بيطلع 500،
+        # فتطبيق المندوب يقول «خطأ في الخادم» والرسالة اللي بتقول إيه الناقص بالظبط
+        # تضيع في اللوج. الرسالة نفسها مكتوبة بالعربي ومفيدة من الأول.
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "account_missing", "message": str(exc)})
     db.commit()
     return _standalone_return_out(ret)
 
@@ -902,6 +915,12 @@ def update_standalone_return(
     except StockError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "no_negative_stock", "message": str(exc)})
+    except AccountResolutionError as exc:
+        # «المندوب مالوش حساب عهدة» إعداد ناقص، مش عطل في السيرفر — وكان بيطلع 500،
+        # فتطبيق المندوب يقول «خطأ في الخادم» والرسالة اللي بتقول إيه الناقص بالظبط
+        # تضيع في اللوج. الرسالة نفسها مكتوبة بالعربي ومفيدة من الأول.
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "account_missing", "message": str(exc)})
     db.commit()
     return _standalone_return_out(ret, db)
 

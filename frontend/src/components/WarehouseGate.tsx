@@ -49,6 +49,14 @@ export default function WarehouseGate({
     }));
   }, [warehouses]);
 
+  /** بصمة الخيارات كنص — الاعتماد على المصفوفة نفسها بيعمل حلقة.
+   *
+   *  فيه نداء بيمرّر `locationOptions.filter(...)` (وجهة التحويل، اللي بتستبعد المصدر)،
+   *  ودي مصفوفة جديدة كل رندر. الـ`useMemo` بيعيد الحساب معاها، فالـeffect يشوف
+   *  اعتماد اتغيّر ويشتغل تاني — ولو الخيار واحد بينده `onChange` و`onOk` كل رندر،
+   *  يعني رندر لا نهائي. البصمة بتتغيّر لما المحتوى يتغيّر فعلاً بس. */
+  const optionsKey = normalizedOptions.map((o) => String(o.value)).join('|');
+
   // لو المستخدم عنده مخزن واحد بس متاح، ما نسألوش — نحطّه ونعدّي على طول
   useEffect(() => {
     if (open && autoAdvanceIfSingle && normalizedOptions.length === 1) {
@@ -58,7 +66,8 @@ export default function WarehouseGate({
         onOk();
       }
     }
-  }, [open, autoAdvanceIfSingle, normalizedOptions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, autoAdvanceIfSingle, optionsKey]);
 
   if (!open || (autoAdvanceIfSingle && normalizedOptions.length === 1)) {
     return null;
