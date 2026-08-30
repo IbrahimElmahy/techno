@@ -125,6 +125,9 @@ interface PointsLedgerData {
   kinds: Record<string, string>;
 }
 
+/** سقف الـendpoint نفسه (`le=5000`) — أكبر صفحة ينفع نطلبها في مرة. */
+const POINTS_PAGE_SIZE = 5000;
+
 const STATUS_LABELS: Record<string, string> = {
   pending: 'تحت التحصيل', settled: 'محصّل', bounced: 'مرتد', cancelled: 'ملغي',
   issued: 'صادر', redeemed: 'مستخدم', draft: 'مسودة', approved: 'معتمد', rejected: 'مرفوض',
@@ -171,6 +174,7 @@ export default function CustomerProfile() {
   const [recordRef, setRecordRef] = useState<{ kind: string; id: number } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [points, setPoints] = useState<PointsLedgerData | null>(null);
+  const [pointsMoreLoading, setPointsMoreLoading] = useState(false);
 
   // Statement advanced filters state (Matching AccountStatement.tsx)
   const [repFilter, setRepFilter] = useState<string | undefined>(undefined);
@@ -271,21 +275,31 @@ export default function CustomerProfile() {
   };
 
   /** الدفتر بيتحمّل لوحده مش مع الملف: التاجر الكبير عنده آلاف السطور، وتحميلها مع كل
-   *  فتحة كارت بيبطّأ الشاشة كلها عشان تبويب ممكن محدش يفتحه. */
-  const loadPoints = async () => {
+   *  فتحة كارت بيبطّأ الشاشة كلها عشان تبويب ممكن محدش يفتحه.
+   *
+   *  والصفحة الواحدة سقفها ٥٠٠٠ (سقف الـendpoint نفسه) — التاجر اللي عدّاها كان بياخد
+   *  أقدم ٥٠٠٠ حركة وبس، من غير ولا رسالة، وآخر «رصيد جاري» في الجدول بيخالف كارت
+   *  «الرصيد». دلوقتي بنكمّل بـ`offset`: السيرفر بيحسب رصيد افتتاحي للصفحة الجديدة من
+   *  اللي فاتها، فالسطور بتتلزق ورا بعض والرصيد الجاري بيفضل متصل. */
+  const loadPoints = async (offset = 0) => {
     if (!customerId) return;
+    if (offset) setPointsMoreLoading(true);
     try {
       const res = await api.get(`/api/v1/customers/${customerId}/points/ledger`, {
-        params: { limit: 5000 },
+        params: { limit: POINTS_PAGE_SIZE, offset },
       });
-      setPoints(res.data);
+      setPoints((prev) => (offset && prev
+        ? { ...res.data, rows: [...prev.rows, ...(res.data.rows || [])] }
+        : res.data));
     } catch {
-      setPoints(null);
+      if (!offset) setPoints(null);
+    } finally {
+      if (offset) setPointsMoreLoading(false);
     }
   };
 
   useEffect(() => { load(); }, [customerId]);
-  useEffect(() => { loadPoints(); }, [customerId]);
+  useEffect(() => { setPointsMoreLoading(false); loadPoints(); }, [customerId]);
   useEffect(() => { loadStatement(); }, [customerId, range, statementFamily]);
 
   /** الأنواع جاية من السيرفر مع الدفتر، فاسم عربي جديد بيظهر في الفلتر من غير نشر فرونت. */
@@ -1243,6 +1257,23 @@ export default function CustomerProfile() {
                             { title: 'رصيد جاري', dataIndex: 'running', key: 'run', align: 'left', width: 120,
                               render: (v: string | null) => <b>{pointsNum(v)}</b> },
                           ]} />
+                      )}
+                      {/* القص لازم يبان: من غير السطر ده الشاشة بتعرض أقدم صفحة وبس،
+                          و«عدد الحركات» بيقول رقم أكبر من اللي في الجدول من غير تفسير،
+                          وآخر «رصيد جاري» بيخالف كارت «الرصيد». */}
+                      {points && points.count > points.rows.length && (
+                        <Alert
+                          style={{ marginTop: 12 }}
+                          type="warning"
+                          showIcon
+                          message={`معروض ${points.rows.length} حركة من ${points.count} — الباقي لسه ماتحمّلش، فآخر «رصيد جاري» في الجدول مش هو رصيد العميل النهائي.`}
+                          action={(
+                            <Button size="small" loading={pointsMoreLoading}
+                              onClick={() => loadPoints(points.rows.length)}>
+                              تحميل المزيد
+                            </Button>
+                          )}
+                        />
                       )}
                     </>
                   ),
