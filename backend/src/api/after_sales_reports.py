@@ -11,9 +11,13 @@
 ---------------------------------------------------------------------------
 قرارين:
 
-* **«لسه برّه» = اتصرف ناقص اللي رجع، محسوبة على الورقة مش على العدد.** جمع الأعداد
-  بيدي رقم قريب وغلط: ورقة اتصرفت مرتين بالغلط، أو رجعت من غير ما تتصرف، بتخلّي الفرق
-  يكدب. المقارنة على (الفئة + الرقم) بتقول الورقة الفلانية فين بالظبط.
+* **«لسه برّه» بتتحسب على صاحب الصرف مش على اللي رجّع.** الورقة بتتصرف لموزع والسباك
+  بيرجّعها — دول مش نفس الراجل. لو حسبنا «اتصرف له ناقص اللي استلمناه منه» بيطلع للسباك
+  رصيد **سالب** (رجّع ٥ ومااتصرفش له حاجة) وللموزع رصيد كامل كأن مافيش حاجة رجعت. فالرجوع
+  بيتنسب لمستند الصرف (`coupon_issue_id`)، وساعتها «لسه برّه» بتقول اللي بجد لسه برّه.
+
+* **السباك تقريره «رجّع كام»، والموزع تقريره «عليه كام».** السؤالين مختلفين: الموزع ماسك
+  ورق، والسباك بيجيب ورق. عمود واحد اسمه «المتبقي» على الاتنين بيخلّي واحد منهم يكدب.
 
 * **الفني بيتلاقى بالعميل مش بالاسم.** الاستلام بيتسجّل على `customer_id`، والاسم على
   الكارت ممكن يتصلّح بعدين. التقرير اللي بيجمّع بالاسم بيفرّق الراجل الواحد لاتنين أول
@@ -50,9 +54,12 @@ class CouponPartyRow(BaseModel):
     customer_id: int | None = None
     name: str
     phone: str | None = None
+    # للموزع: اتصرف له كام، ورجع من الصرف ده كام (من أي سباك)، والفرق لسه برّه.
     issued: int = 0
-    received: int = 0
+    returned: int = 0
     outstanding: int = 0
+    # للسباك: رجّع كام ورقة بنفسه.
+    received: int = 0
     last_issue: date | None = None
     last_receipt: date | None = None
 
@@ -118,12 +125,33 @@ def _received_counts(db: Session, current: CurrentUser,
     return db.execute(stmt.group_by(CouponReceipt.customer_id)).all()
 
 
+def _returned_against_issue(db: Session, current: CurrentUser,
+                            date_from: date | None, date_to: date | None):
+    """كل مستند صرف رجع منه كام ورقة — بغضّ النظر عن مين رجّعها.
+
+    الورقة بتخرج لموزع وبترجع من سباك. ربط الرجوع بمستند الصرف هو اللي بيخلّي «لسه برّه»
+    تقول الحقيقة؛ ربطها باللي رجّعها بيدّي للموزع رصيد كامل وللسباك رصيد سالب.
+    """
+    stmt = branch_scope.scope(
+        select(CouponIssue.customer_id, func.count(CouponReceiptLine.id))
+        .join(CouponIssueLine, CouponIssueLine.issue_id == CouponIssue.id)
+        .join(CouponReceiptLine,
+              CouponReceiptLine.coupon_issue_id == CouponIssue.id),
+        CouponIssue, current)
+    if date_from:
+        stmt = stmt.where(CouponIssue.issue_date >= date_from)
+    if date_to:
+        stmt = stmt.where(CouponIssue.issue_date <= date_to)
+    return dict(db.execute(stmt.group_by(CouponIssue.customer_id)).all())
+
+
 def _party_rows(db: Session, current: CurrentUser, *, customer_type: str | None,
                 date_from: date | None, date_to: date | None) -> list[CouponPartyRow]:
     issued = {cid: (n, last) for cid, n, last in
               _issued_counts(db, current, date_from, date_to)}
     received = {cid: (n, last) for cid, n, last in
                 _received_counts(db, current, date_from, date_to)}
+    returned = _returned_against_issue(db, current, date_from, date_to)
     ids = {c for c in (set(issued) | set(received)) if c}
     if not ids:
         return []
@@ -134,11 +162,12 @@ def _party_rows(db: Session, current: CurrentUser, *, customer_type: str | None,
     for c in db.scalars(stmt).all():
         out_n, out_last = issued.get(c.id, (0, None))
         in_n, in_last = received.get(c.id, (0, None))
+        back = returned.get(c.id, 0)
         rows.append(CouponPartyRow(
             customer_id=c.id, name=c.name, phone=c.phone,
-            issued=out_n, received=in_n, outstanding=out_n - in_n,
-            last_issue=out_last, last_receipt=in_last))
-    rows.sort(key=lambda r: (-r.outstanding, -r.issued))
+            issued=out_n, returned=back, outstanding=out_n - back,
+            received=in_n, last_issue=out_last, last_receipt=in_last))
+    rows.sort(key=lambda r: (-r.outstanding, -r.received, -r.issued))
     return rows
 
 

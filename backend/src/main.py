@@ -321,6 +321,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("coupon_receipt_line", "coupon_kind", "VARCHAR(24)"),
     # الورقة ممكن تكون اتصرفت لموزع بدل ما تتباع مع فاتورة.
     ("coupon_receipt_line", "coupon_issue_id", "BIGINT"),
+    # مندوب خدمة العملاء — غير مندوب المبيعات، والاتنين بيزوروا نفس العميل.
+    ("customer", "service_rep_id", "BIGINT"),
     ("sales_invoice_coupon", "coupon_kind", "VARCHAR(24)"),
     # مرجع المصدر للقيد — استيراد الدفتر من نظام برّه بيتعاد من غير تكرار ولا تخطّي.
     ("ledger_entry", "external_ref", "VARCHAR(60)"),

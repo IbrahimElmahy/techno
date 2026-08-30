@@ -21,6 +21,10 @@
   والمناطق كلها البحيرة والغربية والمنوفية. الفرع بيتحدد من `--branch` برضه — الرقم ده
   دليل مش قاعدة.
 
+* **مندوب خدمة العملاء غير مندوب المبيعات.** `SalesRepId` هنا مندوب الخدمة — اللي بيعاين
+  عند العميل وبياخد منه الكوبونات. مندوب المبيعات جاي من a5 وبيفضل مكانه. لو الاتنين
+  اتحطوا في خانة واحدة، تقرير المناديب بيجمّع ناس على شغل مش بتاعهم.
+
 * **الكود بيتحفظ عشان المعاينات تلاقي ناسها.** المعاينة بتشاور على `CustomerID` و
   `PlumberID` بأرقام النظام القديم، فالكود عندنا بيبقى `ERP-C-{id}` و`ERP-P-{id}` —
   ومن غير كده الخطوة الجاية مالهاش طريق ترجع بيه.
@@ -35,6 +39,7 @@ from collections import Counter
 from sqlalchemy import select
 
 from src.core.db import SessionLocal
+from src.core.security import hash_password
 from src.models.customer import Customer
 from src.models.org import Branch, Territory
 from src.models.role import Role, RoleName
@@ -125,6 +130,38 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
         if terr is None:
             raise SystemExit("الفرع مالوش منطقة واحدة على الأقل.")
 
+        # ---------- مناديب الخدمة ----------
+        #
+        # الـ16 مندوب بتوع نظام ما بعد البيع. من غيرهم كل معاينة وكل عميل بيقعد على
+        # مندوب واحد افتراضي، وتقرير «زيارات المناديب» بيرجّع صف واحد فيه الـ10922.
+        service_reps: dict[str, User] = {}
+        by_full = {(u.full_name or "").strip(): u for u in db.scalars(select(User)).all()
+                   if (u.full_name or "").strip()}
+        taken_names = {u.username for u in db.scalars(select(User)).all()}
+        password = os.environ.get("SEED_PASSWORD", "").strip()
+        for r in by_kind.get("REP", []):
+            name = _clean(r[F_NAME])
+            if not name or JUNK.match(name):
+                continue
+            user = by_full.get(name)
+            if user is None:
+                if not password:
+                    skipped.append(f"مندوب «{name}»: محتاج SEED_PASSWORD")
+                    continue
+                username = f"svc.{r[F_ID]}"
+                while username in taken_names:
+                    username += "x"
+                user = User(username=username, password_hash=hash_password(password),
+                            role_id=role.id if role else None, branch_id=branch.id,
+                            full_name=name, active=True)
+                db.add(user)
+                db.flush()
+                taken_names.add(username)
+                by_full[name] = user
+                made["مناديب خدمة"] += 1
+            service_reps[r[F_ID]] = user
+        db.flush()
+
         existing = db.scalars(select(Customer)).all()
         by_code = {c.code: c for c in existing if c.code}
         # المطابقة بالاسم جوّه الفرع: نفس الشخص متسجّل في النظامين، وتكراره عندنا معناه
@@ -142,9 +179,11 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             address = _clean(row[F_ADDR])[:240] or None
 
             if target is None:
+                svc = service_reps.get(row[F_REP])
                 target = Customer(
                     code=code, name=name, customer_type=kind,
-                    rep_id=rep.id, territory_id=terr.id, branch_id=branch.id,
+                    rep_id=rep.id, service_rep_id=svc.id if svc else None,
+                    territory_id=terr.id, branch_id=branch.id,
                     phone=phone, address=address,
                     active=row[F_ACTIVE] != "0")
                 db.add(target)
@@ -164,6 +203,10 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             if kind != TRADER and target.customer_type == TRADER:
                 target.customer_type = kind
                 made[f"اتصنّف: {kind}"] += 1
+            svc = service_reps.get(row[F_REP])
+            if svc is not None and target.service_rep_id != svc.id:
+                target.service_rep_id = svc.id
+                made["اتربط بمندوب خدمة"] += 1
 
         db.commit()
         print(f"{'الحالة':<22}{'عدد':>8}")

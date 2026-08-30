@@ -47,6 +47,13 @@ class Customer(Base):
     # ---- card fields read off their العملاء form (031) ----
     # The branch the customer belongs to. Nullable: it is the first column on their list, but an
     # existing customer recorded before the field existed is not invalid for lacking one.
+    # مندوب خدمة العملاء — غير مندوب المبيعات.
+    #
+    # الاتنين بيزوروا نفس العميل ومش نفس الراجل: واحد بيبيع له، والتاني بيعاين عنده
+    # وبياخد منه الكوبونات. النظام القديم كان بيمسك الاتنين في قاعدتين مختلفتين، فلما
+    # اتجمّعوا في كارت واحد كان لازم يبقى فيه خانتين — وإلا واحد منهم بيدهس التاني وكل
+    # تقرير مناديب بيبقى بيجمّع ناس على شغل مش بتاعهم.
+    service_rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
     email: Mapped[str | None] = mapped_column(String(160), nullable=True)
     tax_number: Mapped[str | None] = mapped_column(String(40), nullable=True)

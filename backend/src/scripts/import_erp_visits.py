@@ -20,6 +20,10 @@
   مش في الكشف — بتدخل باسم «عميل غير معروف» على المستند، لأن الزيارة حصلت والنقاط
   اتصرفت، والحذف بيخفي شغل حصل.
 
+* **المندوب من الزيارة مش افتراضي.** `SalesRepId` على الزيارة بيقول مين نزل. من غيره
+  الـ١٠٩٢٢ معاينة بيقعدوا على مندوب واحد، وتقرير «زيارات المناديب» بيرجّع صف واحد.
+  المناديب دول اتعملوا في نقل الأطراف بأسماء `svc.{id}`.
+
 * **النقاط بتتقرا مابتتحسبش.** `TotalPoint` على البند و مجموعها على المعاينة. حسابها من
   الكمية × النقطة بيدي رقم تاني لو النظام القديم عدّلها بإيده، والورقة المطبوعة عند
   العميل شايلة رقمهم.
@@ -115,6 +119,9 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             .order_by(User.id)).first() if role else None
         if rep is None:
             rep = db.scalars(select(User).order_by(User.id)).first()
+        # مناديب الخدمة اللي نقل الأطراف عملهم — اسم الدخول `svc.{رقمه في نظامهم}`.
+        svc_reps = {u.username[4:]: u for u in db.scalars(
+            select(User).where(User.username.like("svc.%"))).all()}
 
         # ---------- الأصناف والقوايم ----------
         have_types = {t.name for t in db.scalars(select(InspectionItemType)).all()}
@@ -141,9 +148,16 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
         taken = {n for (n,) in db.execute(select(Inspection.document_number)).all()}
         type_ids = {t.name: t.id for t in db.scalars(select(InspectionItemType)).all()}
 
+        by_number = {i.document_number: i for i in db.scalars(select(Inspection)).all()}
         for r in by_kind["VISIT"]:
             number = f"ERP-V-{r[V_A]}"
             if number in taken:
+                # موجودة — بس ممكن تكون دخلت على المندوب الافتراضي قبل ما المناديب يتنقلوا.
+                old_row = by_number.get(number)
+                svc = svc_reps.get(r[V_D])
+                if old_row is not None and svc is not None and old_row.rep_user_id != svc.id:
+                    old_row.rep_user_id = svc.id
+                    made["اتصلّح مندوبها"] += 1
                 continue
             when = _date(r[V_E])
             if when is None:
@@ -168,7 +182,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
                 technician_name=(tech.name[:160] if tech else None),
                 technician_phone=(tech.phone[:32] if tech and tech.phone else None),
                 visit_details=_clean(r[V_J])[:1000] or None,
-                rep_user_id=rep.id)
+                rep_user_id=(svc_reps[r[V_D]].id if r[V_D] in svc_reps else rep.id))
             db.add(insp)
             db.flush()
             taken.add(number)
