@@ -80,6 +80,13 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
 
     Every document kind ends up as: (document, party_id, line-ish facts). Doing the flattening
     once here is what lets the grouping and totalling code below be written a single time.
+
+    The row's `date` is the document's own date — `invoice_date` / `purchase_date` /
+    `return_date` — and never `created_at`, which only records when the row was written here.
+    The two are far apart for everything migrated from a5: 8,014 invoices spanning January to
+    August all carry a `created_at` of the two days the migration ran, so reading `created_at`
+    put every one of them outside every real reporting period. `created_at` stays as the
+    fallback for a document saved without a date of its own.
     """
     rows: list[dict] = []
 
@@ -92,7 +99,8 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         for ln, doc in pairs:
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
-                "date": _as_date(doc.created_at), "party_id": doc.customer_id,
+                "date": _as_date(doc.invoice_date or doc.created_at),
+                "party_id": doc.customer_id,
                 "item_id": ln.item_id, "warehouse_id": ln.location_id or doc.origin_location_id,
                 "quantity": to_qty(ln.quantity),
                 "amount": to_money(ln.line_total),
@@ -114,7 +122,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
             amount = to_money(ln.line_total) if ln.line_total is not None else ZERO
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
-                "date": _as_date(doc.created_at),
+                "date": _as_date(doc.return_date or doc.created_at),
                 "party_id": doc.customer_id,
                 "item_id": ln.item_id,
                 "warehouse_id": ln.location_id or doc.origin_location_id,
@@ -134,7 +142,8 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         for ln, doc in pairs:
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
-                "date": _as_date(doc.created_at), "party_id": doc.supplier_id,
+                "date": _as_date(doc.purchase_date or doc.created_at),
+                "party_id": doc.supplier_id,
                 "item_id": ln.item_id,
                 "warehouse_id": ln.line_location_id or doc.location_id,
                 "quantity": to_qty(ln.quantity), "amount": to_money(ln.line_total),
@@ -157,7 +166,8 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
             )
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
-                "date": _as_date(doc.created_at), "party_id": inv.supplier_id,
+                "date": _as_date(doc.return_date or doc.created_at),
+                "party_id": inv.supplier_id,
                 "item_id": ln.item_id, "warehouse_id": inv.location_id,
                 "quantity": to_qty(ln.quantity),
                 "amount": to_money(Decimal(str(unit or 0)) * Decimal(str(ln.quantity))),
