@@ -182,7 +182,7 @@ export default function CouponReceipts() {
   }, [searchQuery]);
 
   useEffect(() => {
-    api.get('/api/v1/customers').then((r) => setCustomers(r.data || [])).catch(console.error);
+    api.get('/api/v1/customers/options', { params: { limit: 2000 } }).then((r) => setCustomers(r.data || [])).catch(console.error);
   }, []);
 
   const customerName = (id: number | null) =>

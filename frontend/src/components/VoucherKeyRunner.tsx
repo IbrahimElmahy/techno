@@ -97,7 +97,7 @@ export function useRunnerWorld(enabled = true): [RunnerWorld, () => void] {
     if (!enabled) return;
     Promise.all([
       api.get('/api/v1/treasuries').catch(() => ({ data: [] })),
-      api.get('/api/v1/customers').catch(() => ({ data: [] })),
+      api.get('/api/v1/customers/options', { params: { limit: 2000 } }).catch(() => ({ data: [] })),
       api.get('/api/v1/suppliers').catch(() => ({ data: [] })),
       api.get('/api/v1/users', { params: { role: 'rep' } }).catch(() => ({ data: [] })),
       api.get('/api/v1/accounts').catch(() => ({ data: [] })),

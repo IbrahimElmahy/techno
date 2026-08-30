@@ -122,7 +122,7 @@ export default function Orders() {
   useEffect(() => {
     load();
     Promise.all([
-      api.get('/api/v1/items'), api.get('/api/v1/customers'),
+      api.get('/api/v1/items'), api.get('/api/v1/customers/options', { params: { limit: 2000 } }),
       api.get('/api/v1/suppliers'),
     ]).then(([i, c, s]) => {
       setItems(i.data || []); setCustomers(c.data || []);

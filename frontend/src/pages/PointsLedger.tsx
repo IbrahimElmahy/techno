@@ -87,7 +87,7 @@ export default function PointsLedger() {
   };
 
   useEffect(() => {
-    api.get('/api/v1/customers').then((r) => setCustomers(r.data || [])).catch(() => {});
+    api.get('/api/v1/customers/options', { params: { limit: 2000 } }).then((r) => setCustomers(r.data || [])).catch(() => {});
   }, []);
 
   // تغيير أي فلتر بيرجّع لأول صفحة: الصفحة ٧ من نتيجة قديمة على فلتر جديد بتطلع فاضية،

@@ -280,7 +280,7 @@ export default function Returns() {
   const loadLookups = async () => {
     try {
       const [custRes, prodRes, whRes, ptRes, repRes, empRes] = await Promise.all([
-        api.get('/api/v1/customers'),
+        api.get('/api/v1/customers/options', { params: { limit: 2000 } }),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),

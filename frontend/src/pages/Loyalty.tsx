@@ -127,7 +127,7 @@ export default function Loyalty() {
 
   const loadLookups = async () => {
     try {
-      const res = await api.get('/api/v1/customers');
+      const res = await api.get('/api/v1/customers/options', { params: { limit: 2000 } });
       setCustomers(res.data);
     } catch (err) {
       console.error(err);

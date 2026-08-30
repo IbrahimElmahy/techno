@@ -123,7 +123,7 @@ export default function OpsReports() {
   const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
-    Promise.all([api.get('/api/v1/customers'), api.get('/api/v1/users')])
+    Promise.all([api.get('/api/v1/customers/options', { params: { limit: 2000 } }), api.get('/api/v1/users')])
       .then(([c, u]) => { setCustomers(c.data || []); setUsers(u.data || []); })
       .catch(console.error);
   }, []);

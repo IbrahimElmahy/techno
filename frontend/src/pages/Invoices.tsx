@@ -535,7 +535,7 @@ export default function Invoices() {
     try {
       const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes,
         brRes] = await Promise.all([
-        api.get('/api/v1/customers'),
+        api.get('/api/v1/customers/options', { params: { limit: 2000 } }),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
@@ -1109,7 +1109,19 @@ export default function Invoices() {
    * «نوع الفاتورة» سؤال عن حساب العميل، فمابيتسألش غير لما يكون عنده أكتر من حساب فعلاً.
    * العميل العادي عنده واحد بس، والدورة بتخلص عند المخزن وتفتح المستند على طول.
    */
-  const afterWarehouseStep = (): null | 'family' => (families.length > 1 ? 'family' : null);
+  const afterWarehouseStep = (): null | 'family' => 'family';
+
+  /** خيارات باب «نوع الفاتورة».
+   *
+   *  العميل المقسوم (أكتر من حساب) بيتسأل عن حساباته هو — الاختيار بيحدد الرصيد اللي
+   *  هيتحرّك. والعميل العادي بيتسأل عن خط المنتجات (أبيض/بولي) وده بيتكتب على المستند
+   *  بس: حسابه واحد ومافيش رصيد تاني يروح له. الفرق ده هو اللي بيخلّي السؤال ينفع
+   *  يتسأل للاتنين من غير ما فاتورة تترفض بعد ما تتكتب. */
+  const familyChoices = (): { value: string; label: string }[] => (
+    families.length > 1
+      ? families.map((a) => ({ value: a.family as string, label: a.family as string }))
+      : FAMILY_OPTIONS
+  );
 
   /** The warehouse a line actually draws from: its own, else the document's. */
   const lineWarehouse = (l: SaleLineItem): number | null => l.warehouse_id ?? docWarehouseId;
@@ -2616,7 +2628,7 @@ export default function Invoices() {
           * `onCustomerChange`. سؤال مالوش غير إجابة واحدة مش سؤال.
           */}
         <TabModal
-          open={newStep === 'family' && families.length > 1 && !viewOnly && !editingInvoice}
+          open={newStep === 'family' && !viewOnly && !editingInvoice}
           title="الفاتورة على أنهي حساب؟"
           okText="ابدأ الفاتورة" cancelText="رجوع"
           okButtonProps={{ disabled: !invoiceFamily }}
@@ -2637,7 +2649,7 @@ export default function Invoices() {
               const keys = ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'];
               if (keys.includes(e.key)) {
                 e.preventDefault();
-                const list = families.map((a) => a.family as string);
+                const list = familyChoices().map((o) => o.value);
                 const at = list.indexOf(invoiceFamily ?? '');
                 const step = (e.key === 'ArrowLeft' || e.key === 'ArrowDown') ? 1 : -1;
                 setInvoiceFamily(at < 0 ? list[0] : list[(at + step + list.length) % list.length]);
@@ -2654,18 +2666,26 @@ export default function Invoices() {
               size="large"
               value={invoiceFamily ?? ''}
               onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
-              options={families.map((a) => ({
-                value: a.family as string,
-                label: (
-                  <span style={{ fontWeight: 700 }}>
-                    {a.family}
-                    <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
-                                   fontWeight: 400 }}>
-                      ({money(Number(a.balance || 0))})
+              options={familyChoices().map((o) => {
+                // الرصيد بيظهر جنب الاسم للعميل المقسوم بس — عنده حساب لكل خط ورصيده
+                // بيفرق. العميل العادي حسابه واحد، فرصيده جنب الخيارين هيبقى نفس
+                // الرقم مرتين وبيوحي إن الاختيار بيحرّك حاجة وهو مش بيحركها.
+                const acc = families.find((a) => a.family === o.value);
+                return {
+                  value: o.value,
+                  label: (
+                    <span style={{ fontWeight: 700 }}>
+                      {o.label}
+                      {families.length > 1 && acc ? (
+                        <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
+                                       fontWeight: 400 }}>
+                          ({money(Number(acc.balance || 0))})
+                        </span>
+                      ) : null}
                     </span>
-                  </span>
-                ),
-              }))}
+                  ),
+                };
+              })}
             />
             <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
               بيتغيّر من خانة «نوع الفاتورة» في الترويسة في أي وقت.

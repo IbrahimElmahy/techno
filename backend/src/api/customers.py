@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -251,6 +251,58 @@ def customers_summary(
         debtors_count=int(row.debtors_count or 0),
         total_debt=Decimal(str(row.total_debt or 0)),
     )
+
+
+class CustomerOptionOut(BaseModel):
+    """العميل زي ما منتقي الاسم محتاجه — مش كارته كله.
+
+    الشاشات اللي فيها اختيار عميل (فاتورة بيع، مردود، أذون، استلام كوبونات) كانت
+    بتنده `/customers` من غير ترقيم عشان تملا القايمة: ١٫٦٩ ميجا و٢ ثانية على السيرفر
+    نفسه، وأضعافها عبر النفق — كل ده عشان اسم في قايمة منسدلة. الشاشة بتستعمل خمس
+    حقول من الكارت، والباقي بيتنقل ويترمي.
+    """
+
+    id: int
+    code: str
+    name: str
+    phone: str | None = None
+    customer_type: str | None = None
+    rep_id: int | None = None
+    default_price_tier: str | None = None
+    discount_pct: Decimal | None = None
+
+
+@router.get("/options", response_model=list[CustomerOptionOut])
+def customer_options(
+    q: str | None = Query(default=None, description="بحث بالاسم أو الكود أو التليفون"),
+    customer_type: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=2000),
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
+    db: Session = Depends(get_db),
+) -> list[CustomerOptionOut]:
+    """قايمة مختصرة للاختيار — الأعمدة اللي المنتقي بيعرضها وبس."""
+    # نفس عزل الفروع بتاع القايمة الكاملة — المنتقي مايوريش عملاء الفرع التاني.
+    stmt = _scope_filter(
+        select(Customer.id, Customer.code, Customer.name, Customer.phone,
+               Customer.customer_type, Customer.rep_id,
+               Customer.default_price_tier, Customer.discount_pct),
+        current).where(Customer.active.is_(True))
+    if customer_type:
+        stmt = stmt.where(Customer.customer_type == customer_type)
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(or_(Customer.name.ilike(like), Customer.code.ilike(like),
+                              Customer.phone.ilike(like)))
+    rows = db.execute(stmt.order_by(Customer.name).limit(limit)).all()
+    return [
+        CustomerOptionOut(
+            id=r.id, code=r.code, name=r.name, phone=r.phone,
+            customer_type=getattr(r.customer_type, "value", r.customer_type),
+            rep_id=r.rep_id,
+            default_price_tier=getattr(r.default_price_tier, "value", r.default_price_tier),
+            discount_pct=r.discount_pct)
+        for r in rows
+    ]
 
 
 @router.get("", response_model=None)
