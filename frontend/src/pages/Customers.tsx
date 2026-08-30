@@ -107,6 +107,12 @@ const CustomerBalance = ({ value }: { value?: string | null }) => {
 export default function Customers() {
   const { options: typeOptions } = useLookup('customer_type');
   const typeLabels = labelMap(typeOptions);
+  interface CustomersSummary {
+    total_count: number;
+    debtors_count: number;
+    total_debt: number;
+  }
+
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [reps, setReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
@@ -116,22 +122,57 @@ export default function Customers() {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');           // typed text, applied on Enter/button
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+  const [summaryData, setSummaryData] = useState<CustomersSummary>({
+    total_count: 0,
+    debtors_count: 0,
+    total_debt: 0,
+  });
   const navigate = useNavigate();
 
   const [form] = Form.useForm();
   const { user: currentUser } = useAuth();
 
+  const loadSummary = async (activeFilters = filters) => {
+    try {
+      const params: any = {};
+      Object.entries(activeFilters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') params[k] = v;
+      });
+      const res = await api.get<CustomersSummary>('/api/v1/customers/summary', { params });
+      setSummaryData({
+        total_count: Number(res.data.total_count || 0),
+        debtors_count: Number(res.data.debtors_count || 0),
+        total_debt: Number(res.data.total_debt || 0),
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // Filtering happens on the server so it covers ALL customers, not just the loaded page.
-  const fetchCustomers = async (override?: Filters) => {
+  const fetchCustomers = async (override?: Filters, targetPage = page, targetPageSize = pageSize) => {
     const active = override ?? filters;
     setLoading(true);
     try {
-      const params: any = {};
+      const params: any = {
+        limit: targetPageSize,
+        offset: (targetPage - 1) * targetPageSize,
+      };
       Object.entries(active).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
       });
       const res = await api.get('/api/v1/customers', { params });
-      setCustomers(res.data);
+      if (Array.isArray(res.data)) {
+        setCustomers(res.data);
+        const headerTotal = res.headers['x-total-count'];
+        setTotalCount(headerTotal ? Number(headerTotal) : res.data.length);
+      } else {
+        setCustomers(res.data.rows || []);
+        setTotalCount(Number(res.data.total || 0));
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -142,7 +183,9 @@ export default function Customers() {
   const setFilter = (key: keyof Filters, value: any) => {
     const next = { ...filters, [key]: value };
     setFilters(next);
-    fetchCustomers(next);
+    setPage(1);
+    fetchCustomers(next, 1, pageSize);
+    loadSummary(next);
   };
 
   const applySearch = () => setFilter('q', search.trim() || undefined);
@@ -150,15 +193,16 @@ export default function Customers() {
   const resetFilters = () => {
     setSearch('');
     setFilters({});
-    fetchCustomers({});
+    setPage(1);
+    fetchCustomers({}, 1, pageSize);
+    loadSummary({});
   };
 
-  // Live summary of whatever the current filter returned.
-  const summary = useMemo(() => {
-    const total = customers.reduce((s, c) => s + Number(c.balance || 0), 0);
-    const debtors = customers.filter((c) => Number(c.balance || 0) > 0).length;
-    return { count: customers.length, total, debtors };
-  }, [customers]);
+  const handlePageChange = (newPage: number, newPageSize: number) => {
+    setPage(newPage);
+    setPageSize(newPageSize);
+    fetchCustomers(filters, newPage, newPageSize);
+  };
 
   const fetchLookups = async () => {
     try {
@@ -179,6 +223,7 @@ export default function Customers() {
 
   useEffect(() => {
     fetchCustomers();
+    loadSummary();
     fetchLookups();
   }, []);
 
@@ -483,16 +528,16 @@ export default function Customers() {
 
         <Row gutter={12} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="عدد العملاء الظاهرين" value={summary.count} /></Card>
+            <Card size="small"><Statistic title="عدد العملاء" value={summaryData.total_count} /></Card>
           </Col>
           <Col xs={24} md={8}>
             <Card size="small">
-              <Statistic title="إجمالي المديونية" value={money(summary.total)} suffix="ج.م"
-                valueStyle={{ color: summary.total > 0 ? '#cf1322' : undefined }} />
+              <Statistic title="إجمالي المديونية" value={money(summaryData.total_debt)} suffix="ج.م"
+                valueStyle={{ color: summaryData.total_debt > 0 ? '#cf1322' : undefined }} />
             </Card>
           </Col>
           <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="عملاء عليهم مديونية" value={summary.debtors} /></Card>
+            <Card size="small"><Statistic title="عملاء عليهم مديونية" value={summaryData.debtors_count} /></Card>
           </Col>
         </Row>
 
@@ -504,7 +549,15 @@ export default function Customers() {
           size="middle"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}` }}
+          pagination={{
+            current: page,
+            pageSize,
+            total: totalCount,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            onChange: handlePageChange,
+            showTotal: (t) => `الإجمالي: ${t}`,
+          }}
           // The whole row opens the customer file — no dedicated button needed.
           onRow={(record) => ({
             onClick: () => navigate(`/customers/${record.id}`),

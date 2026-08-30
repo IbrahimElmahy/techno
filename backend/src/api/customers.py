@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -180,32 +180,123 @@ def _scope_filter(stmt, current: CurrentUser):
     return stmt
 
 
-@router.get("", response_model=list[CustomerOut])
-def list_customers(
-    rep_id: int | None = None,
-    territory_id: int | None = None,
-    q: str | None = None,
-    customer_type: str | None = None,
-    governorate_id: int | None = None,
-    active: bool | None = None,
-    balance_filter: str | None = None,  # all | debtors | settled | credit
+class PaginatedCustomersOut(BaseModel):
+    rows: list[CustomerOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class CustomersSummaryOut(BaseModel):
+    total_count: int
+    debtors_count: int
+    total_debt: Decimal
+
+
+@router.get("/summary", response_model=CustomersSummaryOut)
+def customers_summary(
+    rep_id: int | None = Query(None),
+    territory_id: int | None = Query(None),
+    q: str | None = Query(None),
+    customer_type: str | None = Query(None),
+    governorate_id: int | None = Query(None),
+    active: bool | None = Query(None),
+    balance_filter: str | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
-) -> list[CustomerOut]:
-    """List customers with search + filters, each carrying its receivable balance.
+) -> CustomersSummaryOut:
+    from sqlalchemy import case, func
+    from src.models.ledger import Account, LedgerLine
 
-    `q` matches code/name/phone/markaz/address partially. Balances come from ONE grouped
-    query, so filtering by debt costs the same as listing.
-    """
+    base_stmt = customer_profile_service.apply_filters(
+        _scope_filter(select(Customer), current),
+        q=q, customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
+        governorate_id=governorate_id, active=active,
+    )
+    signed = case(
+        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        else_=-LedgerLine.amount,
+    )
+    bal_subq = (
+        select(CustomerAccount.customer_id, func.coalesce(func.sum(signed), 0).label("balance"))
+        .join(Account, Account.id == CustomerAccount.account_id)
+        .join(LedgerLine, LedgerLine.account_id == Account.id, isouter=True)
+        .group_by(CustomerAccount.customer_id)
+        .subquery()
+    )
+    cust_subq = base_stmt.order_by(None).subquery()
+    joined = (
+        select(
+            cust_subq.c.id,
+            func.coalesce(bal_subq.c.balance, 0).label("balance")
+        )
+        .outerjoin(bal_subq, bal_subq.c.customer_id == cust_subq.c.id)
+    )
+    if balance_filter == "debtors":
+        joined = joined.where(func.coalesce(bal_subq.c.balance, 0) > 0)
+    elif balance_filter == "settled":
+        joined = joined.where(func.coalesce(bal_subq.c.balance, 0) == 0)
+    elif balance_filter == "credit":
+        joined = joined.where(func.coalesce(bal_subq.c.balance, 0) < 0)
+
+    j_subq = joined.subquery()
+    sum_stmt = select(
+        func.count(j_subq.c.id).label("total_count"),
+        func.coalesce(func.sum(case((j_subq.c.balance > 0, 1), else_=0)), 0).label("debtors_count"),
+        func.coalesce(func.sum(case((j_subq.c.balance > 0, j_subq.c.balance), else_=0)), Decimal("0.00")).label("total_debt"),
+    )
+    row = db.execute(sum_stmt).one()
+    return CustomersSummaryOut(
+        total_count=int(row.total_count or 0),
+        debtors_count=int(row.debtors_count or 0),
+        total_debt=Decimal(str(row.total_debt or 0)),
+    )
+
+
+@router.get("", response_model=None)
+def list_customers(
+    response: Response,
+    rep_id: int | None = Query(None),
+    territory_id: int | None = Query(None),
+    q: str | None = Query(None),
+    customer_type: str | None = Query(None),
+    governorate_id: int | None = Query(None),
+    active: bool | None = Query(None),
+    balance_filter: str | None = Query(None),  # all | debtors | settled | credit
+    limit: int | None = Query(None),
+    offset: int = Query(0),
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
+    db: Session = Depends(get_db),
+):
+    """List customers with search + filters, each carrying its receivable balance."""
     stmt = customer_profile_service.apply_filters(
         _scope_filter(select(Customer), current),
         q=q, customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
     )
-    rows = list(db.scalars(stmt.order_by(Customer.id.desc())).all())
-    balances = customer_profile_service.bulk_balances(db, [c.id for c in rows])
-    rows = customer_profile_service.filter_by_balance(rows, balances, balance_filter)
-    # الأرقام الإضافية للصفحة كلها في نداء واحد بدل نداء لكل عميل.
+
+    if balance_filter and balance_filter != "all":
+        # Need balances before slicing
+        all_rows = list(db.scalars(stmt.order_by(Customer.id.desc())).all())
+        balances = customer_profile_service.bulk_balances(db, [c.id for c in all_rows])
+        filtered_rows = customer_profile_service.filter_by_balance(all_rows, balances, balance_filter)
+        total = len(filtered_rows)
+        if limit is not None:
+            clamped_limit = min(limit, 500)
+            rows = filtered_rows[offset:offset + clamped_limit]
+        else:
+            rows = filtered_rows
+    else:
+        from sqlalchemy import func
+        total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
+        p_stmt = stmt.order_by(Customer.id.desc())
+        if limit is not None:
+            clamped_limit = min(limit, 500)
+            p_stmt = p_stmt.limit(clamped_limit).offset(offset)
+        rows = list(db.scalars(p_stmt).all())
+        balances = customer_profile_service.bulk_balances(db, [c.id for c in rows])
+
+    # الأرقام الإضافية للصفحة فقط
     phones = contact_service.bulk_phone_values(
         db, PhoneOwner.customer, [c.id for c in rows])
     out = []
@@ -213,6 +304,10 @@ def list_customers(
         item = _out(c, db, phones)
         item.balance = balances.get(c.id, Decimal("0.00"))
         out.append(item)
+
+    response.headers["X-Total-Count"] = str(total)
+    if limit is not None:
+        return PaginatedCustomersOut(rows=out, total=total, limit=min(limit, 500), offset=offset)
     return out
 
 
