@@ -30,6 +30,70 @@ class CustomerError(Exception):
     """Invalid customer data (e.g. a plumber assigned to a non after-sales rep)."""
 
 
+def open_account(db: Session, customer: Customer, *, family: str | None = None) -> CustomerAccount:
+    """يفتح حساب ذمم للعميل ده ويربطه بيه.
+
+    Receivable account is a normal-debit ledger account (assets increase on debit). It belongs to
+    the customer's branch (024) so per-branch receivables aggregate correctly: his own branch
+    first, then his territory's, then the main branch.
+
+    It is opened with no name and no code **on purpose**. A per-owner account is labelled from the
+    link table at read time (`chart_service.bulk_owner_names`) and homed under «العملاء» by
+    `chart_service.effective_parent_id`, so a name copied in here would drift the first time
+    somebody fixed a spelling on the customer.
+
+    Written once, here, because it used to live inline in `create_customer` — which meant a
+    customer who arrived any other way (an import, a merge, the a5 migration) got no account at
+    all, and every sale, voucher and statement for him refused: «العميل ده مالوش حساب ذمم».
+    """
+    from src.models.org import Territory
+    from src.services import org_service
+
+    territory = db.get(Territory, customer.territory_id) if customer.territory_id else None
+    branch_id = org_service.resolve_branch_id(
+        db,
+        customer.branch_id or (territory.branch_id if territory is not None else None),
+    )
+    account = Account(
+        account_type=AccountType.customer_receivable,
+        owner_ref=None,
+        normal_side=Direction.debit,
+        branch_id=branch_id,
+    )
+    db.add(account)
+    db.flush()
+    cust_account = CustomerAccount(
+        customer_id=customer.id, account_id=account.id, family=family)
+    db.add(cust_account)
+    db.flush()
+    account.owner_ref = cust_account.id
+    db.flush()
+    return cust_account
+
+
+def ensure_account(db: Session, customer: Customer) -> tuple[CustomerAccount | None, bool]:
+    """حساب ذمم العميل — الموجود، أو واحد جديد لو مالوش. الـ`bool` معناه «اتعمل دلوقتي».
+
+    Idempotent by construction, because `ensure_customer_accounts` re-runs it over the whole file
+    and a second run must not open anybody a second account.
+
+    Finding is delegated to `customer_merge_service.receivable_account`, which is where the rule
+    already lives: one account → that one; several with a family-less one → that one; several
+    without → refuse, since there is no honest answer. The refusal is not a problem here — a
+    customer who holds several accounts is precisely one who needs nothing opened — so it comes
+    back as `(None, False)`: nothing created, and «اسأل عن الحساب بالعائلة» for whoever posts.
+    """
+    from src.services import customer_merge_service
+
+    try:
+        acc = customer_merge_service.receivable_account(db, customer.id)
+    except customer_merge_service.MergeError:
+        return None, False
+    if acc is not None:
+        return acc, False
+    return open_account(db, customer), True
+
+
 # (v4) Customer types whose responsible rep must be after-sales (customer-service) staff.
 AFTER_SALES_TYPES = {"plumber"}
 
@@ -82,28 +146,7 @@ def create_customer(
     db.add(customer)
     db.flush()
 
-    # Receivable account is a normal-debit ledger account (assets increase on debit).
-    # It belongs to the customer's branch (024 — via his territory), so per-branch receivables
-    # aggregate correctly; falls back to the main branch when the territory has none.
-    from src.models.org import Territory
-    from src.services import org_service
-
-    territory = db.get(Territory, territory_id)
-    branch_id = org_service.resolve_branch_id(
-        db, territory.branch_id if territory is not None else None)
-    account = Account(
-        account_type=AccountType.customer_receivable,
-        owner_ref=None,
-        normal_side=Direction.debit,
-        branch_id=branch_id,
-    )
-    db.add(account)
-    db.flush()
-    cust_account = CustomerAccount(customer_id=customer.id, account_id=account.id)
-    db.add(cust_account)
-    db.flush()
-    account.owner_ref = cust_account.id
-    db.flush()
+    open_account(db, customer)
 
     audit_service.record(
         db,

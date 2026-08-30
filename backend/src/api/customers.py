@@ -106,9 +106,14 @@ class CustomerReassign(BaseModel):
 
 
 class CustomerAccountOut(BaseModel):
-    id: int
+    # NULL على العميل اللي لسه مافتحلوش حساب ذمم — رصيده صفر، وده مش خطأ.
+    #
+    # A customer who has never moved money has no receivable account, and the honest answer to
+    # «what does he owe» is «لا شيء», not a 404. NULL here says «مافيش حساب مفتوح» while the
+    # balance still reads 0, so the panel prints a zero instead of a red toast.
+    id: int | None = None
     customer_id: int
-    account_id: int
+    account_id: int | None = None
     balance: Decimal
     balance_derived: bool = True
     # (031) Which product line this account is for. NULL on a customer who has only ever had one.
@@ -490,10 +495,14 @@ def customer_accounts(
     db: Session = Depends(get_db),
 ) -> CustomerAccountsOut:
     """حسابات العميل — فرع لكل عيلة منتجات، وبعدهم الإجمالي."""
+    # 404 لغاية دلوقتي كانت بتتقال على حالتين مختلفتين: «العميل ده مش موجود» و«العميل موجود
+    # بس لسه ماتعاملش مالياً». التانية دي حالة عادية — ٢٬٤١٩ عميل من ٣٬٨٨٤ — وكانت بتطلّع
+    # «Account not found» أحمر فوق كارت عميل سليم تماماً. فبقى: العميل المش موجود بس هو اللي
+    # بياخد 404، واللي مالوش حساب بياخد قايمة فاضية وإجمالي صفر، والشاشة تقول «مافيش حركة».
+    if db.get(Customer, customer_id) is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
     rows = db.scalars(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id)).all()
-    if not rows:
-        raise HTTPException(404, {"code": "not_found", "message": "Account not found"})
     out = [CustomerAccountOut(
         id=a.id, customer_id=a.customer_id, account_id=a.account_id,
         balance=ledger_service.balance_of(db, a.account_id),
@@ -514,6 +523,8 @@ def customer_account(
 ) -> CustomerAccountOut:
     # The customer's original, family-less account. Scoped rather than «whichever comes first»:
     # once a customer holds two, an unscoped query answers with an arbitrary one of them.
+    if db.get(Customer, customer_id) is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
     acc = db.scalar(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id,
         CustomerAccount.family.is_(None)))
@@ -526,7 +537,10 @@ def customer_account(
             raise HTTPException(409, {
                 "code": "multiple_accounts",
                 "message": "العميل ده عنده حساب لكل عيلة — استخدم /accounts"})
-        raise HTTPException(404, {"code": "not_found", "message": "Account not found"})
+        # عميل موجود ومالوش حساب ذمم = ماتعاملش مالياً لسه = رصيده صفر. الـpanel اللي تحت
+        # الفاتورة بيقرا `balance` بس، وكان بياخد 404 فيطلّع توست أحمر على عميل سليم.
+        return CustomerAccountOut(
+            id=None, customer_id=customer_id, account_id=None, balance=Decimal("0"))
     return CustomerAccountOut(
         id=acc.id, customer_id=acc.customer_id, account_id=acc.account_id,
         balance=ledger_service.balance_of(db, acc.account_id),
