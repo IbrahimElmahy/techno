@@ -32,6 +32,7 @@ import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import WarehouseGate from '../components/WarehouseGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
@@ -157,7 +158,7 @@ export default function Returns() {
   const [returnFamily, setReturnFamily] = useState<string | null>(null);
   const families = familyAccounts.filter((a) => a.family);
 
-  const [newStep, setNewStep] = useState<null | 'party'>(null);
+  const [newStep, setNewStep] = useState<null | 'party' | 'warehouse'>(null);
   // Also opened from inside the document to change the party mid-return, exactly as the sale does.
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
@@ -372,16 +373,18 @@ export default function Returns() {
   };
 
   /** الباب التاني: العميل. Mid-return this only swaps the party; during the opening run it is the
-   *  second door and hands over to the page — the same sequence, in the same order, as the sale. */
+   *  second door and hands over to the warehouse door — the same sequence, in the same order, as the sale. */
   const handlePartyPicked = (picked: Party) => {
     setPartyPickerOpen(false);
-    if (newStep === 'party') { setNewStep(null); setCreateVisible(true); }
     createForm.setFieldsValue({ customer_id: picked.id });
     // A customer created inside the picker is not in the loaded list yet, so the field would
     // render a bare id until the next reload.
     setCustomers((prev) => (prev.some((c: any) => c.id === picked.id)
       ? prev : [...prev, { id: picked.id, name: picked.name } as any]));
     onCustomerChange(picked.id);
+    if (newStep === 'party') {
+      setNewStep('warehouse');
+    }
   };
 
   /** Which store a rep works out of. A rep IS a user; the link lives on their employee record. */
@@ -1018,19 +1021,32 @@ export default function Returns() {
     message.info('المرتجع مفتوح الآن للتعديل');
   };
 
-  const partyModal = (
-    <PartyPickerModal
-      open={newStep === 'party' || partyPickerOpen} kind="customer"
-      kinds={['customer', 'supplier']}
-      date={returnDate} onDateChange={(d) => setReturnDate(d)}
-      onPick={handlePartyPicked}
-      onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
+  const doors = (
+    <>
+      <PartyPickerModal
+        open={newStep === 'party' || partyPickerOpen} kind="customer"
+        kinds={['customer', 'supplier']}
+        date={returnDate} onDateChange={(d) => setReturnDate(d)}
+        onPick={handlePartyPicked}
+        onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
+
+      <WarehouseGate
+        open={newStep === 'warehouse' && !viewOnly && !editingSourceId}
+        title="المرتجع ده هيدخل أنهي مخزن؟"
+        subtitle="ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن»."
+        value={docWarehouseId}
+        onChange={(v) => setDocWarehouseId(v as number)}
+        warehouses={warehouses}
+        onCancel={() => { setDocWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
+        onOk={() => { setNewStep(null); setCreateVisible(true); }}
+      />
+    </>
   );
 
   if (createVisible) {
     return (
       <div>
-        {partyModal}
+        {doors}
         <Card title={(
           <Space>
             <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
@@ -1643,7 +1659,7 @@ export default function Returns() {
         />
       </Card>
 
-      {partyModal}
+      {doors}
     </div>
   );
 }

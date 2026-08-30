@@ -29,6 +29,7 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import WarehouseGate from '../components/WarehouseGate';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -238,7 +239,7 @@ export default function Purchases() {
   // The sale opens as a run of doors — التاريخ, then the party, then the page. The purchase is the
   // same document from the other side, so it opens the same way. No coupons and no points: those
   // are things a SALE hands out, and a purchase has neither to give.
-  const [newStep, setNewStep] = useState<null | 'party'>(null);
+  const [newStep, setNewStep] = useState<null | 'party' | 'warehouse'>(null);
   const [purchaseDate, setPurchaseDate] = useState<Dayjs>(dayjs());
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   // The picker window, so a line is added by typing rather than by hunting a dropdown — the same
@@ -693,6 +694,7 @@ export default function Purchases() {
           if (!p && selected?.sale_price) p = parseFloat(selected.sale_price);
           updatedItem.unit_price = p;
           updatedItem.unit = null;
+          updatedItem.warehouse_id = updatedItem.warehouse_id ?? stickyWarehouseId ?? lineWarehouses[0]?.id ?? null;
           if (value) fetchUnits(value);
         }
         return updatedItem;
@@ -918,7 +920,6 @@ export default function Purchases() {
    */
   const editPosted = async (det: PurchaseDetail) => {
     setEditingId(det.id);
-    // Refill from what the invoice actually held, line by line.
     form.setFieldsValue({
       supplier_id: det.supplier_id,
       warehouse_id: det.location_id ?? undefined,
@@ -931,30 +932,35 @@ export default function Purchases() {
       quantity: Number(l.quantity) || null,
       unit_price: Number(l.unit_price) || 0,
       unit: l.unit ?? null,
-      // The discount is a fact about the deal, so reopening has to bring it back — rebuilding the
-      // line without it would quietly re-price the invoice on save.
-      // بيرجع كله في «المتغيّر»: اللي اتخزّن رقم واحد، والتخمين إن جزء منه ثابت
-      // كان هيقول على المورد اتفاق ماقالهوش.
       discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
       fixed_discount_pct: null,
       warehouse_id: l.line_location_id ?? det.location_id ?? null,
     })));
-    // الفاتورة اللي بتتفتح للتعديل بتيجي بمخزنها — فالسطر الجاي يبدأ عليه مش على فاضي.
     setStickyWarehouseId(
       ((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
-    // وحدات كل صنف على الفاتورة — من غيرها خانة الوحدة بتفضل من غير خيارات لحد ما حد يفتحها.
     [...new Set((det.lines || []).map((l: any) => l.item_id))]
       .forEach((id) => fetchUnits(id as number));
     setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
     setDetail(null);
-    // وبتفتح شاشة الكتابة فعلاً.
-    //
-    // كانت ناقصة: العكس اتشال من الفتح، وكان هو اللي — عن طريق `openDetail` — بيرفع
-    // `createVisible`. فلما اتشال، الشاشة كانت بتتملّى في الخلفية والسجل فاضل قدامك، فالضغطة
-    // على «عرض» بتلف وماتوديش مكان.
     setCreateVisible(true);
+  };
+
+  const handleSaveAndPost = async () => {
+    await form.validateFields();
+    if (purchaseItems.filter((i) => i.item_id !== null).length === 0) {
+      message.error('يرجى إضافة صنف واحد على الأقل!');
+      return;
+    }
+    setSubmitLoading(true);
+    try {
+      await handleSubmit(form.getFieldsValue());
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر ترحيل فاتورة الشراء');
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   const handleSubmit = async (values: any) => {
@@ -969,8 +975,6 @@ export default function Purchases() {
       message.error('يرجى إضافة صنف واحد صالح على الأقل!');
       return;
     }
-    // مخزن المستند بقى مخزن أول سطر، فسطر من غير مخزن مالوش مكان ينزل فيه. الرفض بيسمّي
-    // الصنف عشان اللي بيقرا يلاقيه في فاتورة فيها خمستاشر سطر.
     const homeless = validLines.find((l) => l.warehouse_id == null);
     if (homeless) {
       message.error(`«${itemName(homeless.item_id as number)}»: اختار مخزن الاستلام.`);
@@ -1054,46 +1058,25 @@ export default function Purchases() {
   };
 
   /** الباب التاني: المورد. Mid-document this only swaps the party; during the opening run it is
-   *  the second door and hands over to the page — the same order the sale opens in. */
+   *  the second door and hands over to the warehouse door — the same order the sale opens in. */
   const handlePartyPicked = (picked: Party) => {
     setPartyPickerOpen(false);
-    // بيانات المورد بتتعرض على الفاتورة — العنوان والتليفون والرصيد الحالي. كانوا بيتشافوا في
-    // شاشة المورد بس، فاللي بيكتب فاتورة ومحتاج يتأكد إنه المورد الصح كان بيسيب الشاشة.
     setParty(picked);
-    // الباب الأخير بيسلّم للصفحة نفسها — التاريخ، وبعده المورد، وبعده الفاتورة بتفتح.
-    if (newStep === 'party') { setNewStep(null); setCreateVisible(true); }
     form.setFieldsValue({ supplier_id: picked.id });
-    // A supplier created inside the picker is not in the loaded list yet, so the field would show
-    // a bare id until the next reload.
     setSuppliers((prev) => (prev.some((x) => x.id === picked.id)
       ? prev : [...prev, { id: picked.id, name: picked.name, code: '' } as any]));
+    if (newStep === 'party') {
+      setNewStep('warehouse');
+    }
   };
 
-  /** A picked product becomes a line, and the caret lands in its quantity — so the next thing
-   *  typed is the number, not a hunt for the box. Same loop as the sale and the return. */
-  /** الصنف اللي على الفاتورة بالفعل بتزيد كميته بدل ما يتكرّر سطر — زي شاشة البيع بالظبط. */
-  /**
-   * يضيف صنف للفاتورة — في تحديث واحد بيقرا السطور اللي موجودة فعلاً.
-   *
-   * كانت بتتعمل على مرحلتين: سطر فاضي يتضاف، وبعدين `handleItemChange` تحطّ الصنف جوّاه بـ
-   * `setTimeout`. والتانية كانت بتبني المصفوفة من `purchaseItems` بتاعة الرندر اللي الدالة اتعرّفت فيه —
-   * مفهاش السطر اللي لسه اتضاف — فكانت بتكتب فوقه وتشيله.
-   *
-   * الصنف الأول كان بيعدّي لأنه بينزل في السطر الفاضي الموجود من بدري، فمافيش سطر بيتضاف والنسختين
-   * بيطلعوا واحد. والتاني كان بيختفي. وعشان كده الفاتورة كانت مش بتقبل أكتر من صنف.
-   *
-   * دلوقتي الإضافة والتعبية حاجة واحدة جوّا `setPurchaseItems`، فاللوب اللي بيضيف عشرة أصناف مرة
-   * واحدة بيشتغل برضه — كل دورة بتبني على اللي قبلها مش على اللي كان موجود قبل اللوب.
-   */
+  /** A picked product becomes a line, and the caret lands in its quantity. */
   const addProductById = async (itemId: number) => {
     if (!itemId) return;
-    // مافيش مخزن للشحنة لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
-    if (stickyWarehouseId === null) {
-      setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
-      setPendingWarehouse((prev) => prev ?? lineWarehouses[0]?.id ?? null);
-      return;
+    const wh = stickyWarehouseId ?? lineWarehouses[0]?.id;
+    if (wh) {
+      await addProductByIdWith(itemId, wh);
     }
-    await addProductByIdWith(itemId, stickyWarehouseId);
   };
 
   /**
@@ -1323,7 +1306,7 @@ export default function Purchases() {
                   onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={7}>
               <Form.Item name="supplier_id" label="المورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
                 style={{ marginBottom: 8 }}>
@@ -1335,7 +1318,21 @@ export default function Purchases() {
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
+            <Col xs={12} md={6}>
+              <Form.Item label="المخزن الافتراضي" style={{ marginBottom: 8 }}>
+                <Select
+                  disabled={viewOnly}
+                  placeholder="اختر المخزن الافتراضي"
+                  value={stickyWarehouseId ?? undefined}
+                  onChange={(val) => setStickyWarehouseId(val ?? null)}
+                  options={lineWarehouses.map((w: any) => ({
+                    value: w.id,
+                    label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
               <Form.Item name="external_document_number" label="المستند"
                 style={{ marginBottom: 8 }}>
                 <Input placeholder="رقم فاتورة المورد" disabled={viewOnly} />
@@ -1906,42 +1903,20 @@ export default function Purchases() {
       </TabModal>
 
       {/*
-        * «الشحنة دي داخلة أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
+        * الباب التالت: **المخزن**.
         *
-        * محطوط هنا مع باقي الأبواب عن قصد: الجزء ده بيترسم في الفرعين (القايمة والمستند)،
-        * والبوباب اللي بيعيش في فرع واحد بيتشال أول ما التاني يتفتح — والسؤال يفضل مستني
-        * إجابة محدش بيرسمها.
+        * بيختار المخزن الافتراضي للسطور الجديدة.
         */}
-      <TabModal
-        open={pendingItems.length > 0}
-        title={pendingItems.length > 1
-          ? `الأصناف دي (${pendingItems.length}) داخلة أنهي مخزن؟`
-          : 'الشحنة دي داخلة أنهي مخزن؟'}
-        okText="تمام" cancelText="إلغاء"
-        okButtonProps={{ disabled: pendingWarehouse === null }}
-        onCancel={() => setPendingItems([])}
-        onOk={async () => {
-          const wh = pendingWarehouse;
-          const queued = pendingItems;
-          if (wh === null || queued.length === 0) return;
-          setPendingItems([]);
-          setStickyWarehouseId(wh);
-          // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها.
-          for (const id of queued) await addProductByIdWith(id, wh);
-        }}
-        destroyOnHidden
-      >
-        <Select
-          style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
-          placeholder="اختر المخزن"
-          value={pendingWarehouse ?? undefined}
-          onChange={(v) => setPendingWarehouse(v as number)}
-          options={lineWarehouses.map((w: any) => ({ value: w.id, label: w.name }))}
-        />
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-          هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
-        </div>
-      </TabModal>
+      <WarehouseGate
+        open={newStep === 'warehouse' && !viewOnly && editingId === null}
+        title="الشحنة دي داخلة أنهي مخزن؟"
+        subtitle="ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن»."
+        value={stickyWarehouseId}
+        onChange={(v) => setStickyWarehouseId(v as number)}
+        warehouses={lineWarehouses}
+        onCancel={() => { setStickyWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
+        onOk={() => { setNewStep(null); setCreateVisible(true); }}
+      />
 
       <ProductPickerModal
         open={pickerOpen}

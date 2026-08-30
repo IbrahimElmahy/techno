@@ -18,6 +18,7 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
 import { TabModal } from '../components/TabModal';
+import WarehouseGate from '../components/WarehouseGate';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 
@@ -302,25 +303,19 @@ export default function StockPermits() {
         onCancel={() => setPickerOpen(false)}
         onPick={addItem} />
 
-      <TabModal
-        open={newStep === 'warehouse'}
-        title={kind === 'issue' ? 'الصرف من أي مخزن؟' : 'الإضافة لأي مخزن؟'}
-        okText="التالي" cancelText="إلغاء"
+      <WarehouseGate
+        open={newStep === 'warehouse' && !detail}
+        title={kind === 'issue' ? 'الصرف من أي مخزن؟' : (kind === 'opening' ? 'بضاعة أول المدة في أي مخزن؟' : 'الإضافة لأي مخزن؟')}
+        subtitle={kind === 'issue'
+          ? 'الأصناف التي ستظهر بعد ذلك هي المتاحة في هذا المخزن فقط.'
+          : 'البضاعة هتدخل على المخزن ده.'}
+        value={warehouseId}
+        onChange={setWarehouseId}
+        warehouses={warehouses}
+        cancelText="إلغاء"
         onCancel={() => setNewStep(null)}
         onOk={() => { if (warehouseId) { setNewStep(null); setCreating(true); } }}
-        okButtonProps={{ disabled: !warehouseId }}
-        destroyOnHidden
-      >
-        <Select showSearch size="large" style={{ width: '100%' }} autoFocus
-          optionFilterProp="label" placeholder="اختر المخزن"
-          value={warehouseId} onChange={setWarehouseId}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-          {kind === 'issue'
-            ? 'الأصناف التي ستظهر بعد ذلك هي المتاحة في هذا المخزن فقط.'
-            : 'البضاعة هتدخل على المخزن ده.'}
-        </div>
-      </TabModal>
+      />
     </>
   );
 

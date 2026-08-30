@@ -28,6 +28,7 @@ import { useAuth } from '../components/AuthProvider';
 import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
+import WarehouseGate from '../components/WarehouseGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
@@ -2578,41 +2579,15 @@ export default function Invoices() {
           * و`onWarehouseChange` مش `setDocWarehouseId` لوحدها عشان رصيد المخزن يتجاب معاه —
           * من غيره كل صنف بيقرا صفر والمنتقي بيقفل بضاعة موجودة.
           */}
-        <TabModal
+        <WarehouseGate
           open={newStep === 'warehouse' && !viewOnly && !editingInvoice}
           title="الفاتورة دي هتتصرف من أنهي مخزن؟"
-          okText="التالي" cancelText="رجوع"
-          okButtonProps={{ disabled: docWarehouseId === null }}
-          // الرجوع بيرجّع للعميل، وبيمسح المخزن عشان مندوب العميل الجديد يملاه من تاني —
-          // اللي رجع رجع لأن اللي قاله كان غلط، فتثبيت الغلط على العميل اللي بعده مالوش لازمة.
+          value={docWarehouseId}
+          onChange={(v) => { doorWarehouseRef.current = v as number; onWarehouseChange(v as number); }}
+          warehouses={warehouses}
           onCancel={() => { setDocWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
           onOk={() => setNewStep(afterWarehouseStep())}
-        >
-          {/*
-            * الدورة كلها بالكيبورد — الزراير ← التاريخ ← العميل كلهم بيتجاوبوا بـEnter، ومنتقي
-            * العميل نفسه فيه بحث متركّز و↑↓ وEnter. فالباب ده لازم يكمّل نفس الخط: `autoFocus`
-            * بيحط الكيبورد جوّه القايمة أول ما الشباك يفتح، وEnter بيأكّد. من غيرهم البايع
-            * بيقع على شباك مافيش فيه حاجة متركّزة ولازم يمسك الماوس في نص كل فاتورة.
-            */}
-          <div onKeyDown={(e) => {
-            if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
-            if (doorWarehouseRef.current === null) return;
-            e.preventDefault();
-            setNewStep(afterWarehouseStep());
-          }}>
-            <Select
-              autoFocus
-              style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
-              placeholder="اختر المخزن"
-              value={docWarehouseId ?? undefined}
-              onChange={(v) => { doorWarehouseRef.current = v as number; onWarehouseChange(v as number); }}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-            />
-            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-              ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
-            </div>
-          </div>
-        </TabModal>
+        />
 
         {/*
           * الباب الرابع: **نوع الفاتورة** — الخط اللي الفاتورة عليه.

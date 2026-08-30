@@ -26,6 +26,7 @@ import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
+import WarehouseGate from '../components/WarehouseGate';
 import { useTableColumns } from '../components/ColumnSettings';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -749,42 +750,46 @@ export default function Transfers() {
         onCancel={() => setPickerOpen(false)}
         onPick={(id: number) => { setPickerOpen(false); addItem(id); }} />
 
-      <TabModal
-        open={newStep === 'source'}
+      <WarehouseGate
+        open={newStep === 'source' && !editing && !viewOnly}
         title="التحويل من أين؟"
-        okText="التالي" cancelText="إلغاء"
+        subtitle="البضاعة بتطلع من هنا — والرصيد المتاح بيتحمّل على أساسه."
+        placeholder="اختر المخزن أو العهدة المصدر"
+        value={source}
+        onChange={(v) => { onSourceChange(v); }}
+        warehouses={locationOptions}
+        cancelText="إلغاء"
         onCancel={() => setNewStep(null)}
         onOk={() => { if (source) setNewStep('dest'); }}
-        okButtonProps={{ disabled: !source }}
-        destroyOnHidden
-      >
-        <Select showSearch size="large" style={{ width: '100%' }} autoFocus
-          placeholder="اختر المخزن أو العهدة المصدر" optionFilterProp="label"
-          value={source ?? undefined}
-          onChange={(v) => { onSourceChange(v); }}
-          options={locationOptions} />
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-          البضاعة بتطلع من هنا — والرصيد المتاح بيتحمّل على أساسه.
-        </div>
-      </TabModal>
+        autoAdvanceIfSingle={false}
+      />
 
-      <TabModal
-        open={newStep === 'dest'}
+      <WarehouseGate
+        open={newStep === 'dest' && !editing && !viewOnly}
         title="التحويل إلى أين؟"
-        okText="ابدأ" cancelText="رجوع"
+        subtitle="المصدر مستبعد من القايمة — تحويل لنفس المكان مش تحويل."
+        placeholder="اختر المخزن أو العهدة الوجهة"
+        value={dest}
+        onChange={(v) => {
+          if (v === source) {
+            message.error('لا يمكن اختيار نفس المخزن كمصدر ووجهة');
+            return;
+          }
+          setDest(v);
+        }}
+        warehouses={locationOptions.filter((o: any) => o.value !== source)}
+        okText="ابدأ"
+        cancelText="رجوع"
         onCancel={() => setNewStep('source')}
-        onOk={() => { if (dest) { setNewStep(null); setCreateVisible(true); } }}
-        okButtonProps={{ disabled: !dest }}
-        destroyOnHidden
-      >
-        <Select showSearch size="large" style={{ width: '100%' }} autoFocus
-          placeholder="اختر المخزن أو العهدة الوجهة" optionFilterProp="label"
-          value={dest ?? undefined} onChange={(v) => setDest(v)}
-          options={locationOptions.filter((o: any) => o.value !== source)} />
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-          المصدر مستبعد من القايمة — تحويل لنفس المكان مش تحويل.
-        </div>
-      </TabModal>
+        onOk={() => {
+          if (!dest || dest === source) {
+            message.error('يجب اختيار مخزن وجهة مختلف عن المصدر');
+            return;
+          }
+          setNewStep(null);
+          setCreateVisible(true);
+        }}
+      />
     </>
   );
 
