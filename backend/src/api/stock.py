@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -314,17 +314,33 @@ def create_permit(
     return out
 
 
-@router.get("/permits", response_model=list[PermitOut])
+class PaginatedPermitsOut(BaseModel):
+    rows: list[PermitOut]
+    total: int
+    limit: int
+    offset: int
+
+
+@router.get("/permits", response_model=None)
 def list_permits(
-    kind: str | None = None,
-    warehouse_id: int | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
+    response: Response,
+    kind: str | None = Query(None),
+    warehouse_id: int | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    limit: int | None = Query(None),
+    offset: int = Query(0),
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
-) -> list[PermitOut]:
+):
     rows = stock_permit_service.list_permits(
         db, kind=kind, warehouse_id=warehouse_id, date_from=date_from, date_to=date_to)
+    total = len(rows)
+    response.headers["X-Total-Count"] = str(total)
+    if limit is not None:
+        clamped_limit = min(limit, 500)
+        paged_rows = rows[offset:offset + clamped_limit]
+        return PaginatedPermitsOut(rows=[_permit_out(db, p) for p in paged_rows], total=total, limit=clamped_limit, offset=offset)
     return [_permit_out(db, p) for p in rows]
 
 

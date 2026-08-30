@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -517,8 +517,16 @@ def reverse_voucher(
     return _out(v)
 
 
-@router.get("/vouchers", response_model=list[VoucherOut])
+class PaginatedVouchersOut(BaseModel):
+    rows: list[VoucherOut]
+    total: int
+    limit: int
+    offset: int
+
+
+@router.get("/vouchers", response_model=None)
 def list_vouchers(
+    response: Response,
     kind: VoucherKind | None = Query(default=None),
     customer_id: int | None = Query(default=None),
     supplier_id: int | None = Query(default=None),
@@ -526,9 +534,11 @@ def list_vouchers(
     treasury_id: int | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    limit: int | None = Query(default=None),
+    offset: int = Query(default=0),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
-) -> list[VoucherOut]:
+):
     # A rep only ever sees the vouchers tied to his own custody/collections.
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
     rows = voucher_service.list_vouchers(
@@ -537,7 +547,15 @@ def list_vouchers(
     if current.role == RoleName.sales_rep:
         rows = [v for v in rows
                 if v.actor_user_id == current.id or v.rep_user_id == current.id]
-    return [_out(v) for v in branch_scope.visible(current, rows)]
+    visible_rows = branch_scope.visible(current, rows)
+    total = len(visible_rows)
+    response.headers["X-Total-Count"] = str(total)
+
+    if limit is not None:
+        clamped_limit = min(limit, 500)
+        paged_rows = visible_rows[offset:offset + clamped_limit]
+        return PaginatedVouchersOut(rows=[_out(v) for v in paged_rows], total=total, limit=clamped_limit, offset=offset)
+    return [_out(v) for v in visible_rows]
 
 
 @router.get("/customers/{customer_id}/statement", response_model=StatementOut)

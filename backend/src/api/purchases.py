@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -173,15 +173,35 @@ class PurchaseReturnListOut(BaseModel):
     statement3: str | None = None
 
 
-@router.get("", response_model=list[PurchaseListOut])
+class PaginatedPurchasesOut(BaseModel):
+    rows: list[PurchaseListOut]
+    total: int
+    limit: int
+    offset: int
+
+
+@router.get("", response_model=None)
 def list_purchases(
+    response: Response,
+    supplier_id: int | None = Query(None),
+    limit: int | None = Query(None),
+    offset: int = Query(0),
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
-) -> list[PurchaseListOut]:
+):
+    from sqlalchemy import func
+    base_stmt = branch_scope.scope(select(PurchaseInvoice), PurchaseInvoice, current)
+    if supplier_id:
+        base_stmt = base_stmt.where(PurchaseInvoice.supplier_id == supplier_id)
+
+    total = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
+
+    stmt = base_stmt.order_by(PurchaseInvoice.id.desc())
+    if limit is not None:
+        stmt = stmt.limit(min(limit, 500)).offset(offset)
+
+    rows = list(db.scalars(stmt).all())
     names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
-    rows = db.scalars(branch_scope.scope(
-        select(PurchaseInvoice), PurchaseInvoice, current).order_by(
-            PurchaseInvoice.id.desc())).all()
 
     # الفرع مش على الفاتورة — هو على المخزن اللي البضاعة نزلت فيه، فبيتجاب منه.
     from src.models.org import Branch
@@ -217,6 +237,10 @@ def list_purchases(
             # الضريبة كنسبة من الصافي — الصافي صفر يعني مفيش نسبة، مش قسمة على صفر.
             tax_pct=(to_money(to_money(p.tax_amount or 0) / net * 100) if net else Decimal("0")),
         ))
+
+    response.headers["X-Total-Count"] = str(total)
+    if limit is not None:
+        return PaginatedPurchasesOut(rows=out, total=total, limit=min(limit, 500), offset=offset)
     return out
 
 
