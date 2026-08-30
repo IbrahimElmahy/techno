@@ -1187,7 +1187,9 @@ export default function Invoices() {
         // Pre-picked only when there is nothing to pick: one line means no question to ask. With
         // two, it stays empty on purpose — choosing for him is choosing which balance moves.
         const named = rows.filter((a: any) => a.family);
-        setInvoiceFamily(named.length === 1 ? named[0].family : null);
+        // مابيكتبش على اختيار المستخدم. الطلب ده بيتبعت في نفس اللحظة اللي باب
+        // «نوع الفاتورة» بيتفتح فيها، فالرد المتأخر كان بيمسح اللي اختاره لسه.
+        setInvoiceFamily((prev) => prev ?? (named.length === 1 ? named[0].family : null));
       })
       .catch((err) => { console.error(err); setFamilyAccounts([]); setCustomerBalance(null); });
     api.get('/api/v1/coupons', { params: { customer_id: customerId, status_filter: 'issued' } })

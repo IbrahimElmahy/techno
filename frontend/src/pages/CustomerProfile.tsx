@@ -281,6 +281,8 @@ export default function CustomerProfile() {
    *  أقدم ٥٠٠٠ حركة وبس، من غير ولا رسالة، وآخر «رصيد جاري» في الجدول بيخالف كارت
    *  «الرصيد». دلوقتي بنكمّل بـ`offset`: السيرفر بيحسب رصيد افتتاحي للصفحة الجديدة من
    *  اللي فاتها، فالسطور بتتلزق ورا بعض والرصيد الجاري بيفضل متصل. */
+  const [pointsFailed, setPointsFailed] = useState(false);
+
   const loadPoints = async (offset = 0) => {
     if (!customerId) return;
     if (offset) setPointsMoreLoading(true);
@@ -288,11 +290,18 @@ export default function CustomerProfile() {
       const res = await api.get(`/api/v1/customers/${customerId}/points/ledger`, {
         params: { limit: POINTS_PAGE_SIZE, offset },
       });
+      setPointsFailed(false);
       setPoints((prev) => (offset && prev
         ? { ...res.data, rows: [...prev.rows, ...(res.data.rows || [])] }
         : res.data));
-    } catch {
+    } catch (err: any) {
+      // «مافيش حركة» و«مااتحمّلتش» حالتين مختلفتين. الـcatch الفاضية كانت بتخلّي
+      // الاتنين شكلهم واحد: التبويب يقول «النقاط (٠)» والعطل يعدّي — وده بالظبط
+      // العطل اللي التبويب اتعمل عشانه («الرصيد بيقول صفر دايماً»).
+      console.error(err);
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل دفتر النقاط');
       if (!offset) setPoints(null);
+      setPointsFailed(true);
     } finally {
       if (offset) setPointsMoreLoading(false);
     }

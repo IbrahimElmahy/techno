@@ -176,13 +176,19 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
     else:
         raise TradeReportError(f"Unknown document type '{doc_type}'.")
 
-    return [
+    kept = [
         r for r in rows
         if _in_range(r["date"], date_from, date_to)
         and (party_id is None or r["party_id"] == party_id)
         and (item_id is None or r["item_id"] == item_id)
         and (warehouse_id is None or r["warehouse_id"] == warehouse_id)
     ]
+    # الترتيب بتاريخ المستند. الاستعلام بيرتّب بالـid، وده كان بيوافق التاريخ صدفةً
+    # لما التاريخ كان `created_at` (بيزيد مع الـid). بعد ما بقى تاريخ المستند الحقيقي،
+    # العمود بيعرض حاجة والترتيب بيقول حاجة تانية — والكشف بيبان مبعثر.
+    # `date` ممكن تكون None لو المستند مالوش تاريخ، فبتتاخر للآخر بدل ما توقّع المقارنة.
+    kept.sort(key=lambda r: (r["date"] is None, r["date"], r["doc_id"]))
+    return kept
 
 
 def trade(

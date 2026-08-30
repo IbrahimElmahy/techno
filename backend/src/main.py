@@ -215,6 +215,8 @@ def create_app() -> FastAPI:
 
         Base.metadata.create_all(engine)
         _ensure_columns(engine)
+        # الفهرس بعد العمود — بيتبني عليه.
+        _ensure_indexes(engine)
         # بعد ما العمود الجديد يتعمل: القيد الجديد محتاجه، والقديم لازم يتشال قبل ما يمنع.
         _sync_constraints(engine)
         _relax_not_null(engine)
@@ -309,6 +311,18 @@ def _load_permission_overrides() -> None:
 # Columns added to EXISTING tables after their first release. create_all only creates missing
 # tables, never alters — so on a live DB these are added here (idempotent; checked via inspector).
 # Format: (table, column, "<DDL type + default>"). Types are ANSI-ish and work on sqlite/PG/MySQL.
+# فهارس على أعمدة اتضافت لجدول موجود.
+#
+# `index=True` على الموديل بيتنفّذ في `create_all` بس — و`create_all` مابيلمسش جدول
+# موجود. والعمود اللي بيتضاف من `_ADDED_COLUMNS` بيتعمل بـ`ADD COLUMN` من غير فهرس،
+# فالموديل بيوعد بفهرس والقاعدة مافيهاش. الوعد ده بيعدي محلياً (القاعدة بتتعمل من
+# الصفر) ويقع على السيرفر بس — وهو المكان الوحيد اللي فيه الداتا الكبيرة.
+_ADDED_INDEXES: list[tuple[str, str, str]] = [
+    # (اسم الفهرس، الجدول، الأعمدة)
+    ("ix_point_record_inspection_id", "point_record", "inspection_id"),
+]
+
+
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # (HR-1) «القسم» بقى جدول. نفس شكل ("employee","warehouse_id","BIGINT") اللي عدّى قبل كده:
     # nullable، من غير default، ومن غير FK في نص الـDDL — أي حاجة فيها NOT NULL DEFAULT بتختلف
@@ -873,6 +887,35 @@ def _ensure_columns(engine) -> None:
         except Exception as exc:  # pragma: no cover — best-effort
             logging.getLogger("uvicorn.error").info(
                 "ensure column %s.%s skipped: %s", table, column, exc
+            )
+
+
+def _ensure_indexes(engine) -> None:
+    """يعمل الفهارس اللي في `_ADDED_INDEXES` لو مش موجودة. Idempotent."""
+    import logging
+
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for name, table, columns in _ADDED_INDEXES:
+        if table not in existing_tables:
+            continue
+        have = {i["name"] for i in inspector.get_indexes(table)}
+        if name in have:
+            continue
+        cols = {c["name"] for c in inspector.get_columns(table)}
+        # العمود لازم يكون اتعمل الأول — `_ensure_columns` بتجري قبلها.
+        if any(c.strip() not in cols for c in columns.split(",")):
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({columns})"))
+        except Exception as exc:  # pragma: no cover — best-effort
+            logging.getLogger("uvicorn.error").info(
+                "ensure index %s on %s skipped: %s", name, table, exc
             )
 
 

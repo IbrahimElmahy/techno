@@ -141,7 +141,15 @@ def ledger(
     الإجماليات بتتحسب في القاعدة على الحركة كلها — مش على الصفحة المعروضة. إجمالي
     بيتجمع من ٥٠٠ سطر معروضين بيقول رقم غلط وهو واثق.
     """
-    kinds = [k for k in (kinds or []) if k in KIND_LABELS] or None
+    # نوع مجهول بيرجّع فاضي — مش بيلغي الفلتر. `or None` كانت بتشيل الشرط كله،
+    # فالشاشة تقول إنها معروضة على فلتر وهي معروضة على كل حاجة.
+    asked = list(kinds or [])
+    kinds = [k for k in asked if k in KIND_LABELS]
+    if asked and not kinds:
+        # قيمة مستحيلة تبقى نوع — النتيجة بترجع فاضية زي ما اتطلب. `or None` كانت
+        # بتشيل الشرط كله، فالشاشة تقول إنها معروضة على فلتر وهي معروضة على كل حاجة.
+        kinds = ["__no_such_kind__"]
+    kinds = kinds or None
 
     positive = case((PointRecord.delta > 0, PointRecord.delta), else_=0)
     negative = case((PointRecord.delta < 0, PointRecord.delta), else_=0)

@@ -223,14 +223,14 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month") -> dict:
     rows, buckets = [], {}
     gross_total = net_total = ZERO
     for inv in db.scalars(select(SalesInvoice).order_by(SalesInvoice.id)).all():
-        if not _in_range(inv.created_at, date_from, date_to):
+        if not _in_range(inv.invoice_date or inv.created_at, date_from, date_to):
             continue
         gross_total += to_money(inv.gross)
         net_total += to_money(inv.net)
         rows.append({"document_number": inv.document_number, "customer_id": inv.customer_id,
                      "gross": str(to_money(inv.gross)), "net": str(to_money(inv.net)),
-                     "created_at": str(inv.created_at)})
-        b = buckets.setdefault(bucket_key(inv.created_at, period), {"gross": ZERO, "net": ZERO})
+                     "created_at": str(inv.invoice_date or inv.created_at)})
+        b = buckets.setdefault(bucket_key(inv.invoice_date or inv.created_at, period), {"gross": ZERO, "net": ZERO})
         b["gross"] += to_money(inv.gross)
         b["net"] += to_money(inv.net)
     return {

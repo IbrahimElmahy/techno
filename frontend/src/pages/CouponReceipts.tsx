@@ -643,7 +643,9 @@ export default function CouponReceipts() {
       extra={(
         <Space>
           {listCols.control}
-          <Button icon={<ReloadOutlined />} onClick={loadReceipts}>تحديث</Button>
+          {/* `onClick` بيبعت حدث الماوس كأول باراميتر — و`loadReceipts` أول باراميتر
+              عنده رقم الصفحة، فالزرار كان بيطلب صفحة اسمها MouseEvent. */}
+          <Button icon={<ReloadOutlined />} onClick={() => loadReceipts()}>تحديث</Button>
         </Space>
       )}>
       <CouponStatsOverview

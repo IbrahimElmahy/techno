@@ -131,9 +131,9 @@ def run(*, execute: bool) -> None:
                 ("نقاط", total_points, EXPECTED["points"]),
             ) if _far(actual, expected)
         ]
-        # المقارنة بتتعمل على شغل جديد بس — إعادة التشغيل بعد نجاح بتكتب صفر وده الصح،
-        # مش انحراف.
-        if off and (written or not done):
+        # المقارنة على التشغيل الأول بس. `written` بيعدّ الجديد لوحده، فإعادة تشغيل
+        # بتلاقي ٣٠ سطر متأخرين كانت بتقارن الـ٣٠ بالـ٢٨٧٩٠ وتوقف وهي «واثقة».
+        if off and not done:
             print()
             print("⚠ الأرقام بعيدة عن المتوقع في: " + "، ".join(off))
             print(f"  المتوقع: {EXPECTED['lines']} سطر · {EXPECTED['invoices']} فاتورة · "

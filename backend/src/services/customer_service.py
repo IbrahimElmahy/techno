@@ -30,6 +30,19 @@ class CustomerError(Exception):
     """Invalid customer data (e.g. a plumber assigned to a non after-sales rep)."""
 
 
+# الأنواع اللي مابيتفتحلهاش حساب ذمم. السباك بيرجّع كوبونات ومابيشتريش، فمالوش ذمة.
+#
+# مكتوبة هنا مش في السكربت عشان القاعدة تبقى واحدة: كان السكربت بيستثنيهم
+# و`create_customer` بيفتح لأي حد من غير شرط، فالسباك القديم مالوش حساب والجديد ليه —
+# نفس النوع بيتصرف بشكلين، وسند لواحد بيشتغل وللتاني بيقول «العميل ليس له حساب ذمم».
+NO_RECEIVABLE_TYPES = {"plumber", "سباك"}
+
+
+def _norm_type(value) -> str:
+    """نوع العميل كنص للمقارنة — بيوصل Enum أو نص حسب مين بينده."""
+    return getattr(value, "value", value) or ""
+
+
 def open_account(db: Session, customer: Customer, *, family: str | None = None) -> CustomerAccount:
     """يفتح حساب ذمم للعميل ده ويربطه بيه.
 
@@ -146,7 +159,8 @@ def create_customer(
     db.add(customer)
     db.flush()
 
-    open_account(db, customer)
+    if _norm_type(customer_type) not in NO_RECEIVABLE_TYPES:
+        open_account(db, customer)
 
     audit_service.record(
         db,

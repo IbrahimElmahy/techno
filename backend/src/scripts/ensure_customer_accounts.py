@@ -81,7 +81,9 @@ from src.scripts.link_a5_party_accounts import CUSTOMER_GROUPS, _accounts_under,
 from src.services import customer_service
 
 # النوع الوحيد اللي مالوش طريق يوصل بيه لرصيد ذمم — شوف الشرح فوق.
-SKIPPED_TYPES = {"plumber", "سباك"}
+# نفس القاعدة اللي `create_customer` بيمشي بيها — مصدر واحد عشان القديم والجديد
+# يتصرفوا بنفس الشكل.
+from src.services.customer_service import NO_RECEIVABLE_TYPES as SKIPPED_TYPES
 
 
 def _orphan_customer_accounts(db):
