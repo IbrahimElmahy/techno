@@ -366,6 +366,15 @@ export default function Invoices() {
   // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
   /**
+   * نفس القيمة، بس مقروءة في نفس اللحظة.
+   *
+   * الـEnter اللي بيختار المخزن من القايمة بيطلع لحارس الباب في **نفس** الحدث — قبل أي رندر —
+   * فالحارس لو قرا الـstate هيلاقيها لسه فاضية ويسيب المستخدم يدوس Enter مرتين على غير لزوم.
+   * الـref بتتكتب جوّه `onChange` نفسه، فالحارس بيقرا اللي المستخدم لسه مختاره.
+   */
+  const doorWarehouseRef = useRef<number | null>(null);
+  doorWarehouseRef.current = docWarehouseId;
+  /**
    * الصنف اللي مستني المخزن يتحدّد قبل ما ينزل السطر.
    *
    * كل سطر بيقيس المتاح على مخزنه، ومن غير مخزن الإجابة بتطلع صفر — «مافيش حاجة متاحة من
@@ -1039,6 +1048,21 @@ export default function Invoices() {
     return () => window.removeEventListener('keydown', onKey);
   }, [createVisible, pickerOpen, partyPickerOpen, newStep]);
 
+  /**
+   * باب «نوع الفاتورة» مالوش لازمة لما مافيش حاجة تتسأل.
+   *
+   * الباب ده بيسأل على **أنهي حساب** الفاتورة هتتحرّك عليه، والحسابات دي بتتحمّل مع العميل
+   * (`/customers/{id}/accounts`). العميل اللي مااتقسمش — وده الأغلب — عنده حساب واحد
+   * بـ`family = null`، فمافيش «أبيض» ولا «بولي» يتختار، والسيرفر بيرحّل على حسابه الوحيد.
+   * لو الباب فضل مفتوح في الحالة دي، الدورة بتقف على سؤال مالوش إجابة صح.
+   *
+   * الحسابات بتوصل بعد اختيار العميل بشوية، فالقرار بيتاخد هنا كمان مش في `onOk` بتاع الباب
+   * اللي قبله بس — لو الرد وصل والباب كان اتفتح، بيتقفل لوحده.
+   */
+  useEffect(() => {
+    if (newStep === 'family' && families.length <= 1) setNewStep(null);
+  }, [newStep, families.length]);
+
   /** Chosen from the picker (existing or just-created) — fills the form and the header strip. */
   const handlePartyPicked = (picked: Party) => {
     setParty(picked);
@@ -1078,6 +1102,14 @@ export default function Invoices() {
     // Lines still pointing at no warehouse of their own follow the document.
     await loadWarehouseStock(warehouseId);
   };
+
+  /**
+   * الباب اللي بعد المخزن — ولا ولا حاجة.
+   *
+   * «نوع الفاتورة» سؤال عن حساب العميل، فمابيتسألش غير لما يكون عنده أكتر من حساب فعلاً.
+   * العميل العادي عنده واحد بس، والدورة بتخلص عند المخزن وتفتح المستند على طول.
+   */
+  const afterWarehouseStep = (): null | 'family' => (families.length > 1 ? 'family' : null);
 
   /** The warehouse a line actually draws from: its own, else the document's. */
   const lineWarehouse = (l: SaleLineItem): number | null => l.warehouse_id ?? docWarehouseId;
@@ -2540,43 +2572,102 @@ export default function Invoices() {
           // الرجوع بيرجّع للعميل، وبيمسح المخزن عشان مندوب العميل الجديد يملاه من تاني —
           // اللي رجع رجع لأن اللي قاله كان غلط، فتثبيت الغلط على العميل اللي بعده مالوش لازمة.
           onCancel={() => { setDocWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
-          onOk={() => setNewStep('family')}
+          onOk={() => setNewStep(afterWarehouseStep())}
         >
-          <Select
-            style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
-            placeholder="اختر المخزن"
-            value={docWarehouseId ?? undefined}
-            onChange={(v) => onWarehouseChange(v as number)}
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-          />
-          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-            ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+          {/*
+            * الدورة كلها بالكيبورد — الزراير ← التاريخ ← العميل كلهم بيتجاوبوا بـEnter، ومنتقي
+            * العميل نفسه فيه بحث متركّز و↑↓ وEnter. فالباب ده لازم يكمّل نفس الخط: `autoFocus`
+            * بيحط الكيبورد جوّه القايمة أول ما الشباك يفتح، وEnter بيأكّد. من غيرهم البايع
+            * بيقع على شباك مافيش فيه حاجة متركّزة ولازم يمسك الماوس في نص كل فاتورة.
+            */}
+          <div onKeyDown={(e) => {
+            if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+            if (doorWarehouseRef.current === null) return;
+            e.preventDefault();
+            setNewStep(afterWarehouseStep());
+          }}>
+            <Select
+              autoFocus
+              style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+              placeholder="اختر المخزن"
+              value={docWarehouseId ?? undefined}
+              onChange={(v) => { doorWarehouseRef.current = v as number; onWarehouseChange(v as number); }}
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+            />
+            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+              ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
+            </div>
           </div>
         </TabModal>
 
         {/*
           * الباب الرابع: **نوع الفاتورة** — الخط اللي الفاتورة عليه.
           *
-          * نفس مصدر خانة الترويسة وعمود الكشف (`FAMILY_OPTIONS`) — مش قايمة تانية، عشان
-          * الشاشة ماتقولش حاجتين.
+          * القايمة جاية من **حسابات العميل نفسه** (`families`)، مش من `FAMILY_OPTIONS`.
+          * الفرق ده مش تجميل: السؤال الحقيقي هو «الفاتورة هتتحرّك على أنهي حساب»، و«أبيض»
+          * و«بولي» موجودين كحسابات بس للعملا اللي `customer_merge_service` قسمهم. العميل
+          * العادي عنده حساب واحد بـ`family = null` — فلو الباب عرض عليه «أبيض» واختارها،
+          * السيرفر بيرد `العميل مالوش حساب لـ«أبيض»` بعد ما البايع كتب الفاتورة كلها.
+          *
+          * وعشان كده الباب مابيظهرش أصلاً إلا لما يكون فيه أكتر من حساب (`afterWarehouseStep`،
+          * والحارس اللي بيقفله لو الحسابات وصلت متأخرة) — وحساب واحد باسم بيتحطّ لوحده في
+          * `onCustomerChange`. سؤال مالوش غير إجابة واحدة مش سؤال.
           */}
         <TabModal
-          open={newStep === 'family' && !viewOnly && !editingInvoice}
-          title="نوع الفاتورة (الخط)"
+          open={newStep === 'family' && families.length > 1 && !viewOnly && !editingInvoice}
+          title="الفاتورة على أنهي حساب؟"
           okText="ابدأ الفاتورة" cancelText="رجوع"
           okButtonProps={{ disabled: !invoiceFamily }}
           onCancel={() => setNewStep('warehouse')}
           onOk={() => setNewStep(null)}
         >
-          <Segmented
-            block
-            size="large"
-            value={invoiceFamily ?? ''}
-            onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
-            options={FAMILY_OPTIONS.map((f) => ({ value: f.value, label: f.label }))}
-          />
-          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-            بيتغيّر من خانة «نوع الفاتورة» في الترويسة في أي وقت.
+          {/*
+            * زي باب المخزن: الشباك بياخد الكيبورد أول ما يفتح (`tabIndex` + تركيز)، ←→/↑↓
+            * بيلفّوا على الحسابات، وEnter بيأكّد. الأسهم متعملة بإيدنا مش مسيبة لـ`Segmented`
+            * عشان تنقّل الراديو بالأسهم بيعتمد على تفاصيل جوّه antd، والدورة دي مالهاش بديل
+            * بالماوس في نص الفاتورة.
+            */}
+          <div
+            tabIndex={-1}
+            ref={(el) => { el?.focus(); }}
+            style={{ outline: 'none' }}
+            onKeyDown={(e) => {
+              const keys = ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'];
+              if (keys.includes(e.key)) {
+                e.preventDefault();
+                const list = families.map((a) => a.family as string);
+                const at = list.indexOf(invoiceFamily ?? '');
+                const step = (e.key === 'ArrowLeft' || e.key === 'ArrowDown') ? 1 : -1;
+                setInvoiceFamily(at < 0 ? list[0] : list[(at + step + list.length) % list.length]);
+                return;
+              }
+              if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+              if (!invoiceFamily) return;
+              e.preventDefault();
+              setNewStep(null);
+            }}
+          >
+            <Segmented
+              block
+              size="large"
+              value={invoiceFamily ?? ''}
+              onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
+              options={families.map((a) => ({
+                value: a.family as string,
+                label: (
+                  <span style={{ fontWeight: 700 }}>
+                    {a.family}
+                    <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
+                                   fontWeight: 400 }}>
+                      ({money(Number(a.balance || 0))})
+                    </span>
+                  </span>
+                ),
+              }))}
+            />
+            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+              بيتغيّر من خانة «نوع الفاتورة» في الترويسة في أي وقت.
+            </div>
           </div>
         </TabModal>
       </div>
