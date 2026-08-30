@@ -385,6 +385,7 @@ export const EXTRA_SECTIONS: NavGroup[] = [
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/owners', label: 'الملّاك', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/inspection-items', label: 'أصناف المعاينة', roles: OFFICE },
+      { key: '/points-ledger', label: 'سجل النقاط', roles: LOYALTY },
       {
         key: 'grp-loyalty-reports',
         label: 'تقارير النقاط والكوبونات',

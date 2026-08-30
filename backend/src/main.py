@@ -127,6 +127,9 @@ def create_app() -> FastAPI:
     app.include_router(product_points.router, prefix=prefix)
     app.include_router(loyalty_settings.router, prefix=prefix)
     app.include_router(points.router, prefix=prefix)
+    # الكشف العام للنقاط — راوتر تاني في نفس ملف points، prefix بتاعه `/points` مش
+    # `/customers`. من غير السطر ده شاشة «سجل النقاط» بتاخد 404 والملف مبيقولش ليه.
+    app.include_router(points.ledger_router, prefix=prefix)
     app.include_router(coupons.router, prefix=prefix)
     app.include_router(reports.router, prefix=prefix)
     app.include_router(voucher_keys.router, prefix=prefix)
@@ -326,6 +329,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("coupon_receipt_line", "coupon_issue_id", "BIGINT"),
     # مندوب خدمة العملاء — غير مندوب المبيعات، والاتنين بيزوروا نفس العميل.
     ("customer", "service_rep_id", "BIGINT"),
+    # المعاينة اللي خصمت النقط من رصيد التاجر — الرفض بيدوّر عليه عشان يرجّع الخصم مرة واحدة.
+    ("point_record", "inspection_id", "BIGINT"),
     ("inspection", "merchant_customer_id", "BIGINT"),
     ("inspection", "owner_id", "BIGINT"),
     ("owner", "governorate_id", "BIGINT"),
@@ -570,6 +575,12 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     # الجديدة وهي واصلة، والشاشة بتقول «تعذّر تسجيل طلب التحويل» من غير سبب مفهوم.
     ("stock_transfer", "route",
      "ENUM('central_to_branch','central_to_rep','rep_to_rep','rep_to_central')"),
+    # خصم نقط المعاينة ورجوعها. `point_record.kind` ENUM أصلي في Postgres، والقيمة الجديدة
+    # بتترفض عند القاعدة قبل ما توصل — قبول المعاينة كان هيقع بـ500 على السيرفر وهو ماشي
+    # محلياً، لأن SQLite بيخزّن الـEnum نص من غير قيد.
+    ("point_record", "kind",
+     "ENUM('earn','reverse','converted','void_reclaim','adjustment','inspection',"
+     "'inspection_reverse')"),
 ]
 
 
@@ -643,6 +654,42 @@ def _sync_constraints(engine) -> None:
             log.warning("add constraint %s.%s failed: %s", table, name, str(exc)[:160])
 
 
+def _enum_labels(ddl_type: str) -> list[str] | None:
+    """يرجّع قيم `ENUM('a','b')`، أو None لو ده مش ENUM. مفصولة عشان تتقرا لوحدها."""
+    import re
+
+    m = re.match(r"^\s*ENUM\s*\((.*)\)\s*$", ddl_type, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return None
+    return [p.strip().strip("'") for p in m.group(1).split(",") if p.strip()]
+
+
+def _widen_pg_enum(engine, table: str, column: str, labels: list[str]) -> None:
+    """يضيف القيم الجديدة للنوع الـENUM الأصلي في Postgres.
+
+    Postgres مابيقبلش `ALTER COLUMN ... TYPE ENUM(...)` أصلاً — النوع كيان مستقل بـاسم
+    (`pointkind`)، وبيتوسّع بـ`ALTER TYPE ... ADD VALUE`. الفرع النُميري تحت كان بيشتغل على
+    الاتنين وبيرمي `USING col::numeric` على عمود ENUM، فالجملة بتفشل والاستثناء بيتبلع عند
+    مستوى info: العمود بيفضل بقيمه القديمة والكتابة بقيمة جديدة بتقع بـ500 من غير أثر مفهوم.
+
+    AUTOCOMMIT مش تجميل: `ALTER TYPE ... ADD VALUE` مايقدرش يتنفّذ جوّه transaction في
+    Postgres أقل من ١٢، و`engine.begin()` بيفتح واحدة.
+    """
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        udt = conn.execute(text(
+            "SELECT udt_name FROM information_schema.columns "
+            "WHERE table_name = :t AND column_name = :c AND data_type = 'USER-DEFINED'"
+        ), {"t": table, "c": column}).scalar()
+        if not udt:
+            return  # العمود بقى VARCHAR — مافيش نوع يتوسّع
+        for label in labels:
+            conn.execute(text(
+                f'ALTER TYPE "{udt}" ADD VALUE IF NOT EXISTS \'{label}\''))
+
+
 def _widen_columns(engine) -> None:
     """Widen column types introduced after release (e.g. integer points -> fractional). Idempotent."""
     import logging
@@ -659,9 +706,20 @@ def _widen_columns(engine) -> None:
         if table not in tables:
             continue
         col = next((c for c in inspector.get_columns(table) if c["name"] == column), None)
-        if col is None or "NUMERIC" in str(col["type"]).upper() or "DECIMAL" in str(col["type"]).upper():
-            continue  # already widened
+        if col is None:
+            continue
+        labels = _enum_labels(ddl_type)
         try:
+            if labels is not None:
+                if dialect in ("postgresql", "postgres"):
+                    _widen_pg_enum(engine, table, column, labels)
+                else:  # MySQL بيعرف ENUM(...) في MODIFY زي ما هي
+                    with engine.begin() as conn:
+                        conn.execute(text(
+                            f"ALTER TABLE `{table}` MODIFY `{column}` {ddl_type} NOT NULL"))
+                continue
+            if "NUMERIC" in str(col["type"]).upper() or "DECIMAL" in str(col["type"]).upper():
+                continue  # already widened
             with engine.begin() as conn:
                 if dialect in ("postgresql", "postgres"):
                     conn.execute(text(

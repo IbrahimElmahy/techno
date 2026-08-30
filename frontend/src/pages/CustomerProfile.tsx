@@ -16,7 +16,7 @@ import InvoiceDocument, { invoiceFooter } from '../components/InvoiceDocument';
 import VoucherDocument, { voucherFooter } from '../components/VoucherDocument';
 import CustomerEditModal from '../components/CustomerEditModal';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
-import DocumentLink, { DocKind, docKindOf, useOpenDocument } from '../components/DocumentLink';
+import DocumentLink, { DocKind, DocRef, docKindOf, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
 import DateRangeFilter from '../components/DateRangeFilter';
@@ -38,6 +38,11 @@ import CouponStatsOverview from '../components/CouponStatsOverview';
 
 const money = (v: any) =>
   Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** النقط كسور (صنف ممكن يساوي ١/٦ نقطة) — الحد الأدنى صفر خانات عشان الأرقام الصحيحة
+ *  تفضل نظيفة، والأقصى ٣ عشان الكسر مايتقرّبش لصفر ويختفي. */
+const pointsNum = (v: any) =>
+  Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 /** One receivable account — a customer holds one per product family. */
 interface AccountRow {
@@ -94,6 +99,32 @@ interface ProfileData {
   coupons: any[];
 }
 
+/** سطر في دفتر النقاط. `running` الرصيد بعد السطر ده — بيجي محسوب من السيرفر عشان
+ *  الترتيب اللي اتحسب عليه هو نفسه الترتيب اللي اتعرض. */
+interface PointRow {
+  id: number;
+  date: string | null;
+  kind: string;
+  kind_label: string;
+  delta: string;
+  earned: string;
+  spent: string;
+  doc_kind: string | null;
+  doc_id: number | null;
+  doc_number: string | null;
+  running: string | null;
+}
+
+interface PointsLedgerData {
+  rows: PointRow[];
+  count: number;
+  earned: string;
+  spent: string;
+  net: string;
+  balance: string | null;
+  kinds: Record<string, string>;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   pending: 'تحت التحصيل', settled: 'محصّل', bounced: 'مرتد', cancelled: 'ملغي',
   issued: 'صادر', redeemed: 'مستخدم', draft: 'مسودة', approved: 'معتمد', rejected: 'مرفوض',
@@ -139,6 +170,7 @@ export default function CustomerProfile() {
   const [recordLoading, setRecordLoading] = useState(false);
   const [recordRef, setRecordRef] = useState<{ kind: string; id: number } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [points, setPoints] = useState<PointsLedgerData | null>(null);
 
   // Statement advanced filters state (Matching AccountStatement.tsx)
   const [repFilter, setRepFilter] = useState<string | undefined>(undefined);
@@ -187,6 +219,11 @@ export default function CustomerProfile() {
     search: (r) => [r.serial, r.value, r.points_consumed],
     filters: { status: (r, v) => r.status === v },
   });
+  const pointsFilter = useListFilter<PointRow>(points?.rows || [], {
+    search: (r) => [r.doc_number, r.kind_label, r.delta],
+    filters: { kind: (r, v) => r.kind === v },
+    dateOf: (r) => r.date,
+  });
 
   const load = async () => {
     if (!customerId) return;
@@ -233,11 +270,44 @@ export default function CustomerProfile() {
     }
   };
 
+  /** الدفتر بيتحمّل لوحده مش مع الملف: التاجر الكبير عنده آلاف السطور، وتحميلها مع كل
+   *  فتحة كارت بيبطّأ الشاشة كلها عشان تبويب ممكن محدش يفتحه. */
+  const loadPoints = async () => {
+    if (!customerId) return;
+    try {
+      const res = await api.get(`/api/v1/customers/${customerId}/points/ledger`, {
+        params: { limit: 5000 },
+      });
+      setPoints(res.data);
+    } catch {
+      setPoints(null);
+    }
+  };
+
   useEffect(() => { load(); }, [customerId]);
+  useEffect(() => { loadPoints(); }, [customerId]);
   useEffect(() => { loadStatement(); }, [customerId, range, statementFamily]);
+
+  /** الأنواع جاية من السيرفر مع الدفتر، فاسم عربي جديد بيظهر في الفلتر من غير نشر فرونت. */
+  const pointKindOptions = useMemo(
+    () => Object.entries(points?.kinds || {}).map(([value, label]) => ({ value, label })),
+    [points?.kinds],
+  );
+
+  /** الفاتورة والمرتجع ليهم شاشة بتفتح بـ`?doc=` فبيبقوا لينك. المعاينة والكوبون مالهمش،
+   *  فبيفضلوا نص — لينك بيوديك لكشف تدوّر فيه بنفسك أسوأ من مافيش لينك. */
+  const renderPointDoc = (r: PointRow) => {
+    if (!r.doc_number) return <span style={{ color: '#8c8c8c' }}>-</span>;
+    if (r.doc_kind === 'invoice' || r.doc_kind === 'return') {
+      return <DocRef kind={r.doc_kind as DocKind} id={r.doc_id} label={r.doc_number} />;
+    }
+    return <Tag>{r.doc_number}</Tag>;
+  };
 
   const c = data?.customer;
   const balance = Number(data?.balance || 0);
+  // الدفتر لما يكون محمّل هو الأدق (نفس الحساب بالظبط)، والملف بيغطي اللحظة اللي قبل ما يوصل.
+  const pointsBalance = Number(points?.balance ?? data?.points_balance ?? 0);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const families = accounts.filter((a) => a.family);
 
@@ -689,7 +759,13 @@ export default function CustomerProfile() {
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="رصيد النقاط" value={Number(data.points_balance || 0)} />
+                  {/* الرصيد جاي من مجموع الدفتر — مافيش عمود رصيد محفوظ يتأخّر عنه.
+                      النقط كسور (١/٦ نقطة)، فالتنسيق بيسمح بـ٣ خانات بدل ما يقرّبها لصفر. */}
+                  <Statistic
+                    title="رصيد النقاط"
+                    value={pointsBalance.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                    valueStyle={{ color: pointsBalance < 0 ? '#cf1322' : undefined }}
+                  />
                 </Card>
               </Col>
             </Row>
@@ -1097,6 +1173,77 @@ export default function CustomerProfile() {
                           { title: 'الحالة', dataIndex: 'status', key: 'st',
                             render: (s: string) => <Tag>{STATUS_LABELS[s] || s}</Tag> },
                         ]} />
+                    </>
+                  ),
+                },
+                {
+                  key: 'points',
+                  label: `النقاط (${points?.count ?? 0})`,
+                  children: (
+                    <>
+                      {/* الإجماليات جاية من السيرفر على الحركة كلها، مش مجموعة من الصفوف
+                          المعروضة — كشف مفلتر بيفضل يقول رصيد العميل الحقيقي. */}
+                      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                        <Col xs={12} md={6}>
+                          <Card size="small">
+                            <Statistic title="وارد (مكتسب)" value={pointsNum(points?.earned)}
+                              valueStyle={{ color: '#3f8600' }} />
+                          </Card>
+                        </Col>
+                        <Col xs={12} md={6}>
+                          <Card size="small">
+                            <Statistic title="منصرف" value={pointsNum(points?.spent)}
+                              valueStyle={{ color: '#cf1322' }} />
+                          </Card>
+                        </Col>
+                        <Col xs={12} md={6}>
+                          <Card size="small">
+                            <Statistic title="عدد الحركات" value={points?.count ?? 0} />
+                          </Card>
+                        </Col>
+                        <Col xs={12} md={6}>
+                          <Card size="small">
+                            <Statistic title="الرصيد"
+                              value={pointsBalance.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                              valueStyle={{ color: pointsBalance < 0 ? '#cf1322' : '#1677ff' }} />
+                          </Card>
+                        </Col>
+                      </Row>
+                      <ListToolbar
+                        searchPlaceholder="بحث برقم المستند أو نوع الحركة"
+                        searchSpan={8}
+                        query={pointsFilter.query} onQueryChange={pointsFilter.setQuery}
+                        values={pointsFilter.values} onValueChange={pointsFilter.setValue}
+                        onReset={pointsFilter.reset}
+                        showDateRange range={pointsFilter.range} onRangeChange={pointsFilter.setRange}
+                        total={points?.rows.length || 0} shown={pointsFilter.filtered.length}
+                        filters={[
+                          { key: 'kind', placeholder: 'نوع الحركة', options: pointKindOptions },
+                        ]}
+                      />
+                      {!points?.rows.length ? (
+                        <Empty description="مافيش حركة نقاط للعميل ده" />
+                      ) : (
+                        <Table size="small" rowKey="id" dataSource={pointsFilter.filtered}
+                          pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                          scroll={{ x: true }}
+                          columns={[
+                            { title: 'التاريخ', dataIndex: 'date', key: 'd', width: 110,
+                              render: (d: string | null) => d || '-' },
+                            { title: 'النوع', dataIndex: 'kind_label', key: 'k', width: 150,
+                              render: (l: string) => <Tag>{l}</Tag> },
+                            { title: 'المستند', key: 'doc', width: 160,
+                              render: (_: any, r: PointRow) => renderPointDoc(r) },
+                            { title: 'وارد', dataIndex: 'earned', key: 'in', align: 'left', width: 110,
+                              render: (v: string) => (Number(v) > 0
+                                ? <b style={{ color: '#3f8600' }}>{pointsNum(v)}</b> : '-') },
+                            { title: 'منصرف', dataIndex: 'spent', key: 'out', align: 'left', width: 110,
+                              render: (v: string) => (Number(v) > 0
+                                ? <b style={{ color: '#cf1322' }}>{pointsNum(v)}</b> : '-') },
+                            { title: 'رصيد جاري', dataIndex: 'running', key: 'run', align: 'left', width: 120,
+                              render: (v: string | null) => <b>{pointsNum(v)}</b> },
+                          ]} />
+                      )}
                     </>
                   ),
                 },

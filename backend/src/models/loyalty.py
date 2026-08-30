@@ -53,6 +53,14 @@ class PointKind(str, enum.Enum):
     converted = "converted"
     void_reclaim = "void_reclaim"
     adjustment = "adjustment"
+    # المعاينة بتخصم من رصيد التاجر، والرفض بيرجّع الخصم بسطر جديد موجب — الأصلي بيفضل
+    # مكانه عشان الدفتر يفضل قايل الحقيقة: اتخصم، وبعدين اترجع.
+    #
+    # ⚠️ الاتنين دول اتضافوا بعد الإصدار، و`kind` متخزّن ENUM أصلي في Postgres. من غير
+    # تسجيلهم في `_WIDENED_COLUMNS` في `src/main.py` القاعدة بترفض القيمة الجديدة وهي
+    # واصلة، وقبول المعاينة بيقع بـ500 على السيرفر بس — محلياً على SQLite بيعدي عادي.
+    inspection = "inspection"
+    inspection_reverse = "inspection_reverse"
 
 
 class PointRecord(Base):
@@ -67,6 +75,10 @@ class PointRecord(Base):
     origin_earn_id: Mapped[int | None] = mapped_column(ForeignKey("point_record.id"), nullable=True)
     conversion_id: Mapped[int | None] = mapped_column(ForeignKey("point_conversion.id"), nullable=True)
     coupon_id: Mapped[int | None] = mapped_column(ForeignKey("coupon.id"), nullable=True)
+    # المعاينة اللي خصمت النقط (أو اللي الرفض رجّعها). index عشان الفحص «اتخصم قبل كده؟»
+    # بيتنفّذ مع كل قبول معاينة.
+    inspection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("inspection.id"), nullable=True, index=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
