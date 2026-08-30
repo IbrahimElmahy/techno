@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
   Space, Statistic, Table, Tabs, Tag, Typography, message,
@@ -12,7 +12,7 @@ import {
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import DocumentLink from '../components/DocumentLink';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import ListToolbar from '../components/ListToolbar';
 import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 
@@ -109,22 +109,79 @@ export default function CouponReceipts() {
 
   const kindLabel = (k: string) => kindOptions.find((o) => o.value === k)?.label ?? k;
 
+  interface ReceiptsSummary {
+    total_receipts: number;
+    total_coupons: number;
+    total_value: number;
+    kind_counts: Record<string, number>;
+  }
+
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Receipt | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [summaryData, setSummaryData] = useState<ReceiptsSummary>({
+    total_receipts: 0,
+    total_coupons: 0,
+    total_value: 0,
+    kind_counts: {},
+  });
 
   const clientUuid = useRef<string>(crypto.randomUUID());
 
-  const loadReceipts = async () => {
+  const loadSummary = useCallback(async (q = searchQuery) => {
+    try {
+      const params: Record<string, any> = {};
+      if (q.trim()) params.q = q.trim();
+      const res = await api.get<ReceiptsSummary>('/api/v1/coupon-receipts/summary', { params });
+      setSummaryData({
+        total_receipts: Number(res.data.total_receipts || 0),
+        total_coupons: Number(res.data.total_coupons || 0),
+        total_value: Number(res.data.total_value || 0),
+        kind_counts: res.data.kind_counts || {},
+      });
+    } catch {
+      // ignore
+    }
+  }, [searchQuery]);
+
+  const loadReceipts = useCallback(async (targetPage = page, targetPageSize = pageSize, q = searchQuery) => {
     setLoading(true);
     try {
-      const res = await api.get('/api/v1/coupon-receipts');
-      setReceipts(res.data || []);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
+      const params: Record<string, any> = {
+        limit: targetPageSize,
+        offset: (targetPage - 1) * targetPageSize,
+      };
+      if (q.trim()) params.q = q.trim();
+      const res = await api.get<any>('/api/v1/coupon-receipts', { params });
+      if (Array.isArray(res.data)) {
+        setReceipts(res.data);
+        const headerTotal = res.headers['x-total-count'];
+        setTotalCount(headerTotal ? Number(headerTotal) : res.data.length);
+      } else {
+        setReceipts(res.data.rows || []);
+        setTotalCount(Number(res.data.total || 0));
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize, searchQuery]);
 
   useEffect(() => {
-    loadReceipts();
+    const timer = setTimeout(() => {
+      setPage(1);
+      loadReceipts(1, pageSize, searchQuery);
+      loadSummary(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
     api.get('/api/v1/customers').then((r) => setCustomers(r.data || [])).catch(console.error);
   }, []);
 
@@ -267,11 +324,6 @@ export default function CouponReceipts() {
       message.error(err?.response?.data?.detail?.message || 'تعذر تسجيل الاستلام');
     } finally { setSaving(false); }
   };
-
-  const filter = useListFilter(receipts, {
-    search: (r) => [r.document_number, r.notes,
-      ...r.lines.map((l) => l.serial)],
-  });
 
   const statusChip = (e: Entry) => {
     switch (e.status) {
@@ -595,26 +647,43 @@ export default function CouponReceipts() {
         </Space>
       )}>
       <CouponStatsOverview
-        totalCount={receipts.reduce((s, r) => s + (r.coupon_count || 0), 0)}
-        totalValue={receipts.reduce((s, r) => s
-          + (r.declared_value ? Number(r.declared_value) * (r.coupon_count || 0) : 0), 0)}
+        totalCount={summaryData.total_coupons}
+        totalValue={summaryData.total_value}
         kinds={kindOptions.map((k) => ({
           key: k.value,
           label: k.label,
-          count: receipts.filter((r) => r.declared_kind === k.value)
-            .reduce((s, r) => s + (r.coupon_count || 0), 0),
+          count: summaryData.kind_counts[k.value] || 0,
         }))}
       />
       <ListToolbar
-        searchPlaceholder="بحث برقم المستند أو رقم كوبون"
-        query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
-        total={receipts.length} shown={filter.filtered.length} searchSpan={10}
+        searchPlaceholder="بحث برقم المستند أو رقم كوبون أو اسم العميل"
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        onReset={() => setSearchQuery('')}
+        total={totalCount}
+        shown={receipts.length}
+        searchSpan={10}
       />
       <Table<Receipt>
-        rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
+        rowKey="id"
+        size="small"
+        loading={loading}
+        dataSource={receipts}
         onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد استلامات' }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{
+          current: page,
+          pageSize,
+          total: totalCount,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          onChange: (p, ps) => {
+            setPage(p);
+            setPageSize(ps);
+            loadReceipts(p, ps, searchQuery);
+          },
+          showTotal: (t) => `إجمالي ${t} استلام`,
+        }}
         columns={listCols.columns}
       />
     </Card>
@@ -631,7 +700,7 @@ export default function CouponReceipts() {
     >
       <Tabs items={[
         { key: 'receive', label: 'استلام كوبونات', children: receiveTab },
-        { key: 'history', label: `السجل (${receipts.length})`, children: historyTab },
+        { key: 'history', label: `السجل (${totalCount})`, children: historyTab },
       ]} />
     </Card>
   );

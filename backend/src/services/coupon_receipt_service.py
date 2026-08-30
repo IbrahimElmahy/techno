@@ -20,7 +20,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
+from decimal import Decimal
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.auth.branch_scope import branch_for
@@ -523,15 +525,75 @@ def create_receipt(
     return receipt
 
 
-def list_receipts(
-    db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
-) -> list[CouponReceipt]:
-    stmt = select(CouponReceipt).options(selectinload(CouponReceipt.lines))
+def _build_receipts_stmt(
+    *, customer_id: int | None = None, rep_user_id: int | None = None,
+    q: str | None = None,
+):
+    stmt = select(CouponReceipt)
     if customer_id:
         stmt = stmt.where(CouponReceipt.customer_id == customer_id)
     if rep_user_id:
         stmt = stmt.where(CouponReceipt.rep_user_id == rep_user_id)
-    return list(db.scalars(stmt.order_by(CouponReceipt.id.desc())).all())
+    if q:
+        q_str = q.strip()
+        from src.models.customer import Customer
+        from src.models.loyalty import CouponReceiptLine
+        from sqlalchemy import or_, exists
+        line_match = select(1).where(
+            CouponReceiptLine.receipt_id == CouponReceipt.id,
+            CouponReceiptLine.serial.contains(q_str)
+        )
+        cust_match = select(1).where(
+            Customer.id == CouponReceipt.customer_id,
+            Customer.name.contains(q_str)
+        )
+        conds = [
+            CouponReceipt.document_number.contains(q_str),
+            CouponReceipt.notes.contains(q_str),
+            exists(line_match),
+            exists(cust_match),
+        ]
+        stmt = stmt.where(or_(*conds))
+    return stmt
+
+
+def list_receipts(
+    db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
+    q: str | None = None, limit: int | None = None, offset: int = 0,
+) -> tuple[list[CouponReceipt], int]:
+    base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q)
+    total_count = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
+
+    query = base_stmt.options(selectinload(CouponReceipt.lines)).order_by(CouponReceipt.id.desc())
+    if limit is not None:
+        query = query.limit(min(limit, 500)).offset(offset)
+    return list(db.scalars(query).all()), total_count
+
+
+def coupon_receipts_summary(
+    db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
+    q: str | None = None,
+) -> dict:
+    base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q)
+    subq = base_stmt.order_by(None).subquery()
+    summary_stmt = select(
+        func.count(subq.c.id).label("total_receipts"),
+        func.coalesce(func.sum(subq.c.coupon_count), 0).label("total_coupons"),
+        func.coalesce(func.sum(subq.c.declared_value * subq.c.coupon_count), Decimal("0.00")).label("total_value"),
+    )
+    row = db.execute(summary_stmt).one()
+    kind_stmt = select(
+        subq.c.declared_kind,
+        func.coalesce(func.sum(subq.c.coupon_count), 0).label("cnt")
+    ).where(subq.c.declared_kind.isnot(None)).group_by(subq.c.declared_kind)
+    kind_counts = {r[0]: int(r[1]) for r in db.execute(kind_stmt).all() if r[0]}
+
+    return {
+        "total_receipts": int(row.total_receipts or 0),
+        "total_coupons": int(row.total_coupons or 0),
+        "total_value": Decimal(str(row.total_value or 0)),
+        "kind_counts": kind_counts,
+    }
 
 
 def get_receipt(db: Session, receipt_id: int) -> CouponReceipt:

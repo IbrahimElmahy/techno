@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -151,18 +151,56 @@ def create_receipt(
     return out
 
 
-@router.get("", response_model=list[ReceiptOut])
-def list_receipts(
+class PaginatedReceiptsOut(BaseModel):
+    rows: list[ReceiptOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class CouponReceiptsSummaryOut(BaseModel):
+    total_receipts: int
+    total_coupons: int
+    total_value: Decimal
+    kind_counts: dict[str, int] = {}
+
+
+@router.get("/summary", response_model=CouponReceiptsSummaryOut)
+def get_coupon_receipts_summary(
     customer_id: int | None = Query(None),
     rep_user_id: int | None = Query(None),
+    q: str | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
-) -> list[ReceiptOut]:
+) -> CouponReceiptsSummaryOut:
+    scope_rep = current.id if current.role == RoleName.sales_rep else rep_user_id
+    summary = coupon_receipt_service.coupon_receipts_summary(
+        db, customer_id=customer_id, rep_user_id=scope_rep, q=q)
+    return CouponReceiptsSummaryOut(**summary)
+
+
+@router.get("", response_model=None)
+def list_receipts(
+    response: Response,
+    customer_id: int | None = Query(None),
+    rep_user_id: int | None = Query(None),
+    q: str | None = Query(None),
+    limit: int | None = Query(None),
+    offset: int = Query(0),
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+):
     # A rep sees his own handovers, not the branch's.
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_user_id
-    rows = coupon_receipt_service.list_receipts(
-        db, customer_id=customer_id, rep_user_id=scope_rep)
-    return [_out(r) for r in branch_scope.visible(current, rows)]
+    rows, total = coupon_receipt_service.list_receipts(
+        db, customer_id=customer_id, rep_user_id=scope_rep, q=q, limit=limit, offset=offset)
+    visible_rows = branch_scope.visible(current, rows)
+    items_out = [_out(r) for r in visible_rows]
+    response.headers["X-Total-Count"] = str(total)
+
+    if limit is not None:
+        return PaginatedReceiptsOut(rows=items_out, total=total, limit=min(limit, 500), offset=offset)
+    return items_out
 
 
 @router.get("/{receipt_id}", response_model=ReceiptOut)
