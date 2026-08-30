@@ -2327,7 +2327,7 @@ export default function Invoices() {
                 style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#6AB42D', borderColor: '#6AB42D' }}
                 onClick={() => setPickerOpen(true)}
               >
-                إضافة صنف للفاتورة (F2)
+                إضافة صنف للفاتورة (Enter أو F2)
               </Button>
             )}
             <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>

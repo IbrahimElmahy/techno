@@ -1367,7 +1367,7 @@ export default function Purchases() {
                     style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#1677ff', borderColor: '#1677ff' }}
                     onClick={() => setPickerOpen(true)}
                   >
-                    إضافة صنف للفاتورة (F2)
+                    إضافة صنف للفاتورة (Enter أو F2)
                   </Button>
                   <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
                 </div>

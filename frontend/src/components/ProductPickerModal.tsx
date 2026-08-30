@@ -56,6 +56,13 @@ export default function ProductPickerModal({
   const [onlyAvailableStock, setOnlyAvailableStock] = useState(false);
   const searchRef = useRef<any>(null);
 
+  /** `availableFor` بتوصل دالة جديدة كل رندر من الشاشة اللي بتنده الشباك، ولو دخلت
+   *  في اعتمادات الميمو تحت بتلغيه: الفلترة على آلاف الأصناف (ومعاها `normalizeAr`
+   *  على كل اسم) بتتعاد كل رندر، والشباك بياخد ثواني يفتح. الـref بيدّي أحدث نسخة
+   *  من غير ما يبقى اعتماد. */
+  const availableRef = useRef(availableFor);
+  availableRef.current = availableFor;
+
   const visible = useMemo(() => {
     let list = activeCategory ? products.filter((p) => p.category === activeCategory) : products;
     const needle = normalizeAr(query);
@@ -63,14 +70,25 @@ export default function ProductPickerModal({
       list = products.filter((p) => normalizeAr(p.name).includes(needle)
         || normalizeAr(p.code || '').includes(needle));
     }
-    if (disableOutOfStock && onlyAvailableStock && availableFor) {
+    const avail = availableRef.current;
+    if (disableOutOfStock && onlyAvailableStock && avail) {
       list = list.filter((p) => {
-        const av = availableFor(p.id);
+        const av = avail(p.id);
         return av === null || av > 0;
       });
     }
     return list;
-  }, [query, activeCategory, products, disableOutOfStock, onlyAvailableStock, availableFor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, activeCategory, products, disableOutOfStock, onlyAvailableStock]);
+
+  /** بيترسم من القايمة قد إيه.
+   *
+   *  الكتالوج آلاف الأصناف، وكلهم كانوا بيتحطوا في الـDOM مرة واحدة — الشباك بيتجمّد
+   *  ثواني قبل ما يبان. المعروض بيتقصّ، وبيزيد لما اللي بيدوّر يوصل لآخر القايمة. */
+  const PAGE = 120;
+  const [shown, setShown] = useState(PAGE);
+  useEffect(() => { setShown(PAGE); }, [query, activeCategory, open, onlyAvailableStock]);
+  const rendered = useMemo(() => visible.slice(0, shown), [visible, shown]);
 
   // Back to the top whenever the list underneath changes, so the highlight is never left pointing
   // at a row that scrolled out from under it.
@@ -166,6 +184,13 @@ export default function ProductPickerModal({
                 </div>
               );
             })}
+            {rendered.length < visible.length && (
+              <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                <a onClick={() => setShown((n) => n + PAGE)}>
+                  عرض المزيد ({visible.length - rendered.length} صنف كمان)
+                </a>
+              </div>
+            )}
           </div>
         </Col>
 
@@ -174,7 +199,7 @@ export default function ProductPickerModal({
             {visible.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={query ? 'لا يوجد صنف بهذا الاسم' : (onlyAvailableStock ? 'لا توجد أصناف برصيد متاح في هذا المخزن' : 'لا توجد أصناف')} />
-            ) : visible.map((p, i) => {
+            ) : rendered.map((p, i) => {
               const available = availableFor ? availableFor(p.id) : null;
               // الصفر بيتقال، مابيمنعش. الصنف اللي مش في المكان ده بيبقى غالباً في مكان
               // تاني — والمخزن على السطر مش على المستند (030)، فمنعه من القايمة بيمنع بيع
