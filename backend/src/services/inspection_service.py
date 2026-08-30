@@ -196,7 +196,7 @@ def create_inspection(
     technician_name: str | None = None, technician_phone: str | None = None,
     purchase_shop: str | None = None, purchase_shop_phone: str | None = None,
     visit_details: str | None = None,
-    customer_id: int | None = None, client_uuid: str | None = None,
+    customer_id: int | None = None, owner_id: int | None = None, client_uuid: str | None = None,
 ) -> Inspection:
     # A regular visit is tied to a chosen customer; its owner_name is filled from the customer,
     # so a technician inspection needs a typed owner while a regular visit needs a customer.
@@ -209,6 +209,14 @@ def create_inspection(
             raise InspectionError("العميل غير موجود.")
         if not name:
             name = customer.name
+    elif owner_id is not None:
+        from src.models.owner import Owner
+
+        owner = db.get(Owner, owner_id)
+        if owner is None:
+            raise InspectionError("المالك غير موجود.")
+        if not name:
+            name = owner.name
     if not name:
         raise InspectionError("اسم صاحب الزيارة (أو العميل) مطلوب.")
 
@@ -221,6 +229,7 @@ def create_inspection(
     insp = Inspection(
         document_number=_doc_number(db), certificate_number=_next_certificate_number(db),
         client_uuid=client_uuid, visit_kind=visit_kind, customer_id=customer_id,
+        owner_id=owner_id,
         inspection_date=inspection_date, owner_name=name, owner_phone=owner_phone,
         national_id=national_id, owner_address=owner_address, floor_number=floor_number,
         description=description, inspection_type=inspection_type,

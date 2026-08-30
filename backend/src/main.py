@@ -34,6 +34,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     manufacturing,
     orders,  # طلبات البيع والشراء (B9)
     org,
+    owners,
     points,
     price_display,  # شاشة معلومات المنتج (031)
     product_points,
@@ -139,6 +140,8 @@ def create_app() -> FastAPI:
     app.include_router(wastage.router, prefix=prefix)
     # Site inspections / معاينات (015) — rep mobile app
     app.include_router(inspections.router, prefix=prefix)
+    # Owners / الملّاك (خدمات ما بعد البيع)
+    app.include_router(owners.router, prefix=prefix)
     # Cash vouchers + account statements (018) — سندات القبض والصرف وكشوف الحساب
     app.include_router(vouchers.router, prefix=prefix)
     # Cheques + income statement / balance sheet / aging (020)
@@ -324,6 +327,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # مندوب خدمة العملاء — غير مندوب المبيعات، والاتنين بيزوروا نفس العميل.
     ("customer", "service_rep_id", "BIGINT"),
     ("inspection", "merchant_customer_id", "BIGINT"),
+    ("inspection", "owner_id", "BIGINT"),
+    ("owner", "governorate_id", "BIGINT"),
+    ("owner", "markaz", "VARCHAR(120)"),
     ("sales_invoice_coupon", "coupon_kind", "VARCHAR(24)"),
     # مرجع المصدر للقيد — استيراد الدفتر من نظام برّه بيتعاد من غير تكرار ولا تخطّي.
     ("ledger_entry", "external_ref", "VARCHAR(60)"),

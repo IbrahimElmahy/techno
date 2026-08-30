@@ -73,6 +73,7 @@ const Reps = lazy(() => import('../pages/Reps'));
 const Territories = lazy(() => import('../pages/Territories'));
 const Governorates = lazy(() => import('../pages/Governorates'));
 const Inspections = lazy(() => import('../pages/Inspections'));
+const Owners = lazy(() => import('../pages/Owners'));
 const InspectionItems = lazy(() => import('../pages/InspectionItems'));
 const Vouchers = lazy(() => import('../pages/Vouchers'));
 const VoucherKeys = lazy(() => import('../pages/VoucherKeys'));
@@ -144,6 +145,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/loyalty" element={<Loyalty />} />
       <Route path="/audit" element={<Audit />} />
       <Route path="/inspections" element={<Inspections />} />
+      <Route path="/owners" element={<Owners />} />
       <Route path="/inspection-items" element={<InspectionItems />} />
       <Route path="/reports" element={<Reports />} />
       <Route path="/purchase-returns" element={<PurchaseReturns />} />

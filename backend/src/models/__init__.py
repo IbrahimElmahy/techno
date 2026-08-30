@@ -83,6 +83,7 @@ from src.models.hr_payroll import (  # noqa: E402
 from src.models.hr_attendance import (  # noqa: E402
     AttendanceDay, AttendanceImport, EmployeeShiftAssignment, Holiday, WorkShift,
 )
+from src.models.owner import Owner  # noqa: E402
 
 __all__ = [
     "AccountRouting",
@@ -106,4 +107,5 @@ __all__ = [
     "PayrollSchemeVersion", "PayrollSchemeBracket",
     "EmployeeAdvance", "EmployeeAdvanceInstalment", "PayrollAdjustment",
     "PayrollRun", "PayrollLine", "PayrollLineDetail", "PayrollRemittance",
+    "Owner",
 ]

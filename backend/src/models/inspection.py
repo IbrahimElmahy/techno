@@ -51,6 +51,8 @@ class Inspection(Base):
     # الزيارة العادية مرتبطة بعميل مختار من النظام؛ معاينة الفنيين تكتب اسم المالك يدويًا.
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True,
                                                     index=True)
+    # صاحب البيت. كان `customer_id` لما الملّاك كانوا في كشف العملاء.
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("owner.id"), nullable=True, index=True)
 
     # صاحب الشقة / المالك (أو اسم العميل في الزيارة العادية)
     owner_name: Mapped[str] = mapped_column(String(160), nullable=False)

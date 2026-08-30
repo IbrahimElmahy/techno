@@ -383,6 +383,7 @@ export const EXTRA_SECTIONS: NavGroup[] = [
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
+      { key: '/owners', label: 'الملّاك', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/inspection-items', label: 'أصناف المعاينة', roles: OFFICE },
       {
         key: 'grp-loyalty-reports',

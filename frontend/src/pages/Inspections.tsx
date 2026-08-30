@@ -39,6 +39,8 @@ interface InspectionRecord {
   printed: boolean;
   visit_kind: 'technician' | 'regular';
   inspection_date: string;
+  customer_id: number | null;
+  owner_id: number | null;
   owner_name: string;
   owner_phone: string | null;
   national_id: string | null;
@@ -241,7 +243,27 @@ const Inspections: React.FC = () => {
       width: 110,
       render: (v: number | null) => <b>{v ?? '—'}</b>,
     },
-    { title: 'اسم المالك', dataIndex: 'owner_name' },
+    {
+      title: 'اسم المالك',
+      dataIndex: 'owner_name',
+      render: (name: string, record: InspectionRecord) => {
+        if (record.owner_id) {
+          return (
+            <a href={`#/owners`}>
+              {name}
+            </a>
+          );
+        }
+        if (record.customer_id) {
+          return (
+            <a href={`#/customers/${record.customer_id}`}>
+              {name}
+            </a>
+          );
+        }
+        return name;
+      },
+    },
     { title: 'تاريخ المعاينة', dataIndex: 'inspection_date', width: 115 },
     { title: 'اسم الفني', dataIndex: 'technician_name', width: 140 },
     { title: 'المندوب', dataIndex: 'rep_user_id', width: 130, render: repName },
@@ -517,6 +539,19 @@ const Inspections: React.FC = () => {
               </Descriptions.Item>
               <Descriptions.Item label="التاريخ">{detail.inspection_date}</Descriptions.Item>
               <Descriptions.Item label="المندوب">{repName(detail.rep_user_id)}</Descriptions.Item>
+              <Descriptions.Item label="اسم المالك">
+                {detail.owner_id ? (
+                  <a href={`#/owners`}>
+                    {detail.owner_name}
+                  </a>
+                ) : detail.customer_id ? (
+                  <a href={`#/customers/${detail.customer_id}`}>
+                    {detail.owner_name}
+                  </a>
+                ) : (
+                  detail.owner_name
+                )}
+              </Descriptions.Item>
               <Descriptions.Item label="تليفون المالك">
                 {detail.owner_phone || '—'}
               </Descriptions.Item>

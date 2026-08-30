@@ -23,6 +23,7 @@ class CustomerType(str, enum.Enum):
 
     trader = "trader"
     plumber = "plumber"
+    owner = "owner"
     other = "other"
 
 

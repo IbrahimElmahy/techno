@@ -43,6 +43,7 @@ class InspectionIn(BaseModel):
     # Optional: a regular visit fills it from the chosen customer. Validated in the service.
     owner_name: str | None = Field(default=None, max_length=160)
     customer_id: int | None = None
+    owner_id: int | None = None
     owner_phone: str | None = None
     national_id: str | None = None
     owner_address: str | None = None
@@ -80,6 +81,7 @@ class InspectionOut(BaseModel):
     visit_kind: VisitKind
     inspection_date: date
     customer_id: int | None
+    owner_id: int | None = None
     owner_name: str
     owner_phone: str | None
     national_id: str | None
@@ -145,6 +147,7 @@ def _out(i, merchant_name: str | None = None) -> InspectionOut:
         id=i.id, document_number=i.document_number, certificate_number=i.certificate_number,
         status=i.status, visit_type=i.visit_type, printed=i.printed, client_uuid=i.client_uuid,
         visit_kind=i.visit_kind, inspection_date=i.inspection_date, customer_id=i.customer_id,
+        owner_id=i.owner_id,
         owner_name=i.owner_name,
         owner_phone=i.owner_phone, national_id=i.national_id, owner_address=i.owner_address,
         floor_number=i.floor_number, description=i.description,
@@ -173,7 +176,7 @@ def _out_single(db: Session, insp) -> InspectionOut:
 def _create(db: Session, body: InspectionIn, current: CurrentUser):
     return inspection_service.create_inspection(
         db, visit_kind=body.visit_kind, inspection_date=body.inspection_date,
-        owner_name=body.owner_name, customer_id=body.customer_id,
+        owner_name=body.owner_name, customer_id=body.customer_id, owner_id=body.owner_id,
         rep_user_id=current.id, actor_user_id=current.id,
         owner_phone=body.owner_phone, national_id=body.national_id,
         owner_address=body.owner_address, floor_number=body.floor_number,

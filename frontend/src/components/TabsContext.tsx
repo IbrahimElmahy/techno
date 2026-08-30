@@ -50,6 +50,7 @@ const BASE_TITLES: Record<string, string> = {
   '/loyalty': 'الكوبونات والنقاط',
   '/audit': 'سجل العمليات',
   '/inspections': 'المعاينات',
+  '/owners': 'الملّاك',
   '/inspection-items': 'أصناف المعاينة',
   '/reports': 'التقارير والإحصائيات',
   '/trade-reports': 'تقارير المبيعات والمشتريات',
