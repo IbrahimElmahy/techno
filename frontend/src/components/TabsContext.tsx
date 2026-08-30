@@ -42,6 +42,7 @@ const BASE_TITLES: Record<string, string> = {
   '/employees': 'الموظفون والوظائف',
   '/orders': 'طلبات البيع والشراء',
   '/coupon-receipts': 'استلام الكوبونات',
+  '/after-sales-reports': 'تقارير المتابعة',
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',
   '/finance-reports': 'القوائم المالية',

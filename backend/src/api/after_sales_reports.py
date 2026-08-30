@@ -132,9 +132,11 @@ def _returned_against_issue(db: Session, current: CurrentUser,
     الورقة بتخرج لموزع وبترجع من سباك. ربط الرجوع بمستند الصرف هو اللي بيخلّي «لسه برّه»
     تقول الحقيقة؛ ربطها باللي رجّعها بيدّي للموزع رصيد كامل وللسباك رصيد سالب.
     """
+    # الربط على المستند مباشرةً — من غير المرور بسطوره. المرور بيهم كان بيضرب العدد
+    # في عدد أوراق المستند: مستند فيه ٥٠ ورقة رجع منه ٤٠ كان بيتحسب ٢٠٠٠، و«لسه برّه»
+    # كانت بتطلع بالسالب بعشرات الألوف.
     stmt = branch_scope.scope(
         select(CouponIssue.customer_id, func.count(CouponReceiptLine.id))
-        .join(CouponIssueLine, CouponIssueLine.issue_id == CouponIssue.id)
         .join(CouponReceiptLine,
               CouponReceiptLine.coupon_issue_id == CouponIssue.id),
         CouponIssue, current)

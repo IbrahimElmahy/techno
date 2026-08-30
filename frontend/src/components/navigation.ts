@@ -399,6 +399,18 @@ export const EXTRA_SECTIONS: NavGroup[] = [
         ],
       },
       {
+        // «تقارير متابعة» عندهم — بتسأل عن الناس مش عن المستندات: الموزع ماسك كام،
+        // الفني رجّع كام، ومين نزل كام معاينة.
+        key: 'grp-followup-reports',
+        label: 'تقارير المتابعة',
+        children: [
+          { key: '/after-sales-reports?tab=distributors', label: 'كوبونات الموزعين', roles: LOYALTY },
+          { key: '/after-sales-reports?tab=plumbers', label: 'كوبونات السباكين', roles: LOYALTY },
+          { key: '/after-sales-reports?tab=technicians', label: 'زيارات الفنيين بالنقاط', roles: R([...SALES, 'after_sales_staff']) },
+          { key: '/after-sales-reports?tab=reps', label: 'زيارات المناديب', roles: R([...SALES, 'after_sales_staff']) },
+        ],
+      },
+      {
         key: 'grp-inspection-reports',
         label: 'تقارير المعاينات',
         children: [
