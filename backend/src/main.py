@@ -59,7 +59,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
 from src.api import (
     settings as sales_settings,
 )
-from src.api import branch_overview, permissions, reps
+from src.api import after_sales_reports, branch_overview, permissions, reps
 
 
 def create_app() -> FastAPI:
@@ -168,6 +168,7 @@ def create_app() -> FastAPI:
     app.include_router(orders.router, prefix=prefix)
     # Coupon hand-back from customers (mobile app + office)
     app.include_router(coupon_receipts.router, prefix=prefix)
+    app.include_router(after_sales_reports.router, prefix=prefix)
     app.include_router(attachments.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(admin.router, prefix=prefix)
