@@ -79,6 +79,9 @@ export default function CouponReceipts() {
   const [customerType, setCustomerType] = useState<string>('plumber');
 
   const { options: kindLookup } = useLookup('coupon_kind');
+  // أنواع العملاء زي ما الأدمن ظابطها — مش مكتوبة في الكود، عشان النوع المضاف من
+  // الإعدادات يبان باسمه في قايمة «بستلم من مين».
+  const { options: customerTypeLookup } = useLookup('customer_type');
 
   // مصدر واحد لفئات الورق: قائمة «فئات الكوبونات» في الإعدادات.
   //
@@ -201,12 +204,31 @@ export default function CouponReceipts() {
       : `أكتر من تاجر (${issuedToNames.length})`;
   const totalValue = (value ?? 0) * counted.length;
 
-  // «بستلم منه» بيتفلتر على النوع المختار: سباك ⇒ السباكين بس. «تاجر» في الشاشة
-  // هو `trader` في كارت العميل — نفس الراجل باسمين، فالاتنين بيتقبلوا.
+  // «بستلم منه» **مابيتفلترش** — النوع المختار بيرتّب بس.
+  //
+  // `customer_type` قايمة حرة يديرها الأدمن (فيها `owner` و`other` ونوع أي حد يضيفه)،
+  // وفلترة القايمة على نوعين كانت بتخفي كل عميل غير كده — يعني الاستلام منه يبقى
+  // مستحيل خالص وهو واقف بالورق. اللي بيتصرف هنا الترتيب: النوع المختار فوق،
+  // والباقي تحته، والنوع مكتوب جنب الاسم عشان اللي بيدخل يفرّق.
   const receiverTypes = customerType === 'plumber' ? ['plumber'] : ['trader', 'merchant'];
-  const receiverOptions = customers
-    .filter((c) => receiverTypes.includes(String(c.customer_type)))
-    .map((c) => ({ value: c.id as number, label: String(c.name) }));
+  const customerTypeLabel = (t: unknown) => {
+    const key = String(t ?? '');
+    if (!key) return '';
+    return customerTypeLookup.find((o) => o.value === key)?.label ?? key;
+  };
+  const receiverOptions = [...customers]
+    .sort((a, b) => {
+      const rank = (c: any) => (receiverTypes.includes(String(c.customer_type)) ? 0 : 1);
+      return rank(a) - rank(b)
+        || String(a.name ?? '').localeCompare(String(b.name ?? ''), 'ar');
+    })
+    .map((c) => {
+      const typeLabel = customerTypeLabel(c.customer_type);
+      return {
+        value: c.id as number,
+        label: typeLabel ? `${String(c.name)} — ${typeLabel}` : String(c.name),
+      };
+    });
 
   const save = async () => {
     if (!entries.length) { message.warning('لا توجد كوبونات'); return; }
@@ -230,7 +252,13 @@ export default function CouponReceipts() {
         customer_type: customerType,
       });
       message.success('تم تسجيل الاستلام ورفعه إلى الخادم');
-      setEntries([]); setNotes(''); setCustomerId(undefined);
+      // ⛔ والفئة بترجع فاضية زي كل حاجة تانية.
+      //
+      // المستند الواحد دفتر واحد، والمستند اللي بعده قرار جديد. لو سابناها، المندوب
+      // اللي خلّص ٥٠ ذهبي وبدأ على طول في دفتر فضي بيلاقي الحقل مفتوح وفيه «ذهبي»،
+      // وأول رقم يتفحص تحت الدفتر الغلط. الفاضي هنا سؤال مقصود — بيرجّع تحذير
+      // «اختر فئة الكوبون الأول» ويقفل حقول النطاق لحد ما يتقرر.
+      setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
       setValue(null); setCustomerType('plumber');
       setReceivedDate(dayjs());
       clientUuid.current = crypto.randomUUID();
@@ -294,7 +322,15 @@ export default function CouponReceipts() {
       title="تسجيل استلام جديد"
       extra={(
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => { setEntries([]); setNotes(''); setCustomerId(undefined); }}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              // «تفريغ» بيفضّي الفئة كمان: الشاشة بترجع لسؤالها الأول بدل ما تفضل
+              // محطوط عليها دفتر المستند اللي فات.
+              setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
+              setValue(null);
+            }}
+          >
             تفريغ
           </Button>
           <Button type="primary" icon={<SaveOutlined />} loading={saving}
@@ -368,8 +404,7 @@ export default function CouponReceipts() {
             status={!customerId ? 'warning' : undefined}
             value={customerId} onChange={setCustomerId}
             options={receiverOptions}
-            notFoundContent={customerType === 'plumber' ? 'مافيش سباكين بالاسم ده'
-              : 'مافيش تجار بالاسم ده'}
+            notFoundContent="مافيش عميل بالاسم ده"
           />
         </Col>
       </Row>
