@@ -141,6 +141,8 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             db, "inspection_type", [_clean(r[V_B]) for r in by_kind["PTYPE"]])
         made["توصيفات"] = _ensure_options(
             db, "inspection_description", [_clean(r[V_B]) for r in by_kind["PDESC"]])
+        made["خيارات نوع الزيارة"] = _ensure_options(
+            db, "visit_type", ["معاينة", "مرمة"])
         db.flush()
 
         # ---------- المعاينات ----------

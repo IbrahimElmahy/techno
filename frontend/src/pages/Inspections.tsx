@@ -48,6 +48,8 @@ interface InspectionRecord {
   inspection_type: string | null;
   technician_name: string | null;
   technician_phone: string | null;
+  merchant_customer_id: number | null;
+  merchant_name: string | null;
   purchase_shop: string | null;
   visit_details: string | null;
   total_points: string;
@@ -194,7 +196,7 @@ const Inspections: React.FC = () => {
           ['اسم الفني', d.technician_name ?? '—'],
           ['تليفون الفني', d.technician_phone ?? '—'],
           ['المندوب', repName(d.rep_user_id)],
-          ['التاجر / محل الشراء', d.purchase_shop ?? '—'],
+          ['التاجر / محل الشراء', d.merchant_name || d.purchase_shop || '—'],
           ['نوع الزيارة', d.visit_type],
           ['التاريخ', d.inspection_date],
         ],
@@ -257,7 +259,23 @@ const Inspections: React.FC = () => {
       align: 'center' as const,
       render: (v: boolean) => (v ? <Tag color="blue">تم</Tag> : <Tag>غير مطبوعة</Tag>),
     },
-    { title: 'التاجر', dataIndex: 'purchase_shop', width: 120 },
+    {
+      title: 'التاجر',
+      dataIndex: 'purchase_shop',
+      width: 140,
+      render: (_v: string | null, record: InspectionRecord) => {
+        const name = record.merchant_name || record.purchase_shop;
+        if (!name) return '—';
+        if (record.merchant_customer_id) {
+          return (
+            <a href={`#/customers/${record.merchant_customer_id}`}>
+              {name}
+            </a>
+          );
+        }
+        return name;
+      },
+    },
     {
       title: 'عدد النقاط',
       dataIndex: 'total_points',
@@ -518,7 +536,13 @@ const Inspections: React.FC = () => {
                 {detail.technician_phone || '—'}
               </Descriptions.Item>
               <Descriptions.Item label="التاجر / محل الشراء">
-                {detail.purchase_shop || '—'}
+                {detail.merchant_customer_id ? (
+                  <a href={`#/customers/${detail.merchant_customer_id}`}>
+                    {detail.merchant_name || detail.purchase_shop}
+                  </a>
+                ) : (
+                  detail.merchant_name || detail.purchase_shop || '—'
+                )}
               </Descriptions.Item>
               <Descriptions.Item label="تفاصيل الزيارة">
                 {detail.visit_details || '—'}

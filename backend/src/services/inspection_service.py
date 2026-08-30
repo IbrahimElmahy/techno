@@ -311,8 +311,12 @@ def list_inspections(
         stmt = stmt.where(Inspection.owner_name.contains(owner))
     if technician:
         stmt = stmt.where(Inspection.technician_name.contains(technician))
-    if trader:  # التاجر في الشاشة القديمة = محل الشراء
-        stmt = stmt.where(Inspection.purchase_shop.contains(trader))
+    if trader:  # التاجر في الشاشة: محل الشراء أو اسم التاجر المربوط
+        from src.models.customer import Customer
+        stmt = stmt.outerjoin(Customer, Inspection.merchant_customer_id == Customer.id)
+        stmt = stmt.where(
+            Inspection.purchase_shop.contains(trader) | Customer.name.contains(trader)
+        )
     return db.scalars(stmt.order_by(Inspection.inspection_date.desc(), Inspection.id.desc())).all()
 
 

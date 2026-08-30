@@ -37,6 +37,26 @@ cd src; pytest; ruff check .
 
 Python 3.12: Follow standard conventions
 
+## Legacy databases are READ-ONLY
+
+The client's two legacy systems live on SQL Server and are **still in daily use**:
+
+| قاعدة | فيها إيه |
+|---|---|
+| `aliaa2026` · `Techno2026` | a5 — المبيعات والمخازن والحسابات (فرعَي العلياء وأكتوبر) |
+| `ERP` | ما بعد البيع — المعاينات، الكوبونات، الفنيين، التجار |
+
+**`SELECT` and export only.** No `INSERT`, `UPDATE`, `DELETE`, `ALTER`, `DROP`, `CREATE` —
+not even a temp table or a "quick fix". Every write goes to **our own Postgres** on the
+server (`DATABASE_URL` in `backend/.env`); that is the project we own.
+
+Two reasons, and either one is enough: the client is working in those systems right now and
+we hold no backup to restore from, and they are the reference we check the migration
+against — a source we edited proves nothing.
+
+Need to correct migrated data? Correct it in our Postgres with a script under
+`backend/src/scripts/`, never at the source.
+
 ## Recent Changes
 - 011-stock-min-max (built): advisory min/max thresholds + reorder report (how much to buy); perishable items tracked in expiry lots with FEFO consumption on sale, lot restore on return, and an expiring-soon report. Invariant: batch sum == derived on-hand at every location.
 - 030-invoice-parity: Warehouse moved from the document to the LINE (one invoice can be served out of several warehouses; availability checked on the SUM per item×warehouse; reversal returns each line to its own warehouse). Cost of goods frozen on each sold line (`costing_service.average_cost`) so past profit never moves. Document fields: rep, posting account (drives the ledger), external document number, notes + 3 statements. Party picker modal with inline create. Migration `0028` backfills legacy lines from their document.

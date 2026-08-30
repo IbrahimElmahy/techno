@@ -67,6 +67,14 @@ class Inspection(Base):
     technician_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     technician_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
+    # التاجر اللي العميل اشترى منه — نفس تاجر البيع، مش نص.
+    #
+    # النظامين القدام كانوا منفصلين، فالتاجر كان مكتوب اسمه هنا ومتسجّل كعميل هناك.
+    # بعد الدمج بقى واحد، والربط بيخلّي كارته يجمع بيعه ومعايناته وكوبوناته.
+    # `purchase_shop` النصي فضل تحته كنسخة احتياطية للصفوف اللي مالهاش تاجر متطابق.
+    merchant_customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customer.id"), nullable=True, index=True)
+
     purchase_shop: Mapped[str | None] = mapped_column(String(160), nullable=True)  # محل الشراء
     # تليفون محل الشراء — «محل الشراء» تاجر متسجّل عندنا، والمندوب بيختاره من قايمته.
     # The name alone is a string a second rep spells differently; carrying the phone with it

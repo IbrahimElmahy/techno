@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -20,6 +21,7 @@ from src.auth.rbac import (
     CAP_SETTINGS_WRITE,
 )
 from src.core.db import get_db
+from src.models.customer import Customer
 from src.models.inspection import InspectionStatus, VisitKind
 from src.models.role import RoleName
 from src.services import inspection_service
@@ -87,6 +89,8 @@ class InspectionOut(BaseModel):
     inspection_type: str | None
     technician_name: str | None
     technician_phone: str | None
+    merchant_customer_id: int | None = None
+    merchant_name: str | None = None
     purchase_shop: str | None
     purchase_shop_phone: str | None
     visit_details: str | None
@@ -136,7 +140,7 @@ def _type_out(t) -> ItemTypeOut:
                        active=t.active)
 
 
-def _out(i) -> InspectionOut:
+def _out(i, merchant_name: str | None = None) -> InspectionOut:
     return InspectionOut(
         id=i.id, document_number=i.document_number, certificate_number=i.certificate_number,
         status=i.status, visit_type=i.visit_type, printed=i.printed, client_uuid=i.client_uuid,
@@ -145,13 +149,25 @@ def _out(i) -> InspectionOut:
         owner_phone=i.owner_phone, national_id=i.national_id, owner_address=i.owner_address,
         floor_number=i.floor_number, description=i.description,
         inspection_type=i.inspection_type, technician_name=i.technician_name,
-        technician_phone=i.technician_phone, purchase_shop=i.purchase_shop,
+        technician_phone=i.technician_phone,
+        merchant_customer_id=i.merchant_customer_id,
+        merchant_name=merchant_name or i.purchase_shop,
+        purchase_shop=i.purchase_shop,
         purchase_shop_phone=i.purchase_shop_phone,
         visit_details=i.visit_details, total_points=i.total_points, rep_user_id=i.rep_user_id,
         items=[InspectionLineOut(id=ln.id, item_id=ln.item_id, item_name=ln.item_name,
                                  quantity=ln.quantity, points=ln.points, total=ln.total)
                for ln in i.items],
     )
+
+
+def _out_single(db: Session, insp) -> InspectionOut:
+    m_name = None
+    if insp.merchant_customer_id is not None:
+        c = db.get(Customer, insp.merchant_customer_id)
+        if c:
+            m_name = c.name
+    return _out(insp, merchant_name=m_name or insp.purchase_shop)
 
 
 def _create(db: Session, body: InspectionIn, current: CurrentUser):
@@ -184,7 +200,7 @@ def create_inspection(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "inspection_invalid", "message": str(exc)})
     db.commit()
-    return _out(insp)
+    return _out_single(db, insp)
 
 
 @router.post("/sync", response_model=list[SyncResultOut])
@@ -317,7 +333,12 @@ def list_inspections(
         db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to,
         status=status_filter, visit_type=visit_type, printed=printed,
         certificate_number=certificate_number, owner=owner, technician=technician, trader=trader)
-    return [_out(i) for i in rows]
+
+    m_ids = {i.merchant_customer_id for i in rows if i.merchant_customer_id is not None}
+    m_map = {c.id: c.name for c in db.scalars(
+        select(Customer).where(Customer.id.in_(m_ids))).all()} if m_ids else {}
+
+    return [_out(i, merchant_name=m_map.get(i.merchant_customer_id) or i.purchase_shop) for i in rows]
 
 
 class InspectionPatch(BaseModel):
@@ -352,7 +373,7 @@ def update_inspection(
     if body.visit_type:
         insp.visit_type = body.visit_type
     db.commit()
-    return _out(insp)
+    return _out_single(db, insp)
 
 
 @router.post("/{inspection_id}/reject", response_model=InspectionOut)
@@ -370,7 +391,7 @@ def reject_inspection(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "reject_conflict", "message": str(exc)})
     db.commit()
-    return _out(insp)
+    return _out_single(db, insp)
 
 
 @router.post("/{inspection_id}/mark-printed", response_model=InspectionOut)
@@ -386,7 +407,7 @@ def mark_printed(
     insp.printed = True
     insp.printed_at = datetime.now()
     db.commit()
-    return _out(insp)
+    return _out_single(db, insp)
 
 
 @router.delete("/{inspection_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -421,4 +442,5 @@ def get_inspection(
     if current.role == RoleName.sales_rep and insp.rep_user_id != current.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "Not your inspection."})
-    return _out(insp)
+    return _out_single(db, insp)
+
