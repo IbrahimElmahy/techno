@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 19, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 20, onUpgrade: (d, from, to) async {
       if (from < 18) {
         // v18: صناديق المندوب — واحد لكل خط. الصندوق بيتحدد من نوع الفاتورة لوحده،
         // والجهاز لازم يكون شايله عشان يعرضه وهو في الشارع من غير شبكة.
@@ -87,6 +87,11 @@ class LocalDb {
         ]) {
           try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN $col'); } catch (_) {}
         }
+      }
+      if (from < 20) {
+        // v20: التحصيل بقى بالخط — «المدفوع ده أبيض ولا بولي» — لأن الفلوس بتنزل في
+        // صندوق الخط والمديونية اللي بتتخصم مديونية الخط.
+        try { await d.execute('ALTER TABLE sale_receipt ADD COLUMN family TEXT'); } catch (_) {}
       }
       if (from < 19) {
         // v19: أرصدة العميل بالخط. المندوب واقف قدام العميل وبيقول له عليك كام —
@@ -787,6 +792,7 @@ class LocalDb {
     required String customerName,
     required double amount,
     required String receiptDate,
+    String? family,
     String? notes,
   }) async {
     final d = await db;
@@ -796,6 +802,7 @@ class LocalDb {
       'customer_name': customerName,
       'amount': amount,
       'receipt_date': receiptDate,
+      'family': family,
       'notes': notes,
       'synced': 0,
       'created_at': DateTime.now().toIso8601String(),
@@ -963,6 +970,7 @@ CREATE TABLE sale_receipt(
   customer_name TEXT NOT NULL,
   amount REAL NOT NULL,
   receipt_date TEXT NOT NULL,
+  family TEXT,
   notes TEXT,
   synced INTEGER NOT NULL DEFAULT 0,
   document_number TEXT,

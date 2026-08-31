@@ -467,9 +467,14 @@ class ApiClient {
                 'amount': '${row['amount']}',
                 'voucher_date': row['receipt_date'],
                 'description': row['notes'],
-                // على إجمالي المديونية: المندوب في الشارع مش بيعرف العميل مدين على أنهي
-                // خط منتجات، والسيرفر بيوزّع بالنسبة بدل ما يخمّن خط واحد.
-                'on_total': true,
+                // التحصيل بقى بالخط: المندوب بيتسأل «المدفوع ده أبيض ولا بولي» وقت
+                // الكتابة، لأن الفلوس بتنزل في صندوق الخط والمديونية اللي بتتخصم
+                // مديونية الخط. التحصيلات القديمة اللي لسه في الطابور من قبل السؤال
+                // مالهاش خط — دي بتتوزّع على الإجمالي بالنسبة زي الأول.
+                if ((row['family'] as String?) != null)
+                  'family': row['family']
+                else
+                  'on_total': true,
                 'client_uuid': row['client_uuid'],
               }))
           .timeout(const Duration(seconds: 60));

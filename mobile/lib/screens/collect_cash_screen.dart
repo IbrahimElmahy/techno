@@ -13,8 +13,10 @@ import '../theme.dart';
 /// اللي فات. فالتحصيل بيتكتب هنا زي الفاتورة بالظبط — طابور على الجهاز، ورفع لما الشبكة
 /// تيجي، ورقم جهاز بيمنع إنه يتقيّد مرتين لو الرفع اتعاد.
 ///
-/// **والتحصيل بيروح على إجمالي المديونية.** العميل ممكن يكون مدين على أكتر من خط منتجات،
-/// والمندوب في الشارع مش بيعرف على أنهي واحد — فالسيرفر بيوزّع بالنسبة بدل ما حد يخمّن.
+/// **والتحصيل بالخط** — «المدفوع ده أبيض ولا بولي». العميل مدين على خطين بحسابين،
+/// والفلوس بتنزل في صندوق الخط: من غير السؤال ده السند بيتوزّع بالتخمين والصندوق
+/// بيتاخد عشوائي. والتاريخ **ثابت على النهارده وعرض بس** — نفس قاعدة الفاتورة:
+/// سند بتاريخ قديم بيتكتب من المكتب بقرار، مش من الشارع بغلطة في منتقي تاريخ.
 class CollectCashScreen extends StatefulWidget {
   const CollectCashScreen({super.key});
 
@@ -24,7 +26,11 @@ class CollectCashScreen extends StatefulWidget {
 
 class _CollectCashScreenState extends State<CollectCashScreen> {
   CustomerRef? _customer;
-  DateTime _date = DateTime.now();
+  /// النهارده دايماً — getter مش حقل، فمافيش طريقة أصلاً تتكتب بيها قيمة تانية.
+  DateTime get _date => DateTime.now();
+  /// الخط اللي الدفعة عليه — أبيض ولا بولي. إجباري قبل الحفظ.
+  String? _family;
+  List<RepTreasury> _treasuries = const [];
   final _amount = TextEditingController();
   final _notes = TextEditingController();
   bool _saving = false;
@@ -34,6 +40,43 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   void initState() {
     super.initState();
     _loadRecent();
+    _loadTreasuries();
+  }
+
+  Future<void> _loadTreasuries() async {
+    final rows = await LocalDb.instance.treasuries();
+    if (mounted) setState(() => _treasuries = rows);
+  }
+
+  double get _typed => double.tryParse(_amount.text.trim()) ?? 0;
+
+  /// حساب العميل السابق — الإجمالي، ورصيد كل خط لوحده.
+  double get _prevBalance => _customer?.balance ?? 0;
+  double _familyBalance(String f) => _customer?.familyBalances[f] ?? 0;
+
+  /// الباقي بعد الدفعة. بيقدر يطلع سالب — العميل دفع أكتر من اللي عليه، ودي دفعة
+  /// مقدّمة بتتقيّد له، مش غلطة بترفض.
+  double get _afterPayment => _prevBalance - _typed;
+
+  /// صندوق الخط المختار — نفس منطق شاشة الفاتورة بالحرف.
+  RepTreasury? get _treasury {
+    if (_family == null) return null;
+    for (final t in _treasuries) {
+      if (t.family == _family) return t;
+    }
+    return null;
+  }
+
+  bool get _treasuriesKnown => _treasuries.isNotEmpty;
+  bool get _boxMissing => _family != null && _treasuriesKnown && _treasury == null;
+
+  String get _treasuryLabel {
+    if (_family == null) return 'بيتحدّد من نوع الدفعة';
+    final t = _treasury;
+    if (t != null) return t.code.isEmpty ? t.label : '${t.label} · ${t.code}';
+    return _treasuriesKnown
+        ? 'مافيش صندوق لخط «$_family» — كلّم المكتب'
+        : 'اسحب البيانات عشان الصندوق يبان';
   }
 
   @override
@@ -60,9 +103,18 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   }
 
   Future<void> _save() async {
-    final amount = double.tryParse(_amount.text.trim()) ?? 0;
+    final amount = _typed;
     if (_customer == null) return _say('اختار العميل');
+    if (_family == null) return _say('المدفوع ده أبيض ولا بولي؟');
     if (amount <= 0) return _say('اكتب المبلغ');
+    // مافيش حد أعلى: العميل بيدفع أكتر من اللي عليه عادي، والزيادة بتتقيّد له.
+    if (_boxMissing) {
+      return _say('مافيش صندوق لخط «$_family» على حسابك — كلّم المكتب.');
+    }
+
+    // آخر سؤال قبل الحفظ: الفلوس دي داخلة فين — عرض بس، زي الفاتورة بالظبط.
+    if (!await _confirmTreasury(amount)) return;
+    if (!mounted) return;
 
     setState(() => _saving = true);
     try {
@@ -74,6 +126,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
         customerName: _customer!.name,
         amount: amount,
         receiptDate: _date.toIso8601String().substring(0, 10),
+        family: _family,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
       );
       var pushed = false;
@@ -89,6 +142,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
         _amount.clear();
         _notes.clear();
         _customer = null;
+        _family = null;
       });
       _loadRecent();
     } catch (e) {
@@ -96,6 +150,97 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String _money(double v) => v.toStringAsFixed(2);
+
+  Widget _balanceRow(String label, double v,
+      {bool highlight = false, bool big = false}) {
+    final row = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label,
+            style: TextStyle(
+                fontSize: big ? 15 : 13,
+                fontWeight: highlight ? FontWeight.w700 : FontWeight.w400,
+                color: highlight ? Colors.black87 : Colors.black54)),
+        Text('${_money(v)} ج.م',
+            style: TextStyle(
+                fontSize: big ? 18 : 14,
+                fontWeight: FontWeight.w800,
+                color: v > 0.001 ? AppColors.danger : AppColors.success)),
+      ],
+    );
+    if (!highlight) return row;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: row,
+    );
+  }
+
+  /// بوباب «الفلوس داخلة فين» — **قراءة بس**: المندوب مالوش قرار في الصندوق،
+  /// نوع الدفعة حدّده. بيشوف ويأكّد.
+  Future<bool> _confirmTreasury(double amount) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تأكيد التحصيل',
+              style: TextStyle(fontWeight: FontWeight.w800)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('المبلغ', style: TextStyle(color: Colors.black54)),
+                  Text('${_money(amount)} ج.م',
+                      style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary)),
+                ],
+              ),
+              const Divider(height: 20),
+              const Text('بينزل في الخزنة',
+                  style: TextStyle(color: Colors.black54)),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.savings_outlined,
+                      size: 16, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(_treasuryLabel,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text('اتحدّد من نوع الدفعة «${_family ?? ''}»',
+                  style: const TextStyle(fontSize: 11, color: Colors.black45)),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('رجوع')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('تأكيد وحفظ')),
+          ],
+        ),
+      ),
+    );
+    return ok == true;
   }
 
   void _say(String m) =>
@@ -117,23 +262,98 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                   onTap: _pickCustomer,
                 ),
                 const Divider(height: 1),
+                // التاريخ عرض بس — النهارده وخلاص، مافيش onTap أصلاً.
                 ListTile(
                   leading: const Icon(Icons.event_outlined, color: AppColors.primary),
                   title: const Text('تاريخ التحصيل'),
                   subtitle: Text(_date.toIso8601String().substring(0, 10)),
-                  onTap: () async {
-                    final d = await showDatePicker(
-                      context: context,
-                      initialDate: _date,
-                      firstDate: DateTime.now().subtract(const Duration(days: 60)),
-                      lastDate: DateTime.now(),
-                    );
-                    if (d != null) setState(() => _date = d);
-                  },
+                  trailing: const Text('اليوم',
+                      style: TextStyle(fontSize: 12, color: Colors.black45)),
                 ),
               ],
             ),
           ),
+          // المدفوع ده أبيض ولا بولي — قبل المبلغ لأن الإجابة بتحدد الصندوق والمديونية.
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('الدفعة على خط',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      for (final f in const ['أبيض', 'بولي']) ...[
+                        Expanded(
+                          child: ChoiceChip(
+                            label: Center(child: Text(f)),
+                            selected: _family == f,
+                            onSelected: (_) => setState(() => _family = f),
+                          ),
+                        ),
+                        if (f != 'بولي') const SizedBox(width: 8),
+                      ],
+                    ],
+                  ),
+                  if (_family != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.savings_outlined,
+                            size: 14,
+                            color: _boxMissing ? AppColors.danger : Colors.black45),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text('الفلوس بتنزل في: $_treasuryLabel',
+                              maxLines: 2,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: _boxMissing
+                                      ? AppColors.danger
+                                      : Colors.black54)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          // حساب العميل — بالخط وبالإجمالي، وبعد الدفعة هيبقى كام.
+          if (_customer != null)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  children: [
+                    for (final f in const ['أبيض', 'بولي'])
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: _balanceRow('مديونية $f', _familyBalance(f),
+                            highlight: f == _family),
+                      ),
+                    const Divider(height: 14),
+                    _balanceRow('حساب سابق على العميل', _prevBalance),
+                    if (_typed > 0) ...[
+                      const SizedBox(height: 6),
+                      _balanceRow('الباقي بعد الدفعة', _afterPayment, big: true),
+                      if (_afterPayment < -0.001)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4),
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text('دفع أكتر من اللي عليه — الزيادة بتتقيّد له',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.black45)),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -144,6 +364,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                     textAlign: TextAlign.center,
+                    onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(
                       labelText: 'المبلغ المحصّل',
                       suffixText: 'ج.م',

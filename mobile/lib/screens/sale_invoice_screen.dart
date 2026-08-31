@@ -7,7 +7,7 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'invoice_print_screen.dart';
-import 'sale_item_picker_screen.dart';
+import 'sale_add_item_flow.dart';
 
 /// فاتورة بيع من العربية.
 ///
@@ -213,32 +213,97 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// أحياناً بيتحدّد بعد ما يشوف الموجود. فالسعر بيتعرض بالأساسي، وأول ما العميل يتحدّد
   /// السطور بتتسعّر من جديد على فئته (`_repriceAll`).
   Future<void> _addItem() async {
-    final onInvoice = {for (final l in _lines) l.itemId: l.quantity};
-    final picked = await Navigator.push<SaleItem>(
+    // بوبابات ورا بعض زي أصناف المعاينة — الفئة، الصنف، الكمية، و«التالي» بيرجّعه
+    // للأصناف على طول. كانت شاشة كاملة بدخلة وخرجة لكل صنف، والكمية بتبتدي «١»
+    // فبتتكتب فوقها غلط. المندوب طلب الاتنين.
+    await SaleAddItemFlow.show(
       context,
-      MaterialPageRoute(builder: (_) => SaleItemPickerScreen(
-          alreadyOnInvoice: onInvoice, priceTier: _customer?.priceTier)),
+      alreadyOnInvoice: {for (final l in _lines) l.itemId: l.quantity},
+      priceTier: _customer?.priceTier,
+      onAdd: (picked, qty) {
+        final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
+        setState(() {
+          if (existing >= 0) {
+            _lines[existing].quantity += qty;
+            // الرقم اتغيّر في الموديل — والخانة عندها كنترولر، فلازم تتبلّغ.
+            _syncQtyField(_lines[existing]);
+          } else {
+            _lines.add(SaleDraftLine(
+              itemId: picked.itemId,
+              itemName: picked.name,
+              quantity: qty,
+              // السعر والخصم من الصنف — الواحد بيراجع رقم، مش بيخترعه.
+              unitPrice: picked.priceFor(_customer?.priceTier),
+              // الثابت من الصنف، والمتغيّر بيبتدي صفر — ده اللي المندوب بيزوّده بإيده.
+              fixedDiscountPct: picked.defaultDiscountPct,
+              variableDiscountPct: 0,
+            ));
+          }
+        });
+      },
     );
-    if (picked == null) return;
-    final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
-    setState(() {
-      if (existing >= 0) {
-        _lines[existing].quantity += 1;
-        // الرقم اتغيّر في الموديل — والخانة عندها كنترولر، فلازم تتبلّغ.
-        _syncQtyField(_lines[existing]);
-      } else {
-        _lines.add(SaleDraftLine(
-          itemId: picked.itemId,
-          itemName: picked.name,
-          quantity: 1,
-          // السعر والخصم من الصنف — الواحد بيراجع رقم، مش بيخترعه.
-          unitPrice: picked.priceFor(_customer?.priceTier),
-          // الثابت من الصنف، والمتغيّر بيبتدي صفر — ده اللي المندوب بيزوّده بإيده.
-          fixedDiscountPct: picked.defaultDiscountPct,
-          variableDiscountPct: 0,
-        ));
-      }
-    });
+  }
+
+  /// بوباب «الفلوس داخلة فين» — عرض بس، وبيرجّع هل المندوب أكّد.
+  Future<bool> _confirmTreasury() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تأكيد التحصيل',
+              style: TextStyle(fontWeight: FontWeight.w800)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('المبلغ المحصّل',
+                      style: TextStyle(color: Colors.black54)),
+                  Text('${_money(_cashAmount)} ج.م',
+                      style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary)),
+                ],
+              ),
+              const Divider(height: 20),
+              const Text('بينزل في الخزنة',
+                  style: TextStyle(color: Colors.black54)),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.savings_outlined,
+                      size: 16, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(_treasuryLabel,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // الصندوق بيتحدد من نوع الفاتورة — يتقال ليه، مش يتساب كأنه مزاج.
+              Text('اتحدّد من نوع الفاتورة «${_family ?? ''}»',
+                  style: const TextStyle(fontSize: 11, color: Colors.black45)),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('رجوع')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('تأكيد وحفظ')),
+          ],
+        ),
+      ),
+    );
+    return ok == true;
   }
 
   /// بتتأكد إن كل سطر لسه جوّه المتاح — بيتقاس وقت الحفظ كمان مش عند الإضافة بس، لأن
@@ -275,9 +340,26 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
     final over = await _overCustody();
     if (over != null) return _say(over);
-    if (_cashAmount > _total + 0.0001) {
-      return _say('المدفوع أكبر من الفاتورة');
+    // المدفوع **ممكن يزيد عن الفاتورة** — والزيادة بتسدّد المديونية القديمة.
+    //
+    // كان بيترفض عند إجمالي الفاتورة، والعميل اللي عليه آجل من قبل بيدفع أكتر عادي —
+    // ده نص شغل التحصيل. النظام على الويب بيقول الجملة دي حرفياً تحت الخانة، والتطبيق
+    // كان بيمنعها. الحد الحقيقي هو الفاتورة + اللي عليه، ومافيش سبب يخلّيه يدفع أكتر
+    // من ده (ودي بتبقى دفعة مقدّمة، سند مش فاتورة).
+    final maxCash = _total + _prevBalance;
+    if (_cashAmount > maxCash + 0.0001) {
+      return _say(_prevBalance > 0.001
+          ? 'الأكتر اللي ينفع يتحصّل ${_money(maxCash)} — الفاتورة واللي عليه'
+          : 'المدفوع أكبر من الفاتورة');
     }
+
+    // آخر سؤال قبل الحفظ: **الفلوس دي رايحة فين**.
+    //
+    // على النظام اللي بيحفظ **بيختار** الخزنة؛ هنا مافيش اختيار — صندوق المندوب بتاع
+    // الخط ده هو ده، ومالوش قرار فيه. فالبوباب **للقراءة بس**: بيقول الرقم والصندوق
+    // بالاسم ويستنى تأكيد. اللي بيقبض فلوس لازم يشوف هي داخلة فين قبل ما يقبض،
+    // مش بعدين في كشف الحساب.
+    if (_cashAmount > 0.001 && !await _confirmTreasury()) return;
 
     setState(() => _saving = true);
     try {
@@ -871,7 +953,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                           : AppColors.primary,
                       highlight: f == _family),
                 ),
-              _totalRow('إجمالي المديونية', _money(_prevBalance),
+              _totalRow('حساب سابق على العميل', _money(_prevBalance),
                   color: _prevBalance > 0.001 ? AppColors.danger : AppColors.primary),
               const Divider(height: 18),
             ],
