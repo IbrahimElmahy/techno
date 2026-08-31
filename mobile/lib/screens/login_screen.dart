@@ -100,14 +100,25 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Image.asset(
-                      'assets/images/technotherm_logo.png',
-                      height: 72,
-                      fit: BoxFit.contain,
-                      // A missing asset otherwise throws a red box over the login screen; the old
-                      // icon is a poor logo but a working screen.
-                      errorBuilder: (_, __, ___) =>
-                          const Icon(Icons.plumbing, size: 64, color: AppColors.primary),
+                    // ضغطة طويلة على اللوجو بتفتح خانة عنوان السيرفر — للدعم مش
+                    // للمندوب. الزرار الظاهر كان بيتداس بالفضول والعنوان يتغيّر
+                    // بالغلط، والتطبيق كله يقف بصمت.
+                    child: GestureDetector(
+                      onLongPress: () async {
+                        if (!_showServer) {
+                          _server.text = await ApiClient.instance.baseUrl();
+                        }
+                        setState(() => _showServer = !_showServer);
+                      },
+                      child: Image.asset(
+                        'assets/images/technotherm_logo.png',
+                        height: 72,
+                        fit: BoxFit.contain,
+                        // A missing asset otherwise throws a red box over the login screen; the
+                        // old icon is a poor logo but a working screen.
+                        errorBuilder: (_, __, ___) =>
+                            const Icon(Icons.plumbing, size: 64, color: AppColors.primary),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -151,21 +162,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 textAlign: TextAlign.center),
                           ],
                           const SizedBox(height: 6),
-                          Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: TextButton.icon(
-                              onPressed: () async {
-                                if (!_showServer) {
-                                  _server.text = await ApiClient.instance.baseUrl();
-                                }
-                                setState(() => _showServer = !_showServer);
-                              },
-                              icon: Icon(
-                                  _showServer ? Icons.keyboard_arrow_up : Icons.dns_outlined,
-                                  size: 18),
-                              label: const Text('عنوان السيرفر'),
-                            ),
-                          ),
                           if (_showServer)
                             TextField(
                               controller: _server,

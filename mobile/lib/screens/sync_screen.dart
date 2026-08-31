@@ -13,6 +13,13 @@ class SyncScreen extends StatefulWidget {
 }
 
 class _SyncScreenState extends State<SyncScreen> {
+  /// إعدادات السيرفر مستخبية عن المندوب — بتظهر بضغطة طويلة على أيقونة السحابة.
+  ///
+  /// مش محذوفة: العنوان ده هو اللي أنقذ الدخول يوم ما الدومين القديم مات، وحذفه
+  /// معناه إن أي مشكلة زيّها بكرة تحتاج نسخة تطبيق جديدة. بس المندوب مالوش دعوة
+  /// بيه، وخانة URL قدام كل مستخدم بتتغيّر بالغلط — والتطبيق كله يقف بصمت.
+  bool _showServer = false;
+
   int _pending = 0;
   String? _lastSync;
   String? _lastPull;
@@ -121,10 +128,13 @@ class _SyncScreenState extends State<SyncScreen> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                  Icon(
-                    _pending > 0 ? Icons.cloud_upload_outlined : Icons.cloud_done,
-                    size: 56,
-                    color: _pending > 0 ? AppColors.accent : AppColors.success,
+                  GestureDetector(
+                    onLongPress: () => setState(() => _showServer = !_showServer),
+                    child: Icon(
+                      _pending > 0 ? Icons.cloud_upload_outlined : Icons.cloud_done,
+                      size: 56,
+                      color: _pending > 0 ? AppColors.accent : AppColors.success,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -163,6 +173,7 @@ class _SyncScreenState extends State<SyncScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          if (_showServer)
           Card(
             margin: EdgeInsets.zero,
             child: Padding(

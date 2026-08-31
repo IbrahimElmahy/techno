@@ -40,6 +40,12 @@ class SaleAddItemFlow {
     // نسخة شغّالة بتتظبط مع كل صنف يتضاف — البوباب اللي بعده بيقول المتاح الصح.
     final onInvoice = Map<int, double>.from(alreadyOnInvoice);
 
+    // فئة واحدة (أو ولا واحدة) = مافيش مستوى فئات أصلاً — والرجوع من الأصناف
+    // ساعتها لازم يقفل، مش يرجع لسؤال بيتجاوب لوحده. من غير الفرق ده البوباب كان
+    // بيرجع يفتح نفسه للأبد: X ← فئات ← فئة واحدة بتتعدى أوتوماتيك ← نفس البوباب.
+    // (اتصادت بالتجربة على جهاز أصنافه لسه ماتزامنتش.)
+    final hasCategoryLevel = _categoriesOf(items).length > 1;
+
     var keepGoing = true;
     String? category;
     while (keepGoing && context.mounted) {
@@ -53,7 +59,8 @@ class SaleAddItemFlow {
         context, items, free, onInvoice, category, priceTier,
         capToAvailable: capToAvailable, showPrice: showPrice);
       if (picked == null) {
-        // رجوع من الأصناف بيرجّع للفئات — مش بيقفل الدورة كلها.
+        // رجوع من الأصناف بيرجّع للفئات — لو فيه فئات يترجع لها أصلاً.
+        if (!hasCategoryLevel) return;
         category = null;
         continue;
       }
@@ -96,18 +103,22 @@ String _fmt(double v) {
 
 String _money(double v) => v.toStringAsFixed(2);
 
-Future<String?> _pickCategory(BuildContext context, List<SaleItem> items) {
+List<MapEntry<String, int>> _categoriesOf(List<SaleItem> items) {
   final counts = <String, int>{};
   for (final it in items) {
     counts.update(_categoryOf(it), (n) => n + 1, ifAbsent: () => 1);
   }
-  final cats = counts.entries.toList()
+  return counts.entries.toList()
     ..sort((a, b) {
       if ((a.key == _noCategory) != (b.key == _noCategory)) {
         return a.key == _noCategory ? 1 : -1;
       }
       return a.key.compareTo(b.key);
     });
+}
+
+Future<String?> _pickCategory(BuildContext context, List<SaleItem> items) {
+  final cats = _categoriesOf(items);
   // فئة واحدة مش سؤال — بتتعدّى على طول لقايمة الأصناف.
   if (cats.length <= 1) {
     return Future.value(cats.isEmpty ? _noCategory : cats.first.key);
