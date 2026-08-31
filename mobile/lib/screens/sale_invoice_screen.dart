@@ -62,12 +62,15 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// وهي كنترولر مش `initialValue` عشان زراير − و+ تغيّر الرقم المكتوب في الخانة؛
   /// `initialValue` بتتقرا مرة واحدة وبعدها الخانة بتفضل بترينا رقم قديم.
   final Map<int, TextEditingController> _qtyCtl = {};
+  // نفس فكرة كنترولر الكمية: خانة بتتعدّل في مكانها لازم كنترولر ثابت — `initialValue`
+  // بتتقرا مرة عند التركيب، ومفتاح بيتغيّر مع القيمة بيبني الخانة من جديد مع كل حرف
+  // فالمؤشر يضيع وانت بتكتب.
+  final Map<int, TextEditingController> _priceCtl = {};
+  final Map<int, TextEditingController> _discCtl = {};
 
   /// السطور اللي التفاصيل (السعر والخصومات) مفتوحة عليها — بالـ`itemId` برضه.
   ///
-  /// السطر المقفول بيبقى صفّين: الاسم والإجمالي فوق، والكمية والسعر تحت. الفاتورة
   /// اللي فيها ٢٠ صنف كانت ٢٠ كارت بأربع صفوف وستّ خانات إدخال — طول لا ينتهي.
-  final Set<int> _openLines = {};
 
   /// صناديق المندوب زي ما نزلوا في الحزمة — واحد لكل خط.
   ///
@@ -143,6 +146,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     for (final c in _qtyCtl.values) {
       c.dispose();
     }
+    for (final c in _priceCtl.values) {
+      c.dispose();
+    }
+    for (final c in _discCtl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -196,13 +205,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           l.fixedDiscountPct = it.defaultDiscountPct;
         }
       }
-      // اللوحة المفتوحة بتتقفل عشان تتبني من جديد على الأرقام الجديدة.
-      //
-      // خانات السعر والخصم بتتبني بـ`initialValue`، ودي بتتقرا مرة عند التركيب.
-      // المندوب بيضيف أصناف قبل ما يختار العميل (الشاشة بتسمح بده عن قصد)، يفتح سطر
-      // يبص على سعره، وبعدين يختار العميل — فالسعر بيتغيّر في الموديل والسطر المضغوط،
-      // واللوحة المفتوحة تفضل على السعر القديم. رقمين مختلفين لنفس السطر في نفس اللحظة.
-      _openLines.clear();
+      // الخانات عندها كنترولرز، والموديل لسه متغيّر من برّه — فلازم تتبلّغ، وإلا
+      // السطر يتسعّر على فئة العميل والخانة تفضل واقفة على السعر القديم.
+      for (final l in _lines) {
+        _priceCtl[l.itemId]?.text = _trim(l.unitPrice);
+        _discCtl[l.itemId]?.text = _trim(l.variableDiscountPct);
+      }
     });
   }
 
@@ -472,8 +480,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     if (i < 0) return;
     setState(() {
       _lines.removeAt(i);
-      _openLines.remove(l.itemId);
       _qtyCtl.remove(l.itemId)?.dispose();
+      _priceCtl.remove(l.itemId)?.dispose();
+      _discCtl.remove(l.itemId)?.dispose();
     });
   }
 
@@ -709,88 +718,129 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     );
   }
 
-  /// السطر المضغوط: الاسم · الكمية · السعر · الإجمالي في صفّين.
+  /// سطر الفاتورة: **صفّين، من غير طي** — بطلب صاحب النظام.
   ///
-  /// السعر والخصومات جوّه فتحة بتتفتح بالضغط على السطر — لأنها بتتغيّر في سطر من
-  /// كل عشرة، ومش مستاهلة تاخد مكان دايم في كل سطر.
+  /// كان فيه فتحة بتتفتح بالضغط عشان السعر والخصم، فالمندوب اللي بيراجع فاتورة
+  /// بيفتح سطر سطر عشان يشوف أرقام هي أصلاً بتاعته. دلوقتي كله قدامه:
+  /// الصف الأول: # · الاسم · (خصم ثابت لو فيه) · الإجمالي.
+  /// الصف التاني: الكمية ± · سعر الوحدة · خصم٪ · حذف — والتلاتة بيتعدّلوا في مكانهم.
   Widget _lineTile(int i) {
     final l = _lines[i];
-    final open = _openLines.contains(l.itemId);
     // مفتاح بالصنف عشان حالة الخانات تفضل مع سطرها لو اتمسح سطر من النص.
     final ctl = _qtyCtl.putIfAbsent(
         l.itemId, () => TextEditingController(text: _trim(l.quantity)));
-    final priceBits = StringBuffer('× ${_trim(l.unitPrice)} ج.م');
-    if (l.discountPct > 0) priceBits.write(' · خصم ${_trim(l.discountPct)}%');
     return Card(
       key: ValueKey(l.itemId),
       margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-      child: Column(
-        children: [
-          InkWell(
-            onTap: () => setState(() =>
-                open ? _openLines.remove(l.itemId) : _openLines.add(l.itemId)),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      SizedBox(
-                        width: 22,
-                        child: Text('${i + 1}',
-                            style: const TextStyle(fontSize: 11, color: Colors.black38)),
-                      ),
-                      Expanded(
-                        child: Text(l.itemName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 14)),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(_money(l.net),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
-                              color: AppColors.primary)),
-                      Icon(open ? Icons.expand_less : Icons.expand_more,
-                          size: 18, color: Colors.black38),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      _qtyStepper(l, ctl),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(priceBits.toString(),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12, color: Colors.black54)),
-                      ),
-                      // سلة صريحة — بس بمقاس وحدود مضبوطة.
-                      //
-                      // `IconButton` بمقاسه الافتراضي (٤٨) جنب خانة الكمية بيطلع
-                      // برّه الصف فيتقصّ: بيترسم تمام وبيبلع الضغطات. الحدود هنا
-                      // بتخلّيه جوّه المساحة اللي مسموح له بيها.
-                      IconButton(
-                        icon: const Icon(Icons.delete_outline,
-                            size: 20, color: AppColors.danger),
-                        tooltip: 'حذف السطر',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => _removeLine(l),
-                      ),
-                    ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  child: Text('${i + 1}',
+                      style: const TextStyle(fontSize: 11, color: Colors.black38)),
+                ),
+                Expanded(
+                  child: Text(l.itemName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                ),
+                // الخصم الثابت جاي من الصنف ونادراً ما بيتعدّل — بيتقال هنا عشان
+                // مجموع الخصم يبان منين جه، من غير ما ياخد خانة في الصف التاني.
+                if (l.fixedDiscountPct > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('ثابت ${_trim(l.fixedDiscountPct)}%',
+                        style:
+                            const TextStyle(fontSize: 10, color: Colors.black87)),
                   ),
                 ],
-              ),
+                const SizedBox(width: 6),
+                Text('${_money(l.net)} ج.م',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: AppColors.primary)),
+              ],
             ),
-          ),
-          if (open) _lineDetails(l),
-        ],
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _qtyStepper(l, ctl),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _inlineField(
+                    label: 'السعر',
+                    controller: _priceCtl.putIfAbsent(l.itemId,
+                        () => TextEditingController(text: _trim(l.unitPrice))),
+                    onChanged: (v) => setState(() => l.unitPrice = v),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _inlineField(
+                    label: 'خصم %',
+                    controller: _discCtl.putIfAbsent(
+                        l.itemId,
+                        () => TextEditingController(
+                            text: _trim(l.variableDiscountPct))),
+                    onChanged: (v) =>
+                        setState(() => l.variableDiscountPct = v),
+                  ),
+                ),
+                // سلة صريحة — بس بمقاس وحدود مضبوطة.
+                //
+                // `IconButton` بمقاسه الافتراضي (٤٨) جنب خانة الكمية بيطلع
+                // برّه الصف فيتقصّ: بيترسم تمام وبيبلع الضغطات. الحدود هنا
+                // بتخلّيه جوّه المساحة اللي مسموح له بيها.
+                IconButton(
+                  icon: const Icon(Icons.delete_outline,
+                      size: 20, color: AppColors.danger),
+                  tooltip: 'حذف السطر',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 32, height: 36),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _removeLine(l),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  /// خانة رقم صغيرة بعنوان فوقها — بتتعدّل في مكانها من غير فتحة.
+  Widget _inlineField({
+    required String label,
+    required TextEditingController controller,
+    required void Function(double) onChanged,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      textAlign: TextAlign.center,
+      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+      decoration: InputDecoration(
+        labelText: label,
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      onChanged: (t) => onChanged(double.tryParse(t.trim()) ?? 0),
     );
   }
 
@@ -841,73 +891,6 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     );
   }
 
-  Widget _lineDetails(SaleDraftLine l) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-      child: Column(
-        children: [
-          const Divider(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _numField(
-                  label: 'سعر الوحدة',
-                  value: l.unitPrice,
-                  onChanged: (v) => setState(() => l.unitPrice = v),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _numField(
-                  label: 'خصم ثابت %',
-                  value: l.fixedDiscountPct,
-                  onChanged: (v) => setState(() => l.fixedDiscountPct = v),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _numField(
-                  label: 'خصم إضافي %',
-                  value: l.variableDiscountPct,
-                  onChanged: (v) => setState(() => l.variableDiscountPct = v),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('إجمالي الخصم',
-                        style: TextStyle(fontSize: 11, color: Colors.black54)),
-                    Text('${_trim(l.discountPct)}%',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _numField({
-    required String label,
-    required double value,
-    required void Function(double) onChanged,
-  }) {
-    return TextFormField(
-      initialValue: _trim(value),
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      textAlign: TextAlign.center,
-      decoration: InputDecoration(labelText: label, isDense: true),
-      onChanged: (t) => onChanged(double.tryParse(t.trim()) ?? 0),
-    );
-  }
 
   /// الدفع والملاحظات في آخر القايمة — بيتكتبوا مرة واحدة في آخر الفاتورة،
   /// فمش محتاجين يقعدوا على الشاشة. والرقم اللي بيتقري كتير (الإجمالي والباقي)
