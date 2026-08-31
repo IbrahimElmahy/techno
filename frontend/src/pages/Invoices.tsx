@@ -33,6 +33,9 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
+/** نافذة كتم تكرار تحذير قص الكمية — بالملي ثانية. */
+const CAP_NOTICE_MS = 3000;
+
 // حجم الصفحة في شاشة الفواتير. الكشف كله بقى 6163 فاتورة بعد نقل داتا a5،
 // و«اعرض كل حاجة» بقى معناه 2.9 ميجا في كل فتحة. الفلترة والبحث على السيرفر
 // فالصفحة دي مش بتخفي حاجة عن اللي بيدوّر.
@@ -977,6 +980,41 @@ export default function Invoices() {
     return fresh;
   };
 
+  /**
+   * تحذير القص — مرة واحدة لكل محاولة، مش لكل ضغطة زرار.
+   *
+   * القص بيحصل على كل `onChange`: اللي بيكتب «١٠٠» بيعدّي على «١» و«١٠» و«١٠٠»، واللي
+   * ماسك سهم الزيادة بيبعت عشرات التغييرات في تانية واحدة. رسالة على كل واحدة فيهم
+   * بتبني برج إشعارات فوق الفاتورة، والنتيجة إن محدش بيقرا ولا واحدة — وهي بالظبط
+   * الرسالة اللي كان لازم تتقرا.
+   *
+   * فالبصمة (سطر × مخزن × رصيد) بتتقال مرة، وأي محاولة تانية بنفس البصمة جوّه النافذة
+   * بتجدّد الوقت من غير ما تطلّع رسالة. يعني ضغط متواصل = رسالة واحدة، ووقفة وبعدها
+   * محاولة جديدة = رسالة جديدة، لأنها بقت خبر تاني مش تكرار.
+   */
+  const capNoticeRef = useRef<Record<string, number>>({});
+  const announceQuantityCap = (
+    lineKey: string, itemName: string, storeName: string, stock: number, unit: string | null,
+  ) => {
+    const now = Date.now();
+    const seen = capNoticeRef.current;
+    Object.keys(seen).forEach((k) => { if (now - seen[k] > CAP_NOTICE_MS) delete seen[k]; });
+    const sig = `${lineKey}|${storeName}|${stock}`;
+    const repeated = seen[sig] !== undefined;
+    seen[sig] = now;
+    if (repeated) return;
+    const u = unit ? ` ${unit}` : '';
+    const n = stock.toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+    // الاسم والمخزن جوّه الرسالة عن قصد: الفاتورة فيها سطور كتير، و«الكمية غير متاحة»
+    // لوحدها بتخلّي اللي بيقرا يدوّر هو على السطر اللي اتقص.
+    message.warning({
+      key: `qty-cap-${lineKey}`,
+      content: stock > 0
+        ? `المتاح ${n}${u} فقط من «${itemName}» في ${storeName} — الكمية اتظبطت.`
+        : `مفيش رصيد من «${itemName}» في ${storeName} — الكمية اتشالت.`,
+    });
+  };
+
   const handleLineChange = async (key: string, field: keyof SaleLineItem, value: any) => {
     const fresh = field === 'item_id' && value ? await fetchPrices(value) : undefined;
     // (030) A line moved to another warehouse needs THAT warehouse's stock to cap against.
@@ -1004,9 +1042,7 @@ export default function Invoices() {
         if (Number(value) > stock) {
           const name = productName(line.item_id);
           const store = warehouses.find((w) => w.id === lineWarehouse(line))?.name ?? 'المخزن';
-          message.warning(stock > 0
-            ? `«${name}»: المتاح في ${store} هو ${stock} — اتسجّلت ${stock}.`
-            : `«${name}»: مفيش رصيد في ${store}.`);
+          announceQuantityCap(key, name, store, stock, line.unit);
           value = stock;
         }
       }
