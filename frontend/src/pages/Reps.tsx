@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Empty, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
-import { ReloadOutlined, SearchOutlined, SwapOutlined, TeamOutlined } from '@ant-design/icons';
+import {
+  ReloadOutlined, SearchOutlined, StopOutlined, SwapOutlined, TeamOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { Popconfirm } from '../components/noConfirm';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 
@@ -168,6 +171,29 @@ export default function Reps() {
             <Button type="text" size="small" icon={<TeamOutlined />}
               onClick={() => navigate(`/rep-reports?rep=${r.user_id}`)} />
           </Tooltip>
+          {/* إيقاف مش حذف — نفس قاعدة المخازن والموظفين. اسم المندوب مكتوب على فواتير
+              وعُهد ومعاينات، والمسح بيخلّي المستندات القديمة تقول «#١٦» بدل اسمه.
+              المفتاح في عمود «نشط» بيعمل نفس الحاجة؛ الزرار هنا عشان الإجراء يبان
+              في نفس المكان اللي بيتدوّر عليه فيه في باقي الشاشات. */}
+          {r.active && (
+            <Popconfirm
+              title="إيقاف المندوب؟"
+              description={
+                (r.customer_count || 0) > 0
+                  ? `عليه ${r.customer_count} عميل — هيفضلوا مربوطين بيه، بس مش هيظهر في `
+                    + 'قوايم الاختيار. انقل عملاءه الأول لو ده مش المطلوب.'
+                  : 'مش هيظهر في قوايم الاختيار. مستنداته القديمة بتفضل باسمه.'
+              }
+              okText="إيقاف"
+              cancelText="إلغاء"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => patch(r, { active: false }, 'الإيقاف')}
+            >
+              <Tooltip title="إيقاف المندوب">
+                <Button type="text" size="small" danger icon={<StopOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },

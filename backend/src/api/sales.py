@@ -411,6 +411,9 @@ def _build_sale(
                             l.discount_pct, l.warehouse_id)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, family=body.family,
+            has_coupon_rows=any(
+                c.coupon_kind or c.coupon_type_id is not None or c.count
+                or c.serial_from or c.serial_to for c in body.coupons),
             can_sell_below=can_sell_below,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,

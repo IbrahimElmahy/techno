@@ -220,6 +220,8 @@ def create_sale(
     # Coupons handed over with this invoice, as the serial range off the book.
     coupon_serial_from: str | None = None,
     coupon_serial_to: str | None = None,
+    # فيه صفوف كوبونات هتتكتب بعد المستند — الفحص محتاج يعرف بيها.
+    has_coupon_rows: bool = False,
     coupon_count: int | None = None,
     # The day the sale happened. It dates the document AND its ledger entry, because a document
     # dated one day and posted on another makes every statement disagree with the paper.
@@ -240,7 +242,13 @@ def create_sale(
     # دي تتكتب كفاتورة بصنف وهمي بصفر — وده بيدخل صنف مالوش وجود في تقارير المبيعات.
     #
     # اللي بيتفحص هنا إن المستند مش فاضي، مش إن فيه أصناف: صنف أو كوبونات أو الاتنين.
-    has_coupons = bool(coupon_serial_from or coupon_serial_to or coupon_count)
+    # الحقول المسطّحة دي شكل قديم لدفتر واحد. الشاشة بقت بتبعت **صفوف** كوبونات
+    # (`body.coupons`) — دفتر لكل صف — وبتتكتب بعد ما الفاتورة تتعمل، يعني الفحص هنا
+    # عمره ما شافها. النتيجة إن فاتورة كوبونات بس كانت بتترفض بـ«لازم يكون فيها صنف
+    # أو دفتر كوبونات» والدفتر مكتوب قدام اللي بيدخل. الطبقة اللي فوق بتقول إن فيه
+    # صفوف جاية عشان الفحص يحكم على المستند كله مش على نصه.
+    has_coupons = bool(coupon_serial_from or coupon_serial_to or coupon_count
+                       or has_coupon_rows)
     if not lines and not has_coupons:
         raise SalesError("الفاتورة لازم يكون فيها صنف أو دفتر كوبونات على الأقل.")
     fixed = fixed_discount_pct(db)
