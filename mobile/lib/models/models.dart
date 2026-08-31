@@ -302,3 +302,53 @@ class SaleDraftLine {
     );
   }
 }
+
+// ------------------------------------------------------------------ صناديق المندوب
+
+/// صندوق المندوب لخط منتجات — زي ما نزل في حزمة البيع.
+///
+/// a5 بيدّي كل مندوب صندوقين، «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)»،
+/// والفلوس بتتفصل بالخط زي المديونية بالظبط. فالصندوق مش سؤال على الشاشة: نوع الفاتورة
+/// بيحدّده لوحده، والمندوب بيشوفه عشان يعرف فلوسه رايحة فين — مش عشان يختار.
+///
+/// `family` بـ`null` = عهدة قديمة من قبل ما الصناديق تتقسم. نازلة زي ما هي عشان المندوب
+/// اللي لسه ماتقسمش يفضل شغّال، والشاشة مابتقعش عليها لما الفاتورة قايلة خطها: صندوق خط
+/// تاني أوحش من مافيش صندوق — التاني بيشتكي، والأول بيسكت والفلوس بتروح مكان غلط.
+class RepTreasury {
+  final int custodyId;
+  final int accountId;
+  final String? family;
+
+  /// اسم الصندوق زي ما هو في شجرة حسابات a5 — ده اللي المكتب بينده بيه في التليفون.
+  final String name;
+  final String code;
+
+  const RepTreasury({
+    required this.custodyId,
+    required this.accountId,
+    this.family,
+    this.name = '',
+    this.code = '',
+  });
+
+  /// اللي بيتعرض. الصندوق القديم اللي مالوش اسم بيتسمّى بخطه، واللي مالوش خط «عهدتك».
+  String get label => name.trim().isNotEmpty
+      ? name.trim()
+      : (family == null ? 'عهدتك' : 'صندوق $family');
+
+  Map<String, Object?> toRow() => {
+        'custody_id': custodyId,
+        'account_id': accountId,
+        'family': family,
+        'name': name,
+        'code': code,
+      };
+
+  static RepTreasury fromRow(Map<String, Object?> r) => RepTreasury(
+        custodyId: r['custody_id'] as int,
+        accountId: (r['account_id'] as int?) ?? 0,
+        family: r['family'] as String?,
+        name: (r['name'] as String?) ?? '',
+        code: (r['code'] as String?) ?? '',
+      );
+}

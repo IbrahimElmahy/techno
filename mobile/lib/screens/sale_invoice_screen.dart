@@ -69,6 +69,16 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// اللي فيها ٢٠ صنف كانت ٢٠ كارت بأربع صفوف وستّ خانات إدخال — طول لا ينتهي.
   final Set<int> _openLines = {};
 
+  /// صناديق المندوب زي ما نزلوا في الحزمة — واحد لكل خط.
+  ///
+  /// الصندوق **مش سؤال**: نوع الفاتورة بيحدّده لوحده. اللي هنا للعرض بس، عشان المندوب
+  /// يشوف فلوسه رايحة فين قبل ما يحفظ — القرار مش بتاعه، والترحيل بيحصل على السيرفر.
+  List<RepTreasury> _treasuries = [];
+
+  /// اسم المندوب زي ما دخل بيه — عشان رسالة «مالكش صندوق» تقول مين، فاللي هيكلّم
+  /// المكتب يعرف يقول الإعداد الناقص على مين بالظبط.
+  String _me = '';
+
   final _scroll = ScrollController();
 
   /// `null` = سيب الترويسة تقرّر لوحدها. المندوب لو ضغط، رأيه هو اللي بيمشي.
@@ -78,6 +88,52 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// وبتتلمّ في سطر واحد أول ما الاتنين يتحدّدوا — عشان السطور تاخد الشاشة.
   bool get _headerOpen =>
       _headerOpenOverride ?? (_customer == null || _family == null);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRepInfo();
+  }
+
+  /// صناديقه واسمه من الكاش — من غير شبكة، زي كل حاجة تانية في الشاشة دي.
+  Future<void> _loadRepInfo() async {
+    final rows = await LocalDb.instance.treasuries();
+    final me = await LocalDb.instance.getKv('username');
+    if (!mounted) return;
+    setState(() {
+      _treasuries = rows;
+      _me = me ?? '';
+    });
+  }
+
+  /// صندوق الخط ده. المطابقة بالخط بالظبط — **مافيش وقوع على صندوق تاني**: صندوق خط
+  /// تاني بيسكت والفلوس بتروح مكان غلط، وده مافيش حاجة بتقوله بعدين. نفس قاعدة السيرفر
+  /// بالحرف (`resolve_cash_account`).
+  RepTreasury? get _treasury {
+    if (_family == null) return null;
+    for (final t in _treasuries) {
+      if (t.family == _family) return t;
+    }
+    return null;
+  }
+
+  /// الجهاز عارف صناديقه أصلاً؟
+  ///
+  /// القايمة الفاضية معناها «ما اتسحبتش» أو «سيرفر قديم مابيرجّعهاش» — مش «مالوش صندوق».
+  /// والفرق ده بيقرّر: مش عارف ⇒ الشاشة مابتمنعش، والسيرفر هو اللي بيرفض بسببه.
+  bool get _treasuriesKnown => _treasuries.isNotEmpty;
+
+  /// الخط اتحدّد، والجهاز عارف الصناديق، ومافيش صندوق للخط ده — إعداد ناقص عند المكتب.
+  bool get _boxMissing => _family != null && _treasuriesKnown && _treasury == null;
+
+  String get _treasuryLabel {
+    if (_family == null) return 'بيتحدّد بنوع الفاتورة';
+    final t = _treasury;
+    if (t != null) return t.code.isEmpty ? t.label : '${t.label} · ${t.code}';
+    return _treasuriesKnown
+        ? 'مافيش صندوق لخط «$_family» — كلّم المكتب'
+        : 'اسحب البيانات عشان الصندوق يبان';
+  }
 
   @override
   void dispose() {
@@ -192,6 +248,16 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // رقمه على الاتنين بالنسبة — وكشف حسابه بعدها مايقولش حاجة مفهومة. السؤال هنا
       // أرخص من التصحيح بعدين.
       return _say('اختر نوع الفاتورة — أبيض أو بولي');
+    }
+    if (_boxMissing) {
+      // إعداد ناقص عند المكتب مش غلطة من المندوب — فالرسالة بتقول الخط والمندوب بالاسم.
+      //
+      // والحفظ بيقف هنا لأن السيرفر هيرفضها برضه: الفاتورة محتاجة صندوق للخط ده عشان
+      // تترحّل، والبديل (ترحيلها على صندوق تاني) أوحش من رفضها. أحسن يعرف وهو واقف عند
+      // العميل من إن الفاتورة تقعد في الطابور وترجع بخطأ في المزامنة بعد ساعتين.
+      return _say(_me.isEmpty
+          ? 'مافيش صندوق لخط «$_family» على حسابك — كلّم المكتب.'
+          : 'مافيش صندوق لخط «$_family» على «$_me» — كلّم المكتب.');
     }
     if (_lines.isEmpty) return _say('ضيف صنف واحد على الأقل');
     if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
@@ -473,6 +539,22 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 ],
               ),
             ),
+            if (_family != null) ...[
+              const Divider(height: 1),
+              // الصندوق عرض بس — نوع الفاتورة بيحدّده، والمندوب مالوش قرار فيه.
+              //
+              // بيتعرض عشان يشوف فلوسه رايحة فين قبل ما يحفظ، مش بعدين في كشف الحساب.
+              ListTile(
+                leading: Icon(Icons.savings_outlined,
+                    color: _boxMissing ? AppColors.danger : AppColors.primary),
+                title: const Text('الصندوق'),
+                subtitle: Text(_treasuryLabel,
+                    style: TextStyle(color: _boxMissing ? AppColors.danger : null)),
+                trailing:
+                    const Icon(Icons.lock_outline, size: 18, color: Colors.black38),
+                enabled: false,
+              ),
+            ],
           ],
           const Divider(height: 1),
           // تاريخ الفاتورة عرض بس — النهارده ومفيش غيره.
@@ -737,6 +819,27 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
               onChanged: (_) => setState(() {}),
             ),
+            // الفلوس دي رايحة فين — جنب الخانة اللي بيكتب فيها الرقم بالظبط.
+            //
+            // الترويسة بتتلمّ بعد ما العميل والخط يتحدّدوا، فالصندوق بيختفي من فوق. وهنا
+            // هو المكان اللي بيتسأل فيه السؤال أصلاً: بيقبض كام، وبينزل فين.
+            if (_cashAmount > 0) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.savings_outlined,
+                      size: 14, color: _boxMissing ? AppColors.danger : Colors.black45),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text('النقدي بينزل في: $_treasuryLabel',
+                        maxLines: 2,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: _boxMissing ? AppColors.danger : Colors.black54)),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 10),
             _totalRow('إجمالي الفاتورة', _money(_total)),
             const SizedBox(height: 6),

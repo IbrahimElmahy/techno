@@ -13,7 +13,12 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 17, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 18, onUpgrade: (d, from, to) async {
+      if (from < 18) {
+        // v18: صناديق المندوب — واحد لكل خط. الصندوق بيتحدد من نوع الفاتورة لوحده،
+        // والجهاز لازم يكون شايله عشان يعرضه وهو في الشارع من غير شبكة.
+        try { await d.execute(_treasuryTable); } catch (_) {}
+      }
       if (from < 17) {
         // v17: فئة الصنف جنب الصنف — منتقي البيع بقى خطوتين (فئة، وبعدها أصنافها).
         // من غير الترقية دي الجهاز اللي عليه نسخة قديمة بيقع أول ما يقرا العمود.
@@ -146,6 +151,7 @@ class LocalDb {
           'PRIMARY KEY(category, value))');
       await d.execute('CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)');
       await d.execute(_warehouseTable);
+      await d.execute(_treasuryTable);
       await d.execute(_transferTable);
       await d.execute(_transferLineTable);
       await d.execute(_saleItemTable);
@@ -667,6 +673,30 @@ class LocalDb {
     return d.query('warehouse', orderBy: 'name');
   }
 
+  // ------------------------------------------------------------------ صناديق المندوب
+
+  /// بتحطّ صناديق المندوب مكان اللي قبلها — كاش مش دفتر، زي الأصناف والمخازن بالظبط.
+  /// اللي بيقرّر مين صندوق مين هو السيرفر، والجهاز بيشيل آخر إجابة قالها.
+  Future<void> replaceTreasuries(List<RepTreasury> rows) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('rep_treasury');
+      final batch = tx.batch();
+      for (final t in rows) {
+        batch.insert('rep_treasury', t.toRow());
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  /// صناديقه هو بس. المقسومة بالخط الأول، والقديمة (من غير خط) وراهم.
+  Future<List<RepTreasury>> treasuries() async {
+    final d = await db;
+    final rows =
+        await d.query('rep_treasury', orderBy: 'family IS NULL, family, custody_id');
+    return [for (final r in rows) RepTreasury.fromRow(r)];
+  }
+
   /// بتحفظ إذن تحويل وسطوره في معاملة واحدة — إذن من غير سطور مش إذن.
   Future<int> saveTransfer({
     required String clientUuid,
@@ -928,6 +958,21 @@ CREATE TABLE warehouse(
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   kind TEXT
+)''';
+
+/// صناديق المندوب — بتنزل مع حزمته عشان الشاشة تعرض الصندوق وهو من غير شبكة.
+///
+/// كل مندوب له صندوق لكل خط («صندوق أبيض السياره (ب)» و«صندوق بولي السياره (ب)»)، والفلوس
+/// بتتفصل بالخط زي المديونية. والجدول ده للعرض بس: اللي بيرحّل الفلوس هو السيرفر، وهو اللي
+/// بيختار الصندوق من خط الفاتورة — الجهاز مابيبعتش صندوق عشان مايبقاش فيه مصدرين لحقيقة
+/// واحدة، ولا يبقى فيه جهاز شايل صورة قديمة بيرحّل عليها.
+const _treasuryTable = '''
+CREATE TABLE rep_treasury(
+  custody_id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL,
+  family TEXT,
+  name TEXT,
+  code TEXT
 )''';
 
 /// إذن تحويل اتكتب على الجهاز.

@@ -300,6 +300,23 @@ class ApiClient {
       for (final w in ((body['warehouses'] as List?) ?? []))
         {'id': w['id'], 'name': '${w['name']}', 'kind': w['kind'] as String?}
     ]);
+    // صناديقه هو بس — واحد لكل خط، باسمه اللي على الصندوق في المكتب.
+    //
+    // بينزلوا مع الحزمة مش وقت الحفظ، لأن المندوب بيكتب في الشارع من غير شبكة. الصندوق
+    // بيتحدد من نوع الفاتورة لوحده، والشاشة بتعرضه عشان المندوب يشوف فلوسه رايحة فين.
+    //
+    // السيرفر القديم مابيرجّعش المفتاح ده — القايمة بتبقى فاضية، والشاشة ساعتها مابتمنعش
+    // الحفظ: «مش عارف» مش زي «مالوش صندوق»، واللي بيرحّل هو السيرفر وهو اللي بيرفض.
+    await LocalDb.instance.replaceTreasuries([
+      for (final t in ((body['treasuries'] as List?) ?? const []))
+        RepTreasury(
+          custodyId: t['custody_id'] as int,
+          accountId: (t['account_id'] as int?) ?? 0,
+          family: _text(t['family']),
+          name: _text(t['name']) ?? '',
+          code: _text(t['code']) ?? '',
+        )
+    ]);
     await LocalDb.instance.setKv('last_sales_pull', DateTime.now().toIso8601String());
   }
 
