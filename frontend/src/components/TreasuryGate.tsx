@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Select } from 'antd';
+import { Select, message } from 'antd';
 import { TabModal } from './TabModal';
 import { api } from '../api/client';
 import { money } from '../utils/money';
@@ -71,28 +71,37 @@ export function familyOfSafe(name: string): string | null {
  * الفشل بيرجّع قايمة فاضية، والفاضية معناها **مافيش بوباب** — اللي مالوش صلاحية يقرا
  * الشجرة يفضل بيحفظ زي ما هو. قفل الحفظ عشان قايمة مانزلتش أسوأ من سؤال مااتسألش.
  */
-export function useTreasurySafes(enabled = true): TreasuryChoice[] {
+export function useTreasurySafes(enabled = true): [TreasuryChoice[], boolean] {
   const [rows, setRows] = useState<TreasuryChoice[]>([]);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (!enabled) { setRows([]); return; }
+    if (!enabled) { setRows([]); setFailed(false); return; }
+    setFailed(false);
     let alive = true;
     // نفس عنوان `Invoices` بالظبط — الكاش في `api/client` بيتفهرس بالعنوان الكامل،
     // فالحرف الزيادة معناه طلبة تانية لنفس القايمة.
-    api.get('/api/v1/accounts?postable_only=true')
+    api.get('/api/v1/cash-accounts')
       .then((res) => {
         if (!alive) return;
-        setRows((res.data || [])
-          .filter((a: any) => a.account_type === 'treasury' && a.active !== false)
-          .map((a: any) => ({
-            value: a.id,
-            label: a.name || `خزينة #${a.id}`,
-            family: familyOfSafe(a.name || ''),
-          })));
+        setRows((res.data || []).map((t: any) => ({
+          value: t.account_id,
+          label: t.rep_name ? `${t.name || `#${t.account_id}`} — ${t.rep_name}`
+                            : (t.name || `خزينة #${t.account_id}`),
+          // الخط من العهدة المربوطة بالصندوق؛ والقراءة من الاسم فضلت كاحتياطي للصناديق
+          // اللي مالهاش عهدة (المركز الرئيسي، البونص).
+          family: t.family ?? familyOfSafe(t.name || ''),
+        })));
       })
-      .catch(() => { if (alive) setRows([]); });
+      .catch((e) => {
+        if (!alive) return;
+        setRows([]);
+        setFailed(true);
+        // eslint-disable-next-line no-console
+        console.error('[TreasuryGate] قايمة الخزائن مانزلتش', e);
+      });
     return () => { alive = false; };
   }, [enabled]);
-  return rows;
+  return [rows, failed];
 }
 
 export interface TreasuryGateProps {
@@ -192,7 +201,7 @@ export interface TreasuryAsk {
  * (نقدي صفر، أو مافيش صناديق) بتتنده على طول بـ`null` — الحفظ مايتعطّلش.
  */
 export function useTreasuryGate(enabled = true) {
-  const options = useTreasurySafes(enabled);
+  const [options, failed] = useTreasurySafes(enabled);
   const [req, setReq] = useState<(TreasuryAsk & { run: (id: number | null) => void }) | null>(null);
   const [value, setValue] = useState<number | null>(null);
 
@@ -213,15 +222,29 @@ export function useTreasuryGate(enabled = true) {
   }, [req, suggested]);
 
   const ask = useCallback((o: TreasuryAsk, run: (id: number | null) => void) => {
-    // المستند اللي كله آجل مافيهوش فلوس بتتحرّك — والقايمة الفاضية معناها مافيش إجابة
-    // ممكنة. في الحالتين الحفظ بيعدّي زي ما هو.
-    if (!enabled || options.length === 0 || !(Math.abs(o.amount) > 0.004)) {
+    // المستند اللي كله آجل مافيهوش فلوس بتتحرّك — سؤال مالوش أثر مش سؤال.
+    if (!enabled || !(Math.abs(o.amount) > 0.004)) {
+      run(null);
+      return;
+    }
+    // ⚠️ القايمة الفاضية **مش نفس** القايمة اللي مانزلتش.
+    //
+    // ده اللي خلّى البوباب ماظهرش خالص أول ما اتنشر: كان بيقرا شجرة الحسابات، ودي
+    // صلاحية محاسبة مالهاش غير الأدمن والمحاسب — فمدير الفرع بياخد 403، القايمة تفضل
+    // فاضية، والشرط ده يعدّي الحفظ **من غير ما يسأل ومن غير ما يقول إنه ماسألش**.
+    // اللي بيحفظ فاكر إنه اختار، وهو ماتسألش أصلاً.
+    if (failed) {
+      message.error('قايمة الخزائن مانزلتش — الخزنة هتتحدد من السيرفر. جرّب تحدّث الصفحة.');
+      run(null);
+      return;
+    }
+    if (options.length === 0) {
       run(null);
       return;
     }
     setValue(null);
     setReq({ ...o, run });
-  }, [enabled, options]);
+  }, [enabled, options, failed]);
 
   const close = useCallback(() => { setReq(null); setValue(null); }, []);
 

@@ -414,6 +414,59 @@ def list_treasuries(
     return out
 
 
+class CashAccountOut(BaseModel):
+    """صندوق زي ما بوباب الحفظ محتاج يعرضه — رقم الحساب واسمه وخطه."""
+    account_id: int
+    code: str | None
+    name: str | None
+    # الخط جاي من **العهدة المربوطة بالصندوق** مش من قراءة اسمه. الاسم بيتكتب بإيد
+    # وبيتغيّر؛ العهدة جملة صريحة اتكتبت مرة واحدة.
+    family: str | None
+    rep_id: int | None
+    rep_name: str | None
+
+
+@router.get("/cash-accounts", response_model=list[CashAccountOut])
+def list_cash_accounts(
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> list[CashAccountOut]:
+    """حسابات الخزن اللي ينفع يترحّل عليها — لبوباب «الفلوس رايحة فين» قبل الحفظ.
+
+    ⚠️ **مش `/accounts`.** البوباب كان بيقرا شجرة الحسابات، ودي محتاجة صلاحية محاسبة
+    مالهاش غير الأدمن والمحاسب — فمدير الفرع (اللي بيعمل الفواتير فعلاً) كان بياخد 403،
+    القايمة تفضل فاضية، والبوباب **يتخطى نفسه في صمت**. اللي بيحفظ فاكر إنه اختار وهو
+    ماتسألش. والشجرة كمان ٣٬٧٦٧ حساب بأرصدتها — تحميل تقيل لسؤال من سطر واحد.
+
+    وصناديق a5 التلتاشر **حسابات** مش صفوف في `treasury` (الجدول ده فيه صف واحد)،
+    فالقايمة بتتقرا من الحسابات نفسها.
+    """
+    from src.models.ledger import AccountType
+    from src.models.user import User
+    from src.models.warehouse import Custody
+
+    accounts = db.scalars(
+        select(Account)
+        .where(Account.account_type == AccountType.treasury, Account.active.is_(True))
+        .order_by(Account.code)
+    ).all()
+    links = {
+        c.account_id: c for c in db.scalars(select(Custody).where(
+            Custody.account_id.isnot(None))).all()
+    }
+    names = {u.id: (u.full_name or u.username) for u in db.scalars(select(User)).all()}
+    out: list[CashAccountOut] = []
+    for a in accounts:
+        c = links.get(a.id)
+        out.append(CashAccountOut(
+            account_id=a.id, code=a.code, name=a.name,
+            family=c.family if c is not None else None,
+            rep_id=c.rep_id if c is not None else None,
+            rep_name=names.get(c.rep_id) if c is not None else None,
+        ))
+    return out
+
+
 @router.post("/treasuries", response_model=TreasuryOut, status_code=status.HTTP_201_CREATED)
 def create_treasury(
     body: TreasuryIn,
