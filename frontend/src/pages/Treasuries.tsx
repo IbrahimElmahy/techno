@@ -25,7 +25,7 @@ interface TreasuryRecord {
   account_number: string | null;
   is_default: boolean;
   active: boolean;
-  balance: string;
+  balance: string | null;
 }
 
 const KIND_LABELS: Record<string, string> = { cash: 'خزينة', bank: 'بنك' };
@@ -46,7 +46,7 @@ interface RepSafe {
   family: string | null;
   rep_id: number | null;
   rep_name: string;
-  balance: string;
+  balance: string | null;
   active: boolean;
 }
 
@@ -124,7 +124,10 @@ export default function Treasuries() {
           family: c.family ?? null,
           rep_id: c.rep_id ?? null,
           rep_name: (c.rep_id && repName[c.rep_id]) || '',
-          balance: link ? String(link.balance) : '0',
+          // الطلب اللي وقع بيرجّع `null` مش صفر. صفر معناه «الخزنة فاضية» — جملة عن
+          // الفلوس؛ والطلب اللي مارجعش معناه «مش عارفين». الاتنين كانوا بيتكتبوا صفر،
+          // فخزنة فيها فلوس تبان فاضية ومحدش يعرف إن السطر ده مقروش أصلاً.
+          balance: link ? String(link.balance) : null,
           active: c.active !== false,
         } as RepSafe;
       }));
@@ -206,7 +209,9 @@ export default function Treasuries() {
       key: 'balance',
       width: 140,
       align: 'left' as const,
-      render: (b: string) => <strong>{egp(b)}</strong>,
+      render: (b: string | null) =>
+        b === null ? <span style={{ color: '#999' }} title="الرصيد مااتقراش">—</span>
+                   : <strong>{egp(b)}</strong>,
       sorter: (a: RepSafe, b: RepSafe) => Number(a.balance || 0) - Number(b.balance || 0),
     },
   ];
@@ -324,7 +329,9 @@ export default function Treasuries() {
       key: 'balance',
       width: 140,
       align: 'left' as const,
-      render: (b: string) => <strong>{egp(b)}</strong>,
+      render: (b: string | null) =>
+        b === null ? <span style={{ color: '#999' }} title="الرصيد مااتقراش">—</span>
+                   : <strong>{egp(b)}</strong>,
       sorter: (a: TreasuryRecord, b: TreasuryRecord) =>
         Number(a.balance || 0) - Number(b.balance || 0),
     },
