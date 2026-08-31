@@ -159,7 +159,10 @@ class Inspection {
         'merchant_customer_id': merchantCustomerId,
         'purchase_shop_phone': purchaseShopPhone,
         'visit_details': visitDetails,
-        'customer_id': customerId,
+        // المالك بيتخزّن محلياً برقم سالب عشان يتميّز عن العميل في نفس الكاش،
+        // وبيتبعت في خانته الصح: `owner_id` موجب. الموجب عميل حقيقي.
+        'customer_id': (customerId != null && customerId! > 0) ? customerId : null,
+        'owner_id': (customerId != null && customerId! < 0) ? -customerId! : null,
         'items': [
           for (final l in lines)
             {

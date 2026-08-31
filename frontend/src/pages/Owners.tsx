@@ -88,10 +88,17 @@ export default function Owners() {
     try {
       const [uRes, tRes] = await Promise.all([
         api.get<UserOption[]>('/api/v1/users'),
-        api.get<TerritoryOption[]>('/api/v1/org/territories'),
+        // `/org/territories` مش مسار موجود — كان بيرجّع صفحة الـSPA نفسها (HTML)،
+        // والـcatch اللي تحت بيبلع الفشل لأنه مافيش فشل: الرد 200 بنص.
+        api.get<TerritoryOption[]>('/api/v1/territories'),
       ]);
-      setUsers(uRes.data);
-      setTerritories(tRes.data);
+      // الرد اللي مش مصفوفة مابيدخلش الحالة.
+      //
+      // نص HTML اتحط في `territories` وبعدين حد عمل عليه `forEach` — والانهيار
+      // مانزلش على الصفحة لوحدها، نزل على التطبيق كله: الشاشة بتفضل بيضا من غير
+      // ولا رسالة. مسار غلط أو خطأ من السيرفر مايبقاش حالة.
+      setUsers(Array.isArray(uRes.data) ? uRes.data : []);
+      setTerritories(Array.isArray(tRes.data) ? tRes.data : []);
     } catch {
       // best-effort lookup load
     }
@@ -107,7 +114,9 @@ export default function Owners() {
       if (hasInspections !== undefined) params.has_inspections = hasInspections;
 
       const res = await api.get<OwnerListItem[]>('/api/v1/owners', { params });
-      setOwners(res.data);
+      // نفس القاعدة: اللي مش مصفوفة مايدخلش الحالة.
+      const rows: any = res.data;
+      setOwners(Array.isArray(rows) ? rows : (rows?.rows ?? []));
     } catch (err: any) {
       message.error(err.response?.data?.message || 'تعذر تحميل بيانات الملّاك');
     } finally {

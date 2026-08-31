@@ -105,9 +105,18 @@ class ApiClient {
     final custR = await http
         .get(await _uri('/customers'), headers: headers)
         .timeout(const Duration(seconds: 60));
+    // والملّاك من جدولهم، مش من العملاء.
+    //
+    // صاحب البيت كان متسجّل كعميل بتصنيف «الملّاك»، فخانة المالك في المعاينة كانت
+    // بتقلّب في العملاء وتفلتر بالتصنيف. الملّاك اتنقلوا لجدول لوحدهم (٧٠٤٥ صف)،
+    // فالتصنيف ده بقى صفر في العملاء — والخانة فضلت بتدوّر في مكان فاضي ومالقيتش حد.
+    //
+    // الاتنين بينزلوا في نفس الكاش المحلي عشان الخانة تفضل بتشتغل offline بنفس
+    // الطريقة، والمالك بيتعلّم بتصنيفه فالفلتر بيمسكه.
+    List<CustomerRef> parties = [];
     if (custR.statusCode == 200) {
       final rows = jsonDecode(utf8.decode(custR.bodyBytes)) as List;
-      await LocalDb.instance.replaceCustomers([
+      parties.addAll([
         for (final c in rows)
           CustomerRef(
             id: c['id'] as int,
@@ -117,6 +126,30 @@ class ApiClient {
             customerType: c['customer_type'] as String?,
           )
       ]);
+    }
+    try {
+      final ownR = await http
+          .get(await _uri('/owners', {'limit': '20000'}), headers: headers)
+          .timeout(const Duration(seconds: 90));
+      if (ownR.statusCode == 200) {
+        final body = jsonDecode(utf8.decode(ownR.bodyBytes));
+        final rows = (body is List ? body : (body['rows'] as List? ?? []));
+        parties.addAll([
+          for (final o in rows)
+            CustomerRef(
+              id: -(o['id'] as int),   // سالب: مفتاح المالك غير مفتاح العميل
+              name: o['name'] as String,
+              phone: o['phone'] as String?,
+              address: o['address'] as String?,
+              customerType: 'owner',
+            )
+        ]);
+      }
+    } catch (_) {
+      // الملّاك إضافة على الكاش — فشل سحبهم مايوقّفش باقي المزامنة.
+    }
+    if (parties.isNotEmpty) {
+      await LocalDb.instance.replaceCustomers(parties);
     }
 
     await LocalDb.instance.setKv('last_pull', DateTime.now().toIso8601String());
