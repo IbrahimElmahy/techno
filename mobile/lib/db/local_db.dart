@@ -13,7 +13,14 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 16, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 17, onUpgrade: (d, from, to) async {
+      if (from < 17) {
+        // v17: فئة الصنف جنب الصنف — منتقي البيع بقى خطوتين (فئة، وبعدها أصنافها).
+        // من غير الترقية دي الجهاز اللي عليه نسخة قديمة بيقع أول ما يقرا العمود.
+        try {
+          await d.execute('ALTER TABLE sale_item ADD COLUMN category TEXT');
+        } catch (_) {}
+      }
       if (from < 2) {
         // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
@@ -559,6 +566,29 @@ class LocalDb {
     return onHand - ((sold.first['q'] as num?)?.toDouble() ?? 0);
   }
 
+  /// نفس حساب [availableForSale] بس **لكل الأصناف في استعلامين** بدل استعلامين للصنف.
+  ///
+  /// المنتقي فيه ٣٢٦ صنف؛ نداء للصنف الواحد كان يبقى ٦٥٢ استعلام على القرص قبل ما
+  /// أول سطر يبان على شاشة تليفون. الحساب نفسه ماتغيّرش — الكاش ناقص اللي اتباع ولسه
+  /// ما اترفعش.
+  Future<Map<int, double>> availableForSaleAll() async {
+    final d = await db;
+    final onHand = await d.query('sale_item', columns: ['item_id', 'on_hand']);
+    final sold = await d.rawQuery(
+        'SELECT l.item_id AS item_id, COALESCE(SUM(l.quantity), 0) AS q '
+        'FROM sale_invoice_line l '
+        'JOIN sale_invoice i ON i.local_id = l.invoice_local_id '
+        'WHERE i.synced = 0 GROUP BY l.item_id');
+    final pending = {
+      for (final r in sold) r['item_id'] as int: (r['q'] as num?)?.toDouble() ?? 0
+    };
+    return {
+      for (final r in onHand)
+        r['item_id'] as int:
+            ((r['on_hand'] as num?)?.toDouble() ?? 0) - (pending[r['item_id'] as int] ?? 0)
+    };
+  }
+
   /// بتحفظ فاتورة وسطورها في معاملة واحدة — فاتورة من غير سطور مش فاتورة.
   Future<int> saveSaleInvoice({
     required String clientUuid,
@@ -830,6 +860,7 @@ CREATE TABLE sale_item(
   item_id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   unit TEXT,
+  category TEXT,
   on_hand REAL NOT NULL DEFAULT 0,
   base_price REAL,
   default_discount_pct REAL NOT NULL DEFAULT 0,

@@ -52,6 +52,15 @@ class ApiClient {
     return 'خطأ من الخادم (${r.statusCode})';
   }
 
+  /// نص من JSON، والفاضي بيبقى `null`.
+  ///
+  /// `'' ` و`null` نفس المعنى للي بيقرا — ومن غير التوحيد ده الفئة الفاضية بتبقى فئة
+  /// اسمها فراغ في المنتقي، جنب «بدون فئة» اللي المفروض تكون فيها.
+  static String? _text(Object? v) {
+    final s = v?.toString().trim() ?? '';
+    return s.isEmpty ? null : s;
+  }
+
   Future<void> login(String username, String password) async {
     final r = await http
         .post(await _uri('/auth/login'),
@@ -274,6 +283,9 @@ class ApiClient {
           itemId: i['item_id'] as int,
           name: i['name'] as String,
           unit: i['unit'] as String?,
+          // الفئة بتتخزّن مع الصنف عشان المنتقي يقدر يقسّم من غير شبكة. الصنف اللي
+          // فئته فاضية بيتخزّن بـnull، والشاشة بتلمّه تحت «بدون فئة» — مابيتخفيش.
+          category: _text(i['category']),
           onHand: double.tryParse('${i['on_hand']}') ?? 0,
           basePrice: double.tryParse('${i['base_price']}'),
           defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,

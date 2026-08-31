@@ -185,6 +185,12 @@ class SaleItem {
   final int itemId;
   final String name;
   final String? unit;
+
+  /// فئة الصنف زي ما هي في الأصناف على السيرفر — ممكن تكون فاضية.
+  ///
+  /// موجودة عشان منتقي الأصناف يبقى خطوتين: ٣٢٦ صنف في قايمة واحدة على شاشة تليفون
+  /// كومة مش قايمة. الفئة هنا **عرض بس** — مالهاش أي دخل بالسعر ولا بالرصيد.
+  final String? category;
   final double onHand;
   final double? basePrice;
   final double defaultDiscountPct;
@@ -194,6 +200,7 @@ class SaleItem {
     required this.itemId,
     required this.name,
     this.unit,
+    this.category,
     this.onHand = 0,
     this.basePrice,
     this.defaultDiscountPct = 0,
@@ -208,6 +215,7 @@ class SaleItem {
         'item_id': itemId,
         'name': name,
         'unit': unit,
+        'category': category,
         'on_hand': onHand,
         'base_price': basePrice,
         'default_discount_pct': defaultDiscountPct,
@@ -220,6 +228,7 @@ class SaleItem {
         itemId: r['item_id'] as int,
         name: r['name'] as String,
         unit: r['unit'] as String?,
+        category: r['category'] as String?,
         onHand: (r['on_hand'] as num?)?.toDouble() ?? 0,
         basePrice: (r['base_price'] as num?)?.toDouble(),
         defaultDiscountPct: (r['default_discount_pct'] as num?)?.toDouble() ?? 0,
