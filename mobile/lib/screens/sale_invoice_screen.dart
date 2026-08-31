@@ -128,6 +128,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           l.fixedDiscountPct = it.defaultDiscountPct;
         }
       }
+      // اللوحة المفتوحة بتتقفل عشان تتبني من جديد على الأرقام الجديدة.
+      //
+      // خانات السعر والخصم بتتبني بـ`initialValue`، ودي بتتقرا مرة عند التركيب.
+      // المندوب بيضيف أصناف قبل ما يختار العميل (الشاشة بتسمح بده عن قصد)، يفتح سطر
+      // يبص على سعره، وبعدين يختار العميل — فالسعر بيتغيّر في الموديل والسطر المضغوط،
+      // واللوحة المفتوحة تفضل على السعر القديم. رقمين مختلفين لنفس السطر في نفس اللحظة.
+      _openLines.clear();
     });
   }
 
@@ -270,7 +277,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     final c = _qtyCtl[l.itemId];
     if (c == null) return;
     final t = _trim(l.quantity);
-    if (c.text != t) c.text = t;
+    if (c.text == t) return;
+    // `c.text = t` بيرمي المؤشر على موضع غير صالح (-1) — توثيق Flutter نفسه بيقول
+    // إن الـsetter ده للاختبارات. والنتيجة إن الرقم الجاي بيتكتب في **أول** الخانة:
+    // المندوب يدوس «+» وبعدين يكتب صفر على «٢» فتطلع «٠٢» وتترجع ٢ بدل ٢٠ — والكمية
+    // غلط والإجمالي وراها، ومحدش بيشتكي لأن الحفظ بيرفض الصفر بس.
+    c.value = TextEditingValue(
+      text: t, selection: TextSelection.collapsed(offset: t.length));
   }
 
   /// الحذف بيسأل الأول.
@@ -359,7 +372,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         children: [
           Expanded(
             child: InkWell(
-              onTap: _toggleHeader,
+              // الشريط بيقول «اضغط للاختيار» لما مافيش عميل — فالضغطة تفتح المنتقي
+              // فعلاً. كانت بتطوي الكارت اللي فيه زرار الاختيار نفسه، يعني أول لمسة
+              // في الشاشة بتعمل عكس اللي مكتوب عليها.
+              onTap: _customer == null ? _pickCustomer : _toggleHeader,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
                 child: Row(

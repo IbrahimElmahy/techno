@@ -310,6 +310,18 @@ def rep_bundle(
 
     _ZERO = Decimal("0")
 
+    # اسم الفئة زي ما المكتب شايفه، مش قيمتها المخزّنة.
+    #
+    # `Item.category` بيمسك **القيمة** — متولّدة مرة عند الإنشاء بمسافات متحوّلة
+    # لـ«_» ومقصوصة على ٤٠ حرف — والتعديل من شاشة الفئات بيغيّر الليبل بس. كل شاشات
+    # الويب بتعرض الليبل، فلو التطبيق عرض القيمة يبقى هو المكان الوحيد اللي بيسمّي
+    # الفئة باسم تاني — والمندوب والمكتب بيتكلموا في التليفون على نفس الفئة.
+    from src.models.lookup import LookupOption
+
+    cat_label = dict(db.execute(
+        select(LookupOption.value, LookupOption.label)
+        .where(LookupOption.category == "item_category")).all())
+
     acct_balance = chart_service.bulk_balances(db)
     accounts_by_customer: dict[int, list[CustomerAccount]] = {}
     if customers:
@@ -403,7 +415,7 @@ def rep_bundle(
                 "default_discount_pct": str(r[3]) if r[3] is not None else None,
                 "base_price": str(r[4]) if r[4] is not None else None,
                 "on_hand": str(on_hand[r[0]]),
-                "category": r[6],
+                "category": cat_label.get(r[6], r[6]),
                 "tier_prices": tiers.get(r[0], {}),
             }
             for r in live

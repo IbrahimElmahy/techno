@@ -82,7 +82,11 @@ class _SaleItemPickerScreenState extends State<SaleItemPickerScreen> {
   /// فالشرطة دي شكل مش معنى — بترجع مسافة عشان تطلع «سخانات كهرباء» مش «سخانات_كهرباء».
   String _categoryOf(SaleItem it) {
     final c = it.category?.trim() ?? '';
-    return c.isEmpty ? _noCategory : c.replaceAll('_', ' ');
+    // السيرفر بقى بيبعت **اسم** الفئة زي ما المكتب شايفه، مش قيمتها المخزّنة —
+    // فمافيش تحويل «_» لمسافة هنا. التحويل ده كان بيصيب مع فئات a5 (قيمتها فيها
+    // مسافات أصلاً) ويغلط مع أي فئة اتغيّر اسمها من الإعدادات: التليفون كان هيفضل
+    // على الاسم القديم للأبد.
+    return c.isEmpty ? _noCategory : c;
   }
 
   bool get _searching => _search.text.trim().isNotEmpty;
@@ -100,7 +104,11 @@ class _SaleItemPickerScreenState extends State<SaleItemPickerScreen> {
           if (it.name.toLowerCase().contains(q)) it
       ];
     }
-    if (_openCategory == null) return const [];
+    // فئة واحدة (أو ولا فئة، زي قبل أول مزامنة) = مافيش مستوى فئات أصلاً، فالقايمة
+    // بتوري كل الأصناف بدل ما ترجع فاضية ومنتظرة اختيار مالوش وجود.
+    if (_openCategory == null) {
+      return _categories.length > 1 ? const <SaleItem>[] : _items;
+    }
     return [
       for (final it in _items)
         if (_categoryOf(it) == _openCategory) it
@@ -202,7 +210,12 @@ class _SaleItemPickerScreenState extends State<SaleItemPickerScreen> {
       return const _Empty(
           'مافيش أصناف في العربية.\nاسحب البيانات من شاشة المزامنة الأول.');
     }
-    if (!_searching && _openCategory == null) return _categoryList();
+    // فئة واحدة بس = مافيش سؤال. قبل أول مزامنة الفئة بتبقى فاضية على كل الأصناف،
+    // فالشاشة كانت هتوري فولدر واحد اسمه «بدون فئة» جوّاه الـ٣٢٦ — نفس الكومة
+    // القديمة وضغطة زيادة. ونفس الحالة للمندوب اللي في الشارع ومش قادر يزامن.
+    if (!_searching && _openCategory == null && _categories.length > 1) {
+      return _categoryList();
+    }
 
     final items = _visibleItems;
     if (items.isEmpty) {
