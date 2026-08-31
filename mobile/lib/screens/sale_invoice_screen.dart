@@ -150,6 +150,18 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   double get _cashAmount => double.tryParse(_cash.text.trim()) ?? 0;
   double get _credit => max(0, _total - _cashAmount);
 
+  /// حساب العميل السابق — قبل الفاتورة اللي بيكتبها دلوقتي.
+  double get _prevBalance => _customer?.balance ?? 0;
+
+  /// الباقي على العميل بعد الفاتورة دي = السابق + الفاتورة − المدفوع.
+  ///
+  /// كان بيعرض `_credit` وبس، يعني آجل الفاتورة دي لوحدها. والمندوب بيقول للعميل
+  /// «عليك كذا» فبيقول رقم الفاتورة وهو مديون من قبلها — وده نص الرقم الحقيقي.
+  double get _dueAfter => _prevBalance + _total - _cashAmount;
+
+  /// رصيد خط بعينه. الخط اللي مالوش حساب رصيده صفر — جملة صح عن الفلوس.
+  double _familyBalance(String f) => _customer?.familyBalances[f] ?? 0;
+
   Future<void> _pickCustomer() async {
     final picked = await showModalBottomSheet<CustomerRef>(
       context: context,
@@ -841,9 +853,34 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
             ],
             const SizedBox(height: 10),
-            _totalRow('إجمالي الفاتورة', _money(_total)),
+            _totalRow('إجمالي الأصناف', _money(_total)),
             const SizedBox(height: 6),
-            _totalRow('الباقي على العميل', _money(_credit)),
+            _totalRow('صافي الفاتورة', _money(_total), color: AppColors.primary),
+            if (_customer != null) ...[
+              const Divider(height: 18),
+              // سطر لكل خط، والخط اللي الفاتورة عليه متعلّم.
+              //
+              // الخطين بيتعرضوا دايماً حتى لو واحد فيهم صفر: العميل بيسأل «الأبيض بكام»،
+              // والسطر الناقص بيخلّي السؤال يتردّ عليه بتخمين. والصفر إجابة.
+              for (final f in const ['أبيض', 'بولي'])
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: _totalRow('مديونية $f', _money(_familyBalance(f)),
+                      color: _familyBalance(f) > 0.001
+                          ? AppColors.danger
+                          : AppColors.primary,
+                      highlight: f == _family),
+                ),
+              _totalRow('إجمالي المديونية', _money(_prevBalance),
+                  color: _prevBalance > 0.001 ? AppColors.danger : AppColors.primary),
+              const Divider(height: 18),
+            ],
+            if (_cashAmount > 0.001) ...[
+              _totalRow('المدفوع نقداً', '− ${_money(_cashAmount)}',
+                  color: AppColors.primary),
+              const SizedBox(height: 6),
+            ],
+            _totalRow('الباقي على العميل', _money(_dueAfter), big: true),
             const SizedBox(height: 10),
             TextField(
               controller: _notes,
@@ -855,17 +892,33 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     );
   }
 
-  Widget _totalRow(String label, String value, {bool big = false}) {
-    return Row(
+  Widget _totalRow(String label, String value,
+      {bool big = false, Color? color, bool highlight = false}) {
+    final row = Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(fontSize: big ? 15 : 14, color: Colors.black54)),
+        Text(label,
+            style: TextStyle(
+                fontSize: big ? 15 : 14,
+                fontWeight: highlight ? FontWeight.w700 : FontWeight.w400,
+                color: highlight ? Colors.black87 : Colors.black54)),
         Text('$value ج.م',
             style: TextStyle(
                 fontSize: big ? 22 : 16,
                 fontWeight: FontWeight.w800,
-                color: big ? AppColors.primary : Colors.black87)),
+                color: color ?? (big ? AppColors.primary : Colors.black87))),
       ],
+    );
+    // الخط اللي الفاتورة عليه بيتعلّم بخلفية خفيفة: تلات أرقام متشابهين في عمود من
+    // غير علامة على اللي بيتحرّك دلوقتي هما تلات أرقام محدش بيقراهم.
+    if (!highlight) return row;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: row,
     );
   }
 
@@ -903,7 +956,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                               fontWeight: FontWeight.w800,
                               color: AppColors.primary)),
                     ),
-                    Text('باقي ${_money(_credit)}',
+                    // نفس رقم اللوحة تحت — الشريط كان بيقول آجل الفاتورة دي بس واللوحة
+                    // بتقول الباقي كله، فرقمين مختلفين بنفس الاسم في شاشة واحدة.
+                    Text('باقي ${_money(_dueAfter)}',
                         style: const TextStyle(fontSize: 12, color: Colors.black54)),
                   ],
                 ),

@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 18, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 19, onUpgrade: (d, from, to) async {
       if (from < 18) {
         // v18: صناديق المندوب — واحد لكل خط. الصندوق بيتحدد من نوع الفاتورة لوحده،
         // والجهاز لازم يكون شايله عشان يعرضه وهو في الشارع من غير شبكة.
@@ -88,6 +88,13 @@ class LocalDb {
           try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN $col'); } catch (_) {}
         }
       }
+      if (from < 19) {
+        // v19: أرصدة العميل بالخط. المندوب واقف قدام العميل وبيقول له عليك كام —
+        // ورقم واحد مجمّع مابيردّش على «الأبيض بكام؟»، والفلوس بتتحصّل بالخط.
+        for (final col in ['family_balances TEXT', 'balance REAL']) {
+          try { await d.execute('ALTER TABLE customer ADD COLUMN $col'); } catch (_) {}
+        }
+      }
       if (from < 15) {
         // v15: تصنيف العميل وخطوط منتجاته — «أبيض» و«بولي» بينزلوا مع الحزمة عشان
         // الفاتورة تقول على أنهي مديونية، وعشان حقل المالك في المعاينة يتفلتر بالتصنيف.
@@ -133,7 +140,8 @@ class LocalDb {
           created_at TEXT NOT NULL
         )''');
       await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT, phone TEXT, '
-          'address TEXT, price_tier TEXT, customer_type TEXT, families TEXT)');
+          'address TEXT, price_tier TEXT, customer_type TEXT, families TEXT, '
+        'family_balances TEXT, balance REAL)');
       await d.execute(
           'CREATE TABLE insp_item_type(id INTEGER PRIMARY KEY, name TEXT, points REAL)');
       await d.execute('''
@@ -226,6 +234,10 @@ class LocalDb {
           // مفصولة بفاصلة: قايمة قصيرة (خط أو اتنين) ومحدش بيبحث جوّاها، فجدول تاني
           // ليها هيبقى تكلفة من غير مقابل.
           'families': c.families.join(','),
+          // «أبيض=123.45|بولي=0» — قايمة من خطين، فجدول تاني ليها تكلفة من غير مقابل.
+          'family_balances':
+              c.familyBalances.entries.map((e) => '${e.key}=${e.value}').join('|'),
+          'balance': c.balance,
         });
       }
       await batch.commit(noResult: true);
@@ -272,6 +284,12 @@ class LocalDb {
             .split(',')
             .where((x) => x.trim().isNotEmpty)
             .toList(),
+        familyBalances: {
+          for (final part in ((r['family_balances'] as String?) ?? '').split('|'))
+            if (part.contains('='))
+              part.split('=').first: double.tryParse(part.split('=').last) ?? 0,
+        },
+        balance: (r['balance'] as num?)?.toDouble() ?? 0,
       );
 
   // --- inspection point-items catalog (أصناف المعاينة) ---

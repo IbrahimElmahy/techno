@@ -275,6 +275,12 @@ class ApiClient {
           families: [
             for (final f in ((c['families'] as List?) ?? const [])) f as String
           ],
+          // الأرصدة بتنزل مع الحزمة عشان تشتغل من غير شبكة — المندوب في الشارع.
+          familyBalances: {
+            for (final e in ((c['family_balances'] as Map?) ?? const {}).entries)
+              e.key as String: double.tryParse('${e.value}') ?? 0,
+          },
+          balance: double.tryParse('${c['balance'] ?? 0}') ?? 0,
         )
     ]);
     await LocalDb.instance.replaceSaleItems([

@@ -292,7 +292,17 @@ export default function Invoices() {
   const [familyAccounts, setFamilyAccounts] = useState<
     { family: string | null; balance: string }[]>([]);
   const [invoiceFamily, setInvoiceFamily] = useState<string | null>(null);
-  const families = familyAccounts.filter((a) => a.family);
+  // الخطين دايماً بيتعرضوا — مش الموجود بس.
+  //
+  // العميل اللي عنده حساب «بولي» بس كان بيتعرض بسطر عام «حساب سابق على العميل»، فالرقم
+  // بيبان من غير ما يقول هو على أنهي خط؛ واللي بيبص بيسأل «طب دي مديونية إيه؟». والخط
+  // اللي مالوش حساب رصيده **صفر** — ودي جملة صحيحة عن الفلوس، مش سطر ناقص.
+  const FAMILIES = ['أبيض', 'بولي'];
+  const families = FAMILIES.map((f) => ({
+    family: f,
+    balance: familyAccounts.find((a) => a.family === f)?.balance ?? '0',
+  })).concat(familyAccounts.filter(
+    (a) => a.family && !FAMILIES.includes(a.family)) as { family: string; balance: string }[]);
   // Coupons already issued to this customer and not yet redeemed — the counter reads out their
   // serial range when handing them over.
   const [customerCoupons, setCustomerCoupons] = useState<any[]>([]);
@@ -2618,12 +2628,7 @@ export default function Invoices() {
                   })),
                   { label: 'إجمالي المديونية', value: money(balance), strong: true,
                     color: balance > 0 ? '#cf1322' : '#6AB42D',
-                    rule: families.length > 1,
-                    show: hasParty && families.length > 1 },
-                  { label: 'حساب سابق على العميل', value: money(balance),
-                    color: balance > 0 ? '#cf1322' : '#6AB42D',
-                    // Only for a customer with no split — otherwise it restates the total above.
-                    show: hasParty && families.length <= 1 && Math.abs(balance) > 0.001 },
+                    rule: true, show: hasParty },
                   { label: 'المدفوع نقداً', value: `− ${money(cashAmount)}`, color: '#6AB42D',
                     show: hasParty && cashAmount > 0.001 },
                   { label: 'الباقي على العميل', value: money(due), big: true, rule: true,

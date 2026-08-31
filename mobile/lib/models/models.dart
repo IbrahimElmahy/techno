@@ -41,6 +41,16 @@ class CustomerRef {
   /// المديونية الغلط — وده اللي بيخلّي كشف حساب العميل يطلع مالوش معنى.
   final List<String> families;
 
+  /// رصيد كل خط لوحده — «أبيض» و«بولي» — زي ما شاشة الفاتورة على النظام بتوريه.
+  ///
+  /// المندوب واقف قدام العميل وبيقول له عليك كام. رقم واحد مجمّع مابيردّش على السؤال
+  /// ده: العميل بيسأل «الأبيض بكام؟» لأن الفلوس بتتحصّل بالخط والصناديق مقسومة بالخط.
+  final Map<String, double> familyBalances;
+
+  /// إجمالي المديونية — مجموع الخطوط. بينزل من السيرفر مش بيتجمع هنا: العميل ممكن
+  /// يكون له حساب مالوش خط (كارت قديم قبل التقسيم) وده مابيبانش في القايمة فوق.
+  final double balance;
+
   const CustomerRef({
     required this.id,
     required this.name,
@@ -49,6 +59,8 @@ class CustomerRef {
     this.priceTier,
     this.customerType,
     this.families = const [],
+    this.familyBalances = const {},
+    this.balance = 0,
   });
 }
 

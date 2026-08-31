@@ -457,6 +457,11 @@ def list_cash_accounts(
     names = {u.id: (u.full_name or u.username) for u in db.scalars(select(User)).all()}
     out: list[CashAccountOut] = []
     for a in accounts:
+        # الحساب اللي مالوش اسم ولا كود مايتعرضش: «خزينة #٣٧٦٧» مش اختيار، دي مطالبة
+        # للي بيحفظ إنه يخمّن. (ده حساب اتعمل أوتوماتيك ومالوش ولا حركة.) السيرفر لسه
+        # بيقدر يستنتجه لو هو الخزنة العامة — الإخفا من القايمة مش من الترحيل.
+        if not (a.name or "").strip() and not (a.code or "").strip():
+            continue
         c = links.get(a.id)
         out.append(CashAccountOut(
             account_id=a.id, code=a.code, name=a.name,
