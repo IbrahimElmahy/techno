@@ -535,37 +535,57 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               // الشريط بيقول «اضغط للاختيار» لما مافيش عميل — فالضغطة تفتح المنتقي
               // فعلاً. كانت بتطوي الكارت اللي فيه زرار الاختيار نفسه، يعني أول لمسة
               // في الشاشة بتعمل عكس اللي مكتوب عليها.
-              onTap: _customer == null ? _pickCustomer : _toggleHeader,
+              onTap: _customer == null && !_headerOpen ? _pickCustomer : _toggleHeader,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                child: Row(
-                  children: [
-                    Icon(missing ? Icons.error_outline : Icons.person_outline,
-                        size: 20, color: missing ? AppColors.danger : AppColors.primary),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                // والكارت المفتوح تحته بيقول نفس الكلام — «اختار العميل» مرتين فوق
+                // بعض. فلما الترويسة مفتوحة الشريط بيبقى مقبض بس: «بيانات الفاتورة»
+                // وسهم يطويها، والكلام الحقيقي في الكارت.
+                child: _headerOpen
+                    ? const Row(
                         children: [
-                          Text(_customer?.name ?? 'اختار العميل',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 14)),
-                          Text(sub,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: missing ? AppColors.danger : Colors.black54)),
+                          Icon(Icons.receipt_long_outlined,
+                              size: 20, color: AppColors.primary),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text('بيانات الفاتورة',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 14)),
+                          ),
+                          Icon(Icons.expand_less, size: 20, color: Colors.black45),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Icon(missing ? Icons.error_outline : Icons.person_outline,
+                              size: 20,
+                              color: missing ? AppColors.danger : AppColors.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_customer?.name ?? 'اختار العميل',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700, fontSize: 14)),
+                                Text(sub,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: missing
+                                            ? AppColors.danger
+                                            : Colors.black54)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.expand_more,
+                              size: 20, color: Colors.black45),
                         ],
                       ),
-                    ),
-                    Icon(_headerOpen ? Icons.expand_less : Icons.expand_more,
-                        size: 20, color: Colors.black45),
-                  ],
-                ),
               ),
             ),
           ),
