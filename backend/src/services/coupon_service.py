@@ -14,7 +14,6 @@ from sqlalchemy.orm import Session
 
 from src.core.money import to_money
 from src.models.catalog import Item, ItemKind
-from src.models.customer import CustomerAccount
 from src.models.ledger import Direction
 from src.models.loyalty import (
     Coupon,
@@ -25,6 +24,7 @@ from src.models.loyalty import (
 )
 from src.models.stock import LocationKind, StockDirection
 from src.services import account_resolver, audit_service, ledger_service, stock_service
+from src.services.customer_merge_service import MergeError
 from src.services.ledger_service import LineInput
 
 
@@ -38,9 +38,22 @@ def _require_issued(coupon: Coupon) -> None:
 
 
 def _receivable_account_id(db: Session, customer_id: int) -> int:
-    acc = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == customer_id))
-    if acc is None:
-        raise CouponError("العميل ده مالوش حساب ذمم.")
+    """حساب ذمم العميل — ولو مالوش، بيتفتح دلوقتي بدل ما الصرف يقف.
+
+    الكوبون بيتصرف على ذمة العميل (مدين مصروف ولاء، دائن الذمم)، فلازم يكون فيه حساب.
+    بس «مالوش حساب» مش سبب يمنع الصرف — الكوبون في إيد العميل بالفعل. الفتح على نفس
+    الـsession، فلو الصرف وقع بعد كده الحساب بيترجع معاه.
+
+    القاعدة مشتركة مع البيع (`customer_service.require_account`) عن قصد: قبل كده كان
+    الاستعلام هنا بياخد **أي** حساب للعميل من غير ترتيب، فالعميل المقسوم على خطين كان
+    ممكن ياخد كوبونه على حساب النهارده وعلى التاني بكرة.
+    """
+    from src.services import customer_service
+
+    try:
+        acc = customer_service.require_account(db, customer_id)
+    except (MergeError, customer_service.CustomerError) as exc:
+        raise CouponError(str(exc)) from exc
     return acc.account_id
 
 

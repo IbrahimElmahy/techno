@@ -19,7 +19,7 @@ from src.core import hooks
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
-from src.services import customer_merge_service
+from src.services import customer_service
 from src.services.customer_merge_service import MergeError
 from src.models.ledger import Account, Direction
 from src.models.role import RoleName
@@ -349,12 +349,12 @@ def create_sale(
 
     # (031) Which of his accounts this invoice belongs to. A customer may hold one per product
     # line now, and an unscoped lookup would post to an arbitrary one of them.
+    # العميل اللي مالوش حساب لسه، بيتفتحله واحد هنا وخلاص — البيع مابيقفش على تفصيلة
+    # محاسبية. الفتح على نفس الـsession بتاعة الفاتورة، فلو الفاتورة وقعت الحساب بيقع معاها.
     try:
-        cust_acc = customer_merge_service.receivable_account(db, customer_id, family)
-    except MergeError as exc:
+        cust_acc = customer_service.require_account(db, customer_id, family=family)
+    except (MergeError, customer_service.CustomerError) as exc:
         raise SalesError(str(exc)) from exc
-    if cust_acc is None:
-        raise SalesError("العميل ده مالوش حساب ذمم.")
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
 
     # الفاتورة اللي بتتعدّل بتحتفظ برقمها وتاريخ إنشائها — الرقم ده اتطبع واتقال في
@@ -832,8 +832,11 @@ def return_sale(
     # The return goes back to the SAME account the invoice posted to — read off the invoice rather
     # than resolved again, so a customer whose lines were split later still gets his money back
     # where it came from.
-    cust_acc = customer_merge_service.receivable_account(
-        db, inv.customer_id, getattr(inv, "family", None))
+    try:
+        cust_acc = customer_service.require_account(
+            db, inv.customer_id, family=getattr(inv, "family", None))
+    except (MergeError, customer_service.CustomerError) as exc:
+        raise SalesError(str(exc)) from exc
     entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, value)]
     if tax_refund > ZERO:
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id, Direction.debit,
@@ -910,12 +913,12 @@ def create_standalone_return(
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise SalesError("العميل مش موجود.")
+    # العميل اللي مالوش حساب لسه، بيتفتحله واحد هنا وخلاص — البيع مابيقفش على تفصيلة
+    # محاسبية. الفتح على نفس الـsession بتاعة الفاتورة، فلو الفاتورة وقعت الحساب بيقع معاها.
     try:
-        cust_acc = customer_merge_service.receivable_account(db, customer_id, family)
-    except MergeError as exc:
+        cust_acc = customer_service.require_account(db, customer_id, family=family)
+    except (MergeError, customer_service.CustomerError) as exc:
         raise SalesError(str(exc)) from exc
-    if cust_acc is None:
-        raise SalesError("العميل ده مالوش حساب ذمم.")
 
     # (031) Remember where this customer's returns come back to, the FIRST time it is answered.
     # His goods come back to the branch that serves him, and asking again on every return is

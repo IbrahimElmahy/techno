@@ -107,6 +107,51 @@ def ensure_account(db: Session, customer: Customer) -> tuple[CustomerAccount | N
     return open_account(db, customer), True
 
 
+def require_account(db: Session, customer_id: int, *, family: str | None = None) -> CustomerAccount:
+    """حساب الذمم اللي الحركة دي بتترحّل عليه — والعميل اللي مالوش، بيتفتحله دلوقتي.
+
+    كل بيع وكوبون كان بيقف على «العميل ده مالوش حساب ذمم». والمستخدم قال بالنص: «العميل
+    لو ماعندهوش فلوس الفاتورة بتتباع عادي» — يعني الحساب تفصيلة محاسبية، مش شرط على البيع.
+    العميل اللي وصل من استيراد أو من نقل a5 أو من دمج مالوش حساب، والبايع اللي قدامه ورقة
+    فاتورة مايقدرش يعمل حاجة بالرسالة دي غير إنه يسيبها.
+
+    فالحساب بيتفتح في اللحظة اللي محتاجينه فيها. مافيش داتا بتضيع: الحساب المفتوح كده
+    مطابق بالظبط للي `create_customer` بيفتحه — نفس النوع، نفس الفرع، بدون اسم ولا كود.
+
+    **ذرّي مع المستند**: بيتعمل `flush` بس على نفس الـsession بتاعة النداء، من غير `commit`
+    (اللي بيعمله الـendpoint في الآخر). فلو الفاتورة وقعت بعد كده، الحساب بيترجع معاها
+    وماتفضلش فاضية ورا.
+
+    مش idempotent بالغلط: تاني مرة `receivable_account` بترجّع الحساب اللي اتفتح، فمافيش
+    حساب تاني لنفس العميل.
+
+    بيرفض في حالتين بس، وكل واحدة فيهم قرار بني آدم مش تفصيلة:
+
+    * **العميل عنده أكتر من حساب ومافيش واحد مطابق للخط المطلوب** — دي بترجع من
+      `receivable_account` كـ`MergeError`، وبتعدي زي ما هي. فتح حساب تالت هنا بيخفي السؤال.
+    * **نوع مابيتفتحلوش حساب** (السباك — بيرجّع كوبونات ومابيشتريش). لو وصل لنقطة إنه محتاج
+      ذمة، يبقى فيه حاجة تانية غلط قبل كده، والرسالة بتقول كده بالظبط بدل ما تفتحله حساب
+      وتدفن الغلط.
+    """
+    from src.services import customer_merge_service
+
+    customer = db.get(Customer, customer_id)
+    if customer is None:
+        raise CustomerError("العميل مش موجود.")
+    acc = customer_merge_service.receivable_account(db, customer_id, family)
+    if acc is not None:
+        return acc
+    if _norm_type(customer.customer_type) in NO_RECEIVABLE_TYPES:
+        raise CustomerError(
+            f"«{customer.name}» عميل من نوع «سباك» — مابيتفتحلوش حساب ذمم ومابيتباعلوش. "
+            "لو المفروض يشتري، غيّر نوع العميل الأول."
+        )
+    # بدون `family`: ده حسابه الوحيد، والقايمة اللي فيها حساب واحد `receivable_account`
+    # بترجّعه لأي خط بيتطلب. لو اتكتب عليه خط، أول فاتورة على خط تاني هتلاقي حساب
+    # «مش بتاعها» وتفضل تدوّر على واحد مش موجود.
+    return open_account(db, customer)
+
+
 # (v4) Customer types whose responsible rep must be after-sales (customer-service) staff.
 AFTER_SALES_TYPES = {"plumber"}
 
