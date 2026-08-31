@@ -83,13 +83,75 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   void dispose() {
     _amount.dispose();
     _notes.dispose();
+    _recentSearch.dispose();
     super.dispose();
   }
 
   Future<void> _loadRecent() async {
+    // كل الصفوف بتتحمّل والفلترة في الذاكرة — القايمة على الجهاز أصلاً، وقصّها
+    // قبل الفلتر كان هيخلّي البحث يدوّر في آخر ٢٠ بس ويقول «مافيش» على حاجة موجودة.
     final rows = await LocalDb.instance.receipts();
-    if (mounted) setState(() => _recent = rows.take(20).toList());
+    if (mounted) setState(() => _recent = rows);
   }
+
+  /// البحث والفترة — نفس فلتر «فواتيري» بالحرف.
+  final _recentSearch = TextEditingController();
+  DateTime? _from;
+  DateTime? _to;
+
+  String _bare(String x) => x
+      .replaceAll(RegExp('[أإآ]'), 'ا')
+      .replaceAll('ة', 'ه')
+      .replaceAll('ى', 'ي');
+
+  List<Map<String, Object?>> get _visibleRecent {
+    final q = _bare(_recentSearch.text.trim());
+    return [
+      for (final r in _recent)
+        if ((q.isEmpty ||
+                _bare('${r['customer_name'] ?? ''}').contains(q) ||
+                '${r['document_number'] ?? ''}'.contains(q)) &&
+            _inRange(r['receipt_date'] as String?))
+          r
+    ].take(50).toList();
+  }
+
+  bool _inRange(String? d) {
+    if (d == null || d.isEmpty) return true;
+    final day = DateTime.tryParse(d);
+    if (day == null) return true;
+    if (_from != null &&
+        day.isBefore(DateTime(_from!.year, _from!.month, _from!.day))) {
+      return false;
+    }
+    if (_to != null && day.isAfter(DateTime(_to!.year, _to!.month, _to!.day))) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _pickDate({required bool from}) async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: (from ? _from : _to) ?? now,
+      firstDate: DateTime(now.year - 2),
+      lastDate: now,
+    );
+    if (d == null) return;
+    setState(() {
+      if (from) {
+        _from = d;
+        // «من» بعد «إلى» مالوش معنى — الحد التاني بيتظبط بدل ما النتيجة تطلع فاضية.
+        if (_to != null && _to!.isBefore(d)) _to = d;
+      } else {
+        _to = d;
+        if (_from != null && _from!.isAfter(d)) _from = d;
+      }
+    });
+  }
+
+  String _d(DateTime? v) => v == null ? '' : v.toIso8601String().substring(0, 10);
 
   Future<void> _pickCustomer() async {
     final rows = await LocalDb.instance.customers(limit: 200);
@@ -400,7 +462,63 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                     style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black54)),
               ),
             ),
-            for (final r in _recent)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: TextField(
+                controller: _recentSearch,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'دوّر بالعميل أو رقم السند',
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  suffixIcon: _recentSearch.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(_recentSearch.clear),
+                        ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _pickDate(from: true),
+                      icon: const Icon(Icons.event_outlined, size: 16),
+                      label: Text(_from == null ? 'من' : 'من ${_d(_from)}',
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _pickDate(from: false),
+                      icon: const Icon(Icons.event, size: 16),
+                      label: Text(_to == null ? 'إلى' : 'إلى ${_d(_to)}',
+                          style: const TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                  if (_from != null || _to != null)
+                    IconButton(
+                      tooltip: 'شيل الفترة',
+                      icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
+                      onPressed: () => setState(() {
+                        _from = null;
+                        _to = null;
+                      }),
+                    ),
+                ],
+              ),
+            ),
+            if (_visibleRecent.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: Text('مافيش تحصيلات على الفلتر ده')),
+              ),
+            for (final r in _visibleRecent)
               ListTile(
                 leading: Icon(
                   (r['synced'] as int?) == 1 ? Icons.check_circle : Icons.schedule,
