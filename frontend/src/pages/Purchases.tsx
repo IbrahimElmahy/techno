@@ -30,6 +30,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -214,6 +215,8 @@ export default function Purchases() {
   const [variableDiscount, setVariableDiscount] = useState<number>(0);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
+  // بوباب الخزنة قبل الحفظ (أمر ٠٠٩ بند ٤). الشرا من المكتب، فمافيش استثناء للمندوب.
+  const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate();
 
   // Document creation result
   const [docResult, setDocResult] = useState<any>(null);
@@ -989,72 +992,89 @@ export default function Purchases() {
       return;
     }
 
-    setSubmitLoading(true);
-    try {
-      // الفاتورة اللي اتفتحت للتعديل بتتعكس **دلوقتي** — مش وقت الفتح.
-      //
-      // العكس بيطلّع البضاعة من المخزن. لو حصل وقت الفتح، أي فاتورة أصنافها اتباعت بقت مش
-      // قابلة للفتح أصلاً: الرصيد مايكفي فالعكس بيقع، ومجرد إنك عايز تبص عليها كان بيفشل.
-      //
-      // هنا هو في مكانه: التبديل بيحصل مرة واحدة — القديمة تتعكس والجديدة تترحّل. ولو الرصيد
-      // فعلاً مايكفيش، الرسالة بتيجي وهي بتقول حاجة صح، والفاتورة القديمة بتفضل زي ما هي.
-      //
-      // **والفاتورة اللي اترجّعت بالكامل بتعدّي.** لو المردودات أكلت قيمتها كلها، مفيش
-      const payload = {
-        supplier_id: values.supplier_id,
-        // مخزن المستند بقى مخزن أول سطر. السيرفر لسه محتاج مكان على المستند (٠٣٠)، والسطر
-        // اللي نزل مخزن تاني شايل مخزنه بنفسه — فالاتنين متسقين من غير ما حد يتسأل مرتين.
-        location: {
-          location_kind: 'warehouse',
-          location_id: validLines[0].warehouse_id,
-        },
-        cash_amount: cashAmount,
-        credit_amount: creditAmount,
-        variable_discount_pct: variableDiscount || 0,
-        external_document_number: values.external_document_number || null,
-        // «الحساب» — الحساب اللي القيد بينزل عليه. الحقل كان موجود في السيرفر من ٠٣٠ والشاشة
-        // مكانتش بتبعته خالص، فكل فاتورة كانت بتترحّل على الافتراضي مهما كان قصد الكاتب.
-        // خانة «الحساب» اتشالت من الترويسة — القيد بينزل على حساب المشتريات الافتراضي.
-        expense_account_id: null,
-        // `branch_id` مش في العقد عن قصد — مفيش عمود ليه على المستند، والفرع بيتعرف من المخزن.
-        notes: values.notes || null,
-        statement1: values.statement1 || null,
-        statement2: values.statement2 || null,
-        statement3: values.statement3 || null,
-        lines: validLines.map((l) => ({
-          item_id: l.item_id,
-          quantity: Number(l.quantity || 0),
-          unit_price: l.unit_price,
-          unit: l.unit,
-          // الاتنين بيتجمعوا — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
-          discount_pct: (l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0) || null,
-          warehouse_id: l.warehouse_id,
-        })),
-        // The day the goods were received, taken from the first door — not the day this row was
-        // typed, which is what `created_at` would have recorded.
-        purchase_date: purchaseDate.format('YYYY-MM-DD'),
-      };
+    // بوباب الخزنة (أمر ٠٠٩ بند ٤): فاتورة الشرا **بتخصم** من الخزنة. الحفظ بيتم بعد
+    // الاختيار، والرجوع مابيحفظش. كله آجل (نقدي بصفر) ⇒ مافيش فلوس بتتحرّك، فمافيش سؤال.
+    //
+    // والسؤال قبل `setSubmitLoading(true)` عن قصد: لو اتفتح البوباب واترجع، الزرار كان
+    // هيفضل بيلف على الفاضي.
+    askTreasury(
+      {
+        amount: Number(cashAmount) || 0,
+        direction: 'out',
+        docLabel: 'فاتورة الشراء',
+      },
+      async (cashAccountId) => {
+        setSubmitLoading(true);
+        try {
+          // الفاتورة اللي اتفتحت للتعديل بتتعكس **دلوقتي** — مش وقت الفتح.
+          //
+          // العكس بيطلّع البضاعة من المخزن. لو حصل وقت الفتح، أي فاتورة أصنافها اتباعت بقت مش
+          // قابلة للفتح أصلاً: الرصيد مايكفي فالعكس بيقع، ومجرد إنك عايز تبص عليها كان بيفشل.
+          //
+          // هنا هو في مكانه: التبديل بيحصل مرة واحدة — القديمة تتعكس والجديدة تترحّل. ولو الرصيد
+          // فعلاً مايكفيش، الرسالة بتيجي وهي بتقول حاجة صح، والفاتورة القديمة بتفضل زي ما هي.
+          //
+          // **والفاتورة اللي اترجّعت بالكامل بتعدّي.** لو المردودات أكلت قيمتها كلها، مفيش
+          const payload = {
+            supplier_id: values.supplier_id,
+            // مخزن المستند بقى مخزن أول سطر. السيرفر لسه محتاج مكان على المستند (٠٣٠)، والسطر
+            // اللي نزل مخزن تاني شايل مخزنه بنفسه — فالاتنين متسقين من غير ما حد يتسأل مرتين.
+            location: {
+              location_kind: 'warehouse',
+              location_id: validLines[0].warehouse_id,
+            },
+            cash_amount: cashAmount,
+            credit_amount: creditAmount,
+            // (٠٠٩) الخزنة اللي البوباب سأل عنها — الشرا **بيخصم** منها. `undefined` =
+            // مااتسألش (نقدي بصفر أو مافيش صناديق) والسيرفر بيقرر زي ما هو بيعمل دلوقتي.
+            cash_account_id: cashAccountId ?? undefined,
+            variable_discount_pct: variableDiscount || 0,
+            external_document_number: values.external_document_number || null,
+            // «الحساب» — الحساب اللي القيد بينزل عليه. الحقل كان موجود في السيرفر من ٠٣٠ والشاشة
+            // مكانتش بتبعته خالص، فكل فاتورة كانت بتترحّل على الافتراضي مهما كان قصد الكاتب.
+            // خانة «الحساب» اتشالت من الترويسة — القيد بينزل على حساب المشتريات الافتراضي.
+            expense_account_id: null,
+            // `branch_id` مش في العقد عن قصد — مفيش عمود ليه على المستند، والفرع بيتعرف من المخزن.
+            notes: values.notes || null,
+            statement1: values.statement1 || null,
+            statement2: values.statement2 || null,
+            statement3: values.statement3 || null,
+            lines: validLines.map((l) => ({
+              item_id: l.item_id,
+              quantity: Number(l.quantity || 0),
+              unit_price: l.unit_price,
+              unit: l.unit,
+              // الاتنين بيتجمعوا — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
+              discount_pct: (l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0) || null,
+              warehouse_id: l.warehouse_id,
+            })),
+            // The day the goods were received, taken from the first door — not the day this row was
+            // typed, which is what `created_at` would have recorded.
+            purchase_date: purchaseDate.format('YYYY-MM-DD'),
+          };
 
-      // التعديل بيروح للفاتورة نفسها — بنفس رقمها، من غير مردود ولا قيد عكسي.
-      const res = editingId !== null
-        ? await api.put(`/api/v1/purchases/${editingId}`, payload)
-        : await api.post('/api/v1/purchases', payload);
-      setDocResult(res.data);
-      message.success(editingId !== null
-        ? 'تم حفظ الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
-      setEditingId(null);
-      form.resetFields();
-      setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-        discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
-      setCashAmount(0);
-      setCreditAmount(0);
-      fetchPurchases();
-    } catch (err: any) {
-      console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر ترحيل فاتورة الشراء');
-    } finally {
-      setSubmitLoading(false);
-    }
+          // التعديل بيروح للفاتورة نفسها — بنفس رقمها، من غير مردود ولا قيد عكسي.
+          const res = editingId !== null
+            ? await api.put(`/api/v1/purchases/${editingId}`, payload)
+            : await api.post('/api/v1/purchases', payload);
+          setDocResult(res.data);
+          message.success(editingId !== null
+            ? 'تم حفظ الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
+          setEditingId(null);
+          form.resetFields();
+          setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+            discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
+          setCashAmount(0);
+          setCreditAmount(0);
+          fetchPurchases();
+        } catch (err: any) {
+          console.error(err);
+          message.error(err?.response?.data?.detail?.message || 'تعذر ترحيل فاتورة الشراء');
+        } finally {
+          setSubmitLoading(false);
+        }
+      },
+    );
   };
 
   /** الباب التاني: المورد. Mid-document this only swaps the party; during the opening run it is
@@ -1912,6 +1932,8 @@ export default function Purchases() {
       >
         {preview ? <InvoiceDocument doc={purchaseDoc(preview)!} /> : null}
       </TabModal>
+
+      <TreasuryGate {...treasuryGate} />
 
       {/*
         * الباب التالت: **المخزن**.

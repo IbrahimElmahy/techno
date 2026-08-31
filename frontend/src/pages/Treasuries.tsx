@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Button, Card, Checkbox, Col, Form, Input, Row, Select, Space, Switch, Table, Tag, Tooltip, message
+  Button, Card, Checkbox, Col, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag,
+  Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, CheckOutlined,
@@ -29,6 +30,28 @@ interface TreasuryRecord {
 
 const KIND_LABELS: Record<string, string> = { cash: 'خزينة', bank: 'بنك' };
 
+/**
+ * صندوق مندوب — عهدة واحدة بخطها وحسابها ورصيدها.
+ *
+ * a5 بيدّي كل مندوب صندوقين — أبيض وبولي — والفلوس بتتفصل بالخط زي المديونية. الشاشة دي
+ * كانت بتعرض سجلات `Treasury` بتاعتنا وبس، فالـ١٣ صندوق اللي اتنقلوا من شجرة a5 مكانوش
+ * بيبانوا هنا خالص: المكتب مش شايف الصناديق اللي الفلوس بتنزل فيها فعلاً.
+ */
+interface RepSafe {
+  custody_id: number;
+  account_id: number | null;
+  name: string;
+  code: string;
+  /** الخط زي ما هو مكتوب على العهدة — مش مستنتج من الاسم. */
+  family: string | null;
+  rep_id: number | null;
+  rep_name: string;
+  balance: string;
+  active: boolean;
+}
+
+const FAMILY_FILTER = ['الكل', 'أبيض', 'بولي', 'بدون خط'] as const;
+
 export default function Treasuries() {
   const { user } = useAuth();
   const [rows, setRows] = useState<TreasuryRecord[]>([]);
@@ -36,6 +59,9 @@ export default function Treasuries() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const searchRef = useRef<any>(null);
+  const [safes, setSafes] = useState<RepSafe[]>([]);
+  const [safesLoading, setSafesLoading] = useState(false);
+  const [familyFilter, setFamilyFilter] = useState<string>('الكل');
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<TreasuryRecord | null>(null);
   const [form] = Form.useForm();
@@ -59,7 +85,55 @@ export default function Treasuries() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  /**
+   * صناديق المناديب — العهدة بخطها ومندوبها وحسابها.
+   *
+   * تلات مصادر لأن مافيش واحد فيهم بيقول القصة كلها: `/custodies` بترجّع الخط والمندوب من
+   * غير `account_id`، و`/custodies/{id}/balance` هي اللي بتقول الحساب والرصيد، والاسم
+   * والكود («صندوق بولي السياره (ب)» / `A5S-…`) على الحساب في الشجرة.
+   *
+   * وطلبة الرصيد بتتنده لكل عهدة لوحدها — عشرين عهدة يعني عشرين طلبة على شاشة إعدادات
+   * بتتفتح مرة في اليوم. اللي يستاهل تجميع هو السيرفر لما `/custodies` ترجّع `account_id`.
+   */
+  const loadSafes = async () => {
+    setSafesLoading(true);
+    try {
+      const [cu, rp, acc] = await Promise.all([
+        api.get('/api/v1/custodies').catch(() => ({ data: [] })),
+        api.get('/api/v1/reps', { params: { include_inactive: true } })
+          .catch(() => ({ data: [] })),
+        api.get('/api/v1/accounts?postable_only=true').catch(() => ({ data: [] })),
+      ]);
+      const repName: Record<number, string> = {};
+      (rp.data || []).forEach((r: any) => { repName[r.user_id] = r.full_name || r.username; });
+      const account: Record<number, any> = {};
+      (acc.data || []).forEach((a: any) => { account[a.id] = a; });
+      const rows = (cu.data || []).filter((c: any) => c.holder_type === 'rep');
+      const links = await Promise.all(rows.map((c: any) => api
+        .get(`/api/v1/custodies/${c.id}/balance`).then((r) => r.data).catch(() => null)));
+      setSafes(rows.map((c: any, i: number) => {
+        const link = links[i];
+        const a = link ? account[link.account_id] : null;
+        return {
+          custody_id: c.id,
+          account_id: link ? link.account_id : null,
+          // العهدة القديمة اللي اتعملت من الشاشة حسابها من غير اسم — بيتقال إنه من غير اسم،
+          // مايتألّفش لها اسم من الخط.
+          name: (a && a.name) || '',
+          code: (a && a.code) || '',
+          family: c.family ?? null,
+          rep_id: c.rep_id ?? null,
+          rep_name: (c.rep_id && repName[c.rep_id]) || '',
+          balance: link ? String(link.balance) : '0',
+          active: c.active !== false,
+        } as RepSafe;
+      }));
+    } finally {
+      setSafesLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); loadSafes(); }, []);
 
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
@@ -76,6 +150,66 @@ export default function Treasuries() {
     return [String(t.id), t.name, KIND_LABELS[t.kind], branchName(t.branch_id),
       t.bank_name || '', t.account_number || ''].some((v) => v.includes(q));
   });
+
+  /** الصناديق بعد البحث والخط. «بدون خط» عهدة من قبل التقسيم، مش نوع تالت. */
+  const filteredSafes = safes.filter((s) => {
+    if (familyFilter === 'أبيض' || familyFilter === 'بولي') {
+      if (s.family !== familyFilter) return false;
+    } else if (familyFilter === 'بدون خط' && s.family) {
+      return false;
+    }
+    const q = search.trim();
+    if (!q) return true;
+    return [s.name, s.code, s.family || '', s.rep_name].some((v) => v.includes(q));
+  });
+
+  const safeColumns = [
+    {
+      title: 'الصندوق',
+      dataIndex: 'name',
+      key: 'name',
+      ellipsis: true,
+      render: (name: string, r: RepSafe) => (
+        <Space size={4}>
+          <span style={{ fontWeight: 600 }}>{name || <span style={{ color: '#8c8c8c' }}>حساب بلا اسم</span>}</span>
+          {!r.active && <Tag color="red">مقفول</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: 'الكود',
+      dataIndex: 'code',
+      key: 'code',
+      width: 130,
+      render: (c: string) => (c
+        ? <span style={{ fontFamily: 'monospace', direction: 'ltr' }}>{c}</span> : '—'),
+    },
+    {
+      title: 'الخط',
+      dataIndex: 'family',
+      key: 'family',
+      width: 110,
+      render: (f: string | null) => (f
+        ? <Tag color={f === 'أبيض' ? 'default' : 'blue'}>{f}</Tag>
+        : <span style={{ color: '#8c8c8c' }}>بدون خط</span>),
+    },
+    {
+      title: 'المندوب',
+      dataIndex: 'rep_name',
+      key: 'rep_name',
+      ellipsis: true,
+      render: (n: string, r: RepSafe) => n || (r.rep_id ? `#${r.rep_id}` : '—'),
+    },
+    {
+      title: 'الرصيد',
+      dataIndex: 'balance',
+      key: 'balance',
+      width: 140,
+      align: 'left' as const,
+      render: (b: string) => <strong>{egp(b)}</strong>,
+      sorter: (a: RepSafe, b: RepSafe) => Number(a.balance || 0) - Number(b.balance || 0),
+    },
+  ];
 
   const onCreate = async (v: any) => {
     try {
@@ -319,6 +453,40 @@ export default function Treasuries() {
           size="middle"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
+          pagination={{ defaultPageSize: 20, showSizeChanger: true,
+            showTotal: (t) => `عدد: ${t}` }}
+        />
+      </Card>
+
+      {/*
+        * صناديق المناديب — الجدول التاني عن قصد، مش أعمدة زيادة على الأول.
+        *
+        * الاتنين مش نفس الحاجة: فوق سجلات `Treasury` اللي بتتعمل من الشاشة وليها تعديل
+        * وإخفاء، وتحت عهد المناديب اللي بتتعمل مع المندوب وبتتقفل معاه. جدول واحد كان
+        * هيبقى نصّه أزرار مالهاش معنى في نص الصفوف.
+        */}
+      <Card
+        title="صناديق المناديب"
+        style={{ marginTop: 16 }}
+        extra={(
+          <Space>
+            <Segmented
+              value={familyFilter}
+              onChange={(v) => setFamilyFilter(String(v))}
+              options={FAMILY_FILTER.map((f) => ({ value: f, label: f }))}
+            />
+            <Button icon={<ReloadOutlined />} onClick={loadSafes}>اعادة تحميل</Button>
+          </Space>
+        )}
+      >
+        <Table
+          dataSource={filteredSafes}
+          columns={safeColumns}
+          rowKey="custody_id"
+          loading={safesLoading}
+          size="middle"
+          tableLayout="fixed"
+          locale={{ emptyText: 'مافيش صناديق للمناديب' }}
           pagination={{ defaultPageSize: 20, showSizeChanger: true,
             showTotal: (t) => `عدد: ${t}` }}
         />

@@ -29,6 +29,7 @@ import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
@@ -313,8 +314,12 @@ export default function Invoices() {
   // Asked of the server's capability list, not of a role name copied into this file. Reopening
   // and voiding a posted invoice are separate rights from writing one, and the endpoint enforces
   // exactly these two strings — so the button and the gate cannot come to disagree.
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const canEditInvoice = can('sale.edit');
+  // بوباب الخزنة قبل الحفظ. المندوب مابيتسألش — صندوق خطه بيتحدد لوحده (أمر ٠٠٩ بند ٥)،
+  // والسؤال هنا للمكتب اللي قدامه أكتر من صندوق.
+  const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate(
+    user?.role !== 'sales_rep');
   const canDeleteInvoice = can('sale.delete');
 
 
@@ -1384,78 +1389,94 @@ export default function Invoices() {
       }
     }
 
-    try {
-      // التعديل بيروح للفاتورة نفسها. كان بيعكسها الأول وبعدين يكتب واحدة جديدة، فتصليح
-      // سعر كان بيسيب وراه مرتجع محدش رجّعه ورقم فاتورة جديد على الورقة اللي في إيد
-      // العميل. دلوقتي الفاتورة بتتحفظ في مكانها زي أي شاشة تعديل.
-      const editingId = editingInvoice?.id;
-      const send = editingId
-        ? (b: any) => api.put(`/api/v1/sales/${editingId}`, b)
-        : (b: any) => api.post('/api/v1/sales', b);
-      await send({
-        customer_id: values.customer_id,
-        // Who sold it. Recorded on the document so a commission report and a rep's own list of
-        // invoices do not have to re-derive it from whoever owns the customer today.
-        rep_id: values.rep_id ?? null,
-        origin: {
-          location_kind: 'warehouse',
-          location_id: validLines[0]?.warehouse_id ?? docWarehouseId ?? warehouses[0]?.id ?? 1,
-        },
-        variable_discount_pct: discountPct,
-        cash_amount: cashAmount,
-        // مش متبعوت عن قصد: السيرفر بيحسبه من المستحق (اللي فيه الضريبة والمصروفات)
-        // ناقص النقدي. اللي على الشاشة تقدير للعرض، والحقيقة عند اللي بيرحّل.
-        credit_amount: undefined,
-        lines: validLines.map((l) => {
-          const prod = products.find((p) => p.id === l.item_id);
-          return {
-            item_id: l.item_id,
-            quantity: Number(l.quantity || 0),
-            tier: l.tier,
-            unit: l.unit,
-            unit_price: l.unit_price.toFixed(2),
-            // Combined per-line discount: the item's fixed + the typed variable.
-            discount_pct: ((l.fixed_discount || 0) + (l.variable_discount || 0)).toFixed(2),
-            serials: prod?.is_serialized ? parseSerials(l.serials) : null,
-            // (030) Only sent when it differs from the document's, so the server keeps its
-            // "fall back to the document" behaviour for everything else.
-            warehouse_id: l.warehouse_id ?? undefined,
-          };
-        }),
-        // (030) document fields
-        external_document_number: values.external_document_number || undefined,
-        invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
-        // Coupons handed over with this invoice, as the serial range off the book. Kept on the
-        // invoice because that is what proves which coupons were his when they come back in.
-        coupons: couponRows
-          .filter((r) => r.coupon_kind || r.serial_from || r.serial_to)
-          .map((r) => ({
-            coupon_kind: r.coupon_kind ?? null,
-            // Sent as the range implies it. Sending a separately-typed number was how an invoice
-            // came to claim a book size its serials do not support.
-            count: couponCount(r.serial_from, r.serial_to),
-            serial_from: r.serial_from || null,
-            serial_to: r.serial_to || null,
-          })),
-        notes: values.notes || undefined,
-        statement1: values.statement1 || undefined,
-        statement2: values.statement2 || undefined,
-        statement3: values.statement3 || undefined,
-        // Which of his accounts this invoice posts to. Null for a customer who has only one.
+    // بوباب الخزنة (أمر ٠٠٩ بند ٤): فاتورة البيع **بتضيف** للخزنة، والاقتراح صندوق خط
+    // الفاتورة. الحفظ بيتم بعد الاختيار — والرجوع مابيحفظش. نقدي بصفر (كله آجل) يعني
+    // مافيش فلوس بتتحرّك، فالبوباب مابيظهرش والحفظ بيعدّي على طول.
+    askTreasury(
+      {
+        amount: Number(cashAmount) || 0,
+        direction: 'in',
         family: invoiceFamily,
-      });
+        docLabel: 'فاتورة البيع',
+      },
+      async (cashAccountId) => {
+        try {
+          // التعديل بيروح للفاتورة نفسها. كان بيعكسها الأول وبعدين يكتب واحدة جديدة، فتصليح
+          // سعر كان بيسيب وراه مرتجع محدش رجّعه ورقم فاتورة جديد على الورقة اللي في إيد
+          // العميل. دلوقتي الفاتورة بتتحفظ في مكانها زي أي شاشة تعديل.
+          const editingId = editingInvoice?.id;
+          const send = editingId
+            ? (b: any) => api.put(`/api/v1/sales/${editingId}`, b)
+            : (b: any) => api.post('/api/v1/sales', b);
+          await send({
+            customer_id: values.customer_id,
+            // Who sold it. Recorded on the document so a commission report and a rep's own list of
+            // invoices do not have to re-derive it from whoever owns the customer today.
+            rep_id: values.rep_id ?? null,
+            origin: {
+              location_kind: 'warehouse',
+              location_id: validLines[0]?.warehouse_id ?? docWarehouseId ?? warehouses[0]?.id ?? 1,
+            },
+            variable_discount_pct: discountPct,
+            cash_amount: cashAmount,
+            // مش متبعوت عن قصد: السيرفر بيحسبه من المستحق (اللي فيه الضريبة والمصروفات)
+            // ناقص النقدي. اللي على الشاشة تقدير للعرض، والحقيقة عند اللي بيرحّل.
+            credit_amount: undefined,
+            lines: validLines.map((l) => {
+              const prod = products.find((p) => p.id === l.item_id);
+              return {
+                item_id: l.item_id,
+                quantity: Number(l.quantity || 0),
+                tier: l.tier,
+                unit: l.unit,
+                unit_price: l.unit_price.toFixed(2),
+                // Combined per-line discount: the item's fixed + the typed variable.
+                discount_pct: ((l.fixed_discount || 0) + (l.variable_discount || 0)).toFixed(2),
+                serials: prod?.is_serialized ? parseSerials(l.serials) : null,
+                // (030) Only sent when it differs from the document's, so the server keeps its
+                // "fall back to the document" behaviour for everything else.
+                warehouse_id: l.warehouse_id ?? undefined,
+              };
+            }),
+            // (030) document fields
+            external_document_number: values.external_document_number || undefined,
+            invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
+            // Coupons handed over with this invoice, as the serial range off the book. Kept on the
+            // invoice because that is what proves which coupons were his when they come back in.
+            coupons: couponRows
+              .filter((r) => r.coupon_kind || r.serial_from || r.serial_to)
+              .map((r) => ({
+                coupon_kind: r.coupon_kind ?? null,
+                // Sent as the range implies it. Sending a separately-typed number was how an invoice
+                // came to claim a book size its serials do not support.
+                count: couponCount(r.serial_from, r.serial_to),
+                serial_from: r.serial_from || null,
+                serial_to: r.serial_to || null,
+              })),
+            notes: values.notes || undefined,
+            statement1: values.statement1 || undefined,
+            statement2: values.statement2 || undefined,
+            statement3: values.statement3 || undefined,
+            // Which of his accounts this invoice posts to. Null for a customer who has only one.
+            family: invoiceFamily,
+            // (٠٠٩) الخزنة اللي البوباب سأل عنها. `undefined` = مااتسألش أصلاً — نقدي بصفر
+            // أو مافيش صناديق — والسيرفر بيقرر زي ما هو بيعمل دلوقتي.
+            cash_account_id: cashAccountId ?? undefined,
+          });
 
-      message.success(editingInvoice
-        ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة البيع بنجاح');
-      // تفضية كاملة بعد الحفظ. كانت تفضية بالإيد بتشيل السطور والخصم والنقدي وتسيب
-      // **صفوف الكوبونات** والعميل والمخزن ونوع الفاتورة مكانهم — فأول فاتورة بعدها
-      // بتفتح وفيها كوبونات فاتورة غيرها.
-      closeCreate();
-      fetchInvoices();
-    } catch (err: any) {
-      console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الفاتورة');
-    }
+          message.success(editingInvoice
+            ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة البيع بنجاح');
+          // تفضية كاملة بعد الحفظ. كانت تفضية بالإيد بتشيل السطور والخصم والنقدي وتسيب
+          // **صفوف الكوبونات** والعميل والمخزن ونوع الفاتورة مكانهم — فأول فاتورة بعدها
+          // بتفتح وفيها كوبونات فاتورة غيرها.
+          closeCreate();
+          fetchInvoices();
+        } catch (err: any) {
+          console.error(err);
+          message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الفاتورة');
+        }
+      },
+    );
   };
 
   /**
@@ -2672,6 +2693,8 @@ export default function Invoices() {
           onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }}
           date={createVisible ? undefined : invoiceDate}
           onDateChange={setInvoiceDate} />
+
+        <TreasuryGate {...treasuryGate} />
 
         {/*
           * الباب التالت: **المخزن**.

@@ -33,6 +33,7 @@ import { useAuth } from '../components/AuthProvider';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
@@ -123,8 +124,11 @@ export default function Returns() {
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const canWriteReturn = can('return.write');
+  // بوباب الخزنة قبل الحفظ (أمر ٠٠٩ بند ٤). المندوب مابيتسألش — صندوق خطه بيتحدد لوحده.
+  const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate(
+    user?.role !== 'sales_rep');
 
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
@@ -758,60 +762,76 @@ export default function Returns() {
       message.error('مجموع المسترد نقداً + الخصم من الحساب يجب أن يساوي صافي المرتجع');
       return;
     }
-    showReversalConfirm({
-      title: 'تأكيد تسجيل مرتجع المبيعات',
-      content: `سيتم إرجاع ${valid.length} صنف إلى المخزن وتسوية مبلغ ${money(netTotal)} ج.م لحساب العميل. متابعة؟`,
-      onOk: async () => {
-        try {
-          // التعديل بيروح للمرتجع نفسه بنفس رقمه — كان بيتعكس ويتكتب سند جديد.
-          const editingId = editingSourceId;
-          const send = editingId
-            ? (b: any) => api.put(`/api/v1/sales/returns/${editingId}`, b)
-            : (b: any) => api.post('/api/v1/sales/returns', b);
-          const res = await send({
-            customer_id: customerId,
-            // المخزن من السطر. الترويسة مابقاش فيها خانة مخزن، والـ`origin` بقى أول مخزن
-            // مسمّى في السطور — وكل سطر بيرجع لمخزنه هو على أي حال.
-            origin: {
-              location_kind: 'warehouse',
-              location_id: valid[0]?.warehouse_id ?? docWarehouseId,
-            },
-            variable_discount_pct: discountPct,
-            cash_refund: cash,
-            credit_reduction: creditReduction,
-            family: returnFamily,
-            rep_id: repId ?? undefined,
-            external_document_number: externalDocNumber || undefined,
-            notes: docNotes || undefined,
-            statement1: statements[0] || undefined,
-            statement2: statements[1] || undefined,
-            statement3: statements[2] || undefined,
-            return_date: returnDate.format('YYYY-MM-DD'),
-            // Only the rows that name a book and a count — an empty row is somebody who clicked
-            // «إضافة» and changed their mind, not a coupon.
-            returned_coupons: couponRows
-              .filter((r) => r.serial_from && r.count)
-              .map((r) => ({ serial_from: r.serial_from, serial_to: r.serial_to, count: r.count })),
-            lines: valid.map((l) => ({
-              item_id: l.item_id, quantity: Number(l.quantity || 0), unit_price: l.unit_price,
-              // الاتنين بيتجمعوا — سطر المرتجع في السيرفر بيشيل خصم واحد.
-              discount_pct: lineDiscountPct(l),
-              // (030) only when the line differs from the document's warehouse
-              warehouse_id: l.warehouse_id ?? undefined,
-              serials: l.is_serialized ? (l.serials || []) : undefined,
-            })),
-          });
-          message.success(editingSourceId
-            ? `اتحفظ المرتجع. رقم السند: ${res.data.document_number}`
-            : `تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
-          closeCreate();
-          fetchReturns();
-        } catch (err: any) {
-          console.error(err);
-          message.error(err?.response?.data?.detail?.message || 'تعذر تسجيل المرتجع');
-        }
+    // بوباب الخزنة (أمر ٠٠٩ بند ٤): مردود المبيعات **بيخصم** من الخزنة — الفلوس راجعة
+    // للعميل. الاقتراح صندوق خط المرتجع، والحفظ بيتم بعد الاختيار؛ الرجوع مابيحفظش.
+    // مرتجع كله خصم من الحساب (المسترد نقداً صفر) ⇒ مافيش فلوس بتتحرّك، فمافيش سؤال.
+    askTreasury(
+      {
+        amount: cash,
+        direction: 'out',
+        family: returnFamily,
+        docLabel: 'مردود المبيعات',
       },
-    });
+      (cashAccountId) => {
+        showReversalConfirm({
+          title: 'تأكيد تسجيل مرتجع المبيعات',
+          content: `سيتم إرجاع ${valid.length} صنف إلى المخزن وتسوية مبلغ ${money(netTotal)} ج.م لحساب العميل. متابعة؟`,
+          onOk: async () => {
+            try {
+              // التعديل بيروح للمرتجع نفسه بنفس رقمه — كان بيتعكس ويتكتب سند جديد.
+              const editingId = editingSourceId;
+              const send = editingId
+                ? (b: any) => api.put(`/api/v1/sales/returns/${editingId}`, b)
+                : (b: any) => api.post('/api/v1/sales/returns', b);
+              const res = await send({
+                customer_id: customerId,
+                // المخزن من السطر. الترويسة مابقاش فيها خانة مخزن، والـ`origin` بقى أول مخزن
+                // مسمّى في السطور — وكل سطر بيرجع لمخزنه هو على أي حال.
+                origin: {
+                  location_kind: 'warehouse',
+                  location_id: valid[0]?.warehouse_id ?? docWarehouseId,
+                },
+                variable_discount_pct: discountPct,
+                cash_refund: cash,
+                credit_reduction: creditReduction,
+                // (٠٠٩) الخزنة اللي البوباب سأل عنها — المردود **بيخصم** منها. `undefined` =
+                // مااتسألش (مافيش مسترد نقدي) والسيرفر بيقرر زي ما هو بيعمل دلوقتي.
+                cash_account_id: cashAccountId ?? undefined,
+                family: returnFamily,
+                rep_id: repId ?? undefined,
+                external_document_number: externalDocNumber || undefined,
+                notes: docNotes || undefined,
+                statement1: statements[0] || undefined,
+                statement2: statements[1] || undefined,
+                statement3: statements[2] || undefined,
+                return_date: returnDate.format('YYYY-MM-DD'),
+                // Only the rows that name a book and a count — an empty row is somebody who clicked
+                // «إضافة» and changed their mind, not a coupon.
+                returned_coupons: couponRows
+                  .filter((r) => r.serial_from && r.count)
+                  .map((r) => ({ serial_from: r.serial_from, serial_to: r.serial_to, count: r.count })),
+                lines: valid.map((l) => ({
+                  item_id: l.item_id, quantity: Number(l.quantity || 0), unit_price: l.unit_price,
+                  // الاتنين بيتجمعوا — سطر المرتجع في السيرفر بيشيل خصم واحد.
+                  discount_pct: lineDiscountPct(l),
+                  // (030) only when the line differs from the document's warehouse
+                  warehouse_id: l.warehouse_id ?? undefined,
+                  serials: l.is_serialized ? (l.serials || []) : undefined,
+                })),
+              });
+              message.success(editingSourceId
+                ? `اتحفظ المرتجع. رقم السند: ${res.data.document_number}`
+                : `تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
+              closeCreate();
+              fetchReturns();
+            } catch (err: any) {
+              console.error(err);
+              message.error(err?.response?.data?.detail?.message || 'تعذر تسجيل المرتجع');
+            }
+          },
+        });
+      },
+    );
   };
 
   /**
@@ -1044,6 +1064,8 @@ export default function Returns() {
         date={returnDate} onDateChange={(d) => setReturnDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
+
+      <TreasuryGate {...treasuryGate} />
 
       <WarehouseGate
         open={newStep === 'warehouse' && !viewOnly && !editingSourceId}
