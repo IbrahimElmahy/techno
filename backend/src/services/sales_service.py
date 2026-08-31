@@ -208,6 +208,8 @@ def create_sale(
     # (031) أبيض ولا بولي — which of the customer's accounts this document belongs to. None on a
     # customer who has only ever had one, which is every customer who was never split.
     family: str | None = None,
+    # الخزنة اللي اتختارت من البوباب. فاضية ⇒ تتستنتج من الخط.
+    cash_account_id: int | None = None,
     can_sell_below: bool = False,
     # (030) document fields — all optional so every pre-030 caller keeps working unchanged.
     rep_id: int | None = None,
@@ -357,7 +359,13 @@ def create_sale(
         raise SalesError(str(exc)) from exc
     # نفس الـ`family` اللي راح لحساب المديونية فوق بالظبط — قيمة واحدة للطرفين. لو الكاش
     # اتحدد بمنطق تاني، الفاتورة الواحدة تبقى على خط في المديونية وخط تاني في الصندوق.
-    cash_acc = account_resolver.resolve_cash_account(
+    # الخزنة اللي اللي بيحفظ اختارها من البوباب بتغلب الاستنتاج.
+    #
+    # الاستنتاج بالخط صح للمندوب — صندوقه بتاع الخط ده. لكن في المكتب الفاتورة ممكن
+    # تتحصّل في خزنة تانية (المركز الرئيسي، صندوق بونص)، واللي بيحفظ هو اللي يعرف.
+    # من غير ده كان البوباب بيسأل والإجابة تترمي، والفلوس تروح لمكان تالت من غير
+    # ما حد يعرف إن اختياره اتلغى.
+    cash_acc = account_resolver.explicit_treasury(db, cash_account_id) or account_resolver.resolve_cash_account(
         db, role=actor_role, user_id=actor_user_id, family=family)
 
     # الفاتورة اللي بتتعدّل بتحتفظ برقمها وتاريخ إنشائها — الرقم ده اتطبع واتقال في
@@ -886,6 +894,8 @@ def create_standalone_return(
     lines: list[ReturnLine],
     actor_role: RoleName,
     actor_user_id: int,
+    # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ تتستنتج من خط المستند/المندوب.
+    cash_account_id: int | None = None,
     # (031) أبيض ولا بولي — which of the customer's accounts this document belongs to. None on a
     # customer who has only ever had one, which is every customer who was never split.
     family: str | None = None,
@@ -964,9 +974,11 @@ def create_standalone_return(
         )
 
     # نفس خط الفاتورة: الفلوس اللي بترجع للعميل بتطلع من صندوق نفس الخط اللي نزلت فيه.
-    cash_acc = (account_resolver.resolve_cash_account(
-                    db, role=actor_role, user_id=actor_user_id, family=family)
-                if to_money(cash_refund) > ZERO else None)
+    cash_acc = (
+        (account_resolver.explicit_treasury(db, cash_account_id)
+         or account_resolver.resolve_cash_account(
+             db, role=actor_role, user_id=actor_user_id, family=family))
+        if to_money(cash_refund) > ZERO else None)
 
     existing = db.get(SalesReturn, replace_return_id) if replace_return_id else None
     if replace_return_id and existing is None:

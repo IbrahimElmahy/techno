@@ -72,6 +72,8 @@ def create_purchase(
     lines: list[PurchaseLine],
     actor_role: RoleName,
     actor_user_id: int,
+    # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ تتستنتج من خط المستند/المندوب.
+    cash_account_id: int | None = None,
     # (030) document fields — all optional so pre-030 callers keep working unchanged.
     rep_id: int | None = None,
     expense_account_id: int | None = None,
@@ -194,7 +196,11 @@ def create_purchase(
         )
 
     # Money: debit purchases_expense T; credit cash-location C + supplier_payable P.
-    cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
+    # الخزنة المختارة بتغلب الاستنتاج — الشراء بيتدفع من خزنة المكتب مش من صندوق المندوب
+    # غالباً، واللي بيحفظ هو اللي يعرف منين.
+    cash_acc = (account_resolver.explicit_treasury(db, cash_account_id)
+                or account_resolver.resolve_cash_account(
+                    db, role=actor_role, user_id=actor_user_id))
     expense_acc = account_resolver.purchases_expense_account(db)
     entry_lines = [LineInput(expense_acc.id, Direction.debit, total)]
     if to_money(cash_amount) > ZERO:

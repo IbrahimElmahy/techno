@@ -43,7 +43,16 @@ def rep_store(db: Session, rep_user_id: int) -> tuple[LocationKind, int] | None:
     emp = db.scalar(select(Employee).where(Employee.user_id == rep_user_id))
     if emp is not None and emp.warehouse_id is not None:
         return (LocationKind.warehouse, emp.warehouse_id)
-    own = db.scalar(select(Custody).where(Custody.rep_id == rep_user_id))
+    # المندوب بقى له أكتر من عهدة (صندوق أبيض وصندوق بولي جنب العهدة القديمة)، والبضاعة
+    # مكانها **العهدة اللي من غير خط** — دي اللي كانت شايلة كل حاجة قبل ما الصناديق تتقسم،
+    # وأرصدة المخزون المسجّلة عليها هي اللي في إيد الراجل فعلاً. الصناديق الجديدة مالية بحتة.
+    # من غير الترتيب ده كان `scalar` بيرجّع صف عشوائي، فالمندوب يتقال له «بيع من عهدتك»
+    # وهي فاضية والبضاعة في التانية.
+    own = db.scalars(
+        select(Custody)
+        .where(Custody.rep_id == rep_user_id)
+        .order_by(Custody.family.is_(None).desc(), Custody.active.desc(), Custody.id)
+    ).first()
     if own is not None:
         return (LocationKind.custody, own.id)
     return None

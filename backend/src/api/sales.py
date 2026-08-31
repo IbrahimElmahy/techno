@@ -87,6 +87,9 @@ class InvoiceCouponOut(InvoiceCouponIn):
 class SaleCreate(BaseModel):
     customer_id: int
     origin: LocationIn
+    # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ السيرفر يستنتجها من خط الفاتورة
+    # (صندوق المندوب بتاع الخط ده) — وده اللي بيحصل مع تطبيق المندوب.
+    cash_account_id: int | None = None
     variable_discount_pct: Decimal = Decimal("0")
     cash_amount: Decimal
     # سيبه فاضي والسيرفر يحسبه: المستحق ناقص النقدي. الشاشة بتحسب صافي السطور
@@ -161,6 +164,8 @@ class StandaloneReturnCreate(BaseModel):
     cash_refund: Decimal = Decimal("0")
     credit_reduction: Decimal = Decimal("0")
     lines: list[StandaloneReturnLineIn]
+    # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ السيرفر يستنتجها (تطبيق المندوب).
+    cash_account_id: int | None = None
     # (031) The same document fields the invoice takes. `SalesReturn` has carried the columns
     # since 030 and this payload dropped them, so nothing could ever fill them.
     rep_id: int | None = None
@@ -484,6 +489,7 @@ def _build_sale(
                             l.discount_pct, l.warehouse_id)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, family=body.family,
+            cash_account_id=body.cash_account_id,
             has_coupon_rows=any(
                 c.coupon_kind or c.coupon_type_id is not None or c.count
                 or c.serial_from or c.serial_to for c in body.coupons),
@@ -905,6 +911,7 @@ def create_standalone_return(
             origin_location_id=body.origin.location_id,
             variable_discount_pct=body.variable_discount_pct,
             cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
+            cash_account_id=body.cash_account_id,
             lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
                               l.warehouse_id, serials=l.serials)
                    for l in body.lines],
@@ -975,6 +982,7 @@ def update_standalone_return(
             origin_location_id=body.origin.location_id,
             variable_discount_pct=body.variable_discount_pct,
             cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
+            cash_account_id=body.cash_account_id,
             lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
                               l.warehouse_id, serials=l.serials)
                    for l in body.lines],

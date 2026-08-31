@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
+from src.services.account_resolver import AccountResolutionError
 from src.services import document_edit_service
 from src.services.document_edit_service import DocumentEditError
 from src.core.db import get_db
@@ -50,6 +51,8 @@ class PurchaseCreate(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     lines: list[PurchaseLineIn]
+    # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ السيرفر يستنتجها (تطبيق المندوب).
+    cash_account_id: int | None = None
     # (030) document fields — the supplier's own invoice number and free text.
     rep_id: int | None = None
     expense_account_id: int | None = None
@@ -429,6 +432,7 @@ def update_purchase(
             db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
             location_id=body.location.location_id, cash_amount=body.cash_amount,
             credit_amount=body.credit_amount,
+            cash_account_id=body.cash_account_id,
             lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id,
                                 l.discount_pct)
                    for l in body.lines],
@@ -440,7 +444,9 @@ def update_purchase(
             variable_discount_pct=body.variable_discount_pct,
             replace_invoice_id=purchase_id,
         )
-    except (PurchaseError, StockError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError) as exc:
+        # خزنة مختارة غلط أو مندوب مالوش عهدة = إعداد ناقص، مش عطل سيرفر. من غير السطر ده
+        # كانت بتطلع 500 والرسالة العربية اللي بتقول الناقص إيه تضيع في اللوج.
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "purchase_invalid", "message": str(exc)})
     db.commit()
@@ -474,6 +480,7 @@ def create_purchase(
             db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
             location_id=body.location.location_id, cash_amount=body.cash_amount,
             credit_amount=body.credit_amount,
+            cash_account_id=body.cash_account_id,
             lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id,
                                 l.discount_pct)
                    for l in body.lines],
@@ -484,7 +491,7 @@ def create_purchase(
             purchase_date=body.purchase_date,
             variable_discount_pct=body.variable_discount_pct,
         )
-    except (PurchaseError, StockError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "purchase_invalid", "message": str(exc)})
     db.commit()
     return _doc_out(inv)
@@ -504,7 +511,7 @@ def return_purchase(
             actor_role=current.role, actor_user_id=current.id,
             return_date=body.return_date, notes=body.notes,
         )
-    except (PurchaseError, StockError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "return_invalid", "message": str(exc)})
     db.commit()
     return DocOut(id=ret.id, document_number=ret.document_number, ledger_entry_id=ret.ledger_entry_id)
@@ -577,7 +584,7 @@ def create_standalone_purchase_return(
             statement1=body.statement1, statement2=body.statement2,
             statement3=body.statement3,
         )
-    except (PurchaseError, StockError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "return_invalid", "message": str(exc)}) from exc
     db.commit()
@@ -622,7 +629,7 @@ def update_purchase_return(
             variable_discount_pct=body.variable_discount_pct,
             replace_return_id=return_id,
         )
-    except (PurchaseError, StockError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "return_invalid", "message": str(exc)})
     db.commit()

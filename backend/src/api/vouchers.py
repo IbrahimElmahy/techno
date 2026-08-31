@@ -730,6 +730,7 @@ def rep_cash_statement(
     rep_user_id: int,
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    family: str | None = Query(default=None, description="أبيض / بولي — صندوق الخط"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
@@ -741,7 +742,15 @@ def rep_cash_statement(
 
     from src.models.warehouse import Custody
 
-    custody = db.scalar(select(Custody).where(Custody.rep_id == rep_user_id))
+    # المندوب بقى له صندوق لكل خط. `scalar` كان بيرجّع واحد عشوائي، فكشف الحساب يطلع
+    # ناقص من غير ما يقول إنه ناقص. من غير `family` بناخد العهدة القديمة (اللي فيها كل
+    # الحركة اللي قبل التقسيم)، وبـ`family` نجيب صندوق الخط.
+    custody = db.scalars(
+        select(Custody)
+        .where(Custody.rep_id == rep_user_id, *([Custody.family == family] if family else []))
+        .order_by(*([] if family else [Custody.family.is_(None).desc()]),
+                  Custody.active.desc(), Custody.id)
+    ).first()
     if custody is None or custody.account_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "المندوب ليس له عهدة بحساب نقدي."})

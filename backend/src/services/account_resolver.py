@@ -192,3 +192,17 @@ def resolve_cash_account(
             + (f" — خط «{custody.family}»" if custody.family else "")
             + " مالوش حساب في الدفاتر.")
     return db.get(Account, custody.account_id)
+
+
+def explicit_treasury(db: Session, account_id: int | None) -> Account | None:
+    """الخزنة اللي الشاشة اختارتها — أو `None` لو مااتبعتش حاجة.
+
+    الرقم جاي من العميل فمابيتصدّقش: حساب مبيعات أو حساب عميل اتحطّ في الخانة دي بيخلّي
+    الكاش يترحّل على حاجة مش خزنة أصلاً — والقيد بيتوازن، فمافيش حاجة بتشتكي.
+    """
+    if account_id is None:
+        return None
+    acc = db.get(Account, account_id)
+    if acc is None or acc.account_type not in (AccountType.treasury, AccountType.custody):
+        raise AccountResolutionError("الخزنة المختارة مش موجودة أو مش خزنة.")
+    return acc

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -184,7 +185,8 @@ def _create(
 
 
 def _cash_side(
-    db: Session, *, actor_role: RoleName, actor_user_id: int, treasury_id: int | None
+    db: Session, *, actor_role: RoleName, actor_user_id: int, treasury_id: int | None,
+    family: str | None = None,
 ) -> tuple[int, int | None]:
     """Which ledger account holds the cash, and the treasury it belongs to.
 
@@ -192,8 +194,11 @@ def _cash_side(
     default one), which is what makes per-branch and bank safes work.
     """
     if actor_role == RoleName.sales_rep:
+        # الخط لازم يعدّي. من غيره التحصيل بينزل في الصندوق اللي `resolve` بيلاقيه أول
+        # واحد، فالمندوب يحصّل على فاتورة أبيض والفلوس تقعد في صندوق بولي — والقيد
+        # متوازن، والفرق مايبانش غير في جرد بعد شهر.
         return account_resolver.resolve_cash_account(
-            db, role=actor_role, user_id=actor_user_id).id, None
+            db, role=actor_role, user_id=actor_user_id, family=family).id, None
     treasury = treasury_service.resolve(db, treasury_id)
     return treasury.account_id, treasury.id
 
@@ -215,8 +220,10 @@ def create_receipt(
     collection landing on the wrong line is money the next statement cannot explain.
     """
     value = _positive(amount)
+    # نفس خط الفاتورة يروح للطرفين: حساب المديونية اللي بيتخصم، والصندوق اللي بينزل فيه.
     cash_account_id, safe_id = _cash_side(
-        db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
+        db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id,
+        family=family)
 
     accounts = _customer_accounts(db, customer_id)
     if on_total and family is None and len(accounts) > 1:
@@ -335,7 +342,7 @@ def create_cash_transfer(
 def create_handover(
     db: Session, *, rep_user_id: int, amount, actor_user_id: int,
     voucher_date: date | None = None, description: str | None = None,
-    reference: str | None = None,
+    reference: str | None = None, family: str | None = None,
 ) -> Voucher:
     """توريد المندوب — نقل النقدية من عهدة المندوب لخزينة الشركة.
 
@@ -344,9 +351,15 @@ def create_handover(
     value = _positive(amount)
     if db.get(User, rep_user_id) is None:
         raise VoucherError("المندوب غير موجود.")
-    custody = db.scalar(select(Custody).where(Custody.rep_id == rep_user_id))
-    if custody is None or custody.account_id is None:
-        raise VoucherError("المندوب ليس له عهدة بحساب نقدي.")
+    # المندوب بقى له صندوق لكل خط. التوريد لازم يقول بيورّد من أنهي صندوق — `scalar`
+    # كان بياخد صف عشوائي، فالرصيد اللي بيتفحص ممكن يكون بتاع صندوق تاني خالص، والقيد
+    # يخصم من صندوق واللي في إيده فلوس صندوق غيره.
+    try:
+        custody_acc = account_resolver.resolve_cash_account(
+            db, role=RoleName.sales_rep, user_id=rep_user_id, family=family)
+    except account_resolver.AccountResolutionError as exc:
+        raise VoucherError(str(exc)) from exc
+    custody = SimpleNamespace(account_id=custody_acc.id)
     held = ledger_service.balance_of(db, custody.account_id)
     if value > held:
         raise VoucherError(f"رصيد عهدة المندوب {held} — لا يمكن توريد {value}.")
