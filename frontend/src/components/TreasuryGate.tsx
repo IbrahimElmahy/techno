@@ -161,7 +161,9 @@ export default function TreasuryGate({
             {inbound ? 'إضافة للخزنة' : 'خصم من الخزنة'}
           </span>
           <span style={{ color: tone, fontWeight: 700, whiteSpace: 'nowrap' }}>
-            {inbound ? '+' : '−'} {money(amount)} ج.م
+            {Math.abs(amount) > 0.004
+              ? `${inbound ? '+' : '−'} ${money(amount)} ج.م`
+              : 'كله آجل — مافيش نقدي دلوقتي'}
           </span>
         </div>
 
@@ -185,7 +187,7 @@ export default function TreasuryGate({
 }
 
 export interface TreasuryAsk {
-  /** النقدي اللي بيتحرّك فعلاً. صفر = مافيش سؤال. */
+  /** النقدي اللي بيتحرّك. صفر بيظهر برضه — بيتقال «كله آجل» بدل الرقم. */
   amount: number;
   direction: CashDirection;
   /** خط المستند — «أبيض» / «بولي». منه بييجي الاقتراح. */
@@ -222,11 +224,14 @@ export function useTreasuryGate(enabled = true) {
   }, [req, suggested]);
 
   const ask = useCallback((o: TreasuryAsk, run: (id: number | null) => void) => {
-    // المستند اللي كله آجل مافيهوش فلوس بتتحرّك — سؤال مالوش أثر مش سؤال.
-    if (!enabled || !(Math.abs(o.amount) > 0.004)) {
+    if (!enabled) {
       run(null);
       return;
     }
+    // البوباب بيظهر حتى والنقدي صفر — قرار صاحب النظام الصريح («سواء خصم وإضافة»)،
+    // بعد ما كان بيتخطى المستند الآجل وباين له إن البوباب مش موجود أصلاً. والاختيار
+    // مش كلام: بيتسجّل `cash_account_id` على المستند، فلو المستند اتعدّل بعدين
+    // ونزل عليه نقدي، بينزل في الخزنة اللي اتقالت يوم ما اتكتب.
     // ⚠️ القايمة الفاضية **مش نفس** القايمة اللي مانزلتش.
     //
     // ده اللي خلّى البوباب ماظهرش خالص أول ما اتنشر: كان بيقرا شجرة الحسابات، ودي
