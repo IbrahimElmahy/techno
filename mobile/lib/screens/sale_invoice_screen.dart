@@ -33,7 +33,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// العميل الواحد ممكن يبقى مديون على الخطين بحسابين منفصلين، فالفاتورة لازم تقول على
   /// أنهي واحد بتنزل. اللي عنده خط واحد بيتحدّد لوحده — سؤال إجابته واحدة مش سؤال.
   String? _family;
-  DateTime _date = DateTime.now();
+  /// تاريخ الفاتورة = النهارده، وبيتقرا **لحظة الحفظ** مش لحظة فتح الشاشة.
+  ///
+  /// المندوب بيسيب التطبيق مفتوح؛ لو التاريخ اتثبّت وقت الفتح، اللي بيبيع الصبح بعد
+  /// ليلة مفتوحة بيكتب فاتورة بتاريخ امبارح — وده يوم محاسبي تاني، والفرق مابيبانش
+  /// غير في تقرير آخر الشهر.
+  DateTime get _date => DateTime.now();
   final _notes = TextEditingController();
   final _cash = TextEditingController(text: '0');
   final List<SaleDraftLine> _lines = [];
@@ -258,20 +263,19 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   ),
                 ],
                 const Divider(height: 1),
+                // تاريخ الفاتورة عرض بس — النهارده ومفيش غيره.
+                //
+                // كان بيسمح بأي يوم لحد ٦٠ يوم ورا. المندوب في الشارع بيكتب اللي باعه
+                // دلوقتي، وتاريخ قديم بيحطّ البيعة في يوم مقفول أو في شهر اتقفلت
+                // حساباته — والفرق مابيبانش غير في تقرير آخر الشهر لما الأرقام
+                // ماتطبقش. اللي محتاج يأرّخ بأثر رجعي بيعملها من الويب، هناك اللي
+                // بيعملها محاسب شايف الدفاتر.
                 ListTile(
                   leading: const Icon(Icons.event_outlined, color: AppColors.primary),
                   title: const Text('تاريخ الفاتورة'),
                   subtitle: Text(_date.toIso8601String().substring(0, 10)),
-                  trailing: const Icon(Icons.edit_calendar_outlined),
-                  onTap: () async {
-                    final d = await showDatePicker(
-                      context: context,
-                      initialDate: _date,
-                      firstDate: DateTime.now().subtract(const Duration(days: 60)),
-                      lastDate: DateTime.now(),
-                    );
-                    if (d != null) setState(() => _date = d);
-                  },
+                  trailing: const Icon(Icons.lock_outline, size: 18, color: Colors.black38),
+                  enabled: false,
                 ),
               ],
             ),
