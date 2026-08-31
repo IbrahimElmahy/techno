@@ -1236,6 +1236,20 @@ const Vouchers: React.FC = () => {
                       options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))}
                     />
                   </Form.Item>
+                  {/* (009) المندوب بقى له صندوق لكل خط، والتوريد بيسحب من واحد محدد.
+                      فاضي = العهدة القديمة اللي من غير خط — اللي شايلة حركة ما قبل التقسيم. */}
+                  <Form.Item name="family" label="من صندوق خط"
+                    extra="سيبها فاضية للعهدة القديمة اللي قبل تقسيم الصناديق">
+                    <Select
+                      allowClear
+                      style={{ width: 240 }}
+                      placeholder="أبيض / بولي"
+                      options={[
+                        { value: 'أبيض', label: 'أبيض' },
+                        { value: 'بولي', label: 'بولي' },
+                      ]}
+                    />
+                  </Form.Item>
                   <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
                     <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
                   </Form.Item>

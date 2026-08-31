@@ -68,6 +68,10 @@ class PaymentIn(BaseModel):
 class HandoverIn(BaseModel):
     rep_user_id: int
     amount: Decimal
+    # (009) التوريد من أنهي صندوق — «أبيض» / «بولي». فاضي = العهدة القديمة اللي من
+    # غير خط. من غيره التوريد كان بيدوّر في العهدة القديمة بس ويلاقيها صفر، والفلوس
+    # قاعدة في صندوقي الخط ومافيش طريق يطلّعها منهم.
+    family: str | None = None
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
@@ -349,7 +353,7 @@ def create_handover(
         v = voucher_service.create_handover(
             db, rep_user_id=body.rep_user_id, amount=body.amount, actor_user_id=current.id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference)
+            reference=body.reference, family=body.family)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
