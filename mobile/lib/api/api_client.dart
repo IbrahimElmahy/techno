@@ -502,6 +502,23 @@ class ApiClient {
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  /// حسابات العميل بالخط — «أبيض» و«بولي» كل واحد برصيده، حي من السيرفر.
+  ///
+  /// مش من كاش المزامنة عن قصد: الشاشة دي أصلاً محتاجة شبكة (الرصيد بيتغيّر من
+  /// المكتب كمان)، ورقم من الكاش جنب رقم حي بيطلعوا مختلفين ومحدش عارف مين الصح.
+  Future<List<Map<String, dynamic>>> customerAccounts(int customerId) async {
+    final r = await http
+        .get(await _uri('/customers/$customerId/accounts'), headers: await _headers())
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return [
+      for (final a in (body['accounts'] as List? ?? const []))
+        a as Map<String, dynamic>
+    ];
+  }
+
   // ------------------------------------------------------------ coupon receipts
 
   /// Check one coupon before it is accepted, so the rep learns it is bad while the customer is

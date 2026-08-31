@@ -21,6 +21,9 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   List<CustomerRef> _customers = [];
   CustomerRef? _picked;
   Map<String, dynamic>? _profile;
+  /// حسابات الخطوط — بتيجي مع البروفايل في نفس الفتحة. فاضية = لسه، أو العميل
+  /// مالوش حسابات (ورصيده صفر — ودي مش حالة خطأ).
+  List<Map<String, dynamic>> _accounts = const [];
   bool _loading = false;
   String? _error;
 
@@ -41,7 +44,17 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     });
     try {
       final p = await ApiClient.instance.customerProfile(c.id);
-      if (mounted) setState(() => _profile = p);
+      // الحسابات بالخط — لو وقعت لوحدها الشاشة بتكمل من غير السطرين، مش بتقع كلها.
+      var accounts = const <Map<String, dynamic>>[];
+      try {
+        accounts = await ApiClient.instance.customerAccounts(c.id);
+      } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _profile = p;
+          _accounts = accounts;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
     } finally {
@@ -118,6 +131,26 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                   Text('${_num(p['balance'])} ج.م',
                       style: const TextStyle(
                           fontSize: 30, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                  // المديونية بالخط — نفس السطرين اللي في الفاتورة والتحصيل.
+                  if (_accounts.any((a) => a['family'] != null)) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (final a in _accounts)
+                          if (a['family'] != null)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                  '${a['family']}: ${_num(a['balance'])} ج.م',
+                                  style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black54)),
+                            ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
