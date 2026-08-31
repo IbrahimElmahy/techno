@@ -1022,6 +1022,9 @@ export default function Invoices() {
    * محاولة جديدة = رسالة جديدة، لأنها بقت خبر تاني مش تكرار.
    */
   const capNoticeRef = useRef<Record<string, number>>({});
+  /** شبّاك واحد في المرة — من غيره الضغط المتواصل بيكوّم شبابيك فوق بعض. */
+  const capModalOpenRef = useRef(false);
+
   const announceQuantityCap = (
     lineKey: string, itemName: string, storeName: string, stock: number, unit: string | null,
   ) => {
@@ -1034,13 +1037,36 @@ export default function Invoices() {
     if (repeated) return;
     const u = unit ? ` ${unit}` : '';
     const n = stock.toLocaleString('ar-EG', { maximumFractionDigits: 3 });
-    // الاسم والمخزن جوّه الرسالة عن قصد: الفاتورة فيها سطور كتير، و«الكمية غير متاحة»
-    // لوحدها بتخلّي اللي بيقرا يدوّر هو على السطر اللي اتقص.
-    message.warning({
-      key: `qty-cap-${lineKey}`,
-      content: stock > 0
-        ? `المتاح ${n}${u} فقط من «${itemName}» في ${storeName} — الكمية اتظبطت.`
-        : `مفيش رصيد من «${itemName}» في ${storeName} — الكمية اتشالت.`,
+    // شبّاك بيتقفل بضغطة، مش رسالة بتعدّي لوحدها.
+    //
+    // القص بيغيّر رقم اللي بيكتب تحت إيده. التوست بيروح بعد تلات ثواني — واللي بيكتب
+    // بسرعة بيلاقي الرقم اتغيّر ومايعرفش ليه، وده كان البلاغ الأصلي. الشبّاك بيوقّف
+    // الإيد لحظة ويخلّي الرقم الجديد قرار متشاف مش مفاجأة.
+    //
+    // الاسم والمخزن جوّه النص عن قصد: الفاتورة فيها سطور كتير.
+    if (capModalOpenRef.current) return;   // واحد بس في المرة — مايتكوّمش
+    capModalOpenRef.current = true;
+    Modal.warning({
+      title: stock > 0 ? 'الكمية أكبر من المتاح' : 'مفيش رصيد',
+      okText: 'تمام',
+      centered: true,
+      content: (
+        <div style={{ lineHeight: 1.9 }}>
+          {stock > 0 ? (
+            <>
+              المتاح <b style={{ color: '#cf4b1a' }}>{n}{u}</b> فقط من{' '}
+              <b>«{itemName}»</b> في <b>{storeName}</b>.
+              <div style={{ marginTop: 6, color: '#6b6b6b' }}>الكمية اتظبطت على المتاح.</div>
+            </>
+          ) : (
+            <>
+              مفيش رصيد من <b>«{itemName}»</b> في <b>{storeName}</b>.
+              <div style={{ marginTop: 6, color: '#6b6b6b' }}>الكمية اتشالت.</div>
+            </>
+          )}
+        </div>
+      ),
+      afterClose: () => { capModalOpenRef.current = false; },
     });
   };
 
