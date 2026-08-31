@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
-import 'sale_item_picker_screen.dart';
+import 'sale_add_item_flow.dart';
 
 /// طلب تحويل بضاعة — من مخزن لمخزن، أو من عربية المندوب لمخزن.
 ///
@@ -82,18 +82,37 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
   String _resolve(String v) =>
       v == '__me__' ? '$_myKind:$_myId' : v;
 
+  /// المصدر عربية المندوب نفسه؟ — ده اللي بيقرّر هل المتاح حد ولا معلومة.
+  bool get _fromMyStore =>
+      _source != null && _myId != null && _resolve(_source!) == '$_myKind:$_myId';
+
   Future<void> _addItem() async {
-    final picked = await Navigator.push<SaleItem>(
+    // بوبابات متتالية زي أصناف المعاينة: فئة ← صنف ← كمية، و«التالي» بيكمّل من
+    // غير خروج. كانت شاشة كاملة بترجع صنف من غير كمية، والكمية تتكتب بعدين في
+    // خانة صغيرة على السطر.
+    //
+    // المتاح حد **بس لما المصدر عربيته**: مايبعتش اللي مش معاه. الطلب من المخزن
+    // مالوش الحد ده — هو أصلاً بيطلب حاجة ناقصاه، والمسؤول بيراجع قبل الاعتماد.
+    // والسعر مش بيتعرض: إذن تحويل مافيهوش فلوس.
+    await SaleAddItemFlow.show(
       context,
-      MaterialPageRoute(builder: (_) => const SaleItemPickerScreen()),
+      alreadyOnInvoice: {
+        for (final l in _lines) l.item.itemId: l.quantity ?? 0
+      },
+      priceTier: null,
+      capToAvailable: _fromMyStore,
+      showPrice: false,
+      onAdd: (picked, qty) {
+        setState(() {
+          final i = _lines.indexWhere((l) => l.item.itemId == picked.itemId);
+          if (i >= 0) {
+            _lines[i].quantity = (_lines[i].quantity ?? 0) + qty;
+          } else {
+            _lines.add(_Line(picked)..quantity = qty);
+          }
+        });
+      },
     );
-    if (picked == null) return;
-    if (!mounted) return;
-    if (_lines.any((l) => l.item.itemId == picked.itemId)) {
-      _say('«${picked.name}» موجود — عدّل الكمية من السطر');
-      return;
-    }
-    setState(() => _lines.add(_Line(picked)));
   }
 
   Future<void> _save() async {
@@ -196,6 +215,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
                   trailing: SizedBox(
                     width: 96,
                     child: TextFormField(
+                      key: ValueKey('q${l.item.itemId}-${l.quantity}'),
                       initialValue: l.quantity?.toString() ?? '',
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),

@@ -27,6 +27,11 @@ class SaleAddItemFlow {
     required Map<int, double> alreadyOnInvoice,
     required String? priceTier,
     required void Function(SaleItem item, double quantity) onAdd,
+    // البيع بيتحد بالمتاح في العربية؛ طلب التحويل **من المخزن** لأ — المندوب بيطلب
+    // حاجة مش معاه أصلاً، والمتاح عنده معلومة مش حد. المسؤول هو اللي بيراجع الكميات.
+    bool capToAvailable = true,
+    // السعر على إذن تحويل زحمة — مافيش فلوس في المستند ده.
+    bool showPrice = true,
   }) async {
     final items = await LocalDb.instance.saleItems();
     final free = await LocalDb.instance.availableForSaleAll();
@@ -45,7 +50,8 @@ class SaleAddItemFlow {
 
       if (!context.mounted) return;
       final picked = await _pickItem(
-        context, items, free, onInvoice, category, priceTier);
+        context, items, free, onInvoice, category, priceTier,
+        capToAvailable: capToAvailable, showPrice: showPrice);
       if (picked == null) {
         // رجوع من الأصناف بيرجّع للفئات — مش بيقفل الدورة كلها.
         category = null;
@@ -54,7 +60,8 @@ class SaleAddItemFlow {
 
       if (!context.mounted) return;
       final avail = (free[picked.itemId] ?? 0) - (onInvoice[picked.itemId] ?? 0);
-      final answer = await _askQuantity(context, picked, avail, priceTier);
+      final answer = await _askQuantity(context, picked, avail, priceTier,
+          capToAvailable: capToAvailable, showPrice: showPrice);
       if (!context.mounted) return;
       if (answer == null) continue; // رجع يختار صنف تاني من نفس الفئة
 
@@ -120,8 +127,10 @@ Future<SaleItem?> _pickItem(
   Map<int, double> free,
   Map<int, double> onInvoice,
   String category,
-  String? priceTier,
-) =>
+  String? priceTier, {
+  required bool capToAvailable,
+  required bool showPrice,
+}) =>
     showDialog<SaleItem>(
       context: context,
       builder: (_) => Directionality(
@@ -132,18 +141,25 @@ Future<SaleItem?> _pickItem(
           onInvoice: onInvoice,
           category: category,
           priceTier: priceTier,
+          capToAvailable: capToAvailable,
+          showPrice: showPrice,
         ),
       ),
     );
 
 Future<_QtyAnswer?> _askQuantity(
-        BuildContext context, SaleItem item, double available, String? priceTier) =>
+        BuildContext context, SaleItem item, double available, String? priceTier,
+        {required bool capToAvailable, required bool showPrice}) =>
     showDialog<_QtyAnswer>(
       context: context,
       builder: (_) => Directionality(
         textDirection: TextDirection.rtl,
         child: _SaleQuantityDialog(
-            item: item, available: available, priceTier: priceTier),
+            item: item,
+            available: available,
+            priceTier: priceTier,
+            capToAvailable: capToAvailable,
+            showPrice: showPrice),
       ),
     );
 
@@ -210,6 +226,8 @@ class _SaleItemDialog extends StatefulWidget {
     required this.onInvoice,
     required this.category,
     required this.priceTier,
+    required this.capToAvailable,
+    required this.showPrice,
   });
 
   final List<SaleItem> items;
@@ -217,6 +235,8 @@ class _SaleItemDialog extends StatefulWidget {
   final Map<int, double> onInvoice;
   final String category;
   final String? priceTier;
+  final bool capToAvailable;
+  final bool showPrice;
 
   @override
   State<_SaleItemDialog> createState() => _SaleItemDialogState();
@@ -299,16 +319,19 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                       itemBuilder: (c, i) {
                         final it = rows[i];
                         final avail = _availableOf(it);
-                        final out = avail <= 0;
+                        // من غير حد بالمتاح، «خلص» مابتقفلش الصنف — بتتقال وخلاص.
+                        final out = widget.capToAvailable && avail <= 0;
+                        final parts = <String>[
+                          avail <= 0 ? 'خلص من العربية' : 'عندك ${_fmt(avail)}',
+                          if (widget.showPrice)
+                            '${_money(it.priceFor(widget.priceTier))} ج.م',
+                        ];
                         return ListTile(
                           enabled: !out,
                           title: Text(it.name),
                           // السعر والمتاح — الاتنين بيتسألوا وهو واقف، فبيتقالوا هنا.
                           subtitle: Text(
-                            out
-                                ? 'خلص من العربية'
-                                : 'متاح ${_fmt(avail)} · '
-                                    '${_money(it.priceFor(widget.priceTier))} ج.م',
+                            parts.join(' · '),
                             style: TextStyle(
                                 fontSize: 12,
                                 color: out ? AppColors.danger : Colors.black54),
@@ -331,11 +354,15 @@ class _SaleQuantityDialog extends StatefulWidget {
     required this.item,
     required this.available,
     required this.priceTier,
+    required this.capToAvailable,
+    required this.showPrice,
   });
 
   final SaleItem item;
   final double available;
   final String? priceTier;
+  final bool capToAvailable;
+  final bool showPrice;
 
   @override
   State<_SaleQuantityDialog> createState() => _SaleQuantityDialogState();
@@ -360,8 +387,8 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
       return;
     }
     // المتاح بيتقاس هنا كمان مش وقت الحفظ بس: أحسن يعرف وهو بيكتب الرقم من إن
-    // الفاتورة تترفض بعد ما يكون سلّم البضاعة.
-    if (q > widget.available + 0.0001) {
+    // الفاتورة تترفض بعد ما يكون سلّم البضاعة. (طلب التحويل من المخزن مالوش الحد ده.)
+    if (widget.capToAvailable && q > widget.available + 0.0001) {
       setState(() => _error = 'المتاح ${_fmt(widget.available)} بس');
       return;
     }
@@ -379,7 +406,10 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('السعر: ${_money(price)} ج.م · المتاح: ${_fmt(widget.available)}',
+          Text(
+              widget.showPrice
+                  ? 'السعر: ${_money(price)} ج.م · المتاح: ${_fmt(widget.available)}'
+                  : 'عندك في العربية: ${_fmt(widget.available)}',
               style: const TextStyle(
                   color: AppColors.primary, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
@@ -397,16 +427,17 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
             ),
           ),
           const SizedBox(height: 10),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: Text(
-              total > 0 ? 'الإجمالي: ${_money(total)} ج.م' : 'الإجمالي: —',
-              style: TextStyle(
-                color: total > 0 ? AppColors.success : Colors.blueGrey,
-                fontWeight: FontWeight.w700,
+          if (widget.showPrice)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                total > 0 ? 'الإجمالي: ${_money(total)} ج.م' : 'الإجمالي: —',
+                style: TextStyle(
+                  color: total > 0 ? AppColors.success : Colors.blueGrey,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
         ],
       ),
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
