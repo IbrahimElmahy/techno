@@ -27,6 +27,72 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   bool _loading = false;
   String? _error;
 
+  /// بحث القايمة وفترة الحركة — نفس فلتر «فواتيري» بالحرف.
+  final _search = TextEditingController();
+  DateTime? _from;
+  DateTime? _to;
+
+  String _bare(String x) => x
+      .replaceAll(RegExp('[أإآ]'), 'ا')
+      .replaceAll('ة', 'ه')
+      .replaceAll('ى', 'ي');
+
+  List<CustomerRef> get _visibleCustomers {
+    final q = _bare(_search.text.trim());
+    if (q.isEmpty) return _customers;
+    return [
+      for (final c in _customers)
+        if (_bare(c.name).contains(q)) c
+    ];
+  }
+
+  bool _inRange(Object? d) {
+    final raw = '${d ?? ''}'.split('T').first;
+    if (raw.isEmpty) return true;
+    final day = DateTime.tryParse(raw);
+    if (day == null) return true;
+    if (_from != null &&
+        day.isBefore(DateTime(_from!.year, _from!.month, _from!.day))) {
+      return false;
+    }
+    if (_to != null && day.isAfter(DateTime(_to!.year, _to!.month, _to!.day))) {
+      return false;
+    }
+    return true;
+  }
+
+  List _ranged(List rows) =>
+      [for (final r in rows) if (_inRange(r['date'] ?? r['created_at'])) r];
+
+  Future<void> _pickDate({required bool from}) async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: (from ? _from : _to) ?? now,
+      firstDate: DateTime(now.year - 2),
+      lastDate: now,
+    );
+    if (d == null) return;
+    setState(() {
+      if (from) {
+        _from = d;
+        // «من» بعد «إلى» مالوش معنى — الحد التاني بيتظبط بدل ما القايمة تفضى بصمت.
+        if (_to != null && _to!.isBefore(d)) _to = d;
+      } else {
+        _to = d;
+        if (_from != null && _from!.isAfter(d)) _from = d;
+      }
+    });
+  }
+
+  String _fmtD(DateTime? v) => v == null ? '' : v.toIso8601String().substring(0, 10);
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -70,16 +136,46 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     );
   }
 
-  Widget _list() => ListView.separated(
-        itemCount: _customers.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (_, i) => ListTile(
-          title: Text(_customers[i].name),
-          subtitle: _customers[i].phone == null ? null : Text(_customers[i].phone!),
-          trailing: const Icon(Icons.chevron_left),
-          onTap: () => _open(_customers[i]),
+  Widget _list() {
+    final rows = _visibleCustomers;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: TextField(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'دوّر باسم العميل',
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              suffixIcon: _search.text.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () => setState(_search.clear),
+                    ),
+            ),
+          ),
         ),
-      );
+        Expanded(
+          child: rows.isEmpty
+              ? const Center(child: Text('مافيش عميل بالاسم ده'))
+              : ListView.separated(
+                  itemCount: rows.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) => ListTile(
+                    title: Text(rows[i].name),
+                    subtitle:
+                        rows[i].phone == null ? null : Text(rows[i].phone!),
+                    trailing: const Icon(Icons.chevron_left),
+                    onTap: () => _open(rows[i]),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
 
   Widget _detail() {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -165,8 +261,49 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               ),
             ),
           ),
-          _section('آخر الفواتير', invoices),
-          _section('آخر التحصيلات', receipts),
+          // فترة الحركة — بتفلتر الفواتير والتحصيلات اللي تحت مع بعض.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickDate(from: true),
+                    icon: const Icon(Icons.event_outlined, size: 16),
+                    label: Text(_from == null ? 'من' : 'من ${_fmtD(_from)}',
+                        style: const TextStyle(fontSize: 12)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _pickDate(from: false),
+                    icon: const Icon(Icons.event, size: 16),
+                    label: Text(_to == null ? 'إلى' : 'إلى ${_fmtD(_to)}',
+                        style: const TextStyle(fontSize: 12)),
+                  ),
+                ),
+                if (_from != null || _to != null)
+                  IconButton(
+                    tooltip: 'شيل الفترة',
+                    icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
+                    onPressed: () => setState(() {
+                      _from = null;
+                      _to = null;
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          if ((_from != null || _to != null) &&
+              _ranged(invoices).isEmpty &&
+              _ranged(receipts).isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: Text('مافيش حركة في الفترة دي')),
+            ),
+          _section('آخر الفواتير', _ranged(invoices)),
+          _section('آخر التحصيلات', _ranged(receipts)),
           Padding(
             padding: const EdgeInsets.all(12),
             child: OutlinedButton.icon(
