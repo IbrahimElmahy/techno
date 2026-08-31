@@ -829,30 +829,59 @@ export default function Invoices() {
     setCreditAmount(parseFloat((netTotal - cash).toFixed(2)));
   }, [cashAmount, netTotal, discountPct]);
 
-  // Close the create page and clear it, so reopening starts fresh.
-  const closeCreate = () => {
-    setCreateVisible(false);
+  /**
+   * تفضية **كل** اللي بيخص مستند واحد — المكان الوحيد اللي بيحصل فيه ده.
+   *
+   * الحالة كانت بتتفضّى في تلات أماكن مختلفة (القفل، «جديد»، وبعد الحفظ) وكل واحد فيهم
+   * بينسى حاجة غير التاني: الحفظ كان بيفضّي السطور وينسى **صفوف الكوبونات**، وزرار «تسجيل
+   * فاتورة بيع» في الشاشة الرئيسية مكانش بيفضّي أي حاجة أصلاً. النتيجة اللي شافها المستخدم:
+   * يقفل فاتورة ويفتح واحدة جديدة فيلاقي كوبونات اللي قبلها مكتوبة قدامه — ويحفظها وهو مش
+   * واخد باله إنها مش بتاعته.
+   *
+   * فبقت دالة واحدة، وكل مدخل «مستند جديد» بيعدّي عليها. أي حالة جديدة تخص المستند تتحط
+   * هنا وبس — كده مافيش مدخل بينساها.
+   *
+   * ⚠️ الدالة دي **مش** للمستند القديم اللي بيتفتح للعرض أو التعديل: `openDetail` بيملا
+   * الحالة من المستند نفسه.
+   *
+   * بتسيب `newStep` على `null` وبتقفل المناتق — اللي بيفتح مستند جديد بيبدأ دورة الأبواب
+   * من أول خطوة بنفسه بعد النداء.
+   */
+  const resetDocument = () => {
     setViewOnly(false);
     setViewInvoice(null);
     setViewReturns([]);
     setEditingInvoice(null);
     setLines([]);
+    setCouponRows([blankCoupon()]);
+    setCustomerCoupons([]);
     setActiveCategory(null);
+    setPanelItemId(null);
+    setFocusLineKey(null);
     setCashAmount(0);
+    setCreditAmount(0);
     setDiscountPct(0);
     setSelectedCustomerId(null);
+    setCustomerTier(null);
     setCustomerBalance(null);
     setFamilyAccounts([]);
     setInvoiceFamily(null);
-    setCustomerCoupons([]);
-    setCouponRows([blankCoupon()]);
     setAvailability({});
     setParty(null);
     setDocWarehouseId(null);
     setPendingItems([]);
     setPendingWarehouse(null);
+    setPickerOpen(false);
+    setPartyPickerOpen(false);
     setNewStep(null);
+    setInvoiceDate(dayjs());
     createForm.resetFields();
+  };
+
+  // Close the create page and clear it, so reopening starts fresh.
+  const closeCreate = () => {
+    resetDocument();
+    setCreateVisible(false);
   };
 
   // Type a product name → it's added to the invoice immediately (POS-style, fastest path).
@@ -1392,13 +1421,10 @@ export default function Invoices() {
 
       message.success(editingInvoice
         ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة البيع بنجاح');
-      setCreateVisible(false);
-      createForm.resetFields();
-      setLines([]);
-      setActiveCategory(null);
-      setCashAmount(0);
-      setDiscountPct(0);
-      setEditingInvoice(null);
+      // تفضية كاملة بعد الحفظ. كانت تفضية بالإيد بتشيل السطور والخصم والنقدي وتسيب
+      // **صفوف الكوبونات** والعميل والمخزن ونوع الفاتورة مكانهم — فأول فاتورة بعدها
+      // بتفتح وفيها كوبونات فاتورة غيرها.
+      closeCreate();
       fetchInvoices();
     } catch (err: any) {
       console.error(err);
@@ -1996,10 +2022,9 @@ export default function Invoices() {
   };
 
   const startNew = () => {
-    closeCreate();
-    setInvoiceDate(dayjs());
+    // التفضية الأول، وبعدين أول باب في الدورة.
+    resetDocument();
     setCreateVisible(true);
-    setViewOnly(false);
     setNewStep('party');
     setPartyPickerOpen(true);
   };
@@ -2745,7 +2770,9 @@ export default function Invoices() {
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" icon={<PlusOutlined />}
               style={{ fontWeight: 600 }}
-              onClick={() => { setInvoiceDate(dayjs()); setNewStep('party'); }}>
+              // نفس تفضية «جديد» بالظبط. الزرار ده كان بيفتح الدورة على الحالة اللي
+              // سايبها المستند اللي قبله — ودي كانت أقصر طريق لكوبونات فاتورة غلط.
+              onClick={() => { resetDocument(); setNewStep('party'); }}>
               تسجيل فاتورة بيع
             </Button>
           </Space>
