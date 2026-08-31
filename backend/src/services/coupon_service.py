@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from src.core.money import to_money
 from src.models.catalog import Item, ItemKind
-from src.models.ledger import Direction
+from src.models.customer import CustomerAccount
+from src.models.ledger import Direction, LedgerLine
 from src.models.loyalty import (
     Coupon,
     CouponKind,
@@ -37,24 +38,65 @@ def _require_issued(coupon: Coupon) -> None:
         raise CouponError("الكوبون ده مش صالح للصرف — الكوبون المصروف للعميل بس هو اللي يتصرف.")
 
 
-def _receivable_account_id(db: Session, customer_id: int) -> int:
-    """حساب ذمم العميل — ولو مالوش، بيتفتح دلوقتي بدل ما الصرف يقف.
+def _receivable_account(db: Session, customer_id: int) -> tuple[int, str | None]:
+    """حساب ذمم العميل + بيان يتكتب على السطر لو الاختيار مااتسألش عنه.
 
     الكوبون بيتصرف على ذمة العميل (مدين مصروف ولاء، دائن الذمم)، فلازم يكون فيه حساب.
     بس «مالوش حساب» مش سبب يمنع الصرف — الكوبون في إيد العميل بالفعل. الفتح على نفس
-    الـsession، فلو الصرف وقع بعد كده الحساب بيترجع معاه.
+    الـsession، فلو الصرف وقع بعد كده الحساب بيترجع معاه. ده اللي
+    `customer_service.require_account` بيعمله.
 
-    القاعدة مشتركة مع البيع (`customer_service.require_account`) عن قصد: قبل كده كان
-    الاستعلام هنا بياخد **أي** حساب للعميل من غير ترتيب، فالعميل المقسوم على خطين كان
-    ممكن ياخد كوبونه على حساب النهارده وعلى التاني بكرة.
+    **والعميل المدموج ماينفعش يترفض هنا.** بعد `customer_merge_service.apply` العميل
+    الباقي بيبقى عنده حسابين (أبيض + بولي) ومافيش فيهم واحد بـ`family=None`، فسؤال
+    `require_account` من غير خط بيرجع `MergeError`. في البيع ده سؤال حقيقي — «نوع
+    الفاتورة» مكتوب على المستند والبايع بيجاوب عليه. في الكوبون مافيش إجابة أصلاً:
+    `Coupon` مالوش `family`، و`RedeemRequest` مافيهاش الحقل، فالرسالة بتطلب من
+    المستخدم حاجة مافيش شاشة تقولها. والتجار — أصحاب الكوبونات — هما بالظبط اللي
+    الدمج اتعمل عليهم.
+
+    فبدل الرفض: أقدم حساب (`min(id)`) — وده حساب العميل الباقي نفسه، اللي الدمج سماه
+    «أبيض» — والاختيار بيتكتب في بيان السطر عشان اللي بيراجع الدفتر يشوفه بدل ما
+    يخمّنه.
     """
     from src.services import customer_service
 
     try:
         acc = customer_service.require_account(db, customer_id)
-    except (MergeError, customer_service.CustomerError) as exc:
+        return acc.account_id, None
+    except MergeError:
+        pass
+    except customer_service.CustomerError as exc:
         raise CouponError(str(exc)) from exc
-    return acc.account_id
+
+    rows = sorted(
+        db.scalars(
+            select(CustomerAccount).where(CustomerAccount.customer_id == customer_id)
+        ).all(),
+        key=lambda a: a.id,
+    )
+    if not rows:  # ما يوصلش — `require_account` بيفتح حساب للي مالوش
+        raise CouponError("العميل ده مالوش حساب ذمم.")
+    acc = rows[0]
+    return acc.account_id, f"صرف كوبون على حساب «{acc.family or '—'}» (العميل عنده أكتر من حساب)"
+
+
+def _original_receivable_account_id(db: Session, original: CouponRedemption) -> int | None:
+    """الحساب اللي الصرف الأصلي نزل عليه — مقروء من قيده، مش بسؤال جديد.
+
+    العكس مالوش أي حق يسأل تاني: القيد الأصلي عارف نزل على أنهي حساب، وأي إعادة حساب
+    ممكن ترد بحساب تاني (أو ترفض) وتسيب صرف مقيّد مايتعكسش. الصرف بينزل سطرين — مدين
+    مصروف ولاء، دائن الذمم — فسطر الدائن هو حساب العميل.
+    """
+    if original.ledger_entry_id is None:
+        return None
+    return db.scalar(
+        select(LedgerLine.account_id)
+        .where(
+            LedgerLine.entry_id == original.ledger_entry_id,
+            LedgerLine.direction == Direction.credit,
+        )
+        .order_by(LedgerLine.id)
+    )
 
 
 def _post_money_redemption(
@@ -63,13 +105,13 @@ def _post_money_redemption(
 ) -> CouponRedemption:
     """Money / gift-money-off: debit loyalty_expense, credit customer_receivable (one entry)."""
     value = to_money(coupon.value)
-    receivable_id = _receivable_account_id(db, coupon.customer_id)
+    receivable_id, note = _receivable_account(db, coupon.customer_id)
     expense = account_resolver.loyalty_expense_account(db)
     entry = ledger_service.post_entry(
         db, entry_type="coupon_redeem", actor_user_id=actor_user_id,
         lines=[
             LineInput(expense.id, Direction.debit, value),
-            LineInput(receivable_id, Direction.credit, value),
+            LineInput(receivable_id, Direction.credit, value, statement=note),
         ],
         description=f"Coupon {coupon.serial} redeemed ({mode.value})",
     )
@@ -157,7 +199,11 @@ def reverse_redemption(db, *, coupon: Coupon, actor_user_id: int) -> CouponRedem
         actor_user_id=actor_user_id,
     )
     if original.mode in (RedemptionMode.money, RedemptionMode.gift_money_off):
-        receivable_id = _receivable_account_id(db, coupon.customer_id)
+        # الحساب من قيد الصرف نفسه. الرجوع لـ`_receivable_account` بس لو الصرف القديم
+        # مالوش قيد أصلاً — ساعتها مافيش حاجة تُقرأ منها.
+        receivable_id = _original_receivable_account_id(db, original)
+        if receivable_id is None:
+            receivable_id, _note = _receivable_account(db, coupon.customer_id)
         expense = account_resolver.loyalty_expense_account(db)
         entry = ledger_service.post_entry(
             db, entry_type="coupon_redeem_reverse", actor_user_id=actor_user_id,
