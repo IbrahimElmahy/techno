@@ -575,6 +575,10 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("item", "min_stock", "NUMERIC(18,3)"),
     ("item", "max_stock", "NUMERIC(18,3)"),
     ("item", "is_perishable", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # (009) العهدة بقت لكل (مندوب × خط): «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)».
+    # لازم العمود يتعمل هنا **قبل** `_sync_constraints` — القيد الجديد
+    # `uq_custody_rep_family` مبني عليه، وترتيب النداءات فوق بيضمن ده.
+    ("custody", "family", "VARCHAR(24)"),
 ]
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).
@@ -606,6 +610,9 @@ _DROPPED_CONSTRAINTS: list[tuple[str, str]] = [
     ("coupon_receipt_line", "uq_coupon_receipt_serial"),
     # اتبدّل تاني: الهوية فئة الورقة مش عرض الاستبدال.
     ("coupon_receipt_line", "uq_coupon_receipt_type_serial"),
+    # (009) العهدة بقت لكل (مندوب × خط). القديم على `rep_id` لوحده كان بيمنع الصندوق
+    # التاني للمندوب من إنه يتعمل أصلاً — والشيل لازم يسبق العمل تحت.
+    ("custody", "uq_custody_rep"),
 ]
 
 
@@ -613,6 +620,9 @@ _DROPPED_CONSTRAINTS: list[tuple[str, str]] = [
 _ADDED_CONSTRAINTS: list[tuple[str, str, tuple[str, ...]]] = [
     ("coupon_receipt_line", "uq_coupon_receipt_kind_serial",
      ("coupon_kind", "serial")),
+    # (009) عهدة واحدة لكل (مندوب × خط). العمود `custody.family` بيتعمل في
+    # `_ensure_columns` اللي بيجري قبل الدالة دي — القيد ده مالوش معنى من غيره.
+    ("custody", "uq_custody_rep_family", ("rep_id", "family")),
 ]
 
 

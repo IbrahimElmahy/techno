@@ -272,6 +272,35 @@ def _rep_scope_check(db: Session, current: CurrentUser, customer_id: int, origin
             "message": "لازم تبيع من مخزنك انت."})
 
 
+def _rep_treasuries(db: Session, rep_id: int) -> list[dict]:
+    """صناديق المندوب دون غيره — (خط، حساب، اسم) لكل عهدة نشطة ليه.
+
+    الاسم بيتقرا من الحساب نفسه (`account.name`) مش بيتألّف هنا: ده اسم الصندوق زي ما هو
+    في شجرة a5 («صندوق بولي السياره (ب)») واللي المكتب بينده بيه في التليفون. لو الحساب
+    من غير اسم — عهدة قديمة اتعملت من الشاشة — بيرجع فاضي والتطبيق بيعرض الخط بدله.
+    """
+    from src.models.ledger import Account
+
+    rows = db.execute(
+        select(Custody, Account)
+        .join(Account, Account.id == Custody.account_id)
+        .where(Custody.rep_id == rep_id, Custody.active.is_(True))
+        .order_by(Custody.family.is_(None), Custody.family, Custody.id)
+    ).all()
+    return [
+        {
+            "custody_id": c.id,
+            "account_id": acc.id,
+            # NULL = عهدة من قبل التقسيم. بتنزل زي ما هي عشان المندوب اللي لسه ماتقسمش
+            # يفضل شغّال — التطبيق بيقع عليها لما الفاتورة مالهاش خط.
+            "family": c.family,
+            "name": acc.name or "",
+            "code": acc.code or "",
+        }
+        for c, acc in rows
+    ]
+
+
 @router.get("/rep-bundle", response_model=dict)
 def rep_bundle(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
@@ -380,6 +409,16 @@ def rep_bundle(
                 .order_by(Warehouse.name)
             ).all()
         ],
+        # صناديق المندوب هو بس — واحد لكل خط، باسمه اللي على الصندوق في المكتب.
+        #
+        # a5 بيدّي كل مندوب صندوقين، «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)»،
+        # والفلوس بتتفصل بالخط زي المديونية. المندوب بيختار «نوع الفاتورة» (نازل خلاص مع
+        # العميل في `families`) والصندوق بيتحدد **لوحده** من الخط ده — مافيش سؤال، لأن
+        # مالوش قرار هنا: صندوق الخط هو ده.
+        #
+        # والصناديق نازلة كلها مع الحزمة مش بتتجاب عند الحفظ، لأن المندوب بيكتب في الشارع
+        # من غير شبكة. والاسم نازل عشان الشاشة تعرضه — يشوف فلوسه رايحة فين قبل ما يحفظ.
+        "treasuries": _rep_treasuries(db, current.rep_id),
         "customers": [
             {
                 "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,

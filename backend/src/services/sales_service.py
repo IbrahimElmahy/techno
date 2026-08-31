@@ -355,7 +355,10 @@ def create_sale(
         cust_acc = customer_service.require_account(db, customer_id, family=family)
     except (MergeError, customer_service.CustomerError) as exc:
         raise SalesError(str(exc)) from exc
-    cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
+    # نفس الـ`family` اللي راح لحساب المديونية فوق بالظبط — قيمة واحدة للطرفين. لو الكاش
+    # اتحدد بمنطق تاني، الفاتورة الواحدة تبقى على خط في المديونية وخط تاني في الصندوق.
+    cash_acc = account_resolver.resolve_cash_account(
+        db, role=actor_role, user_id=actor_user_id, family=family)
 
     # الفاتورة اللي بتتعدّل بتحتفظ برقمها وتاريخ إنشائها — الرقم ده اتطبع واتقال في
     # التليفون، وتغييره عشان سعر اتظبط بيخلّي الورقة اللي في إيد العميل تشاور على حاجة
@@ -960,7 +963,9 @@ def create_standalone_return(
             else f"cash refund + credit reduction must equal the total including VAT ({refund_total})."
         )
 
-    cash_acc = (account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
+    # نفس خط الفاتورة: الفلوس اللي بترجع للعميل بتطلع من صندوق نفس الخط اللي نزلت فيه.
+    cash_acc = (account_resolver.resolve_cash_account(
+                    db, role=actor_role, user_id=actor_user_id, family=family)
                 if to_money(cash_refund) > ZERO else None)
 
     existing = db.get(SalesReturn, replace_return_id) if replace_return_id else None

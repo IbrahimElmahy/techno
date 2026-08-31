@@ -70,12 +70,19 @@ def get_or_create_singleton(
     routed = _routed(db, account_type, bid)
     if routed is not None:
         return routed
+    # الترتيب مش تجميل. من (009) بقى فيه صناديق a5 حقيقية بنوع `treasury` على نفس الفرع —
+    # «صندوق بونص» و«صندوق بيع عدد وأدوات» مالهمش صاحب، فـ`owner_ref` بتاعهم NULL وبيدخلوا
+    # في الشرط ده. من غير ترتيب ثابت الاختيار بيبقى مزاج القاعدة: الخزنة العامة ممكن تطلع
+    # صندوق البونص النهارده والمركز الرئيسي بكرة، والفلوس تتقسم على مكانين من غير ما حد يعرف.
+    # `is_system` هي اللي بتقول «دي الخزنة العامة»، والـ id أقدم واحد كسر تعادل ثابت.
     acc = db.scalar(
-        select(Account).where(
+        select(Account)
+        .where(
             Account.account_type == account_type,
             Account.owner_ref.is_(None),
             Account.branch_id == bid,
         )
+        .order_by(Account.is_system.desc(), Account.id)
     )
     if acc is not None:
         return acc
@@ -123,11 +130,65 @@ def opening_balance_equity_account(db: Session, *, branch_id: int | None = None)
         db, AccountType.opening_balance_equity, branch_id=branch_id)
 
 
-def resolve_cash_account(db: Session, *, role: RoleName, user_id: int) -> Account:
-    """The actor's cash location: a Sales Rep's custody, else the consolidated treasury (Q3)."""
-    if role == RoleName.sales_rep:
-        custody = db.scalar(select(Custody).where(Custody.rep_id == user_id))
-        if custody is None or custody.account_id is None:
-            raise AccountResolutionError("المندوب ده مالوش حساب عهدة — اعمله واحد الأول.")
-        return db.get(Account, custody.account_id)
-    return treasury_account(db)
+def _rep_name(db: Session, user_id: int) -> str:
+    """اسم المندوب زي ما المكتب بيناديه — عشان رسالة الخطأ تقول مين، مش رقم."""
+    from src.models.user import User
+
+    u = db.get(User, user_id)
+    return (u.full_name or u.username) if u is not None else f"#{user_id}"
+
+
+def resolve_cash_account(
+    db: Session, *, role: RoleName, user_id: int, family: str | None = None
+) -> Account:
+    """The actor's cash location: the Sales Rep's safe **for this product line**, else the treasury.
+
+    a5 gives every car rep two safes — «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)» — and
+    the cash splits by line exactly the way the debt does. So `family` here is the SAME value that
+    picked the customer's receivable account: one invoice, one line, both sides.
+
+    ⚠️ **مافيش وقوع على صندوق تاني.** المندوب اللي مالوش صندوق للخط ده بيترفض بالاسم — الخط
+    والمندوب — لأن الفلوس اللي بتنزل في صندوق غلط مافيش حاجة بتقولها بعدين: القيد بيتوازن،
+    والرصيد بيبان معقول، والفرق مايظهرش غير في جرد بعد شهر ومحدش عارف منين جه.
+    """
+    if role != RoleName.sales_rep:
+        return treasury_account(db)
+
+    # النشط الأول عند التعادل — عهدة اتقفلت مايتقيّدش عليها وفيه واحدة شغالة جنبها.
+    rows = db.scalars(
+        select(Custody)
+        .where(Custody.rep_id == user_id)
+        .order_by(Custody.active.desc(), Custody.id)
+    ).all()
+    if not rows:
+        raise AccountResolutionError(
+            f"«{_rep_name(db, user_id)}» مالوش حساب عهدة — اعمله واحد الأول.")
+
+    if family:
+        match = [c for c in rows if c.family == family]
+        if not match:
+            raise AccountResolutionError(
+                f"«{_rep_name(db, user_id)}» مالوش صندوق لخط «{family}» — "
+                "الفاتورة دي مش هتترحّل لحد ما المكتب يعمله واحد."
+            )
+        custody = match[0]
+    else:
+        # نداء من غير خط (الشراء، السندات، وكل اللي قبل التقسيم): العهدة اللي مش متقسّمة،
+        # وإلا الوحيدة لو عنده واحدة بس. اتنين متقسّمين من غير خط = اختيار مالوش أساس.
+        plain = [c for c in rows if c.family is None]
+        if plain:
+            custody = plain[0]
+        elif len(rows) == 1:
+            custody = rows[0]
+        else:
+            lines = "، ".join(c.family or "—" for c in rows)
+            raise AccountResolutionError(
+                f"«{_rep_name(db, user_id)}» عنده أكتر من صندوق ({lines}) "
+                "والمستند ده مش قايل على أنهي خط.")
+
+    if custody.account_id is None:
+        raise AccountResolutionError(
+            f"صندوق «{_rep_name(db, user_id)}»"
+            + (f" — خط «{custody.family}»" if custody.family else "")
+            + " مالوش حساب في الدفاتر.")
+    return db.get(Account, custody.account_id)

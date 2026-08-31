@@ -45,6 +45,9 @@ class WarehouseUpdate(BaseModel):
 
 class CustodyUpdate(BaseModel):
     active: bool | None = None
+    # الخط بيتصحّح، مابيتعادش عمله. صندوق اتفتح على «أبيض» وهو بولي كان لازم يتقفل
+    # ويتعمل واحد جديد — والرصيد بيتقسم على صفّين عشان غلطة في قايمة.
+    family: str | None = None
 
 
 class WarehouseOut(BaseModel):
@@ -59,6 +62,9 @@ class WarehouseOut(BaseModel):
 class CustodyCreate(BaseModel):
     holder_type: HolderType
     rep_id: int | None = None
+    # (009) الخط اللي الصندوق ده بتاعه — «أبيض» / «بولي». المندوب له صندوق لكل خط،
+    # فالتفرّد بقى على (المندوب، الخط) مش على المندوب لوحده.
+    family: str | None = None
     warehouse_id: int | None = None
 
 
@@ -66,6 +72,7 @@ class CustodyOut(BaseModel):
     id: int
     holder_type: HolderType
     rep_id: int | None
+    family: str | None = None
     warehouse_id: int | None
     active: bool
 
@@ -167,7 +174,7 @@ def list_custodies(
 ) -> list[CustodyOut]:
     return [
         CustodyOut(
-            id=c.id, holder_type=c.holder_type, rep_id=c.rep_id,
+            id=c.id, holder_type=c.holder_type, rep_id=c.rep_id, family=c.family,
             warehouse_id=c.warehouse_id, active=c.active,
         )
         for c in db.scalars(select(Custody)).all()
@@ -184,7 +191,11 @@ def create_custody(
     if body.holder_type == HolderType.rep:
         if body.rep_id is None:
             raise HTTPException(422, {"code": "validation", "message": "rep custody needs rep_id"})
-        exists = db.scalar(select(Custody).where(Custody.rep_id == body.rep_id))
+        # التفرّد على (المندوب، الخط): نفس المندوب ياخد صندوق أبيض وصندوق بولي، ومايخدش
+        # صندوقين لنفس الخط.
+        exists = db.scalar(select(Custody).where(
+            Custody.rep_id == body.rep_id,
+            Custody.family == body.family if body.family else Custody.family.is_(None)))
     else:
         if body.warehouse_id is None:
             raise HTTPException(422, {"code": "validation", "message": "warehouse custody needs warehouse_id"})
@@ -199,7 +210,7 @@ def create_custody(
     db.add(account)
     db.flush()
     custody = Custody(
-        holder_type=body.holder_type, rep_id=body.rep_id,
+        holder_type=body.holder_type, rep_id=body.rep_id, family=(body.family or None),
         warehouse_id=body.warehouse_id, account_id=account.id,
     )
     db.add(custody)
@@ -208,7 +219,7 @@ def create_custody(
     db.commit()
     return CustodyOut(
         id=custody.id, holder_type=custody.holder_type, rep_id=custody.rep_id,
-        warehouse_id=custody.warehouse_id, active=custody.active,
+        family=custody.family, warehouse_id=custody.warehouse_id, active=custody.active,
     )
 
 
@@ -224,12 +235,14 @@ def update_custody(
         raise HTTPException(404, {"code": "not_found", "message": "Custody not found"})
     if body.active is not None:
         c.active = body.active
+    if body.family is not None:
+        c.family = body.family or None
     db.flush()
     audit_service.record(db, action="custody.update", actor_user_id=current.id,
                          entity_type="custody", entity_id=c.id)
     db.commit()
     return CustodyOut(id=c.id, holder_type=c.holder_type, rep_id=c.rep_id,
-                      warehouse_id=c.warehouse_id, active=c.active)
+                      family=c.family, warehouse_id=c.warehouse_id, active=c.active)
 
 
 @router.delete("/custodies/{custody_id}", status_code=status.HTTP_204_NO_CONTENT)
