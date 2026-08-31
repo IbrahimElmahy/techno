@@ -56,10 +56,37 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   final List<SaleDraftLine> _lines = [];
   bool _saving = false;
 
+  /// خانة الكمية بتاعة كل سطر — بالـ`itemId` مش بالترتيب.
+  ///
+  /// الترتيب بيتغيّر لما سطر في النص يتمسح، والكنترولر لازم يفضل ماشي مع صنفه هو.
+  /// وهي كنترولر مش `initialValue` عشان زراير − و+ تغيّر الرقم المكتوب في الخانة؛
+  /// `initialValue` بتتقرا مرة واحدة وبعدها الخانة بتفضل بترينا رقم قديم.
+  final Map<int, TextEditingController> _qtyCtl = {};
+
+  /// السطور اللي التفاصيل (السعر والخصومات) مفتوحة عليها — بالـ`itemId` برضه.
+  ///
+  /// السطر المقفول بيبقى صفّين: الاسم والإجمالي فوق، والكمية والسعر تحت. الفاتورة
+  /// اللي فيها ٢٠ صنف كانت ٢٠ كارت بأربع صفوف وستّ خانات إدخال — طول لا ينتهي.
+  final Set<int> _openLines = {};
+
+  final _scroll = ScrollController();
+
+  /// `null` = سيب الترويسة تقرّر لوحدها. المندوب لو ضغط، رأيه هو اللي بيمشي.
+  bool? _headerOpenOverride;
+
+  /// الترويسة بتفضل مفتوحة طول ما فيه سؤال من غير إجابة (عميل أو نوع فاتورة)،
+  /// وبتتلمّ في سطر واحد أول ما الاتنين يتحدّدوا — عشان السطور تاخد الشاشة.
+  bool get _headerOpen =>
+      _headerOpenOverride ?? (_customer == null || _family == null);
+
   @override
   void dispose() {
     _notes.dispose();
     _cash.dispose();
+    _scroll.dispose();
+    for (final c in _qtyCtl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -122,6 +149,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     setState(() {
       if (existing >= 0) {
         _lines[existing].quantity += 1;
+        // الرقم اتغيّر في الموديل — والخانة عندها كنترولر، فلازم تتبلّغ.
+        _syncQtyField(_lines[existing]);
       } else {
         _lines.add(SaleDraftLine(
           itemId: picked.itemId,
@@ -228,188 +257,428 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  /// بتحرّك الكمية بالزراير — و`max` عشان مافيش سالب.
+  ///
+  /// الحد الأدنى صفر بس، مش واحد: السطر بصفر لسه بيترفض عند الحفظ زي ما كان
+  /// («في سطر كميته صفر»)، والمندوب اللي بينزّل لحد الصفر غالباً قصده يمسح السطر.
+  void _bumpQty(SaleDraftLine l, double delta) {
+    setState(() => l.quantity = max(0.0, l.quantity + delta));
+    _syncQtyField(l);
+  }
+
+  void _syncQtyField(SaleDraftLine l) {
+    final c = _qtyCtl[l.itemId];
+    if (c == null) return;
+    final t = _trim(l.quantity);
+    if (c.text != t) c.text = t;
+  }
+
+  /// الحذف بيسأل الأول.
+  ///
+  /// سلة جنب خانة الكمية في سطر مضغوط = ضغطة غلط بتودّي صنف. والصنف اللي طار
+  /// مابيبانش غير عند مراجعة الإجمالي — لو حد راجعه. السؤال أرخص من كده.
+  Future<void> _removeLine(SaleDraftLine l) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('حذف السطر'),
+        content: Text('تشيل «${l.itemName}» من الفاتورة؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('رجوع')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('احذف'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    // بالهوية مش بالترتيب — الترتيب ممكن يكون اتغيّر والحوار مفتوح.
+    final i = _lines.indexOf(l);
+    if (i < 0) return;
+    setState(() {
+      _lines.removeAt(i);
+      _openLines.remove(l.itemId);
+      _qtyCtl.remove(l.itemId)?.dispose();
+    });
+  }
+
+  void _toggleHeader() {
+    setState(() => _headerOpenOverride = !_headerOpen);
+    // التفاصيل بتتفتح فوق القايمة، فلو المندوب كان في نص السطور مش هيشوف حاجة
+    // اتفتحت. الرجوع لأول القايمة بيخلّي الفتحة تبان.
+    if (_headerOpen) _scrollTo(0);
+  }
+
+  void _scrollTo(double offset) {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(offset,
+        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('فاتورة بيع')),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 120),
+      // عمود، مش `ListView` واحدة للشاشة كلها.
+      //
+      // كانت الترويسة والسطور والإجماليات كلهم في قايمة واحدة بتلفّ: مع ٢٠ صنف
+      // الإجمالي بيبقى تحت خالص، والمندوب بيلفّ لتحت عشان يقرا رقم هو محتاجه وهو
+      // واقف بيتكلّم. دلوقتي السطور بس هي اللي بتلفّ — الترويسة مثبّتة فوق
+      // والإجمالي وزرار الحفظ مثبّتين تحت.
+      body: Column(
         children: [
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.person_outline, color: AppColors.primary),
-                  title: Text(_customer?.name ?? 'اختار العميل'),
-                  subtitle: Text(_customer == null
-                      ? 'عملاءك انت بس'
-                      : [
-                          if (_customer!.phone != null) _customer!.phone!,
-                          if (_customer!.priceTier != null) 'فئة ${_customer!.priceTier}',
-                          if (_family != null) 'حساب $_family',
-                        ].join(' · ')),
-                  trailing: const Icon(Icons.chevron_left),
-                  onTap: _pickCustomer,
-                ),
-                if (_customer != null) ...[
-                  const Divider(height: 1),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('نوع الفاتورة (الخط)',
-                            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                        const SizedBox(height: 6),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            for (final f in _familyChoices)
-                              ChoiceChip(
-                                label: Text(f),
-                                selected: _family == f,
-                                onSelected: (_) => setState(() => _family = f),
-                              ),
-                          ],
-                        ),
-                      ],
+          _headerStrip(),
+          const Divider(height: 1),
+          Expanded(child: _linesList()),
+        ],
+      ),
+      bottomNavigationBar: _bottomBar(),
+    );
+  }
+
+  /// سطر الترويسة المضغوط — بيفضل مثبّت فوق مهما طالت القايمة.
+  ///
+  /// وزرار «صنف» جوّاه مش فوق القايمة: الإضافة هي الحاجة اللي بتتعمل عشرين مرة،
+  /// فماينفعش تكون محتاجة لفّة لفوق كل مرة.
+  Widget _headerStrip() {
+    final missing = _customer == null || _family == null;
+    final bits = <String>[
+      if (_family != null) _family!,
+      if (_customer?.priceTier != null) 'فئة ${_customer!.priceTier}',
+      _date.toIso8601String().substring(0, 10),
+      if (_lines.isNotEmpty) '${_lines.length} صنف',
+    ];
+    final sub = _customer == null
+        ? 'اضغط للاختيار'
+        : (_family == null ? 'اختار نوع الفاتورة' : bits.join(' · '));
+    return Material(
+      color: Colors.white,
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: _toggleHeader,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                child: Row(
+                  children: [
+                    Icon(missing ? Icons.error_outline : Icons.person_outline,
+                        size: 20, color: missing ? AppColors.danger : AppColors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_customer?.name ?? 'اختار العميل',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 14)),
+                          Text(sub,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: missing ? AppColors.danger : Colors.black54)),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-                const Divider(height: 1),
-                // تاريخ الفاتورة عرض بس — النهارده ومفيش غيره.
-                //
-                // كان بيسمح بأي يوم لحد ٦٠ يوم ورا. المندوب في الشارع بيكتب اللي باعه
-                // دلوقتي، وتاريخ قديم بيحطّ البيعة في يوم مقفول أو في شهر اتقفلت
-                // حساباته — والفرق مابيبانش غير في تقرير آخر الشهر لما الأرقام
-                // ماتطبقش. اللي محتاج يأرّخ بأثر رجعي بيعملها من الويب، هناك اللي
-                // بيعملها محاسب شايف الدفاتر.
-                ListTile(
-                  leading: const Icon(Icons.event_outlined, color: AppColors.primary),
-                  title: const Text('تاريخ الفاتورة'),
-                  subtitle: Text(_date.toIso8601String().substring(0, 10)),
-                  trailing: const Icon(Icons.lock_outline, size: 18, color: Colors.black38),
-                  enabled: false,
+                    Icon(_headerOpen ? Icons.expand_less : Icons.expand_more,
+                        size: 20, color: Colors.black45),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            padding: const EdgeInsets.fromLTRB(0, 6, 10, 6),
             child: FilledButton.icon(
               onPressed: _addItem,
-              icon: const Icon(Icons.add),
-              label: const Text('إضافة صنف'),
-              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('صنف'),
+              // مقاس صريح — الافتراضي في الثيم ٥٠ ارتفاع، وده بيكبّر السطر
+              // المضغوط. و**مش** `Size.fromHeight` جوّه `Row`: عرض لانهائي.
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(72, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
             ),
           ),
-          if (_lines.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('مافيش أصناف على الفاتورة لسه.', textAlign: TextAlign.center),
-            )
-          else
-            for (var i = 0; i < _lines.length; i++) _lineCard(i),
-          _totalsCard(),
         ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: FilledButton.icon(
-            onPressed: _saving ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.save_outlined),
-            label: Text(_saving ? 'بيحفظ…' : 'حفظ الفاتورة'),
-            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
-          ),
-        ),
       ),
     );
   }
 
-  Widget _lineCard(int i) {
-    final l = _lines[i];
+  /// تفاصيل الترويسة — العميل والخط والتاريخ. بتلفّ مع القايمة، مش مثبّتة، عشان
+  /// الكيبورد ما يزقّهاش على السطور.
+  Widget _headerDetails() {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(l.itemName,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                  onPressed: () => setState(() => _lines.removeAt(i)),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: _numField(
-                    label: 'الكمية',
-                    value: l.quantity,
-                    onChanged: (v) => setState(() => l.quantity = v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _numField(
-                    label: 'السعر',
-                    value: l.unitPrice,
-                    onChanged: (v) => setState(() => l.unitPrice = v),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: _numField(
-                    label: 'خصم ثابت %',
-                    value: l.fixedDiscountPct,
-                    onChanged: (v) => setState(() => l.fixedDiscountPct = v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _numField(
-                    label: 'خصم إضافي %',
-                    value: l.variableDiscountPct,
-                    onChanged: (v) => setState(() => l.variableDiscountPct = v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: Column(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.person_outline, color: AppColors.primary),
+            title: Text(_customer?.name ?? 'اختار العميل'),
+            subtitle: Text(_customer == null
+                ? 'عملاءك انت بس'
+                : [
+                    if (_customer!.phone != null) _customer!.phone!,
+                    if (_customer!.priceTier != null) 'فئة ${_customer!.priceTier}',
+                    if (_family != null) 'حساب $_family',
+                  ].join(' · ')),
+            trailing: const Icon(Icons.chevron_left),
+            onTap: _pickCustomer,
+          ),
+          if (_customer != null) ...[
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('نوع الفاتورة (الخط)',
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
                     children: [
-                      const Text('إجمالي الخصم',
-                          style: TextStyle(fontSize: 11, color: Colors.black54)),
-                      Text('${_trim(l.discountPct)}%',
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w800)),
+                      for (final f in _familyChoices)
+                        ChoiceChip(
+                          label: Text(f),
+                          selected: _family == f,
+                          onSelected: (_) => setState(() => _family = f),
+                        ),
                     ],
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: Text('الإجمالي: ${_money(l.net)} ج.م',
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+                ],
+              ),
             ),
           ],
-        ),
+          const Divider(height: 1),
+          // تاريخ الفاتورة عرض بس — النهارده ومفيش غيره.
+          //
+          // كان بيسمح بأي يوم لحد ٦٠ يوم ورا. المندوب في الشارع بيكتب اللي باعه
+          // دلوقتي، وتاريخ قديم بيحطّ البيعة في يوم مقفول أو في شهر اتقفلت
+          // حساباته — والفرق مابيبانش غير في تقرير آخر الشهر لما الأرقام
+          // ماتطبقش. اللي محتاج يأرّخ بأثر رجعي بيعملها من الويب، هناك اللي
+          // بيعملها محاسب شايف الدفاتر.
+          ListTile(
+            leading: const Icon(Icons.event_outlined, color: AppColors.primary),
+            title: const Text('تاريخ الفاتورة'),
+            subtitle: Text(_date.toIso8601String().substring(0, 10)),
+            trailing: const Icon(Icons.lock_outline, size: 18, color: Colors.black38),
+            enabled: false,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _linesList() {
+    return ListView(
+      controller: _scroll,
+      padding: const EdgeInsets.only(bottom: 12),
+      children: [
+        if (_headerOpen) _headerDetails(),
+        if (_lines.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(28),
+            child: Text('مافيش أصناف على الفاتورة لسه.\nاضغط «صنف» فوق عشان تضيف.',
+                textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
+          )
+        else
+          for (var i = 0; i < _lines.length; i++) _lineTile(i),
+        _paymentCard(),
+      ],
+    );
+  }
+
+  /// السطر المضغوط: الاسم · الكمية · السعر · الإجمالي في صفّين.
+  ///
+  /// السعر والخصومات جوّه فتحة بتتفتح بالضغط على السطر — لأنها بتتغيّر في سطر من
+  /// كل عشرة، ومش مستاهلة تاخد مكان دايم في كل سطر.
+  Widget _lineTile(int i) {
+    final l = _lines[i];
+    final open = _openLines.contains(l.itemId);
+    // مفتاح بالصنف عشان حالة الخانات تفضل مع سطرها لو اتمسح سطر من النص.
+    final ctl = _qtyCtl.putIfAbsent(
+        l.itemId, () => TextEditingController(text: _trim(l.quantity)));
+    final priceBits = StringBuffer('× ${_trim(l.unitPrice)} ج.م');
+    if (l.discountPct > 0) priceBits.write(' · خصم ${_trim(l.discountPct)}%');
+    return Card(
+      key: ValueKey(l.itemId),
+      margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => setState(() =>
+                open ? _openLines.remove(l.itemId) : _openLines.add(l.itemId)),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        child: Text('${i + 1}',
+                            style: const TextStyle(fontSize: 11, color: Colors.black38)),
+                      ),
+                      Expanded(
+                        child: Text(l.itemName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 14)),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(_money(l.net),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                              color: AppColors.primary)),
+                      Icon(open ? Icons.expand_less : Icons.expand_more,
+                          size: 18, color: Colors.black38),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      _qtyStepper(l, ctl),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(priceBits.toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                      ),
+                      // سلة صريحة — بس بمقاس وحدود مضبوطة.
+                      //
+                      // `IconButton` بمقاسه الافتراضي (٤٨) جنب خانة الكمية بيطلع
+                      // برّه الصف فيتقصّ: بيترسم تمام وبيبلع الضغطات. الحدود هنا
+                      // بتخلّيه جوّه المساحة اللي مسموح له بيها.
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline,
+                            size: 20, color: AppColors.danger),
+                        tooltip: 'حذف السطر',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => _removeLine(l),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (open) _lineDetails(l),
+        ],
+      ),
+    );
+  }
+
+  /// الكمية بتتعدّل من السطر نفسه: زراير ± للسرعة، والخانة للكسور.
+  Widget _qtyStepper(SaleDraftLine l, TextEditingController ctl) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.black12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _stepButton(Icons.remove, () => _bumpQty(l, -1)),
+          SizedBox(
+            width: 52,
+            child: TextField(
+              controller: ctl,
+              textAlign: TextAlign.center,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              decoration: const InputDecoration(
+                isDense: true,
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 6),
+              ),
+              onChanged: (t) =>
+                  setState(() => l.quantity = double.tryParse(t.trim()) ?? 0),
+            ),
+          ),
+          _stepButton(Icons.add, () => _bumpQty(l, 1)),
+        ],
+      ),
+    );
+  }
+
+  Widget _stepButton(IconData icon, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Icon(icon, size: 18, color: AppColors.primary),
+      ),
+    );
+  }
+
+  Widget _lineDetails(SaleDraftLine l) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Column(
+        children: [
+          const Divider(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _numField(
+                  label: 'سعر الوحدة',
+                  value: l.unitPrice,
+                  onChanged: (v) => setState(() => l.unitPrice = v),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _numField(
+                  label: 'خصم ثابت %',
+                  value: l.fixedDiscountPct,
+                  onChanged: (v) => setState(() => l.fixedDiscountPct = v),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _numField(
+                  label: 'خصم إضافي %',
+                  value: l.variableDiscountPct,
+                  onChanged: (v) => setState(() => l.variableDiscountPct = v),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('إجمالي الخصم',
+                        style: TextStyle(fontSize: 11, color: Colors.black54)),
+                    Text('${_trim(l.discountPct)}%',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -428,15 +697,21 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     );
   }
 
-  Widget _totalsCard() {
+  /// الدفع والملاحظات في آخر القايمة — بيتكتبوا مرة واحدة في آخر الفاتورة،
+  /// فمش محتاجين يقعدوا على الشاشة. والرقم اللي بيتقري كتير (الإجمالي والباقي)
+  /// مثبّت تحت.
+  Widget _paymentCard() {
     return Card(
+      margin: const EdgeInsets.fromLTRB(8, 10, 8, 8),
       color: const Color(0xFFF3F8FB),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(12),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _totalRow('إجمالي الفاتورة', _money(_total), big: true),
-            const SizedBox(height: 10),
+            const Text('الدفع',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+            const SizedBox(height: 8),
             TextField(
               controller: _cash,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -446,7 +721,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
               onChanged: (_) => setState(() {}),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            _totalRow('إجمالي الفاتورة', _money(_total)),
+            const SizedBox(height: 6),
             _totalRow('الباقي على العميل', _money(_credit)),
             const SizedBox(height: 10),
             TextField(
@@ -470,6 +747,62 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 fontWeight: FontWeight.w800,
                 color: big ? AppColors.primary : Colors.black87)),
       ],
+    );
+  }
+
+  /// الشريط المثبّت تحت: الإجمالي والباقي وزرار الحفظ. مهما طالت القايمة.
+  ///
+  /// والضغط على الأرقام بينزّل لآخر القايمة عند خانة «المدفوع نقداً» — عشان اللي
+  /// واقف على فاتورة فيها ٢٠ صنف مايدوّرش على الخانة بلفّ.
+  Widget _bottomBar() {
+    return SafeArea(
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.black12)),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              onTap: () => _scrollTo(
+                  _scroll.hasClients ? _scroll.position.maxScrollExtent : 0),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
+                  children: [
+                    const Text('الإجمالي',
+                        style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('${_money(_total)} ج.م',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary)),
+                    ),
+                    Text('باقي ${_money(_credit)}',
+                        style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            FilledButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.save_outlined),
+              label: Text(_saving ? 'بيحفظ…' : 'حفظ الفاتورة'),
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
