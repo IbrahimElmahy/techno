@@ -33,6 +33,18 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// العميل الواحد ممكن يبقى مديون على الخطين بحسابين منفصلين، فالفاتورة لازم تقول على
   /// أنهي واحد بتنزل. اللي عنده خط واحد بيتحدّد لوحده — سؤال إجابته واحدة مش سؤال.
   String? _family;
+
+  /// خطوط المنتجات لما العميل مالوش حسابات مقسومة.
+  ///
+  /// «نوع الفاتورة» سؤالين في واحد: خط المنتجات اللي بيتكتب على المستند، والحساب
+  /// اللي الفلوس بتترحّل عليه. للعميل المقسوم هما نفس السؤال؛ للعادي الأول له معنى
+  /// والتاني مالوش غير إجابة واحدة. فالسؤال بيتسأل للاتنين، ومصدر الخيارات بيفرق.
+  static const _kFamilies = ['أبيض', 'بولي'];
+
+  List<String> get _familyChoices {
+    final fams = _customer?.families ?? const <String>[];
+    return fams.length > 1 ? fams : _kFamilies;
+  }
   /// تاريخ الفاتورة = النهارده، وبيتقرا **لحظة الحفظ** مش لحظة فتح الشاشة.
   ///
   /// المندوب بيسيب التطبيق مفتوح؛ لو التاريخ اتثبّت وقت الفتح، اللي بيبيع الصبح بعد
@@ -66,6 +78,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       _customer = picked;
       // خط واحد ⇒ اتحدّد لوحده. أكتر من واحد ⇒ المندوب بيختار. ولا واحد ⇒ الفاتورة
       // بتنزل على المديونية كلها زي ما كانت بتعمل قبل ما الخطوط تتعرف أصلاً.
+      // حساب واحد باسم ⇒ مافيش سؤال. غير كده الخانة بتفضل فاضية لحد ما يختار.
       _family = picked.families.length == 1 ? picked.families.first : null;
       // فئة العميل بتقرّر السعر، فالسطور اللي اتكتبت قبل ما يتحدّد بتتسعّر من جديد عليه.
       for (var i = 0; i < _lines.length; i++) {
@@ -138,10 +151,11 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
 
   Future<void> _save() async {
     if (_customer == null) return _say('اختر العميل');
-    if (_family == null && (_customer!.families.length > 1)) {
-      // الفاتورة اللي مش قايلة على أنهي مديونية بتنزل، بتوزّع الرقم على الاتنين بالنسبة —
-      // وكشف حساب العميل بعدها مايقولش حاجة مفهومة. السؤال هنا أرخص من التصحيح بعدين.
-      return _say('اختر الحساب — أبيض أو بولي');
+    if (_family == null) {
+      // الفاتورة اللي مش قايلة على أنهي خط بتتكتب من غير هوية، والعميل المقسوم بتوزّع
+      // رقمه على الاتنين بالنسبة — وكشف حسابه بعدها مايقولش حاجة مفهومة. السؤال هنا
+      // أرخص من التصحيح بعدين.
+      return _say('اختر نوع الفاتورة — أبيض أو بولي');
     }
     if (_lines.isEmpty) return _say('ضيف صنف واحد على الأقل');
     if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
@@ -237,20 +251,20 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   trailing: const Icon(Icons.chevron_left),
                   onTap: _pickCustomer,
                 ),
-                if ((_customer?.families.length ?? 0) > 1) ...[
+                if (_customer != null) ...[
                   const Divider(height: 1),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('الحساب',
+                        const Text('نوع الفاتورة (الخط)',
                             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
                         const SizedBox(height: 6),
                         Wrap(
                           spacing: 8,
                           children: [
-                            for (final f in _customer!.families)
+                            for (final f in _familyChoices)
                               ChoiceChip(
                                 label: Text(f),
                                 selected: _family == f,

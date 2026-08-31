@@ -305,6 +305,12 @@ def rep_bundle(
     ).all()
 
     # حسابات العملاء دول — استعلام واحد، مش واحد لكل عميل.
+    # كل الأرصدة في استعلامين، مش واحد لكل حساب: ١٤٨ عميل × حسابين = ٢٩٦ رحلة.
+    from src.services import chart_service
+
+    _ZERO = Decimal("0")
+
+    acct_balance = chart_service.bulk_balances(db)
     accounts_by_customer: dict[int, list[CustomerAccount]] = {}
     if customers:
         for acc in db.scalars(
@@ -320,12 +326,15 @@ def rep_bundle(
     )
     held = db.execute(
         select(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
-               Item.sale_price, func.coalesce(func.sum(signed), 0).label("qty"))
+               Item.sale_price, func.coalesce(func.sum(signed), 0).label("qty"),
+               # الفئة نازلة مع الصنف عشان المندوب يختار الفئة الأول وبعدين الصنف —
+               # ٣٢٦ صنف في قايمة واحدة على شاشة تليفون مش قايمة، دي كومة.
+               Item.category)
         .join(StockMovement, StockMovement.item_id == Item.id)
         .where(StockMovement.location_kind == store_kind,
                StockMovement.location_id == store_id)
         .group_by(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
-                  Item.sale_price)
+                  Item.sale_price, Item.category)
         .order_by(Item.name)
     ).all()
     on_hand = {r[0]: Decimal(str(r[5] or 0)) for r in held}
@@ -373,6 +382,18 @@ def rep_bundle(
                 # القايمة دي التطبيق مش هيعرف يسأل، والفاتورة بتنزل على المديونية الغلط.
                 "families": sorted(
                     {a.family for a in accounts_by_customer.get(c.id, []) if a.family}),
+                # رصيد كل خط، والإجمالي — نفس اللي شاشة الفاتورة على الويب بتوريه.
+                #
+                # المندوب واقف قدام العميل وبيسأله يدفع كام؛ من غير الرقم ده بيبيع وهو
+                # مش عارف عليه كام أصلاً. والأرصدة بتنزل مع الحزمة مش بتتجاب عند
+                # الاختيار عشان تشتغل من غير شبكة — ودي نص شغله.
+                "family_balances": {
+                    a.family: str(acct_balance.get(a.account_id, _ZERO))
+                    for a in accounts_by_customer.get(c.id, []) if a.family
+                },
+                "balance": str(sum(
+                    (acct_balance.get(a.account_id, _ZERO)
+                     for a in accounts_by_customer.get(c.id, [])), _ZERO)),
             }
             for c in customers
         ],
@@ -382,6 +403,7 @@ def rep_bundle(
                 "default_discount_pct": str(r[3]) if r[3] is not None else None,
                 "base_price": str(r[4]) if r[4] is not None else None,
                 "on_hand": str(on_hand[r[0]]),
+                "category": r[6],
                 "tier_prices": tiers.get(r[0], {}),
             }
             for r in live
