@@ -24,6 +24,7 @@ class CustomerType(str, enum.Enum):
     trader = "trader"
     plumber = "plumber"
     owner = "owner"
+    employee = "employee"
     other = "other"
 
 
@@ -41,6 +42,17 @@ class Customer(Base):
     governorate_id: Mapped[int | None] = mapped_column(ForeignKey("governorate.id"), nullable=True)
     markaz: Mapped[str | None] = mapped_column(String(120), nullable=True)
     address: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    # الموظف اللي الكارت ده بتاعه — لما يكون الطرف موظف عندنا بيشتري لنفسه.
+    #
+    # a5 مافيهوش تمييز خالص: الموظف اللي بيشتري بياخد كارت عميل عادي، فمشترياته بتعدّي
+    # في تقارير التجار والعمولات على إنها بيع لتاجر. ١٩ اسم عندنا في الجدولين، ١٧ منهم
+    # عليهم فواتير فعلاً — فمش غلطة نقل، دي حالة شغل حقيقية النظام القديم مابيشوفهاش.
+    #
+    # **ربط مش تسمية.** التصنيف نص بيتعدّل من الشاشة وممكن يضيع؛ المفتاح ده بيقول
+    # الكارت ده بتاع مين بالظبط، فالرصيد اللي عليه ينفع يتقاصّ من مرتبه، والتقرير ينفع
+    # يستثني مشتريات الموظفين من مبيعات التجار من غير ما يعتمد على كلمة مكتوبة.
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employee.id"), nullable=True)
     rep_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     territory_id: Mapped[int] = mapped_column(ForeignKey("territory.id"), nullable=False)
     # Default sale price tier (007); NULL resolves to the consumer tier.

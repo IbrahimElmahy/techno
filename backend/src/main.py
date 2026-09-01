@@ -437,6 +437,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # NULL is «nothing agreed», 0 is «agreed, and it is zero».
     ("customer", "branch_id", "BIGINT"),
     ("customer", "email", "VARCHAR(160)"),
+    # الكارت بتاع موظف — بيربطه بصفّه في «الموظفين» بدل ما يفضل «تاجر» بالاسم.
+    ("customer", "employee_id", "BIGINT"),
     ("customer", "tax_number", "VARCHAR(40)"),
     ("customer", "commercial_register", "VARCHAR(40)"),
     ("customer", "discount_pct", "DECIMAL(5,2)"),
