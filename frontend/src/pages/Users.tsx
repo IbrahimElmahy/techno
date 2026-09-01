@@ -135,6 +135,7 @@ export default function Users() {
   const openEdit = (record: UserRecord) => {
     setEditingUser(record);
     editForm.setFieldsValue({
+      username: record.username,
       full_name: record.full_name,
       role: record.role,
       branch_id: record.branch_id ?? undefined,
@@ -149,6 +150,7 @@ export default function Users() {
     if (!editingUser) return;
     try {
       const payload: any = {
+        username: values.username,
         full_name: values.full_name,
         role: values.role,
         branch_id: values.branch_id || null,
@@ -393,6 +395,20 @@ export default function Users() {
         destroyOnHidden
       >
         <Form form={editForm} layout="vertical" onFinish={onEditFinish} requiredMark={false}>
+          {/* اسم الدخول بيتعدّل. الأسماء اللي اتولدت مع نقل a5 طويلة ومحدش بيفتكرها،
+              واللي بيدخل بيها كل يوم هو اللي يقرر تبقى إيه. */}
+          <Form.Item
+            name="username"
+            label="اسم الدخول"
+            extra="ده اللي بيتكتب في شاشة الدخول — خلّيه قصير وسهل"
+            rules={[
+              { required: true, message: 'يرجى إدخال اسم الدخول!' },
+              { min: 2, message: 'حرفين على الأقل' },
+            ]}
+          >
+            <Input placeholder="مثال: ahmed" autoComplete="off" />
+          </Form.Item>
+
           <Form.Item
             name="full_name"
             label="الاسم الكامل للموظف"

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,6 +34,10 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     """(v4) Edit a user. Password is optional — send it only to reset it."""
 
+    # اسم الدخول نفسه بيتعدّل. كان مقفول بعد الإنشاء، والأسماء اللي اتولدت مع نقل a5
+    # طويلة ومحدش بيفتكرها — واللي بيدخل بيها كل يوم هو اللي يقرر تبقى إيه. الفريد
+    # بيتفحص هنا، ومحدش بيقدر ياخد اسم حد تاني.
+    username: str | None = Field(default=None, min_length=2, max_length=50)
     full_name: str | None = None
     role: RoleName | None = None
     branch_id: int | None = None
@@ -151,6 +155,18 @@ def update_user(
         raise HTTPException(
             422, {"code": "validation", "message": "sales_rep needs branch_id + territory_id"})
 
+    if body.username is not None:
+        uname = body.username.strip()
+        if not uname:
+            raise HTTPException(422, {"code": "validation",
+                                      "message": "اسم المستخدم ماينفعش يبقى فاضي."})
+        clash = db.scalar(select(User).where(User.username == uname, User.id != user.id))
+        if clash is not None:
+            # الرسالة بتقول الاسم اللي اتاخد — «الاسم مستخدم» لوحدها بتخلّي اللي
+            # بيغيّر أسماء كتير ورا بعض يدوّر على أنهي واحد فيهم.
+            raise HTTPException(409, {"code": "conflict",
+                                      "message": f"«{uname}» متاخد لمستخدم تاني."})
+        user.username = uname
     if body.role is not None:
         role = db.scalar(select(Role).where(Role.name == body.role))
         if role is None:

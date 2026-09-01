@@ -37,7 +37,17 @@ node_modules/
 *.log
 
 # Electron / build artifacts (large binaries — never commit)
-frontend/dist/
+# ⚠️ `frontend/dist` بيتكوميت عن قصد — ده قناة النشر مش مخلّفات بناء.
+#
+# السيرفر مافيهوش node، فمش قادر يبني الواجهة بنفسه. والوصلة ليه بتنقل ٣ كيلوبايت
+# في الثانية وبتقع فوق ٢٥٦ كيلو، فنسخ ١٣٨ ملف بـscp بياخد ساعة وبيفشل في نصّه.
+# `git pull` بينقل الفرق مضغوط ومابيقعش — فالبناء بيتكوميت والسيرفر بيسحبه.
+#
+# اللي بيتنشر هو `dist/assets` و`dist/index.html` بس. باقي مخرجات البناء
+# (إلكترون والمثبّت) مالهاش دعوة بالسيرفر وبتفضل مستثناة.
+frontend/dist/*
+!frontend/dist/assets/
+!frontend/dist/index.html
 frontend/dist-electron/
 frontend/dist-package/
 
