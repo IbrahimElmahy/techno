@@ -25,6 +25,7 @@ import sys
 
 from sqlalchemy import select
 
+from src.core.money import ZERO
 from src.core.db import SessionLocal
 from src.models.account_routing import AccountRouting
 from src.models.ledger import Account, Direction
@@ -34,22 +35,26 @@ from src.services import account_resolver, ledger_service
 from src.services.ledger_service import LineInput
 
 OLD_ID = 9      # «الخزينة» — بتاعتنا القديمة
-NEW_ID = 1418   # «خزينة المركز الرئيسى» — a5
+NEW_ID = 1404   # «خزينة المركز الرئيسى» — a5 AL-A5S-1
 
 
 def run(*, execute: bool) -> None:
     db = SessionLocal()
     try:
-        old = db.get(Account, OLD_ID)
-        new = db.get(Account, NEW_ID)
-        assert old is not None and new is not None, "الحسابين مش موجودين"
+        new = db.scalar(select(Account).where(Account.code == "AL-A5S-1")) or db.get(Account, NEW_ID)
+        assert new is not None, "حساب خزينة المركز الرئيسي مش موجود"
         assert "الرئيسى" in (new.name or "") or "الرئيسي" in (new.name or ""), \
-            f"#{NEW_ID} مش المركز الرئيسى: {new.name}"
+            f"#{new.id} مش المركز الرئيسى: {new.name}"
 
-        bal_old = ledger_service.balance_of(db, OLD_ID)
-        bal_new = ledger_service.balance_of(db, NEW_ID)
-        print(f"«{old.name}» #{OLD_ID}: {bal_old} ج")
-        print(f"«{new.name}» #{NEW_ID}: {bal_new} ج")
+        old = db.get(Account, OLD_ID) if db.get(Account, OLD_ID) and db.get(Account, OLD_ID).name == "الخزينة" else db.scalar(select(Account).where(Account.name == "الخزينة"))
+
+        bal_old = ledger_service.balance_of(db, old.id) if old else ZERO
+        bal_new = ledger_service.balance_of(db, new.id)
+        if old:
+            print(f"«{old.name}» #{old.id}: {bal_old} ج")
+        else:
+            print("مافيش حساب «الخزينة» قديم منفصل — القاعدة مبنية من a5 مباشرة.")
+        print(f"«{new.name}» #{new.id}: {bal_new} ج")
 
         branches = db.scalars(select(Branch).where(Branch.active.is_(True))).all()
         existing = {
@@ -59,24 +64,24 @@ def run(*, execute: bool) -> None:
         t = db.scalar(select(Treasury).where(Treasury.is_default.is_(True)))
 
         print("\nهيتعمل:")
-        if bal_old != 0:
-            print(f"  · قيد تحويل {bal_old} ج من #{OLD_ID} إلى #{NEW_ID}")
+        if bal_old != 0 and old is not None:
+            print(f"  · قيد تحويل {bal_old} ج من #{old.id} إلى #{new.id}")
         else:
             print("  · مافيش رصيد يتنقل")
-        print(f"  · قفل #{OLD_ID} وشيل صفة النظام منه")
+        if old:
+            print(f"  · قفل #{old.id} وشيل صفة النظام منه")
         if t is not None:
-            print(f"  · صف الخزنة الافتراضي «{t.name}» → حساب #{NEW_ID} وبالاسم الجديد")
+            print(f"  · صف الخزنة الافتراضي «{t.name}» → حساب #{new.id} وبالاسم الجديد")
         rows_needed = [b for b in branches if b.id not in existing]
-        print(f"  · توجيه «الخزينة» → #{NEW_ID} على الفروع: "
+        print(f"  · توجيه «الخزينة» → #{new.id} على الفروع: "
               + "، ".join(b.name for b in rows_needed))
 
         if not execute:
             print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
             return
 
-        if bal_old != 0:
-            # الرصيد ممكن يكون سالب نظرياً — الاتجاهات بتتعكس ساعتها.
-            debit, credit = (NEW_ID, OLD_ID) if bal_old > 0 else (OLD_ID, NEW_ID)
+        if bal_old != 0 and old is not None:
+            debit, credit = (new.id, old.id) if bal_old > 0 else (old.id, new.id)
             amount = abs(bal_old)
             stmt = "توحيد الخزنة العامة — نقل رصيد «الخزينة» لخزينة المركز الرئيسى"
             entry = ledger_service.post_entry(
@@ -89,27 +94,28 @@ def run(*, execute: bool) -> None:
             )
             print(f"✔ قيد التحويل #{entry.id}")
 
-        old.active = False
-        old.is_system = False
-        # ⚠️ سيب new.is_system زي ما هي — دي اللي بتخليها تكسب لو التوجيه اتشال.
+        if old is not None:
+            old.active = False
+            old.is_system = False
         new.is_system = True
 
         if t is not None:
-            t.account_id = NEW_ID
+            t.account_id = new.id
             t.name = new.name or t.name
 
         for b in rows_needed:
-            db.add(AccountRouting(role="treasury", account_id=NEW_ID, branch_id=b.id))
+            db.add(AccountRouting(role="treasury", account_id=new.id, branch_id=b.id))
 
         db.commit()
 
         # التحقق بعد الكتابة — بنفس الدوال اللي الترحيل بيستعملها، مش بقراءتنا إحنا.
         for b in branches:
             acc = account_resolver.treasury_account(db, branch_id=b.id)
-            mark = "✔" if acc.id == NEW_ID else "✘"
+            mark = "✔" if acc.id == new.id else "✘"
             print(f"{mark} خزنة فرع «{b.name}» = #{acc.id} {acc.name}")
-        print(f"رصيد #{OLD_ID} بعد النقل: {ledger_service.balance_of(db, OLD_ID)}")
-        print(f"رصيد #{NEW_ID} بعد النقل: {ledger_service.balance_of(db, NEW_ID)}")
+        if old:
+            print(f"رصيد #{old.id} بعد النقل: {ledger_service.balance_of(db, old.id)}")
+        print(f"رصيد #{new.id} بعد النقل: {ledger_service.balance_of(db, new.id)}")
     finally:
         db.close()
 
