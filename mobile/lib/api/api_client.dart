@@ -357,6 +357,11 @@ class ApiClient {
                 'credit_amount': '${inv['credit_amount']}',
                 'invoice_date': inv['invoice_date'],
                 'notes': inv['notes'],
+                // الكوبونات المصروفة — صف لكل فئة بمداه، زي ما الويب بيبعتها. متخزّنة
+                // JSON على صف الفاتورة، فبتتفك هنا وبتتبعت زي ما هي.
+                'coupons': inv['coupons'] == null
+                    ? const []
+                    : jsonDecode(inv['coupons'] as String),
                 'client_uuid': inv['client_uuid'],
                 'lines': [
                   for (final l in lines)

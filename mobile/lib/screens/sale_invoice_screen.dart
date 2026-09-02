@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../models/models.dart';
 import '../theme.dart';
 import 'invoice_print_screen.dart';
 import 'sale_add_item_flow.dart';
+import 'sale_coupons_section.dart';
 
 /// فاتورة بيع من العربية.
 ///
@@ -53,6 +55,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   DateTime get _date => DateTime.now();
   final _notes = TextEditingController();
   final _cash = TextEditingController(text: '0');
+
+  /// الكوبونات المصروفة مع الفاتورة — صف لكل فئة دفتر، زي النظام على الويب.
+  final List<SaleCouponRow> _coupons = [];
   final List<SaleDraftLine> _lines = [];
   bool _saving = false;
 
@@ -326,6 +331,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     return null;
   }
 
+  /// الصفوف المكتوبة بس، JSON — الفاضي بيتساب ومابيتخزّنش.
+  String? _couponsJson() {
+    final rows = [for (final c in _coupons) if (!c.isEmpty) c.toJson()];
+    return rows.isEmpty ? null : jsonEncode(rows);
+  }
+
   Future<void> _save() async {
     if (_customer == null) return _say('اختر العميل');
     if (_family == null) {
@@ -345,6 +356,19 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           : 'مافيش صندوق لخط «$_family» على «$_me» — كلّم المكتب.');
     }
     if (_lines.isEmpty) return _say('ضيف صنف واحد على الأقل');
+    // صف كوبونات نص مكتوب مابيترحّلش ساكت. المدى هو اللي المرتجع بيراجع عليه الرقم
+    // الراجع — مدى غلط معناه كوبون حقيقي بيترفض على العميل بعد شهر من غير سبب مفهوم.
+    for (final c in _coupons) {
+      if (c.isEmpty) continue;
+      final from = c.serialFrom.trim();
+      final to = c.serialTo.trim();
+      if (from.isEmpty || to.isEmpty) {
+        return _say('في صف كوبونات ناقصه رقم — اكتب «من» و«إلى» أو امسح الصف');
+      }
+      if (couponCount(from, to) == null) {
+        return _say('مدى الكوبونات «$from — $to» مش مفهوم — راجع الرقمين');
+      }
+    }
     if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
     final over = await _overCustody();
     if (over != null) return _say(over);
@@ -385,6 +409,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         creditAmount: _credit,
         total: _total,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+        couponsJson: _couponsJson(),
         lines: _lines,
       );
       if (!mounted) return;
@@ -971,6 +996,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               controller: _notes,
               decoration: const InputDecoration(labelText: 'ملاحظات (اختياري)'),
             ),
+            // الكوبونات جوّه نفس الفاتورة — مش شاشة تانية. اللي بيسلّم دفتر بيسلّمه
+            // مع البضاعة في نفس اللحظة، والمدى ده هو اللي المرتجع بيراجع عليه بعدين.
+            SaleCouponsSection(
+                rows: _coupons, onChanged: () => setState(() {})),
           ],
         ),
       ),

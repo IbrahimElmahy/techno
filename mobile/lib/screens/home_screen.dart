@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../db/local_db.dart';
+import '../services/auto_sync.dart';
 import '../theme.dart';
 import 'login_screen.dart';
 import 'coupon_receipt_screen.dart';
@@ -34,6 +35,24 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _refresh();
+    AutoSync.instance.addListener(_onSync);
+    // **المزامنة بتحصل لوحدها أول ما الشاشة تفتح** — لو فيه نت وآخر واحدة بقى لها
+    // شوية. المندوب ماكانش لازم يفتكر: اللي بينسى بيفتح الفاتورة ويلاقيها ناقصة.
+    // مافيش `await`: الشاشة بتترسم على طول والعلامة فوق بتقول إنها شغالة.
+    AutoSync.instance.maybeRun();
+  }
+
+  void _onSync() {
+    if (!mounted) return;
+    setState(() {});
+    // خلص؟ يبقى الأرقام اللي على الشاشة (المستنّي في الطابور) اتغيّرت.
+    if (AutoSync.instance.state == AutoSyncState.done) _refresh();
+  }
+
+  @override
+  void dispose() {
+    AutoSync.instance.removeListener(_onSync);
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -75,7 +94,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       drawer: _buildDrawer(),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        // السحب لتحت بيزامن كمان، مش بيعيد رسم الأرقام بس — ده اللي أي حد بيتوقعه
+        // من الحركة دي، وبيدّي المندوب طريقة يجبر بيها التحديث من غير ما يدخل شاشة.
+        onRefresh: () async {
+          await AutoSync.instance.maybeRun(force: true);
+          await _refresh();
+        },
         child: CustomScrollView(
           slivers: [
             SliverAppBar(
@@ -135,6 +159,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
               ),
             ),
+            // شريط المزامنة — بيلف طول ما شغّالة، وبيقول النتيجة بعدها.
+            //
+            // المزامنة الصامتة أوحش من مافيش مزامنة: الواحد مايعرفش لو اللي شايفه
+            // جديد ولا بايت من امبارح. الشريط ده هو الفرق.
+            SliverToBoxAdapter(child: _SyncBanner(onRetry: () {
+              AutoSync.instance.run();
+            })),
             SliverPadding(
               padding: const EdgeInsets.all(16),
               sliver: SliverList(
@@ -412,6 +443,99 @@ class _BigAction extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// شريط حالة المزامنة اللي بتحصل لوحدها.
+///
+/// بيلف طول ما شغّالة، وبيقول اتحدّث إيه لما تخلص، وبيدّي «حاول تاني» لو فشلت. بيختفي
+/// لوحده بعد النجاح — الرسالة اتقرت، ومافيش داعي تفضل واخدة مكان.
+class _SyncBanner extends StatefulWidget {
+  const _SyncBanner({required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  State<_SyncBanner> createState() => _SyncBannerState();
+}
+
+class _SyncBannerState extends State<_SyncBanner> {
+  @override
+  void initState() {
+    super.initState();
+    AutoSync.instance.addListener(_tick);
+  }
+
+  @override
+  void dispose() {
+    AutoSync.instance.removeListener(_tick);
+    super.dispose();
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    setState(() {});
+    if (AutoSync.instance.state == AutoSyncState.done) {
+      // الرسالة الناجحة بتقعد أربع ثواني وتمشي. الفشل بيفضل — ده اللي محتاج قرار.
+      Future.delayed(const Duration(seconds: 4), () {
+        if (mounted && AutoSync.instance.state == AutoSyncState.done) {
+          AutoSync.instance.clear();
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sync = AutoSync.instance;
+    if (sync.state == AutoSyncState.idle) return const SizedBox.shrink();
+
+    final running = sync.state == AutoSyncState.running;
+    final failed = sync.state == AutoSyncState.failed;
+    final bg = running
+        ? const Color(0xFFE8F1FB)
+        : failed
+            ? const Color(0xFFFDECEA)
+            : const Color(0xFFE9F7EF);
+    final fg = running
+        ? AppColors.primary
+        : failed
+            ? AppColors.danger
+            : AppColors.success;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: fg.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          if (running)
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2.2, color: fg),
+            )
+          else
+            Icon(failed ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,
+                size: 20, color: fg),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(sync.message ?? '',
+                style: TextStyle(
+                    fontSize: 13.5, fontWeight: FontWeight.w600, color: fg)),
+          ),
+          if (failed)
+            TextButton(
+                onPressed: widget.onRetry,
+                style: TextButton.styleFrom(
+                    foregroundColor: fg, padding: EdgeInsets.zero),
+                child: const Text('حاول تاني')),
+        ],
       ),
     );
   }

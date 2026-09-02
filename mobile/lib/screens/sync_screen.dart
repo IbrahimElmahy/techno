@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../db/local_db.dart';
+import '../services/auto_sync.dart';
 import '../theme.dart';
 
 /// «مزامنة البيانات» — push pending inspections up, pull catalog + lookups down.
@@ -52,67 +53,28 @@ class _SyncScreenState extends State<SyncScreen> {
     }
   }
 
+  /// **نفس الكود بتاع المزامنة اللي بتحصل لوحدها**، مش نسخة تانية منه.
+  ///
+  /// كان فيه تنفيذين لنفس العملية — واحد هنا وواحد في الأوتوماتيك. نسختين من قاعدة
+  /// واحدة هما إزاي واحدة منهم تفضل قديمة من غير ما حد ياخد باله: أي مستند جديد
+  /// يتضاف للطابور ويتنسى في واحدة، فالمندوب اللي بيزامن من الشاشة يرفعه واللي
+  /// بيعتمد على الأوتوماتيك لأ.
   Future<void> _syncNow() async {
     setState(() {
       _busy = true;
       _status = 'جاري المزامنة...';
       _error = false;
     });
-    try {
-      final pushed = await ApiClient.instance.pushInspections();
-      final coupons = await ApiClient.instance.pushCouponReceipts();
-      // الفواتير قبل السحب: الرفع بيخصم من العهدة على السيرفر، والسحب اللي بعده بيجيب
-      // الرصيد بعد الخصم. العكس كان هيرجّع أرقام قديمة على طول.
-      final invoices = await ApiClient.instance.pushSaleInvoices();
-      final collected = await ApiClient.instance.pushReceipts();
-      // أذون التحويل — بتترفع معلّقة وبتستنى الاعتماد، فمابتأثرش على الأرصدة اللي
-      // السحب اللي بعدها هيجيبها.
-      final permits = await ApiClient.instance.pushTransfers();
-      await ApiClient.instance.pullReferenceData();
-      // حزمة البيع بتتسحب مع الباقي — عملاء المندوب وأصناف عربيته بأسعارهم.
-      //
-      // اللي بيتبلع هو **بس** إن اللي داخل مش مندوب (٤٠٣) أو مالوش مخزن ولا عهدة
-      // (٤٠٤): دول مش أعطال، ومزامنة الإدارة مالهاش دعوة بحزمة البيع.
-      //
-      // أي فشل تاني بيتقال. كان بيتبلع كله والشاشة تكتب «واتحدثت الأصناف ✔» — فالمندوب
-      // بيقفل المزامنة مطمّن، يفتح الفاتورة، ويلاقي «مفيش أصناف» من غير ما حد قال له
-      // ليه. علامة صح على حاجة ماحصلتش أوحش من رسالة غلط.
-      String? bundleNote;
-      try {
-        await ApiClient.instance.pullSalesBundle();
-      } on ApiException catch (e) {
-        if (e.statusCode == 403) {
-          bundleNote = null; // مش مندوب — مافيش أصناف عربية أصلاً
-        } else if (e.statusCode == 404) {
-          bundleNote = 'مالكش مخزن ولا عهدة مسجّلة — كلّم المخزن';
-        } else {
-          throw Exception('الأصناف ماتحدثتش: ${e.message}');
-        }
-      } catch (e) {
-        throw Exception('الأصناف ماتحدثتش: $e');
-      }
-      setState(() {
-        final parts = <String>[
-          if (pushed > 0) 'اترفعت $pushed معاينة',
-          if (coupons > 0) 'اترفع $coupons استلام كوبونات',
-          if (invoices > 0) 'اترفعت $invoices فاتورة',
-          if (collected > 0) 'اترفع $collected تحصيل',
-          if (permits > 0) 'اترفع $permits إذن تحويل',
-        ];
-        final done = parts.isEmpty
-            ? 'مفيش حاجة جديدة — واتحدثت الأصناف والقوائم ✔'
-            : '${parts.join(' و')} واتحدثت الأصناف ✔';
-        _status = bundleNote == null ? done : '$done\n⚠ $bundleNote';
-      });
-    } catch (e) {
-      setState(() {
-        _status = 'فشلت المزامنة: $e';
-        _error = true;
-      });
-    } finally {
-      setState(() => _busy = false);
-      _refresh();
-    }
+    await AutoSync.instance.run();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _error = AutoSync.instance.state == AutoSyncState.failed;
+      _status = _error
+          ? 'فشلت المزامنة: ${AutoSync.instance.message}'
+          : AutoSync.instance.message;
+    });
+    _refresh();
   }
 
   Future<void> _saveServer() async {

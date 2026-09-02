@@ -13,7 +13,7 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 20, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 21, onUpgrade: (d, from, to) async {
       if (from < 18) {
         // v18: صناديق المندوب — واحد لكل خط. الصندوق بيتحدد من نوع الفاتورة لوحده،
         // والجهاز لازم يكون شايله عشان يعرضه وهو في الشارع من غير شبكة.
@@ -87,6 +87,12 @@ class LocalDb {
         ]) {
           try { await d.execute('ALTER TABLE coupon_receipt ADD COLUMN $col'); } catch (_) {}
         }
+      }
+      if (from < 21) {
+        // v21: الكوبونات المصروفة مع الفاتورة — صف لكل فئة (عادي/فضي/ذهبي) بمداه.
+        // JSON في عمود واحد مش جدول: دي صفوف طابور بتترفع مع الفاتورة وبتتمسح معاها،
+        // مالهاش استعلام لوحدها ولا بتتربط بحاجة تانية.
+        try { await d.execute('ALTER TABLE sale_invoice ADD COLUMN coupons TEXT'); } catch (_) {}
       }
       if (from < 20) {
         // v20: التحصيل بقى بالخط — «المدفوع ده أبيض ولا بولي» — لأن الفلوس بتنزل في
@@ -630,6 +636,8 @@ class LocalDb {
     String? notes,
     /// خط المنتجات اللي الفاتورة دي عليه — «أبيض» أو «بولي». `null` = على المديونية كلها.
     String? family,
+    /// الكوبونات المصروفة مع الفاتورة، JSON — صف لكل فئة بمداه. `null` = مافيش.
+    String? couponsJson,
     required List<SaleDraftLine> lines,
   }) async {
     final d = await db;
@@ -644,6 +652,7 @@ class LocalDb {
         'total': total,
         'notes': notes,
         'family': family,
+        'coupons': couponsJson,
         'synced': 0,
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -939,6 +948,7 @@ CREATE TABLE sale_invoice(
   total REAL NOT NULL DEFAULT 0,
   notes TEXT,
   family TEXT,
+  coupons TEXT,
   synced INTEGER NOT NULL DEFAULT 0,
   document_number TEXT,
   created_at TEXT NOT NULL
