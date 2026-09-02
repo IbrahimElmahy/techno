@@ -30,6 +30,10 @@ class SaleAddItemFlow {
     // البيع بيتحد بالمتاح في العربية؛ طلب التحويل **من المخزن** لأ — المندوب بيطلب
     // حاجة مش معاه أصلاً، والمتاح عنده معلومة مش حد. المسؤول هو اللي بيراجع الكميات.
     bool capToAvailable = true,
+    // **وهل يشوف المتاح أصلاً.** الحد والعرض حاجتين: على طلب التحويل المندوب بيطلب
+    // احتياجه، والرصيد الحالي مش بس مش حد — عرضه بيخلّيه يكتب الرصيد مكان احتياجه،
+    // فالمكتب يستلم رقم مش اللي هو عايزه.
+    bool showAvailable = true,
     // السعر على إذن تحويل زحمة — مافيش فلوس في المستند ده.
     bool showPrice = true,
   }) async {
@@ -87,7 +91,8 @@ class SaleAddItemFlow {
       if (!context.mounted) return;
       final picked = await _pickItem(
         context, items, free, onInvoice, category, priceTier,
-        capToAvailable: capToAvailable, showPrice: showPrice);
+        capToAvailable: capToAvailable, showAvailable: showAvailable,
+        showPrice: showPrice);
       if (picked == null) {
         // رجوع من الأصناف بيرجّع للفئات — لو فيه فئات يترجع لها أصلاً.
         if (!hasCategoryLevel) return;
@@ -98,7 +103,8 @@ class SaleAddItemFlow {
       if (!context.mounted) return;
       final avail = (free[picked.itemId] ?? 0) - (onInvoice[picked.itemId] ?? 0);
       final answer = await _askQuantity(context, picked, avail, priceTier,
-          capToAvailable: capToAvailable, showPrice: showPrice);
+          capToAvailable: capToAvailable, showAvailable: showAvailable,
+          showPrice: showPrice);
       if (!context.mounted) return;
       if (answer == null) continue; // رجع يختار صنف تاني من نفس الفئة
 
@@ -170,6 +176,7 @@ Future<SaleItem?> _pickItem(
   String category,
   String? priceTier, {
   required bool capToAvailable,
+  required bool showAvailable,
   required bool showPrice,
 }) =>
     showDialog<SaleItem>(
@@ -183,6 +190,7 @@ Future<SaleItem?> _pickItem(
           category: category,
           priceTier: priceTier,
           capToAvailable: capToAvailable,
+          showAvailable: showAvailable,
           showPrice: showPrice,
         ),
       ),
@@ -190,7 +198,9 @@ Future<SaleItem?> _pickItem(
 
 Future<_QtyAnswer?> _askQuantity(
         BuildContext context, SaleItem item, double available, String? priceTier,
-        {required bool capToAvailable, required bool showPrice}) =>
+        {required bool capToAvailable,
+        required bool showAvailable,
+        required bool showPrice}) =>
     showDialog<_QtyAnswer>(
       context: context,
       builder: (_) => Directionality(
@@ -200,6 +210,7 @@ Future<_QtyAnswer?> _askQuantity(
             available: available,
             priceTier: priceTier,
             capToAvailable: capToAvailable,
+            showAvailable: showAvailable,
             showPrice: showPrice),
       ),
     );
@@ -268,6 +279,7 @@ class _SaleItemDialog extends StatefulWidget {
     required this.category,
     required this.priceTier,
     required this.capToAvailable,
+    required this.showAvailable,
     required this.showPrice,
   });
 
@@ -277,6 +289,7 @@ class _SaleItemDialog extends StatefulWidget {
   final String category;
   final String? priceTier;
   final bool capToAvailable;
+  final bool showAvailable;
   final bool showPrice;
 
   @override
@@ -363,7 +376,12 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                         // من غير حد بالمتاح، «خلص» مابتقفلش الصنف — بتتقال وخلاص.
                         final out = widget.capToAvailable && avail <= 0;
                         final parts = <String>[
-                          avail <= 0 ? 'خلص من العربية' : 'عندك ${_fmt(avail)}',
+                          if (widget.showAvailable)
+                            avail <= 0
+                                ? 'خلص من العربية'
+                                : 'عندك ${_fmt(avail)}',
+                          if (it.unit != null && !widget.showAvailable)
+                            '${it.unit}',
                           if (widget.showPrice)
                             '${_money(it.priceFor(widget.priceTier))} ج.م',
                         ];
@@ -396,6 +414,7 @@ class _SaleQuantityDialog extends StatefulWidget {
     required this.available,
     required this.priceTier,
     required this.capToAvailable,
+    required this.showAvailable,
     required this.showPrice,
   });
 
@@ -403,6 +422,7 @@ class _SaleQuantityDialog extends StatefulWidget {
   final double available;
   final String? priceTier;
   final bool capToAvailable;
+  final bool showAvailable;
   final bool showPrice;
 
   @override
@@ -447,12 +467,19 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-              widget.showPrice
-                  ? 'السعر: ${_money(price)} ج.م · المتاح: ${_fmt(widget.available)}'
-                  : 'عندك في العربية: ${_fmt(widget.available)}',
-              style: const TextStyle(
-                  color: AppColors.primary, fontWeight: FontWeight.w700)),
+          // على طلب التحويل مافيش سعر ومافيش متاح — السطر ده بيبقى الوحدة بس، ولو
+          // مافيش وحدة بيختفي خالص. سطر فاضي على راس بوباب بياخد مساحة ومايقولش حاجة.
+          if (widget.showPrice || widget.showAvailable ||
+              widget.item.unit != null)
+            Text(
+                widget.showPrice
+                    ? 'السعر: ${_money(price)} ج.م'
+                        '${widget.showAvailable ? ' · المتاح: ${_fmt(widget.available)}' : ''}'
+                    : widget.showAvailable
+                        ? 'عندك في العربية: ${_fmt(widget.available)}'
+                        : 'الوحدة: ${widget.item.unit}',
+                style: const TextStyle(
+                    color: AppColors.primary, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           TextField(
             controller: _qty,

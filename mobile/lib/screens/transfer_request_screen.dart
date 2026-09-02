@@ -79,12 +79,27 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
     return out;
   }
 
+  /// قايمة الوجهة — نفس الأماكن ناقص مكان المندوب نفسه.
+  List<DropdownMenuItem<String>> get _destPlaces {
+    final mine = _myKind == 'warehouse' ? 'warehouse:$_myId' : '__me__';
+    return [for (final d in _places) if (d.value != mine) d];
+  }
+
+  /// اسم مكان المندوب زي ما هو مكتوب على المخزن في المكتب.
+  ///
+  /// المخزن بينزل مع حزمة البيع، فالاسم موجود على الجهاز من غير شبكة. ولو الحزمة
+  /// ماتسحبتش لسه، بيتقال إنها ماتسحبتش — مش بيتساب فاضي والمندوب يفتكر إنه اختيار.
+  String _myPlaceName() {
+    if (_myId == null) return 'اسحب البيانات الأول — مخزنك مش معروف';
+    if (_myKind == 'custody') return 'عربيتي (عهدتي)';
+    for (final w in _warehouses) {
+      if (w['id'] == _myId) return '${w['name']}';
+    }
+    return 'مخزني (#$_myId)';
+  }
+
   String _resolve(String v) =>
       v == '__me__' ? '$_myKind:$_myId' : v;
-
-  /// المصدر عربية المندوب نفسه؟ — ده اللي بيقرّر هل المتاح حد ولا معلومة.
-  bool get _fromMyStore =>
-      _source != null && _myId != null && _resolve(_source!) == '$_myKind:$_myId';
 
   Future<void> _addItem() async {
     // بوبابات متتالية زي أصناف المعاينة: فئة ← صنف ← كمية، و«التالي» بيكمّل من
@@ -100,7 +115,17 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
         for (final l in _lines) l.item.itemId: l.quantity ?? 0
       },
       priceTier: null,
-      capToAvailable: _fromMyStore,
+      // **الطلب مايتحدش بالمتاح، ولا بيعرضه أصلاً.**
+      //
+      // المندوب بيطلب اللي محتاجه — ده معنى الطلب. ولو الكمية ناقصة عندنا، المكتب
+      // بيعدّل الطلب أو يرفضه، وده قراره هو: هو اللي شايف المخزن كله والطلبات
+      // التانية والوارد الجاي.
+      //
+      // وعرض المتاح كان بيشوّه الطلب من غير ما يمنعه: المندوب اللي محتاج ١٠٠ ويشوف
+      // «عندك ٦٠» بيكتب ٦٠ — فالمكتب مايعرفش إن فيه نقص ٤٠، والرقم اللي وصله مش
+      // احتياجه، ده الرصيد. المعلومة الغلط في المكان الغلط بتخبّي الطلب الحقيقي.
+      capToAvailable: false,
+      showAvailable: false,
       showPrice: false,
       onAdd: (picked, qty) {
         setState(() {
@@ -117,8 +142,15 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
 
   Future<void> _save() async {
     final src = _source, dst = _dest;
-    if (src == null || dst == null) {
-      _say('اختر المصدر والوجهة');
+    // «من» مقفول على مخزن المندوب، فاللي ممكن يكون ناقص حاجة من اتنين: إنه ماسحبش
+    // البيانات (فمخزنه مش معروف على الجهاز)، أو إنه ماختارش الوجهة. الرسالتين
+    // مختلفتين لأن الحل مختلف — واحدة بتتصلّح بمزامنة والتانية بضغطة.
+    if (src == null) {
+      _say('مخزنك مش معروف على الجهاز — اعمل مزامنة الأول');
+      return;
+    }
+    if (dst == null) {
+      _say('اختر المخزن اللي هتحوّل له');
       return;
     }
     if (_resolve(src) == _resolve(dst)) {
@@ -173,14 +205,32 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          DropdownButtonFormField<String>(
-            initialValue: _source,
+          // **«من» مقفول على مخزن المندوب نفسه** — مش قايمة يختار منها.
+          //
+          // الإذن اللي بيتكتب من التطبيق هو دايماً بضاعة **طالعة من عربيته**: بيرجّع
+          // للمخزن، أو بيحوّل لمندوب تاني. مافيش حالة يبعت فيها من مخزن مش في إيده —
+          // ولو اختار واحد كده، السيرفر بيرفض الإذن أصلاً (`is_own_store`)، والمندوب
+          // بيكتشف ده بعد ما يكتب الطلب كله ويبعته.
+          //
+          // والقايمة كانت بتخلّي الغلط دا سهل: ٦٥ مخزن في منسدلة، والصح واحد فيهم،
+          // وبيفتح عليه أصلاً. سؤال إجابته واحدة مش سؤال — الخانة بتقول المكان
+          // وخلاص، والاختيار الحقيقي (الوجهة) بيفضل هو اللي محتاج تفكير.
+          InputDecorator(
             decoration: const InputDecoration(
               labelText: 'من',
               border: OutlineInputBorder(),
             ),
-            items: _places,
-            onChanged: (v) => setState(() => _source = v),
+            child: Row(
+              children: [
+                const Icon(Icons.lock_outline, size: 15, color: Colors.black38),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(_myPlaceName(),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
@@ -189,7 +239,9 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
               labelText: 'إلى',
               border: OutlineInputBorder(),
             ),
-            items: _places,
+            // مكان المندوب نفسه مش في قايمة الوجهة: تحويل من مخزنه لمخزنه مالوش
+            // معنى، والسيرفر بيرفضه — فمافيش داعي يبقى قدامه أصلاً.
+            items: _destPlaces,
             onChanged: (v) => setState(() => _dest = v),
           ),
           const SizedBox(height: 16),
