@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -131,6 +132,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final cash = (inv['cash_amount'] as num?)?.toDouble() ?? 0;
     final credit = (inv['credit_amount'] as num?)?.toDouble() ?? 0;
     final family = inv['family'] as String?;
+    // الكوبونات المصروفة مع الفاتورة. من غيرها الفاتورة اللي كوبونات بس بتطلع ورقة
+    // فاضية بإجمالي صفر — والعميل ماخد دفتر في إيده والورقة مش قايلة حاجة عنه.
+    final coupons = _coupons(inv['coupons'] as String?);
     final now = DateTime.now().toIso8601String();
     final printedAt = '${now.substring(0, 10)} ${now.substring(11, 16)}';
 
@@ -162,7 +166,12 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                               fontSize: 20,
                               fontWeight: pw.FontWeight.bold,
                               color: PdfColors.white)),
-                      pw.Text('فاتورة بيع',
+                      pw.Text(
+                          // الورقة بتقول عن نفسها إيه هي. «فاتورة بيع» على ورقة
+                          // مالهاش أصناف بتخلي اللي بيمسكها يدوّر على بضاعة مافيش.
+                          _lines.isEmpty && coupons.isNotEmpty
+                              ? 'إذن تسليم كوبونات'
+                              : 'فاتورة بيع',
                           style: const pw.TextStyle(
                               fontSize: 11, color: PdfColors.white)),
                     ],
@@ -222,7 +231,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ]),
             ),
             pw.SizedBox(height: 10),
-            pw.Table(
+            if (_lines.isNotEmpty) pw.Table(
               border: const pw.TableBorder(
                 horizontalInside: pw.BorderSide(width: 0.4, color: PdfColors.grey400),
                 bottom: pw.BorderSide(width: 0.6, color: PdfColors.grey500),
@@ -276,6 +285,62 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   ),
               ],
             ),
+            // الكوبونات المسلّمة — جدول زي الأصناف، لأن دي هي البضاعة في الورقة دي.
+            //
+            // المدى هو المهم مش العدد: يوم ما العميل يرجّع ورقة، اللي بيستلم بيراجع
+            // رقمها على المدى ده عشان يعرف إنها اتصرفت في تسليمة حصلت فعلاً.
+            if (coupons.isNotEmpty) ...[
+              if (_lines.isNotEmpty) pw.SizedBox(height: 12),
+              pw.Text('الكوبونات المسلّمة',
+                  style: const pw.TextStyle(
+                      fontSize: 12, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: 4),
+              pw.Table(
+                border: const pw.TableBorder(
+                  horizontalInside:
+                      pw.BorderSide(width: 0.4, color: PdfColors.grey400),
+                  bottom: pw.BorderSide(width: 0.6, color: PdfColors.grey500),
+                ),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(0.6),
+                  1: const pw.FlexColumnWidth(2.5),
+                  2: const pw.FlexColumnWidth(2),
+                  3: const pw.FlexColumnWidth(2),
+                  4: const pw.FlexColumnWidth(1.2),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: _brand),
+                    children: [
+                      _cell('#', bold: true, white: true, center: true),
+                      _cell('الفئة', bold: true, white: true),
+                      _cell('من رقم', bold: true, white: true, center: true),
+                      _cell('إلى رقم', bold: true, white: true, center: true),
+                      _cell('العدد', bold: true, white: true, center: true),
+                    ],
+                  ),
+                  for (var i = 0; i < coupons.length; i++)
+                    pw.TableRow(
+                      decoration: pw.BoxDecoration(
+                          color: i.isOdd ? PdfColors.grey100 : PdfColors.white),
+                      children: [
+                        _cell('${i + 1}', center: true),
+                        _cell('${coupons[i]['coupon_kind'] ?? '—'}'),
+                        _cell('${coupons[i]['serial_from'] ?? '—'}', center: true),
+                        _cell('${coupons[i]['serial_to'] ?? '—'}', center: true),
+                        _cell('${coupons[i]['count'] ?? '—'}',
+                            center: true, bold: true),
+                      ],
+                    ),
+                ],
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                  'إجمالي الكوبونات: '
+                  '${coupons.fold<int>(0, (t, c) => t + ((c['count'] as int?) ?? 0))}',
+                  style: const pw.TextStyle(
+                      fontSize: 11, fontWeight: pw.FontWeight.bold)),
+            ],
             pw.SizedBox(height: 12),
             // الإجماليات في صندوق على الشمال — نفس سلم النظام، والباقي هو الرقم الكبير.
             pw.Row(children: [
@@ -317,6 +382,19 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
       ),
     );
     return doc.save();
+  }
+}
+
+/// بيفك عمود الكوبونات (JSON) لصفوف. الفاضي أو المكسور بيرجّع قايمة فاضية — ورقة
+/// من غير جدول كوبونات أحسن من ورقة بتقول «خطأ» في وش العميل.
+List<Map<String, Object?>> _coupons(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const [];
+  try {
+    final v = jsonDecode(raw);
+    if (v is! List) return const [];
+    return [for (final e in v) if (e is Map) Map<String, Object?>.from(e)];
+  } catch (_) {
+    return const [];
   }
 }
 
