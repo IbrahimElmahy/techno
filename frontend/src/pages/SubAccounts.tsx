@@ -248,7 +248,11 @@ export default function SubAccounts() {
   );
 
   const inSection = columns.filter((c: any) => c.key !== 'parent_id');
-  const tableCols = useTableColumns('sub-accounts', inSection);
+  // الشاشة بتقسّم الصفوف على جداول جوّه كل حساب رئيسي، والملف بياخدهم كلهم مرة واحدة —
+  // فالصفوف هنا هي `filtered` نفسها مش صفوف قسم واحد.
+  const tableCols = useTableColumns('sub-accounts', inSection, {
+    export: { name: 'الحسابات الفرعيه', rows: filtered },
+  });
 
   const sections = useMemo(() => {
     const byName = new Map<string, ChartAccount[]>();

@@ -296,7 +296,10 @@ export default function TradeReports() {
   });
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('trade-reports', columns);
+  // اسم الملف بيتغيّر مع التقرير المفتوح — الشاشة واحدة بس بتقدّم عشرين تقرير مختلف.
+  const tableCols = useTableColumns('trade-reports', columns, {
+    export: { name: view ? view.label : 'تقارير المبيعات والمشتريات', rows },
+  });
 
   return (
     <Card

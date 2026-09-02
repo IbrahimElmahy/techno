@@ -538,7 +538,9 @@ export default function SupplierProfile() {
       ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
   ];
 
-  const tableCols = useTableColumns('supplier-ledger-v2', columns);
+  const tableCols = useTableColumns('supplier-ledger-v2', columns, {
+    export: { name: 'كشف حساب المورد', rows: shownLines },
+  });
 
   return (
     <div>

@@ -445,7 +445,9 @@ export default function Loyalty() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const typeCols = useTableColumns('loyalty-coupon-types', typeColumns);
+  const typeCols = useTableColumns('loyalty-coupon-types', typeColumns, {
+    export: { name: 'أنواع الكوبونات الترويجية', rows: typeFilter.filtered },
+  });
 
   const couponColumns = [
     { title: 'الرقم التسلسلي الكوبون', dataIndex: 'serial', key: 'serial',
@@ -521,7 +523,9 @@ export default function Loyalty() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const couponCols = useTableColumns('loyalty-coupons', couponColumns);
+  const couponCols = useTableColumns('loyalty-coupons', couponColumns, {
+    export: { name: 'الكوبونات', rows: couponFilter.filtered },
+  });
 
   const items = [
     {

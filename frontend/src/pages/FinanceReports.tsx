@@ -208,7 +208,10 @@ const FinanceReports: React.FC = () => {
       render: (v: string) => <b>{money(v)}</b>,
     },
   ]), [agingParty, aging]);
-  const agingCols = useTableColumns('finance-aging', agingColumns as any, { locked: ['party_name'] });
+  const agingCols = useTableColumns('finance-aging', agingColumns as any, {
+    locked: ['party_name'],
+    export: { name: 'أعمار الديون', rows: agingFilter.filtered },
+  });
 
   return (
     <div>

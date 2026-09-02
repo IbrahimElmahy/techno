@@ -119,7 +119,10 @@ export default function BranchOverview() {
       align: 'center' as const, render: num },
   ];
 
-  const cols = useTableColumns('branch-overview', columns as any, { locked: ['branch_name'] });
+  const cols = useTableColumns('branch-overview', columns as any, {
+    locked: ['branch_name'],
+    export: { name: 'نظرة على الفروع', rows },
+  });
 
   return (
     <Card

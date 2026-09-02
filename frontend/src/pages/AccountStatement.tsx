@@ -442,7 +442,9 @@ export default function AccountStatement() {
       ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
   ];
 
-  const tableCols = useTableColumns('account-statement', columns);
+  const tableCols = useTableColumns('account-statement', columns, {
+    export: { name: isItem ? 'كشف صنف' : 'كشف حساب', rows: shownLines },
+  });
 
   const printColOf = (k: string): PrintColumn<StatementLine> | null => {
     switch (k) {

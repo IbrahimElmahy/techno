@@ -442,7 +442,10 @@ export default function HrReports() {
 
   const kb = useTableKeyboard<any>({ rows, rowKey: rowKeyOf, onOpen: drillInto });
 
-  const tableCols = useTableColumns(`hr-reports-${grouped ? 'grouped' : subject}`, columns);
+  // اسم الملف بيتغيّر مع التقرير المعروض — نفس العنوان اللي بيتطبع في ترويسة الطباعة.
+  const tableCols = useTableColumns(`hr-reports-${grouped ? 'grouped' : subject}`, columns, {
+    export: { name: view?.label ?? SUBJECT_LABELS[subject], rows },
+  });
 
   return (
     <Card

@@ -294,7 +294,9 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('settings-lookups', columns);
+  const tableCols = useTableColumns('settings-lookups', columns, {
+    export: { name: meta.label, rows: filter.filtered },
+  });
 
   return (
     <Card

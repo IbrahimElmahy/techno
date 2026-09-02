@@ -24,6 +24,7 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../com
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import ExportExcelButton from '../components/ExportExcelButton';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
@@ -1622,6 +1623,8 @@ export default function Returns() {
     },
   ];
 
+  const visibleColumns = returnCols.apply(columns);
+
   return (
     <div>
       <Card
@@ -1638,6 +1641,12 @@ export default function Returns() {
               onChange={returnCols.setHidden}
               order={returnCols.order}
               onMove={(k, d) => returnCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
+            />
+            <ExportExcelButton
+              name="مرتجعات المبيعات"
+              rows={returns}
+              tableColumns={visibleColumns}
+              style={{ marginInlineStart: 0 }}
             />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" danger icon={<PlusOutlined />}
@@ -1684,7 +1693,7 @@ export default function Returns() {
         </Row>
 
         <Table
-          dataSource={returns} columns={returnCols.apply(columns)} rowKey="id" loading={loading}
+          dataSource={returns} columns={visibleColumns} rowKey="id" loading={loading}
           size="small" tableLayout="fixed"
           // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
           //

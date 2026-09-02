@@ -9,6 +9,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import ExportExcelButton from '../components/ExportExcelButton';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
@@ -305,6 +306,7 @@ export default function StockSheet() {
   ];
 
   const cols = useHiddenColumns(`stock-sheet-${view}`, []);
+  const visibleColumns = cols.apply(columns);
 
   const kb = useTableKeyboard<any>({
     rows: shown, rowKey,
@@ -443,6 +445,14 @@ export default function StockSheet() {
             hidden={cols.hidden} onChange={cols.setHidden}
             order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
           />
+          {/* التصدير والطباعة القديمين بيمشوا على المحدّد لو فيه تحديد. ملف الإكسل بياخد
+              اللي على الشاشة زي ما هو — نفس قاعدة الزرار في كل الشاشات. */}
+          <ExportExcelButton
+            name={TITLES[view]}
+            rows={shown}
+            tableColumns={visibleColumns}
+            style={{ marginInlineStart: 0 }}
+          />
           <Button icon={<PrinterOutlined />} onClick={printIt}>
             {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
           </Button>
@@ -541,7 +551,7 @@ export default function StockSheet() {
         size="small"
         loading={loading}
         dataSource={shown}
-        columns={cols.apply(columns)}
+        columns={visibleColumns}
         tableLayout="fixed"
         scroll={{ x: 'max-content' }}
         locale={{ emptyText: 'لا توجد أرصدة' }}
@@ -570,7 +580,7 @@ export default function StockSheet() {
           return (
             <Table.Summary fixed>
               <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-                {cols.apply(columns).map((c: any, i: number) => {
+                {visibleColumns.map((c: any, i: number) => {
                   if (c.key === 'quantity') {
                     return (
                       <Table.Summary.Cell key={c.key} index={i} align="left">

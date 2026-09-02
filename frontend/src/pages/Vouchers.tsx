@@ -20,6 +20,7 @@ import { entryTypeLabel } from '../components/labels';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
+import ExportExcelButton from '../components/ExportExcelButton';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import DateRangeFilter from '../components/DateRangeFilter';
@@ -510,7 +511,11 @@ const Vouchers: React.FC = () => {
     },
   ];
 
-  const voucherCols = useTableColumns('vouchers', voucherColumns);
+  // الأعمدة دي بتخدم ست جداول، بس الزرار متعلّق في تبويب «سند قبض» لوحده — فالملف اللي بيطلع
+  // منه هو سندات القبض. سجل السندات تحت ليه زرار خاص بيه بصفوفه.
+  const voucherCols = useTableColumns('vouchers', voucherColumns, {
+    export: { name: 'سندات القبض', rows: byKind('receipt') },
+  });
 
   const totals = {
     receipts: vouchers.filter((v) => v.kind === 'receipt' && !v.is_reversal)
@@ -1043,6 +1048,12 @@ const Vouchers: React.FC = () => {
               <DateRangeFilter value={range as any} onChange={(v) => setRange(v as any)} />
             </div>
             <Button onClick={loadVouchers}>تحديث</Button>
+            <ExportExcelButton
+              name="سجل السندات"
+              rows={shownVouchers}
+              tableColumns={voucherCols.columns}
+              style={{ marginInlineStart: 0 }}
+            />
           </Space>
         }
       >

@@ -189,7 +189,9 @@ export default function StockBalance() {
   ] : []), [balance]);
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const locCols = useTableColumns('stock-balance-locations', locationColumns);
+  const locCols = useTableColumns('stock-balance-locations', locationColumns, {
+    export: { name: TITLES[view] ?? TITLES.balance, rows: balance?.locations ?? [] },
+  });
 
   return (
     <>

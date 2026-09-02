@@ -235,7 +235,9 @@ export default function Users() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('users', columns);
+  const tableCols = useTableColumns('users', columns, {
+    export: { name: 'مستخدمي النظام', rows: filter.filtered },
+  });
 
   return (
     <div>

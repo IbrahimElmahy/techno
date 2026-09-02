@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Checkbox, Dropdown, Space } from 'antd';
 import { SettingOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
+import ExportExcelButton, { type ExcelExport } from './ExportExcelButton';
 
 /**
  * اعدادات الأعمدة — إظهار / إخفاء وترتيب، في مكان واحد.
@@ -212,31 +213,42 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
 
 /**
  * سطر واحد بيدّي الجدول أعمدته والزرار بتاعه.
+ *
+ * ولما الشاشة تبعت `export`، نفس الزرار بيجيب معاه «تصدير Excel». التصدير محطوط هنا مش في كل
+ * شاشة لوحدها لسببين: الأول إنه محتاج بالظبط اللي الهوك ده بيحسبه — الأعمدة بعد الإخفاء
+ * والترتيب — فأي مكان تاني كان هيقرا الأعمدة الأصلية ويطلّع ملف مش شبه الشاشة. والتاني إن مكانه
+ * بيبقى واحد في البرنامج كله من غير ما حد يفتكر يحطّه صح.
  */
 export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; title?: any }>(
   storageKey: string,
   columns: T[],
-  opts: { defaultHidden?: string[]; locked?: string[] } = {},
+  opts: { defaultHidden?: string[]; locked?: string[]; export?: ExcelExport } = {},
 ) {
   const prefs = useHiddenColumns(storageKey, opts.defaultHidden);
   const keyOf = (c: T, idx: number) => String(c.key ?? c.dataIndex ?? `__col_${idx}__`);
   const allKeys = columns.map((c, idx) => keyOf(c, idx));
   const locked = opts.locked ?? allKeys.slice(0, 1);
+  const visible = prefs.apply(columns);
 
   const control = (
-    <ColumnSettings
-      choices={columns.map((c, idx) => ({
-        key: keyOf(c, idx),
-        title: typeof c.title === 'string' && c.title ? c.title : 'إجراءات',
-        locked: locked.includes(keyOf(c, idx)),
-      }))}
-      hidden={prefs.hidden}
-      onChange={prefs.setHidden}
-      order={prefs.order}
-      onMove={(k, d) => prefs.move(k, d, allKeys)}
-      onResetOrder={prefs.reset}
-    />
+    <>
+      <ColumnSettings
+        choices={columns.map((c, idx) => ({
+          key: keyOf(c, idx),
+          title: typeof c.title === 'string' && c.title ? c.title : 'إجراءات',
+          locked: locked.includes(keyOf(c, idx)),
+        }))}
+        hidden={prefs.hidden}
+        onChange={prefs.setHidden}
+        order={prefs.order}
+        onMove={(k, d) => prefs.move(k, d, allKeys)}
+        onResetOrder={prefs.reset}
+      />
+      {opts.export && (
+        <ExportExcelButton {...opts.export} tableColumns={visible as any} />
+      )}
+    </>
   );
 
-  return { ...prefs, columns: prefs.apply(columns), control };
+  return { ...prefs, columns: visible, control };
 }

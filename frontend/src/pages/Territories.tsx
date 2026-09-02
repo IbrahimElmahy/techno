@@ -137,7 +137,10 @@ export default function Territories() {
     },
   ];
 
-  const cols = useTableColumns('territories', columns as any, { locked: ['name'] });
+  const cols = useTableColumns('territories', columns as any, {
+    locked: ['name'],
+    export: { name: 'المناطق', rows: visible },
+  });
 
   return (
     <Card

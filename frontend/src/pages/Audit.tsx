@@ -210,7 +210,9 @@ export default function Audit() {
     },
   ];
 
-  const tableCols = useTableColumns('audit', columns);
+  const tableCols = useTableColumns('audit', columns, {
+    export: { name: 'سجل المراجعة والعمليات', rows: filter.filtered },
+  });
 
   const [trail, setTrail] = useState<{ type: string; id: number } | null>(null);
   const kb = useTableKeyboard<AuditLog>({

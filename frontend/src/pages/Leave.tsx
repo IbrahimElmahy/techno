@@ -218,8 +218,14 @@ export default function Leave() {
       render: (v: string) => <Tag color={remainingTone(v)}>{Number(v)}</Tag> },
   ];
 
-  const reqTable = useTableColumns('leave-requests', requestCols, { locked: ['document_number'] });
-  const balTable = useTableColumns('leave-balances', balanceCols, { locked: ['employee_name'] });
+  const reqTable = useTableColumns('leave-requests', requestCols, {
+    locked: ['document_number'],
+    export: { name: 'طلبات الأجازات', rows: requests },
+  });
+  const balTable = useTableColumns('leave-balances', balanceCols, {
+    locked: ['employee_name'],
+    export: { name: `أرصدة الأجازات ${year}`, rows: balances },
+  });
 
   const openRequest = (row: LeaveRequestRow) => {
     if (row.status !== 'submitted') {

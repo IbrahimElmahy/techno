@@ -949,7 +949,13 @@ export default function Transfers() {
       )),
     }] : []),
   ];
-  const docCols = useTableColumns('transfer-doc-lines', docLineColumns);
+  // الجدول ده مابيتعرضش غير والإذن مفتوح، والهوك بيشتغل على طول — فالصفوف فاضية لغاية ما يتفتح.
+  const docCols = useTableColumns('transfer-doc-lines', docLineColumns, {
+    export: {
+      name: editing ? `إذن تحويل ${editing.document_number}` : 'إذن تحويل',
+      rows: editing ? docLines(editing) : [],
+    },
+  });
 
   const draftLineColumns = [
     { key: 'name', title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
@@ -991,7 +997,9 @@ export default function Transfers() {
   ];
   const draftCols = useTableColumns('transfer-draft-lines', draftLineColumns);
 
-  const tableCols = useTableColumns('transfer-requests', columns);
+  const tableCols = useTableColumns('transfer-requests', columns, {
+    export: { name: 'التحويلات', rows: filter.filtered },
+  });
 
   if (createVisible) {
     const stockOfCategory = sourceStock.filter((s) => (

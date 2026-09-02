@@ -134,7 +134,10 @@ export default function PointsLedger() {
         ? <b style={{ color: '#cf1322' }}>{num(v)}</b> : <Text type="secondary">-</Text>) },
   ];
 
-  const { columns, control: columnSettings } = useTableColumns('points-ledger', rawColumns);
+  const { columns, control: columnSettings } = useTableColumns('points-ledger', rawColumns, {
+    // الصفحة المعروضة بس — الفلترة والترقيم على السيرفر، فاللي في الإيد هو اللي في الملف.
+    export: { name: 'سجل النقاط', rows: data?.rows || [] },
+  });
 
   const exportCsv = () => {
     const cols: CsvColumn<PointRow>[] = [

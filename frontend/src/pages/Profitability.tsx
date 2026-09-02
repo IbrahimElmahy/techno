@@ -148,7 +148,9 @@ export default function Profitability() {
     writeCsv(`profitability-${dimension}`, columnsFromTable(columns), rows);
   };
 
-  const tableCols = useTableColumns('profitability', columns);
+  const tableCols = useTableColumns('profitability', columns, {
+    export: { name: view?.label ?? 'تحليل الربحية', rows },
+  });
 
   return (
     <Card

@@ -245,7 +245,9 @@ export default function Owners() {
     },
   ];
 
-  const tableCols = useTableColumns('owners_list', rawColumns);
+  const tableCols = useTableColumns('owners_list', rawColumns, {
+    export: { name: 'الملّاك', rows: owners },
+  });
 
   return (
     <div style={{ padding: 16 }}>

@@ -248,7 +248,9 @@ function InventoryTab({ warehouses, items }: TabProps) {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const inventoryTabCols = useTableColumns('rep-inventory', columns);
+  const inventoryTabCols = useTableColumns('rep-inventory', columns, {
+    export: { name: 'المخازن (الأرصدة)', rows },
+  });
 
   return (
     <div>
@@ -333,7 +335,9 @@ function WastageTab({ range, warehouses, items }: TabProps) {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const wastageTabCols = useTableColumns('rep-wastage', columns);
+  const wastageTabCols = useTableColumns('rep-wastage', columns, {
+    export: { name: 'الهوالك', rows },
+  });
 
   return (
     <div>
@@ -411,7 +415,9 @@ function StagnantTab({ warehouses }: TabProps) {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const stagnantTabCols = useTableColumns('rep-stagnant', columns);
+  const stagnantTabCols = useTableColumns('rep-stagnant', columns, {
+    export: { name: 'الرواكد', rows },
+  });
 
   return (
     <div>

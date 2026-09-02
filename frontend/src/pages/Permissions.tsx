@@ -165,7 +165,10 @@ export default function Permissions() {
     })),
   ]), [editable, draft, caps]);
 
-  const tableCols = useTableColumns('permissions', columns as any, { locked: ['label'] });
+  const tableCols = useTableColumns('permissions', columns as any, {
+    locked: ['label'],
+    export: { name: 'الصلاحيات', rows },
+  });
 
   return (
     <Card

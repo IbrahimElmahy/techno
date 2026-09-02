@@ -15,6 +15,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import ExportExcelButton from '../components/ExportExcelButton';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -874,6 +875,7 @@ export default function PurchaseReturns() {
   };
 
   const cols = useHiddenColumns('purchase-returns-list', ['id']);
+  const visibleColumns = cols.apply(columns);
 
   const filter = useListFilter<ReturnRow>(rows, {
     search: (r) => [r.document_number, r.purchase_document_number, r.supplier_name,
@@ -924,6 +926,12 @@ export default function PurchaseReturns() {
               hidden={cols.hidden} onChange={cols.setHidden}
               order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
+            <ExportExcelButton
+              name="مردودات الشراء"
+              rows={filter.filtered}
+              tableColumns={visibleColumns}
+              style={{ marginInlineStart: 0 }}
+            />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
             <Button data-shortcut="F2" type="primary" danger icon={<PlusOutlined />} onClick={openCreate}>
               تسجيل مردود شراء
@@ -950,7 +958,7 @@ export default function PurchaseReturns() {
 
         <Table
           {...kb.tableProps}
-          dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
+          dataSource={filter.filtered} columns={visibleColumns} rowKey="id" loading={loading}
           // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
           //
           // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
@@ -967,7 +975,7 @@ export default function PurchaseReturns() {
             return (
               <Table.Summary fixed>
                 <Table.Summary.Row style={{ background: '#fff7f0', fontWeight: 700 }}>
-                  {(cols.apply(columns) as any[]).map((col, i) => {
+                  {(visibleColumns as any[]).map((col, i) => {
                     const key = String(col.key ?? col.dataIndex ?? i);
                     return (
                       <Table.Summary.Cell key={key} index={i}

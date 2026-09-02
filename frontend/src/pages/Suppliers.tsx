@@ -307,7 +307,9 @@ export default function Suppliers() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('suppliers', columns);
+  const tableCols = useTableColumns('suppliers', columns, {
+    export: { name: 'الموردين', rows: suppliers },
+  });
 
   // Ours, given back in full one click away rather than made narrower for everyone.
   const expandedRow = (record: SupplierRecord) => (

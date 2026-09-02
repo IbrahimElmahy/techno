@@ -181,7 +181,9 @@ const InspectionItems: React.FC = () => {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('inspection-items', columns);
+  const tableCols = useTableColumns('inspection-items', columns, {
+    export: { name: 'أصناف المعاينة', rows: filter.filtered },
+  });
 
   return (
     <div>

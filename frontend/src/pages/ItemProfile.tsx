@@ -169,7 +169,9 @@ export default function ItemProfile() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('item-sales', columns);
+  const tableCols = useTableColumns('item-sales', columns, {
+    export: { name: 'سجل بيع الصنف', rows: salesFilter.filtered },
+  });
 
   return (
     <div>

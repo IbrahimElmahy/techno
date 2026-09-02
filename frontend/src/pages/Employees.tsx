@@ -174,7 +174,9 @@ export default function Employees() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const employeeCols = useTableColumns('employees', employeeColumns);
+  const employeeCols = useTableColumns('employees', employeeColumns, {
+    export: { name: 'الموظفون', rows: filter.filtered },
+  });
 
   const employeesTab = (
     <Card

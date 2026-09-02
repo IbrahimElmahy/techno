@@ -261,7 +261,9 @@ export default function ItemCard() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('item-card', columns);
+  const tableCols = useTableColumns('item-card', columns, {
+    export: { name: 'كارت الصنف', rows: cardRows },
+  });
 
   return (
     <Card

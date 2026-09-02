@@ -230,8 +230,14 @@ export default function Payroll() {
       render: (v: boolean) => (v ? <Tag color="green">اتصرف</Tag> : null) },
   ];
 
-  const runTable = useTableColumns('payroll-runs', runCols, { locked: ['document_number'] });
-  const lineTable = useTableColumns('payroll-lines', lineCols, { locked: ['employee_name'] });
+  const runTable = useTableColumns('payroll-runs', runCols, {
+    locked: ['document_number'],
+    export: { name: 'مسيّرات الرواتب', rows: runs },
+  });
+  const lineTable = useTableColumns('payroll-lines', lineCols, {
+    locked: ['employee_name'],
+    export: { name: 'مسير الرواتب', rows: detail?.lines ?? [] },
+  });
 
   // السطر في القايمة بيفتح المسير، والسطر جوّه المسير بيفتح قسيمة صاحبه — الخطوة اللي
   // بعد قراية أي سطر مرتب هي «طب ده جه منين».

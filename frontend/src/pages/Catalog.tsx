@@ -714,7 +714,9 @@ export default function Catalog() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('catalog-items', columns);
+  const tableCols = useTableColumns('catalog-items', columns, {
+    export: { name: 'الأصناف', rows: filteredItems },
+  });
 
   // Ours that used to be columns. «نقاط المنتج» in particular belongs here rather than in the
   // grid: it fetched once per visible row, so a page of 200 items fired 200 requests to fill a

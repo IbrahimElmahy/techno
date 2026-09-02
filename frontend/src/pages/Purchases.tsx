@@ -1689,6 +1689,7 @@ export default function Purchases() {
    *  أعمدة معروضة أصلاً، فاللي محتاجها بيفتحها واللي مش محتاجها بيقرا جدول مقروء. */
   const listCols = useTableColumns('purchase-list', listColumns, {
     defaultHidden: ['gross', 'combined_pct', 'tax_pct', 'expense_account_name', 'notes'],
+    export: { name: 'المشتريات', rows: purchasesFilter.filtered },
   });
 
   const listContent = (

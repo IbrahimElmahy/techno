@@ -224,7 +224,9 @@ export default function FixedAssets() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('fixed-assets', columns);
+  const tableCols = useTableColumns('fixed-assets', columns, {
+    export: { name: 'الاصول الثابتة', rows: filter.filtered },
+  });
 
   return (
     <>

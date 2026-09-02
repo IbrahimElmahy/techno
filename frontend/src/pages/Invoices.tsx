@@ -22,6 +22,7 @@ import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ProductPickerModal from '../components/ProductPickerModal';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import ExportExcelButton from '../components/ExportExcelButton';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
@@ -2068,6 +2069,11 @@ export default function Invoices() {
     },
   ];
 
+  // الأعمدة بعد الإخفاء والترتيب، محسوبة مرة واحدة: الجدول بيرسمها والتصدير بيكتبها، ولازم
+  // يبقوا نفس القايمة — لو كل واحد نادى `apply` لوحده، ملف بيطلع بأعمدة غير اللي على الشاشة
+  // يبقى مسألة وقت.
+  const visibleColumns = invoiceCols.apply(columns);
+
   // The create form is a full inner page (not a modal) — a big invoice form reads better on a
   // full page than boxed inside a scrolling modal.
   /**
@@ -2832,6 +2838,13 @@ export default function Invoices() {
               order={invoiceCols.order}
               onMove={(k, d) => invoiceCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
+            {/* جوّه `Space`، فالمسافة الافتراضية بتتشال — الـ`Space` بيباعد لوحده. */}
+            <ExportExcelButton
+              name="سجل الفواتير والمرتجعات"
+              rows={unifiedRecords}
+              tableColumns={visibleColumns}
+              style={{ marginInlineStart: 0 }}
+            />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             <Button type="primary" icon={<PlusOutlined />}
               style={{ fontWeight: 600 }}
@@ -2969,7 +2982,7 @@ export default function Invoices() {
 
         <Table
           dataSource={unifiedRecords}
-          columns={invoiceCols.apply(columns)}
+          columns={visibleColumns}
           size="small"
           tableLayout="fixed"
           // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.

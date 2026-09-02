@@ -310,7 +310,9 @@ export default function Treasury() {
     },
   ];
 
-  const tableCols = useTableColumns('treasury-moves', columns);
+  const tableCols = useTableColumns('treasury-moves', columns, {
+    export: { name: 'الحسابات المالية', rows: filter.filtered },
+  });
 
   const kb = useTableKeyboard<LedgerEntry>({
     rows: filter.filtered, rowKey: (e) => e.id,

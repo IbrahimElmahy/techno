@@ -301,7 +301,9 @@ export default function StockCounts() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('stock-counts', columns);
+  const tableCols = useTableColumns('stock-counts', columns, {
+    export: { name: 'كشوف الجرد', rows: filter.filtered },
+  });
 
   return (
     <div>

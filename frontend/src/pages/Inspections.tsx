@@ -20,6 +20,7 @@ import { printDocument } from '../print/brand';
 import { useLookup } from '../hooks/useLookup';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import ExportExcelButton from '../components/ExportExcelButton';
 import DateRangeFilter from '../components/DateRangeFilter';
 
 interface InspectionLine {
@@ -509,6 +510,13 @@ const Inspections: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={() => { setPage(1); load(1, pageSize); loadSummary(); }}>
             تحديث
           </Button>
+          {/* الزرار هنا مش جنب «الأعمدة» — دي بتتعرض في كارت التفاصيل بس، فالقايمة كانت هتفضل من غير تصدير. */}
+          <ExportExcelButton
+            name="المعاينات"
+            rows={rows}
+            tableColumns={tableCols.columns}
+            style={{ marginInlineStart: 0 }}
+          />
         </Space>
 
         <Table<InspectionRecord>

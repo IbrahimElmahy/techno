@@ -190,7 +190,9 @@ export default function MainAccounts() {
     }] : []),
   ];
 
-  const tableCols = useTableColumns('main-accounts', columns);
+  const tableCols = useTableColumns('main-accounts', columns, {
+    export: { name: 'الحسابات الرئيسية', rows: filtered },
+  });
 
   const formFields = (isCreate: boolean) => (
     <>

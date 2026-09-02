@@ -178,7 +178,11 @@ function ChartTab() {
       render: (b: string) => <strong>{egp(b)}</strong> },
   ];
 
-  const chartTabCols = useTableColumns('gl-chart', columns);
+  // الجدول شجرة، فـ`filter.filtered` فيه الجذور بس والفروع جوّاها — الملف لازم ينزل كل الحسابات
+  // اللي الفلتر سابها زي ما الـCSV بينزّلها.
+  const chartTabCols = useTableColumns('gl-chart', columns, {
+    export: { name: 'دليل الحسابات', rows: filter.filtered.flatMap(flatten) },
+  });
 
   const chartKb = useTableKeyboard<any>({
     rows: filter.filtered, rowKey: (a) => a.id,
@@ -462,7 +466,9 @@ function JournalTab() {
         ) : <Tag color="red">معكوس</Tag> },
   ];
 
-  const journalTabCols = useTableColumns('gl-journal', columns);
+  const journalTabCols = useTableColumns('gl-journal', columns, {
+    export: { name: 'قيود اليومية', rows: filter.filtered },
+  });
 
   const entryKb = useTableKeyboard<any>({
     rows: filter.filtered, rowKey: (e) => e.id,
@@ -716,7 +722,10 @@ function TrialBalanceTab() {
       render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
-  const trialBalanceTabCols = useTableColumns('gl-trial-balance', columns);
+  // في العرض المقسّم الجدول بينقسم لجداول بالطبيعة، والملف بيجمعهم كلهم زي الميزان المسطّح.
+  const trialBalanceTabCols = useTableColumns('gl-trial-balance', columns, {
+    export: { name: 'ميزان المراجعة', rows: shownRows },
+  });
 
   const trialKb = useTableKeyboard<any>({
     rows: shownRows, rowKey: (r) => r.account_id,

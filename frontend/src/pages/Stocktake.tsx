@@ -275,7 +275,9 @@ export default function Stocktake() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('stocktake', columns);
+  const tableCols = useTableColumns('stocktake', columns, {
+    export: { name: 'جرد حق تاريخ', rows: filter.filtered },
+  });
 
   return (
     <Card

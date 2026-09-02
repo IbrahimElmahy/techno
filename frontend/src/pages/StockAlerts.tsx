@@ -110,7 +110,9 @@ export default function StockAlerts() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('stock-alerts', columns);
+  const tableCols = useTableColumns('stock-alerts', columns, {
+    export: { name: 'تنبيهات المخزون', rows: reorderFilter.filtered },
+  });
 
   // تبويب واحد بس فضل، فمافيش شريط تبويبات. «قرب انتهاء الصلاحية» و«حركات انتهاء
   // الصلاحية» اتشالوا بطلب العميل — الشركة مابتستعملهمش.

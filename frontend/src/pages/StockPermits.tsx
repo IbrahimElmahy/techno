@@ -566,7 +566,9 @@ export default function StockPermits() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('stock-permits', columns);
+  const tableCols = useTableColumns('stock-permits', columns, {
+    export: { name: 'أذونات المخزن', rows: filter.filtered },
+  });
 
   // The document page — the SAME page whether it is being written or being read. This is the
   // whole point: «افتح الإذن» lands where «اعمل إذن» lands, so nothing has to be relearned to

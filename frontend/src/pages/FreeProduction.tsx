@@ -8,6 +8,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
+import ExportExcelButton from '../components/ExportExcelButton';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -240,6 +241,7 @@ export default function FreeProduction() {
   ];
 
   const cols = useHiddenColumns('free-production-list', ['id', 'unit_cost', 'notes']);
+  const visibleColumns = cols.apply(columns);
 
   const filter = useListFilter<Order>(orders, {
     search: (o) => [o.document_number, o.work_order_ref, itemName(o.product_id)],
@@ -402,6 +404,12 @@ export default function FreeProduction() {
               hidden={cols.hidden} onChange={cols.setHidden}
               order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
+            <ExportExcelButton
+              name="سجل الإنتاج الحر"
+              rows={filter.filtered}
+              tableColumns={visibleColumns}
+              style={{ marginInlineStart: 0 }}
+            />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
           </Space>
         }
@@ -415,7 +423,7 @@ export default function FreeProduction() {
         />
         <Table
           {...kb.tableProps}
-          dataSource={filter.filtered} columns={cols.apply(columns)} rowKey="id" loading={loading}
+          dataSource={filter.filtered} columns={visibleColumns} rowKey="id" loading={loading}
           size="middle" tableLayout="fixed"
           expandable={{
             expandedRowKeys: expanded,

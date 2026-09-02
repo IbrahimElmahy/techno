@@ -9,6 +9,7 @@ import 'coupon_receipt_screen.dart';
 import 'sale_invoice_screen.dart';
 import 'collect_cash_screen.dart';
 import 'customer_profile_screen.dart';
+import 'debts_screen.dart';
 import 'day_summary_screen.dart';
 import 'my_stock_screen.dart';
 import 'transfer_request_screen.dart';
@@ -243,6 +244,21 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () async {
                       await Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const TransferRequestScreen()));
+                      _refresh();
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  // كشف المديونيات قبل «حساب عميل»: الأول بيجاوب «أروح لمين»،
+                  // والتاني بيجاوب «الراجل ده عليه إيه» — والسؤال الأول بيتسأل
+                  // الصبح والتاني وهو واقف قدامه.
+                  _BigAction(
+                    icon: Icons.receipt_long_outlined,
+                    color: AppColors.danger,
+                    title: 'كشف المديونيات',
+                    subtitle: 'مين عليه كام — أبيض وبولي، بيشتغل من غير نت',
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const DebtsScreen()));
                       _refresh();
                     },
                   ),

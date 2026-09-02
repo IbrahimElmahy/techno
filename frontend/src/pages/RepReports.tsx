@@ -150,7 +150,9 @@ export default function RepReports() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const repItemsCols = useTableColumns('rep-item-sales', repItemsColumns);
+  const repItemsCols = useTableColumns('rep-item-sales', repItemsColumns, {
+    export: { name: 'مبيعات اصناف مندوبين', rows: itemFilter.filtered },
+  });
 
   const repCustomersColumns = [
     { title: 'المندوب', dataIndex: 'rep_name', width: 200,
@@ -172,7 +174,9 @@ export default function RepReports() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const repCustomersCols = useTableColumns('rep-collections-by-customer', repCustomersColumns);
+  const repCustomersCols = useTableColumns('rep-collections-by-customer', repCustomersColumns, {
+    export: { name: 'تحصيلات المندوبين عملاء', rows: customerFilter.filtered },
+  });
 
   const repCollectionsColumns = [
     { title: 'المندوب', dataIndex: 'rep_name',
@@ -189,7 +193,9 @@ export default function RepReports() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const repCollectionsCols = useTableColumns('rep-collections', repCollectionsColumns);
+  const repCollectionsCols = useTableColumns('rep-collections', repCollectionsColumns, {
+    export: { name: 'تحصيلات المندوبين', rows: collectionFilter.filtered },
+  });
 
   return (
     <Card title={<span><TeamOutlined /> تقارير المندوبين</span>} extra={header}>

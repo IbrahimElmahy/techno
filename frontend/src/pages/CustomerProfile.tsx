@@ -684,7 +684,9 @@ export default function CustomerProfile() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('customer-ledger-v2', columns);
+  const tableCols = useTableColumns('customer-ledger-v2', columns, {
+    export: { name: 'كشف حساب عميل', rows: shownLines },
+  });
 
   return (
     <div>

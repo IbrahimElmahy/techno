@@ -557,7 +557,9 @@ export default function Orders() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('orders', columns);
+  const tableCols = useTableColumns('orders', columns, {
+    export: { name: `شيت تسعير ${kindLabel}`, rows: filter.filtered },
+  });
 
   return (
     <>

@@ -416,7 +416,9 @@ export default function Customers() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('customers', columns);
+  const tableCols = useTableColumns('customers', columns, {
+    export: { name: 'العملاء', rows: customers },
+  });
 
   // The three of ours that used to be columns. Opening a row costs one click and gives them back
   // in full, rather than making every row narrower for everyone who never looks at them.

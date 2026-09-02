@@ -242,8 +242,14 @@ export default function Advances() {
     ) },
   ];
 
-  const advCols = useTableColumns('hr-advances', advanceCols, { locked: ['document_number'] });
-  const adjCols = useTableColumns('hr-adjustments', adjustmentCols, { locked: ['document_number'] });
+  const advCols = useTableColumns('hr-advances', advanceCols, {
+    locked: ['document_number'],
+    export: { name: 'السلف', rows: advances },
+  });
+  const adjCols = useTableColumns('hr-adjustments', adjustmentCols, {
+    locked: ['document_number'],
+    export: { name: 'الجزاءات والمكافآت', rows: adjustments },
+  });
 
   const kb = useTableKeyboard({
     rows: advances, rowKey: (r: Advance) => r.id, onOpen: () => undefined,

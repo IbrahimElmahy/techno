@@ -203,7 +203,9 @@ export default function Categories() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('categories', columns);
+  const tableCols = useTableColumns('categories', columns, {
+    export: { name: 'الفئات', rows: filter.filtered },
+  });
 
   return (
     <Card

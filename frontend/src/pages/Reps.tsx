@@ -199,7 +199,10 @@ export default function Reps() {
     },
   ];
 
-  const cols = useTableColumns('reps', columns as any, { locked: ['full_name'] });
+  const cols = useTableColumns('reps', columns as any, {
+    locked: ['full_name'],
+    export: { name: 'المناديب', rows: visible },
+  });
   const others = rows.filter((r) => r.user_id !== moveFrom?.user_id && r.active);
 
   return (

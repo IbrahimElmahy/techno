@@ -298,7 +298,9 @@ function OrdersTab({
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const ordersTabCols = useTableColumns('mfg-orders', columns);
+  const ordersTabCols = useTableColumns('mfg-orders', columns, {
+    export: { name: 'أوامر التصنيع', rows: filter.filtered },
+  });
 
   return (
     <div>
@@ -597,7 +599,9 @@ function RecipesTab({
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const recipesTabCols = useTableColumns('mfg-recipes', columns);
+  const recipesTabCols = useTableColumns('mfg-recipes', columns, {
+    export: { name: 'الوصفات', rows: filter.filtered },
+  });
 
   return (
     <div>
@@ -832,7 +836,9 @@ function WastageTab({
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const wastageTabCols = useTableColumns('mfg-wastage', columns);
+  const wastageTabCols = useTableColumns('mfg-wastage', columns, {
+    export: { name: 'مستندات الهالك', rows: filter.filtered },
+  });
 
   return (
     <div>

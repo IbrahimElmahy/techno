@@ -358,7 +358,9 @@ export default function Treasuries() {
     }] : []),
   ];
 
-  const tableCols = useTableColumns('treasuries', columns);
+  const tableCols = useTableColumns('treasuries', columns, {
+    export: { name: 'الخزينه و البنوك', rows: filtered },
+  });
 
   const expandedRow = (r: TreasuryRecord) => (
     <Space size={32} wrap style={{ paddingInlineStart: 8 }}>

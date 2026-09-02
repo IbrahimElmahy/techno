@@ -292,7 +292,9 @@ export default function Org() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const branchCols = useTableColumns('org-branches', branchColumns);
+  const branchCols = useTableColumns('org-branches', branchColumns, {
+    export: { name: 'الفروع والمكاتب', rows: branchFilter.filtered },
+  });
 
   const warehouseColumns = [
     { title: 'كود المستودع', dataIndex: 'id', key: 'id' },
@@ -338,7 +340,9 @@ export default function Org() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const whCols = useTableColumns('org-warehouses', warehouseColumns);
+  const whCols = useTableColumns('org-warehouses', warehouseColumns, {
+    export: { name: 'المستودعات والمخازن', rows: warehouseFilter.filtered },
+  });
 
   const governorateColumns = [
     { title: 'كود المحافظة', dataIndex: 'id', key: 'id' },
@@ -357,7 +361,9 @@ export default function Org() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const govCols = useTableColumns('org-governorates', governorateColumns);
+  const govCols = useTableColumns('org-governorates', governorateColumns, {
+    export: { name: 'المحافظات', rows: govFilter.filtered },
+  });
 
   const custodyColumns = [
     { title: 'رقم العهدة', dataIndex: 'id', key: 'id' },
@@ -399,7 +405,9 @@ export default function Org() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const custodyCols = useTableColumns('org-custodies', custodyColumns);
+  const custodyCols = useTableColumns('org-custodies', custodyColumns, {
+    export: { name: 'العهد المالية والعينية', rows: custodyFilter.filtered },
+  });
 
   const tabItems = [
     {

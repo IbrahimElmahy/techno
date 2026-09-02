@@ -204,7 +204,10 @@ export default function Attendance() {
         ? <Tag color="default" title="داخل مسير مرحّل">🔒</Tag> : null) },
   ];
 
-  const cols = useTableColumns('attendance-days', columns, { locked: ['employee_name'] });
+  const cols = useTableColumns('attendance-days', columns, {
+    locked: ['employee_name'],
+    export: { name: 'سجل الحضور والانصراف', rows },
+  });
 
   /** السطر بيفتح اليوم للتعديل — «اليوم ده غلط» أول رد فعل على أي كشف حضور. */
   const openDay = (row: Day) => {

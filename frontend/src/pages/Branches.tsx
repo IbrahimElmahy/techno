@@ -203,7 +203,9 @@ export default function Branches() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('branches', columns);
+  const tableCols = useTableColumns('branches', columns, {
+    export: { name: 'الفروع', rows: filtered },
+  });
 
   // Their three fields first, then the governorate we keep. The notes are two free lines on
   // purpose — a branch collects facts that belong to no column, and naming them now would only

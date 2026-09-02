@@ -244,7 +244,9 @@ export default function PayrollSettings() {
         ? <Tag color="default" title="مرتب مرحّل استعمله">🔒 متجمّد</Tag>
         : <Button size="small" onClick={() => openEdit(r)}>تعديل</Button>) },
   ];
-  const schemeCols = useTableColumns('payroll-schemes', schemeColumns as any);
+  const schemeCols = useTableColumns('payroll-schemes', schemeColumns as any, {
+    export: { name: 'الشرايح والنسب', rows: versions },
+  });
 
   const componentColumns = [
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 90 },
@@ -257,7 +259,9 @@ export default function PayrollSettings() {
     { title: 'داخل الأجر التأميني', dataIndex: 'insurable', key: 'insurable', width: 160,
       render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
   ];
-  const componentCols = useTableColumns('payroll-components', componentColumns as any);
+  const componentCols = useTableColumns('payroll-components', componentColumns as any, {
+    export: { name: 'بنود الراتب', rows: components },
+  });
 
   return (
     <Card

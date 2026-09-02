@@ -215,7 +215,10 @@ export default function Departments() {
     ) },
   ];
 
-  const cols = useTableColumns('departments', columns, { locked: ['name'] });
+  const cols = useTableColumns('departments', columns, {
+    locked: ['name'],
+    export: { name: 'الأقسام', rows: tree },
+  });
   // F2 على الزرار نفسه (`data-shortcut`) زي شاشة الموظفين — الكيبورد بيدوّر على الزرار
   // المعلّم لما مافيش شاشة سجّلت `onNew` بنفسها.
   const kb = useTableKeyboard({ rows: tree, rowKey: (r: TreeRow) => r.id, onOpen: openEdit });

@@ -321,7 +321,9 @@ export default function Warehouses() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('warehouses', columns);
+  const tableCols = useTableColumns('warehouses', columns, {
+    export: { name: 'المخازن', rows: filtered },
+  });
 
   // Opening a store shows who works out of it — the answer to «مين بيبيع من المخزن ده».
   const expandedRow = (record: WarehouseRecord) => {

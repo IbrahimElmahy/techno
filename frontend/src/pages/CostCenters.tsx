@@ -183,7 +183,9 @@ export default function CostCenters() {
     }] : []),
   ];
 
-  const tableCols = useTableColumns('cost-centers', columns);
+  const tableCols = useTableColumns('cost-centers', columns, {
+    export: { name: 'مراكز التكلفة', rows: filtered },
+  });
 
   return (
     <div>

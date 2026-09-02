@@ -364,7 +364,11 @@ export default function CouponReceipts() {
     { title: 'ملاحظات', dataIndex: 'notes', render: (v: string) => v || '-' },
   ];
 
-  const listCols = useTableColumns('coupon-receipts', listColumns);
+  const listCols = useTableColumns('coupon-receipts', listColumns, {
+    // الصفحة المعروضة بس مش السجل كله — الاستلامات بتتجاب مقسّمة صفحات من السيرفر،
+    // فمفيش نسخة كاملة في الشاشة تتصدّر.
+    export: { name: 'سجل الاستلامات', rows: receipts },
+  });
 
   // Read-only on purpose: a receipt is the act that spends coupons — un-spending one by editing
   // the paper would leave the system counting a coupon the customer already handed over.

@@ -7,6 +7,7 @@ import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import ExportExcelButton from '../components/ExportExcelButton';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
 
@@ -168,10 +169,18 @@ export default function AfterSalesReports() {
       render: (v: string | null) => v || '-' },
   ];
 
-  const plumberCols = useTableColumns('as-coupons-plumbers', plumberColumns as any);
-  const distCols = useTableColumns('as-coupons-distributors', distColumns as any);
-  const techCols = useTableColumns('as-visits-technicians', techColumns as any);
-  const repCols = useTableColumns('as-visits-reps', repColumns as any);
+  const plumberCols = useTableColumns('as-coupons-plumbers', plumberColumns as any, {
+    export: { name: 'كوبونات السباكين', rows: plumberFilter.filtered },
+  });
+  const distCols = useTableColumns('as-coupons-distributors', distColumns as any, {
+    export: { name: 'كوبونات الموزعين', rows: distFilter.filtered },
+  });
+  const techCols = useTableColumns('as-visits-technicians', techColumns as any, {
+    export: { name: 'الزيارات بنقاط الفني', rows: techFilter.filtered },
+  });
+  const repCols = useTableColumns('as-visits-reps', repColumns as any, {
+    export: { name: 'زيارات المناديب', rows: repFilter.filtered },
+  });
 
   const totals = useMemo(() => ({
     returnedByPlumbers: plumbers.reduce((s, r) => s + r.received, 0),
@@ -194,8 +203,9 @@ export default function AfterSalesReports() {
 
   const period = <DateRangeFilter value={range} onChange={setRange} size="small" />;
 
+  // `name` غير `label`: عنوان التبويب جوّاه العدد بين قوسين، وده مايصلحش اسم ملف.
   const tab = (
-    key: string, label: string, rows: any[], filter: any, cols: any, hint: string,
+    key: string, label: string, name: string, rows: any[], filter: any, cols: any, hint: string,
   ) => ({
     key,
     label,
@@ -206,6 +216,9 @@ export default function AfterSalesReports() {
           searchPlaceholder="بحث بالاسم"
           query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
           total={rows.length} shown={filter.filtered.length} searchSpan={10}
+          extra={(
+            <ExportExcelButton name={name} rows={filter.filtered} tableColumns={cols.columns} style={{ marginInlineStart: 0 }} />
+          )}
         />
         <Table
           rowKey={(r: any) => String(r.customer_id ?? r.rep_user_id ?? r.name)}
@@ -228,14 +241,18 @@ export default function AfterSalesReports() {
         activeKey={activeTab}
         onChange={setActiveTab}
         items={[
-          tab('plumbers', `كوبونات السباكين (${plumbers.length})`, plumbers, plumberFilter,
+          tab('plumbers', `كوبونات السباكين (${plumbers.length})`, 'كوبونات السباكين',
+            plumbers, plumberFilter,
             plumberCols, 'كل فني رجّع كام ورقة. الورقة بتتصرف للموزع وبترجع من الفني، '
             + 'فالمتبقّي بيتحسب على الموزع مش عليه.'),
-          tab('distributors', `كوبونات الموزعين (${distributors.length})`, distributors, distFilter,
+          tab('distributors', `كوبونات الموزعين (${distributors.length})`, 'كوبونات الموزعين',
+            distributors, distFilter,
             distCols, 'اتصرف له كام، رجع من الصرف ده كام، والفرق لسه برّه.'),
-          tab('technicians', `الزيارات بنقاط الفني (${techs.length})`, techs, techFilter,
+          tab('technicians', `الزيارات بنقاط الفني (${techs.length})`, 'الزيارات بنقاط الفني',
+            techs, techFilter,
             techCols, 'كل فني عمل كام معاينة وجمّع كام نقطة.'),
-          tab('reps', `زيارات المناديب (${reps.length})`, reps, repFilter,
+          tab('reps', `زيارات المناديب (${reps.length})`, 'زيارات المناديب',
+            reps, repFilter,
             repCols, 'كل مندوب نزل كام معاينة وعند كام عميل.'),
         ]}
       />

@@ -78,7 +78,10 @@ export default function Governorates() {
     },
   ];
 
-  const cols = useTableColumns('governorates', columns as any, { locked: ['id'] });
+  const cols = useTableColumns('governorates', columns as any, {
+    locked: ['id'],
+    export: { name: 'المحافظات', rows: visible },
+  });
 
   const save = async () => {
     const v = name.trim();
