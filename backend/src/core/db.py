@@ -20,7 +20,23 @@ def _engine_kwargs(url: str) -> dict:
     if url.startswith("sqlite"):
         # Needed for SQLite when shared across threads (tests, single-process dev).
         return {"connect_args": {"check_same_thread": False}}
-    return {"pool_pre_ping": True}
+    # البركة الافتراضية ٥ + ١٠ = ١٥ اتصال. ده كان بيقفل قدام المستخدمين قبل ما القاعدة
+    # تتعب: بوستجرس على السيرفر بيسمح بـ١٠٠، فكنا بنستعمل ١٥٪ من طاقته وبنخلّي الطلب
+    # السادس عشر يستنى في الطابور — وشاشة التقارير أثقل طلب عندنا (٢٨٠ ملي ثانية).
+    #
+    # الخدمة بتشتغل بعامل واحد، فالسقف ده هو سقف العملية كلها: ٥٠ اتصال، نص اللي
+    # القاعدة بتسمح بيه، والنص التاني سايبينه لـpsql والسكربتات والصيانة.
+    #
+    # `pool_recycle` بيرمي الاتصال اللي قعد ساعة من غير شغل. الاتصال اللي بيقعد كتير
+    # بيتقفل من ناحية القاعدة أو من الشبكة من غير ما نعرف، والطلب اللي يقع عليه بيرجع
+    # فشل — و`pool_pre_ping` بيمسك ده بس بعد ما يدفع رحلة زيادة على كل طلب.
+    return {
+        "pool_pre_ping": True,
+        "pool_size": 20,
+        "max_overflow": 30,
+        "pool_recycle": 3600,
+        "pool_timeout": 30,
+    }
 
 
 engine = create_engine(settings.database_url, **_engine_kwargs(settings.database_url))
