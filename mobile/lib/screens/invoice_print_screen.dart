@@ -34,6 +34,7 @@ class InvoicePrintScreen extends StatefulWidget {
 class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   List<SaleDraftLine> _lines = [];
   String _rep = '';
+  String? _phone;
   bool _loading = true;
 
   @override
@@ -45,7 +46,20 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   Future<void> _load() async {
     final lines = await LocalDb.instance.saleInvoiceLines(widget.invoice['local_id'] as int);
     final rep = await LocalDb.instance.getKv('username') ?? '';
-    if (mounted) setState(() { _lines = lines; _rep = rep; _loading = false; });
+    // تليفون العميل — الفاتورة المحفوظة شايلة اسمه ورقمه بس، والتليفون في كارته.
+    // الورقة اللي بتروح واتساب من غير تليفون بتخلّي اللي بيراجع يقلّب على العميل
+    // بالاسم، والأسماء بتتكرر.
+    String? phone;
+    final cid = widget.invoice['customer_id'] as int?;
+    if (cid != null) {
+      final all = await LocalDb.instance.customers(limit: 100000);
+      for (final c in all) {
+        if (c.id == cid) { phone = c.phone; break; }
+      }
+    }
+    if (mounted) {
+      setState(() { _lines = lines; _rep = rep; _phone = phone; _loading = false; });
+    }
   }
 
   @override
@@ -127,6 +141,18 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
       arabic = await PdfGoogleFonts.cairoRegular();
     }
 
+    // اللوجو الحقيقي بدل اسم مكتوب. الورقة بتروح واتساب وبتتطبع وبتتصوّر — واللي
+    // بيمسكها لازم يعرف بتاعت مين من أول نظرة، وده شغل العلامة مش شغل سطر نص.
+    //
+    // ولو الملف ضاع لأي سبب، الاسم بيرجع مكانه: ورقة باسم مكتوب أحسن من ورقة بتقع.
+    pw.MemoryImage? logo;
+    try {
+      final bytes = await rootBundle.load('assets/images/technotherm_logo.png');
+      logo = pw.MemoryImage(bytes.buffer.asUint8List());
+    } catch (_) {
+      logo = null;
+    }
+
     final theme = pw.ThemeData.withFont(base: arabic, bold: arabic);
     final total = (inv['total'] as num?)?.toDouble() ?? 0;
     final cash = (inv['cash_amount'] as num?)?.toDouble() ?? 0;
@@ -158,14 +184,30 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
+                  pw.Row(children: [
+                    // لوح أبيض تحت اللوجو — العلامة فيها أخضر وبرتقالي وسطر أسود، ولو
+                    // اترمت على الأزرق على طول بتتقرا لطشة. نفس اللوح اللي في التطبيق.
+                    if (logo != null) ...[
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 5),
+                        decoration: pw.BoxDecoration(
+                          color: PdfColors.white,
+                          borderRadius: pw.BorderRadius.circular(5),
+                        ),
+                        child: pw.Image(logo, height: 30),
+                      ),
+                      pw.SizedBox(width: 10),
+                    ],
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('تكنو ثيرم',
-                          style: const pw.TextStyle(
-                              fontSize: 20,
-                              fontWeight: pw.FontWeight.bold,
-                              color: PdfColors.white)),
+                      if (logo == null)
+                        pw.Text('تكنو ثيرم',
+                            style: const pw.TextStyle(
+                                fontSize: 20,
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfColors.white)),
                       pw.Text(
                           // الورقة بتقول عن نفسها إيه هي. «فاتورة بيع» على ورقة
                           // مالهاش أصناف بتخلي اللي بيمسكها يدوّر على بضاعة مافيش.
@@ -176,6 +218,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                               fontSize: 11, color: PdfColors.white)),
                     ],
                   ),
+                  ]),
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
@@ -218,6 +261,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 pw.Expanded(
                   child: pw.Column(children: [
                     _row('العميل', '${inv['customer_name']}'),
+                    // التليفون على الورقة: اللي بيراجع فاتورة راجعة من واتساب بيدوّر
+                    // على العميل بالاسم، والأسماء بتتكرر — والرقم بيحسم.
+                    _row('التليفون', (_phone ?? '').trim().isEmpty ? '—' : _phone!),
                     _row('المندوب', _rep),
                   ]),
                 ),
@@ -231,33 +277,36 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ]),
             ),
             pw.SizedBox(height: 10),
+            // **الأعمدة من اليمين للشمال.** `pw.Table` مابيقلبش أعمدته مع اتجاه
+            // الصفحة — بيرسمها بترتيب القايمة زي ما هي. فالورقة كانت بتطلع «#» على
+            // الشمال و«الإجمالي» على اليمين: ورقة عربية بترتيب إنجليزي، والعين بتبدأ
+            // من الناحية الغلط. الترتيب هنا مقلوب بإيدنا عشان يقرا صح.
+            //
+            // **وعمودي الخصم اتشالوا.** كانوا بيقولوا «خصم ثابت ١٠٪» و«خصم إضافي ٥٪»
+            // والعميل بيحسب في دماغه ويسأل. دلوقتي «السعر بعد الخصم» هو **صافي سعر
+            // الوحدة بعد الخصمين** — الرقم اللي بيتضرب في الكمية فعلاً — والنسبة
+            // بتتقال تحته بخط صغير عشان اللي عايز يعرف الخصم راح فين يلاقيه.
             if (_lines.isNotEmpty) pw.Table(
               border: const pw.TableBorder(
                 horizontalInside: pw.BorderSide(width: 0.4, color: PdfColors.grey400),
                 bottom: pw.BorderSide(width: 0.6, color: PdfColors.grey500),
               ),
               columnWidths: {
-                0: const pw.FlexColumnWidth(0.6),
-                1: const pw.FlexColumnWidth(3.4),
+                0: const pw.FlexColumnWidth(1.7),
+                1: const pw.FlexColumnWidth(2.0),
                 2: const pw.FlexColumnWidth(1.1),
-                3: const pw.FlexColumnWidth(1.5),
-                4: const pw.FlexColumnWidth(1.1),
-                5: const pw.FlexColumnWidth(1.1),
-                6: const pw.FlexColumnWidth(1.7),
+                3: const pw.FlexColumnWidth(3.4),
+                4: const pw.FlexColumnWidth(0.6),
               },
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: _brand),
                   children: [
-                    _cell('#', bold: true, white: true, center: true),
-                    _cell('الصنف', bold: true, white: true),
-                    _cell('الكمية', bold: true, white: true, center: true),
-                    _cell('السعر', bold: true, white: true, center: true),
-                    // الخصمين منفصلين على الورقة كمان: العميل بيشوف خصم الشركة وخصم
-                    // المندوب، والمراجعة بتعرف مين خصم كام.
-                    _cell('خصم ثابت', bold: true, white: true, center: true),
-                    _cell('خصم إضافي', bold: true, white: true, center: true),
                     _cell('الإجمالي', bold: true, white: true, center: true),
+                    _cell('السعر بعد الخصم', bold: true, white: true, center: true),
+                    _cell('الكمية', bold: true, white: true, center: true),
+                    _cell('الصنف', bold: true, white: true),
+                    _cell('#', bold: true, white: true, center: true),
                   ],
                 ),
                 for (var i = 0; i < _lines.length; i++)
@@ -266,21 +315,11 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     decoration: pw.BoxDecoration(
                         color: i.isOdd ? PdfColors.grey100 : PdfColors.white),
                     children: [
-                      _cell('${i + 1}', center: true),
-                      _cell(_lines[i].itemName),
-                      _cell(_trim(_lines[i].quantity), center: true),
-                      _cell(_money(_lines[i].unitPrice), center: true),
-                      _cell(
-                          _lines[i].fixedDiscountPct > 0
-                              ? '${_trim(_lines[i].fixedDiscountPct)}%'
-                              : '—',
-                          center: true),
-                      _cell(
-                          _lines[i].variableDiscountPct > 0
-                              ? '${_trim(_lines[i].variableDiscountPct)}%'
-                              : '—',
-                          center: true),
                       _cell(_money(_lines[i].net), center: true, bold: true),
+                      _netPriceCell(_lines[i]),
+                      _cell(_trim(_lines[i].quantity), center: true),
+                      _cell(_lines[i].itemName),
+                      _cell('${i + 1}', center: true),
                     ],
                   ),
               ],
@@ -302,21 +341,22 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   bottom: pw.BorderSide(width: 0.6, color: PdfColors.grey500),
                 ),
                 columnWidths: {
-                  0: const pw.FlexColumnWidth(0.6),
-                  1: const pw.FlexColumnWidth(2.5),
+                  0: const pw.FlexColumnWidth(1.2),
+                  1: const pw.FlexColumnWidth(2),
                   2: const pw.FlexColumnWidth(2),
-                  3: const pw.FlexColumnWidth(2),
-                  4: const pw.FlexColumnWidth(1.2),
+                  3: const pw.FlexColumnWidth(2.5),
+                  4: const pw.FlexColumnWidth(0.6),
                 },
                 children: [
+                  // نفس القلب زي جدول الأصناف — الورقة واحدة والعين بتمشي بنفس الاتجاه.
                   pw.TableRow(
                     decoration: const pw.BoxDecoration(color: _brand),
                     children: [
-                      _cell('#', bold: true, white: true, center: true),
-                      _cell('الفئة', bold: true, white: true),
-                      _cell('من رقم', bold: true, white: true, center: true),
-                      _cell('إلى رقم', bold: true, white: true, center: true),
                       _cell('العدد', bold: true, white: true, center: true),
+                      _cell('إلى رقم', bold: true, white: true, center: true),
+                      _cell('من رقم', bold: true, white: true, center: true),
+                      _cell('الفئة', bold: true, white: true),
+                      _cell('#', bold: true, white: true, center: true),
                     ],
                   ),
                   for (var i = 0; i < coupons.length; i++)
@@ -324,12 +364,12 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                       decoration: pw.BoxDecoration(
                           color: i.isOdd ? PdfColors.grey100 : PdfColors.white),
                       children: [
-                        _cell('${i + 1}', center: true),
-                        _cell('${coupons[i]['coupon_kind'] ?? '—'}'),
-                        _cell('${coupons[i]['serial_from'] ?? '—'}', center: true),
-                        _cell('${coupons[i]['serial_to'] ?? '—'}', center: true),
                         _cell('${coupons[i]['count'] ?? '—'}',
                             center: true, bold: true),
+                        _cell('${coupons[i]['serial_to'] ?? '—'}', center: true),
+                        _cell('${coupons[i]['serial_from'] ?? '—'}', center: true),
+                        _cell('${coupons[i]['coupon_kind'] ?? '—'}'),
+                        _cell('${i + 1}', center: true),
                       ],
                     ),
                 ],
@@ -383,6 +423,32 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     );
     return doc.save();
   }
+}
+
+/// **صافي سعر الوحدة** — بعد الخصمين — والنسبة تحته بخط صغير.
+///
+/// الرقم الكبير هو اللي بيتضرب في الكمية ويطلع الإجمالي، فالعميل يقدر يراجع الورقة
+/// بضربة واحدة. والنسبة تحته مش زينة: من غيرها الورقة بتقول سعر أقل من سعر القايمة
+/// من غير ما تقول ليه، واللي بيقارن بفاتورة قديمة مايعرفش الفرق خصم ولا تغيير سعر.
+pw.Widget _netPriceCell(SaleDraftLine l) {
+  final net = l.discountPct > 0
+      ? l.unitPrice * (1 - l.discountPct / 100)
+      : l.unitPrice;
+  return pw.Padding(
+    padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.Text(_money(net),
+            textAlign: pw.TextAlign.center,
+            style: const pw.TextStyle(fontSize: 10)),
+        if (l.discountPct > 0)
+          pw.Text('قبل الخصم ${_money(l.unitPrice)} · خصم ${_trim(l.discountPct)}%',
+              textAlign: pw.TextAlign.center,
+              style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600)),
+      ],
+    ),
+  );
 }
 
 /// بيفك عمود الكوبونات (JSON) لصفوف. الفاضي أو المكسور بيرجّع قايمة فاضية — ورقة

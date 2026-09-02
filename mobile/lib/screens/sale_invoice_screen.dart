@@ -469,15 +469,6 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  /// بتحرّك الكمية بالزراير — و`max` عشان مافيش سالب.
-  ///
-  /// الحد الأدنى صفر بس، مش واحد: السطر بصفر لسه بيترفض عند الحفظ زي ما كان
-  /// («في سطر كميته صفر»)، والمندوب اللي بينزّل لحد الصفر غالباً قصده يمسح السطر.
-  void _bumpQty(SaleDraftLine l, double delta) {
-    setState(() => l.quantity = max(0.0, l.quantity + delta));
-    _syncQtyField(l);
-  }
-
   void _syncQtyField(SaleDraftLine l) {
     final c = _qtyCtl[l.itemId];
     if (c == null) return;
@@ -825,6 +816,20 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     controller: _priceCtl.putIfAbsent(l.itemId,
                         () => TextEditingController(text: _trim(l.unitPrice))),
                     onChanged: (v) => setState(() => l.unitPrice = v),
+                    // **الصنف اللي عليه خصم ثابت، سعره سعر القايمة — مايتكتبش فوقه.**
+                    //
+                    // الشركة بتحطّ الخصم الثابت على خطوط بعينها (تكنو ثيرم، تكنو جوان،
+                    // ابيض تكنوو، ابيض تكنوو ١١٠، تكنو ثيرم معزول) — يعني السعر
+                    // والخصم اتقرروا مع بعض. لو المندوب عدّل السعر كمان، بيبقى خصمين
+                    // على بعض من غير ما حد يشوف، والمكتب بيراجع فاتورة ماتوصلش لسعر
+                    // القايمة ولا يعرف الفرق راح فين.
+                    //
+                    // فالتفاوض بيفضل في مكان واحد: **الخصم المتغيّر**. وهو مفتوح.
+                    //
+                    // والشرط على الداتا مش على أسماء الفئات: المكتب بيقرر من النظام
+                    // (`Item.default_discount_pct`) أنهي أصناف تمشي بالقاعدة دي،
+                    // من غير ما التطبيق يتبني من أول وجديد.
+                    readOnly: l.fixedDiscountPct > 0,
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -867,12 +872,19 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     required String label,
     required TextEditingController controller,
     required void Function(double) onChanged,
+    bool readOnly = false,
   }) {
     return TextFormField(
       controller: controller,
+      readOnly: readOnly,
+      // الخانة المقفولة بتقول إنها مقفولة: رمادية وبقفل صغير. خانة شكلها زي أي خانة
+      // وبتتلمس مافيش حاجة بتحصل بتخلّي الواحد يفتكر التطبيق واقف.
+      style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: readOnly ? Colors.black54 : Colors.black87),
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       textAlign: TextAlign.center,
-      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       decoration: InputDecoration(
         labelText: label,
         isDense: true,
@@ -884,7 +896,11 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     );
   }
 
-  /// الكمية بتتعدّل من السطر نفسه: زراير ± للسرعة، والخانة للكسور.
+  /// الكمية بتتكتب — **من غير زراير ±** بطلب صاحب النظام.
+  ///
+  /// الزراير كانت للسرعة، وطلعت بتعمل العكس: المندوب بيبيع بالعشرات والمئات،
+  /// فالوصول لرقم زي ٤٠ بضغطة الواحدة مش أسرع من كتابته، والضغطة الزيادة بالغلط
+  /// بتعدّل كمية على فاتورة من غير ما حد ياخد باله. الخانة بتقبل الكسور برضه.
   Widget _qtyStepper(SaleDraftLine l, TextEditingController ctl) {
     return Container(
       decoration: BoxDecoration(
@@ -894,9 +910,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _stepButton(Icons.remove, () => _bumpQty(l, -1)),
+          const SizedBox(width: 8),
           SizedBox(
-            width: 52,
+            width: 62,
             child: TextField(
               controller: ctl,
               textAlign: TextAlign.center,
@@ -914,19 +930,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   setState(() => l.quantity = double.tryParse(t.trim()) ?? 0),
             ),
           ),
-          _stepButton(Icons.add, () => _bumpQty(l, 1)),
+          const SizedBox(width: 8),
         ],
-      ),
-    );
-  }
-
-  Widget _stepButton(IconData icon, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        child: Icon(icon, size: 18, color: AppColors.primary),
       ),
     );
   }
