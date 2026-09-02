@@ -37,6 +37,36 @@ class SaleAddItemFlow {
     final free = await LocalDb.instance.availableForSaleAll();
     if (!context.mounted) return;
 
+    // **مافيش ولا صنف على الجهاز = مشكلة مزامنة، مش عربية فاضية.**
+    //
+    // من غير الفرق ده كان بيفتح بوباب «بدون فئة» فاضي مكتوب فيه «مفيش أصناف هنا» —
+    // والمندوب يقفله ويفتحه تاني ويفضل مستني. الرسالة دي بتقول له اللي حصل فعلاً
+    // وبتوديه للمكان اللي بيصلّحه. العربية الفاضية فعلاً بتبان في «مخزني» بأصنافها
+    // على صفر، مش ببوباب صامت.
+    if (items.isEmpty) {
+      await showDialog<void>(
+        context: context,
+        builder: (dctx) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('الأصناف لسه ما نزلتش على الجهاز'),
+            content: const Text(
+                'افتح «مزامنة البيانات» من القايمة واعمل مزامنة — الأصناف بتنزل معاها '
+                'بأرصدة عربيتك وأسعارها.'
+                '\n\n'
+                'لو المزامنة تمّت وبرضه فاضية، يبقى مالكش مخزن ولا عهدة مسجّلة — '
+                'كلّم المخزن.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dctx),
+                  child: const Text('تمام')),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
     // نسخة شغّالة بتتظبط مع كل صنف يتضاف — البوباب اللي بعده بيقول المتاح الصح.
     final onInvoice = Map<int, double>.from(alreadyOnInvoice);
 

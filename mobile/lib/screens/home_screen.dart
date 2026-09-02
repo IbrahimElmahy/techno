@@ -325,8 +325,22 @@ class _HomeScreenState extends State<HomeScreen> {
               final messenger = ScaffoldMessenger.of(context);
               try {
                 await ApiClient.instance.pullReferenceData();
-                messenger.showSnackBar(
-                    const SnackBar(content: Text('تم تحديث الأصناف والقوائم ✔')));
+                // **وأصناف العربية كمان.** الزرار ده كان بيسحب الكتالوج والقوائم بس
+                // ويقول «تم تحديث الأصناف ✔» — وأصناف عربية المندوب (اللي بيبيع منها)
+                // مابتتحدّثش هنا خالص، هي بتنزل مع حزمة البيع. فالمندوب يضغط، يشوف
+                // علامة الصح، يفتح الفاتورة ويلاقيها فاضية. الزرار بيقول «الأصناف»
+                // فلازم يجيب الأصناف اللي هو قاصدها.
+                var mine = 0;
+                try {
+                  await ApiClient.instance.pullSalesBundle();
+                  mine = (await LocalDb.instance.saleItems()).length;
+                } on ApiException catch (e) {
+                  if (e.statusCode != 403) rethrow; // ٤٠٣ = مش مندوب، عادي
+                }
+                messenger.showSnackBar(SnackBar(
+                    content: Text(mine > 0
+                        ? 'اتحدثت القوائم و$mine صنف في عربيتك ✔'
+                        : 'تم تحديث القوائم ✔ — مافيش أصناف في عربيتك')));
               } catch (e) {
                 messenger.showSnackBar(SnackBar(content: Text('فشل التحديث: $e')));
               }

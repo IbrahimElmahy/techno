@@ -69,11 +69,28 @@ class _SyncScreenState extends State<SyncScreen> {
       // السحب اللي بعدها هيجيبها.
       final permits = await ApiClient.instance.pushTransfers();
       await ApiClient.instance.pullReferenceData();
-      // حزمة البيع بتتسحب مع الباقي — عملاء المندوب وأصناف عربيته بأسعارهم. بتتبلع لو
-      // المستخدم مش مندوب أصلاً (مافيش عهدة)، عشان مزامنة الإدارة ماتفشلش من غير سبب.
+      // حزمة البيع بتتسحب مع الباقي — عملاء المندوب وأصناف عربيته بأسعارهم.
+      //
+      // اللي بيتبلع هو **بس** إن اللي داخل مش مندوب (٤٠٣) أو مالوش مخزن ولا عهدة
+      // (٤٠٤): دول مش أعطال، ومزامنة الإدارة مالهاش دعوة بحزمة البيع.
+      //
+      // أي فشل تاني بيتقال. كان بيتبلع كله والشاشة تكتب «واتحدثت الأصناف ✔» — فالمندوب
+      // بيقفل المزامنة مطمّن، يفتح الفاتورة، ويلاقي «مفيش أصناف» من غير ما حد قال له
+      // ليه. علامة صح على حاجة ماحصلتش أوحش من رسالة غلط.
+      String? bundleNote;
       try {
         await ApiClient.instance.pullSalesBundle();
-      } catch (_) {/* مش مندوب، أو مالوش عهدة — باقي المزامنة تمّت */}
+      } on ApiException catch (e) {
+        if (e.statusCode == 403) {
+          bundleNote = null; // مش مندوب — مافيش أصناف عربية أصلاً
+        } else if (e.statusCode == 404) {
+          bundleNote = 'مالكش مخزن ولا عهدة مسجّلة — كلّم المخزن';
+        } else {
+          throw Exception('الأصناف ماتحدثتش: ${e.message}');
+        }
+      } catch (e) {
+        throw Exception('الأصناف ماتحدثتش: $e');
+      }
       setState(() {
         final parts = <String>[
           if (pushed > 0) 'اترفعت $pushed معاينة',
@@ -82,9 +99,10 @@ class _SyncScreenState extends State<SyncScreen> {
           if (collected > 0) 'اترفع $collected تحصيل',
           if (permits > 0) 'اترفع $permits إذن تحويل',
         ];
-        _status = parts.isEmpty
+        final done = parts.isEmpty
             ? 'مفيش حاجة جديدة — واتحدثت الأصناف والقوائم ✔'
             : '${parts.join(' و')} واتحدثت الأصناف ✔';
+        _status = bundleNote == null ? done : '$done\n⚠ $bundleNote';
       });
     } catch (e) {
       setState(() {

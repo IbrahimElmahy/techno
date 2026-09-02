@@ -51,10 +51,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     });
     try {
       await ApiClient.instance.login(_username.text.trim(), _password.text);
-      // First pull of catalog + lookups so the rep can work offline right away.
+      // أول سحب بعد الدخول عشان المندوب يشتغل من غير شبكة على طول.
+      //
+      // **وحزمة البيع معاه.** `pullReferenceData` بتجيب الكتالوج والقوايم — مش أصناف
+      // العربية. المندوب اللي بيدخل لأول مرة وبيفتح فاتورة كان بيلاقيها فاضية، لأن
+      // اللي بيملا `sale_item` هو `pullSalesBundle` وهو مانداش غير من شاشة المزامنة.
+      // الدخول لازم يخلّيه جاهز يبيع، مش يسيبه يدوّر على شاشة تانية.
       try {
         await ApiClient.instance.pullReferenceData();
       } catch (_) {/* offline pull can happen later from settings */}
+      try {
+        await ApiClient.instance.pullSalesBundle();
+      } catch (_) {/* مش مندوب، أو مالوش مخزن — شاشة المزامنة بتقول السبب */}
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const HomeScreen()));
