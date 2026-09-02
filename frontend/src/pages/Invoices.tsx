@@ -1705,8 +1705,19 @@ export default function Invoices() {
       }
 
       // Coupons
-      if (det.coupon_rows && det.coupon_rows.length) {
-        setCouponRows(det.coupon_rows.map((cr: any) => ({
+      //
+      // **الحقل اسمه `coupons` مش `coupon_rows`.** السيرفر بيرجّعه كده من الأول
+      // (`SalesInvoiceDetail.coupons`)، والشاشة كانت بتقرا اسم مالوش وجود — فبيطلع
+      // `undefined` على طول، وبتقع على الشكل القديم (`coupon_serial_from`) وهو فاضي
+      // في أي فاتورة اتكتبت بصفوف، وتنتهي بصف فاضي.
+      //
+      // والأثر مش شكلي: اللي بيفتح الفاتورة للتعديل بيشوف الكوبونات مش موجودة، فلو
+      // حفظ التعديل بيمسحها من المستند — والدفتر اللي في إيد العميل يبقى ملوش أثر،
+      // فالورقة الراجعة بعد شهر بتترفض. `coupon_rows` سايبة كمان عشان لو رد قديم
+      // متكاش في مكان تاني.
+      const couponSrc = det.coupons ?? det.coupon_rows;
+      if (couponSrc && couponSrc.length) {
+        setCouponRows(couponSrc.map((cr: any) => ({
           key: cr.id || String(Math.random()),
           coupon_kind: cr.coupon_kind,
           count: cr.count,
