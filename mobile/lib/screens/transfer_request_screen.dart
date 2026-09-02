@@ -57,9 +57,9 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
       _warehouses = ws;
       _myKind = kind;
       _myId = id;
-      // المصدر بيفتح على مكان المندوب: أغلب الأذون بتطلع من عربيته، واللي عايز
-      // العكس بيغيّرها بضغطة.
-      if (kind != null && id != null) _source = '$kind:$id';
+      // **الوجهة** هي اللي بتتحط لوحدها — عربية المندوب. والمصدر بيفضل فاضي
+      // لحد ما يختار، لأنه هو السؤال: البضاعة جاية منين.
+      if (kind != null && id != null) _dest = '$kind:$id';
     });
   }
 
@@ -79,8 +79,8 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
     return out;
   }
 
-  /// قايمة الوجهة — نفس الأماكن ناقص مكان المندوب نفسه.
-  List<DropdownMenuItem<String>> get _destPlaces {
+  /// الأماكن اللي ينفع تكون مصدر — كل حاجة ماعدا مكان المندوب نفسه.
+  List<DropdownMenuItem<String>> get _otherPlaces {
     final mine = _myKind == 'warehouse' ? 'warehouse:$_myId' : '__me__';
     return [for (final d in _places) if (d.value != mine) d];
   }
@@ -145,12 +145,12 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
     // «من» مقفول على مخزن المندوب، فاللي ممكن يكون ناقص حاجة من اتنين: إنه ماسحبش
     // البيانات (فمخزنه مش معروف على الجهاز)، أو إنه ماختارش الوجهة. الرسالتين
     // مختلفتين لأن الحل مختلف — واحدة بتتصلّح بمزامنة والتانية بضغطة.
-    if (src == null) {
+    if (dst == null) {
       _say('مخزنك مش معروف على الجهاز — اعمل مزامنة الأول');
       return;
     }
-    if (dst == null) {
-      _say('اختر المخزن اللي هتحوّل له');
+    if (src == null) {
+      _say('اختر المخزن اللي البضاعة جاية منه');
       return;
     }
     if (_resolve(src) == _resolve(dst)) {
@@ -205,19 +205,29 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // **«من» مقفول على مخزن المندوب نفسه** — مش قايمة يختار منها.
+          // **«إلى» هي المقفولة، مش «من».**
           //
-          // الإذن اللي بيتكتب من التطبيق هو دايماً بضاعة **طالعة من عربيته**: بيرجّع
-          // للمخزن، أو بيحوّل لمندوب تاني. مافيش حالة يبعت فيها من مخزن مش في إيده —
-          // ولو اختار واحد كده، السيرفر بيرفض الإذن أصلاً (`is_own_store`)، والمندوب
-          // بيكتشف ده بعد ما يكتب الطلب كله ويبعته.
+          // ده **طلب** مش إذن صرف: المندوب بيطلب بضاعة **تيجي له** — من المخزن
+          // الرئيسي أو من عربية مندوب تاني — والمسؤول هو اللي بيعتمد وبيصرف.
+          // فالوجهة دايماً عربيته هو، والمصدر هو السؤال الحقيقي.
           //
-          // والقايمة كانت بتخلّي الغلط دا سهل: ٦٥ مخزن في منسدلة، والصح واحد فيهم،
-          // وبيفتح عليه أصلاً. سؤال إجابته واحدة مش سؤال — الخانة بتقول المكان
-          // وخلاص، والاختيار الحقيقي (الوجهة) بيفضل هو اللي محتاج تفكير.
-          InputDecorator(
+          // (كانت مقفولة على «من» بالغلط: ده شكل إذن الصرف اللي المكتب بيكتبه،
+          // مش شكل الطلب اللي المندوب بيكتبه.)
+          DropdownButtonFormField<String>(
+            initialValue: _source,
             decoration: const InputDecoration(
               labelText: 'من',
+              border: OutlineInputBorder(),
+            ),
+            // مكان المندوب نفسه مش في القايمة: طلب من مخزنه لمخزنه مالوش معنى،
+            // والسيرفر بيرفضه — فمافيش داعي يبقى قدامه أصلاً.
+            items: _otherPlaces,
+            onChanged: (v) => setState(() => _source = v),
+          ),
+          const SizedBox(height: 12),
+          InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'إلى',
               border: OutlineInputBorder(),
             ),
             child: Row(
@@ -231,18 +241,6 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _dest,
-            decoration: const InputDecoration(
-              labelText: 'إلى',
-              border: OutlineInputBorder(),
-            ),
-            // مكان المندوب نفسه مش في قايمة الوجهة: تحويل من مخزنه لمخزنه مالوش
-            // معنى، والسيرفر بيرفضه — فمافيش داعي يبقى قدامه أصلاً.
-            items: _destPlaces,
-            onChanged: (v) => setState(() => _dest = v),
           ),
           const SizedBox(height: 16),
 

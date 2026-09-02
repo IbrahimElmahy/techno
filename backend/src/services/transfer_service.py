@@ -23,7 +23,7 @@ from src.models.warehouse import Custody, Warehouse
 from src.models.catalog import Item
 from src.auth.branch_scope import branch_for
 from src.services import (
-    audit_service, batch_service, reservation_service, serial_service, stock_service,
+    audit_service, batch_service, serial_service, stock_service,
 )
 
 _ROUTE_KINDS = {
@@ -71,24 +71,22 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         raise TransferError("كمية التحويل لازم تكون أكبر من صفر.")
     if source_kind == dest_kind and source_id == dest_id:
         raise TransferError("المصدر والوجهة لازم يكونوا مكانين مختلفين.")
-    # Fail fast: never let a request be raised for more than the source actually holds. The
-    # authoritative no-negative guard still runs at approve time (stock can move in between).
-    # (031) Reserved stock does not move. A hold is a promise to a customer at THIS location, and
-    # sending the goods to another branch breaks it as completely as selling them would — with the
-    # difference that nobody notices until the customer arrives.
-    on_hand = stock_service.on_hand(db, item_id, source_kind, source_id)
-    held = reservation_service.held_against(
-        db, item_id=item_id, location_kind=source_kind, location_id=source_id)
-    available = to_qty(Decimal(str(on_hand)) - Decimal(str(held)))
-    if qty > available:
-        if held > to_qty(0):
-            raise TransferError(
-                f"المتاح للتحويل {available} أقل من المطلوب {qty} — فيه {held} محجوزة لعملاء "
-                f"في المخزن ده."
-            )
-        raise TransferError(
-            f"طالب {qty} والمتاح في المصدر {available} بس."
-        )
+    # **الطلب بيتقبل حتى لو المصدر ماعندوش الكمية.** ده طلب، مش صرف.
+    #
+    # كان فيه فحص مبكر بيرفض `qty > available` — ومعناه إن المندوب اللي محتاج ١٠٠
+    # والمخزن فيه ٦٠ **مايقدرش يطلب المية أصلاً**. فبيطلب ٦٠، والمكتب مايعرفش إن فيه
+    # نقص ٤٠: الرقم اللي وصله مش الاحتياج، ده الرصيد. الطلب اللي بيتفصّل على المتاح
+    # بيخبّي المعلومة الوحيدة اللي المكتب محتاجها عشان يشتري.
+    #
+    # واللي بيشتري بيقرر من مكان تاني خالص: عنده المخزن كله، والطلبات التانية، والوارد
+    # اللي في السكة. فالطلب بيوصل بالكامل، وهو بيعدّله أو يرفضه.
+    #
+    # **والحارس الحقيقي مكانه الاعتماد مش الطلب.** `stock_service.post_movement`
+    # بيرفض أي حركة خروج بترمي الرصيد تحت الصفر (`allow_negative=False` وهو
+    # الافتراضي)، وهي اللي بتتنفّذ ساعة الاعتماد. الفحص هنا كان راحة مش صحة — والرصيد
+    # ممكن يتغيّر بين الطلب والاعتماد، فهو ماكانش بيضمن حاجة أصلاً.
+    #
+    # (031) المحجوز لعملاء برضه بيتحمى هناك، في نفس اللحظة اللي البضاعة بتتحرّك فيها.
     transfer = StockTransfer(
         document_number=_doc_number(db), item_id=item_id, quantity=Decimal(quantity), route=route,
         source_location_kind=source_kind, source_location_id=source_id,
