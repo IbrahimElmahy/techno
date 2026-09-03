@@ -26,7 +26,21 @@ import { keepInView } from '../utils/keepInView';
  * things to dismiss before typing the first line.
  */
 
-export type PartyKind = 'customer' | 'supplier';
+/**
+ * تصنيف الطرف في المنتقي — **زي a5 بالظبط**.
+ *
+ * a5 بيحطّ على كل حساب فرعي خانة «يظهر في» (`showsin` في الـAPI بتاعه)، وهي اللي
+ * بتقرّر الحساب ده يبان في أنهي منتقي. فمنتقي الطرف عنده فيه أكتر من تصنيف —
+ * والموظف واحد منهم: الشركة بتبيع لموظفيها وبتستلم منهم مرتجع، والمستند ده حقيقي
+ * وله دفتره.
+ *
+ * `employee` مش دفتر تالت — هو **نفس دفتر العملاء مفلتر على `customer_type`**.
+ * الموظف اللي بيشتري كارته كارت عميل (وده منطق a5: حساب تحت «العملاء» لدين
+ * البضاعة، وحساب تحت «اجور ومرتبات» للمرتب — حسابين لنفس الراجل بغرضين). فالتصنيف
+ * هنا **عدسة على نفس الكشف**، مش جدول تاني — ولو بقى جدول تاني كان الموظف اللي
+ * بيشتري هيبقى ليه كارتين ورصيدين.
+ */
+export type PartyKind = 'customer' | 'supplier' | 'employee';
 
 export interface Party {
   id: number;
@@ -37,7 +51,7 @@ export interface Party {
   balance?: string | null;
 }
 
-const KIND_LABEL: Record<PartyKind, string> = { customer: 'العميل', supplier: 'المورد' };
+const KIND_LABEL: Record<PartyKind, string> = { customer: 'العميل', supplier: 'المورد', employee: 'الموظف' };
 
 /** شرايح السعر — نفس القايمة اللي في `useLookup` عشان الأسماء ما تتفرّقش. */
 const PRICE_TIERS = [
@@ -50,7 +64,12 @@ const PRICE_TIERS = [
 const KIND_ENDPOINT: Record<PartyKind, string> = {
   customer: '/api/v1/customers',
   supplier: '/api/v1/suppliers',
+  // الموظف من نفس دفتر العملاء — الفلترة تحت على `customer_type`.
+  employee: '/api/v1/customers',
 };
+
+/** التصنيف اللي التبويب ده بيفلتر بيه كشف العملاء. `null` = من غير فلترة. */
+const KIND_CUSTOMER_TYPE: Partial<Record<PartyKind, string>> = { employee: 'employee' };
 
 export default function PartyPickerModal({
   open, kind, onPick, onCancel, date, onDateChange, kinds, title,
@@ -119,12 +138,16 @@ export default function PartyPickerModal({
 
   const visible = useMemo(() => {
     const needle = normalizeAr(query);
+    const onlyType = KIND_CUSTOMER_TYPE[activeKind];
     return parties.filter((p) => {
+      // تبويب «الموظفين» بيفرز نفس الكشف — مش بيجيب دفتر تاني. الموظف اللي بيشتري
+      // كارته كارت عميل، ولو كان له كارت لوحده كان هيبقى ليه رصيدين لنفس الراجل.
+      if (onlyType && (p as any).customer_type !== onlyType) return false;
       if (branchId && p.branch_id !== branchId) return false;
       if (!needle) return true;
       return normalizeAr(p.name).includes(needle) || normalizeAr(p.phone).includes(needle);
     });
-  }, [parties, query, branchId]);
+  }, [parties, query, branchId, activeKind]);
 
   // Back to the top when the list changes, and never past its end.
   useEffect(() => { setCursor(0); }, [query, branchId, open]);
@@ -163,7 +186,10 @@ export default function PartyPickerModal({
         address: values.address || undefined,
       };
       if (activeKind === 'customer') {
-        payload.customer_type = values.customer_type || 'تاجر';
+        // الإنشاء من تبويب «الموظفين» بيتولد موظف على طول — اللي فتح التبويب ده
+        // عارف هو بيضيف مين، وإجباره يختار التصنيف تاني سؤال إجابته قدامه.
+        payload.customer_type = values.customer_type
+          || KIND_CUSTOMER_TYPE[activeKind] || 'تاجر';
         payload.rep_id = values.rep_id;
         payload.territory_id = values.territory_id;
         payload.default_price_tier = values.default_price_tier || undefined;
@@ -249,7 +275,8 @@ export default function PartyPickerModal({
                         background: k === activeKind ? '#eaf5e2' : '#fff',
                         fontWeight: k === activeKind ? 700 : 400,
                       }}>
-                      {k === 'customer' ? 'العملاء' : 'الموردين'}
+                      {k === 'customer' ? 'العملاء'
+                        : k === 'employee' ? 'الموظفين' : 'الموردين'}
                     </div>
                   ))}
                 </div>

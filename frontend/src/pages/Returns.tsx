@@ -1061,7 +1061,7 @@ export default function Returns() {
     <>
       <PartyPickerModal
         open={newStep === 'party' || partyPickerOpen} kind="customer"
-        kinds={['customer', 'supplier']}
+        kinds={['customer', 'employee', 'supplier']}
         date={returnDate} onDateChange={(d) => setReturnDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />

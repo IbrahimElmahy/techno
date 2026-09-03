@@ -3020,7 +3020,7 @@ export default function Invoices() {
         */}
       <PartyPickerModal
         open={partyPickerOpen || newStep === 'party'} kind="customer"
-        kinds={['customer', 'supplier']}
+        kinds={['customer', 'employee', 'supplier']}
         date={invoiceDate} onDateChange={(d) => setInvoiceDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
