@@ -217,10 +217,42 @@ def run(*, execute: bool) -> None:
             made += 1
         db.commit()
 
+        # ── الجولة التانية: ربط اللي فضل من غير حساب، بالفرع ──
+        #
+        # الربط بالاسم لوحده بيقف لما يبقى فيه أكتر من حساب بنفس الاسم — و«مدحت
+        # البحيرى» ليه حساب في كل فرع. الوقفة دي **صح**: التخمين هنا بيحطّ رصيد
+        # راجل على حساب راجل تاني.
+        #
+        # بس الفرع بيحسمها. كود الحساب في شجرتنا بيحمل بادئة الفرع (`AL-A5S-` /
+        # `A5S-`)، فالاسم + الفرع بيحدّدوا حساب واحد — والرصيد بيرجع يبان بدل ما
+        # الكارت يقعد على صفر وهو مديون.
+        linked2 = 0
+        still: list[Customer] = []
+        for c in db.scalars(select(Customer).where(
+                Customer.active.is_(True), Customer.customer_type == "employee",
+                ~Customer.id.in_(select(CustomerAccount.customer_id)))):
+            want = "AL-A5S-" if (c.code or "").startswith("AL-") else "A5S-"
+            hits = [a for a in acc_by_name.get(_norm(c.name), [])
+                    if (a.code or "").startswith(want) and a.id not in taken]
+            if len(hits) == 1:
+                taken.add(hits[0].id)
+                db.add(CustomerAccount(customer_id=c.id, account_id=hits[0].id))
+                linked2 += 1
+            else:
+                still.append(c)
+        if linked2:
+            db.commit()
+
         n_emp = db.scalar(select(func.count()).select_from(Customer)
                           .where(Customer.active.is_(True),
                                  Customer.customer_type == "employee")) or 0
         print(f"\n✔ اتعمل {made} كارت موظف. الإجمالي دلوقتي: {n_emp}")
+        if linked2:
+            print(f"✔ واتربط {linked2} كارت بحسابه بالفرع (الاسم لوحده كان ملتبس).")
+        if still:
+            print(f"\nلسه من غير حساب ({len(still)}) — مالهمش حساب مطابق في الشجرة:")
+            for c in still:
+                print(f"   {c.code:<18}{c.name}")
     finally:
         db.close()
 
