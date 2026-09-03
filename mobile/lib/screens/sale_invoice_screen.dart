@@ -866,6 +866,19 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     // (`Item.default_discount_pct`) أنهي أصناف تمشي بالقاعدة دي،
                     // من غير ما التطبيق يتبني من أول وجديد.
                     readOnly: l.fixedDiscountPct > 0,
+                    // **والخانة المقفولة بتوري صافي سعر الوحدة بعد الخصمين.**
+                    //
+                    // كانت بتوري سعر القايمة (١٦٦٫٢٥) والإجمالي محسوب على ١٤٩٫٦٣،
+                    // فالمندوب والعميل بيبصوا على سطر أرقامه مابتضربش في بعضها:
+                    // ٥ × ١٦٦٫٢٥ = ٨٣١٫٢٥ مش ٧٤٨٫١٣. الرقم اللي على الورقة لازم يكون
+                    // هو الرقم اللي بيتحسب بيه.
+                    //
+                    // والخانة المفتوحة بتفضل بسعر القايمة: هي اللي بيتكتب فيها، ولو
+                    // ورّت الصافي كان اللي يكتب فيه يبقى بيكتب في خانة معناها اتغيّر
+                    // تحت إيده. الشارة «ثابت ١٠٪» جنب السطر بتقول الخصم جه منين.
+                    netPrice: l.fixedDiscountPct > 0
+                        ? l.unitPrice * (1 - l.discountPct / 100)
+                        : null,
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -909,7 +922,30 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     required TextEditingController controller,
     required void Function(double) onChanged,
     bool readOnly = false,
+    /// لما تتبعت، الخانة بتوري الرقم ده بدل اللي في الكنترولر — والعنوان بيقول إنه
+    /// بعد الخصم. للقراءة بس، فمافيش تعارض مع اللي بيتكتب.
+    double? netPrice,
   }) {
+    // الخانة اللي بتوري الصافي **مش خانة كتابة أصلاً** — فبتترسم عرض، من غير
+    // كنترولر. الكتابة في الكنترولر جوّه `build` بتتصادم مع `_repriceAll` وبترمي
+    // المؤشر، وهي هنا مالهاش لازمة: مافيش حد بيكتب في الخانة دي.
+    if (netPrice != null) {
+      return InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'السعر بعد الخصم',
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: Text(_trim(netPrice),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54)),
+      );
+    }
     return TextFormField(
       controller: controller,
       readOnly: readOnly,
@@ -1024,20 +1060,34 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
             _totalRow('صافي الفاتورة', _money(_total), color: AppColors.primary),
             if (_customer != null) ...[
               const Divider(height: 18),
-              // سطر لكل خط، والخط اللي الفاتورة عليه متعلّم.
+              // **الخطين بيتعرضوا لما العميل حسابه مقسوم فعلاً — بس.**
               //
-              // الخطين بيتعرضوا دايماً حتى لو واحد فيهم صفر: العميل بيسأل «الأبيض بكام»،
-              // والسطر الناقص بيخلّي السؤال يتردّ عليه بتخمين. والصفر إجابة.
-              for (final f in const ['أبيض', 'بولي'])
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: _totalRow('مديونية $f', _money(_familyBalance(f)),
-                      color: _familyBalance(f) > 0.001
-                          ? AppColors.danger
-                          : AppColors.primary,
-                      highlight: f == _family),
-                ),
-              _totalRow('حساب سابق على العميل', _money(_prevBalance),
+              // ٩٥٢ من ١٤٩٩ عميل عندهم حساب واحد من غير خط (رصيدهم مليونين)، لأن a5
+              // ماكانش قاسم حساباتهم. الحزمة بتبعت `family_balances` للحسابات اللي
+              // ليها خط بس، فالعميل ده بينزل عنده القايمة **فاضية** — والشاشة كانت
+              // بترسم «مديونية أبيض ٠٫٠٠» و«مديونية بولي ٠٫٠٠» جنب إجمالي ٤٬٢١٣٫٨٠.
+              //
+              // تلات أرقام على شاشة واحدة، اتنين منهم بيقولوا «مافيش» والتالت بيقول
+              // «فيه» — والمندوب واقف قدام العميل. الصفر إجابة **لما يكون مقيس**؛ هنا
+              // ماكانش مقيس، كان غياب بيتقري كصفر.
+              //
+              // اللي حسابه مقسوم بيشوف الخطين زي ما كان، واللي حسابه واحد بيشوف سطر
+              // واحد بالرقم الحقيقي.
+              if (_customer!.familyBalances.isNotEmpty)
+                for (final f in const ['أبيض', 'بولي'])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _totalRow('مديونية $f', _money(_familyBalance(f)),
+                        color: _familyBalance(f) > 0.001
+                            ? AppColors.danger
+                            : AppColors.primary,
+                        highlight: f == _family),
+                  ),
+              _totalRow(
+                  _customer!.familyBalances.isEmpty
+                      ? 'مديونية العميل (حساب واحد مش مقسوم)'
+                      : 'حساب سابق على العميل',
+                  _money(_prevBalance),
                   color: _prevBalance > 0.001 ? AppColors.danger : AppColors.primary),
               const Divider(height: 18),
             ],

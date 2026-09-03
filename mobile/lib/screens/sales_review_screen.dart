@@ -118,13 +118,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
     }
   }
 
-  Future<void> _delete(Map<String, Object?> row) async {
-    // المرفوعة مابتتشالش من هنا — دي بقت في الدفاتر، وشيلها من الجهاز مابيلغيهاش.
-    if ((row['synced'] as int?) == 1) return;
-    await LocalDb.instance.deleteUnsyncedSale(row['local_id'] as int);
-    _load();
-  }
-
   @override
   Widget build(BuildContext context) {
     final pending = _rows.where((r) => (r['synced'] as int?) != 1).length;
@@ -288,13 +281,13 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                           icon: const Icon(Icons.print_outlined),
                           label: const Text('طباعة / PDF'),
                         ),
-                        if (!synced)
-                          TextButton.icon(
-                            onPressed: () => _delete(r),
-                            icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                            label: const Text('امسح',
-                                style: TextStyle(color: AppColors.danger)),
-                          ),
+                        // **مافيش «امسح».** الفاتورة اللي لسه على الجهاز مستند اتكتب
+                        // فعلاً: العميل استلم بضاعة وورقة، والرصيد اتحسب عليها في
+                        // التطبيق. مسحها بتشيل الأثر الوحيد اللي بيقول إنها حصلت —
+                        // ومحدش في المكتب هيعرف إنها كانت موجودة أصلاً.
+                        //
+                        // والغلط بيتصلّح بمستند مش بمسح: ترفع وتتعمل مرتجع، والاتنين
+                        // بيبانوا. اللي عايز يلغي فاتورة قبل ما ترفع بيكلّم المكتب.
                       ],
                     ),
                   ),
