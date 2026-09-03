@@ -68,6 +68,8 @@
 """
 from __future__ import annotations
 
+import csv
+import os
 import re
 import sys
 from collections import defaultdict
@@ -91,7 +93,6 @@ CUSTOMER_GROUP = "العملاء"
 # شجرة a5. والسكربت بيعيد القياس قبل ما يكتب — أي كود فقد الشرط بيتقال ويتخطى.
 EMPLOYEE_CARDS: dict[str, str] = {
     # ── أكتوبر ──
-    "A5-146": "عمرو رجب",
     "A5X2": "محمود عادل المنصورة",
     "A5X3": "كامل هلال",
     "A5X4": "سامى دغار",
@@ -101,12 +102,10 @@ EMPLOYEE_CARDS: dict[str, str] = {
     "A5X10": "عبد الرحمن جمعة",
     "A5X9": "محمود سلام",
     # ── العلياء ──
-    "AL-A5-984": "احمد صبرى",
     "AL-A5X1": "احمد عسران",
     "AL-A5X5": "محمد حسن",
     "AL-A5X6": "محمد ربيع السقا",
     "AL-A5X7": "مدحت خضر",
-    "AL-A5-4357": "محمود سلام",
     "AL-A5X8": "محمد عسران",
     "AL-A5X9": "حذيفه زين عبد الفتاح",
     "AL-A5X10": "محمد عبد العال فون كاش",
@@ -141,6 +140,12 @@ EMPLOYEE_CARDS: dict[str, str] = {
 # الأربعتاشر دول اتحوّلوا غلط في التشغيلة الأولى وبيرجعوا «تاجر» — وهو تصنيفهم اللي
 # كان قبل ما ألمسهم.
 BACK_TO_CUSTOMER: dict[str, str] = {
+    # موظفين فعلاً — بس a5 حاطط كارتهم في `Cust`، فالكارت كارت عميل.
+    # (عمرو رجب مندوب عليه ٢٣٠ عميل، واحمد صبرى ليه مخزن باسمه.) هويتهم
+    # كموظفين عايشة على حساب المرتب وجدول الموظفين، مش على الكارت ده.
+    "A5-146": "عمرو رجب",
+    "AL-A5-984": "احمد صبرى",
+    "AL-A5-4357": "محمود سلام",
     "AL-A5-4288": "حسن رمضان",
     "AL-A5-637": "طارق عقبه",
     "AL-A5-3188": "محمود النقراشى",
@@ -175,6 +180,40 @@ FLAGGED: dict[str, str] = {}
 # «محمد حمودة» مش في كشف العملاء وهو فيه، بفرق حرف واحد.
 ROSTER_DIR = "C:/pgtmp"
 ROSTER_FILES = ("emp_AL.tsv", "emp_OCT.tsv")
+
+# كشف عملاء a5 كامل — `SELECT Cust_id, Cust_name FROM Cust` من القاعدتين.
+#
+# **الحارس بتاع الرجوع «تاجر» بيسأل ده بالكود، مش بالاسم.** كود الكارت بيحمل رقم
+# a5 جوّاه (`AL-A5-984` = `Cust_id` ٩٨٤ في العلياء)، والرقم مابيتغيّرش مهما الاسم
+# اتعدّل عندنا. والاسم كان بيوقّعنا: «احمد صبرى» له كارت عميل في `Cust` **و**حساب
+# تحت «ذمم الموظفين» باسم قريب، فالمقارنة بالاسم بتقول «ده موظف» وهي غلط — كارته
+# كارت عميل عند a5 نفسه.
+CUST_FILES = {"cust_aliaa2026.tsv": "AL-A5-", "cust_Techno2026.tsv": "A5-"}
+
+
+def _read_cust() -> dict[str, set[str]] | None:
+    """بادئة الفرع → أرقام العملاء في a5."""
+    out: dict[str, set[str]] = {}
+    for fn, prefix in CUST_FILES.items():
+        path = os.path.join(ROSTER_DIR, fn)
+        if not os.path.exists(path):
+            continue
+        ids = out.setdefault(prefix, set())
+        with open(path, encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh, delimiter="\t"):
+                if (row.get("رقم") or "").strip():
+                    ids.add(row["رقم"].strip())
+    return out or None
+
+
+def _in_cust(code: str, ids: dict[str, set[str]] | None) -> bool:
+    """الكود ده بيشاور على صف حقيقي في كشف عملاء a5؟"""
+    if ids is None:
+        return True                      # الكشف مش موجود — الحارس بيتعطّل
+    m = re.match(r"^(AL-)?A5-(\d+)$", code or "")
+    if not m:
+        return False
+    return m.group(2) in ids.get("AL-A5-" if m.group(1) else "A5-", set())
 
 
 def _read_roster() -> tuple[set[str] | None, dict[str, str]]:
@@ -225,6 +264,7 @@ def run(*, execute: bool) -> None:
         payroll = in_group.get(PAYROLL_GROUP, set())
         custody = in_group.get(CUSTODY_GROUP, set())
         roster, jobs = _read_roster()
+        cust_ids = _read_cust()
         warned_no_roster = False
         print(f"أسماء تحت «{PAYROLL_GROUP}»: {len(payroll)}   ·   "
               f"تحت «{CUSTODY_GROUP}»: {len(custody)}\n")
@@ -265,9 +305,9 @@ def run(*, execute: bool) -> None:
                 problems.append(
                     f"{code} «{c.name}»: مش في كشف موظفي a5 — اتخطّى")
                 continue
-            elif want == "trader" and _norm(c.name) in roster:
+            elif want == "trader" and not _in_cust(code, cust_ids):
                 problems.append(
-                    f"{code} «{c.name}»: في كشف موظفي a5 — اتخطّى")
+                    f"{code} «{c.name}»: كوده مش في كشف عملاء a5 — اتخطّى")
                 continue
             if c.customer_type == want:
                 continue
