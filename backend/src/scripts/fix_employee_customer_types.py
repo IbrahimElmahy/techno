@@ -92,6 +92,24 @@ CUSTOMER_GROUP = "العملاء"
 # القايمة دي **مقيسة**: كل كود هنا كارت اسمه ليه حساب تحت «اجور ومرتبات إدارية» في
 # شجرة a5. والسكربت بيعيد القياس قبل ما يكتب — أي كود فقد الشرط بيتقال ويتخطى.
 EMPLOYEE_CARDS: dict[str, str] = {
+    # ── a5 كاتب لهم **وظيفة صريحة** على حساب المرتب/العهدة ──
+    #
+    # دول في كشف عملاء a5 كمان (`Cust`)، وكنت سايبهم عملاء على قاعدة «الكارت
+    # بيتبع تصنيف a5». بس الوظيفة إشارة **أقوى** من مجرد وجود صف في `Cust`:
+    # «غفير» و«سائق» و«مشرف مبيعات» مش أوصاف تاجر — دي a5 بيقول بصريح العبارة
+    # إن الراجل ده على كشف مرتباته.
+    #
+    # وكونه بيشتري كمان مابيلغيش إنه موظف — بيفضل ليه حسابين عندهم زي ما هو،
+    # والكارت عندنا بيتصنّف باللي هو عليه فعلاً عشان يبان في تبويب «الموظفين».
+    "AL-A5-984": "احمد صبرى",   # مندوب تسويق
+    "AL-A5-637": "طارق عقبه",   # مشرف مبيعات
+    "A5-146": "عمرو رجب",   # مندوب بيع
+    "AL-A5-3188": "محمود النقراشى",   # غفير
+    "AL-A5-4299": "ابراهيم حسونه",   # مندوب تسويق
+    "A5-14": "احمد صلاح",   # سائق
+    "AL-A5-152": "محمد صبحى",   # مندوب تسويق
+    "AL-A5-398": "محمد عزوز",   # مندوب تسويق
+    "AL-A5-3125": "كامل هلول",   # مشرف مبيعات
     # ── أكتوبر ──
     "A5X2": "محمود عادل المنصورة",
     "A5X3": "كامل هلال",
@@ -140,27 +158,26 @@ EMPLOYEE_CARDS: dict[str, str] = {
 # الأربعتاشر دول اتحوّلوا غلط في التشغيلة الأولى وبيرجعوا «تاجر» — وهو تصنيفهم اللي
 # كان قبل ما ألمسهم.
 BACK_TO_CUSTOMER: dict[str, str] = {
+    # **الاسم الواحد مش شخص واحد بين الفرعين.** «احمد صلاح» في أكتوبر سائق
+    # (حساب مرتب + عهدة)، وفي العلياء عميل خالص — حسابه الوحيد تحت «العملاء»
+    # ومندوبه «مندوب السياره ( ب )». نقل الوظيفة من فرع لفرع كان بيخلّي راجل
+    # بيشتري يبقى موظف عشان واحد تاني اسمه زيه بياخد مرتب في مدينة تانية.
+    "AL-A5-781": "احمد صلاح",
     # موظفين فعلاً — بس a5 حاطط كارتهم في `Cust`، فالكارت كارت عميل.
     # (عمرو رجب مندوب عليه ٢٣٠ عميل، واحمد صبرى ليه مخزن باسمه.) هويتهم
     # كموظفين عايشة على حساب المرتب وجدول الموظفين، مش على الكارت ده.
-    "A5-146": "عمرو رجب",
-    "AL-A5-984": "احمد صبرى",
     "AL-A5-4357": "محمود سلام",
     "AL-A5-4288": "حسن رمضان",
-    "AL-A5-637": "طارق عقبه",
-    "AL-A5-3188": "محمود النقراشى",
-    "AL-A5-4299": "ابراهيم حسونه",
     "AL-A5-9675": "محمد سعيد",
-    "A5-14": "احمد صلاح",
     "AL-A5-197": "احمد الشحات",
-    "AL-A5-398": "محمد عزوز",
     "AL-A5-667": "مصطفى البحيرى",
-    "AL-A5-781": "احمد صلاح",
-    "AL-A5-3125": "كامل هلول",
 }
 
 # مش أشخاص — أقسام وفروع. البضاعة الرايحة لهم صرف داخلي مش بيعة.
 INTERNAL_CARDS: dict[str, str] = {
+    # قسم مش شخص — البضاعة الرايحة له صرف داخلي، وتصنيفه موظف بيحطّ قسم في
+    # كشف المرتبات.
+    "AL-A5-2112": "خدمة العملاء",
     "AL-A5-187": "اداره مبيعات",
     "A5-1627": "اداره مبيعات",
     "AL-A5X3": "فرع اكتوبر",
@@ -204,6 +221,46 @@ def _read_cust() -> dict[str, set[str]] | None:
                 if (row.get("رقم") or "").strip():
                     ids.add(row["رقم"].strip())
     return out or None
+
+
+# كشف حسابات a5 كاملة — `SELECT AccBrnch_id, AccBrnch_N, AccMain_N, MTree2 FROM accBrnch`.
+#
+# اللي بيهمنا منه **الوظيفة** (`MTree2`) على حساب تحت «ذمم الموظفين» أو «اجور
+# ومرتبات إدارية»: «غفير»، «سائق»، «مشرف مبيعات»، «محاسب»، «مندوب تسويق».
+#
+# دي إشارة **أقوى** من مجرد وجود صف في `Cust`. الراجل ممكن يكون في الكشفين — بيشتري
+# وبياخد مرتب — و«غفير» مش وصف تاجر. فاللي a5 كاتب له وظيفة بيتصنّف موظف حتى لو
+# كارته في كشف العملاء عندهم.
+STAFF_GROUPS = ("ذمم الموظفين", "اجور ومرتبات إدارية")
+# الملف → بادئة أكواد الفرع بتاعه.
+#
+# ⚠️ **الوظيفة بتتقيّد بالفرع.** «احمد صلاح» في أكتوبر سائق (حساب مرتب + عهدة)،
+# وفي العلياء عميل خالص. خريطة بالاسم لوحده كانت بتنقل الوظيفة بين الفرعين، فراجل
+# بيشتري في العلياء يبقى موظف عشان واحد تاني اسمه زيه بياخد مرتب في مدينة تانية.
+ACC_FILES = {"acc_aliaa2026.tsv": "AL-", "acc_Techno2026.tsv": ""}
+
+
+def _read_staff_jobs() -> dict[tuple[str, str], str]:
+    """(بادئة الفرع، الاسم المطبّع) → وظيفته، من حسابات الموظفين في a5."""
+    out: dict[tuple[str, str], str] = {}
+    for fn, prefix in ACC_FILES.items():
+        path = os.path.join(ROSTER_DIR, fn)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8", newline="") as fh:
+            for row in csv.DictReader(fh, delimiter="\t"):
+                if (row.get("المجموعة") or "").strip() not in STAFF_GROUPS:
+                    continue
+                job = (row.get("الوظيفة") or "").strip()
+                if job:
+                    out.setdefault((prefix, _norm(row.get("الاسم") or "")), job)
+    return out
+
+
+def _job_of(code: str, name: str, jobs: dict[tuple[str, str], str]) -> str | None:
+    """وظيفة الكارت ده عند a5 — في فرعه هو."""
+    prefix = "AL-" if (code or "").startswith("AL-") else ""
+    return jobs.get((prefix, _norm(name)))
 
 
 def _in_cust(code: str, ids: dict[str, set[str]] | None) -> bool:
@@ -264,6 +321,8 @@ def run(*, execute: bool) -> None:
         payroll = in_group.get(PAYROLL_GROUP, set())
         custody = in_group.get(CUSTODY_GROUP, set())
         roster, jobs = _read_roster()
+        staff_jobs = _read_staff_jobs()
+        jobs = {**{k[1]: v for k, v in staff_jobs.items()}, **jobs}
         cust_ids = _read_cust()
         warned_no_roster = False
         print(f"أسماء تحت «{PAYROLL_GROUP}»: {len(payroll)}   ·   "
@@ -301,9 +360,15 @@ def run(*, execute: bool) -> None:
                     print("⚠️ كشف a5 مش موجود على الجهاز — الحارس متعطّل. "
                           "شغّل الاستعلام وحطّ الكشفين في " + ROSTER_DIR)
                     warned_no_roster = True
-            elif want == "employee" and _norm(c.name) not in roster:
+            elif want == "employee" and _norm(c.name) not in roster \
+                    and not _job_of(code, c.name, staff_jobs):
                 problems.append(
-                    f"{code} «{c.name}»: مش في كشف موظفي a5 — اتخطّى")
+                    f"{code} «{c.name}»: لا في كشف موظفي a5 ولا ليه وظيفة — اتخطّى")
+                continue
+            elif want == "trader" and _job_of(code, c.name, staff_jobs):
+                problems.append(
+                    f"{code} «{c.name}»: a5 كاتب له وظيفة "
+                    f"«{_job_of(code, c.name, staff_jobs)}» — اتخطّى")
                 continue
             elif want == "trader" and not _in_cust(code, cust_ids):
                 problems.append(
