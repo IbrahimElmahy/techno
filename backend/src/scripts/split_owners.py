@@ -92,9 +92,9 @@ def run_split(*, execute: bool) -> None:
         for insp in inspections:
             if insp.customer_id in owner_cust_ids:
                 owner_obj = cust_to_owner[insp.customer_id]
+                owners_with_inspection.add(insp.customer_id)
                 insp.owner_id = owner_obj.id
                 insp.customer_id = None
-                owners_with_inspection.add(insp.customer_id)
                 counts["معاينات اتحوّلت من customer_id إلى owner_id"] += 1
             elif insp.customer_id is not None:
                 counts["معاينات لسه على عميل حقيقي (تجار/عملاء)"] += 1
@@ -158,7 +158,7 @@ def run_purge(*, execute: bool) -> None:
             print(f"❌ خطأ أمان: يوجد {len(insp_still_linked)} معاينة ما زالت تشير إلى customer_id لمالك!")
             return
 
-        # 3. التأكد من خلوهم التام من أي حركة مالية أو ربط كتاجر
+        # 3. التأكد من خلوهم التام من أي حركة مالية أو ربط كتاجر أو مفتاح جسر
         sql_check = text("""
             SELECT c.id, c.code, c.name,
                 EXISTS(SELECT 1 FROM sales_invoice si WHERE si.customer_id = c.id) AS has_inv,
@@ -166,13 +166,15 @@ def run_purge(*, execute: bool) -> None:
                 EXISTS(SELECT 1 FROM voucher v WHERE v.customer_id = c.id) AS has_vch,
                 EXISTS(SELECT 1 FROM inspection i WHERE i.merchant_customer_id = c.id) AS has_merch,
                 EXISTS(SELECT 1 FROM coupon_receipt cr WHERE cr.customer_id = c.id) AS has_cr,
-                EXISTS(SELECT 1 FROM coupon_issue ci WHERE ci.customer_id = c.id) AS has_ci
+                EXISTS(SELECT 1 FROM coupon_issue ci WHERE ci.customer_id = c.id) AS has_ci,
+                EXISTS(SELECT 1 FROM customer_external_ref x WHERE x.customer_id = c.id) AS has_ref
             FROM customer c
             WHERE c.id = ANY(:ids)
         """)
         violations = []
         for row in db.execute(sql_check, {"ids": owner_ids}).all():
-            if any([row.has_inv, row.has_ret, row.has_vch, row.has_merch, row.has_cr, row.has_ci]):
+            if any([row.has_inv, row.has_ret, row.has_vch, row.has_merch,
+                    row.has_cr, row.has_ci, row.has_ref]):
                 violations.append(row)
 
         if violations:
@@ -188,7 +190,7 @@ def run_purge(*, execute: bool) -> None:
         print("فحوصات الأمان:")
         print("  ✔ جميعهم منقولون في جدول owner بنفس الكود")
         print("  ✔ لا توجد أي معاينة تشير إليهم كـ customer_id")
-        print("  ✔ لا توجد فواتير أو مرتجعات أو سندات أو كوبونات")
+        print("  ✔ لا توجد فواتير أو مرتجعات أو سندات أو كوبونات أو مفاتيح جسر")
         print("  ✔ لا يوجد ربط كتاجر في أي معاينة")
         print("-" * 55)
 

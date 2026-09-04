@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Form, Input, Select, Switch, Space, Button, Spin, Row, Col, message
 } from 'antd';
@@ -65,6 +65,11 @@ export default function CustomerEditModal({
   const [territories, setTerritories] = useState<any[]>([]);
   const [governorates, setGovernorates] = useState<any[]>([]);
   const { options: typeOptions } = useLookup('customer_type');
+  // الملّاك ليهم شاشتهم — التصنيف ده مايظهرش هنا.
+  const editTypeOptions = useMemo(
+    () => typeOptions.filter((o) => o.value !== 'owner'),
+    [typeOptions],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -168,7 +173,7 @@ export default function CustomerEditModal({
             <Col xs={24} md={12}>
               <Form.Item name="customer_type" label="تصنيف العميل"
                 rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}>
-                <Select options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+                <Select options={editTypeOptions.map((o) => ({ value: o.value, label: o.label }))} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

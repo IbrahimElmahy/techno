@@ -107,6 +107,12 @@ const CustomerBalance = ({ value }: { value?: string | null }) => {
 export default function Customers() {
   const { options: typeOptions } = useLookup('customer_type');
   const typeLabels = labelMap(typeOptions);
+  // الملّاك ليهم شاشتهم («الملّاك» في ما بعد البيع) — التصنيف ده مايظهرش هنا
+  // لا في الفلتر ولا في فورم الإنشاء/التعديل.
+  const customerTypeOptions = useMemo(
+    () => typeOptions.filter((o) => o.value !== 'owner'),
+    [typeOptions],
+  );
   interface CustomersSummary {
     total_count: number;
     debtors_count: number;
@@ -331,8 +337,9 @@ export default function Customers() {
       ),
     },
     {
-      // «النوع» كان مدفون في السطر المتوسّع. التلاتة دول (تاجر/سباك/مالك) بيحددوا الشغل
-      // نفسه — مين بيشتري، ومين الكوبون بيرجع منه، ومين المعاينة عنده — فمكانه عمود.
+      // «النوع» كان مدفون في السطر المتوسّع. النوع بيحدد الشغل نفسه — مين بيشتري
+      // ومين الكوبون بيرجع منه — فمكانه عمود. (المالك خرج من الكشف خالص:
+      // شاشة «الملّاك» في ما بعد البيع.)
       title: 'النوع',
       dataIndex: 'customer_type',
       key: 'customer_type',
@@ -478,7 +485,7 @@ export default function Customers() {
             <Select allowClear style={{ width: '100%' }} placeholder="التصنيف"
               value={filters.customer_type}
               onChange={(v) => setFilter('customer_type', v)}
-              options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+              options={customerTypeOptions.map((o) => ({ value: o.value, label: o.label }))} />
           </Col>
           <Col xs={12} md={4}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
@@ -647,7 +654,7 @@ export default function Customers() {
               <Form.Item name="customer_type" label="تصنيف"
                 rules={[{ required: true, message: 'يرجى تحديد نوع العميل!' }]}>
                 <Select placeholder="اختر التصنيف"
-                  options={typeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+                  options={customerTypeOptions.map((o) => ({ value: o.value, label: o.label }))} />
               </Form.Item>
             </Col>
             <Col span={8}>

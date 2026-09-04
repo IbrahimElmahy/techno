@@ -105,6 +105,11 @@ export default function PartyPickerModal({
   /** تصنيفات العملاء من قايمة الإعدادات — كانت حالة معرّفة ومفيش حاجة بتملاها، فالقايمة
    *  كانت بتفضل فاضية والفورم بيقع على قايمة مكتوبة في الكود. */
   const { options: customerTypes } = useLookup('customer_type');
+  // الملّاك ليهم شاشتهم — مايتخلقوش من منتقي الطرف.
+  const pickerTypes = useMemo(
+    () => customerTypes.filter((o: any) => o.value !== 'owner'),
+    [customerTypes],
+  );
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [branchId, setBranchId] = useState<number | undefined>();
@@ -461,7 +466,7 @@ export default function PartyPickerModal({
               <Col xs={24} md={8}>
                 <Form.Item name="customer_type" label="التصنيف" style={{ marginBottom: 10 }}>
                   <Select allowClear placeholder="تاجر"
-                    options={customerTypes} />
+                    options={pickerTypes} />
                 </Form.Item>
               </Col>
             </>

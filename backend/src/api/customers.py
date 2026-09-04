@@ -213,6 +213,9 @@ def customers_summary(
         q=q, customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
     )
+    # الملّاك مش عملاء — ليهم جدولهم وشاشتهم (`owner` ← «الملّاك» في ما بعد البيع).
+    # الاستبعاد هنا عشان أي صف شارد مايظهرش في الكشف ولا في إجمالياته.
+    base_stmt = base_stmt.where(Customer.customer_type != "owner")
     signed = case(
         (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
         else_=-LedgerLine.amount,
@@ -286,7 +289,8 @@ def customer_options(
         select(Customer.id, Customer.code, Customer.name, Customer.phone,
                Customer.customer_type, Customer.rep_id,
                Customer.default_price_tier, Customer.discount_pct),
-        current).where(Customer.active.is_(True))
+        current).where(Customer.active.is_(True),
+                       Customer.customer_type != "owner")
     if customer_type:
         stmt = stmt.where(Customer.customer_type == customer_type)
     if q:
@@ -325,7 +329,7 @@ def list_customers(
         _scope_filter(select(Customer), current),
         q=q, customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
-    )
+    ).where(Customer.customer_type != "owner")  # الملّاك في شاشتهم، مش هنا
 
     if balance_filter and balance_filter != "all":
         # Need balances before slicing
@@ -369,6 +373,9 @@ def create_customer(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
     db: Session = Depends(get_db),
 ) -> CustomerCreated:
+    if body.customer_type == "owner":
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "الملّاك بيتسجّلوا من شاشة «الملّاك» في ما بعد البيع، مش من العملاء"})
     try:
         result = customer_service.create_customer(
             db,
@@ -414,6 +421,9 @@ def update_customer(
     if body.phone is not None:
         c.phone = body.phone
     if body.customer_type is not None:
+        if body.customer_type == "owner":
+            raise HTTPException(422, {"code": "validation",
+                                      "message": "الملّاك في شاشة «الملّاك» — ماينفعش يتحوّل لكارت عميل"})
         try:  # (v4) plumber must stay with an after-sales rep
             customer_service.assert_rep_matches_type(
                 db, customer_type=body.customer_type, rep_id=c.rep_id)
