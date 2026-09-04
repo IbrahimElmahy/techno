@@ -5,6 +5,10 @@
     python -m src.scripts.fix_inspection_merchants --dir C:/pgtmp/erp --yes
 
 Idempotent: يمكن إعادة تشغيله بأمان في أي وقت.
+
+التاجر بيتحل من جسر `customer_external_ref` (مفتاح `ERP-M-{id}`) — مش من الكود
+ومش من الاسم. المطابقة بالاسم اتشالت عمداً: الهمزة بتفرّق بين راجلين عند a5،
+والجسر كود-لكود هو المرجع الوحيد.
 """
 from __future__ import annotations
 
@@ -15,11 +19,10 @@ from collections import Counter
 from sqlalchemy import select
 
 from src.core.db import SessionLocal
-from src.models.customer import Customer
+from src.models.customer import Customer, CustomerExternalRef
 from src.models.inspection import Inspection
 from src.models.lookup import LookupOption
 from src.scripts.import_a5 import _clean, _read
-from src.scripts.import_erp_parties import _norm
 
 
 def run(folder: str, *, execute: bool) -> None:
@@ -36,10 +39,11 @@ def run(folder: str, *, execute: bool) -> None:
 
     db = SessionLocal()
     try:
-        # ---------- 1. خريطة التجار ----------
-        customers = db.scalars(select(Customer)).all()
-        by_code = {c.code: c for c in customers if c.code}
-        by_name = {_norm(c.name): c for c in customers}
+        # ---------- 1. خريطة التجار من الجسر ----------
+        customers = {c.id: c for c in db.scalars(select(Customer)).all()}
+        bridge = {x.ref: x.customer_id
+                  for x in db.scalars(select(CustomerExternalRef)).all()
+                  if x.ref.startswith("ERP-M-")}
 
         # mid -> (target_customer | None, name, phone, match_kind)
         resolved_merchants: dict[str, tuple[Customer | None, str, str, str]] = {}
@@ -52,26 +56,20 @@ def run(folder: str, *, execute: bool) -> None:
             name = _clean(r[1])
             phone = _clean(r[2]) if len(r) > 2 else ""
 
-            target = by_code.get(f"ERP-M-{mid}")
+            target = customers.get(bridge.get(f"ERP-M-{mid}"))
             if target is not None:
-                resolved_merchants[mid] = (target, name, phone, "code")
-                m_counts["اتحلّوا بالكود"] += 1
+                resolved_merchants[mid] = (target, name, phone, "bridge")
+                m_counts["اتحلّوا بالجسر"] += 1
             else:
-                target = by_name.get(_norm(name))
-                if target is not None:
-                    resolved_merchants[mid] = (target, name, phone, "name")
-                    m_counts["اتحلّوا بالاسم"] += 1
-                else:
-                    resolved_merchants[mid] = (None, name, phone, "none")
-                    m_counts["مالهمش تاجر عندنا"] += 1
+                resolved_merchants[mid] = (None, name, phone, "none")
+                m_counts["مالهمش تاجر مربوط"] += 1
 
         print("=" * 45)
         print("تقرير مطابقة التجار:")
         print("=" * 45)
         print(f"تجار المصدر (wh_Merchants) : {len(m_rows):>6}")
-        print(f"اتحلّوا بالكود (ERP-M-*)   : {m_counts['اتحلّوا بالكود']:>6}")
-        print(f"اتحلّوا بالاسم (عملاء a5)  : {m_counts['اتحلّوا بالاسم']:>6}")
-        print(f"مالهمش تاجر عندنا           : {m_counts['مالهمش تاجر عندنا']:>6}")
+        print(f"اتحلّوا بالجسر (ERP-M-*)   : {m_counts['اتحلّوا بالجسر']:>6}")
+        print(f"مالهمش تاجر مربوط          : {m_counts['مالهمش تاجر مربوط']:>6}")
         print("-" * 45)
 
         # ---------- 2. خيارات نوع الزيارة (مرمة / معاينة) ----------
