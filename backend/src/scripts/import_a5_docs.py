@@ -387,10 +387,36 @@ def _purchase_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
 
 
 def _transfer(c: Ctx, azn: str, rows: list[list[str]]) -> None:
-    """التحويل عندهم سطر شايل المخزنين. عندنا مستند بمصدر ووجهة وسطور."""
+    """التحويل عندهم سطر شايل المخزنين. عندنا مستند بمصدر ووجهة وسطور.
+
+    a5 بيكتب كل سطر تحويل **مرتين** (صف الخروج + صف الدخول، والاتنين بنفس
+    الصنف والكمية والمخزنين و`just_id` متتالي) — فالزوج المتطابق بيدخل سطر
+    واحد. المفرد (يتيم a5) بيدخل سطر لوحده وبيتقال.
+    """
     num = c.number("T", azn)
     if num in c.taken:
         return
+    ordered = sorted(rows, key=lambda r: int(r[L_JUST] or 0))
+    folded: list[list[str]] = []
+    orphans = 0
+    i = 0
+    while i < len(ordered):
+        r = ordered[i]
+        nxt = ordered[i + 1] if i + 1 < len(ordered) else None
+        if (nxt is not None and _clean(nxt[L_CODE]) == _clean(r[L_CODE])
+                and _clean(nxt[L_NAME]) == _clean(r[L_NAME])
+                and _clean(nxt[L_IN]) == _clean(r[L_IN])
+                and _clean(nxt[L_OUT]) == _clean(r[L_OUT])
+                and _money(nxt[L_QTY]) == _money(r[L_QTY])):
+            folded.append(r)
+            i += 2
+        else:
+            folded.append(r)
+            orphans += 1
+            i += 1
+    if orphans:
+        c.skipped.append(f"تحويل {num}: {orphans} صف مفرد (يتيم a5) دخل بسطر لوحده")
+    rows = folded
     src = c.store(rows[0][L_OUT])
     dst = c.store(rows[0][L_IN])
     if src is None or dst is None:
