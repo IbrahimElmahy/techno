@@ -46,14 +46,10 @@ from src.models.warehouse import Warehouse
 from src.scripts.import_a5 import JUNK, _clean, _money, _read
 from src.services import stock_service
 
-# `Type_Nature` في a5 → طبيعة الحساب عندنا. الترقيم من بياناتهم.
-NATURE = {
-    "1": (AccountNature.asset, Direction.debit),
-    "2": (AccountNature.liability, Direction.credit),
-    "3": (AccountNature.equity, Direction.credit),
-    "4": (AccountNature.income, Direction.credit),
-    "5": (AccountNature.expense, Direction.debit),
-}
+# `Type_Nature` في a5 أربع قيم بس (١ مدين، ٢ دائن، ٣ مصروف، ٤ إيراد) — مش ترقيم
+# قياسي ١-٥. الخريطة الغلط القديمة (٣→حقوق ملكية) صفّرت مصروفات قايمة الدخل،
+# واتصلّحت بـ`fix_account_natures`. القاعدة الواحدة عايشة هناك عشان ماتتكررش.
+from src.scripts.fix_account_natures import target_for_group as _target_nature
 
 
 def run(folder: str, *, execute: bool, branch_name: str = "",
@@ -98,7 +94,8 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             code = f"{prefix}A5M-{a5id}"
             acc = by_code.get(code)
             if acc is None:
-                nature, side = NATURE.get(r[3], (AccountNature.asset, Direction.debit))
+                tgt = _target_nature(int(a5id), prefix, name)
+                nature, side = tgt if tgt else (AccountNature.asset, Direction.debit)
                 acc = Account(
                     account_type=AccountType.user_defined, name=name, code=code,
                     nature=nature, normal_side=side,
