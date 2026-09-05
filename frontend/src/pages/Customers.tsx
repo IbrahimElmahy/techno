@@ -126,7 +126,10 @@ export default function Customers() {
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [filters, setFilters] = useState<Filters>({});
+  // بيفتح على «نشط»: الكشف فيه ٦٢٣ كارت معطّل — خط بولي مدموج وأطراف ما بعد البيع
+  // اللي مالهاش ولا حركة — وعرضهم افتراضياً بيدّي نفس الراجل مرتين ويغرّق الكشف.
+  // الفلتر فوق لسه فيه «معطل» و«الكل» لمن يحتاجهم.
+  const [filters, setFilters] = useState<Filters>({ active: true });
   const [search, setSearch] = useState('');           // typed text, applied on Enter/button
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -365,7 +368,10 @@ export default function Customers() {
       dataIndex: 'rep_id',
       key: 'rep_id',
       ellipsis: true,
-      render: (repId: number) => {
+      // فاضي مقصود: السباك والمالك مالهمش مندوب بيع — إحنا بنبيع للتجار بس.
+      // شرطة بتقول «مافيش»؛ «مندوب #null» كانت بتقول إن فيه مندوب واحنا مش لاقينه.
+      render: (repId: number | null) => {
+        if (!repId) return '—';
         const rep = reps.find((r) => r.id === repId);
         return rep ? rep.full_name : `مندوب #${repId}`;
       },
