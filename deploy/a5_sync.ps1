@@ -1,4 +1,4 @@
-# تزامن يومي مع a5 — بيصدّر كل حاجة من a5 وبيستورد الحركة الجديدة عندنا.
+﻿# تزامن يومي مع a5 — بيصدّر كل حاجة من a5 وبيستورد الحركة الجديدة عندنا.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File C:\techno\deploy\a5_sync.ps1
 #   powershell -NoProfile -ExecutionPolicy Bypass -File C:\techno\deploy\a5_sync.ps1 -ExportOnly
