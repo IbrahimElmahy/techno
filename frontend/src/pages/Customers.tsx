@@ -25,7 +25,8 @@ interface CustomerRecord {
   governorate_id: number | null;
   markaz: string | null;
   address: string | null;
-  rep_id: number;
+  rep_id: number | null;
+  service_rep_id: number | null;
   territory_id: number;
   default_price_tier: string | null;
   active: boolean;
@@ -44,6 +45,7 @@ interface Filters {
   q?: string;
   customer_type?: string;
   rep_id?: number;
+  service_rep_id?: number;
   territory_id?: number;
   governorate_id?: number;
   active?: boolean;
@@ -121,6 +123,7 @@ export default function Customers() {
 
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [reps, setReps] = useState<any[]>([]);
+  const [serviceReps, setServiceReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
   const [governorates, setGovernorates] = useState<Governorate[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
@@ -222,6 +225,8 @@ export default function Customers() {
         api.get('/api/v1/branches'),
       ]);
       setReps(usersRes.data.filter((u: any) => u.role === 'sales_rep'));
+      // مندوب الخدمة دوره `after_sales_staff` مش `sales_rep` — قايمة تانية خالص.
+      setServiceReps(usersRes.data.filter((u: any) => u.role === 'after_sales_staff'));
       setTerritories(territoriesRes.data);
       setGovernorates(governoratesRes.data);
       setBranches(branchesRes.data);
@@ -364,7 +369,7 @@ export default function Customers() {
       render: (phone: string | null) => phone || '-',
     },
     {
-      title: 'مندوب',
+      title: 'مندوب البيع',
       dataIndex: 'rep_id',
       key: 'rep_id',
       ellipsis: true,
@@ -374,6 +379,20 @@ export default function Customers() {
         if (!repId) return '—';
         const rep = reps.find((r) => r.id === repId);
         return rep ? rep.full_name : `مندوب #${repId}`;
+      },
+    },
+    {
+      // عمود تاني مش نفس العمود: الاتنين بيزوروا نفس العميل ومش نفس الراجل —
+      // واحد بيبيع له والتاني بيعاين عنده وياخد منه الكوبونات. جمعهم في خانة
+      // واحدة بيخلّي تقرير المناديب يحسب الاتنين على نفس الشغل.
+      title: 'مندوب الخدمة',
+      dataIndex: 'service_rep_id',
+      key: 'service_rep_id',
+      ellipsis: true,
+      render: (id: number | null) => {
+        if (!id) return '—';
+        const rep = serviceReps.find((r) => r.id === id) || reps.find((r) => r.id === id);
+        return rep ? rep.full_name : `مندوب #${id}`;
       },
     },
     {
@@ -494,11 +513,18 @@ export default function Customers() {
               options={customerTypeOptions.map((o) => ({ value: o.value, label: o.label }))} />
           </Col>
           <Col xs={12} md={4}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="مندوب البيع"
               value={filters.rep_id}
               onChange={(v) => setFilter('rep_id', v)}
               filterOption={(i, o) => String(o?.label ?? '').includes(i)}
               options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+          </Col>
+          <Col xs={12} md={4}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="مندوب الخدمة"
+              value={filters.service_rep_id}
+              onChange={(v) => setFilter('service_rep_id', v)}
+              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              options={serviceReps.map((r) => ({ value: r.id, label: r.full_name }))} />
           </Col>
           <Col xs={12} md={4}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المحافظة"

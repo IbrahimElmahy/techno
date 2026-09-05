@@ -63,6 +63,7 @@ def apply_filters(
     q: str | None = None,
     customer_type: str | None = None,
     rep_id: int | None = None,
+    service_rep_id: int | None = None,
     territory_id: int | None = None,
     governorate_id: int | None = None,
     active: bool | None = None,
@@ -84,6 +85,8 @@ def apply_filters(
         stmt = stmt.where(Customer.customer_type == customer_type)
     if rep_id is not None:
         stmt = stmt.where(Customer.rep_id == rep_id)
+    if service_rep_id is not None:
+        stmt = stmt.where(Customer.service_rep_id == service_rep_id)
     if territory_id is not None:
         stmt = stmt.where(Customer.territory_id == territory_id)
     if governorate_id is not None:

@@ -76,6 +76,10 @@ class CustomerOut(BaseModel):
     phone: str | None
     # فاضي مقصود: السباك والمالك مالهمش مندوب بيع — إحنا بنبيع للتجار بس.
     rep_id: int | None
+    # مندوب خدمة العملاء — غير مندوب البيع. الاتنين بيزوروا نفس العميل ومش نفس
+    # الراجل: واحد بيبيع له والتاني بيعاين عنده وياخد منه الكوبونات. عمود واحد
+    # كان بيخلّي تقرير المناديب يجمّع الاتنين في رقم واحد.
+    service_rep_id: int | None = None
     territory_id: int
     default_price_tier: PriceTier | None = None
     active: bool
@@ -143,7 +147,8 @@ def _out(c: Customer, db: Session | None = None,
                  if db is not None else [])
     return CustomerOut(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type,
-        phone=c.phone, rep_id=c.rep_id, territory_id=c.territory_id,
+        phone=c.phone, rep_id=c.rep_id, service_rep_id=c.service_rep_id,
+        territory_id=c.territory_id,
         default_price_tier=c.default_price_tier, active=c.active,
         governorate_id=c.governorate_id, markaz=c.markaz, address=c.address, phones=extra,
         branch_id=c.branch_id, email=c.email, tax_number=c.tax_number,
@@ -197,6 +202,7 @@ class CustomersSummaryOut(BaseModel):
 @router.get("/summary", response_model=CustomersSummaryOut)
 def customers_summary(
     rep_id: int | None = Query(None),
+    service_rep_id: int | None = Query(None),
     territory_id: int | None = Query(None),
     q: str | None = Query(None),
     customer_type: str | None = Query(None),
@@ -211,7 +217,8 @@ def customers_summary(
 
     base_stmt = customer_profile_service.apply_filters(
         _scope_filter(select(Customer), current),
-        q=q, customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
+        q=q, customer_type=customer_type, rep_id=rep_id,
+        service_rep_id=service_rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
     )
     # الملّاك مش عملاء — ليهم جدولهم وشاشتهم (`owner` ← «الملّاك» في ما بعد البيع).
@@ -314,6 +321,7 @@ def customer_options(
 def list_customers(
     response: Response,
     rep_id: int | None = Query(None),
+    service_rep_id: int | None = Query(None),
     territory_id: int | None = Query(None),
     q: str | None = Query(None),
     customer_type: str | None = Query(None),
@@ -328,7 +336,8 @@ def list_customers(
     """List customers with search + filters, each carrying its receivable balance."""
     stmt = customer_profile_service.apply_filters(
         _scope_filter(select(Customer), current),
-        q=q, customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
+        q=q, customer_type=customer_type, rep_id=rep_id,
+        service_rep_id=service_rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
     ).where(Customer.customer_type != "owner")  # الملّاك في شاشتهم، مش هنا
 
