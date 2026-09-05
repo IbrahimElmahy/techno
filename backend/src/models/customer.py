@@ -53,7 +53,17 @@ class Customer(Base):
     # يستثني مشتريات الموظفين من مبيعات التجار من غير ما يعتمد على كلمة مكتوبة.
     employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employee.id"), nullable=True)
-    rep_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    # مندوب البيع — **بيفضل فاضي للسباك والمالك عن قصد**.
+    #
+    # إحنا بنبيع للتجار. السباك والمالك بياخدوا خدمة عملاء وخلاص، فمندوب البيع على
+    # كارتهم معلومة مخترعة مش ناقصة. ولما نقل ما بعد البيع حطّ الـ٢٬١٨١ كارت الجديد
+    # كلهم على مندوب واحد (`import_erp_parties` كان بيكتب مندوب افتراضي ثابت)، دفتر
+    # «مندوب السياره ( ب )» طلع ٢٬٥٧٩ عميل وa5 بيقول ٤٩٥ — والفرق كله ناس هو عمره ما
+    # باع لهم. فاضي بيقول الحقيقة، والصفر بيتحسب في تقرير المناديب.
+    #
+    # قراءات المندوب كلها `rep_id == <رقم>`، والفاضي مابيطابقش — فالسباك مابيظهرش في
+    # قايمة أي مندوب من غير أي تغيير تاني.
+    rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     territory_id: Mapped[int] = mapped_column(ForeignKey("territory.id"), nullable=False)
     # Default sale price tier (007); NULL resolves to the consumer tier.
     default_price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
@@ -160,3 +170,41 @@ class CustomerAccount(Base):
         viewonly=True,
     )
     account: Mapped[object] = relationship("Account")
+
+
+class CustomerExternalRef(Base):
+    """هوية العميل في نظام قديم — صف لكل مفتاح، مش عمود على الكارت.
+
+    التجار عندهم رقمين في نظام ما بعد البيع، مش رقم واحد: `wh_Merchants.ID` اللي
+    المعاينة بتشاور بيه (١٠٬٨١٤ زيارة)، و`wh_Distributors.ID` اللي الكوبون بيشاور بيه
+    (١٩٬٧٢٣ ورقة). ونطاق الرقمين متداخل — ٧٤ رقم موجود في الجدولين لناس مختلفة — فاللي
+    بيفصلهم هو البادئة في `ref`، مش قيمة الرقم.
+
+    **وليه جدول مش عمود على `customer`:** الجسر اللي المكتب عمله بيدهم كتير-لواحد. ٤٤٧
+    كارت تاجر في النظام القديم بيقعوا على ٤٣٤ كارت عندنا — اتناشر كارت بيلمّوا كارتين
+    أو تلاتة (زي «عبده السنوسى» و«عبده السنوسى 2»، ورقم كل واحد فيهم شايل مستندات:
+    ١٩١ كوبون على الأول وواحد على التاني). عمود واحد على الكارت بيشيل مفتاح واحد، وسبعة
+    من الاتناشر دول عليهم مستندات على أكتر من رقم — يعني ١١ و٧٩ و١١٣ مستند كانوا هيقعوا
+    برّه الكارت بتاعهم في صمت. الصف بيتكرر، والعمود لأ.
+
+    `ref` فريد: الرقم القديم بتاع طرف واحد. لو صفّان طلبوه، ده يا تكرار في المصدر يا
+    غلطة في الجسر — والاتنين محتاجين قرار من المكتب مش تخمين من سكربت.
+    """
+
+    __tablename__ = "customer_external_ref"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    # النظام اللي الرقم ده جاي منه. نص مش enum: النظام القديم التاني (a5) ممكن يحتاج
+    # نفس الجدول بكرة، وإضافة نظام مايستاهلش migration.
+    system: Mapped[str] = mapped_column(String(16), nullable=False, default="erp")
+    # المفتاح كامل بالبادئة: «ERP-M-1001536» تاجر، «ERP-D-10096» موزع. البادئة جزء من
+    # القيمة عشان الرقم العاري مايتلخبطش بين الجدولين.
+    ref: Mapped[str] = mapped_column(String(60), unique=True, nullable=False, index=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customer.id"), nullable=False, index=True)
+    # ملاحظة للمكتب: الاسم اللي كان على الكارت القديم وقت الربط. الاسم عندنا بيتعدّل من
+    # الشاشة، وده بيفضل قايل الربط ده اتعمل على مين.
+    source_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )

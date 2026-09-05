@@ -774,6 +774,8 @@ _NULLABLE_FK_COLUMNS: list[tuple[str, str]] = [
     ("sales_return", "sales_invoice_id"),
     # الكوبون ممكن يكون اتصرف لموزع بدل ما يتباع مع فاتورة.
     ("coupon_receipt_line", "sales_invoice_id"),
+    # السباك والمالك مالهمش مندوب بيع — إحنا بنبيع للتجار بس.
+    ("customer", "rep_id"),
 ]
 
 
