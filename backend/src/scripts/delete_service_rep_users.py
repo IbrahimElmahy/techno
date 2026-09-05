@@ -24,10 +24,10 @@ from __future__ import annotations
 import sys
 from collections import Counter
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select, text
 
-import src.models  # noqa: F401 — بيملا الـmetadata بكل الجداول
-from src.core.db import Base, SessionLocal
+from src.core.db import SessionLocal, engine
 from src.models.user import User
 
 # مناديب الخدمة اللي جم من ERP — بالاسم الكامل زي ما هو في `user.full_name`.
@@ -52,14 +52,27 @@ def _clean(s: str) -> str:
 
 
 def _user_fk_columns() -> list[tuple[str, str, bool]]:
-    """(جدول، عمود، nullable) لكل مفتاح أجنبي على user.id."""
+    """(جدول، عمود، nullable) لكل مفتاح أجنبي على `user.id` — **من القاعدة**.
+
+    مش من `Base.metadata`: الميتاداتا بتشيل الموديلات اللي اتعمل لها import بس،
+    و`src/models/__init__.py` ناقصه حاجات (`coupon_issue` مثلاً) — فقراءة المفاتيح
+    منها بترمي `NoReferencedTableError` أو، أسوأ، بتفوّت عمود بيشاور على اليوزر
+    وتخلّي الحذف يقع على قيد في نص الشغل.
+    """
+    insp = sa_inspect(engine)
     out = []
-    for tbl in Base.metadata.tables.values():
-        for col in tbl.columns:
-            for fk in col.foreign_keys:
-                if fk.column.table.name == "user" and fk.column.name == "id":
-                    out.append((tbl.name, col.name, bool(col.nullable)))
-    return sorted(out)
+    for tbl in insp.get_table_names():
+        nullable = {c["name"]: bool(c.get("nullable", True))
+                    for c in insp.get_columns(tbl)}
+        for fk in insp.get_foreign_keys(tbl):
+            if fk.get("referred_table") != "user":
+                continue
+            for i, ref_col in enumerate(fk.get("referred_columns") or []):
+                if ref_col != "id":
+                    continue
+                col = fk["constrained_columns"][i]
+                out.append((tbl, col, nullable.get(col, True)))
+    return sorted(set(out))
 
 
 def run(*, execute: bool) -> None:

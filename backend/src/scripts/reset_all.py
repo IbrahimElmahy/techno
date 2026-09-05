@@ -43,10 +43,11 @@ from __future__ import annotations
 
 import sys
 
-from sqlalchemy import func, select, text
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
 
 import src.models  # noqa: F401 — بيملا الـmetadata بكل الجداول
-from src.core.db import Base, SessionLocal, engine
+from src.core.db import SessionLocal, engine
 
 # اللي بيفضل. القايمة صغيرة عن قصد: أي جدول مش هنا بيتمسح، فالجدول الجديد اللي حد يضيفه
 # بكرة بيتمسح افتراضياً — وده الاتجاه الآمن. الجدول اللي المفروض يفضل بيتحط هنا بالاسم.
@@ -72,30 +73,76 @@ KEEP: set[str] = {
 UNLINK = (
     "UPDATE salary_component SET account_id = NULL",
     "UPDATE voucher_key SET debit_account_id = NULL, credit_account_id = NULL",
-    "UPDATE department SET manager_employee_id = NULL",
+    "UPDATE department SET manager_employee_id = NULL, cost_center_id = NULL",
+    # دوائر ذاتية: `DELETE` بيقع عليها، و`TRUNCATE` لأ. بتتصفّر قبل الحذف.
+    "UPDATE account SET parent_id = NULL",
+    "UPDATE employee SET warehouse_id = NULL, department_id = NULL",
 )
 
 
+def _all_tables() -> list[str]:
+    """أسماء الجداول من **القاعدة نفسها** مش من الموديلز.
+
+    `Base.metadata` بيشيل اللي اتعمل له import بس، و`src/models/__init__.py` ناقصه
+    موديلات (اتكشف على `stock_count_line`: موجود في القاعدة ومش في الميتاداتا، فوقع
+    الـTRUNCATE بمفتاح أجنبي من جدول مش في القايمة). القاعدة هي الحقيقة الوحيدة
+    الكاملة هنا، والقراءة منها معناها إن أي جدول اتعمل بعدين بيتحسب لوحده.
+    """
+    return sa_inspect(engine).get_table_names()
+
+
 def _targets() -> list[str]:
-    return [t for t in Base.metadata.tables if t not in KEEP]
+    return [t for t in _all_tables() if t not in KEEP]
 
 
-def _fk_targets_of_kept() -> set[str]:
-    """الجداول اللي جدول محفوظ بيشاور عليها — دول مايتعملش لهم TRUNCATE."""
-    out: set[str] = set()
-    for name in KEEP:
-        tbl = Base.metadata.tables.get(name)
-        if tbl is None:
+def _delete_group() -> list[str]:
+    """الجداول اللي لازم تتفضّى بـ`DELETE` — مرتّبة: الابن قبل الأب.
+
+    Postgres بيرفض `TRUNCATE` لجدول عليه مفتاح أجنبي من جدول **بره الجملة**، وده
+    بيتحقق على القيد نفسه مش على الصفوف: جدول فاضي بيمنع برضه. فالمجموعة دي إغلاق
+    مش مستوى واحد:
+
+    * `salary_component`/`voucher_key` (محفوظين) بيشاوروا على `account` → `account`.
+    * `department` (محفوظ) بيشاور على `employee` → `employee`.
+    * و`employee` نفسه بيشاور على `warehouse` → `warehouse` بيدخل معاهم.
+
+    اتكشفت الحلقة دي بالتجربة: أول محاولة وقعت على `stock_count_line`، والتانية على
+    «employee references warehouse». الإغلاق بيمسك الحالة دي كلها لوحده.
+    """
+    insp = sa_inspect(engine)
+    tables = set(_all_tables())
+    group: set[str] = set()
+    frontier = [t for t in KEEP if t in tables]
+    seen_sources: set[str] = set()
+    while frontier:
+        src = frontier.pop()
+        if src in seen_sources:
             continue
-        for fk in tbl.foreign_keys:
-            ref = fk.column.table.name
-            if ref not in KEEP:
-                out.add(ref)
-    return out
+        seen_sources.add(src)
+        for fk in insp.get_foreign_keys(src):
+            ref = fk.get("referred_table")
+            if ref and ref not in KEEP and ref not in group:
+                group.add(ref)
+                frontier.append(ref)
+
+    # ترتيب الحذف: **اللي محدش بيشاور عليه الأول**. `employee` بيشاور على `warehouse`،
+    # فـ`employee` بيتمسح قبله — العكس بيقع على المفتاح.
+    refs = {t: {fk.get("referred_table") for fk in insp.get_foreign_keys(t)} - {t}
+            for t in group}
+    order: list[str] = []
+    remaining = set(group)
+    while remaining:
+        free = [t for t in sorted(remaining)
+                if not any(t in refs[o] for o in remaining if o != t)]
+        if not free:                       # دايرة — بنمشي بالترتيب الأبجدي
+            free = sorted(remaining)
+        order.extend(free)
+        remaining -= set(free)
+    return order
 
 
 def _count(db, name: str) -> int:
-    return db.scalar(select(func.count()).select_from(Base.metadata.tables[name])) or 0
+    return db.scalar(text(f'SELECT count(*) FROM "{name}"')) or 0
 
 
 def run(*, execute: bool) -> None:
@@ -104,7 +151,7 @@ def run(*, execute: bool) -> None:
         return
 
     targets = _targets()
-    by_delete = sorted(_fk_targets_of_kept())
+    by_delete = _delete_group()
     by_truncate = [t for t in targets if t not in by_delete]
 
     db = SessionLocal()
@@ -121,7 +168,7 @@ def run(*, execute: bool) -> None:
             print(f"   ... و{len(counts) - 30} جدول تاني")
         print(f"\nبـDELETE (عليهم مفتاح من جدول محفوظ): {'، '.join(by_delete) or '—'}")
 
-        kept_counts = {t: _count(db, t) for t in KEEP if t in Base.metadata.tables}
+        kept_counts = {t: _count(db, t) for t in sorted(KEEP & set(_all_tables()))}
         print("\nهيفضل:")
         for t, n in sorted(kept_counts.items()):
             print(f"   {t:<34}{n:>10,}")

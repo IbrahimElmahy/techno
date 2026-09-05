@@ -296,5 +296,11 @@ def run(*, path: str, prefix: str, execute: bool) -> None:
 if __name__ == "__main__":
     args = sys.argv[1:]
     file_path = args[args.index("--file") + 1] if "--file" in args else "C:/pgtmp/aliaa/a5_acc.tsv"
-    code_prefix = args[args.index("--prefix") + 1] if "--prefix" in args else "AL-"
+    # `--prefix ""` بيضيع في تمرير الأوامر عبر PowerShell/bash فبتتقرا القيمة اللي
+    # بعدها (`--yes`) كبادئة — واتعملت ١٣ حساب كودها `--yesA5S-…` قبل ما ده يتصلّح.
+    # فأي قيمة بتبدأ بـ`--` معناها «مافيش بادئة».
+    code_prefix = "AL-"
+    if "--prefix" in args:
+        i = args.index("--prefix") + 1
+        code_prefix = args[i] if i < len(args) and not args[i].startswith("--") else ""
     run(path=file_path, prefix=code_prefix, execute="--yes" in args)
