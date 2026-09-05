@@ -17,6 +17,7 @@ Idempotent: يمكن إعادة تشغيله بأمان.
 """
 from __future__ import annotations
 
+import re
 import sys
 from collections import Counter
 from sqlalchemy import select, text
@@ -127,6 +128,9 @@ def run_split(*, execute: bool) -> None:
         db.close()
 
 
+_A5_CODE = re.compile(r"^(AL-)?A5[A-Z]*-?\d+$")
+
+
 def run_purge(*, execute: bool) -> None:
     db = SessionLocal()
     try:
@@ -138,6 +142,20 @@ def run_purge(*, execute: bool) -> None:
         if not owner_customers:
             print("جدول customer نظيف تماماً — لا يوجد أي عميل من نوع 'owner'.")
             return
+
+        # ⚠️ **كارت بكود a5 عمره ما يتمسح من هنا.** الحذف ده مشى على التصنيف
+        # لوحده، والتصنيف كان بيتدهس من `import_erp_parties` لما اسم مالك في ERP
+        # يطابق تاجر عند a5 — فاتمسح ٤٩٩ كارت a5 في العلياء. التصنيف رأي، والكود
+        # هوية: `AL-A5-<Cust_id>` بيشاور على صف حقيقي في `Cust` عندهم.
+        a5_typed = [c for c in owner_customers if c.code and _A5_CODE.match(c.code)]
+        if a5_typed:
+            print(f"⚠ {len(a5_typed)} كارت كوده كود a5 ومتصنّف «مالك» — اتستثنوا من الحذف:")
+            for m in a5_typed[:10]:
+                print(f"  - [{m.id}] {m.code} : {m.name}")
+            owner_customers = [c for c in owner_customers if c not in a5_typed]
+            if not owner_customers:
+                print("مافيش مالك ينفع يتمسح.")
+                return
 
         owner_ids = [c.id for c in owner_customers]
 

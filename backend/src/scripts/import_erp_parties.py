@@ -51,6 +51,13 @@ TECH = re.compile(r"^\s*(فنى|فني|السباك|سباك)\b")
 
 PLUMBER, OWNER, TRADER = "plumber", "owner", "trader"
 
+# كود من a5 — الرقم اللي جوّاه هو `Cust_id` عندهم، وهو الهوية اللي مابتتغيّرش.
+A5_CODE = re.compile(r"^(AL-)?A5[A-Z]*-?\d+$")
+
+
+def _is_a5(code: str | None) -> bool:
+    return bool(code and A5_CODE.match(code))
+
 # نوع الصف في الملف المصدَّر → بادئة الكود عندنا.
 CODE_PREFIX = {"PLUMBER": "ERP-P", "CUSTOMER": "ERP-C",
                "DIST": "ERP-D", "MERCHANT": "ERP-M"}
@@ -200,7 +207,19 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             if not target.address and address:
                 target.address = address
             # التصنيف بيتحدّث بس لو الموجود «تاجر» (الافتراضي بتاع نقل a5) والجديد أدق.
-            if kind != TRADER and target.customer_type == TRADER:
+            #
+            # ⚠️ **إلا لو الكارت كوده كود a5.** الشرط ده كان بيدهس تصنيف كروت a5:
+            # صف مالك في ERP اسمه بيطابق تاجر عند a5 كان بيحوّل كارت التاجر لـ«مالك»،
+            # وبعدين `split_owners --purge` بيمسح كل مالك مالوش أثر مالي — وكتير من
+            # تجار a5 مالهمش فواتير. النتيجة اتقاست: **٤٩٩ كارت من ١٬٣٠٦ في العلياء
+            # اتعملوا واتمسحوا**، و١٣ نجوا في جدول `owner` وهُمّ لسه شايلين `AL-A5-…`.
+            #
+            # a5 هو مصدر الحقيقة للتصنيف. مطابقة اسم في نظام تاني مش سبب كافي إننا
+            # نغيّر كلامه.
+            if _is_a5(target.code) and kind != TRADER:
+                skipped.append(
+                    f"{target.code} «{target.name}»: كارت a5 — التصنيف مابيتغيّرش لـ{kind}")
+            elif kind != TRADER and target.customer_type == TRADER:
                 target.customer_type = kind
                 made[f"اتصنّف: {kind}"] += 1
             svc = service_reps.get(row[F_REP])
