@@ -1,22 +1,43 @@
-"""يفضّي القاعدة كلها إلا الدخول والإعدادات — عشان سحب a5 يبتدي من صفحة بيضا.
+"""يفضّي القاعدة كلها إلا الدخول والهيكل والإعدادات — عشان سحب a5 يبتدي من صفحة بيضا.
 
     python -m src.scripts.reset_all              # يعرض بس
     python -m src.scripts.reset_all --yes        # ينفّذ
 
 **الفرق بينه وبين `reset_transactions`:** التاني بيمسح الحركات ويسيب الأطراف والأصناف
-وشجرة الحسابات. ده بيمسح **الأطراف كمان** — وهي بالظبط اللي اتلخبطت: عملاء a5 وأطراف
-ERP (تجار وسباكين وملّاك) قعدوا في جدول واحد، والدمج بالاسم خلط اللي مالوش علاقة باللي
-له، فالكروت المدموجة بقت مالهاش أصل واضح ولا طريقة تتفك بيها صف صف.
+وشجرة الحسابات. ده بيمسح **الأطراف والشجرة والمخازن كمان** — وهي بالظبط اللي
+اتلخبطت: عملاء a5 وأطراف ERP قعدوا في جدول واحد، والدمج بالاسم خلط اللي مالوش علاقة
+باللي له، فالكروت المدموجة بقت مالهاش أصل واضح ولا طريقة تتفك بيها صف صف.
 
-**اللي بيفضل** — أقل حاجة تخلّي النظام يقوم ويتسجّل عليه دخول:
+**اللي بيفضل** — أقل حاجة تخلّي النظام يقوم ويتسجّل عليه دخول، وكل إعداد اتظبط
+بالإيد ومش موجود في تصدير a5:
 
-    user · role · role_capability · branch · head_office
-    lookup_option · sales_setting · stock_setting
+    user · role · role_capability · branch · governorate · head_office · territory
+    lookup_option · sales_setting · stock_setting · payroll_setting · alembic_version
+    department · job_title · cost_center · voucher_key · salary_component
+    work_shift · leave_type · holiday · coupon_type · inspection_item_type
+    payroll_scheme_version · payroll_scheme_bracket
+
+`governorate` و`territory` بيفضلوا لأن `branch.governorate_id` و`user.territory_id`
+بيشاوروا عليهم — والمناطق نفسها `import_a5` بيعيد بناءها بالاسم فوق الموجود.
 
 **اللي بيتمسح:** كل الباقي. الأرصدة كلها مشتقّة من الحركات، فالمسح بيصفّرها لوحده.
 
-⚠️ **حذف نهائي.** خُد `pg_dump` قبله. والسكربت بيرفض يشتغل لو التخزين مش Postgres:
-`TRUNCATE ... CASCADE` بيتصرّف بشكل تاني على محركات تانية.
+---------------------------------------------------------------------------
+**ليه مش `TRUNCATE ... CASCADE` زي النسخة الأولى:** `CASCADE` في Postgres **مش**
+فحص — هو توسعة: بيمسح كل جدول عنده مفتاح أجنبي على اللي بتمسحه. `user.territory_id`
+بيشاور على `territory`، فمسح `territory` بـ`CASCADE` كان هيمسح المستخدمين، والسكربت
+اللي اتكتب عشان تفضل تعرف تدخل كان هيقفلك بره. من غير `CASCADE` أي مفتاح من جدول
+محفوظ لجدول متمسوح بيرمي خطأ صريح — وده الفحص اللي عايزينه.
+
+**وليه جدولين بيتمسحوا بـ`DELETE` مش `TRUNCATE`:** Postgres بيرفض `TRUNCATE` لجدول
+عليه مفتاح أجنبي من جدول بره القايمة **حتى لو كل القيم NULL**. `salary_component`
+و`voucher_key` (محفوظين) بيشاوروا على `account`، و`department` بيشاور على `employee`.
+فالاتنين دول بيتفضّوا بـ`DELETE` والعدّاد بيترجع بإيدنا — نفس النتيجة، بس بالباب
+اللي Postgres بيفتحه. الأعمدة دي بتتصفّر الأول عشان الـ`DELETE` نفسه مايقعش.
+
+⚠️ **حذف نهائي.** خُد `pg_dump` قبله، ووقّف خدمة `TechnoApi`: أول قيد على قاعدة فاضية
+بيخلّي `account_resolver` يخترع خزينة وحسابات افتراضية — وده ازدواج الخزينتين اللي
+اتصلّح مرة قبل كده. والسكربت بيرفض يشتغل لو التخزين مش Postgres.
 """
 from __future__ import annotations
 
@@ -32,17 +53,49 @@ from src.core.db import Base, SessionLocal, engine
 KEEP: set[str] = {
     # الدخول والصلاحيات — من غيرهم مافيش حد يقدر يدخل يشغّل السحب أصلاً
     "user", "role", "role_capability",
-    # الهيكل الإداري: الفروع بتتنده بالاسم في سكربتات السحب («العلياء»، «أكتوبر»)
-    "branch", "head_office",
+    # الهيكل الإداري: الفروع بتتنده بالاسم في سكربتات السحب («العلياء»، «أكتوبر»)،
+    # والمحافظة والمنطقة مفاتيح على الفرع والمستخدم
+    "branch", "governorate", "head_office", "territory",
     # الإعدادات والقوايم المنسدلة — اتظبطت بالإيد ومش موجودة في تصدير a5
-    "lookup_option", "sales_setting", "stock_setting",
+    "lookup_option", "sales_setting", "stock_setting", "payroll_setting",
+    # إعدادات الموارد البشرية والمحاسبة — تهيئة مش حركة
+    "department", "job_title", "cost_center", "voucher_key", "salary_component",
+    "work_shift", "leave_type", "holiday", "payroll_scheme_version",
+    "payroll_scheme_bracket",
+    # قوايم مرجعية لما بعد البيع — الإدخال اليدوي محتاجها
+    "coupon_type", "inspection_item_type",
     # جداول الترحيلات/النسخ لو موجودة
     "alembic_version",
 }
 
+# أعمدة في جداول محفوظة بتشاور على جداول بتتمسح. بتتصفّر قبل الحذف.
+UNLINK = (
+    "UPDATE salary_component SET account_id = NULL",
+    "UPDATE voucher_key SET debit_account_id = NULL, credit_account_id = NULL",
+    "UPDATE department SET manager_employee_id = NULL",
+)
+
 
 def _targets() -> list[str]:
     return [t for t in Base.metadata.tables if t not in KEEP]
+
+
+def _fk_targets_of_kept() -> set[str]:
+    """الجداول اللي جدول محفوظ بيشاور عليها — دول مايتعملش لهم TRUNCATE."""
+    out: set[str] = set()
+    for name in KEEP:
+        tbl = Base.metadata.tables.get(name)
+        if tbl is None:
+            continue
+        for fk in tbl.foreign_keys:
+            ref = fk.column.table.name
+            if ref not in KEEP:
+                out.add(ref)
+    return out
+
+
+def _count(db, name: str) -> int:
+    return db.scalar(select(func.count()).select_from(Base.metadata.tables[name])) or 0
 
 
 def run(*, execute: bool) -> None:
@@ -51,25 +104,24 @@ def run(*, execute: bool) -> None:
         return
 
     targets = _targets()
+    by_delete = sorted(_fk_targets_of_kept())
+    by_truncate = [t for t in targets if t not in by_delete]
+
     db = SessionLocal()
     try:
-        counts: dict[str, int] = {}
-        for t in targets:
-            n = db.scalar(select(func.count()).select_from(Base.metadata.tables[t])) or 0
-            if n:
-                counts[t] = n
+        counts = {t: _count(db, t) for t in targets}
+        counts = {t: n for t, n in counts.items() if n}
         total = sum(counts.values())
 
         print(f"هيتمسح {total:,} صف من {len(counts)} جدول:\n")
         for t, n in sorted(counts.items(), key=lambda kv: -kv[1])[:30]:
-            print(f"   {t:<34}{n:>10,}")
+            how = "DELETE  " if t in by_delete else "TRUNCATE"
+            print(f"   {how} {t:<34}{n:>10,}")
         if len(counts) > 30:
             print(f"   ... و{len(counts) - 30} جدول تاني")
+        print(f"\nبـDELETE (عليهم مفتاح من جدول محفوظ): {'، '.join(by_delete) or '—'}")
 
-        kept_counts = {
-            t: db.scalar(select(func.count()).select_from(Base.metadata.tables[t])) or 0
-            for t in KEEP if t in Base.metadata.tables
-        }
+        kept_counts = {t: _count(db, t) for t in KEEP if t in Base.metadata.tables}
         print("\nهيفضل:")
         for t, n in sorted(kept_counts.items()):
             print(f"   {t:<34}{n:>10,}")
@@ -78,23 +130,31 @@ def run(*, execute: bool) -> None:
             print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
             return
 
+        for sql in UNLINK:
+            db.execute(text(sql))
+
         # جملة واحدة لكل الجداول: `TRUNCATE` بيقبل قايمة، والمفاتيح الأجنبية اللي بين
-        # الجداول دي مابتعترضش طالما كلهم في نفس الجملة. و`CASCADE` هنا **مش** توسعة:
-        # هو بس بيسمح بالمفاتيح اللي جوّه المجموعة. لو جدول محفوظ بيشاور على واحد
-        # متمسوح، بوستجرس بيرفض الجملة كلها — وده الفحص اللي عايزينه، مش مفاجأة.
-        quoted = ", ".join(f'"{t}"' for t in targets)
-        db.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
+        # الجداول دي (والدوائر الذاتية زي `account.parent_id`) مابتعترضش طالما كلهم
+        # في نفس الجملة. من غير CASCADE عن قصد — شوف الدوكسترنج.
+        quoted = ", ".join(f'"{t}"' for t in by_truncate)
+        db.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY"))
+        for t in by_delete:
+            db.execute(text(f'DELETE FROM "{t}"'))
+            db.execute(text(
+                f"SELECT setval(pg_get_serial_sequence('\"{t}\"', 'id'), 1, false)"))
         db.commit()
 
-        left = sum(
-            db.scalar(select(func.count()).select_from(Base.metadata.tables[t])) or 0
-            for t in targets
-        )
+        left = sum(_count(db, t) for t in targets)
         print(f"\n✔ اتمسح. الفاضل في الجداول دي: {left}")
+        bad = 0
         for t, n in sorted(kept_counts.items()):
-            now = db.scalar(select(func.count()).select_from(Base.metadata.tables[t])) or 0
+            now = _count(db, t)
             mark = "✔" if now == n else "✘"
+            bad += now != n
             print(f"{mark} {t}: {now} (كان {n})")
+        if bad or left:
+            print("\n✘ حاجة اتغيّرت مش المفروض تتغيّر — راجع قبل أي استيراد.")
+            sys.exit(1)
     finally:
         db.close()
 

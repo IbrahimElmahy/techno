@@ -61,6 +61,32 @@ PHONE = re.compile(r"^[0-9+()\-\s]{5,}$")
 TIERS = [PriceTier.commercial, PriceTier.semi_commercial, PriceTier.wholesale,
          PriceTier.semi_wholesale, PriceTier.consumer]
 
+# بادئات الفروع التانية — عشان الفرع اللي مالوش بادئة (أكتوبر) مايشوفش أصنافهم.
+OTHER_PREFIXES = ("AL-",)
+
+
+def mine(rows, prefix: str):
+    """اللي تبع الفرع ده من كتالوج مشترك، بالكود.
+
+    كود a5 عدّاد جوّه كل شركة، فنفس الكود صنفين. بادئة → `startswith`. والبادئة الفاضية
+    (أكتوبر) مش «الكل» — هي «اللي مالوش بادئة فرع تاني»: من غير الاستبعاد ده سطر أكتوبر
+    بلا كود كان بيتحلّ بالاسم على صنف العلياء وبيكتب عليه.
+    """
+    if prefix:
+        return [r for r in rows if (r.code or "").startswith(prefix)]
+    return [r for r in rows if not (r.code or "").startswith(OTHER_PREFIXES)]
+
+
+def _norm_rep(s: str) -> str:
+    """تطبيع أسماء المناديب **بس** — للمطابقة مع `ph1` بتاع a5.
+
+    الهمزة بتتطوى والمسافات بتتشال: «مندوب السياره ( أ )» عندنا هي «( ا )» عندهم،
+    و«(د)» هي «( د )». دي أسماء مناديب محدودة ومعروفة؛ طي الهمزة في أسماء **العملاء**
+    بيدمج ناس مختلفة، فممنوع هناك.
+    """
+    s = re.sub(r"[أإآٱ]", "ا", s or "").replace("\xa0", " ")
+    return re.sub(r"\s+", "", s).strip()
+
 
 def _read(path: str) -> list[list[str]]:
     """يقرا ملف مصدّر من sqlcmd — UTF-16 بفاصل ~."""
@@ -221,9 +247,9 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
         # الكتالوج بيتقسّم بالبادئة. من غير كده «كوع ٢٥ لحام» بتاع العلياء بيلاقي صنف
         # أكتوبر بنفس الاسم وبيكتب عليه أسعار العلياء.
         all_items = db.scalars(select(Item)).all()
-        mine = [i for i in all_items if not prefix or (i.code or "").startswith(prefix)]
-        item_by_code = {i.code: i for i in mine if i.code}
-        item_by_name = {i.name: i for i in mine}
+        my_items = mine(all_items, prefix)
+        item_by_code = {i.code: i for i in my_items if i.code}
+        item_by_name = {i.name: i for i in my_items}
         taken_codes = {i.code for i in all_items if i.code}
         for r in items:
             if len(r) < 12 or not r[0].isdigit():
@@ -299,12 +325,17 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
         if rep_role:
             for u in db.scalars(select(User).where(User.role_id == rep_role.id,
                                                    User.branch_id == branch.id)).all():
-                for key in filter(None, {_clean(u.full_name or ""), u.username}):
+                for key in filter(None, {_norm_rep(u.full_name or ""), u.username}):
                     rep_by_name[key] = u.id
         unmatched_reps: dict[str, int] = {}
 
-        cust_by_name = {c.name: c for c in db.scalars(
-            select(Customer).where(Customer.branch_id == branch.id)).all()}
+        # بالكود الأول، وبعده الاسم. الكود بيحمل `Cust_id` بتاع a5 وهو الهوية اللي
+        # مابتتغيّرش؛ الاسم بيتعدّل عندنا وعندهم. واللي لقيناه بالكود **ومقفول** ده خط
+        # بولي اتدمج جوّه صاحبه — بيتخطّى، وإلا إعادة التشغيل بتفكّ الدمج.
+        branch_custs = db.scalars(
+            select(Customer).where(Customer.branch_id == branch.id)).all()
+        cust_by_code = {c.code: c for c in branch_custs if c.code}
+        cust_by_name = {c.name: c for c in branch_custs if c.active}
         for r in custs:
             if len(r) < 8 or not r[0].isdigit():
                 continue
@@ -313,7 +344,12 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                 rep.skip(f"عميل باسم غير صالح: «{name}»")
                 continue
             terr = by_name.get(_clean(r[3])) or by_name.get(_clean(r[2])) or fallback_terr
-            c = cust_by_name.get(name)
+            c = cust_by_code.get(f"{prefix}A5-{r[0]}")
+            if c is not None and not c.active:
+                rep.add("عملاء مدموجين — اتخطّوا", False)
+                continue
+            if c is None:
+                c = cust_by_name.get(name)
             created = c is None
             if c is None:
                 # الكود والمندوب والمنطقة إجباريين عندنا وa5 مش لازم يبقى عنده الترتيب
@@ -324,6 +360,13 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                              branch_id=terr.branch_id, active=True)
                 db.add(c)
                 cust_by_name[name] = c
+                cust_by_code[c.code] = c
+            # `ph3` هو الموبايل الحقيقي — العمود اللي عمره ما اتصدّر في النقل الأول.
+            # بيتملى لو الخانة فاضية بس؛ اللي اتكتب بالإيد مابيتدهسش.
+            if len(r) > 9 and not c.phone:
+                mobile = _clean(r[9])
+                if mobile and PHONE.match(mobile):
+                    c.phone = mobile[:32]
             # `ph1` مش تليفون — هو **اسم المندوب**.
             #
             # a5 عنده عمود مخصص للمندوب (`Emp_Bos`) وهو فاضي في الـ٦٥٠ عميل كلهم، واللي
@@ -336,7 +379,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             if raw and PHONE.match(raw):
                 c.phone = raw[:32]
             elif raw:
-                rid = rep_by_name.get(raw)
+                rid = rep_by_name.get(_norm_rep(raw))
                 if rid:
                     c.rep_id = rid
                     rep.add("عملاء بمندوب", True)

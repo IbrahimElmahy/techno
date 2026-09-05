@@ -1,22 +1,37 @@
-﻿# تزامن يومي مع a5 — بيجيب اللي اتعمل عندهم من إمبارح ويحطّه عندنا.
+# تزامن يومي مع a5 — بيصدّر كل حاجة من a5 وبيستورد الحركة الجديدة عندنا.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File C:\techno\deploy\a5_sync.ps1
+#   powershell -NoProfile -ExecutionPolicy Bypass -File C:\techno\deploy\a5_sync.ps1 -ExportOnly
 #
 # ⚠️ **قواعد a5 قراءة بس.** السكربت ده `SELECT` وخلاص — مافيش `INSERT` ولا `UPDATE`
 # ولا حتى جدول مؤقت. الشركة شغّالة عليهم دلوقتي ومافيش نسخة نرجّع منها.
+# **وقاعدة `ERP` ممنوعة خالص** — مش هنا ولا في أي مكان.
 #
 # ---------------------------------------------------------------------------
 # **ليه أصلاً:** النقل الأصلي لقطة. قِسنا الفرق: آخر حركة عندنا ٢٩ أغسطس، وa5 كمّل
 # ٣٠ و٣١ و١ و٢ و٣ سبتمبر — ١٬١٠٨ سطر دفتر و١٧٦ فاتورة. والفرق بيكبر كل يوم طول ما
 # الشركة شغّالة على النظامين.
 #
-# **بيصدّر الكل مش الجديد بس، عن قصد.** المستوردين بيتخطوا اللي موجود (المستند
+# **التصدير كامل مش المستندات بس.** استعلامات التصدير الأساسية (أصناف، عملاء، شجرة،
+# جرد افتتاحي…) اتعملت مرة في ٢٩ أغسطس وضاعت — ماكانتش في الريبو. لما احتجنا نعيد
+# البناء من الصفر ماكانش فيه غير لقطة بايتة أسبوع. فكل استعلام دلوقتي في
+# `deploy\a5_sql\` وبيتشغّل هنا كل ليلة، والتصدير الكامل محفوظ ومايضيعش تاني.
+# `-ExportOnly` بيوقف بعد التصدير — ده اللي إعادة البناء بتستعمله.
+#
+# **بيصدّر الكل مش الجديد بس، عن قصد.** المستوردين بيتخطوا الموجود (المستند
 # برقمه، والقيد بـ`external_ref`)، فإعادة التصدير الكاملة بتلقّط كمان **التعديل
 # الرجعي**: فاتورة اتظبطت بتاريخ قديم، أو سطر اتصلّح. الفلترة بالتاريخ كانت هتفوّتهم
 # ومحدش هيعرف. والتكلفة دقايق، والدقة تستاهل.
 #
-# **الفاصل `~` مش tab** — ده اللي `import_a5._read` بيقراه، وهو نفس شكل التصدير
-# الأصلي. أي فاصل تاني بيدّي صفوف بعمود واحد من غير ما حد ياخد باله.
+# **الفاصل `~` مش tab** في ملفات `a5_*.tsv` — ده اللي `import_a5._read` بيقراه.
+# و`~` جوّه القيم بيتحوّل لشرطة، فالاستعلامات بتطلّع أعمدة حقيقية مش نص متسلسل.
+# ملفات الكشوف (`emp_*`, `cust_*`, `acc_*`) بفاصل tab وصف عناوين — دي بتتقرا
+# بـ`csv.DictReader`، والفاصل والرأس جزء من عقدها.
+#
+# **الاستيراد اليومي مستندات وقيود بس.** `import_a5` (الأصناف والعملاء) مش في السلسلة
+# اليومية عن قصد: بعد دمج «تكنو فلان» مع «فلان»، إعادة قراءة كشف العملاء كل ليلة
+# كانت هتعيد خلق الكارت المقفول. الكيانات الجديدة بتتضاف بقرار مش بجدول زمني.
+param([switch]$ExportOnly)
 $ErrorActionPreference = 'Stop'
 
 $Root    = 'C:\techno'
@@ -32,20 +47,35 @@ function Say($m) {
     Add-Content -Path $Log -Value $line -Encoding UTF8
 }
 
-# فرع → (قاعدة a5، مجلد التصدير، اسم الفرع عندنا، بادئة الأكواد)
+# فرع → (قاعدة a5، مجلد التصدير، اسم الفرع عندنا، بادئة الأكواد، وسم ملفات الكشوف)
 $Branches = @(
-    @{ Db = 'aliaa2026';  Dir = 'C:\pgtmp\aliaa'; Name = 'العلياء'; Prefix = 'AL-' },
-    @{ Db = 'Techno2026'; Dir = 'C:\pgtmp';       Name = 'أكتوبر';  Prefix = ''    }
+    @{ Db = 'aliaa2026';  Dir = 'C:\pgtmp\aliaa'; Name = 'العلياء'; Prefix = 'AL-'; Tag = 'AL'  },
+    @{ Db = 'Techno2026'; Dir = 'C:\pgtmp';       Name = 'أكتوبر';  Prefix = '';    Tag = 'OCT' }
 )
 
-# ملف الاستعلام → الملف اللي المستوردين بيقروه
+# ملف الاستعلام → الملف اللي المستوردين بيقروه (بفاصل ~ من غير رأس)
 $Exports = @(
+    @{ Sql = 'exp_cats.sql';  Out = 'a5_cats.tsv'     },
+    @{ Sql = 'exp_items.sql'; Out = 'a5_items.tsv'    },
+    @{ Sql = 'exp_misc.sql';  Out = 'a5_misc.tsv'     },
+    @{ Sql = 'exp_cust.sql';  Out = 'a5_cust.tsv'     },
+    @{ Sql = 'exp_tree.sql';  Out = 'a5_acc.tsv'      },
+    @{ Sql = 'exp_open.sql';  Out = 'a5_open.tsv'     },
+    @{ Sql = 'exp_emp.sql';   Out = 'a5_emp.tsv'      },
     @{ Sql = 'exp_hdr.sql';   Out = 'a5_hdr.tsv'      },
     @{ Sql = 'exp_lines.sql'; Out = 'a5_lines.tsv'    },
-    @{ Sql = 'exp_acc.sql';   Out = 'a5_acclines.tsv' }
+    @{ Sql = 'exp_acc.sql';   Out = 'a5_acclines.tsv' },
+    @{ Sql = 'exp_bal.sql';   Out = 'a5_bal.tsv'      }
 )
 
-function Export-A5 ($db, $sqlPath, $outPath) {
+# كشوف بفاصل tab وصف عناوين. المسار فيه {tag} أو {db} بيتبدّل بالفرع.
+$Rosters = @(
+    @{ Sql = 'exp_roster_emp.sql';  Out = 'C:\pgtmp\emp_{tag}.tsv' },
+    @{ Sql = 'exp_roster_cust.sql'; Out = 'C:\pgtmp\cust_{db}.tsv' },
+    @{ Sql = 'exp_roster_acc.sql';  Out = 'C:\pgtmp\acc_{db}.tsv'  }
+)
+
+function Export-A5 ($db, $sqlPath, $outPath, $sep = '~', [bool]$header = $false) {
     $sql = Get-Content $sqlPath -Raw -Encoding UTF8
     $c = New-Object System.Data.SqlClient.SqlConnection(
         "Server=localhost;Database=$db;Integrated Security=True;" +
@@ -60,16 +90,22 @@ function Export-A5 ($db, $sqlPath, $outPath) {
         # القديم يفضل سليم بدل ما نستورد نص كشف ونفتكره كامل.
         $tmp = "$outPath.tmp"
         $sw = New-Object IO.StreamWriter($tmp, $false, (New-Object Text.UTF8Encoding $false))
+        if ($header) {
+            $cols = @(); for ($i = 0; $i -lt $r.FieldCount; $i++) { $cols += $r.GetName($i) }
+            $sw.WriteLine(($cols -join $sep))
+        }
         $n = 0
         while ($r.Read()) {
             $v = @()
             for ($i = 0; $i -lt $r.FieldCount; $i++) {
                 $x = $r.GetValue($i)
                 if ($x -is [DBNull]) { $x = '' }
-                # `~` جوّه النص بيكسر الفاصل — بيتحوّل لشرطة. والسطر الجديد بيقطع الصف.
-                $v += (([string]$x) -replace '[~]', '-' -replace "[`r`n`t]", ' ')
+                $s = ([string]$x) -replace "[`r`n`t]", ' '
+                # الفاصل جوّه النص بيكسر الصف — `~` بيتحوّل لشرطة. مع tab مافيش لزوم.
+                if ($sep -eq '~') { $s = $s -replace '[~]', '-' }
+                $v += $s
             }
-            $sw.WriteLine(($v -join '~'))
+            $sw.WriteLine(($v -join $sep))
             $n++
         }
         $sw.Close(); $r.Close()
@@ -93,6 +129,16 @@ foreach ($b in $Branches) {
             $failed = $true
         }
     }
+    foreach ($e in $Rosters) {
+        $out = $e.Out -replace '\{tag\}', $b.Tag -replace '\{db\}', $b.Db
+        try {
+            $n = Export-A5 $b.Db (Join-Path $SqlDir $e.Sql) $out "`t" $true
+            Say ("  كشف   {0,-18} {1,7} صف" -f (Split-Path $out -Leaf), $n)
+        } catch {
+            Say ("  ✘ فشل كشف {0}: {1}" -f (Split-Path $out -Leaf), $_.Exception.Message)
+            $failed = $true
+        }
+    }
 }
 
 if ($failed) {
@@ -100,6 +146,11 @@ if ($failed) {
     # بيتخطوا الموجود — فاللي ناقص بيفضل ناقص ومحدش بيعرف.
     Say '✘ التصدير فشل — الاستيراد اتلغى. الداتا زي ما هي.'
     exit 1
+}
+
+if ($ExportOnly) {
+    Say '✔ تصدير بس — خلص.'
+    exit 0
 }
 
 foreach ($b in $Branches) {
@@ -117,6 +168,24 @@ foreach ($b in $Branches) {
         } finally { Pop-Location }
     }
 }
+
+# ── التصحيحات اللي لازم تتعاد بعد كل استيراد ──
+#
+# **`Emali_aftr` عند a5 مكسور على ١٬٤٣٩ فاتورة** — بيرجع صفر والسطور والقيد بقيمة
+# حقيقية. اتقاس: مجموع `emali_aftax` بيطابق مجموع سطور `a_price` لحد القروش، بينما
+# `Emali_aftr` أقل بـ١٫٣ مليون. الاستيراد بياخد الحقل زي ما هو، فكل تزامن بيجيب
+# فواتير جديدة صافيها صفر — أول تشغيلة جابت ٢٠ فاتورة بـ٥٨٬٤٥٤ ج مخفية.
+#
+# فالتصحيح جزء من التزامن مش خطوة بتتفتكر. والسكربت بيتحقق إن `gross` بيساوي مجموع
+# السطور قبل ما يكتب، واللي مايطابقش بيتقال ومايتغيّرش.
+Say '-- تصحيحات ما بعد الاستيراد --'
+Push-Location "$Root\backend"
+try {
+    $env:PYTHONIOENCODING = 'utf-8'
+    $out = & $Py -m src.scripts.fix_zero_net_invoices --yes 2>&1
+    Say ("  " + (($out | Select-Object -Last 3) -join ' | '))
+    if ($LASTEXITCODE -ne 0) { Say ("  X كود الخروج {0}" -f $LASTEXITCODE); $failed = $true }
+} finally { Pop-Location }
 
 if ($failed) { Say '✘ خلص وفيه فشل' } else { Say '✔ خلص تمام' }
 if ($failed) { exit 1 }

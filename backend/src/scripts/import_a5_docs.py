@@ -63,7 +63,7 @@ from src.models.transfer import (
 )
 from src.models.user import User
 from src.models.warehouse import Warehouse
-from src.scripts.import_a5 import _clean, _money, _read
+from src.scripts.import_a5 import _clean, _money, _read, mine
 from src.services import account_resolver, stock_service
 
 ZERO = Decimal("0")
@@ -86,6 +86,13 @@ KIND = {
 # أعمدة الرأس
 (H_KIND, H_ID, H_NO, H_DATE, H_PARTY, H_REP, H_GROSS, H_BONS, H_TAX,
  H_NET, H_CASH, H_CREDIT, H_PTYPE, H_MEMO, H_USER) = range(15)
+# ١٦ (اختياري): رقم الطرف عند a5 — `Cust_id` للبيع ومردوده، `Mourd_id` للشراء ومردوده.
+# التصدير القديم كان ١٥ عمود وبيفضل يتقرا؛ الجديد بيضيف الرقم والمطابقة بتبقى بيه.
+H_PARTY_ID = 15
+
+
+def _party_id(h: list[str]) -> str:
+    return _clean(h[H_PARTY_ID]) if len(h) > H_PARTY_ID else "0"
 
 
 def _date(v: str) -> date | None:
@@ -126,16 +133,21 @@ class Ctx:
         self.admin = db.scalars(select(User).order_by(User.id)).first()
         self.treasury = account_resolver.treasury_account(db, branch_id=branch.id)
 
-        items = db.scalars(select(Item)).all()
-        mine = [i for i in items if not prefix or (i.code or "").startswith(prefix)]
-        self.item_by_code = {i.code: i for i in mine if i.code}
-        self.item_by_name = {i.name: i for i in mine}
+        my_items = mine(db.scalars(select(Item)).all(), prefix)
+        self.item_by_code = {i.code: i for i in my_items if i.code}
+        self.item_by_name = {i.name: i for i in my_items}
 
         self.wh = {w.name: w for w in db.scalars(
             select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
-        self.cust = {c.name: c for c in db.scalars(
-            select(Customer).where(Customer.branch_id == branch.id)).all()}
-        self.supp = {s.name: s for s in db.scalars(select(Supplier)).all()}
+        # الطرف بالكود الأول (`{prefix}A5-{Cust_id}`) وبعده بالاسم. الكود من رقم a5
+        # اللي مابيتغيّرش؛ الاسم على الفاتورة بيختلف عن الكشف بمسافة فيتخترع كارت.
+        branch_custs = db.scalars(
+            select(Customer).where(Customer.branch_id == branch.id)).all()
+        self.cust_by_code = {c.code: c for c in branch_custs if c.code}
+        self.cust = {c.name: c for c in branch_custs if c.active}
+        supps = db.scalars(select(Supplier)).all()
+        self.supp_by_code = {s.code: s for s in supps if s.code}
+        self.supp = {s.name: s for s in supps}
 
         role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
         self.rep: dict[str, User] = {}
@@ -166,16 +178,26 @@ class Ctx:
     def number(self, tag: str, a5_id: str) -> str:
         return f"{self.prefix}{tag}{a5_id}"
 
-    def party(self, name: str, *, supplier: bool):
-        """الطرف اللي على الفاتورة، وبيتعمل لو مش موجود في كشف العملاء/الموردين.
+    def party(self, name: str, party_id: str = "0", *, supplier: bool):
+        """الطرف اللي على الفاتورة: بالرقم، وإلا بالاسم، وإلا بيتعمل.
 
-        فيه ٢٢٦ فاتورة في العلياء طرفها مش في `Cust` ولا `Mourd`: «تكنووو ثيرم» و«فرع
-        اكتوبر» (الشركة الشقيقة) وأسماء موظفين (بيع بالعهدة). عندهم دول حسابات في شجرة
-        الحسابات مش عملاء، وعندنا الفاتورة لازم يكون ليها طرف.
+        **بالرقم الأول.** الرأس بيحمل `Cust_id`/`Mourd_id`، والكود عندنا
+        `{prefix}A5-{id}` — مطابقة مابتغلطش. المطابقة بالاسم لوحدها اخترعت ٧٥ كارت
+        `A5X` في النقل الأول، ٤١ منهم «تكنو X» لراجل موجود بمسافة مختلفة في اسمه.
+
+        فيه فواتير طرفها مش في `Cust` ولا `Mourd` فعلاً: «تكنووو ثيرم» و«فرع اكتوبر»
+        (الشركة الشقيقة) وأسماء موظفين (بيع بالعهدة). عندهم دول حسابات في شجرة
+        الحسابات مش عملاء، وعندنا الفاتورة لازم يكون ليها طرف — دول بس اللي بيتعملوا.
 
         وتخطّيها مش خيار: البضاعة خرجت من المخزن فعلاً، فتخطّي الفاتورة معناه رصيد غلط.
         """
         name = _clean(name)
+        pid = _clean(party_id)
+        if pid and pid != "0":
+            by_code = self.supp_by_code if supplier else self.cust_by_code
+            hit = by_code.get(f"{self.prefix}A5-{pid}")
+            if hit is not None:
+                return hit
         if not name:
             return None
         book = self.supp if supplier else self.cust
@@ -242,7 +264,7 @@ def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("S", h[H_ID])
     if num in c.taken:
         return
-    cust = c.party(h[H_PARTY], supplier=False)
+    cust = c.party(h[H_PARTY], _party_id(h), supplier=False)
     if cust is None:
         c.skipped.append(f"فاتورة بيع: عميل مش موجود «{_clean(h[H_PARTY])}»")
         return
@@ -282,7 +304,7 @@ def _sale_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("SR", h[H_ID])
     if num in c.taken:
         return
-    cust = c.party(h[H_PARTY], supplier=False)
+    cust = c.party(h[H_PARTY], _party_id(h), supplier=False)
     ls = _lines_of(c, rows, L_IN, "مردود بيع")
     if not ls:
         return
@@ -316,7 +338,7 @@ def _purchase(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("P", h[H_ID])
     if num in c.taken:
         return
-    supp = c.party(h[H_PARTY], supplier=True)
+    supp = c.party(h[H_PARTY], _party_id(h), supplier=True)
     if supp is None:
         c.skipped.append(f"فاتورة شراء: مورد مش موجود «{_clean(h[H_PARTY])}»")
         return
@@ -356,7 +378,7 @@ def _purchase_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("PR", h[H_ID])
     if num in c.taken:
         return
-    supp = c.party(h[H_PARTY], supplier=True)
+    supp = c.party(h[H_PARTY], _party_id(h), supplier=True)
     ls = _lines_of(c, rows, L_OUT, "مردود شراء")
     if not ls:
         return

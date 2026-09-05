@@ -36,6 +36,11 @@ TECHNO_PREFIX = "تكنو "
 FAMILY_WHITE = "أبيض"
 FAMILY_POLY = "بولي"
 
+# «تكنو فلان» اللي مالوش «فلان» **مابيتسمّاش**. الاسم بتاعه عند a5 بـ«تكنو»، وأي
+# مطابقة بعدين (كشف a5، ملف العميل، التزامن اليومي) بتدوّر عليه بالاسم ده. شيل البادئة
+# كان بيكسر المطابقة دي كلها عشان تجميل. بيتقال في التقرير بس.
+RENAME_TECHNO_ONLY = False
+
 
 class MergeError(Exception):
     pass
@@ -92,9 +97,12 @@ def plan(db: Session) -> MergePlan:
     out = MergePlan()
     customers = db.scalars(select(Customer).where(Customer.active.is_(True))).all()
 
-    by_name: dict[str, list[Customer]] = {}
+    # المفتاح (الفرع، الاسم) مش الاسم لوحده. «تكنو احمد صبرى» في العلياء كان بيلاقي
+    # «احمد صبرى» في أكتوبر — راجل تاني بحساب تاني — والدمج كان هيحطّ رصيد فرع على
+    # كارت فرع. الاسم بيتكرر بين الفرعين، والحساب لأ.
+    by_name: dict[tuple[int | None, str], list[Customer]] = {}
     for c in customers:
-        by_name.setdefault(_normalise(c.name), []).append(c)
+        by_name.setdefault((c.branch_id, _normalise(c.name)), []).append(c)
 
     for c in customers:
         name = _normalise(c.name)
@@ -105,7 +113,7 @@ def plan(db: Session) -> MergePlan:
             out.skipped.append((c.name, "«تكنو» من غير اسم بعدها"))
             continue
 
-        candidates = by_name.get(base, [])
+        candidates = by_name.get((c.branch_id, base), [])
         if not candidates:
             out.techno_only.append((c.id, c.name))
             continue
@@ -148,7 +156,7 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
     p = plan(db)
     result = p.as_dict()
     result["applied"] = False
-    result["remaining"] = len(p.pairs) + len(p.techno_only)
+    result["remaining"] = len(p.pairs) + (len(p.techno_only) if RENAME_TECHNO_ONLY else 0)
     if dry_run:
         return result
 
@@ -212,16 +220,19 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
                                  "name": f"{dupe.name} {MERGED_MARK}{keep.id})"})
         moved[dupe.id] = keep.id
 
-    for cid, name in p.techno_only:
-        c = customers.get(cid)
-        if c is None:
-            continue
-        customer_changes.append({"id": c.id, "active": c.active,
-                                 "name": _normalise(name[len(TECHNO_PREFIX):])})
-        for acc in accounts_by_customer.get(c.id, []):
-            if acc.family is None:
-                account_changes.append({"id": acc.id, "customer_id": c.id,
-                                        "family": FAMILY_POLY})
+    renamed = 0
+    if RENAME_TECHNO_ONLY:
+        for cid, name in p.techno_only:
+            c = customers.get(cid)
+            if c is None:
+                continue
+            customer_changes.append({"id": c.id, "active": c.active,
+                                     "name": _normalise(name[len(TECHNO_PREFIX):])})
+            for acc in accounts_by_customer.get(c.id, []):
+                if acc.family is None:
+                    account_changes.append({"id": acc.id, "customer_id": c.id,
+                                            "family": FAMILY_POLY})
+            renamed += 1
 
     if account_changes:
         db.execute(update(CustomerAccount), account_changes)
@@ -235,8 +246,8 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
     done = p.as_dict()
     done["applied"] = True
     # What is LEFT after this batch — the caller repeats until it is zero.
-    done["remaining"] = max(0, result["remaining"] - len(p.pairs) - len(p.techno_only))
-    done["merged_now"] = len(p.pairs) + len(p.techno_only)
+    done["remaining"] = max(0, result["remaining"] - len(p.pairs) - renamed)
+    done["merged_now"] = len(p.pairs) + renamed
     done["documents_moved"] = documents_moved
     return done
 

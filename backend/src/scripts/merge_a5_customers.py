@@ -19,19 +19,19 @@ def run(*, execute: bool) -> None:
     try:
         p = customer_merge_service.plan(db)
         print(f"أزواج هتتدمج:        {len(p.pairs):>6}")
-        print(f"«تكنو» من غير أصل:   {len(p.techno_only):>6}   (هيتشال «تكنو» من اسمه)")
+        print(f"«تكنو» من غير أصل:   {len(p.techno_only):>6}   (هيتساب زي ما هو — اسمه عند a5 كده)")
         print(f"اتخطّى:              {len(p.skipped):>6}")
         if p.pairs:
             print("\nعيّنة:")
             for pair in p.pairs[:8]:
                 same = "نفس المندوب" if pair.same_rep else "مندوب مختلف"
                 print(f"   «{pair.merge_name}» ← «{pair.keep_name}»  ({same})")
+        # اللي اتخطّى بيتطبع **كله** — دي قايمة «محتاج قرار» اللي المستخدم بيراجعها،
+        # وقصّها على ١٠ كان بيخبّي القرارات نفسها.
         if p.skipped:
-            print(f"\nاتخطّى ({len(p.skipped)}):")
-            for name, why in p.skipped[:10]:
+            print(f"\nاتخطّى — محتاج قرار ({len(p.skipped)}):")
+            for name, why in p.skipped:
                 print(f"   {name}: {why}")
-            if len(p.skipped) > 10:
-                print(f"    … و{len(p.skipped) - 10} غيرهم")
         if not execute:
             print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
             return

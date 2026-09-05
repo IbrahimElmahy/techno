@@ -1,7 +1,8 @@
 """ينقل صناديق a5 (الحسابات تحت «الخزينة») ويربط كل صندوق بمندوبه وخطه.
 
-    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/chart_AL.tsv
-    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/chart_AL.tsv --yes
+    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/aliaa/a5_acc.tsv --prefix AL-
+    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/aliaa/a5_acc.tsv --prefix AL- --yes
+    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/a5_acc.tsv --prefix "" --yes
 
 المصدر تصدير شجرة a5: UTF-16LE بفاصل `~`، والسطر اللي بيبدأ بـ`B` هو حساب فرعي.
 اللي `AccMain_id = 1` هما الصناديق — ١٣ صندوق.
@@ -102,16 +103,33 @@ def canonical_name(name: str) -> str:
 
 
 def read_boxes(path: str) -> list[tuple[int, str, str]]:
-    """(AccBrnch_id, الاسم زي ما هو في a5, Brnch_Cod) لكل صندوق تحت «الخزينة»."""
-    with open(path, encoding="utf-16-le", newline="") as fh:
-        raw = fh.read()
+    """(AccBrnch_id, الاسم زي ما هو في a5, '') لكل صندوق تحت «الخزينة».
+
+    بيقرا `a5_acc.tsv` — نفس ملف الشجرة اللي `import_a5_phase2` بيقراه، بنفس القارئ
+    (`import_a5._read`: UTF-16 لو فيه BOM وإلا UTF-8، فاصل `~`). القراءة القديمة كانت
+    بتفرض UTF-16LE على ملف `chart_AL.tsv` مستقل، والتزامن اليومي بيكتب UTF-8 — فكانت
+    بتقرا هراء من غير ما ترمي خطأ.
+
+    الحارس: الحساب الرئيسي رقم ١ لازم يكون اسمه فيه «خزين» — وإلا الشجرة دي مش اللي
+    السكربت بيفترضها، والصناديق اللي هيطلّعها حسابات تانية خالص.
+    """
+    from src.scripts.import_a5 import _read
+
+    rows = _read(path)
+    main_name = next((r[2].strip() for r in rows
+                      if len(r) > 2 and r[0] == "MAIN" and r[1] == TREASURY_MAIN_ID), "")
+    if "خزين" not in main_name:
+        raise SystemExit(
+            f"الحساب الرئيسي رقم {TREASURY_MAIN_ID} اسمه «{main_name}» مش «الخزينة» — "
+            f"الملف {path} مش شجرة الفرع المتوقعة.")
     out: list[tuple[int, str, str]] = []
-    for line in raw.splitlines():
-        parts = line.lstrip("\ufeff").split("~")
-        # B ~ AccBrnch_id ~ AccMain_id ~ AccBrnch_N ~ AccMain_N ~ Brnch_Cod ~ TypeN ~ Brn
-        if len(parts) < 6 or parts[0] != "B" or parts[2] != TREASURY_MAIN_ID:
+    for r in rows:
+        # SUB ~ AccBrnch_id ~ AccBrnch_N ~ AccMain_id ~ ''
+        if len(r) < 4 or r[0] != "SUB" or r[3].strip() != TREASURY_MAIN_ID:
             continue
-        out.append((int(parts[1]), parts[3].strip(), parts[5].strip()))
+        if not r[1].strip().isdigit():
+            continue
+        out.append((int(r[1]), r[2].strip(), ""))
     return out
 
 
@@ -277,6 +295,6 @@ def run(*, path: str, prefix: str, execute: bool) -> None:
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    file_path = args[args.index("--file") + 1] if "--file" in args else "C:/pgtmp/chart_AL.tsv"
+    file_path = args[args.index("--file") + 1] if "--file" in args else "C:/pgtmp/aliaa/a5_acc.tsv"
     code_prefix = args[args.index("--prefix") + 1] if "--prefix" in args else "AL-"
     run(path=file_path, prefix=code_prefix, execute="--yes" in args)

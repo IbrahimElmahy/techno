@@ -19,6 +19,7 @@ from sqlalchemy import select
 from src.core.db import SessionLocal
 from src.core.money import ZERO, to_money
 from src.models.ledger import Account, LedgerEntry
+from src.scripts.import_a5 import _read
 
 # نفس أعمدة `import_a5_ledger` — أي تغيير هناك لازم يتنقل هنا.
 A_KEY, A_DATE, A_ACC, A_ACCNAME = 0, 1, 2, 3
@@ -38,8 +39,10 @@ def _money(s: str):
 
 def run(folder: str, prefix: str) -> None:
     path = f"{folder}/a5_acclines.tsv"
-    raw = open(path, encoding="utf-16-le").read()
-    rows = [r.split("~") for r in raw.splitlines() if r.strip()][1:]
+    # نفس قارئ المستورد: UTF-16 لو فيه BOM وإلا UTF-8. القراءة القديمة كانت بتفرض
+    # UTF-16LE وبتقص أول صف كأنه رأس — والتزامن اليومي بيكتب UTF-8 من غير رأس، فكانت
+    # بتقرا هراء وتاكل أول قيد من غير ما ترمي خطأ.
+    rows = _read(path)
     print(f"الملف: {path}\nصفوف المصدر: {len(rows):,}\n")
 
     db = SessionLocal()
