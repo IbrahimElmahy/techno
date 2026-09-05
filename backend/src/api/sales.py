@@ -44,6 +44,18 @@ from src.auth import branch_scope
 router = APIRouter(tags=["sales"], prefix="/sales")
 
 
+def _reject_non_trader(db: Session, customer_id: int) -> None:
+    """البيع للتجار بس — السباك مالوش بيع (معاينات وكوبونات ونقاط بس).
+
+    الفحص على مستوى الـAPI مش الخدمة عشان سكربتات النقل اللي بتبني مستندات
+    قديمة من الداتا الخام ماتتكسرش — المنع للي بيتكتب من الشاشات والتطبيق.
+    """
+    cust = db.get(Customer, customer_id)
+    if cust is not None and (cust.customer_type or "") == "plumber":
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "السباك مالوش فواتير بيع — شغله معاينات وكوبونات ونقاط"})
+
+
 class LocationIn(BaseModel):
     location_kind: LocationKind
     location_id: int
@@ -478,6 +490,7 @@ def _build_sale(
     لوحده، أول حقل يتضاف للفاتورة هيتحط في واحد وينسى في التاني.
     """
     _rep_scope_check(db, current, body.customer_id, body.origin)
+    _reject_non_trader(db, body.customer_id)
     can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
     try:
         inv = sales_service.create_sale(
@@ -905,6 +918,7 @@ def create_standalone_return(
     db: Session = Depends(get_db),
 ) -> dict:
     _rep_scope_check(db, current, body.customer_id, body.origin)
+    _reject_non_trader(db, body.customer_id)
     try:
         ret = sales_service.create_standalone_return(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
@@ -970,6 +984,7 @@ def update_standalone_return(
     if not branch_scope.may_see(current, ret):
         raise HTTPException(404, {"code": "not_found", "message": "المرتجع مش موجود"})
     _rep_scope_check(db, current, body.customer_id, body.origin)
+    _reject_non_trader(db, body.customer_id)
     try:
         document_edit_service.purge_sales_return(db, ret)
     except DocumentEditError as exc:

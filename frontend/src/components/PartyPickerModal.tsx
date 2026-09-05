@@ -72,7 +72,7 @@ const KIND_ENDPOINT: Record<PartyKind, string> = {
 const KIND_CUSTOMER_TYPE: Partial<Record<PartyKind, string>> = { employee: 'employee' };
 
 export default function PartyPickerModal({
-  open, kind, onPick, onCancel, date, onDateChange, kinds, title,
+  open, kind, onPick, onCancel, date, onDateChange, kinds, title, excludeTypes,
 }: {
   open: boolean;
   /** التصنيف اللي البوباب بيفتح عليه. */
@@ -90,9 +90,12 @@ export default function PartyPickerModal({
    * list, so the person can look in the other book without closing what they started. Omit it and
    * the picker stays fixed on `kind`, which is right for a screen that only ever has one answer.
    */
-  kinds?: PartyKind[];
-  title?: string;
-}) {
+   kinds?: PartyKind[];
+   title?: string;
+   /** تصنيفات عملاء مستبعدة من القايمة — شاشات البيع بتبعت `['plumber']`
+    *  (السباك مالوش بيع). شاشات الكوبونات مابتبعتش حاجة. */
+   excludeTypes?: string[];
+ }) {
   // التصنيف الحالي — بيبدأ من اللي الشاشة فتحت بيه وبيرجعله كل مرة تتفتح.
   const [activeKind, setActiveKind] = useState<PartyKind>(kind);
   useEffect(() => { if (open) setActiveKind(kind); }, [open, kind]);
@@ -148,6 +151,7 @@ export default function PartyPickerModal({
       // تبويب «الموظفين» بيفرز نفس الكشف — مش بيجيب دفتر تاني. الموظف اللي بيشتري
       // كارته كارت عميل، ولو كان له كارت لوحده كان هيبقى ليه رصيدين لنفس الراجل.
       if (onlyType && (p as any).customer_type !== onlyType) return false;
+      if (excludeTypes?.includes((p as any).customer_type)) return false;
       if (branchId && p.branch_id !== branchId) return false;
       if (!needle) return true;
       return normalizeAr(p.name).includes(needle) || normalizeAr(p.phone).includes(needle);
@@ -466,7 +470,7 @@ export default function PartyPickerModal({
               <Col xs={24} md={8}>
                 <Form.Item name="customer_type" label="التصنيف" style={{ marginBottom: 10 }}>
                   <Select allowClear placeholder="تاجر"
-                    options={pickerTypes} />
+                    options={pickerTypes.filter((o: any) => !excludeTypes?.includes(o.value))} />
                 </Form.Item>
               </Col>
             </>

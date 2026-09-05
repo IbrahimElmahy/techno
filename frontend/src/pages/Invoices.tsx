@@ -2708,6 +2708,7 @@ export default function Invoices() {
 
         <PartyPickerModal
           open={partyPickerOpen} kind="customer"
+          excludeTypes={['plumber']}
           onPick={handlePartyPicked}
           // `setNewStep(null)` مش زيادة: من غيرها الإلغاء بيقفل الشباك ويسيب الدورة واقفة على
           // خطوة «العميل» — والمستند مفتوح قدامك بس Enter مش بيفتح منتقي الأصناف لأن الحارس
@@ -3021,6 +3022,7 @@ export default function Invoices() {
       <PartyPickerModal
         open={partyPickerOpen || newStep === 'party'} kind="customer"
         kinds={['customer', 'employee', 'supplier']}
+        excludeTypes={['plumber']}
         date={invoiceDate} onDateChange={(d) => setInvoiceDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
