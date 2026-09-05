@@ -60,10 +60,7 @@ def _is_a5(code: str) -> bool:
 
 def run(folder: str, *, execute: bool) -> None:
     rows = _read(os.path.join(folder, "plumbers.tsv"))
-    reps = _read(os.path.join(folder, "reps.tsv"))
-    # كود الموظف في الملف (`EMP-0045`) → اسم الراجل عندنا. الربط بالاسم مش برقم
-    # اليوزر اللي في الملف: الأرقام دي من نقل قديم واتغيّرت، وواحد منها غلط أصلاً.
-    by_emp = {r["emp_code"]: r["erp_name"] for r in reps if r.get("emp_code")}
+    _read(os.path.join(folder, "reps.tsv"))          # بيتقري للتأكد إنه موجود
 
     db = SessionLocal()
     try:
@@ -73,8 +70,38 @@ def run(folder: str, *, execute: bool) -> None:
         terr = db.scalar(select(Territory).where(Territory.branch_id == branch.id)
                          .order_by(Territory.id))
 
-        users = db.scalars(select(User)).all()
-        user_by_name = {(u.full_name or "").strip(): u for u in users}
+        users = {u.username: u for u in db.scalars(select(User)).all()}
+        # كود الموظف في الملف → حساب الدخول عندنا.
+        #
+        # **مش بالاسم.** الملف بيسمّي الناس بوظايفهم أو بأسماء قديمة: «اشرف هلول»
+        # هو **اشرف محى** (٣٦٠ سباك)، و«اداره خدمه عملاء» هو **محمد هلال ابو عمه**
+        # — دي وظيفة مش اسم. المطابقة بالاسم كانت بتسيب ٣٦٢ سباك بلا مندوب خدمة.
+        #
+        # ومش برقم اليوزر اللي في الملف كمان: الأرقام من نقل قديم واتغيّرت، وواحد
+        # منها بيشاور على `aftersales` بدل «محمد ممدوح» — راجل تاني خالص.
+        #
+        # `EMP-0043`/`0045`/`0046`/`0044`/`0047` مناديب **بيع** في الملف، واسمهم
+        # عنده اسم السايق القديم. دول بيروحوا حساب السيارة الشغّال، مش الحساب
+        # المعطّل بتاع الراجل.
+        by_emp_code = {
+            "EMP-0053": "ashraf",          # اشرف محى
+            "EMP-0002": "ibrahim.khattab",
+            "EMP-0003": "anas",            # انس سعيد
+            "EMP-0008": "bayoumy",
+            "EMP-0004": "hassan.eid",
+            "EMP-0005": "ahmed.torky",
+            "EMP-0054": "care",            # محمد هلال ابو عمه
+            "EMP-0006": "mohamed.mamdouh",
+            "EMP-0007": "medhat",
+            "EMP-0055": "mohamed.torky",
+            "EMP-0040": "sales.dept2",     # اداره مبيعات
+            # مناديب البيع — حساب السيارة الشغّال
+            "EMP-0045": "car.a",           # الملف كاتبها «محمد صبحى»؛ سايقها حذيفه
+            "EMP-0043": "car.b",           # ابراهيم حسونه
+            "EMP-0046": "car.g",           # محمد مكرم
+            "EMP-0044": "car.d",           # الملف كاتبها «احمد الكومى»؛ سايقها احمد صبرى
+            "EMP-0047": "car.sharqia",     # حسام موسي
+        }
         by_code = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
 
         made: list[tuple[str, str, User | None]] = []
@@ -87,10 +114,13 @@ def run(folder: str, *, execute: bool) -> None:
             if not code or not name:
                 notes["صف بلا كود أو اسم"] += 1
                 continue
-            svc_name = by_emp.get(r.get("emp_code", ""))
-            svc = user_by_name.get((svc_name or "").strip()) if svc_name else None
-            if svc_name and svc is None:
-                notes[f"مندوب خدمة مالوش يوزر: {svc_name}"] += 1
+            emp_code = r.get("emp_code", "")
+            uname = by_emp_code.get(emp_code)
+            svc = users.get(uname) if uname else None
+            if emp_code and uname is None:
+                notes[f"كود موظف مش في الخريطة: {emp_code}"] += 1
+            elif uname and svc is None:
+                notes[f"حساب مش موجود: {uname}"] += 1
 
             if kind == "تاجر":
                 # كود a5 في العمود الأول — الكارت موجود، التصنيف بس هو اللي بيترجع.
