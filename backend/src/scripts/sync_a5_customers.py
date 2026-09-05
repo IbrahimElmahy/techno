@@ -29,6 +29,14 @@
 الـ١٬٩٥٨ كارت كلهم، واللي بيدخّل بيكتب اسم المندوب في خانة التليفون. اتفحصت
 القيم: كلها أسماء («مندوب السياره ( ب )»، «عمرو رجب»…)، ولا واحدة رقم.
 
+**⚠️ الكارت المدموج مابيترجعش.** a5 بيدّي التاجر الواحد كارتين لأن نظامهم بيدّي
+حساب ذمم واحد بس: «فلان» للأبيض و«تكنو فلان» للبولي. عندنا اتلمّوا في عميل واحد
+بحسابين (`customer_merge_service`)، والكارت البولي اتعطّل. تشغيلة أولى للسكربت ده
+رجّعت **٤٨٣ كارت بولي** كعملاء مستقلين وفكّت الدمج — اتقاس: ٤٧٨ من الكروت الباقية
+عندها حسابين فعلاً. فالحارس بيقارن بالاسم قبل الإنشاء: «تكنو X» واسمه مطروح منه
+البادئة موجود شغّال في نفس الفرع = ده الخط البولي بتاع عميل مدموج، والكارت
+مابيتعملش.
+
 **التليفون الحقيقي في `ph3`** — ده العمود اللي فيه الموبايل، ومااتصدّرش خالص في
 النقل الأصلي. بيتملا هنا **لو الخانة عندنا فاضية** بس.
 """
@@ -40,7 +48,7 @@ import re
 import sys
 from collections import Counter
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from src.core.db import SessionLocal
 from src.models.customer import Customer
@@ -55,6 +63,8 @@ SOURCES = {
 }
 
 TRADER = "trader"
+# البادئة اللي a5 بيعلّم بيها الكارت التاني للراجل الواحد — خط البولي.
+TECHNO_PREFIX = "تكنو "
 # التصنيفات اللي اتاخدت بقرار في شغل سابق ومابتترجعش لـ«تاجر» أوتوماتيك.
 KEEP_TYPES = {"employee", "internal", "showroom", "company", "establishment", "other"}
 # دول اللي a5 بيناقضهم صراحةً: هو بيقول تاجر، وإحنا حاطينهم مالك أو سباك.
@@ -94,7 +104,22 @@ def run(folder: str, *, execute: bool) -> None:
             if rep_role and u.role_id == rep_role.id:
                 rep_by_name.setdefault((u.branch_id, _norm_rep(u.full_name or "")), u)
 
-        by_code = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
+        all_customers = db.scalars(select(Customer)).all()
+        by_code = {c.code: c for c in all_customers if c.code}
+        # الاسم جوّه الفرع → الكارت الشغّال. ده اللي بيكشف الخط البولي بتاع عميل
+        # مدموج: «تكنو فلان» عند a5 و«فلان» عندنا.
+        by_name: dict[tuple[int, str], Customer] = {}
+        for c in all_customers:
+            if c.active and c.branch_id is not None:
+                by_name.setdefault((c.branch_id, _clean(c.name)), c)
+        poly: list[tuple[str, str, Customer]] = []
+        # الكروت اللي عليها حركة — الحارس اللي بيمنع قفل صف شايل تاريخ.
+        busy: set[int] = set()
+        for sql in ("SELECT DISTINCT customer_id FROM customer_account",
+                    "SELECT DISTINCT customer_id FROM sales_invoice",
+                    "SELECT DISTINCT customer_id FROM sales_return",
+                    "SELECT DISTINCT customer_id FROM voucher WHERE customer_id IS NOT NULL"):
+            busy.update(x[0] for x in db.execute(text(sql)) if x[0] is not None)
 
         created: list[tuple[str, str]] = []
         updates: list[tuple[Customer, str, object, object]] = []
@@ -127,6 +152,31 @@ def run(folder: str, *, execute: bool) -> None:
                         notes[f"مندوب a5 مالوش يوزر: {rep_raw}"] += 1
 
                 c = by_code.get(code)
+                if name.startswith(TECHNO_PREFIX):
+                    twin = by_name.get((branch.id, name[len(TECHNO_PREFIX):].strip()))
+                    if twin is not None and (c is None or c.id != twin.id):
+                        # الكارت ده الخط البولي بتاع عميل مدموج. مافيش كارت
+                        # بيتعمل — ولو تشغيلة قديمة عملته، بيتقفل هنا بنفس علامة
+                        # `customer_merge_service` بدل ما يتمسح: المستندات
+                        # بتسمّي الصف، والحذف بيحوّلها لرقم محدش يعرف يحلّه.
+                        poly.append((code, name, twin))
+                        if c is None:
+                            notes["الخط البولي لعميل مدموج — مااتعملش كارت"] += 1
+                        elif c.active and c.id in busy:
+                            # عليه حساب أو مستند — الدمج ده شغل
+                            # `customer_merge_service`، مش قفل صف. القفل هنا كان
+                            # هيخفي فواتيره من غير ما يحرّك حسابه.
+                            problems.append(
+                                f"{code} «{c.name}»: خط بولي عليه حركة — محتاج دمج حقيقي")
+                        elif c.active:
+                            notes["كارت بولي شغّال بالغلط — اتقفل"] += 1
+                            updates.append((c, "active", True, False))
+                            if "مدموج في #" not in (c.name or ""):
+                                updates.append((c, "name", c.name,
+                                                f"{c.name} (مدموج في #{twin.id})"))
+                            if c.rep_id is not None:
+                                updates.append((c, "rep_id", c.rep_id, None))
+                        continue
                 if c is None:
                     terr = terrs.get(_clean(r.get("area", ""))) or fallback
                     created.append((code, name))
@@ -168,10 +218,15 @@ def run(folder: str, *, execute: bool) -> None:
         for k, v in notes.most_common(12):
             print(f"{k:<48}{v:>6}")
 
+        print(f"{'كروت بولي لعملاء مدموجين — اتسابت':<48}{len(poly):>6}")
         if created:
             print("\n   عيّنة من الجديد:")
             for code, name in created[:10]:
                 print(f"      {code:<14} {name}")
+        if poly:
+            print("\n   عيّنة من الخط البولي (الكارت الباقي شايل الحسابين):")
+            for pcode, pname, twin in poly[:6]:
+                print(f"      {pcode:<14} «{pname[:26]:<26}» → #{twin.id} «{twin.name[:22]}»")
         if problems:
             print("\nمحتاج مراجعة:")
             for p in problems[:15]:

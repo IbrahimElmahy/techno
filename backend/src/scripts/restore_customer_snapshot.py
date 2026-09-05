@@ -24,18 +24,29 @@
 """
 from __future__ import annotations
 
-import csv
 import os
 import sys
 from collections import Counter
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select, text
 
-from src.core.db import SessionLocal
+from src.core.db import SessionLocal, engine
 from src.models.customer import Customer
 
 # أعمدة اللقطة بالترتيب زي ما اتصدّرت.
 (C_ID, C_CODE, C_NAME, C_TYPE, C_REP, C_REPNAME, C_SVC, C_BRANCH, C_ACTIVE) = range(9)
+
+# كل خانة بتشاور على عميل — الفحص قبل أي حذف بيمرّ عليها كلها.
+REFS = (
+    ("sales_invoice", "customer_id"), ("sales_return", "customer_id"),
+    ("voucher", "customer_id"), ("cheque", "customer_id"),
+    ("trade_order", "customer_id"), ("reservation", "customer_id"),
+    ("coupon_issue", "customer_id"), ("coupon_receipt", "customer_id"),
+    ("inspection", "customer_id"), ("inspection", "merchant_customer_id"),
+    ("customer_account", "customer_id"), ("customer_external_ref", "customer_id"),
+    ("customer_phone", "customer_id"),
+)
 
 
 def _load(path: str) -> dict[int, list[str]]:
@@ -64,9 +75,12 @@ def _i(v: str) -> int | None:
     return int(v) if v.isdigit() else None
 
 
-def run(path: str, *, execute: bool) -> None:
+def run(path: str, *, execute: bool, delete_extras: bool = False) -> None:
     snap = _load(path)
     print(f"اللقطة: {len(snap)} كارت — {path}")
+
+    insp = sa_inspect(engine)
+    tables = set(insp.get_table_names())
 
     db = SessionLocal()
     try:
@@ -74,10 +88,11 @@ def run(path: str, *, execute: bool) -> None:
         changes: list[tuple[Customer, str, object, object]] = []
         notes: Counter = Counter()
 
+        extras: list[Customer] = []
         for c in rows:
             s = snap.get(c.id)
             if s is None:
-                notes["كارت عندنا مش في اللقطة (اتعمل بعدها) — اتساب"] += 1
+                extras.append(c)
                 continue
             for field, want in (("customer_type", s[C_TYPE].strip() or None),
                                 ("rep_id", _i(s[C_REP])),
@@ -93,6 +108,23 @@ def run(path: str, *, execute: bool) -> None:
         if missing:
             notes["كارت في اللقطة ومش موجود دلوقتي"] = missing
 
+        # الكروت اللي اتعملت بعد اللقطة. بتتمسح مع `--delete-extras` بس، وبعد ما
+        # يتأكد إنها **فاضية** — صفر إشارة في كل جدول بيشاور على عميل. كارت عليه
+        # مستند مابيتمسحش مهما الأمر قال: الرجوع مايستاهلش مرجع مكسور.
+        deletable: list[Customer] = []
+        if extras:
+            eids = [c.id for c in extras]
+            busy: set[int] = set()
+            for t, col in REFS:
+                if t not in tables or col not in {x["name"] for x in insp.get_columns(t)}:
+                    continue
+                busy.update(x[0] for x in db.execute(
+                    text(f"SELECT DISTINCT {col} FROM {t} WHERE {col} = ANY(:i)"), {"i": eids}))
+            deletable = [c for c in extras if c.id not in busy]
+            notes["كارت اتعمل بعد اللقطة"] = len(extras)
+            if busy:
+                notes["منهم عليه مستندات — مش هيتمسح"] = len(busy)
+
         # المراجع اللي اتضافت بعد اللقطة — بالتاريخ.
         newer = db.execute(text(
             "SELECT count(*) FROM customer_external_ref"
@@ -104,6 +136,8 @@ def run(path: str, *, execute: bool) -> None:
         for f, n in by_field.most_common():
             print(f"   {f:<40}{n:>6}")
         print(f"   {'customer_external_ref هتتمسح':<40}{newer:>6}")
+        if delete_extras:
+            print(f"   {'كروت هتتمسح (اتعملت بعد اللقطة وفاضية)':<40}{len(deletable):>6}")
         print(f"   {'إجمالي':<40}{len(changes):>6}")
         for k, v in notes.most_common():
             print(f"\n   {k}: {v}")
@@ -124,9 +158,15 @@ def run(path: str, *, execute: bool) -> None:
             "DELETE FROM customer_external_ref"
             " WHERE created_at > (SELECT min(created_at) + interval '1 hour'"
             "                     FROM customer_external_ref)"))
+        gone = 0
+        if delete_extras and deletable:
+            db.execute(text("DELETE FROM customer WHERE id = ANY(:i)"),
+                       {"i": [c.id for c in deletable]})
+            gone = len(deletable)
         db.commit()
         print(f"\nرجع: {len(changes)} حقل على "
-              f"{len({c.id for c, *_ in changes})} كارت، و{newer} مرجع اتمسح.")
+              f"{len({c.id for c, *_ in changes})} كارت، و{newer} مرجع اتمسح"
+              + (f"، و{gone} كارت زيادة اتمسح." if gone else "."))
     finally:
         db.close()
 
@@ -136,7 +176,7 @@ def main() -> None:
     path = "C:/pgtmp/erp/wb/snap.tsv"
     if "--file" in args:
         path = args[args.index("--file") + 1]
-    run(path, execute="--yes" in args)
+    run(path, execute="--yes" in args, delete_extras="--delete-extras" in args)
 
 
 if __name__ == "__main__":
