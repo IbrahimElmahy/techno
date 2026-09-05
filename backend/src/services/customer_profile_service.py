@@ -19,7 +19,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
-from src.models.customer import Customer, CustomerAccount
+from src.models.customer import MERGED_MARK, Customer, CustomerAccount
 from src.models.ledger import Account, LedgerLine
 from src.models.sales import SalesInvoice, SalesReturn
 from src.models.voucher import Voucher, VoucherKind
@@ -66,6 +66,7 @@ def apply_filters(
     territory_id: int | None = None,
     governorate_id: int | None = None,
     active: bool | None = None,
+    include_merged: bool = False,
 ) -> Select:
     """Narrow a customer SELECT. `q` matches code, name, phone or address (partial, any part)."""
     if q:
@@ -89,6 +90,16 @@ def apply_filters(
         stmt = stmt.where(Customer.governorate_id == governorate_id)
     if active is not None:
         stmt = stmt.where(Customer.active.is_(active))
+    elif not include_merged:
+        # الكارت المدموج مش عميل — هو **اسم تاني لعميل موجود**. a5 بيدّي التاجر
+        # الواحد كارتين عشان نظامهم بيدّي حساب ذمم واحد («فلان» للأبيض و«تكنو
+        # فلان» للبولي)، وعندنا اتلمّوا في كارت واحد بحسابين والصف التاني اتقفل
+        # بالعلامة دي. عرضه في الكشف بيدّي نفس الراجل مرتين — مرة برصيده ومرة
+        # بصفر — و٦٢٠ صف زيّه بيغرّقوا الكشف.
+        #
+        # الاستبعاد هنا مش إخفاء: اللي يفلتر على «مخفي» صراحةً (`active=False`)
+        # بيلاقيهم زي ما هُمّ، ورصيدهم أصلاً على الكارت الباقي.
+        stmt = stmt.where(Customer.name.not_like(f"%{MERGED_MARK}%"))
     return stmt
 
 

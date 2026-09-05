@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
-from src.models.customer import Customer, CustomerAccount
+from src.models.customer import MERGED_MARK, Customer, CustomerAccount
 
 # The prefix their system used to mark the second line. «تكنو» and «بولي» are the same thing to the
 # client — the import carried the تكنو spelling, and the family it maps to is بولي.
@@ -209,7 +209,7 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
         # Deactivated, never deleted: documents already name this row, and a deleted customer turns
         # every one of them into an id nobody can resolve.
         customer_changes.append({"id": dupe.id, "active": False,
-                                 "name": f"{dupe.name} (مدموج في #{keep.id})"})
+                                 "name": f"{dupe.name} {MERGED_MARK}{keep.id})"})
         moved[dupe.id] = keep.id
 
     for cid, name in p.techno_only:
