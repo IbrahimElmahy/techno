@@ -156,9 +156,14 @@ def require_account(db: Session, customer_id: int, *, family: str | None = None)
 AFTER_SALES_TYPES = {"plumber"}
 
 
-def assert_rep_matches_type(db: Session, *, customer_type: str, rep_id: int) -> None:
-    """A plumber's responsible rep must be After-Sales staff (client rule, v4)."""
-    if customer_type not in AFTER_SALES_TYPES:
+def assert_rep_matches_type(db: Session, *, customer_type: str, rep_id: int | None) -> None:
+    """A plumber's responsible rep must be After-Sales staff (client rule, v4).
+
+    و**فاضي مقبول**: «احنا بنبيع للتجار مش للسباك، لكن بنقدم خدمه عملاء للسباك
+    والمالك». فمندوب البيع على كارت سباك مش ناقص — هو مالوش معنى، وخانته بتفضل
+    فاضية. اللي بيمسك المعلومة الحقيقية هو `service_rep_id`.
+    """
+    if customer_type not in AFTER_SALES_TYPES or rep_id is None:
         return
     from src.models.role import Role, RoleName
     from src.models.user import User

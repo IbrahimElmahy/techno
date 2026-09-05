@@ -74,7 +74,8 @@ class CustomerOut(BaseModel):
     name: str
     customer_type: str
     phone: str | None
-    rep_id: int
+    # فاضي مقصود: السباك والمالك مالهمش مندوب بيع — إحنا بنبيع للتجار بس.
+    rep_id: int | None
     territory_id: int
     default_price_tier: PriceTier | None = None
     active: bool
