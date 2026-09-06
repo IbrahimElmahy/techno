@@ -128,6 +128,9 @@ def run(folder: str, *, execute: bool) -> None:
             raise SystemExit(f"مافيش فرع اسمه «{BRANCH}».")
         users = {u.username: u for u in db.scalars(select(User)).all()}
         admin = db.scalar(select(User).order_by(User.id))
+        if admin is None:
+            # `actor_user_id` إجباري على المستندين — اللي سجّل الحركة.
+            raise SystemExit("مافيش ولا يوزر في النظام — مين اللي سجّل؟")
         custs = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
         # الكارت المدموج بيوصّل للكارت الباقي — رقمه في آخر اسمه «(مدموج في #123)».
         by_id = {c.id: c for c in custs.values()}
@@ -201,13 +204,16 @@ def run(folder: str, *, execute: bool) -> None:
             return
 
         n_i = n_il = n_r = n_rl = 0
+        # الترقيم بيكمّل من آخر مستند موجود مش بيبدأ من واحد — `document_number`
+        # فريد، فتشغيلة تانية بتعمل مستندات جديدة بأرقام مصطدمة بالقديمة.
+        seq = db.scalar(select(func.count()).select_from(CouponIssue)) or 0
         for (cid, d_dt, kind, rid), lines in new_i.items():
             ref = f"wb:{cid}:{d_dt}:{kind}:{rid}"
             doc = CouponIssue(
-                document_number=f"{ISSUE_PREFIX}{n_i + 1:06d}", branch_id=branch.id,
+                document_number=f"{ISSUE_PREFIX}{seq + n_i + 1:06d}", branch_id=branch.id,
                 customer_id=cid, coupon_kind=kind, issue_date=d_dt,
                 count=len(lines), rep_user_id=rid or None,
-                external_ref=ref, actor_user_id=admin.id if admin else None, active=True)
+                external_ref=ref, actor_user_id=admin.id, active=True)
             db.add(doc)
             db.flush()
             n_i += 1
@@ -229,7 +235,8 @@ def run(folder: str, *, execute: bool) -> None:
                 coupon_count=len(lines),
                 notes=(f"الفني: {tech}" if tech else None),
                 declared_kind=(next(iter(kinds)) if len(kinds) == 1 else None),
-                declared_value=(_money(next(iter(vals))) if len(vals) == 1 else None))
+                declared_value=(_money(next(iter(vals))) if len(vals) == 1 else None),
+                actor_user_id=admin.id)
             db.add(doc)
             db.flush()
             n_r += 1
