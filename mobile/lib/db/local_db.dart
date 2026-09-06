@@ -257,14 +257,17 @@ class LocalDb {
 
   /// عملاء الجهاز — بفلتر اسم، وبفلتر تصنيف اختياري.
   ///
-  /// `customerType` بيخدم حقل المالك في المعاينة: «الملّاك» تصنيف في كارت العميل، والحقل
-  /// بيقترح منه هو بس بدل ما يقلّب في العملاء كلهم. والاقتراح بيفضل اقتراح — الاسم اللي
-  /// مش في القايمة بيتكتب زي ما هو، لأن المندوب بيقابل ناس المكتب لسه ماعملّهمش كارت،
-  /// ورفض الزيارة عشان كده معناه خسارة الزيارة.
+  /// `customerTypes` بيخدم خانات المعاينة: كل خانة بتقلّب في التصنيف بتاعها بس —
+  /// «المالك» في الملّاك، «الفني» في السباكين، «محل الشراء» في التجار والمعارض. من
+  /// غير الفلتر ده الخانات التلاتة بتقلّب في نفس الكشف، فالمندوب بيلاقي فني في خانة
+  /// محل الشراء وتاجر في خانة الفني — واللي بيتحفظ بعد كده غلط في الاتجاهين.
+  ///
+  /// والاقتراح بيفضل اقتراح — الاسم اللي مش في القايمة بيتكتب زي ما هو، لأن المندوب
+  /// بيقابل ناس لسه ماعملّهمش كارت، ورفض الزيارة عشان كده معناه خسارة الزيارة.
   Future<List<CustomerRef>> customers({
     String query = '',
     int limit = 40,
-    String? customerType,
+    List<String>? customerTypes,
   }) async {
     final d = await db;
     final where = <String>[];
@@ -273,9 +276,12 @@ class LocalDb {
       where.add('name LIKE ?');
       args.add('%$query%');
     }
-    if (customerType != null && customerType.isNotEmpty) {
-      where.add('customer_type = ?');
-      args.add(customerType);
+    final types = (customerTypes ?? const <String>[])
+        .where((t) => t.trim().isNotEmpty)
+        .toList();
+    if (types.isNotEmpty) {
+      where.add('customer_type IN (${List.filled(types.length, '?').join(',')})');
+      args.addAll(types);
     }
     final rows = await d.query('customer',
         where: where.isEmpty ? null : where.join(' AND '),

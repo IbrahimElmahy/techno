@@ -37,6 +37,19 @@ const Object _kDelete = Object();
 /// مش بتقع.
 const String kOwnerCustomerType = 'owner';
 
+// كل خانة بتقلّب في تصنيفها هي بس.
+//
+// الخانات التلاتة كانت بتقلّب في كشف العملاء كله، فـ«محل الشراء» بيرجّع فنيين
+// و«اسم الفني» بيرجّع تجار — والمندوب بيختار غلط والربط بيتحفظ غلط.
+//
+// و«محل الشراء» **مش التجار وبس**: المعرض محل شراء برضه. اتقاس على المعاينات
+// المنقولة — ١٠٬٠٦٨ منها محلها `trader` و**٦٥٧ منها `showroom`**. قصره على
+// `trader` كان هيوقّع الـ٦٥٧ دول من القايمة.
+const List<String> kTechnicianCustomerTypes = ['plumber'];
+const List<String> kShopCustomerTypes = [
+  'trader', 'showroom', 'company', 'establishment',
+];
+
 class _InspectionFormScreenState extends State<InspectionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _ownerName = TextEditingController();
@@ -285,7 +298,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 // الاقتراح من تصنيف «الملّاك» بس — دول ناس بيتعمل لهم معاينة، مش تجار
                 // ولا موردين. من غير الفلتر ده الخانة بتقلّب في العملاء كلهم فبتقترح
                 // تاجر اسمه قريب من اسم المالك، والمعاينة بتترّبط بالكارت الغلط.
-                customerType: kOwnerCustomerType,
+                customerTypes: const [kOwnerCustomerType],
                 helper: 'اكتب الاسم — لو مالك مسجّل هيظهر لتختاره وتتملأ بياناته',
                 onPick: (c) {
                   _selectedCustomerId = c.id;
@@ -350,6 +363,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   controller: _technicianName,
                   helper: 'اكتب الاسم — لو اتسجّل قبل كده هيظهر ويجيب تليفونه',
                   leading: Icons.engineering,
+                  customerTypes: kTechnicianCustomerTypes,
                   onPick: (c) {
                     if ((c.phone ?? '').isNotEmpty) _technicianPhone.text = c.phone!;
                   },
@@ -371,6 +385,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 controller: _purchaseShop,
                 helper: 'اكتب اسم التاجر — لو متسجّل هيظهر ويجيب تليفونه',
                 leading: Icons.store_outlined,
+                customerTypes: kShopCustomerTypes,
                 onPick: (c) {
                   _merchantCustomerId = c.id;
                   if ((c.phone ?? '').isNotEmpty) _purchaseShopPhone.text = c.phone!;
@@ -639,15 +654,16 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     String? helper,
     IconData leading = Icons.person_outline,
     String? Function(String?)? validator,
-    /// لما يتحدد، الاقتراح بيتقلّب في التصنيف ده بس — «الملّاك» لخانة المالك.
-    String? customerType,
+    /// لما تتحدد، الاقتراح بيتقلّب في التصنيفات دي بس — سباك لخانة الفني، تاجر
+    /// ومعرض لخانة محل الشراء، مالك لخانة المالك.
+    List<String>? customerTypes,
   }) {
     return Autocomplete<CustomerRef>(
       displayStringForOption: (c) => c.name,
       optionsBuilder: (value) async {
         final q = value.text.trim();
         if (q.length < 2) return const Iterable<CustomerRef>.empty();
-        return LocalDb.instance.customers(query: q, limit: 8, customerType: customerType);
+        return LocalDb.instance.customers(query: q, limit: 8, customerTypes: customerTypes);
       },
       onSelected: (c) {
         controller.text = c.name;
