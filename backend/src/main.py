@@ -10,38 +10,41 @@ import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event sub
 from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     accounting,  # General Ledger (005)
     admin,  # Demo data seeding (system admin)
+    advances,  # السلف والجزاءات (HR-5)
+    after_sales_reports,
     attachments,  # مرفقات الزيارات (صور المندوب)
+    attendance,  # الحضور والانصراف (HR-2)
     audit,
     auth,
+    branch_overview,
     catalog,
     cheques,  # Cheques + financial statements + aging (020)
     cost_centers,  # Cost Centers (006)
+    coupon_receipts,  # استلام الكوبونات من العملاء
     coupons,
     customers,
-    inspections,  # Site inspections / معاينات (015)
-    loyalty_settings,
-    coupon_receipts,  # استلام الكوبونات من العملاء
     employees,  # الموظفون والوظائف (B8)
-    attendance,  # الحضور والانصراف (HR-2)
-    leave,  # الأجازات (HR-3)
-    advances,  # السلف والجزاءات (HR-5)
-    hr_reports,  # تقارير الموارد البشرية (HR-7)
-    ops_reports,  # تقارير التشغيل والتحليل (٨)
-    payroll,  # مسير الرواتب (HR-6)
-    payroll_setup,  # هيكل الرواتب والشرايح (HR-4)
-    hr,  # الموارد البشرية — الأقسام ونهاية الخدمة (HR-1)
     fixed_assets,  # الأصول الثابتة والإهلاك (B6)
+    hr,  # الموارد البشرية — الأقسام ونهاية الخدمة (HR-1)
+    hr_reports,  # تقارير الموارد البشرية (HR-7)
+    inspections,  # Site inspections / معاينات (015)
+    leave,  # الأجازات (HR-3)
+    loyalty_settings,
     manufacturing,
+    ops_reports,  # تقارير التشغيل والتحليل (٨)
     orders,  # طلبات البيع والشراء (B9)
     org,
     owners,
+    payroll,  # مسير الرواتب (HR-6)
+    payroll_setup,  # هيكل الرواتب والشرايح (HR-4)
+    permissions,
     points,
     price_display,  # شاشة معلومات المنتج (031)
     product_points,
     purchases,
-    reports,
-    voucher_keys,
     rep_reports,
+    reports,
+    reps,
     reservations,  # حجز عملاء (031)  # تقارير مندوبين (031)
     sales,
     serials,  # السرايل و حركات سرايل (031)
@@ -53,6 +56,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     transfers,
     treasury,
     users,
+    voucher_keys,
     vouchers,  # Cash vouchers + statements (018)
     warehouses,
     wastage,
@@ -60,7 +64,6 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
 from src.api import (
     settings as sales_settings,
 )
-from src.api import after_sales_reports, branch_overview, permissions, reps
 
 
 def create_app() -> FastAPI:
@@ -328,6 +331,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # nullable، من غير default، ومن غير FK في نص الـDDL — أي حاجة فيها NOT NULL DEFAULT بتختلف
     # من لهجة للتانية، والفشل هنا بيتبلع عند مستوى info فبيفضل غلط في صمت.
     # ترويسة المردود وسطوره = بتوع الفاتورة — المردود نسخة منها بالعكس.
+    # (HR) حساب ذمة الموظف — الربط بيتعمل مرة بـ`link_employee_receivables`.
+    ("employee", "receivable_account_id", "BIGINT"),
     ("purchase_return", "expense_account_id", "BIGINT"),
     ("purchase_return", "external_document_number", "VARCHAR(40)"),
     ("purchase_return", "statement1", "VARCHAR(200)"),
@@ -817,8 +822,8 @@ def _backfill_branch(engine) -> None:
     """
     import logging
 
-    from sqlalchemy import inspect as sa_inspect
     from sqlalchemy import func, select, update
+    from sqlalchemy import inspect as sa_inspect
 
     inspector = sa_inspect(engine)
     tables = set(inspector.get_table_names())

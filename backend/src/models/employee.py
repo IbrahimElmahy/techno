@@ -71,6 +71,12 @@ class Employee(Base):
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
     # Set only for the employees who also log in; NULL for everyone else.
     user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True, unique=True)
+    # حساب ذمة الموظف — «سلفت كام ولسه عليه كام». الرصيد نفسه بيتحسب من الدفتر مش
+    # بيتخزّن هنا؛ اللي بيتخزّن هو **مين حسابه**، لأن المطابقة بالاسم وقت العرض
+    # بتقع على «كامل هلول» و«كامل هلول شخصى» — اتنين حساب لراجل واحد وواحد بس منهم
+    # ذمته. الربط بيتعمل مرة بـ`link_employee_receivables` وبيتراجع بالعين.
+    receivable_account_id: Mapped[int | None] = mapped_column(
+        ForeignKey("account.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

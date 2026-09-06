@@ -6,17 +6,18 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_HR_READ, CAP_HR_WRITE
 from src.core.db import get_db
-from src.models.employee import Employee
+from src.models.employee import Employee, JobTitle
 from src.models.hr_org import Department, EmployeeTermination, TerminationKind
+from src.models.ledger import Account, Direction, LedgerLine
 from src.services import hr_service
 from src.services.hr_service import HrError
-from src.auth import branch_scope
 
 router = APIRouter(tags=["hr"], prefix="/hr")
 
@@ -256,3 +257,139 @@ def reinstate_employee(
     except HrError as exc:
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
     db.commit()
+
+
+# --------------------------------------------------- ذمم الموظفين (HR-2)
+
+
+class EmployeeReceivableOut(BaseModel):
+    """سطر واحد في كشف ذمم الموظفين."""
+
+    employee_id: int | None = None
+    employee_code: str | None = None
+    employee_name: str | None = None
+    job_title: str | None = None
+    department: str | None = None
+    branch_id: int | None = None
+    active: bool | None = None
+    account_id: int
+    account_code: str
+    account_name: str
+    debit: Decimal
+    credit: Decimal
+    balance: Decimal
+    lines: int
+
+
+class EmployeeReceivablesOut(BaseModel):
+    rows: list[EmployeeReceivableOut]
+    total_debit: Decimal
+    total_credit: Decimal
+    total_balance: Decimal
+    # موظف مسجّل ومالوش حساب ذمة — مش صفر، «مش متربط».
+    unlinked_employees: int
+
+
+# «ذمم الموظفين» في شجرة a5 — مجموعة لكل فرع، وأسماؤها متطابقة.
+_RECEIVABLE_GROUPS = ("A5M-22", "AL-A5M-22")
+
+
+@router.get("/employee-receivables", response_model=EmployeeReceivablesOut)
+def employee_receivables(
+    q: str | None = Query(None, description="بحث بالاسم أو الكود"),
+    branch_id: int | None = Query(None),
+    only_nonzero: bool = Query(True, description="اللي عليهم رصيد بس"),
+    include_orphans: bool = Query(True, description="حسابات الذمم اللي مالهاش موظف"),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    db: Session = Depends(get_db),
+) -> EmployeeReceivablesOut:
+    """كشف «سلفت مين وكام» — الموظف وحسابه ورصيده.
+
+    **الرصيد بيتحسب من الدفتر، مابيتخزّنش.** المخزّن هو `receivable_account_id` —
+    أي حركة تترحّل على الحساب بتبان هنا في نفس اللحظة، ومافيش رقمين لنفس الذمة.
+
+    **والحسابات اللي مالهاش موظف بتبان برضه** (`include_orphans`): «عهدة سيارة
+    الفيوم» و«فرع اكتوبر» دلاء محاسبية عليها فلوس فعلاً، وإخفاؤها بيخلي مجموع
+    الصفحة أقل من مجموع المجموعة في ميزان المراجعة — رقمين مختلفين لنفس الحاجة.
+    """
+    agg = (select(LedgerLine.account_id,
+                  func.coalesce(func.sum(case(
+                      (LedgerLine.direction == Direction.debit, LedgerLine.amount),
+                      else_=0)), 0),
+                  func.coalesce(func.sum(case(
+                      (LedgerLine.direction == Direction.credit, LedgerLine.amount),
+                      else_=0)), 0),
+                  func.count())
+           .group_by(LedgerLine.account_id))
+    stats = {a: (d, c, n) for a, d, c, n in db.execute(agg).all()}
+
+    groups = db.scalars(select(Account)
+                        .where(Account.code.in_(_RECEIVABLE_GROUPS))).all()
+    leaves = []
+    if groups:
+        leaves = db.scalars(select(Account).where(
+            Account.parent_id.in_([g.id for g in groups]))).all()
+    by_id = {a.id: a for a in leaves}
+
+    emps = db.scalars(select(Employee)
+                      .where(Employee.receivable_account_id.is_not(None))).all()
+    titles = {t.id: t.name for t in db.scalars(select(JobTitle)).all()}
+
+    rows: list[EmployeeReceivableOut] = []
+    claimed: set[int] = set()
+    for e in emps:
+        a = by_id.get(e.receivable_account_id)
+        if a is None:
+            continue
+        claimed.add(a.id)
+        d, c, n = stats.get(a.id, (Decimal(0), Decimal(0), 0))
+        rows.append(EmployeeReceivableOut(
+            employee_id=e.id, employee_code=e.code, employee_name=e.name,
+            job_title=titles.get(e.job_title_id), department=e.department,
+            branch_id=e.branch_id, active=e.active,
+            account_id=a.id, account_code=a.code, account_name=a.name,
+            debit=Decimal(d), credit=Decimal(c),
+            balance=Decimal(d) - Decimal(c), lines=n))
+
+    if include_orphans:
+        for a in leaves:
+            if a.id in claimed:
+                continue
+            d, c, n = stats.get(a.id, (Decimal(0), Decimal(0), 0))
+            rows.append(EmployeeReceivableOut(
+                account_id=a.id, account_code=a.code, account_name=a.name,
+                debit=Decimal(d), credit=Decimal(c),
+                balance=Decimal(d) - Decimal(c), lines=n))
+
+    if branch_id is not None:
+        # الحساب اللي مالوش موظف مالوش فرع كمان — بيتقاس ببادئة كوده.
+        want = _branch_prefix(db, branch_id)
+        rows = [r for r in rows
+                if (r.branch_id == branch_id if r.employee_id
+                    else r.account_code.startswith(want))]
+    if q:
+        needle = q.strip().lower()
+        rows = [r for r in rows if needle in (
+            (r.employee_name or "") + (r.employee_code or "")
+            + r.account_name + r.account_code).lower()]
+    if only_nonzero:
+        rows = [r for r in rows if r.balance != 0]
+
+    rows.sort(key=lambda r: abs(r.balance), reverse=True)
+    unlinked = db.scalar(select(func.count()).select_from(Employee)
+                         .where(Employee.receivable_account_id.is_(None),
+                                Employee.active.is_(True))) or 0
+    return EmployeeReceivablesOut(
+        rows=rows,
+        total_debit=sum((r.debit for r in rows), Decimal(0)),
+        total_credit=sum((r.credit for r in rows), Decimal(0)),
+        total_balance=sum((r.balance for r in rows), Decimal(0)),
+        unlinked_employees=unlinked)
+
+
+def _branch_prefix(db: Session, branch_id: int) -> str:
+    """بادئة كود حسابات الفرع — `AL-` للعلياء وفاضي لأكتوبر."""
+    from src.models.org import Branch
+
+    b = db.get(Branch, branch_id)
+    return "AL-" if b is not None and (b.name or "").strip() == "العلياء" else "A5"

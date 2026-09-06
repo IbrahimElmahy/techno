@@ -306,6 +306,9 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/payroll-settings?tab=components', label: 'بنود الراتب', roles: BOOKS },
       { key: '/payroll-settings?tab=rules', label: 'أرقام المسير', roles: BOOKS },
       { key: '/advances', label: 'سلف العاملين', roles: BOOKS },
+      // الذمم أوسع من السلفة: أي حاجة الموظف أخدها ولسه عليه — سلفة، عهدة
+      // سيارة، بضاعة، فلوس حصّلها وماورّدهاش. حساب واحد في a5 بيشيلهم كلهم.
+      { key: '/employee-receivables', label: 'ذمم الموظفين', roles: BOOKS },
       { key: '/advances?tab=adjustments', label: 'الجزاءات والمكافآت', roles: BOOKS },
       { key: '/payroll', label: 'مسير الرواتب', roles: BOOKS },
       // تقارير الموارد البشرية — تسعتاشر اسم على محرك واحد (`pages/HrReports.tsx`). التقارير
