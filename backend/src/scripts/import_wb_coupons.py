@@ -63,9 +63,11 @@ from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
 from src.models.customer import Customer
 from src.models.org import Branch
 from src.models.user import User
+from src.scripts.import_wb_traders import ALIAS
 
 BRANCH = "العلياء"
 ISSUE_PREFIX = "WBI-"
+TRADER_PREFIX = "WB-T-"    # تجار صفحة «اضافه تجار» — مش في a5
 RECEIPT_PREFIX = "WBR-"
 
 # رقم اليوزر القديم في الملف → حساب الدخول، عبر كود الموظف.
@@ -136,7 +138,12 @@ def run(folder: str, *, execute: bool) -> None:
         by_id = {c.id: c for c in custs.values()}
 
         def resolve(code: str) -> Customer | None:
-            c = custs.get(code)
+            # الكود اللي في الملف نوعين: كود a5 صريح (`AL-A5-424`) ورقم داخلي
+            # لتاجر العميل ضافه في نظام ما بعد البيع بس (`1001741`). التاني كارته
+            # عندنا بكود `WB-T-{id}` — شوف `import_wb_traders`. الـ٨٨ صف اللي كانت
+            # بتتخطّى كانت كلها من النوع التاني.
+            c = (custs.get(code) or custs.get(TRADER_PREFIX + code)
+                 or custs.get(ALIAS.get(code, "")))
             if c is None or c.active:
                 return c
             mark = "(مدموج في #"

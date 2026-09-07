@@ -43,13 +43,16 @@ from sqlalchemy import func, select
 
 from src.core.db import SessionLocal
 from src.models.customer import Customer
-from src.models.inspection import Inspection, InspectionItem, VisitKind
+from src.models.inspection import Inspection, InspectionItem, InspectionStatus, VisitKind
 from src.models.org import Branch
 from src.models.owner import Owner
 from src.models.user import User
+from src.scripts.import_wb_traders import ALIAS
 
 BRANCH = "العلياء"
 DOC_PREFIX = "WBV-"            # رقم مستند المعاينة عندنا
+TRADER_PREFIX = "WB-T-"        # تجار صفحة «اضافه تجار» — مش في a5
+MARMA, PREVIEW = "مرمة", "معاينة"
 
 # رقم مندوب ERP → حساب الدخول. الجسر عبر كود الموظف في صفحة «مندوب».
 EMP_TO_USER = {
@@ -142,7 +145,13 @@ def run(folder: str, *, execute: bool) -> None:
             if owner is None and v.get("owner_erp"):
                 notes["المالك مش عندنا"] += 1
             trader_code = v.get("trader_a5", "")
-            trader = custs.get(trader_code) if trader_code else None
+            # زي الكوبونات: العمود بيحمل كود a5 أو رقم تاجر من صفحة «اضافه تجار»
+            # اللي كارته عندنا `WB-T-{id}`.
+            trader = None
+            if trader_code:
+                trader = (custs.get(trader_code)
+                          or custs.get(TRADER_PREFIX + trader_code)
+                          or custs.get(ALIAS.get(trader_code, "")))
             if trader_code and trader is None:
                 notes["كود تاجر مش عندنا"] += 1
             elif not trader_code:
@@ -181,6 +190,12 @@ def run(folder: str, *, execute: bool) -> None:
             insp = Inspection(
                 branch_id=branch.id, document_number=DOC_PREFIX + vid,
                 visit_kind=VisitKind.technician,
+                # **النوع والحالة من الملف مش ثوابت.** أول نقل حطّهم قيمة واحدة
+                # للـ١٠٬٧٩٦، فـ٣٬٧٥١ مرمة بانوا معاينات و٢٢٩ مرفوضة بانت مقبولة.
+                # `IsMarma` نوعها، و`VisitType` حالتها (١ مقبولة / ٠ مرفوضة).
+                visit_type=(MARMA if v.get("is_marma") == "1" else PREVIEW),
+                status=(InspectionStatus.accepted if v.get("visit_kind") != "0"
+                        else InspectionStatus.rejected),
                 inspection_date=_date(v["visit_date"]),
                 owner_id=owner.id if owner else None,
                 owner_name=_cut(v.get("owner_name"), 160) or "—",
