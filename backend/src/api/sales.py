@@ -30,7 +30,7 @@ from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.user import User
-from src.models.warehouse import Custody, Warehouse
+from src.models.warehouse import Custody, Warehouse, WarehouseType
 from src.services import coupon_receipt_service, sales_service
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
@@ -318,6 +318,21 @@ def _rep_treasuries(db: Session, rep_id: int) -> list[dict]:
     ]
 
 
+def _scoped_warehouses(current: CurrentUser):
+    """المخازن اللي المستخدم ده مفروض يشوفها — نفس قاعدة `GET /warehouses`.
+
+    فرعه + المخازن المركزية المشتركة. واللي مالوش فرع (admin) بيشوف الكل، لأن
+    تقييده معناه إنه مايقدرش يعمل شغله على فرع تاني.
+    """
+    stmt = select(Warehouse).where(Warehouse.active.is_(True))
+    if not current.is_admin and current.branch_id is not None:
+        stmt = stmt.where(
+            (Warehouse.branch_id == current.branch_id)
+            | (Warehouse.warehouse_type == WarehouseType.central)
+        )
+    return stmt.order_by(Warehouse.name)
+
+
 @router.get("/rep-bundle", response_model=dict)
 def rep_bundle(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
@@ -419,12 +434,15 @@ def rep_bundle(
         # الإذن محتاج مصدر ووجهة، والتطبيق شغّال offline فمينفعش يسألهم وقت الكتابة.
         # بيتحمّلوا مع الحزمة، والإذن بيتكتب على الجهاز وبيترفع لما الشبكة ترجع — وبيوصل
         # «معلّق» عشان المسؤول يراجعه.
+        # **وبتتفلتر بفرع المندوب.** كانت بتنزل كلها: مندوب أكتوبر بيفتح إذن
+        # التحويل فيلاقي ٤١ مخزن علياء في القايمة، ويقدر يطلب من مخزن مش بتاع
+        # فرعه أصلاً. الفلتر هنا هو نفسه اللي في `GET /warehouses` — فرع المستخدم
+        # زائد المخازن المركزية المشتركة.
+        #
+        # واللي مالوش فرع (admin) بيشوف الكل زي ما هو في الويب.
         "warehouses": [
             {"id": w.id, "name": w.name, "kind": w.warehouse_type.value}
-            for w in db.scalars(
-                select(Warehouse).where(Warehouse.active.is_(True))
-                .order_by(Warehouse.name)
-            ).all()
+            for w in db.scalars(_scoped_warehouses(current)).all()
         ],
         # صناديق المندوب هو بس — واحد لكل خط، باسمه اللي على الصندوق في المكتب.
         #

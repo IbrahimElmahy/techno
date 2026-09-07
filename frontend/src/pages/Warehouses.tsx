@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
+  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, TeamOutlined,
+  DeleteOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
@@ -244,6 +245,40 @@ export default function Warehouses() {
     });
   };
 
+  /**
+   * حذف المخزن — **للغلط في الإدخال بس، والإخفاء جنبه للباقي.**
+   *
+   * المخزن اللي عليه حركة اسمه على كل إذن تحويل وكل حركة مخزون؛ الباك إند بيعدّ
+   * ويرفض ويقول فيه إيه بالأرقام. الإخفاء بيشيله من قوايم الاختيار ويسيب تاريخه
+   * يتقري — وده اللي المخزن الحقيقي محتاجه لما يقفل.
+   */
+  const onDelete = (record: WarehouseRecord) => {
+    Modal.confirm({
+      title: `حذف المخزن ${record.name}`,
+      icon: <ExclamationCircleOutlined />,
+      okText: 'حذف نهائي',
+      okButtonProps: { danger: true },
+      cancelText: 'إلغاء',
+      content: (
+        <span>
+          هيتشال المخزن من النظام نهائياً ومفيش رجعة.
+          <br />
+          لو عليه أي حركة، النظام هيرفض ويقولك فيه إيه — ساعتها استعمل «إخفاء».
+        </span>
+      ),
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/warehouses/${record.id}`, { params: { hard: true } });
+          message.success('اتحذف المخزن');
+          fetchAll();
+        } catch (err: any) {
+          // ٤٠٩ مش عطل — ده النظام بيقول إن عليه حركة، والرسالة فيها الأرقام.
+          message.error(err?.response?.data?.detail?.message ?? 'تعذّر حذف المخزن', 8);
+        }
+      },
+    });
+  };
+
   // Their four columns, in their order: `رقم · الاسم · الفرع · وصف`.
   const columns = [
     {
@@ -315,6 +350,10 @@ export default function Warehouses() {
               <Button type="text" icon={<StopOutlined />} onClick={() => onDeactivate(record)} />
             </Tooltip>
           )}
+          <Tooltip title="حذف نهائي">
+            <Button type="text" danger icon={<DeleteOutlined />}
+              onClick={() => onDelete(record)} />
+          </Tooltip>
         </Space>
       ),
     }] : []),

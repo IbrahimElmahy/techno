@@ -54,13 +54,38 @@ class AutoSync extends ChangeNotifier {
     _running = true;
     _set(AutoSyncState.running, 'بيزامن...');
     try {
-      final pushed = await ApiClient.instance.pushInspections();
-      final coupons = await ApiClient.instance.pushCouponReceipts();
+      // **كل طابور بيتحاسب لوحده.**
+      //
+      // كانوا مربوطين في سلسلة واحدة: أول `await` يرمي بيوقّف اللي بعده. يعني فاتورة
+      // واحدة السيرفر رافضها بتقفل الطابور كله — التحصيلات وأذون التحويل بتفضل على
+      // الجهاز والمكتب مايشوفش حاجة، والمندوب شايف رسالة عن الفاتورة بس فمش عارف إن
+      // في حاجات تانية واقفة وراها. (ده اللي خلّى أذون التحويل «مش بتوصل».)
+      //
+      // دلوقتي كل واحد بيتنفّذ ويتجمّع خطأه، والباقي بيكمّل. الأخطاء بتتقال كلها في
+      // الآخر — مش بتتبلع.
+      final errors = <String>[];
+      Future<int> step(Future<int> Function() f) async {
+        try {
+          return await f();
+        } on ApiException catch (e) {
+          // ٤٠١ معناها الجلسة خلصت — دي بتوقّف كل حاجة فعلاً، مافيش فايدة من إن
+          // الطوابير التانية تحاول بنفس التوكن الميّت.
+          if (e.statusCode == 401) rethrow;
+          errors.add(e.message);
+          return 0;
+        } catch (e) {
+          errors.add('$e');
+          return 0;
+        }
+      }
+
+      final pushed = await step(ApiClient.instance.pushInspections);
+      final coupons = await step(ApiClient.instance.pushCouponReceipts);
       // الرفع قبل السحب: الرفع بيخصم من العهدة على السيرفر، والسحب اللي بعده بيجيب
       // الرصيد بعد الخصم. العكس بيرجّع أرقام قديمة على طول.
-      final invoices = await ApiClient.instance.pushSaleInvoices();
-      final collected = await ApiClient.instance.pushReceipts();
-      final permits = await ApiClient.instance.pushTransfers();
+      final invoices = await step(ApiClient.instance.pushSaleInvoices);
+      final collected = await step(ApiClient.instance.pushReceipts);
+      final permits = await step(ApiClient.instance.pushTransfers);
       await ApiClient.instance.pullReferenceData();
 
       // حزمة البيع — ٤٠٣ (مش مندوب) و٤٠٤ (مالوش مخزن) مش أعطال. أي حاجة تانية عطل
@@ -89,7 +114,16 @@ class AutoSync extends ChangeNotifier {
       _lastRun = DateTime.now();
       final done =
           parts.isEmpty ? 'كل حاجة محدّثة ✔' : '${parts.join(' و')} ✔';
-      _set(AutoSyncState.done, note == null ? done : '$done\n⚠ $note');
+      final warn = <String>[if (note != null) note, ...errors];
+      // **اللي رفع ووقع بيتقال الاتنين.** المزامنة اللي رفعت ٣ فواتير وفشلت في
+      // واحدة نجحت جزئياً، وعلامة صح لوحدها بتكدب وعلامة غلط لوحدها بتخوّف.
+      // الحالة بتبقى «فشل» لو مافيش أي حاجة عدّت، وإلا «تم» ومعاها التحذير.
+      _set(
+        parts.isEmpty && errors.isNotEmpty
+            ? AutoSyncState.failed
+            : AutoSyncState.done,
+        warn.isEmpty ? done : '$done\n⚠ ${warn.join('\n⚠ ')}',
+      );
     } catch (e) {
       _set(AutoSyncState.failed, _short(e));
     } finally {

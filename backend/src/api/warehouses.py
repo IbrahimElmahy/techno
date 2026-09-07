@@ -154,12 +154,61 @@ def update_warehouse(
 @router.delete("/warehouses/{warehouse_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_warehouse(
     warehouse_id: int,
+    hard: bool = False,
     current: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
+    """يخفي المخزن؛ و`hard=true` بيمسحه **بشرط إنه مادخلش ولا خرج منه حاجة**.
+
+    الإخفاء هو الصح في الغالب: المخزن اللي عليه حركة اسمه على كل إذن وكل حركة
+    مخزون، ومسحه بيسيب مستندات بتشاور على مكان مش موجود. الإخفاء بيشيله من
+    قوايم الاختيار ويسيب تاريخه يتقري.
+
+    والمسح للغلط في الإدخال: مخزن اتعمل باسم مكرر أو بالخطأ ومحدش استعمله. أي
+    حاجة غير كده بيرد ٤٠٩ ويقول فيه إيه بالأرقام.
+    """
     wh = db.get(Warehouse, warehouse_id)
     if wh is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
+        raise HTTPException(404, {"code": "not_found", "message": "المخزن مش موجود"})
+    if hard:
+        # كل جدول بيشاور على المخزن — بيتقري من القاعدة نفسها مش من الموديلز، عشان
+        # جدول اتضاف ونسيوا يحدّثوا القايمة مايعديش من غير ما يتعدّ.
+        from sqlalchemy import inspect as sa_inspect
+        from sqlalchemy import text
+
+        from src.core.db import engine
+
+        blockers: list[str] = []
+        insp = sa_inspect(engine)
+        for table in insp.get_table_names():
+            for fk in insp.get_foreign_keys(table):
+                if fk.get("referred_table") != "warehouse":
+                    continue
+                col = fk["constrained_columns"][0]
+                n = db.execute(text(f'SELECT count(*) FROM "{table}" WHERE {col} = :i'),
+                               {"i": wh.id}).scalar() or 0
+                if n:
+                    blockers.append(f"{table}.{col}: {n}")
+        # وحركة المخزون مش رابطة بـFK — بتخزّن المكان بنوعه ورقمه.
+        n_mov = db.execute(text(
+            "SELECT count(*) FROM stock_movement "
+            "WHERE location_kind = 'warehouse' AND location_id = :i"),
+            {"i": wh.id}).scalar() or 0
+        if n_mov:
+            blockers.append(f"حركات مخزون: {n_mov}")
+        if blockers:
+            raise HTTPException(409, {
+                "code": "has_history",
+                "message": ("المخزن ده عليه حركة فمينفعش يتمسح — "
+                            + " · ".join(blockers[:6])
+                            + ". استعمل «إخفاء» بدل المسح."),
+            })
+        audit_service.record(db, action="warehouse.delete", actor_user_id=current.id,
+                             entity_type="warehouse", entity_id=wh.id,
+                             before={"name": wh.name, "branch_id": wh.branch_id})
+        db.delete(wh)
+        db.commit()
+        return
     wh.active = False
     db.flush()
     audit_service.record(db, action="warehouse.deactivate", actor_user_id=current.id,
