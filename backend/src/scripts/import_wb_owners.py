@@ -20,8 +20,12 @@
 `import_wb_plumbers`: الملف بيسمّي الناس بوظايفهم («اداره خدمه عملاء» = محمد هلال
 ابو عمه) وأرقام اليوزرات فيه من نقل قديم واتغيّرت. الخريطة مشتركة بين السكربتين.
 
-**التليفون:** `Phone1` وإلا `Mobile`. الاتنين بيتحطوا لو مختلفين — الأول في `phone`
-والتاني في الملاحظات، لأن `owner` عنده خانة تليفون واحدة.
+**التليفون رقمين مش واحد.** `Phone1` و`Mobile` و`Phone2` — و**٧٬٨٠٥ من ٧٬٨٦٠**
+عندهم رقمين مختلفين. الأول في `phone` والتاني في `phone2`؛ خانة واحدة معناها إن
+خدمة العملاء بتفضل ترنّ على نفس الرقم لو مردّش والتاني مكتوب قدامها في الملف.
+
+**و`Address2` هو الدور مش عنوان تاني** — قيمه «ارضي» و«أول علوي». اسم العمود
+بيكدب ومحتواه هو اللي بيحدد؛ بيروح `floor_number` وبيتطبع في شهادة الضمان.
 """
 from __future__ import annotations
 
@@ -105,7 +109,13 @@ def run(folder: str, *, execute: bool) -> None:
                 notes[f"حساب مش موجود: {uname}"] += 1
             svc_dist[svc.full_name if svc else "(بلا مندوب خدمة)"] += 1
 
-            phone = r.get("phone1") or r.get("mobile") or None
+            nums = []
+            for k in ("phone1", "mobile", "phone2"):
+                x = (r.get(k) or "").strip()
+                if x and x not in nums:
+                    nums.append(x)
+            phone = nums[0] if nums else None
+            phone2 = nums[1] if len(nums) > 1 else None
             o = have.get(code)
             if o is None:
                 made.append((code, name, svc))
@@ -116,6 +126,13 @@ def run(folder: str, *, execute: bool) -> None:
                 upd += 1
             if phone and not o.phone:
                 o.phone = phone[:32]
+                upd += 1
+            if phone2 and not o.phone2:
+                o.phone2 = phone2[:32]
+                upd += 1
+            floor = (r.get("floor") or "").strip()
+            if floor and floor != "0" and not o.floor_number:
+                o.floor_number = floor[:16]
                 upd += 1
 
         print(f"صفوف الملف: {len(rows)}")
@@ -140,9 +157,17 @@ def run(folder: str, *, execute: bool) -> None:
             emp = erp_to_emp.get(r.get("svc_rep_erp", ""))
             uname = EMP_TO_USER.get(emp) if emp else None
             svc = users.get(uname) if uname else None
-            phone = r.get("phone1") or r.get("mobile") or None
+            nums = []
+            for k in ("phone1", "mobile", "phone2"):
+                x = (r.get(k) or "").strip()
+                if x and x not in nums:
+                    nums.append(x)
+            phone = nums[0] if nums else None
+            floor = (r.get("floor") or "").strip()
             db.add(Owner(
                 code=code, name=name[:160], phone=phone[:32] if phone else None,
+                phone2=(nums[1][:32] if len(nums) > 1 else None),
+                floor_number=(floor[:16] if floor and floor != "0" else None),
                 address=(r.get("address") or r.get("addr3") or None),
                 markaz=(r.get("addr3") or None),
                 territory_id=terr.id if terr else None, branch_id=branch.id,

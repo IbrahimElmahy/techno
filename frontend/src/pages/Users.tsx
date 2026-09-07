@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Card, Form, Input, Select, Space, Switch, Table, Tag, message
+  Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message
 } from 'antd';
-import { UserAddOutlined, LockOutlined, EditOutlined } from '@ant-design/icons';
+import {
+  UserAddOutlined, LockOutlined, EditOutlined, DeleteOutlined,
+  ExclamationCircleOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useAuth, RoleName } from '../components/AuthProvider';
@@ -109,6 +112,46 @@ export default function Users() {
           fetchUsers();
         } catch (err) {
           console.error(err);
+        }
+      },
+    });
+  };
+
+  /**
+   * حذف الحساب — **للغلط في الإدخال بس.**
+   *
+   * الحساب اللي عليه شغل الباك إند بيرفض مسحه ويقول شغل إيه بالظبط، لأن اسم
+   * المندوب على الفاتورة واسم اللي راجع في سجل المراجعة مش بيانات المستخدم —
+   * دي بيانات الشركة عن اللي حصل، ومسحها بيسيب فواتير بلا مندوب.
+   *
+   * فالزرار موجود جنب «تعطيل» مش بدله: التعطيل بيقفل الدخول ويسيب الشغل منسوب،
+   * والمسح بيشيل حساب اتعمل بالخطأ ومحدش استعمله.
+   */
+  const handleDelete = (record: UserRecord) => {
+    Modal.confirm({
+      title: `حذف حساب ${record.full_name}`,
+      icon: <ExclamationCircleOutlined />,
+      okText: 'حذف نهائي',
+      okButtonProps: { danger: true },
+      cancelText: 'إلغاء',
+      content: (
+        <span>
+          هيتشال الحساب «{record.username}» من النظام نهائياً ومفيش رجعة.
+          <br />
+          لو عليه أي شغل مسجّل، النظام هيرفض ويقولك شغل إيه — ساعتها استعمل
+          «تعطيل الحساب».
+        </span>
+      ),
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/users/${record.id}`);
+          message.success('اتحذف الحساب');
+          fetchUsers();
+        } catch (err: any) {
+          const d = err?.response?.data?.detail;
+          // ٤٠٩ مش فشل — ده النظام بيقول إن الحساب عليه شغل. الرسالة نفسها فيها
+          // الأرقام، فبتتعرض زي ما هي بدل «حصل خطأ».
+          message.error(d?.message ?? 'تعذّر حذف الحساب', 8);
         }
       },
     });
@@ -227,6 +270,12 @@ export default function Users() {
           {record.active && record.username !== currentUser?.username && (
             <Button size="small" type="primary" danger onClick={() => handleDeactivate(record)}>
               تعطيل الحساب
+            </Button>
+          )}
+          {record.username !== currentUser?.username && (
+            <Button size="small" danger icon={<DeleteOutlined />}
+              onClick={() => handleDelete(record)}>
+              حذف
             </Button>
           )}
         </Space>

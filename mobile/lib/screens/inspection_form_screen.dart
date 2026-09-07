@@ -37,6 +37,22 @@ const Object _kDelete = Object();
 /// مش بتقع.
 const String kOwnerCustomerType = 'owner';
 
+/// «مرمه» في قايمة التوصيف — والتسمية دي هي اللي في `inspection_description`.
+///
+/// لاحظ الهاء: التوصيف مكتوب «مرمه» ونوع الزيارة مكتوب «مرمة». الاتنين قايمتين
+/// مختلفتين في الإعدادات ومحدش وحّد إملاهم، فالمقارنة بتتطبّع بدل ما تتساوى حرفياً.
+const String kMarmaDescription = 'مرمه';
+const String kMarmaVisitType = 'مرمة';
+const String kPreviewVisitType = 'معاينة';
+
+/// يطبّع للمقارنة بس: تاء مربوطة وألف مقصورة وهمزة ومسافات.
+String _fold(String? s) => (s ?? '')
+    .replaceAll(RegExp('[أإآٱ]'), 'ا')
+    .replaceAll('ة', 'ه')
+    .replaceAll('ى', 'ي')
+    .replaceAll(RegExp(r'\s+'), '')
+    .trim();
+
 // كل خانة بتقلّب في تصنيفها هي بس.
 //
 // الخانات التلاتة كانت بتقلّب في كشف العملاء كله، فـ«محل الشراء» بيرجّع فنيين
@@ -335,7 +351,19 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   for (final o in _descriptions)
                     DropdownMenuItem(value: o.value, child: Text(o.label)),
                 ],
-                onChanged: (v) => setState(() => _description = v),
+                // **نوع الزيارة بيتبع التوصيف.** التوصيف «مرمه» معناه إن دي
+                // زيارة تصليح لشغل سابق مش معاينة أولى — فالخانة بتتظبط لوحدها
+                // بدل ما المندوب يفتكر يغيّرها. اتقاس على الـ١٠٬٧٩٦ معاينة
+                // المنقولة: ٣٬١٤٢ من ٣٬١٨٤ توصيفهم «مرمه» نوعهم مرمة فعلاً.
+                //
+                // وبتفضل قابلة للتغيير بعدها — الـ٤٢ الباقيين في الداتا القديمة
+                // بيقولوا إن الحالة دي بتحصل، وقفلها كان هيمنع تسجيلها.
+                onChanged: (v) => setState(() {
+                  _description = v;
+                  _visitType = _fold(v) == _fold(kMarmaDescription)
+                      ? kMarmaVisitType
+                      : kPreviewVisitType;
+                }),
               ),
               DropdownButtonFormField<String>(
                 initialValue: _inspectionType,
@@ -347,6 +375,11 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 onChanged: (v) => setState(() => _inspectionType = v),
               ),
               DropdownButtonFormField<String>(
+                // `initialValue` اسمه بيقول كل حاجة: `FormField` بيقراه مرة
+                // واحدة عند أول بناء وبس. لما التوصيف بيظبط النوع لوحده، القيمة
+                // في الحالة بتتغيّر والخانة بتفضل واقفة على القديم. المفتاح
+                // بيخلّي فلاتر يعمل حقل جديد فيبان الاختيار الجديد.
+                key: ValueKey('visit-type-$_visitType'),
                 initialValue: _visitType,
                 decoration: const InputDecoration(labelText: 'نوع الزيارة'),
                 items: [

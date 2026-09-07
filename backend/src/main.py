@@ -333,6 +333,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # ترويسة المردود وسطوره = بتوع الفاتورة — المردود نسخة منها بالعكس.
     # (HR) حساب ذمة الموظف — الربط بيتعمل مرة بـ`link_employee_receivables`.
     ("employee", "receivable_account_id", "BIGINT"),
+    # (ما بعد البيع) الرقم التاني للمالك — الملف بيدّي رقمين لأغلبهم.
+    ("owner", "phone2", "VARCHAR(32)"),
     ("purchase_return", "expense_account_id", "BIGINT"),
     ("purchase_return", "external_document_number", "VARCHAR(40)"),
     ("purchase_return", "statement1", "VARCHAR(200)"),

@@ -217,3 +217,69 @@ def deactivate_user(
     )
     db.commit()
     return _to_out(db, user)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(
+    user_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_USER_DEACTIVATE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """يمسح الحساب **بشرط إنه ماشتغلش** — وإلا بيقول شغل مين هيضيع.
+
+    الحساب اللي عليه شغل مايتمسحش أبداً: المندوب اسمه على الفاتورة، واللي راجع
+    مستند اسمه في سجل المراجعة، وده مش بيانات المستخدم — ده بيانات الشركة عن
+    اللي حصل. مسحه بيسيب فواتير من غير مندوب وسطور مراجعة بتشاور على حد راح.
+
+    فالمسح هنا **للغلط في الإدخال بس**: حساب اتعمل باسم مكرر أو بالخطأ ومحدش
+    استعمله. أي حاجة غير كده بيرد ٤٠٩ ويقول الأرقام، والصح ساعتها «تعطيل» —
+    الحساب مايدخلش تاني وشغله يفضل منسوب له.
+
+    والتعطيل موجود جنبه في نفس الشاشة، فمافيش داعي إن المسح يعمل شغله بالعافية.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود"})
+    if user.id == current.id:
+        raise HTTPException(
+            409, {"code": "self", "message": "مش هتمسح حسابك وانت داخل بيه"})
+    if not current.is_admin:
+        ensure_branch_access(current, user.branch_id)
+
+    # كل جدول بيشاور على `user.id` — بيتقري من القاعدة نفسها مش من الموديلز، عشان
+    # جدول اتضاف ونسيوا يحدّثوا القايمة مايعديش من غير ما يتعدّ.
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    from src.core.db import engine
+
+    blockers: list[str] = []
+    insp = sa_inspect(engine)
+    for table in insp.get_table_names():
+        for fk in insp.get_foreign_keys(table):
+            if fk.get("referred_table") != "user":
+                continue
+            col = fk["constrained_columns"][0]
+            n = db.execute(text(f'SELECT count(*) FROM "{table}" WHERE {col} = :i'),
+                           {"i": user.id}).scalar() or 0
+            if n:
+                blockers.append(f"{table}.{col}: {n}")
+    if blockers:
+        raise HTTPException(409, {
+            "code": "has_history",
+            "message": ("الحساب ده عليه شغل مسجّل فمينفعش يتمسح — "
+                        + " · ".join(blockers[:6])
+                        + ". استعمل «تعطيل الحساب» بدل المسح."),
+        })
+
+    audit_service.record(
+        db,
+        action="user.delete",
+        actor_user_id=current.id,
+        entity_type="user",
+        entity_id=user.id,
+        before={"username": user.username, "full_name": user.full_name,
+                "role": getattr(user.role, "value", user.role)},
+    )
+    db.delete(user)
+    db.commit()

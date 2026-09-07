@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
@@ -23,6 +23,10 @@ class Owner(Base):
     code: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     name: Mapped[str] = mapped_column(String(160), index=True, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    # الرقم التاني. **مش رفاهية:** ٧٬٨٠٥ من ٧٬٨٦٠ مالك في ملف العميل عندهم
+    # رقمين مختلفين (أرضي وموبايل)، وخانة واحدة معناها إن خدمة العملاء
+    # بتفضل ترنّ على رقم واحد لو مردّش.
+    phone2: Mapped[str | None] = mapped_column(String(32), nullable=True)
     national_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     governorate_id: Mapped[int | None] = mapped_column(ForeignKey("governorate.id"), nullable=True)
     markaz: Mapped[str | None] = mapped_column(String(120), nullable=True)

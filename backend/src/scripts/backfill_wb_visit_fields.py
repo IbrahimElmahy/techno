@@ -23,9 +23,25 @@
 للمصنع) فطلعت بلا تاجر. `import_wb_traders` عمل الكروت، والتمريرة دي بتربطهم —
 **بتملا الفاضي بس**، اللي عليه تاجر مايتغيّرش.
 
-**`PreviewTypeID` و`PreviewDiscID` مابيتكتبوش.** أرقام (١/٢/٣ و١..٨) مالهاش قايمة
-أسماء في أي صفحة في الملف، وكتابة الرقم في خانة اسمها «نوع المعاينة» بتخلّي
-الشاشة تعرض «2» — أسوأ من فاضي لأنها بتبان كأنها معلومة.
+**ورقم الشهادة = `ID` بتاع الصف في الملف.** الشهادة ورقة الضمان اللي بتتطبع
+وبتتسلّم لصاحب البيت، ورقمها هو اللي بيرجّعه لو رجع يشتكي. كانت **فاضية في
+الـ١٠٬٧٩٦ كلهم**.
+
+و`ID` هو التسلسل بتاع النظام القديم نفسه — بيوصل ١٦٠٬٩٧٥، و`CERTIFICATE_SEQUENCE_FLOOR`
+عندنا ١٥٦٬٢٠٤. فالأرقام المنقولة بتغطّي الأرضية دي (٧٤٤ صف فوقها)، وأول شهادة
+جديدة هتاخد ١٦٠٬٩٧٦ — تكملة للتسلسل مش رقم بيصطدم بورقة موجودة عند العميل.
+
+**و`PreviewDiscID`/`PreviewTypeID` هما التوصيف والنوع** — مالهمش قايمة أسماء في
+الملف، بس قوايم الإعدادات عندنا فيها **٨ توصيفات و٣ أنواع** بالظبط زي عدد قيمهم،
+والترتيب اتأكد بالداتا مش بالتخمين:
+
+الكود ٧ في التوصيف لازم يكون «مرمه» لأنه السابع في القايمة — وفعلاً **٣٬١٤٢ من
+٣٬١٨٤ صف كوده ٧ عليهم `IsMarma=1`** (٩٨.٧٪)، وكل كود تاني أغلبه الساحق `IsMarma=0`.
+عمودين مستقلين في الملف بيتفقوا كده مش صدفة. والكود ١ (٦٬٥١٢ صف) بيقع على «حمام
+ومطبخ» وهو أكتر حاجة منطقي تتكرر.
+
+الـ٤٢ صف اللي توصيفهم «مرمه» ونوع زيارتهم «معاينة» **بيتسابوا زي ما هما** —
+النظام القديم كان بيسمح بده، و`IsMarma` هو اللي بيحدد نوع الزيارة مش التوصيف.
 """
 from __future__ import annotations
 
@@ -45,6 +61,14 @@ DOC_PREFIX = "WBV-"
 TRADER_PREFIX = "WB-T-"
 
 MARMA, PREVIEW = "مرمة", "معاينة"
+
+# رقم الملف → التسمية عندنا. الترتيب هو ترتيب قايمة الإعدادات، واتحقق منه
+# بمطابقة الكود ٧ مع `IsMarma` (شوف الدوكسترنج).
+DESCRIPTION = {
+    "1": "حمام ومطبخ", "2": "حمام فقط", "3": "مطبخ فقط", "4": "مسجد",
+    "5": "محل", "6": "صيدلية", "7": "مرمه", "8": "2حمام ومطبخ",
+}
+INSPECTION_TYPE = {"1": "تغذية وصرف", "2": "تغذية فقط", "3": "صرف فقط"}
 
 
 def _read(path: str) -> list[dict[str, str]]:
@@ -82,6 +106,17 @@ def run(folder: str, *, execute: bool) -> None:
             insp = db.get(Inspection, iid)
             if insp is None:
                 continue
+
+            cert = r.get("id", "")
+            if cert.isdigit() and insp.certificate_number != int(cert):
+                plan.append((iid, "certificate_number", int(cert)))
+
+            desc = DESCRIPTION.get(r.get("disc", ""))
+            if desc and insp.description != desc:
+                plan.append((iid, "description", desc))
+            itype = INSPECTION_TYPE.get(r.get("vtype", ""))
+            if itype and insp.inspection_type != itype:
+                plan.append((iid, "inspection_type", itype))
 
             want_type = MARMA if r.get("is_marma") == "1" else PREVIEW
             if insp.visit_type != want_type:
@@ -135,6 +170,10 @@ def run(folder: str, *, execute: bool) -> None:
         no_m = db.scalar(select(func.count()).select_from(Inspection)
                          .where(Inspection.merchant_customer_id.is_(None))) or 0
         print(f"   معاينات بلا محل شراء: {no_m}")
+        no_c = db.scalar(select(func.count()).select_from(Inspection)
+                         .where(Inspection.certificate_number.is_(None))) or 0
+        mx = db.scalar(select(func.max(Inspection.certificate_number)))
+        print(f"   معاينات بلا رقم شهادة: {no_c}   ·   أكبر رقم: {mx}")
     finally:
         db.close()
 

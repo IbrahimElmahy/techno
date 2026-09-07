@@ -53,6 +53,12 @@ BRANCH = "العلياء"
 DOC_PREFIX = "WBV-"            # رقم مستند المعاينة عندنا
 TRADER_PREFIX = "WB-T-"        # تجار صفحة «اضافه تجار» — مش في a5
 MARMA, PREVIEW = "مرمة", "معاينة"
+# رقم الملف → التسمية عندنا. شوف `backfill_wb_visit_fields` للتحقق.
+DESCRIPTION = {
+    "1": "حمام ومطبخ", "2": "حمام فقط", "3": "مطبخ فقط", "4": "مسجد",
+    "5": "محل", "6": "صيدلية", "7": "مرمه", "8": "2حمام ومطبخ",
+}
+INSPECTION_TYPE = {"1": "تغذية وصرف", "2": "تغذية فقط", "3": "صرف فقط"}
 
 # رقم مندوب ERP → حساب الدخول. الجسر عبر كود الموظف في صفحة «مندوب».
 EMP_TO_USER = {
@@ -193,6 +199,12 @@ def run(folder: str, *, execute: bool) -> None:
                 # **النوع والحالة من الملف مش ثوابت.** أول نقل حطّهم قيمة واحدة
                 # للـ١٠٬٧٩٦، فـ٣٬٧٥١ مرمة بانوا معاينات و٢٢٩ مرفوضة بانت مقبولة.
                 # `IsMarma` نوعها، و`VisitType` حالتها (١ مقبولة / ٠ مرفوضة).
+                # رقم الشهادة هو تسلسل النظام القديم نفسه — بيوصل ١٦٠٬٩٧٥ فوق
+                # `CERTIFICATE_SEQUENCE_FLOOR` (١٥٦٬٢٠٤)، فأول شهادة جديدة بتكمّل
+                # من فوقه بدل ما تصطدم بورقة متسلّمة لعميل.
+                certificate_number=int(vid) if vid.isdigit() else None,
+                description=DESCRIPTION.get(v.get("disc", "")),
+                inspection_type=INSPECTION_TYPE.get(v.get("vtype", "")),
                 visit_type=(MARMA if v.get("is_marma") == "1" else PREVIEW),
                 status=(InspectionStatus.accepted if v.get("visit_kind") != "0"
                         else InspectionStatus.rejected),
