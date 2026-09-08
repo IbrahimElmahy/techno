@@ -136,11 +136,26 @@ class ApiClient {
           )
       ]);
     }
+    // **الملّاك بينزلوا على صفحات.** السيرفر سقفه ٢٬٠٠٠ في الطلب الواحد
+    // (`limit: le=2000`)، والطلب القديم كان بيبعت `20000` — يعني ٤٢٢ على طول،
+    // والـ`catch` تحت كانت بتبلعه. النتيجة إن الملّاك **مانزلوش على الجهاز خالص**
+    // من يوم ما السقف اتحط، والكاش اللي على الأجهزة فضل من قبل إعادة بناء القاعدة.
+    //
+    // وده كان بيطلّع «المالك غير موجود» وقت الحفظ: المندوب بيختار مالك من الكاش
+    // القديم، والرقم اللي متخزّن جنبه بقى بيشاور على حد تاني — أو على لا حاجة —
+    // بعد ما الجدول اتبنى من الصفر بأرقام ١..٧٬٨٦٠.
+    var ownersFailed = false;
     try {
-      final ownR = await http
-          .get(await _uri('/owners', {'limit': '20000'}), headers: headers)
-          .timeout(const Duration(seconds: 90));
-      if (ownR.statusCode == 200) {
+      const page = 1000;
+      for (var offset = 0;; offset += page) {
+        final ownR = await http
+            .get(await _uri('/owners', {'limit': '$page', 'offset': '$offset'}),
+                headers: headers)
+            .timeout(const Duration(seconds: 90));
+        if (ownR.statusCode != 200) {
+          ownersFailed = true;
+          break;
+        }
         final body = jsonDecode(utf8.decode(ownR.bodyBytes));
         final rows = (body is List ? body : (body['rows'] as List? ?? []));
         parties.addAll([
@@ -153,9 +168,17 @@ class ApiClient {
               customerType: 'owner',
             )
         ]);
+        // صفحة ناقصة = آخر صفحة. الفاضية بتقف كمان، فالحلقة بتنتهي دايماً.
+        if (rows.length < page) break;
       }
     } catch (_) {
-      // الملّاك إضافة على الكاش — فشل سحبهم مايوقّفش باقي المزامنة.
+      ownersFailed = true;
+    }
+    // **الفشل بيتقال مش بيتبلع.** الكاش القديم بيفضل شغّال (أحسن من قايمة فاضية
+    // في الشارع)، بس المندوب لازم يعرف إن الأسماء اللي قدامه ممكن تكون قديمة —
+    // لأن اللي بعده هو اللي هيقف على «المالك غير موجود» وهو مش فاهم ليه.
+    if (ownersFailed && parties.every((p) => p.customerType != 'owner')) {
+      throw ApiException(0, 'تعذّر تحديث كشف الملّاك — جرّب المزامنة تاني');
     }
     if (parties.isNotEmpty) {
       await LocalDb.instance.replaceCustomers(parties);
