@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
 from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
-from src.services import chart_service
+from src.services import chart_service, ledger_service
 
 
 @dataclass
@@ -85,7 +85,11 @@ def trial_balance(
     cost_center_id: int | None = None,
 ) -> TrialBalanceResult:
     # Pull lines joined to their entry once; bucket in Python (DB-agnostic date handling).
-    stmt = select(LedgerLine, LedgerEntry).join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
+    stmt = (
+        select(LedgerLine, LedgerEntry)
+        .join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
+        .where(ledger_service.is_posted_sql())  # المسودة والملغي مش في الميزان
+    )
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     if cost_center_id is not None:  # optional analytical scope (006)

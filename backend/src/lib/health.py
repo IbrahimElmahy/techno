@@ -35,7 +35,8 @@ from sqlalchemy.orm import Session
 
 from src.core.money import to_money, to_qty
 from src.models.catalog import Item, ItemKind, ItemPrice
-from src.models.ledger import Account, LedgerLine
+from src.models.ledger import Account, LedgerEntry, LedgerLine
+from src.services import ledger_service
 from src.models.sales import SalesInvoice, SalesInvoiceLine
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.treasury import Treasury
@@ -340,6 +341,9 @@ def check_unbalanced_entries(db: Session) -> Issue | None:
     credit = func.sum(case((LedgerLine.direction == "credit", LedgerLine.amount), else_=0))
     rows = db.execute(
         select(LedgerLine.entry_id, debit, credit)
+        # المسودة ناقصة عن قصد — الفحص ده للمرحّل بس، وإلا كل مسودة بتطلع «قيد غير متوازن».
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())
         .group_by(LedgerLine.entry_id)
         .having(debit != credit)
     ).all()
@@ -368,6 +372,8 @@ def check_negative_treasuries(db: Session) -> Issue | None:
             select(LedgerLine.account_id, func.coalesce(func.sum(signed), 0))
             .select_from(LedgerLine)
             .join(Account, Account.id == LedgerLine.account_id)
+            .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+            .where(ledger_service.is_posted_sql())
             .group_by(LedgerLine.account_id)
         ).all()
     }

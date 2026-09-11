@@ -7,6 +7,7 @@ branch-tagged; branch-scoped users post/read only their own branch.
 from __future__ import annotations
 
 from datetime import date
+from datetime import date as DateType  # الحقل اسمه `date` وبيحجب النوع جوه الكلاس
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,10 +24,19 @@ from src.auth.rbac import (
     CAP_ACCOUNTING_TRIAL_BALANCE_READ,
 )
 from src.core.db import get_db
-from src.models.ledger import Account, AccountNature, Direction, LedgerEntry, LedgerLine
+from src.models.journal import JOURNAL_KIND_LABEL, Journal, JournalKind
+from src.models.ledger import (
+    Account,
+    AccountNature,
+    Direction,
+    EntryState,
+    LedgerEntry,
+    LedgerLine,
+)
 from src.services import (
     account_routing_service,
     chart_service,
+    journal_registry,
     journal_service,
     opening_balance_service,
     trial_balance_service,
@@ -108,7 +118,48 @@ class JournalEntryCreate(BaseModel):
     date: date
     description: str = ""
     branch_id: int
-    lines: list[JournalLineIn] = Field(min_length=2)
+    # الدفتر. مالوش قيمة ⇒ بيتحدد من نوع القيد («قيود متنوعة» للقيد اليدوي).
+    journal_id: int | None = None
+    # "posted" يرحّل على طول (السلوك القديم)، "draft" بيسيبه مسودة ناقصة.
+    state: str = EntryState.posted.value
+    # سطر واحد كفاية للمسودة. المرحّل بيتفرض عليه التوازن في `ledger_service`، وده شرط
+    # أقوى من «سطرين»: قيد بسطرين مش متوازنين كان بيعدّي من هنا قبل كده.
+    lines: list[JournalLineIn] = Field(min_length=1)
+
+
+class JournalEntryUpdate(BaseModel):
+    """تعديل مسودة. المرحّل مايتعدلش — يترجّع مسودة الأول."""
+
+    date: DateType | None = None
+    description: str | None = None
+    branch_id: int | None = None
+    journal_id: int | None = None
+    lines: list[JournalLineIn] | None = None
+
+
+class JournalOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    kind: str
+    kind_label: str
+    active: bool
+    is_system: bool
+    sort_order: int
+
+
+class JournalCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=12)
+    name: str = Field(min_length=1, max_length=120)
+    kind: str = JournalKind.general.value
+    sort_order: int = 100
+
+
+class JournalUpdate(BaseModel):
+    name: str | None = None
+    kind: str | None = None
+    active: bool | None = None
+    sort_order: int | None = None
 
 
 class JournalLineOut(BaseModel):
@@ -129,6 +180,15 @@ class JournalEntryOut(BaseModel):
     reverses_entry_id: int | None
     lines: list[JournalLineOut]
     total: Decimal
+    # المرحلة ١ — الدفتر والحالة والرقم.
+    journal_id: int | None = None
+    journal_code: str | None = None
+    journal_name: str | None = None
+    state: str = EntryState.posted.value
+    number: str | None = None
+    # مجموع الدائن كمان، عشان الواجهة توري الفرق من غير ما تحسبه من السطور.
+    total_credit: Decimal = Decimal("0.00")
+    balanced: bool = True
 
 
 class OpeningLineIn(BaseModel):
@@ -201,10 +261,21 @@ def _entry_out(entry: LedgerEntry) -> JournalEntryOut:
     total = sum(
         (l.amount for l in entry.lines if l.direction == Direction.debit), Decimal("0.00")
     )
+    total_credit = sum(
+        (l.amount for l in entry.lines if l.direction == Direction.credit), Decimal("0.00")
+    )
+    journal = entry.journal
     return JournalEntryOut(
         id=entry.id, entry_type=entry.entry_type, date=entry.entry_date,
         description=entry.description, branch_id=entry.branch_id, actor_user_id=entry.actor_user_id,
         reverses_entry_id=entry.reverses_entry_id,
+        journal_id=entry.journal_id,
+        journal_code=journal.code if journal else None,
+        journal_name=journal.name if journal else None,
+        state=entry.state or EntryState.posted.value,
+        number=entry.number,
+        total_credit=total_credit,
+        balanced=(total == total_credit),
         lines=[
             JournalLineOut(account_id=l.account_id, direction=l.direction, amount=l.amount,
                            statement=l.statement, cost_center_id=l.cost_center_id)
@@ -322,12 +393,23 @@ def list_journal_entries(
     to: date | None = None,
     branch_id: int | None = None,
     cost_center_id: int | None = None,
+    journal_id: int | None = None,
+    state: str | None = None,
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[JournalEntryOut]:
     stmt = select(LedgerEntry).where(
         LedgerEntry.entry_type.in_(["journal", "opening_balance", "reversal"])
     )
+    if journal_id is not None:
+        stmt = stmt.where(LedgerEntry.journal_id == journal_id)
+    if state == EntryState.posted.value:
+        # NULL = مرحّل — القيود اللي اتكتبت قبل ما العمود يتولد.
+        stmt = stmt.where(
+            LedgerEntry.state.is_(None) | (LedgerEntry.state == EntryState.posted.value)
+        )
+    elif state is not None:
+        stmt = stmt.where(LedgerEntry.state == state)
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     if from_ is not None:
@@ -371,12 +453,180 @@ def post_journal_entry(
                 for l in body.lines
             ],
             actor_user_id=current.id,
+            journal_id=body.journal_id,
+            state=body.state,
         )
     except JournalError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "journal_invalid", "message": str(exc)})
     db.commit()
     return _entry_out(entry)
+
+
+@router.patch("/journal-entries/{entry_id}", response_model=JournalEntryOut)
+def update_journal_entry(
+    entry_id: int,
+    body: JournalEntryUpdate,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
+    db: Session = Depends(get_db),
+) -> JournalEntryOut:
+    """يعدّل مسودة. المرحّل بيترفض — لازم يترجّع مسودة الأول."""
+    existing = db.get(LedgerEntry, entry_id)
+    if existing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "القيد مش موجود"})
+    _ensure_accounting_branch(current, existing.branch_id)
+    try:
+        entry = journal_service.update_draft(
+            db, entry_id=entry_id, actor_user_id=current.id,
+            entry_date=body.date, description=body.description,
+            branch_id=body.branch_id, journal_id=body.journal_id,
+            lines=None if body.lines is None else [
+                JournalLineInput(l.account_id, l.direction, l.amount, l.statement, l.cost_center_id)
+                for l in body.lines
+            ],
+        )
+    except JournalError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "journal_invalid", "message": str(exc)})
+    db.commit()
+    return _entry_out(entry)
+
+
+@router.post("/journal-entries/{entry_id}/post", response_model=JournalEntryOut)
+def post_draft_entry(
+    entry_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
+    db: Session = Depends(get_db),
+) -> JournalEntryOut:
+    """يرحّل مسودة — هنا بيتفرض التوازن وبيتصرف رقم الدفتر."""
+    existing = db.get(LedgerEntry, entry_id)
+    if existing is not None:
+        _ensure_accounting_branch(current, existing.branch_id)
+    try:
+        entry = journal_service.post_draft(db, entry_id=entry_id, actor_user_id=current.id)
+    except JournalError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "journal_invalid", "message": str(exc)})
+    db.commit()
+    return _entry_out(entry)
+
+
+@router.post("/journal-entries/{entry_id}/reset-to-draft", response_model=JournalEntryOut)
+def reset_entry_to_draft(
+    entry_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_REVERSE)),
+    db: Session = Depends(get_db),
+) -> JournalEntryOut:
+    """يرجّع قيد مرحّل لمسودة — بيخرج من الحسابات ورقمه بيفضل محجوز."""
+    existing = db.get(LedgerEntry, entry_id)
+    if existing is not None:
+        _ensure_accounting_branch(current, existing.branch_id)
+    try:
+        entry = journal_service.reset_to_draft(db, entry_id=entry_id, actor_user_id=current.id)
+    except JournalError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "journal_conflict", "message": str(exc)})
+    db.commit()
+    return _entry_out(entry)
+
+
+@router.post("/journal-entries/{entry_id}/cancel", response_model=JournalEntryOut)
+def cancel_journal_entry(
+    entry_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_REVERSE)),
+    db: Session = Depends(get_db),
+) -> JournalEntryOut:
+    """يلغي قيد — بيخرج من الحسابات وبيفضل موجود برقمه للمراجعة."""
+    existing = db.get(LedgerEntry, entry_id)
+    if existing is not None:
+        _ensure_accounting_branch(current, existing.branch_id)
+    try:
+        entry = journal_service.cancel_entry(db, entry_id=entry_id, actor_user_id=current.id)
+    except JournalError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "journal_conflict", "message": str(exc)})
+    db.commit()
+    return _entry_out(entry)
+
+
+# --- دفاتر اليومية ---------------------------------------------------------------------------
+
+
+def _journal_out(j: Journal) -> JournalOut:
+    return JournalOut(
+        id=j.id, code=j.code, name=j.name, kind=j.kind,
+        kind_label=JOURNAL_KIND_LABEL.get(j.kind, j.kind),
+        active=j.active, is_system=j.is_system, sort_order=j.sort_order,
+    )
+
+
+@router.get("/journals", response_model=list[JournalOut])
+def list_journals(
+    active: bool | None = None,
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    db: Session = Depends(get_db),
+) -> list[JournalOut]:
+    journal_registry.ensure_seeded(db)
+    db.commit()
+    stmt = select(Journal)
+    if active is not None:
+        stmt = stmt.where(Journal.active.is_(active))
+    rows = db.scalars(stmt.order_by(Journal.sort_order, Journal.code)).all()
+    return [_journal_out(j) for j in rows]
+
+
+@router.post("/journals", response_model=JournalOut, status_code=status.HTTP_201_CREATED)
+def create_journal(
+    body: JournalCreate,
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
+    db: Session = Depends(get_db),
+) -> JournalOut:
+    code = body.code.strip().upper()
+    if db.scalar(select(Journal).where(Journal.code == code)) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "duplicate", "message": "فيه دفتر بنفس الكود."})
+    if body.kind not in {k.value for k in JournalKind}:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "invalid", "message": "نوع الدفتر مش معروف."})
+    journal = Journal(code=code, name=body.name.strip(), kind=body.kind,
+                      sort_order=body.sort_order, is_system=False, active=True)
+    db.add(journal)
+    db.commit()
+    db.refresh(journal)
+    return _journal_out(journal)
+
+
+@router.patch("/journals/{journal_id}", response_model=JournalOut)
+def update_journal(
+    journal_id: int,
+    body: JournalUpdate,
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
+    db: Session = Depends(get_db),
+) -> JournalOut:
+    journal = db.get(Journal, journal_id)
+    if journal is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "الدفتر مش موجود"})
+    if body.name is not None:
+        journal.name = body.name.strip()
+    if body.kind is not None:
+        if body.kind not in {k.value for k in JournalKind}:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                {"code": "invalid", "message": "نوع الدفتر مش معروف."})
+        journal.kind = body.kind
+    if body.sort_order is not None:
+        journal.sort_order = body.sort_order
+    if body.active is not None:
+        # دفتر النظام مايتقفلش: فيه كود بيوجّه قيود عليه، وقفله معناه قيود من غير دفتر.
+        if journal.is_system and not body.active:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                {"code": "system_journal", "message": "دفتر النظام مايتقفلش."})
+        journal.active = body.active
+    db.commit()
+    db.refresh(journal)
+    return _journal_out(journal)
 
 
 @router.post("/journal-entries/{entry_id}/reverse", response_model=JournalEntryOut,

@@ -6,6 +6,7 @@ import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
   ReloadOutlined, SearchOutlined, DownloadOutlined, PrinterOutlined,
+  ProfileOutlined, CheckCircleOutlined, EditOutlined, StopOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -49,6 +50,17 @@ interface JournalLine {
   cost_center_id?: number | null;
 }
 
+interface Journal {
+  id: number;
+  code: string;
+  name: string;
+  kind: string;
+  kind_label: string;
+  active: boolean;
+  is_system: boolean;
+  sort_order: number;
+}
+
 interface JournalEntry {
   id: number;
   entry_type: string;
@@ -58,6 +70,13 @@ interface JournalEntry {
   reverses_entry_id: number | null;
   lines: JournalLine[];
   total: string;
+  journal_id: number | null;
+  journal_code: string | null;
+  journal_name: string | null;
+  state: 'draft' | 'posted' | 'cancelled';
+  number: string | null;
+  total_credit: string;
+  balanced: boolean;
 }
 
 interface TrialRow {
@@ -93,6 +112,7 @@ export default function GeneralLedger() {
         { key: 'chart', label: <span><BookOutlined /> دليل الحسابات</span>, children: <ChartTab /> },
         { key: 'journal', label: <span><FileAddOutlined /> القيود اليومية</span>, children: <JournalTab /> },
         { key: 'trial', label: <span><BankOutlined /> ميزان المراجعة</span>, children: <TrialBalanceTab /> },
+        { key: 'journals', label: <span><ProfileOutlined /> الدفاتر</span>, children: <JournalsTab /> },
       ]}
     />
   );
@@ -304,6 +324,9 @@ function ChartTab() {
 function JournalTab() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [journals, setJournals] = useState<Journal[]>([]);
+  // القيد اللي الشاشة فاتحاه للتعديل — مسودة بس. `null` معناها قيد جديد.
+  const [editing, setEditing] = useState<JournalEntry | null>(null);
   const [leaves, setLeaves] = useState<Account[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
@@ -323,13 +346,15 @@ function JournalTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const [e, a, b, cc] = await Promise.all([
+      const [e, a, b, cc, j] = await Promise.all([
         api.get('/api/v1/journal-entries'),
         api.get('/api/v1/accounts?postable_only=true&active=true'),
         api.get('/api/v1/branches'),
         api.get('/api/v1/cost-centers?active=true'),
+        api.get('/api/v1/journals?active=true'),
       ]);
       setEntries(e.data); setLeaves(a.data); setBranches(b.data); setCostCenters(cc.data);
+      setJournals(j.data);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -353,32 +378,114 @@ function JournalTab() {
   const addLine = () =>
     setLines([...lines, { key: String(Date.now()), account_id: null, direction: 'debit', amount: 0, statement: '' }]);
   const removeLine = (k: string) => {
-    if (lines.length <= 2) { message.warning('القيد يحتاج سطرين على الأقل'); return; }
+    // سطر واحد كفاية: المسودة بتتساب ناقصة عن قصد، والتوازن بيتفرض عند الترحيل بس.
+    if (lines.length <= 1) { message.warning('القيد يحتاج سطراً واحداً على الأقل'); return; }
     setLines(lines.filter((l) => l.key !== k));
   };
 
-  const onPost = async (v: any) => {
-    if (!balanced) { message.error('القيد غير متوازن: مجموع المدين يجب أن يساوي الدائن'); return; }
-    const valid = lines.filter((l) => l.account_id);
-    if (valid.length < 2) { message.error('أدخل حسابين صالحين على الأقل'); return; }
+  const resetDrawer = () => {
+    setDrawer(false); setEditing(null); form.resetFields();
+    setLines([
+      { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
+      { key: '2', account_id: null, direction: 'credit', amount: 0, statement: '' },
+    ]);
+  };
+
+  const openNew = () => {
+    setEditing(null); form.resetFields();
+    setLines([
+      { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
+      { key: '2', account_id: null, direction: 'credit', amount: 0, statement: '' },
+    ]);
+    setDrawer(true);
+  };
+
+  const openDraft = (e: JournalEntry) => {
+    setEditing(e);
+    form.setFieldsValue({
+      date: e.date ? dayjs(e.date) : dayjs(),
+      description: e.description,
+      branch_id: e.branch_id ?? undefined,
+      journal_id: e.journal_id ?? undefined,
+    });
+    setLines((e.lines || []).map((l, i) => ({
+      key: String(i + 1), account_id: l.account_id, direction: l.direction,
+      amount: Number(l.amount), statement: l.statement ?? '',
+      cost_center_id: l.cost_center_id ?? null,
+    })));
+    setDrawer(true);
+  };
+
+  /** الحفظ. `asDraft` بيسيب القيد ناقص بلا رقم؛ الترحيل بيطلب التوازن. */
+  const submit = async (asDraft: boolean) => {
+    let v: any;
+    try { v = await form.validateFields(); } catch { return; }
+    const valid = lines.filter((l) => l.account_id && l.amount > 0);
+    if (!valid.length) { message.error('أدخل سطراً واحداً صالحاً على الأقل'); return; }
+    if (!asDraft && !balanced) {
+      message.error('القيد غير متوازن: مجموع المدين لازم يساوي الدائن — أو احفظه مسودة');
+      return;
+    }
+    const payload = {
+      date: v.date.format('YYYY-MM-DD'),
+      description: v.description,
+      branch_id: v.branch_id,
+      journal_id: v.journal_id ?? null,
+      lines: valid.map((l) => ({
+        account_id: l.account_id, direction: l.direction, amount: l.amount.toFixed(2),
+        statement: l.statement || null, cost_center_id: l.cost_center_id || null,
+      })),
+    };
     try {
-      await api.post('/api/v1/journal-entries', {
-        date: v.date.format('YYYY-MM-DD'),
-        description: v.description,
-        branch_id: v.branch_id,
-        lines: valid.map((l) => ({
-          account_id: l.account_id, direction: l.direction, amount: l.amount.toFixed(2),
-          statement: l.statement || null, cost_center_id: l.cost_center_id || null,
-        })),
-      });
-      message.success('تم ترحيل القيد');
-      setDrawer(false); form.resetFields();
-      setLines([
-        { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
-        { key: '2', account_id: null, direction: 'credit', amount: 0, statement: '' },
-      ]);
+      if (editing) {
+        await api.patch(`/api/v1/journal-entries/${editing.id}`, payload);
+        if (!asDraft) await api.post(`/api/v1/journal-entries/${editing.id}/post`);
+        message.success(asDraft ? 'تم حفظ المسودة' : 'تم ترحيل القيد');
+      } else {
+        const { data } = await api.post('/api/v1/journal-entries', {
+          ...payload, state: asDraft ? 'draft' : 'posted',
+        });
+        message.success(asDraft ? 'تم حفظ المسودة' : `تم ترحيل القيد ${data.number ?? ''}`);
+      }
+      resetDrawer();
       load();
     } catch (err) { console.error(err); }
+  };
+
+  const onPost = () => submit(false);
+
+  const handlePostDraft = async (r: JournalEntry) => {
+    try {
+      const { data } = await api.post(`/api/v1/journal-entries/${r.id}/post`);
+      message.success(`تم ترحيل القيد ${data.number ?? ''}`); load();
+    } catch (err) { console.error(err); }
+  };
+
+  const handleResetDraft = (r: JournalEntry) => {
+    showReversalConfirm({
+      title: 'رجوع القيد لمسودة',
+      content: `القيد ${r.number ?? `#${r.id}`} هيخرج من الحسابات وكل التقارير، ورقمه هيفضل محجوز `
+        + 'ليه. تكمّل؟',
+      onOk: async () => {
+        try {
+          await api.post(`/api/v1/journal-entries/${r.id}/reset-to-draft`);
+          message.success('رجع مسودة'); load();
+        } catch (err) { console.error(err); }
+      },
+    });
+  };
+
+  const handleCancel = (r: JournalEntry) => {
+    showReversalConfirm({
+      title: 'إلغاء القيد',
+      content: `القيد ${r.number ?? `#${r.id}`} هيخرج من الحسابات وهيفضل موجود برقمه للمراجعة. تكمّل؟`,
+      onOk: async () => {
+        try {
+          await api.post(`/api/v1/journal-entries/${r.id}/cancel`);
+          message.success('اتلغى القيد'); load();
+        } catch (err) { console.error(err); }
+      },
+    });
   };
 
   const onPostOpening = async (v: any) => {
@@ -415,25 +522,49 @@ function JournalTab() {
   };
   const TYPE_LABEL = (t: string) => ({ t: entryTypeLabel(t), c: TYPE_COLOR[t] || 'default' });
 
+  const STATE_META = (s: string | null | undefined) => (
+    // NULL = مرحّل؛ القيود اللي اتكتبت قبل ما الحالة توجد.
+    s === 'draft' ? { t: 'مسودة', c: 'orange' }
+      : s === 'cancelled' ? { t: 'ملغي', c: 'default' }
+        : { t: 'مرحّل', c: 'green' }
+  );
+
   const branchName = (id: number | null) =>
     id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام';
 
   const filter = useListFilter(entries, {
     search: (e) => [
-      e.id, e.description, entryTypeLabel(e.entry_type), e.entry_type,
+      e.id, e.number, e.journal_code, e.journal_name,
+      e.description, entryTypeLabel(e.entry_type), e.entry_type,
       branchName(e.branch_id), ...e.lines.map((l) => acctLabel(l.account_id)),
       ...e.lines.map((l) => l.statement),
     ],
     filters: {
       entry_type: (e, v) => e.entry_type === v,
       branch_id: (e, v) => (v === 0 ? e.branch_id === null : e.branch_id === v),
+      journal_id: (e, v) => e.journal_id === v,
+      state: (e, v) => (e.state ?? 'posted') === v,
     },
     dateOf: (e) => e.date,
   });
 
   const columns = [
-    { title: 'رقم', dataIndex: 'id', key: 'id', width: 70, ...numberColumn<JournalEntry>((e) => e.id),
-      render: (id: number) => <Tag color="blue">#{id}</Tag> },
+    { title: 'رقم القيد', dataIndex: 'number', key: 'number', width: 140,
+      ...textColumn(entries, (e: JournalEntry) => e.number ?? ''),
+      render: (n: string | null, r: JournalEntry) =>
+        (n ? <Tag color="blue">{n}</Tag> : <Tag>#{r.id} — مسودة</Tag>) },
+    { title: 'الدفتر', dataIndex: 'journal_name', key: 'journal_name', width: 130,
+      ...textColumn(entries, (e: JournalEntry) => e.journal_name ?? ''),
+      render: (n: string | null) => (n ? <Tag color="purple">{n}</Tag> : '-') },
+    { title: 'الحالة', dataIndex: 'state', key: 'state', width: 90,
+      ...choiceColumn<JournalEntry>(
+        [{ text: 'مرحّل', value: 'posted' }, { text: 'مسودة', value: 'draft' },
+         { text: 'ملغي', value: 'cancelled' }],
+        (e, v) => (e.state ?? 'posted') === v),
+      render: (_: any, r: JournalEntry) => {
+        const m = STATE_META(r.state);
+        return <Tag color={m.c}>{m.t}</Tag>;
+      } },
     { title: 'التاريخ', dataIndex: 'date', key: 'date', width: 120,
       ...dateColumn<JournalEntry>((e: any) => e.date), render: (d: string) => d || '-' },
     { title: 'النوع', dataIndex: 'entry_type', key: 'entry_type', width: 120,
@@ -459,11 +590,34 @@ function JournalTab() {
     { title: 'الإجمالي', dataIndex: 'total', key: 'total', width: 120,
       ...numberColumn<JournalEntry>((e: any) => e.total),
       render: (t: string) => <strong>{egp(t)}</strong> },
-    { title: '', key: 'actions', width: 130,
-      render: (_: any, r: JournalEntry) =>
-        (!r.reverses_entry_id && !entries.some((e) => e.reverses_entry_id === r.id)) ? (
-          <Button type="link" danger icon={<RollbackOutlined />} onClick={() => handleReverse(r)}>عكس</Button>
-        ) : <Tag color="red">معكوس</Tag> },
+    { title: '', key: 'actions', width: 230,
+      render: (_: any, r: JournalEntry) => {
+        const state = r.state ?? 'posted';
+        if (state === 'cancelled') return <Tag>ملغي</Tag>;
+        if (state === 'draft') {
+          return (
+            <Space size={0}>
+              <Button type="link" icon={<EditOutlined />} onClick={() => openDraft(r)}>تعديل</Button>
+              <Button type="link" icon={<CheckCircleOutlined />}
+                onClick={() => handlePostDraft(r)}>ترحيل</Button>
+              <Button type="link" danger icon={<StopOutlined />}
+                onClick={() => handleCancel(r)}>إلغاء</Button>
+            </Space>
+          );
+        }
+        const reversed = entries.some((e) => e.reverses_entry_id === r.id);
+        return (
+          <Space size={0}>
+            {!r.reverses_entry_id && !reversed && (
+              <Button type="link" danger icon={<RollbackOutlined />}
+                onClick={() => handleReverse(r)}>عكس</Button>
+            )}
+            {reversed && <Tag color="red">معكوس</Tag>}
+            <Button type="link" icon={<RollbackOutlined />}
+              onClick={() => handleResetDraft(r)}>رجوع لمسودة</Button>
+          </Space>
+        );
+      } },
   ];
 
   const journalTabCols = useTableColumns('gl-journal', columns, {
@@ -477,7 +631,9 @@ function JournalTab() {
   });
 
   const entryReportCols = [
-    { title: 'رقم', value: (e: JournalEntry) => e.id },
+    { title: 'رقم القيد', value: (e: JournalEntry) => e.number ?? `#${e.id}` },
+    { title: 'الدفتر', value: (e: JournalEntry) => e.journal_name ?? '' },
+    { title: 'الحالة', value: (e: JournalEntry) => STATE_META(e.state).t },
     { title: 'التاريخ', value: (e: JournalEntry) => e.date ?? '' },
     { title: 'النوع', value: (e: JournalEntry) => entryTypeLabel(e.entry_type) },
     { title: 'البيان', value: (e: JournalEntry) => e.description },
@@ -517,7 +673,7 @@ function JournalTab() {
           <Button icon={<DownloadOutlined />} onClick={exportJournal}>تصدير CSV</Button>
           <Button icon={<PrinterOutlined />} onClick={printJournal}>طباعة</Button>
           <Button icon={<BankOutlined />} onClick={() => setOpeningDrawer(true)}>أرصدة افتتاحية</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawer(true)}>قيد جديد</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>قيد جديد</Button>
         </Space>
       }
     >
@@ -533,12 +689,22 @@ function JournalTab() {
             options: Object.entries(TYPE_LABEL).map(([v, m]) => ({ value: v, label: m.t })) },
           { key: 'branch_id', placeholder: 'الفرع', span: 4,
             options: [{ value: 0, label: 'عام' }, ...branches.map((b) => ({ value: b.id, label: b.name }))] },
+          { key: 'journal_id', placeholder: 'الدفتر', span: 4,
+            options: journals.map((j) => ({ value: j.id, label: j.name })) },
+          { key: 'state', placeholder: 'الحالة', span: 3,
+            options: [
+              { value: 'posted', label: 'مرحّل' },
+              { value: 'draft', label: 'مسودة' },
+              { value: 'cancelled', label: 'ملغي' },
+            ] },
         ]}
       />
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{journalTabCols.control}</div>
       <Table {...entryKb.tableProps} rowKey="id" loading={loading} dataSource={filter.filtered} columns={journalTabCols.columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
 
-      <TabModal footer={null} centered title="قيد يومية جديد" width={640} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
+      <TabModal footer={null} centered
+        title={editing ? `تعديل مسودة ${editing.number ?? `#${editing.id}`}` : 'قيد يومية جديد'}
+        width={640} open={drawer} onCancel={resetDrawer} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onPost} requiredMark={false}
           initialValues={{ date: dayjs() }}>
           <Row gutter={16}>
@@ -547,10 +713,17 @@ function JournalTab() {
                 <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
               </Form.Item>
             </Col>
-            <Col span={16}>
+            <Col span={8}>
               <Form.Item name="branch_id" label="الفرع" rules={[{ required: true, message: 'اختر الفرع' }]}>
                 <Select placeholder="اختر الفرع"
                   options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="journal_id" label="الدفتر"
+                tooltip="لو سِبته فاضي بيروح «قيود متنوعة»">
+                <Select allowClear placeholder="قيود متنوعة"
+                  options={journals.map((j) => ({ value: j.id, label: `${j.code} — ${j.name}` }))} />
               </Form.Item>
             </Col>
           </Row>
@@ -601,9 +774,17 @@ function JournalTab() {
               valueStyle={{ color: balanced ? '#6AB42D' : '#cf1322' }} /></Col>
           </Row>
           <Divider />
-          <Button type="primary" htmlType="submit" block disabled={!balanced}>
-            {balanced ? 'ترحيل القيد' : 'القيد غير متوازن'}
-          </Button>
+          <Row gutter={8}>
+            <Col span={12}>
+              {/* المسودة مش محتاجة توازن — دي نقطتها. */}
+              <Button block onClick={() => submit(true)}>حفظ كمسودة</Button>
+            </Col>
+            <Col span={12}>
+              <Button type="primary" htmlType="submit" block disabled={!balanced}>
+                {balanced ? 'ترحيل القيد' : `غير متوازن — الفرق ${Math.abs(totalDebit - totalCredit).toFixed(2)}`}
+              </Button>
+            </Col>
+          </Row>
         </Form>
       </TabModal>
 
@@ -850,6 +1031,138 @@ function TrialBalanceTab() {
           </div>
         </>
       ) : <Empty description="لا توجد بيانات" />}
+    </Card>
+  );
+}
+
+/** تبويب الدفاتر — عرض دفاتر اليومية وإضافة دفتر للعميل. */
+function JournalsTab() {
+  const [rows, setRows] = useState<Journal[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  const [editing, setEditing] = useState<Journal | null>(null);
+  const [form] = Form.useForm();
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/api/v1/journals');
+      setRows(data);
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const openNew = () => { setEditing(null); form.resetFields(); setDrawer(true); };
+  const openEdit = (j: Journal) => {
+    setEditing(j);
+    form.setFieldsValue({ code: j.code, name: j.name, kind: j.kind, sort_order: j.sort_order });
+    setDrawer(true);
+  };
+
+  const onSave = async (v: any) => {
+    try {
+      if (editing) {
+        await api.patch(`/api/v1/journals/${editing.id}`,
+          { name: v.name, kind: v.kind, sort_order: v.sort_order });
+        message.success('اتحفظ الدفتر');
+      } else {
+        await api.post('/api/v1/journals', v);
+        message.success('اتضاف الدفتر');
+      }
+      setDrawer(false); form.resetFields(); setEditing(null); load();
+    } catch (err) { console.error(err); }
+  };
+
+  const toggleActive = async (j: Journal) => {
+    try {
+      await api.patch(`/api/v1/journals/${j.id}`, { active: !j.active });
+      message.success(j.active ? 'اتقفل الدفتر' : 'اتفتح الدفتر'); load();
+    } catch (err) { console.error(err); }
+  };
+
+  const columns = [
+    { title: 'الكود', dataIndex: 'code', key: 'code', width: 90,
+      render: (c: string) => <Tag color="purple">{c}</Tag> },
+    { title: 'الاسم', dataIndex: 'name', key: 'name' },
+    { title: 'النوع', dataIndex: 'kind_label', key: 'kind_label', width: 120 },
+    { title: 'الترتيب', dataIndex: 'sort_order', key: 'sort_order', width: 90 },
+    { title: 'الحالة', dataIndex: 'active', key: 'active', width: 110,
+      render: (a: boolean, r: Journal) => (
+        <Space size={4}>
+          <Tag color={a ? 'green' : 'default'}>{a ? 'شغّال' : 'مقفول'}</Tag>
+          {r.is_system && <Tag color="blue">نظام</Tag>}
+        </Space>
+      ) },
+    { title: '', key: 'actions', width: 160,
+      render: (_: any, r: Journal) => (
+        <Space size={0}>
+          <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>تعديل</Button>
+          {/* دفتر النظام مايتقفلش — فيه كود بيوجّه قيود عليه. */}
+          {!r.is_system && (
+            <Button type="link" danger={r.active} onClick={() => toggleActive(r)}>
+              {r.active ? 'قفل' : 'فتح'}
+            </Button>
+          )}
+        </Space>
+      ) },
+  ];
+
+  return (
+    <Card
+      title="دفاتر اليومية"
+      extra={
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>دفتر جديد</Button>
+        </Space>
+      }
+    >
+      <div style={{ marginBottom: 12, color: '#888', fontSize: 13 }}>
+        كل قيد بيعيش في دفتر، والدفتر بيدّيه رقمه المتسلسل — <code>INV/2026/00001</code>.
+        الترقيم بيتصفّر مع كل سنة، والسنة بتتاخد من تاريخ القيد مش من تاريخ النهارده.
+      </div>
+      <Table rowKey="id" loading={loading} dataSource={rows} columns={columns}
+        pagination={false} size="small" />
+
+      <TabModal footer={null} centered width={520} destroyOnHidden
+        title={editing ? `تعديل دفتر ${editing.code}` : 'دفتر جديد'}
+        open={drawer} onCancel={() => { setDrawer(false); setEditing(null); }}>
+        <Form form={form} layout="vertical" onFinish={onSave} requiredMark={false}
+          initialValues={{ kind: 'general', sort_order: 100 }}>
+          <Row gutter={16}>
+            <Col span={10}>
+              <Form.Item name="code" label="الكود" rules={[{ required: true, message: 'أدخل الكود' }]}
+                tooltip="بادئة الترقيم — حروف لاتينية قصيرة">
+                <Input placeholder="MISC" disabled={!!editing} maxLength={12} />
+              </Form.Item>
+            </Col>
+            <Col span={14}>
+              <Form.Item name="name" label="الاسم" rules={[{ required: true, message: 'أدخل الاسم' }]}>
+                <Input placeholder="قيود متنوعة" maxLength={120} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={14}>
+              <Form.Item name="kind" label="النوع" rules={[{ required: true }]}>
+                <Select options={[
+                  { value: 'sale', label: 'مبيعات' },
+                  { value: 'purchase', label: 'مشتريات' },
+                  { value: 'cash', label: 'نقدية' },
+                  { value: 'bank', label: 'بنك' },
+                  { value: 'general', label: 'عام' },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={10}>
+              <Form.Item name="sort_order" label="الترتيب">
+                <InputNumber min={1} max={999} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Button type="primary" htmlType="submit" block>حفظ</Button>
+        </Form>
+      </TabModal>
     </Card>
   );
 }

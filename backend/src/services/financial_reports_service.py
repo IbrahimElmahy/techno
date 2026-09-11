@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Account, AccountNature, LedgerEntry, LedgerLine
+from src.services import ledger_service
 from src.models.supplier import Supplier, SupplierAccount
 
 
@@ -98,6 +99,8 @@ def _movements(
     rows = db.scalars(
         select(LedgerLine).options(selectinload(LedgerLine.entry),
                                    selectinload(LedgerLine.account))
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())  # المسودة والملغي بره القوائم
     ).all()
     totals: dict[int, Decimal] = {}
     for line in rows:
@@ -170,7 +173,8 @@ def _aging_for_accounts(
     rows = db.scalars(
         select(LedgerLine)
         .options(selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
-        .where(LedgerLine.account_id.in_(list(wanted)))
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(LedgerLine.account_id.in_(list(wanted)), ledger_service.is_posted_sql())
     ).all()
 
     per_party: dict[int, list[tuple[date, Decimal, bool]]] = {}

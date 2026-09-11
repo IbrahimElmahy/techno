@@ -15,7 +15,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
-from src.models.ledger import Account, AccountNature, AccountType, Direction, LedgerLine
+from src.models.ledger import (
+    Account,
+    AccountNature,
+    AccountType,
+    Direction,
+    LedgerEntry,
+    LedgerLine,
+)
+from src.services import ledger_service
 from src.models.sales import SalesSetting
 
 OUTPUT_TAX_CODE = "2160"  # ضريبة القيمة المضافة المستحقة
@@ -68,7 +76,8 @@ def vat_return(
     def _movement(account: Account) -> Decimal:
         rows = db.scalars(
             select(LedgerLine).options(selectinload(LedgerLine.entry))
-            .where(LedgerLine.account_id == account.id)
+            .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+            .where(LedgerLine.account_id == account.id, ledger_service.is_posted_sql())
         ).all()
         total = ZERO
         for line in rows:

@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
-from src.models.ledger import Account, AccountNature, AccountType, LedgerLine
+from src.models.ledger import Account, AccountNature, AccountType, LedgerEntry, LedgerLine
 from src.services import ledger_service
 from src.services.account_resolver import (
     NATURE_NORMAL_SIDE,
@@ -282,6 +282,9 @@ def bulk_balances(db: Session) -> dict[int, Decimal]:
     """
     rows = db.execute(
         select(LedgerLine.account_id, LedgerLine.direction, func.sum(LedgerLine.amount))
+        # المسودة والملغي بره الأرصدة — الشرط من `ledger_service` عشان يفضل واحد.
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())
         .group_by(LedgerLine.account_id, LedgerLine.direction)).all()
     accounts = db.execute(
         select(Account.id, Account.parent_id, Account.is_postable, Account.normal_side)).all()

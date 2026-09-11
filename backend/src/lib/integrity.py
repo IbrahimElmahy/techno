@@ -166,7 +166,8 @@ def check_ledger_entries_balanced(db: Session, report: IntegrityReport) -> None:
     exactly why it is worth running. An unbalanced entry would make the trial balance wrong without
     making any single screen look wrong, and that is the hardest kind of error to notice.
     """
-    from src.models.ledger import Direction, LedgerLine
+    from src.models.ledger import Direction, LedgerEntry, LedgerLine
+    from src.services import ledger_service
 
     rows = db.execute(
         select(
@@ -181,7 +182,11 @@ def check_ledger_entries_balanced(db: Session, report: IntegrityReport) -> None:
                     (LedgerLine.direction == Direction.credit, LedgerLine.amount), else_=0
                 )
             ),
-        ).group_by(LedgerLine.entry_id)
+        )
+        # المرحّل بس — المسودة ناقصة بحكم تعريفها.
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())
+        .group_by(LedgerLine.entry_id)
     ).all()
     report.checked["ledger_entries"] = len(rows)
     for entry_id, debit, credit in rows:

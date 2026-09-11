@@ -24,6 +24,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
 from src.core.money import MONEY
+from src.models.journal import Journal  # noqa: F401 — علاقة `LedgerEntry.journal`
 
 
 class AccountType(str, enum.Enum):
@@ -55,6 +56,21 @@ class AccountNature(str, enum.Enum):
 class Direction(str, enum.Enum):
     debit = "debit"
     credit = "credit"
+
+
+class EntryState(str, enum.Enum):
+    """حالة القيد — مسودة، مرحّل، ملغي (نفس دورة أودو).
+
+    المسودة حرّة: تكتب سطر واحد، تسيب القيد ناقص، ترجعله بكره تكمّله. الترحيل هو
+    الخطوة اللي بتطلب التوازن وبتصرف الرقم، لأنه هو اللي بيدخل الحسابات فعلاً.
+
+    القيمة نص مش `Enum` في القاعدة عن قصد: العمود ده بيتضاف على جدول فيه داتا عن طريق
+    `_ADDED_COLUMNS` (ALTER TABLE ADD COLUMN)، و`CREATE TYPE` مابيعديش من هناك.
+    """
+
+    draft = "draft"
+    posted = "posted"
+    cancelled = "cancelled"
 
 
 class Account(Base):
@@ -104,12 +120,30 @@ class Account(Base):
 
 
 class LedgerEntry(Base):
-    """Immutable event header. ≥2 lines, Σdebit = Σcredit (enforced in service)."""
+    """ترويسة القيد: دفتره، حالته، رقمه، وسطوره.
+
+    المرحّل لازم يكون متوازن (Σمدين = Σدائن) — بيتفرض في `ledger_service.post_entry`
+    مش هنا. المسودة معفية من القاعدة دي عن قصد؛ شوف `EntryState`.
+    """
 
     __tablename__ = "ledger_entry"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     entry_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    # الدفتر اللي القيد بيعيش فيه (المرحلة ١). NULL للقيود القديمة قبل سكربت النقل —
+    # `journal_registry.resolve` بيحدده من `entry_type` عند الترحيل.
+    journal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("journal.id"), nullable=True, index=True
+    )
+    # الحالة. الافتراضي `posted` عن قصد: كل مستند بيكتب قيده جاهز ومرحّل، والمسودة
+    # حاجة بيعملها اللي بيكتب قيد بإيده. فالافتراضي ده معناه إن مافيش موديول اتغيّر.
+    state: Mapped[str] = mapped_column(
+        String(12), nullable=False, default=EntryState.posted.value
+    )
+    # رقم القيد المتسلسل في دفتره (`INV/2026/00001`). بيتصرف عند الترحيل بس — المسودة
+    # مالهاش رقم عشان الأرقام تفضل متصلة من غير فجوات لمسودة اتمسحت.
+    number: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     description: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     # Accounting/business date (005). User-chosen; the trial balance filters by this, NOT
     # created_at (opening balances are intentionally back-dated). NULL for legacy posts,
@@ -138,6 +172,7 @@ class LedgerEntry(Base):
     lines: Mapped[list[LedgerLine]] = relationship(
         back_populates="entry", cascade="all, save-update"
     )
+    journal: Mapped["Journal | None"] = relationship("Journal", lazy="joined")
 
 
 class LedgerLine(Base):

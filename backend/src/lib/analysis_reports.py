@@ -25,7 +25,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
 from src.models.cost_center import CostCenter
-from src.models.ledger import AccountNature, LedgerLine
+from src.models.ledger import AccountNature, LedgerEntry, LedgerLine
+from src.services import ledger_service
 from src.models.org import Branch
 from src.services.financial_reports_service import _effective_date, effective_nature
 
@@ -47,6 +48,8 @@ def _pnl_lines(db: Session, *, date_from: date | None, date_to: date | None):
     rows = db.scalars(
         select(LedgerLine).options(
             selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())  # المسودة مش ربح ولا خسارة
     ).all()
     for line in rows:
         nature = effective_nature(line.account)

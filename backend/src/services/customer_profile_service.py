@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from src.core.money import ZERO, to_money
 from src.models.customer import MERGED_MARK, Customer, CustomerAccount
 from src.models.ledger import Account, LedgerLine
+from src.services import ledger_service
 from src.models.sales import SalesInvoice, SalesReturn
 from src.models.voucher import Voucher, VoucherKind
 
@@ -44,7 +45,12 @@ def bulk_balances(db: Session, customer_ids: list[int] | None = None) -> dict[in
     stmt = (
         select(CustomerAccount.customer_id, func.coalesce(func.sum(signed), 0))
         .join(Account, Account.id == CustomerAccount.account_id)
-        .join(LedgerLine, LedgerLine.account_id == Account.id, isouter=True)
+        # المرحّل بس، والشرط في ON مش في WHERE عشان الطرف اللي ماتحركش يفضل بصفر.
+        .join(
+            LedgerLine,
+            (LedgerLine.account_id == Account.id) & ledger_service.posted_line_cond(),
+            isouter=True,
+        )
         .group_by(CustomerAccount.customer_id)
     )
     if customer_ids is not None:

@@ -229,6 +229,7 @@ def create_app() -> FastAPI:
         _backfill_branch(engine)
         _migrate_appears_in(engine)
         _ensure_coupon_kind_tiers(engine)
+        _seed_journals(engine)
         _load_permission_overrides()
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
@@ -359,6 +360,15 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("sales_invoice_coupon", "coupon_kind", "VARCHAR(24)"),
     # مرجع المصدر للقيد — استيراد الدفتر من نظام برّه بيتعاد من غير تكرار ولا تخطّي.
     ("ledger_entry", "external_ref", "VARCHAR(60)"),
+    # (المرحلة ١ — دفاتر اليومية) الدفتر والحالة والرقم.
+    #
+    # `state` بيتضاف NULL على كل القديم عن قصد، و`ledger_service.is_posted_sql` بيعامل
+    # NULL على إنه «مرحّل»: المسودة مالهاش وجود قبل المرحلة دي، فكل قيد قديم مرحّل.
+    # سكربت `backfill_journals` بيملاه بـ'posted' وبيدّي كل قيد دفتره ورقمه.
+    ("ledger_entry", "journal_id", "BIGINT"),
+    ("ledger_entry", "state", "VARCHAR(12)"),
+    ("ledger_entry", "number", "VARCHAR(32)"),
+    ("ledger_entry", "posted_at", "TIMESTAMP"),
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
     ("sales_invoice", "client_uuid", "VARCHAR(64)"),
     ("voucher", "client_uuid", "VARCHAR(64)"),
@@ -909,6 +919,26 @@ def _ensure_columns(engine) -> None:
             logging.getLogger("uvicorn.error").info(
                 "ensure column %s.%s skipped: %s", table, column, exc
             )
+
+
+def _seed_journals(engine) -> None:
+    """يزرع دفاتر اليومية القياسية (المرحلة ١) لو لسه مش موجودة. Idempotent.
+
+    عند الإقلاع مش عند أول ترحيل: أول شاشة بتفتح على «الدفاتر» بتلاقيها موجودة، وقايمة
+    فاضية في شاشة إعدادات بتبان زي عطل مش زي «لسه ماحصلش ترحيل».
+    """
+    import logging
+
+    from sqlalchemy.orm import Session
+
+    from src.services import journal_registry
+
+    try:
+        with Session(engine) as db:
+            journal_registry.ensure_seeded(db)
+            db.commit()
+    except Exception as exc:  # pragma: no cover — best-effort
+        logging.getLogger("uvicorn.error").info("seed journals skipped: %s", exc)
 
 
 def _ensure_indexes(engine) -> None:
