@@ -42,6 +42,7 @@ from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
     price_display,  # شاشة معلومات المنتج (031)
     product_points,
     purchases,
+    reconciliation,  # التسوية (المرحلة ٣ — موديل أودو)
     rep_reports,
     reports,
     reps,
@@ -138,6 +139,7 @@ def create_app() -> FastAPI:
     app.include_router(voucher_keys.router, prefix=prefix)
     # General Ledger (005)
     app.include_router(accounting.router, prefix=prefix)
+    app.include_router(reconciliation.router, prefix=prefix)
     # Cost Centers (006)
     app.include_router(cost_centers.router, prefix=prefix)
     # Settings → configurable dropdown lists (013)
@@ -230,6 +232,7 @@ def create_app() -> FastAPI:
         _migrate_appears_in(engine)
         _ensure_coupon_kind_tiers(engine)
         _seed_journals(engine)
+        _mark_reconcilable_accounts(engine)
         _load_permission_overrides()
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
@@ -332,6 +335,10 @@ _ADDED_INDEXES: list[tuple[str, str, str]] = [
     # وكل شاشة حسابات بتصفّي بالحالة.
     ("ix_ledger_entry_journal_id", "ledger_entry", "journal_id"),
     ("ix_ledger_entry_state", "ledger_entry", "state"),
+    # (المرحلة ٣) شاشة المطابقة بتدوّر على المفتوح بس — من غير الفهرس ده بتلف على
+    # كل سطور الدفتر عشان تلاقي عشرين سطر.
+    ("ix_ledger_line_residual", "ledger_line", "amount_residual"),
+    ("ix_ledger_line_full_reconcile", "ledger_line", "full_reconcile_id"),
 ]
 
 
@@ -388,6 +395,11 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("ledger_line", "partner_kind", "VARCHAR(12)"),
     ("ledger_line", "partner_id", "BIGINT"),
     ("ledger_line", "date_maturity", "DATE"),
+    # (المرحلة ٣) المتبقّي والمطابقة. `amount_residual` بيفضل NULL على السطر اللي مش
+    # على حساب بيتقفل — وده غير الصفر اللي معناه «اتقفل».
+    ("ledger_line", "amount_residual", "DECIMAL(18,2)"),
+    ("ledger_line", "full_reconcile_id", "BIGINT"),
+    ("account", "reconcilable", "BOOLEAN DEFAULT FALSE"),
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
     ("sales_invoice", "client_uuid", "VARCHAR(64)"),
     ("voucher", "client_uuid", "VARCHAR(64)"),
@@ -938,6 +950,27 @@ def _ensure_columns(engine) -> None:
             logging.getLogger("uvicorn.error").info(
                 "ensure column %s.%s skipped: %s", table, column, exc
             )
+
+
+def _mark_reconcilable_accounts(engine) -> None:
+    """يعلّم حسابات العملاء والموردين إنها «قابلة للتسوية». Idempotent.
+
+    المنطق نفسه في `reconcile_service.is_reconcilable` بيعتمد على نوع الحساب، فده
+    مش شرط للشغل — بس العمود هو اللي الشاشة بتعرضه وبتفلتر بيه، وحساب ذمم بيقول
+    «مش قابل للتسوية» في شاشة الحسابات بيبقى غلط ظاهر.
+    """
+    import logging
+
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE account SET reconcilable = TRUE "
+                "WHERE account_type IN ('customer_receivable', 'supplier_payable') "
+                "AND (reconcilable IS NULL OR reconcilable = FALSE)"))
+    except Exception as exc:  # pragma: no cover — best-effort
+        logging.getLogger("uvicorn.error").info("reconcilable sync skipped: %s", exc)
 
 
 def _seed_journals(engine) -> None:

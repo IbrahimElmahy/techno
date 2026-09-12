@@ -4,8 +4,10 @@ All three read the same ledger the trial balance reads; nothing is stored. Accou
 classified by their `nature`, so a user-defined chart account lands in the right statement
 without any extra bookkeeping.
 
-Aging applies credits against debits **oldest-first (FIFO)** per party, which is how a
-collector actually settles a customer: the oldest unpaid amount is what ages.
+Aging reads the **residual** left on each line after reconciliation (المرحلة ٣) and buckets
+it by the line's own due date. The line that has no residual yet — written before the phase-3
+backfill ran — falls back to the old rule: apply credits against debits oldest-first per
+party. الاتنين بيشتغلوا جنب بعض في نفس التقرير عشان النقل مايحتاجش وقفة.
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
-from src.models.ledger import Account, AccountNature, LedgerEntry, LedgerLine
+from src.models.ledger import Account, AccountNature, Direction, LedgerEntry, LedgerLine
 from src.services import ledger_service
 from src.models.supplier import Supplier, SupplierAccount
 
@@ -177,17 +179,52 @@ def _aging_for_accounts(
         .where(LedgerLine.account_id.in_(list(wanted)), ledger_service.is_posted_sql())
     ).all()
 
+    # السطر اللي ليه متبقّي بيتقرا من متبقّيه بتاريخ استحقاقه؛ واللي لسه NULL (قبل ما
+    # سكربت النقل يعدّي) بياخد الطريقة القديمة. الفصل ده مؤقت بطبعه وبيفضى لوحده.
     per_party: dict[int, list[tuple[date, Decimal, bool]]] = {}
+    tracked: dict[int, list[tuple[date, Decimal]]] = {}
     for line in rows:
         when = _effective_date(line.entry)
         if when > as_of:
             continue
         party_id = wanted[line.account_id]
+        if line.amount_residual is not None:
+            residual = to_money(line.amount_residual)
+            if residual == ZERO:
+                continue  # اتقفل — مش مستحق ولا بيقدّم عمر
+            # الإشارة: مدين موجب. للدائنين (الحساب دائن بطبعه) بنقلبها عشان «المستحق»
+            # يطلع موجب في التقريرين.
+            signed = residual if line.account.normal_side == Direction.debit else -residual
+            due = line.date_maturity or when
+            tracked.setdefault(party_id, []).append((due, signed))
+            continue
         is_charge = line.direction == line.account.normal_side  # debit for AR, credit for AP
         per_party.setdefault(party_id, []).append(
             (when, to_money(line.amount), is_charge))
 
     result: list[AgingRow] = []
+    rows_by_party: dict[int, AgingRow] = {}
+
+    def bucket_of(when: date) -> str:
+        age = (as_of - when).days
+        return ("0-30" if age <= 30 else "31-60" if age <= 60
+                else "61-90" if age <= 90 else "90+")
+
+    def row_for(party_id: int) -> AgingRow:
+        row = rows_by_party.get(party_id)
+        if row is None:
+            row = AgingRow(party_id=party_id, party_name=names.get(party_id, f"#{party_id}"),
+                           buckets=dict.fromkeys(BUCKETS, ZERO))
+            rows_by_party[party_id] = row
+        return row
+
+    for party_id, items in tracked.items():
+        row = row_for(party_id)
+        for due, signed in items:
+            key = bucket_of(due)
+            row.buckets[key] = to_money(row.buckets[key] + signed)
+            row.total = to_money(row.total + signed)
+
     for party_id, movements in per_party.items():
         movements.sort(key=lambda m: m[0])
         charges: list[list] = []  # [date, remaining]
@@ -205,18 +242,15 @@ def _aging_for_accounts(
             charge[1] -= applied
             credit_pool -= applied
 
-        row = AgingRow(party_id=party_id, party_name=names.get(party_id, f"#{party_id}"),
-                       buckets=dict.fromkeys(BUCKETS, ZERO))
+        row = row_for(party_id)
         for when, remaining in charges:
             if remaining <= ZERO:
                 continue
-            age = (as_of - when).days
-            bucket = ("0-30" if age <= 30 else "31-60" if age <= 60
-                      else "61-90" if age <= 90 else "90+")
+            bucket = bucket_of(when)
             row.buckets[bucket] = to_money(row.buckets[bucket] + remaining)
             row.total = to_money(row.total + remaining)
-        if row.total > ZERO:
-            result.append(row)
+
+    result = [row for row in rows_by_party.values() if row.total != ZERO]
     result.sort(key=lambda r: r.total, reverse=True)
     return result
 

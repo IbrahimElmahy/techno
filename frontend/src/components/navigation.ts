@@ -219,6 +219,9 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/account-statement', label: 'كشف حساب', roles: R(BOOKS), a5: '/entriesreport' },
       { key: '/general-ledger?tab=journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
       { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
+      // تسوية الحسابات — «الفاتورة دي اتدفعت بإيه». مالهاش شاشة عندهم لأن نظامهم
+      // مابيقفلش دفعة على فاتورة أصلاً؛ دي الحاجة اللي أودو بيعملها وهما لأ.
+      { key: '/reconciliation', label: 'تسوية الحسابات', roles: BOOKS },
       {
         key: 'grp-balances',
         label: 'الأرصدة',

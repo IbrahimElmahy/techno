@@ -710,6 +710,10 @@ export default function CustomerProfile() {
               onClick={() => navigate(`/account-statement?account=${data?.account_id}`)}>
               كشف الحساب التفصيلي
             </Button>
+            <Button icon={<LinkOutlined />} disabled={!c?.id}
+              onClick={() => navigate(`/reconciliation?kind=customer&partner=${c?.id}`)}>
+              تسوية المفتوح
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={() => { load(); loadStatement(); }}>
               تحديث
             </Button>

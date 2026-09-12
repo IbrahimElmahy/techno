@@ -208,6 +208,7 @@ _APPEARS_IN = {"trading", "profit_loss", "balance_sheet", "none"}
 def update_account(
     db: Session, *, account_id: int, name: str | None = None, active: bool | None = None,
     appears_in: str | None = None, main_level: str | None = None,
+    reconcilable: bool | None = None,
 ) -> Account:
     """Rename, (de)activate, and/or set «يظهر في». System accounts may be renamed but not
     deactivated if they still have active children (FR-005)."""
@@ -229,6 +230,11 @@ def update_account(
         # («أصول متداولة»، «مصروفات غير مباشرة»)، and an enum we invented would be wrong for the
         # first client whose chart is arranged differently.
         acc.main_level = main_level or None
+    if reconcilable is not None:
+        # (المرحلة ٣) «قابل للتسوية» — سطوره بتتقفل على بعضها في شاشة التسوية. ذمم
+        # العملاء والموردين بتاخده من نوعها؛ ده للحسابات التانية اللي بتتقفل كمان
+        # (شيكات تحت التحصيل، سلف العاملين).
+        acc.reconcilable = reconcilable
     if active is not None:
         if active is False:
             _assert_deactivatable(db, acc)

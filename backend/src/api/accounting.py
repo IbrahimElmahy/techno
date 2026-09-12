@@ -44,6 +44,7 @@ from src.services import (
     journal_service,
     move_registry,
     opening_balance_service,
+    reconcile_service,
     trial_balance_service,
 )
 from src.services.account_routing_service import RoutingError
@@ -83,6 +84,9 @@ class AccountOut(BaseModel):
     active: bool
     appears_in: str | None = None
     main_level: str | None = None
+    # (المرحلة ٣) سطوره بتتقفل على بعضها في شاشة التسوية — ذمم العملاء والموردين
+    # بتاخده من نوعها، والباقي بالإيد.
+    reconcilable: bool = False
     balance: Decimal
     children: list[AccountOut] | None = None
     # An account opened FOR somebody — a customer, a supplier, a safe, a rep's custody — carries
@@ -106,6 +110,8 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
+    # (المرحلة ٣) سطور الحساب ده بتتقفل على بعضها في شاشة التسوية.
+    reconcilable: bool | None = None
     # «يظهر في» — trading | profit_loss | balance_sheet | none, or "" to follow the nature.
     appears_in: str | None = None
     main_level: str | None = None
@@ -187,6 +193,9 @@ class JournalLineOut(BaseModel):
     partner_kind: str | None = None
     partner_id: int | None = None
     date_maturity: date | None = None
+    # `None` = السطر ده مش على حساب بيتقفل؛ صفر = اتقفل بالكامل.
+    amount_residual: Decimal | None = None
+    full_reconcile_id: int | None = None
 
 
 class JournalEntryOut(BaseModel):
@@ -216,6 +225,10 @@ class JournalEntryOut(BaseModel):
     # الاسم بيتجاب مع القايمة في استعلام واحد — الرقم لوحده مابيقولش حاجة للي بيقرا.
     partner_name: str | None = None
     due_date: date | None = None
+    # المرحلة ٣ — حالة الدفع والمتبقّي، محسوبين من مطابقة السطور.
+    payment_state: str | None = None
+    payment_state_label: str | None = None
+    residual: Decimal | None = None
 
 
 class OpeningLineIn(BaseModel):
@@ -277,6 +290,7 @@ def _account_out(db: Session, acc: Account, *, with_children: bool = False,
         normal_side=acc.normal_side, is_postable=acc.is_postable, is_system=acc.is_system,
         active=acc.active, appears_in=acc.appears_in,
         main_level=getattr(acc, "main_level", None),
+        reconcilable=bool(getattr(acc, "reconcilable", False)),
         balance=(balances.get(acc.id, Decimal("0.00")) if balances is not None
                  else chart_service.account_balance(db, acc.id)), children=children,
         owner_name=(owner_names or {}).get(acc.id),
@@ -336,7 +350,9 @@ def _entry_out(entry: LedgerEntry, partner_names: dict | None = None) -> Journal
             JournalLineOut(account_id=l.account_id, direction=l.direction, amount=l.amount,
                            statement=l.statement, cost_center_id=l.cost_center_id,
                            partner_kind=l.partner_kind, partner_id=l.partner_id,
-                           date_maturity=l.date_maturity)
+                           date_maturity=l.date_maturity,
+                           amount_residual=l.amount_residual,
+                           full_reconcile_id=l.full_reconcile_id)
             for l in entry.lines
         ],
         total=total,
@@ -346,6 +362,14 @@ def _entry_out(entry: LedgerEntry, partner_names: dict | None = None) -> Journal
         partner_id=entry.partner_id,
         partner_name=(partner_names or {}).get((entry.partner_kind, entry.partner_id)),
         due_date=entry.invoice_date_due,
+        payment_state=entry.payment_state,
+        payment_state_label=reconcile_service.PAYMENT_STATE_LABEL.get(
+            entry.payment_state or ""),
+        residual=sum(
+            (abs(Decimal(str(l.amount_residual))) for l in entry.lines
+             if l.amount_residual is not None),
+            Decimal("0.00"),
+        ) if any(l.amount_residual is not None for l in entry.lines) else None,
     )
 
 
@@ -429,6 +453,7 @@ def update_account(
         acc = chart_service.update_account(
             db, account_id=account_id, name=body.name, active=body.active,
             appears_in=body.appears_in, main_level=body.main_level,
+            reconcilable=body.reconcilable,
         )
     except ChartError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "chart_conflict", "message": str(exc)})

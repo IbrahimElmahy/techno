@@ -182,7 +182,7 @@ def _build_lines(
 
 
 def _stamp_posted(db: Session, entry: LedgerEntry) -> None:
-    """يحط القيد في دفتره ونوعه ويصرف له رقمه ويعلّمه مرحّل."""
+    """يحط القيد في دفتره ونوعه ويصرف له رقمه ويعلّمه مرحّل، ويفتح متبقّي سطوره."""
     if entry.journal_id is None:
         entry.journal_id = journal_registry.resolve(db, entry.entry_type).id
     if entry.move_type is None:
@@ -193,6 +193,14 @@ def _stamp_posted(db: Session, entry: LedgerEntry) -> None:
         journal = db.get(Journal, entry.journal_id)
         when = entry.entry_date or date.today()
         entry.number = journal_registry.next_number(db, journal=journal, when=when)
+    # (المرحلة ٣) المتبقّي بيتفتح عند الترحيل مش عند الكتابة: المسودة مش في الحسابات،
+    # فسطر عليه متبقّي وهو مسودة كان هيظهر في شاشة المطابقة كفلوس مستحقة ملهاش وجود.
+    #
+    # الاستيراد جوّه الدالة: `reconcile_service` بيقرا من هنا، والاستيراد فوق بيلف.
+    from src.services import reconcile_service
+
+    reconcile_service.stamp_residuals(db, entry)
+    entry.payment_state = reconcile_service.payment_state_of(entry)
 
 
 def post_entry(
@@ -332,6 +340,31 @@ def post_draft(db: Session, *, entry_id: int) -> LedgerEntry:
     return entry
 
 
+def _release_residuals(db: Session, entry: LedgerEntry) -> None:
+    """يقفل باب المطابقة على قيد خارج من الحسابات (رجوع لمسودة أو إلغاء).
+
+    القيد اللي سطوره متقفلة على فواتير مايخرجش من الحسابات وهو سايب المطابقة
+    وراه: الفاتورة التانية هتفضل مكتوب عليها «اتدفعت» بدفعة ملغية. الفك قرار
+    صاحبه، فالنظام بيرفض ويقول اعمل إيه بدل ما يفك من ورا اللي عمل المطابقة.
+    """
+    from src.models.reconcile import PartialReconcile
+
+    ids = [ln.id for ln in entry.lines]
+    if ids:
+        linked = db.scalar(
+            select(PartialReconcile.id).where(
+                PartialReconcile.debit_line_id.in_(ids)
+                | PartialReconcile.credit_line_id.in_(ids)
+            ).limit(1)
+        )
+        if linked is not None:
+            raise LedgerError(
+                "القيد ده متقفل على فواتير — فك المطابقة الأول من شاشة التسوية.")
+    for line in entry.lines:
+        line.amount_residual = None
+    entry.payment_state = None
+
+
 def reset_to_draft(db: Session, *, entry_id: int) -> LedgerEntry:
     """يرجّع قيد مرحّل لمسودة — بيخرج من الحسابات وبيسيب رقمه محجوز.
 
@@ -343,6 +376,7 @@ def reset_to_draft(db: Session, *, entry_id: int) -> LedgerEntry:
         raise LedgerError("القيد مش موجود.")
     if entry.state == EntryState.draft.value:
         return entry
+    _release_residuals(db, entry)
     entry.state = EntryState.draft.value
     entry.posted_at = None
     db.flush()
@@ -354,6 +388,7 @@ def cancel_entry(db: Session, *, entry_id: int) -> LedgerEntry:
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
         raise LedgerError("القيد مش موجود.")
+    _release_residuals(db, entry)
     entry.state = EntryState.cancelled.value
     db.flush()
     return entry

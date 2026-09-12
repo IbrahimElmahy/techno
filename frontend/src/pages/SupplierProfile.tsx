@@ -565,6 +565,10 @@ export default function SupplierProfile() {
               onClick={() => navigate(`/account-statement?account=${data?.account_id}`)}>
               كشف الحساب التفصيلي
             </Button>
+            <Button icon={<LinkOutlined />} disabled={!s?.id}
+              onClick={() => navigate(`/reconciliation?kind=supplier&partner=${s?.id}`)}>
+              تسوية المفتوح
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={() => { load(); loadStatement(); }}>
               تحديث
             </Button>

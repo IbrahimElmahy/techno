@@ -53,6 +53,11 @@ interface InvoiceRecord {
   cash_amount: string;
   credit_amount: string;
   ledger_entry_id: number;
+  // (المرحلة ٣) «وصل منها كام» — من مطابقة الدفعات، مش من `credit_amount` اللي
+  // بيقول «اتباعت بكام أجل» يوم البيع وبس.
+  payment_state?: 'not_paid' | 'partial' | 'paid' | null;
+  payment_state_label?: string | null;
+  residual?: string | null;
 }
 
 /** أسعار صنف واحد بفئاته وخصوماته. */
@@ -487,6 +492,11 @@ export default function Invoices() {
       net: Number(s.net || 0),
       cash_amount: Number(s.cash_amount || 0),
       credit_amount: Number(s.credit_amount || 0),
+      // (المرحلة ٣) الصف الموحّد بينسخ بالاسم، فاللي مش مكتوب هنا بيوصل فاضي مهما
+      // كان الرد كامل — والتحصيل من دول.
+      payment_state: s.payment_state ?? null,
+      payment_state_label: s.payment_state_label ?? null,
+      residual: s.residual ?? null,
       ledger_entry_id: s.ledger_entry_id,
       raw: s,
     }));
@@ -1981,6 +1991,39 @@ export default function Invoices() {
       render: (val: number) => {
         const n = Number(val || 0);
         return <span style={{ color: n > 0 ? '#cf1322' : undefined, fontWeight: n > 0 ? 600 : undefined }}>{money(n)} ج.م</span>;
+      },
+    },
+    {
+      // «الباقي» اللي فوق رقم يوم البيع ومابيتحركش؛ ده بيتحرك مع كل تحصيل.
+      title: 'التحصيل',
+      dataIndex: 'payment_state',
+      key: 'payment_state',
+      width: 120,
+      filters: [
+        { text: 'مدفوعة', value: 'paid' },
+        { text: 'جزئياً', value: 'partial' },
+        { text: 'غير مدفوعة', value: 'not_paid' },
+      ],
+      onFilter: (v: any, r: any) => r.payment_state === v,
+      render: (_: any, r: any) => {
+        if (!r.payment_state) return '-';
+        const color = r.payment_state === 'paid' ? 'green'
+          : r.payment_state === 'partial' ? 'orange' : 'red';
+        const rest = Number(r.residual ?? 0);
+        return (
+          <Tooltip title={rest > 0 ? `متبقّي ${money(rest)} ج.م` : 'مقفولة بالكامل'}>
+            <Tag
+              color={color}
+              style={{ cursor: 'pointer' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/reconciliation?kind=customer&partner=${r.customer_id}`);
+              }}
+            >
+              {r.payment_state_label ?? r.payment_state}
+            </Tag>
+          </Tooltip>
+        );
       },
     },
     {

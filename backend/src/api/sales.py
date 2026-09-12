@@ -9,7 +9,7 @@ from datetime import date
 from typing import Literal
 
 from sqlalchemy import case, delete as sa_delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
@@ -25,13 +25,14 @@ from src.core import clock
 from src.core.db import get_db
 from src.models.catalog import Item, ItemPrice, PriceTier
 from src.models.customer import Customer, CustomerAccount
+from src.models.ledger import LedgerEntry
 from src.models.lookup import LookupOption
 from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse, WarehouseType
-from src.services import coupon_receipt_service, sales_service
+from src.services import coupon_receipt_service, reconcile_service, sales_service
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
@@ -205,6 +206,12 @@ class SalesInvoiceOut(BaseModel):
     credit_amount: Decimal
     cash_account_id: int
     ledger_entry_id: int | None = None
+    # (المرحلة ٣) حالة دفع الفاتورة ومتبقّيها — من مطابقة سطور الدفتر، مش من
+    # `credit_amount`. الفرق: `credit_amount` بيقول «اتباعت بكام أجل»، ودول بيقولوا
+    # «وصل منها كام لحد دلوقتي».
+    payment_state: str | None = None
+    payment_state_label: str | None = None
+    residual: Decimal | None = None
     created_at: str | None = None
     # (030)
     rep_id: int | None = None
@@ -593,7 +600,7 @@ def update_sale(
                             {"code": "edit_blocked", "message": str(exc)})
     inv = _build_sale(db, body, current, replace_invoice_id=sale_id)
     db.commit()
-    return _inv_out(inv, db)
+    return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 
 
 @router.delete("/{sale_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -631,7 +638,7 @@ def create_sale(
 
     inv = _build_sale(db, body, current)
     db.commit()
-    return _inv_out(inv, db)
+    return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 
 
 def _type_labels(db: Session) -> dict[str, str]:
@@ -660,8 +667,31 @@ def _row_names(db: Session, rows: list) -> tuple[dict[int, str], dict[int, str],
     return custs, types, {k: v for k, v in reps.items() if v}
 
 
+def _payment_states(db: Session, rows) -> dict[int, tuple[str | None, Decimal]]:
+    """حالة الدفع والمتبقّي لكل فاتورة — استعلام واحد للصفحة كلها.
+
+    المفتاح هو قيد الفاتورة: هو المستند في موديل أودو، وهو اللي المطابقة بتشتغل
+    على سطوره.
+    """
+    entry_ids = [r.ledger_entry_id for r in rows if r.ledger_entry_id]
+    if not entry_ids:
+        return {}
+    entries = db.scalars(
+        select(LedgerEntry).options(selectinload(LedgerEntry.lines))
+        .where(LedgerEntry.id.in_(entry_ids))
+    ).all()
+    out: dict[int, tuple[str | None, Decimal]] = {}
+    for entry in entries:
+        residual = sum(
+            (abs(Decimal(str(ln.amount_residual))) for ln in entry.lines
+             if ln.amount_residual is not None), Decimal("0.00"))
+        out[entry.id] = (entry.payment_state, residual)
+    return out
+
+
 def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
-             names: tuple[dict[int, str], dict[int, str], dict[int, str]] | None = None
+             names: tuple[dict[int, str], dict[int, str], dict[int, str]] | None = None,
+             payment_states: dict[int, tuple[str | None, Decimal]] | None = None,
              ) -> SalesInvoiceOut:
     coupons: list[InvoiceCouponOut] = []
     if db is not None:
@@ -696,6 +726,10 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net, cash_amount=inv.cash_amount,
         credit_amount=inv.credit_amount, cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
+        payment_state=(payment_states or {}).get(inv.ledger_entry_id or 0, (None, None))[0],
+        payment_state_label=reconcile_service.PAYMENT_STATE_LABEL.get(
+            ((payment_states or {}).get(inv.ledger_entry_id or 0, (None, None))[0]) or ""),
+        residual=(payment_states or {}).get(inv.ledger_entry_id or 0, (None, None))[1],
         created_at=str(inv.created_at) if inv.created_at else None,
         rep_id=inv.rep_id, external_document_number=inv.external_document_number,
         coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
@@ -761,7 +795,8 @@ def list_sales(
     rows = list(db.scalars(stmt).all())
     # مرة واحدة للصفحة كلها — كانت جوّه الحلقة، يعني نداء لكل صف.
     names = _row_names(db, rows)
-    return [_inv_out(i, names=names) for i in rows]
+    states = _payment_states(db, rows)
+    return [_inv_out(i, names=names, payment_states=states) for i in rows]
 
 
 @router.get("/summary", response_model=dict)

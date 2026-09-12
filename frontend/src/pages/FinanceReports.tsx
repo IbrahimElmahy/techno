@@ -14,7 +14,7 @@ import {
   Descriptions,
   Alert,
 } from 'antd';
-import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
+import { ReloadOutlined, PrinterOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTableColumns } from '../components/ColumnSettings';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -207,7 +207,24 @@ const FinanceReports: React.FC = () => {
       ...numberColumn<AgingRow>((r) => r.total),
       render: (v: string) => <b>{money(v)}</b>,
     },
-  ]), [agingParty, aging]);
+    // الرقم في التقرير ده مجموع فواتير بعينها — والزرار ده بيوصّل لها. من غيره
+    // اللي شايف «٤٠ ألف فوق ٩٠ يوم» لازم يفتح شاشة تانية ويدوّر على الطرف بإيده.
+    {
+      title: '',
+      key: 'reconcile',
+      width: 110,
+      render: (_: unknown, r: AgingRow) => (
+        <Button type="link" size="small" icon={<LinkOutlined />}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/reconciliation?kind=${agingParty === 'customers' ? 'customer' : 'supplier'}`
+              + `&partner=${r.party_id}`);
+          }}>
+          تسوية
+        </Button>
+      ),
+    },
+  ]), [agingParty, aging, navigate]);
   const agingCols = useTableColumns('finance-aging', agingColumns as any, {
     locked: ['party_name'],
     export: { name: 'أعمار الديون', rows: agingFilter.filtered },

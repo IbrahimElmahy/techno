@@ -44,6 +44,7 @@ const ItemCard = lazy(() => import('../pages/ItemCard'));
 const StockPermits = lazy(() => import('../pages/StockPermits'));
 const Stocktake = lazy(() => import('../pages/Stocktake'));
 const AccountStatement = lazy(() => import('../pages/AccountStatement'));
+const Reconciliation = lazy(() => import('../pages/Reconciliation'));
 const FixedAssets = lazy(() => import('../pages/FixedAssets'));
 const Employees = lazy(() => import('../pages/Employees'));
 const Departments = lazy(() => import('../pages/Departments'));
@@ -125,6 +126,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/stock-permits" element={<StockPermits />} />
       <Route path="/stocktake" element={<Stocktake />} />
       <Route path="/account-statement" element={<AccountStatement />} />
+      <Route path="/reconciliation" element={<Reconciliation />} />
       <Route path="/fixed-assets" element={<FixedAssets />} />
       <Route path="/employees" element={<Employees />} />
       <Route path="/departments" element={<Departments />} />

@@ -136,6 +136,11 @@ class Account(Base):
     nature: Mapped[AccountNature | None] = mapped_column(Enum(AccountNature), nullable=True)
     is_postable: Mapped[bool] = mapped_column(default=True, nullable=False)
     is_system: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # (المرحلة ٣) الحساب ده بتتقفل سطوره على بعضها؟ — الذمم والدائنين أيوه، الإيراد
+    # والمصروف لأ. زي `account.reconcile` في أودو بالظبط: هو اللي بيحدد أنهي سطور
+    # ليها «متبقّي» وبتظهر في شاشة المطابقة. بيتحط تلقائي على حسابات العملاء
+    # والموردين، وبيتظبط بالإيد لحساب زي «سلف العاملين» أو «شيكات تحت التحصيل».
+    reconcilable: Mapped[bool] = mapped_column(default=False, nullable=False)
     # «يظهر في» (B8) — which statement this account is presented on. Nature already implies the
     # usual answer, so this is the override for the cases where it does not: a contra account, or
     # a memo account the client does not want on either face. NULL = follow the nature.
@@ -245,6 +250,14 @@ class LedgerLine(Base):
     # تاريخ استحقاق السطر. الأعمار بتترتب عليه هو مش على تاريخ القيد: الفاتورة
     # المؤجّلة عمرها بيبدأ من استحقاقها.
     date_maturity: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    # --- المرحلة ٣: المتبقّي والمطابقة ------------------------------------------------
+    # المتبقّي بإشارته: مدين موجب، دائن سالب، وصفر = اتقفل بالكامل. NULL معناها «السطر
+    # ده مش على حساب بيتقفل» (إيراد، مصروف، مخزون) — مش «متبقّيه صفر».
+    amount_residual: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    # المجموعة اللي السطر اتقفل فيها. NULL = لسه مفتوح أو مقفول جزئياً.
+    full_reconcile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("full_reconcile.id"), nullable=True, index=True
+    )
 
     entry: Mapped[LedgerEntry] = relationship(back_populates="lines")
     account: Mapped[Account] = relationship(back_populates="lines")

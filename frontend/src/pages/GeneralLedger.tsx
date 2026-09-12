@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, message, Radio,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
   ReloadOutlined, SearchOutlined, DownloadOutlined, PrinterOutlined,
-  ProfileOutlined, CheckCircleOutlined, EditOutlined, StopOutlined,
+  ProfileOutlined, CheckCircleOutlined, EditOutlined, StopOutlined, LinkOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -85,6 +85,10 @@ interface JournalEntry {
   partner_id: number | null;
   partner_name: string | null;
   due_date: string | null;
+  // (المرحلة ٣) حالة الدفع والمتبقّي — محسوبين من مطابقة السطور.
+  payment_state: 'not_paid' | 'partial' | 'paid' | null;
+  payment_state_label: string | null;
+  residual: string | null;
 }
 
 interface TrialRow {
@@ -606,6 +610,22 @@ function JournalTab() {
       ...textColumn(entries, (e: JournalEntry) => e.partner_name ?? ''),
       render: (n: string | null, r: JournalEntry) =>
         (n ? <Tag color={PARTNER_COLOR[r.partner_kind ?? 'customer']}>{n}</Tag> : '-') },
+    { title: 'الدفع', dataIndex: 'payment_state', key: 'payment_state', width: 120,
+      ...choiceColumn<JournalEntry>(
+        [{ text: 'مدفوعة', value: 'paid' }, { text: 'جزئياً', value: 'partial' },
+         { text: 'غير مدفوعة', value: 'not_paid' }],
+        (e, v) => e.payment_state === v),
+      render: (_: unknown, r: JournalEntry) => {
+        if (!r.payment_state) return '-';
+        const color = r.payment_state === 'paid' ? 'green'
+          : r.payment_state === 'partial' ? 'orange' : 'red';
+        const rest = Number(r.residual ?? 0);
+        return (
+          <Tooltip title={rest > 0 ? `متبقّي ${egp(rest)}` : 'مقفولة بالكامل'}>
+            <Tag color={color}>{r.payment_state_label ?? r.payment_state}</Tag>
+          </Tooltip>
+        );
+      } },
     { title: 'البيان', dataIndex: 'description', key: 'description',
       ...textColumn(entries, (e: JournalEntry) => e.description) },
     { title: 'الحركات', dataIndex: 'lines', key: 'lines',
@@ -644,6 +664,15 @@ function JournalTab() {
         const reversed = entries.some((e) => e.reverses_entry_id === r.id);
         return (
           <Space size={0}>
+            {r.partner_id && r.partner_kind && (
+              <Tooltip title="افتح المفتوح على الطرف ده وقفله">
+                <Button type="link" icon={<LinkOutlined />}
+                  onClick={() => navigate(
+                    `/reconciliation?kind=${r.partner_kind}&partner=${r.partner_id}`)}>
+                  تسوية
+                </Button>
+              </Tooltip>
+            )}
             {!r.reverses_entry_id && !reversed && (
               <Button type="link" danger icon={<RollbackOutlined />}
                 onClick={() => handleReverse(r)}>عكس</Button>
@@ -673,6 +702,7 @@ function JournalTab() {
     { title: 'التاريخ', value: (e: JournalEntry) => e.date ?? '' },
     { title: 'النوع', value: (e: JournalEntry) => entryTypeLabel(e.entry_type) },
     { title: 'الشريك', value: (e: JournalEntry) => e.partner_name ?? '' },
+    { title: 'الدفع', value: (e: JournalEntry) => e.payment_state_label ?? '' },
     { title: 'البيان', value: (e: JournalEntry) => e.description },
     { title: 'الفرع', value: (e: JournalEntry) => branchName(e.branch_id) },
     { title: 'الحركات', value: (e: JournalEntry) => (e.lines || []).length },

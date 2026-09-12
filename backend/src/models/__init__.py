@@ -33,6 +33,8 @@ from src.models.manufacturing import (  # noqa: E402
     ManufacturingOrderConsumption,
     ManufacturingOrderResource,
 )
+# التسوية (المرحلة ٣ — موديل أودو).
+from src.models.reconcile import FullReconcile, PartialReconcile  # noqa: E402
 from src.models.org import Branch, Governorate, HeadOffice, Territory
 from src.models.purchasing import (  # noqa: E402
     PurchaseInvoice,
@@ -111,4 +113,5 @@ __all__ = [
     "PayrollRun", "PayrollLine", "PayrollLineDetail", "PayrollRemittance",
     "Owner",
     "Journal", "JournalSequence",
+    "FullReconcile", "PartialReconcile",
 ]
