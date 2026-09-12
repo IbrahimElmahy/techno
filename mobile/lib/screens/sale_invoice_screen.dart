@@ -21,7 +21,14 @@ import 'sale_coupons_section.dart';
 /// يعرف وهو في الشارع، مش بديل عنها: الجهاز ممكن يكون بياناته قديمة، والسيرفر هو اللي
 /// عنده الحقيقة ساعة الترحيل.
 class SaleInvoiceScreen extends StatefulWidget {
-  const SaleInvoiceScreen({super.key});
+  const SaleInvoiceScreen({super.key, this.existing});
+
+  /// صف فاتورة **لسه في الطابور** بيتعدّل، أو `null` لفاتورة جديدة.
+  ///
+  /// اللي اترفعت مابتتفتحش هنا خالص: بقت مستند على السيرفر بقيد ومخزون اتحرّك، وتعديلها
+  /// على الجهاز بيخلّي الورقة اللي في إيد العميل تقول حاجة والدفتر يقول غيرها. التصحيح
+  /// بعد الرفع بيتعمل بمرتجع من المكتب — الاتنين بيبانوا.
+  final Map<String, Object?>? existing;
 
   @override
   State<SaleInvoiceScreen> createState() => _SaleInvoiceScreenState();
@@ -97,11 +104,84 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   bool get _headerOpen =>
       _headerOpenOverride ?? (_customer == null || _family == null);
 
+  /// المتاح في العربية لكل صنف — كاش العهدة ناقص اللي اتباع ولسه في الطابور.
+  ///
+  /// بيتقري وقت العرض عشان السطر يقول رقمه وهو مكتوب، مش عند الحفظ بس. الخانة بتتكتب
+  /// بالإيد بعد ما السطر يتضاف، فالحد اللي اتفرض وقت الإضافة مابيمنعش حاجة بعدها.
+  Map<int, double> _free = {};
+
+  /// رقم الفاتورة اللي بتتعدّل على الجهاز — `null` يعني فاتورة جديدة.
+  int? get _editingId => widget.existing?['local_id'] as int?;
+  bool get _isEditing => _editingId != null;
+
   @override
   void initState() {
     super.initState();
     _loadRepInfo();
+    _loadFree();
+    if (_isEditing) _loadExisting();
   }
+
+  Future<void> _loadFree() async {
+    // سطور الفاتورة اللي بتتعدّل مابتتخصمش من المتاح — اللي بيتكتب دلوقتي بياخد مكانها.
+    final free = await LocalDb.instance
+        .availableForSaleAll(exceptInvoiceLocalId: _editingId);
+    if (!mounted) return;
+    setState(() => _free = free);
+  }
+
+  /// بترجّع الفاتورة اللي في الطابور للشاشة زي ما اتكتبت.
+  Future<void> _loadExisting() async {
+    final r = widget.existing!;
+    final lines = await LocalDb.instance.saleInvoiceLines(_editingId!);
+    final all = await LocalDb.instance.customers(limit: 100000);
+    CustomerRef? cust;
+    for (final c in all) {
+      if (c.id == r['customer_id'] as int?) { cust = c; break; }
+    }
+    if (!mounted) return;
+    setState(() {
+      _customer = cust;
+      _family = r['family'] as String?;
+      _cash.text = _trim((r['cash_amount'] as num?)?.toDouble() ?? 0);
+      _notes.text = (r['notes'] as String?) ?? '';
+      _lines
+        ..clear()
+        ..addAll(lines);
+      for (final l in _lines) {
+        _qtyCtl[l.itemId] = TextEditingController(text: _trim(l.quantity));
+        _priceCtl[l.itemId] = TextEditingController(text: _trim(l.unitPrice));
+        _discCtl[l.itemId] =
+            TextEditingController(text: _trim(l.variableDiscountPct));
+      }
+      _coupons
+        ..clear()
+        ..addAll(_couponsFromJson(r['coupons'] as String?));
+    });
+  }
+
+  List<SaleCouponRow> _couponsFromJson(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return const [];
+    try {
+      return [
+        for (final e in (jsonDecode(raw) as List))
+          SaleCouponRow(
+            kind: (e as Map)['coupon_kind'] as String?,
+            serialFrom: '${e['serial_from'] ?? ''}',
+            serialTo: '${e['serial_to'] ?? ''}',
+          )
+      ];
+    } catch (_) {
+      // صف كوبونات مش مقروء مايوقّفش تعديل الفاتورة — بيتساب فاضي والمندوب بيكتبه.
+      return const [];
+    }
+  }
+
+  /// المتاح للصنف ده. الصنف اللي مش في العهدة أصلاً = صفر — وده منع، مش «مش عارف»:
+  /// السيرفر هيرفضه بنفس الحساب.
+  double _freeOf(int itemId) => _free[itemId] ?? 0;
+
+  bool _isOver(SaleDraftLine l) => l.quantity > _freeOf(l.itemId) + 0.0001;
 
   /// صناديقه واسمه من الكاش — من غير شبكة، زي كل حاجة تانية في الشاشة دي.
   Future<void> _loadRepInfo() async {
@@ -255,6 +335,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         });
       },
     );
+    // الطابور اتغيّر بالإضافة؟ لأ — بس المتاح المعروض تحت السطر بيتحسب من `_free`،
+    // وسطر اتضاف دلوقتي لازم يلاقيه محمّل.
+    await _loadFree();
   }
 
   /// بوباب «الفلوس داخلة فين» — عرض بس، وبيرجّع هل المندوب أكّد.
@@ -319,22 +402,115 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     return ok == true;
   }
 
-  /// بتتأكد إن كل سطر لسه جوّه المتاح — بيتقاس وقت الحفظ كمان مش عند الإضافة بس، لأن
-  /// الكمية بتتعدّل بالإيد بعد ما السطر يتضاف.
-  Future<String?> _overCustody() async {
-    for (final l in _lines) {
-      final free = await LocalDb.instance.availableForSale(l.itemId);
-      if (l.quantity > free + 0.0001) {
-        return '${l.itemName}: المتاح في العربية ${_qty(free)} بس.';
+  /// السطور اللي كميتها أكتر من المتاح في العربية — **كلها**، مش أول واحد.
+  ///
+  /// بيتقاس وقت الحفظ كمان مش عند الإضافة بس، لأن الكمية بتتعدّل بالإيد بعد ما السطر
+  /// يتضاف. وبيرجّع القايمة كلها عشان المندوب يعرف كل اللي محتاج يقلّله مرة واحدة بدل
+  /// ما يصلّح سطر ويكتشف اللي بعده.
+  Future<List<_OverLine>> _overCustody() async {
+    // بتتقري من القاعدة من جديد مش من `_free` — الطابور ممكن يكون اتغيّر (فاتورة تانية
+    // اترفعت أو اتمسحت) والشاشة مفتوحة.
+    final free = await LocalDb.instance.availableForSaleAll();
+    if (mounted) setState(() => _free = free);
+    return [
+      for (final l in _lines)
+        if (l.quantity > (free[l.itemId] ?? 0) + 0.0001)
+          _OverLine(l, (free[l.itemId] ?? 0))
+    ];
+  }
+
+  /// بوباب المنع: الفاتورة مابتتعملش بصنف مش موجود، والرسالة بتقول الكام ناقص وبتعرض
+  /// تقلّل الكميات للمتاح.
+  ///
+  /// كانت SnackBar بتعدّي في تلات ثواني تحت خانة الدفع. والنتيجة كانت إن الفاتورة
+  /// تقعد في الطابور وترجع بخطأ إنجليزي عند المزامنة بعد ساعات — بعد ما المندوب يكون
+  /// سلّم البضاعة وقال للعميل إن الفاتورة اتعملت. المنع لازم يبقى واقف قدامه وهو عند
+  /// العميل.
+  Future<void> _warnOverCustody(List<_OverLine> over) async {
+    final capped = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.danger),
+            SizedBox(width: 8),
+            Expanded(child: Text('الكمية أكتر من اللي في عربيتك')),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('الفاتورة مش هتتعمل كده — قلّل الكميات دي للمتاح:',
+                  style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 10),
+              ...[
+                for (final o in over)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '• ${o.line.itemName}\n'
+                      '   طالب ${_qty(o.line.quantity)} — المتاح ${_qty(o.free)}'
+                      '${o.free <= 0 ? ' (خلص من العربية)' : ''}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+              ],
+              const SizedBox(height: 4),
+              const Text(
+                  'لو شايف إن البضاعة معاك فعلاً، اعمل «مزامنة البيانات» الأول — '
+                  'أرصدة العربية بتتحدّث منها.',
+                  style: TextStyle(fontSize: 11, color: Colors.black54)),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dctx, false),
+                child: const Text('هعدّل بنفسي')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dctx, true),
+                child: const Text('قلّل للمتاح')),
+          ],
+        ),
+      ),
+    );
+    if (capped != true || !mounted) return;
+    setState(() {
+      for (final o in over) {
+        // المتاح صفر ⇒ السطر بيتشال خالص. سطر بكمية صفر مستند مالوش معنى، والحفظ
+        // بيرفضه بعد كده برسالة تانية — فالتقليل لازم يوصّل لفاتورة تتحفظ فعلاً.
+        if (o.free <= 0) {
+          _lines.removeWhere((l) => l.itemId == o.line.itemId);
+          _qtyCtl.remove(o.line.itemId)?.dispose();
+        } else {
+          o.line.quantity = o.free;
+          _syncQtyField(o.line);
+        }
       }
-    }
-    return null;
+    });
   }
 
   /// الصفوف المكتوبة بس، JSON — الفاضي بيتساب ومابيتخزّنش.
   String? _couponsJson() {
     final rows = [for (final c in _coupons) if (!c.isEmpty) c.toJson()];
     return rows.isEmpty ? null : jsonEncode(rows);
+  }
+
+  /// محاولة رفع فورية — بسقف ٨ ثواني. بترجّع هل وصلت النظام فعلاً.
+  ///
+  /// الفاتورة محفوظة خلاص والرفع ده مكسب زيادة. **والسقف مقصود**: الرفع العادي مهلته
+  /// ٩٠ ثانية عشان الشبكة الضعيفة تعدّي، لكن هنا المندوب واقف والعميل مستني الورقة —
+  /// شبكة زفت مش سبب يوقّفه، والطابور بيرفع في المزامنة على مهله.
+  Future<bool> _pushNow() async {
+    try {
+      return await ApiClient.instance
+              .pushSaleInvoices()
+              .timeout(const Duration(seconds: 8), onTimeout: () => 0) >
+          0;
+    } catch (_) {
+      return false; // الطابور بيحاول تاني في شاشة المزامنة
+    }
   }
 
   Future<void> _save() async {
@@ -383,7 +559,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     }
     if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
     final over = await _overCustody();
-    if (over != null) return _say(over);
+    if (over.isNotEmpty) return _warnOverCustody(over);
     // **المدفوع ممكن يزيد عن أي حاجة — والسيرفر بيقبلها ويقيّدها صح.**
     //
     // `sales_service.create_sale` بيحسب الآجل = المستحق − النقدي، والسالب مقصود
@@ -447,6 +623,33 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // بيخلّي السيرفر يعرف الفاتورة دي لو الرفع اتعاد بعد انقطاع.
       final uuid = 'inv-${DateTime.now().microsecondsSinceEpoch}-'
           '${Random().nextInt(1 << 32).toRadixString(16)}';
+      if (_isEditing) {
+        final ok = await LocalDb.instance.updateQueuedSaleInvoice(
+          localId: _editingId!,
+          customerId: _customer!.id,
+          customerName: _customer!.name,
+          family: _family,
+          invoiceDate: _date.toIso8601String().substring(0, 10),
+          cashAmount: _cashAmount,
+          creditAmount: _credit,
+          total: _total,
+          notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+          couponsJson: _couponsJson(),
+          lines: _lines,
+        );
+        if (!mounted) return;
+        if (!ok) {
+          // اترفعت وهو بيعدّل. التعديل مابيتكتبش فوق مستند موجود على السيرفر — الورقة
+          // اللي في إيد العميل والدفتر لازم يقولوا نفس الرقم.
+          _say('الفاتورة اترفعت للنظام وهي بتتعدّل — التعديل اتلغى. كلّم المكتب لو فيها غلط.');
+          Navigator.pop(context, true);
+          return;
+        }
+        await _pushNow();
+        if (!mounted) return;
+        Navigator.pop(context, true);
+        return;
+      }
       final localId = await LocalDb.instance.saveSaleInvoice(
         clientUuid: uuid,
         customerId: _customer!.id,
@@ -469,23 +672,26 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // **والسقف مقصود.** الرفع العادي مهلته ٩٠ ثانية عشان الشبكة الضعيفة تعدّي؛ لكن هنا
       // المندوب واقف بيتفرّج على «بيحفظ…» والعميل مستني الورقة. شبكة زفت مش سبب يوقّفه —
       // الطابور بيرفع في المزامنة على مهله.
-      var pushed = false;
-      try {
-        pushed = await ApiClient.instance
-                .pushSaleInvoices()
-                .timeout(const Duration(seconds: 8), onTimeout: () => 0) >
-            0;
-      } catch (_) {/* الطابور بيحاول تاني في شاشة المزامنة */}
+      final pushed = await _pushNow();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(pushed ? 'الفاتورة اترفعت ✔' : 'الفاتورة اتحفظت — هترفع مع المزامنة'),
-        backgroundColor: AppColors.success,
-      ));
-      // الطباعة على طول بعد الحفظ: المندوب لسه واقف عند العميل، والورقة دي سببها.
-      // الصف بيتقرا من القاعدة عشان الورقة تشيل رقم المستند لو الرفع نجح دلوقتي.
+      // **الورقة مابتطلعش غير لما الفاتورة توصل النظام.**
+      //
+      // الورقة اللي بتتطبع من مسودّة بتدّعي فاتورة مالهاش وجود عند المكتب: العميل ماسك
+      // ورقة، والفاتورة ممكن تترفض عند الرفع (رصيد مايكفيش مثلاً) أو تتعدّل قبل ما
+      // ترفع — والورقة اللي في إيده ساعتها بتقول حاجة تانية خالص. اللي في الطابور
+      // بيتعدّل ومابيتطبعش، واللي وصل بيتطبع ومابيتعدّلش.
+      // الصف بيتقرا من القاعدة: الورقة محتاجة رقم المستند اللي السيرفر ردّ بيه، و**هو**
+      // اللي بيقول إن دي هي اللي وصلت — `pushed` بيقول إن الطابور رفع حاجة، مش إن دي
+      // اللي رفعت. الفرق بيبان لما يبقى في الطابور فاتورة تانية بتعدّي وواحدة بترفض.
       final rows = await LocalDb.instance.saleInvoices();
       final saved = rows.firstWhere((r) => r['local_id'] == localId, orElse: () => {});
+      final landed = pushed && (saved['synced'] as int?) == 1;
       if (!mounted) return;
+      if (!landed) {
+        _say('الفاتورة اتحفظت على الجهاز — الطباعة بعد ما ترفع. تقدر تعدّلها لحد ساعتها.');
+        Navigator.pop(context, true);
+        return;
+      }
       if (saved.isNotEmpty) {
         await Navigator.push(
           context,
@@ -566,7 +772,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('فاتورة بيع')),
+      appBar: AppBar(title: Text(_isEditing ? 'تعديل فاتورة' : 'فاتورة بيع')),
       // عمود، مش `ListView` واحدة للشاشة كلها.
       //
       // كانت الترويسة والسطور والإجماليات كلهم في قايمة واحدة بتلفّ: مع ٢٠ صنف
@@ -841,6 +1047,30 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         color: AppColors.primary)),
               ],
             ),
+            // المنع بيتقال والسطر مكتوب، مش عند الحفظ بس — الكمية بتتكتب بالإيد هنا،
+            // فالحد اللي اتفرض وقت الإضافة مابيمنعش حاجة بعدها.
+            if (_isOver(l))
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        size: 14, color: AppColors.danger),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _freeOf(l.itemId) <= 0
+                            ? 'الصنف ده خلص من عربيتك — الفاتورة مش هتتحفظ بيه'
+                            : 'المتاح في عربيتك ${_qty(_freeOf(l.itemId))} بس',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.danger,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 6),
             Row(
               children: [
@@ -1286,6 +1516,13 @@ String _money(double v) => v.toStringAsFixed(2);
 String _trim(double v) {
   final s = v.toStringAsFixed(3);
   return s.replaceFirst(RegExp(r'\.?0+$'), '');
+}
+
+/// سطر كميته أكتر من المتاح، ومعاه المتاح وقت القياس.
+class _OverLine {
+  _OverLine(this.line, this.free);
+  final SaleDraftLine line;
+  final double free;
 }
 
 String _qty(double v) => _trim(v);

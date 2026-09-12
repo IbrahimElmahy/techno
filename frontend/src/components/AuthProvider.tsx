@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Spin } from 'antd';
-import { api, clearApiCache } from '../api/client';
+import { api, clearApiCache, getApiBaseURL } from '../api/client';
 
 // A session that never interrupts work: the token is long-lived on the server, and we
 // re-issue it on every app load and every few hours while the tab stays open. So anyone
@@ -75,7 +75,7 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
 
     // Global listener for 401/403 auto-logout events (from Axios interceptor)
     const handleUnauthorized = () => {
-      logout();
+      logout(false);
     };
 
     window.addEventListener('api-unauthorized', handleUnauthorized);
@@ -118,7 +118,21 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     setIsAuthenticated(true);
   };
 
-  const logout = () => {
+  const logout = (releaseDevice = true) => {
+    // نسيب مكان الجهاز فاضي على السيرفر.
+    //
+    // بـ`fetch` مش بـ`api` عن قصد: الـinterceptor بيرمي `api-unauthorized` على أي 401،
+    // واللي بينده `logout` هو نفسه الـinterceptor — فطلب بيرجع 401 هنا كان هيدخلنا في
+    // لفة لا نهائية. و`releaseDevice` بتبقى false لما الخروج أصلاً سببه إن السيرفر قفل
+    // الجلسة، فمفيش حاجة تتفضّى.
+    const t = localStorage.getItem('token');
+    if (releaseDevice && t) {
+      fetch(`${getApiBaseURL()}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t}` },
+        keepalive: true,
+      }).catch(() => {});
+    }
     clearApiCache();
     localStorage.removeItem('token');
     localStorage.removeItem('user');

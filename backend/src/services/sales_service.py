@@ -173,9 +173,12 @@ def _assert_lines_available(
                     f"المتاح {available} أقل من المطلوب {needed} — فيه {held} محجوزة لعميل تاني "
                     f"(صنف {item_id}، {kind.value} {loc_id})."
                 )
+            # نفس جملة `post_movement` بالحرف — الرفض ده بيسبقه بخطوة واحدة، ومالوش
+            # سبب يتكلّم بلغة تانية. اللي كان مكتوب هنا («No-negative-stock: on-hand 0
+            # < requested out 5 (item 2063, warehouse 37)») كان بيوصل للمندوب في شاشة
+            # المزامنة على تليفونه بالشكل ده بالظبط: رقم صنف مايعرفوش وجملة إنجليزية.
             raise stock_service.StockError(
-                f"No-negative-stock: on-hand {on_hand} < requested out {needed} "
-                f"(item {item_id}, {kind.value} {loc_id})."
+                stock_service.not_enough_message(db, item_id, kind, loc_id, available, needed)
             )
 
 

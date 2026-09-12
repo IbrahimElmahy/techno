@@ -147,8 +147,23 @@ api.interceptors.response.use(
 
       // Handle 401 Unauthorized / 403 Forbidden -> Session Expired (FR-004)
       if (status === 401 || status === 403) {
-        // Dispatch global event so AuthProvider can intercept and log out
-        window.dispatchEvent(new CustomEvent('api-unauthorized', { detail: { status } }));
+        // الحساب لجهاز واحد: الدخول من جهاز تاني بيقفل ده. لازم يبان السبب — «انتهت
+        // الجلسة» في الحالة دي بيخلّي الناس تفضل تحاول تدخل وهي مش فاهمة إن حد تاني
+        // فاتح بنفس الحساب.
+        const replaced = response.data?.detail?.code === 'session_replaced';
+        window.dispatchEvent(new CustomEvent('api-unauthorized', {
+          detail: { status, code: replaced ? 'session_replaced' : undefined },
+        }));
+        if (replaced) {
+          notification.warning({
+            message: 'تم فتح الحساب من جهاز آخر',
+            description: response.data?.detail?.message
+              || 'الحساب يعمل على جهاز واحد فقط — تم إنهاء الجلسة هنا.',
+            placement: 'topLeft',
+            duration: 8,
+          });
+          return Promise.reject(error);
+        }
       }
 
       // Handle server validation/business logic violations (e.g., negative stock, Principle XI).

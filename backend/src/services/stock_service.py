@@ -105,7 +105,7 @@ def _label(db, location_kind: LocationKind, location_id: int) -> str:
     return f"عهدة #{location_id}"
 
 
-def _not_enough(db, item_id: int, location_kind: LocationKind, location_id: int,
+def not_enough_message(db, item_id: int, location_kind: LocationKind, location_id: int,
                 available, wanted) -> str:
     """رسالة «الرصيد مايكفيش» — واحدة للنظام كله.
 
@@ -158,7 +158,7 @@ def post_movement(
     if direction == StockDirection.out and not allow_negative:
         current = on_hand(db, item_id, location_kind, location_id)
         if current - q < ZERO_QTY:
-            raise StockError(_not_enough(db, item_id, location_kind, location_id, current, q))
+            raise StockError(not_enough_message(db, item_id, location_kind, location_id, current, q))
     mv = StockMovement(
         item_id=item_id,
         location_kind=location_kind,

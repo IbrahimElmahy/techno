@@ -71,6 +71,8 @@ interface StockRow {
   category: string | null;
   unit_of_measure: string | null;
   on_hand: string;
+  /** المحجوز على أذونات تحويل معلّقة طالعة من نفس المصدر — مش متاح للتحويل دلوقتي. */
+  pending_out?: string;
 }
 
 interface TransferLine {
@@ -274,7 +276,14 @@ export default function Transfers() {
   const addItem = (itemId: number) => {
     const row = sourceStock.find((s) => s.item_id === itemId);
     if (!row) return;
-    const available = Number(row.on_hand || 0);
+    // **المتاح = الرصيد ناقص المتعهّد عليه على أذونات معلّقة.**
+    //
+    // الإذن مابيحرّكش مخزون لحد الاعتماد، فالرصيد بيفضل قايل إن البضاعة موجودة. واللي
+    // بيكتب الإذن التاني بيلاقيها متاحة وهي متعهّدة خلاص — الاتنين بيتحفظوا، وواحد منهم
+    // بيقع على اللي بيعتمد بعدين وهو مش صاحب الغلطة. الخصم هنا بيمنع التعهّد المزدوج من
+    // أوّله بدل ما يتصحّح عند الاعتماد.
+    const available = Math.max(
+      0, Number(row.on_hand || 0) - Number(row.pending_out || 0));
     const existing = lines.find((l) => l.item_id === itemId);
     if (existing) {
       flashExistingItem(itemId);
@@ -316,7 +325,7 @@ export default function Transfers() {
     if (line && value != null && value > line.available) {
       message.warning(line.available > 0
         ? `«${line.name}»: المتاح ${qty(line.available)} — اتسجّلت ${qty(line.available)}.`
-        : `«${line.name}»: مفيش رصيد في المخزن المصدر.`);
+        : `«${line.name}»: مفيش رصيد متاح في المصدر — ممنوع تحويل صنف مش موجود.`);
     }
     setLines((prev) => prev.map((l) => (l.key === key
       ? { ...l, quantity: value == null ? null : Math.max(0, Math.min(l.available, value)) } : l)));
@@ -411,14 +420,91 @@ export default function Transfers() {
     } catch (err) { console.error(err); }
   };
 
+  /** المتاح دلوقتي لكل صنف في المصدر — الرصيد ناقص المتعهّد على أذونات معلّقة تانية. */
+  const freshAvailability = async (): Promise<Record<number, number> | null> => {
+    if (!source) return null;
+    const { kind, id } = parseLoc(source);
+    try {
+      const res = await api.get('/api/v1/stock/by-location', {
+        params: {
+          location_kind: kind, location_id: id, only_available: false,
+          // الإذن اللي بيتعدّل دلوقتي سطوره متحسوبة في المعلّق وهي بتاعته هو — لو
+          // اتخصمت عليه كمان يبقى بيتحاسب مرتين ومايقدرش يحفظ نفسه زي ما هو.
+          ...(editing?.id ? { exclude_transfer_id: editing.id } : {}),
+        },
+      });
+      const rows: StockRow[] = res.data || [];
+      setSourceStock(rows.filter((r) =>
+        Number(r.on_hand || 0) - Number(r.pending_out || 0) > 0));
+      const map: Record<number, number> = {};
+      rows.forEach((r) => {
+        map[r.item_id] = Math.max(
+          0, Number(r.on_hand || 0) - Number(r.pending_out || 0));
+      });
+      setLines((prev) => prev.map((l) => ({ ...l, available: map[l.item_id] ?? 0 })));
+      return map;
+    } catch (err) {
+      // مقدرناش نقرا — مابنمنعش على أساس معلومة مش موجودة. السيرفر بيرفض الحركة
+      // السالبة عند الاعتماد على أي حال، والحد المحلي راحة مش صحة.
+      console.error(err);
+      return null;
+    }
+  };
+
+  /** بوباب المنع: إذن مايتكتبش بصنف مش موجود، وبيعرض يقلّل الكميات للمتاح. */
+  const warnOverAvailable = (
+    over: { line: TransferLine; free: number }[],
+  ) => {
+    Modal.confirm({
+      title: 'ممنوع تحويل صنف مش موجود',
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      width: 520,
+      content: (
+        <div>
+          <div style={{ marginBottom: 8 }}>الكميات دي أكتر من المتاح في المصدر — قلّلها:</div>
+          {over.map((o) => (
+            <div key={o.line.key} style={{ marginBottom: 4 }}>
+              • <b>{o.line.name}</b> — مطلوب {qty(Number(o.line.quantity || 0))}، المتاح{' '}
+              {qty(o.free)}
+              {o.free <= 0 ? ' (مفيش رصيد متاح)' : ''}
+            </div>
+          ))}
+          <div style={{ marginTop: 10, fontSize: 12, color: '#888' }}>
+            المتاح هنا بعد خصم اللي متعهّد عليه على أذونات تحويل لسه مستنية الاعتماد.
+          </div>
+        </div>
+      ),
+      okText: 'قلّل للمتاح',
+      cancelText: 'هعدّل بنفسي',
+      onOk: () => {
+        setLines((prev) => prev
+          // الصنف اللي مفيش منه حاجة بيتشال — سطر بكمية صفر مايترحّلش، والتقليل لازم
+          // يوصّل لإذن يتحفظ فعلاً مش لإذن يترفض برسالة تانية.
+          .filter((l) => !over.some((o) => o.line.key === l.key && o.free <= 0))
+          .map((l) => {
+            const hit = over.find((o) => o.line.key === l.key);
+            return hit ? { ...l, available: hit.free, quantity: hit.free } : l;
+          }));
+      },
+    });
+  };
+
   const handleSubmit = async () => {
     if (!source || !dest) { message.warning('اختر المصدر والوجهة أولاً'); return; }
     if (sameLocation) { message.error('لا يمكن التحويل إلى نفس الموقع'); return; }
     if (!route) { message.error('هذا الاتجاه غير متاح للتحويل'); return; }
     const valid = lines.filter((l) => Number(l.quantity || 0) > 0);
     if (!valid.length) { message.warning('أضف صنفاً واحداً على الأقل بكمية أكبر من صفر'); return; }
-    const over = valid.find((l) => Number(l.quantity || 0) > l.available);
-    if (over) { message.error(`«${over.name}»: الكمية تتجاوز المتاح (${qty(over.available)})`); return; }
+    // **الرصيد بيتقرا من جديد قبل الحفظ — مش من اللي اتحمّل ساعة ما الشاشة اتفتحت.**
+    //
+    // الشاشة بتفضل مفتوحة وهو بيكتب، والرصيد بيتغيّر تحته: فاتورة بتتباع، وإذن تاني
+    // بيتكتب على نفس البضاعة. الحد اللي اتحسب من نص ساعة مش حد — والإذن اللي بيعدّي
+    // بيه بيقع على اللي بيعتمد بعدين، وهو مش صاحب الغلطة.
+    const fresh = await freshAvailability();
+    const over = valid
+      .map((l) => ({ line: l, free: fresh ? (fresh[l.item_id] ?? 0) : l.available }))
+      .filter((o) => Number(o.line.quantity || 0) > o.free + 1e-9);
+    if (over.length) { warnOverAvailable(over); return; }
 
     const src = parseLoc(source);
     const dst = parseLoc(dest);
@@ -654,7 +740,8 @@ export default function Transfers() {
         name: row?.name ?? nameOfItem(l.item_id),
         category: row?.category ?? null,
         unit: null,
-        available: Number(row?.on_hand ?? 0),
+        available: Math.max(
+          0, Number(row?.on_hand ?? 0) - Number(row?.pending_out ?? 0)),
         quantity: Number(l.quantity) || 0,
       };
     }));

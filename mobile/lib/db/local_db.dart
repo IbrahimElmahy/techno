@@ -13,7 +13,15 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 21, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 22, onUpgrade: (d, from, to) async {
+      if (from < 22) {
+        // v22: المحجوز على إذن تحويل معلّق. من غيره الجهاز بيعتبر البضاعة اللي المندوب
+        // طلب يرجّعها لسه متاحة للبيع، والإذن بيقع على المسؤول عند الاعتماد.
+        try {
+          await d.execute(
+              'ALTER TABLE sale_item ADD COLUMN pending_out REAL NOT NULL DEFAULT 0');
+        } catch (_) {}
+      }
       if (from < 18) {
         // v18: صناديق المندوب — واحد لكل خط. الصندوق بيتحدد من نوع الفاتورة لوحده،
         // والجهاز لازم يكون شايله عشان يعرضه وهو في الشارع من غير شبكة.
@@ -594,16 +602,24 @@ class LocalDb {
   /// من غير الطرح ده، مندوب معاه خمسة يقدر يكتب تلات فواتير بخمسة كل واحدة وهو من غير
   /// شبكة، ويكتشف عند المزامنة إن اتنين منهم اترفضوا — بعد ما يكون سلّم البضاعة وقال
   /// للعملاء إن الفواتير اتعملت. الحساب اللي في إيده لازم يبقى صادق وهو في الشارع.
-  Future<double> availableForSale(int itemId) async {
+  /// `exceptInvoiceLocalId` = فاتورة بتتعدّل دلوقتي: سطورها القديمة **مش** بتتخصم من
+  /// المتاح، لأن اللي بيتكتب دلوقتي بياخد مكانها مش بيتزاد عليها. من غير الاستثناء ده
+  /// فاتورة بخمسة بتقيس نفسها على متاح صفر وماتقدرش تتعدّل ولا ترجع لكميتها.
+  Future<double> availableForSale(int itemId, {int? exceptInvoiceLocalId}) async {
     final d = await db;
     final cached = await d.query('sale_item',
-        columns: ['on_hand'], where: 'item_id = ?', whereArgs: [itemId]);
-    final onHand = cached.isEmpty ? 0.0 : (cached.first['on_hand'] as num).toDouble();
+        columns: ['on_hand', 'pending_out'],
+        where: 'item_id = ?', whereArgs: [itemId]);
+    final onHand = cached.isEmpty
+        ? 0.0
+        : (cached.first['on_hand'] as num).toDouble() -
+            ((cached.first['pending_out'] as num?)?.toDouble() ?? 0);
     final sold = await d.rawQuery(
         'SELECT COALESCE(SUM(l.quantity), 0) AS q FROM sale_invoice_line l '
         'JOIN sale_invoice i ON i.local_id = l.invoice_local_id '
-        'WHERE l.item_id = ? AND i.synced = 0',
-        [itemId]);
+        'WHERE l.item_id = ? AND i.synced = 0'
+        '${exceptInvoiceLocalId == null ? '' : ' AND i.local_id <> ?'}',
+        [itemId, if (exceptInvoiceLocalId != null) exceptInvoiceLocalId]);
     return onHand - ((sold.first['q'] as num?)?.toDouble() ?? 0);
   }
 
@@ -612,21 +628,27 @@ class LocalDb {
   /// المنتقي فيه ٣٢٦ صنف؛ نداء للصنف الواحد كان يبقى ٦٥٢ استعلام على القرص قبل ما
   /// أول سطر يبان على شاشة تليفون. الحساب نفسه ماتغيّرش — الكاش ناقص اللي اتباع ولسه
   /// ما اترفعش.
-  Future<Map<int, double>> availableForSaleAll() async {
+  Future<Map<int, double>> availableForSaleAll({int? exceptInvoiceLocalId}) async {
     final d = await db;
-    final onHand = await d.query('sale_item', columns: ['item_id', 'on_hand']);
+    final onHand =
+        await d.query('sale_item', columns: ['item_id', 'on_hand', 'pending_out']);
     final sold = await d.rawQuery(
         'SELECT l.item_id AS item_id, COALESCE(SUM(l.quantity), 0) AS q '
         'FROM sale_invoice_line l '
         'JOIN sale_invoice i ON i.local_id = l.invoice_local_id '
-        'WHERE i.synced = 0 GROUP BY l.item_id');
+        'WHERE i.synced = 0'
+        '${exceptInvoiceLocalId == null ? '' : ' AND i.local_id <> ?'}'
+        ' GROUP BY l.item_id',
+        [if (exceptInvoiceLocalId != null) exceptInvoiceLocalId]);
     final pending = {
       for (final r in sold) r['item_id'] as int: (r['q'] as num?)?.toDouble() ?? 0
     };
     return {
       for (final r in onHand)
-        r['item_id'] as int:
-            ((r['on_hand'] as num?)?.toDouble() ?? 0) - (pending[r['item_id'] as int] ?? 0)
+        r['item_id'] as int: ((r['on_hand'] as num?)?.toDouble() ?? 0)
+            // المحجوز على إذن تحويل معلّق مش متاح للبيع — الإذن هيصرفه عند الاعتماد.
+            - ((r['pending_out'] as num?)?.toDouble() ?? 0)
+            - (pending[r['item_id'] as int] ?? 0)
     };
   }
 
@@ -668,6 +690,60 @@ class LocalDb {
       }
       await batch.commit(noResult: true);
       return id;
+    });
+  }
+
+  /// بتعدّل فاتورة **لسه في الطابور** — الترويسة والسطور مع بعض.
+  ///
+  /// **اللي اترفعت مابتتعدّلش من هنا.** اللي وصل السيرفر بقى مستند بقيد ومخزون اتحرّك؛
+  /// تعديله على الجهاز بيخلّي الورقة اللي في إيد العميل تقول حاجة والدفتر يقول غيرها.
+  /// الشرط `synced = 0` في الجملة نفسها مش قبلها بسطر — بين الفحص والكتابة ممكن تكون
+  /// المزامنة رفعتها.
+  ///
+  /// `client_uuid` مابيتغيّرش: هو اللي بيخلّي السيرفر يعرف إنها نفس الفاتورة لو الرفع
+  /// اتعاد بعد انقطاع.
+  ///
+  /// بترجّع `true` لو اتعدّلت فعلاً، و`false` لو كانت اترفعت في الوقت ده.
+  Future<bool> updateQueuedSaleInvoice({
+    required int localId,
+    required int customerId,
+    required String customerName,
+    required String invoiceDate,
+    required double cashAmount,
+    required double creditAmount,
+    required double total,
+    String? notes,
+    String? family,
+    String? couponsJson,
+    required List<SaleDraftLine> lines,
+  }) async {
+    final d = await db;
+    return d.transaction<bool>((tx) async {
+      final n = await tx.update(
+        'sale_invoice',
+        {
+          'customer_id': customerId,
+          'customer_name': customerName,
+          'invoice_date': invoiceDate,
+          'cash_amount': cashAmount,
+          'credit_amount': creditAmount,
+          'total': total,
+          'notes': notes,
+          'family': family,
+          'coupons': couponsJson,
+        },
+        where: 'local_id = ? AND synced = 0',
+        whereArgs: [localId],
+      );
+      if (n == 0) return false;
+      await tx.delete('sale_invoice_line',
+          where: 'invoice_local_id = ?', whereArgs: [localId]);
+      final batch = tx.batch();
+      for (final l in lines) {
+        batch.insert('sale_invoice_line', l.toRow(localId));
+      }
+      await batch.commit(noResult: true);
+      return true;
     });
   }
 
@@ -932,6 +1008,7 @@ CREATE TABLE sale_item(
   unit TEXT,
   category TEXT,
   on_hand REAL NOT NULL DEFAULT 0,
+  pending_out REAL NOT NULL DEFAULT 0,
   base_price REAL,
   default_discount_pct REAL NOT NULL DEFAULT 0,
   tier_prices TEXT
