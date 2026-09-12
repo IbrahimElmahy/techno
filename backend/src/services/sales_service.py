@@ -21,7 +21,7 @@ from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
 from src.services import customer_service
 from src.services.customer_merge_service import MergeError
-from src.models.ledger import Account, Direction
+from src.models.ledger import Account, Direction, PartnerKind
 from src.models.role import RoleName
 from src.models.sales import (
     SalesInvoice,
@@ -526,6 +526,9 @@ def create_sale(
             description=f"Sale {invoice.document_number}",
             # Same date as the document: the books and the paper have to agree.
             entry_date=invoice_date,
+            # (المرحلة ٢) الفاتورة قيد على عميل. من غير السطرين دول الدفعة مابتعرفش
+            # تتقفل على الفاتورة دي بالذات، وأعمار الديون بتتحسب من جدول المستندات.
+            partner_kind=PartnerKind.customer, partner_id=invoice.customer_id,
         )
         invoice.ledger_entry_id = entry.id
     else:
@@ -860,6 +863,8 @@ def return_sale(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id,
         description=f"Sales return {ret.document_number}",
+        entry_date=ret.return_date,
+        partner_kind=PartnerKind.customer, partner_id=inv.customer_id,
     )
     ret.ledger_entry_id = entry.id
     db.flush()
@@ -1074,6 +1079,8 @@ def create_standalone_return(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id,
         description=f"Sales return {ret.document_number}",
+        entry_date=ret.return_date,
+        partner_kind=PartnerKind.customer, partner_id=ret.customer_id,
     )
     ret.ledger_entry_id = entry.id
     db.flush()

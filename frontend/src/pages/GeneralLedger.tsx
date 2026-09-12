@@ -20,6 +20,7 @@ import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolb
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 import { entryTypeLabel } from '../components/labels';
+import PartyField from '../components/PartyField';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv } from '../utils/exportCsv';
@@ -77,6 +78,13 @@ interface JournalEntry {
   number: string | null;
   total_credit: string;
   balanced: boolean;
+  // (المرحلة ٢) القيد كمستند: نوعه، وعلى مين، وامتى مستحق.
+  move_type: string | null;
+  move_type_label: string | null;
+  partner_kind: 'customer' | 'supplier' | 'employee' | null;
+  partner_id: number | null;
+  partner_name: string | null;
+  due_date: string | null;
 }
 
 interface TrialRow {
@@ -321,6 +329,21 @@ function ChartTab() {
   );
 }
 
+/** لون تاج الشريك — العميل والمورد والموظف بيتفرقوا بالعين قبل القراية. */
+const PARTNER_COLOR: Record<string, string> = {
+  customer: 'green', supplier: 'orange', employee: 'blue',
+};
+
+/** الأنواع اللي القيد اليدوي ينفع يتكتب عليها.
+ *
+ *  الموظف مش فيها عن قصد: نافذة الأطراف بتجيب «الموظف» من كشف العملاء (عميل نوعه
+ *  موظف)، والشريك `employee` في الدفتر بيشاور على جدول الموظفين بتاع المرتبات —
+ *  رقمين مختلفين لنفس الكلمة. القيود على الموظفين بتتكتب من شاشة السلف والمرتبات. */
+const PARTNER_KINDS = [
+  { value: 'customer', label: 'عميل' },
+  { value: 'supplier', label: 'مورد' },
+];
+
 function JournalTab() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -332,6 +355,8 @@ function JournalTab() {
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  // اسم الشريك اللي اتختار — عشان الخانة تعرضه من غير ما الشاشة تحمّل كشف العملاء كله.
+  const [partnerName, setPartnerName] = useState<string>('');
   const [openingDrawer, setOpeningDrawer] = useState(false);
   const [form] = Form.useForm();
   const [openForm] = Form.useForm();
@@ -384,7 +409,7 @@ function JournalTab() {
   };
 
   const resetDrawer = () => {
-    setDrawer(false); setEditing(null); form.resetFields();
+    setDrawer(false); setEditing(null); form.resetFields(); setPartnerName('');
     setLines([
       { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
       { key: '2', account_id: null, direction: 'credit', amount: 0, statement: '' },
@@ -392,7 +417,7 @@ function JournalTab() {
   };
 
   const openNew = () => {
-    setEditing(null); form.resetFields();
+    setEditing(null); form.resetFields(); setPartnerName('');
     setLines([
       { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
       { key: '2', account_id: null, direction: 'credit', amount: 0, statement: '' },
@@ -407,7 +432,11 @@ function JournalTab() {
       description: e.description,
       branch_id: e.branch_id ?? undefined,
       journal_id: e.journal_id ?? undefined,
+      partner_kind: e.partner_kind ?? undefined,
+      partner_id: e.partner_id ?? undefined,
+      due_date: e.due_date ? dayjs(e.due_date) : undefined,
     });
+    setPartnerName(e.partner_name ?? '');
     setLines((e.lines || []).map((l, i) => ({
       key: String(i + 1), account_id: l.account_id, direction: l.direction,
       amount: Number(l.amount), statement: l.statement ?? '',
@@ -431,6 +460,9 @@ function JournalTab() {
       description: v.description,
       branch_id: v.branch_id,
       journal_id: v.journal_id ?? null,
+      partner_kind: v.partner_kind ?? null,
+      partner_id: v.partner_id ?? null,
+      due_date: v.due_date ? v.due_date.format('YYYY-MM-DD') : null,
       lines: valid.map((l) => ({
         account_id: l.account_id, direction: l.direction, amount: l.amount.toFixed(2),
         statement: l.statement || null, cost_center_id: l.cost_center_id || null,
@@ -570,6 +602,10 @@ function JournalTab() {
     { title: 'النوع', dataIndex: 'entry_type', key: 'entry_type', width: 120,
       ...textColumn(entries, (e: JournalEntry) => (entryTypeLabel(e.entry_type))),
       render: (t: string) => { const m = TYPE_LABEL(t); return <Tag color={m.c}>{m.t}</Tag>; } },
+    { title: 'الشريك', dataIndex: 'partner_name', key: 'partner_name', width: 160,
+      ...textColumn(entries, (e: JournalEntry) => e.partner_name ?? ''),
+      render: (n: string | null, r: JournalEntry) =>
+        (n ? <Tag color={PARTNER_COLOR[r.partner_kind ?? 'customer']}>{n}</Tag> : '-') },
     { title: 'البيان', dataIndex: 'description', key: 'description',
       ...textColumn(entries, (e: JournalEntry) => e.description) },
     { title: 'الحركات', dataIndex: 'lines', key: 'lines',
@@ -636,6 +672,7 @@ function JournalTab() {
     { title: 'الحالة', value: (e: JournalEntry) => STATE_META(e.state).t },
     { title: 'التاريخ', value: (e: JournalEntry) => e.date ?? '' },
     { title: 'النوع', value: (e: JournalEntry) => entryTypeLabel(e.entry_type) },
+    { title: 'الشريك', value: (e: JournalEntry) => e.partner_name ?? '' },
     { title: 'البيان', value: (e: JournalEntry) => e.description },
     { title: 'الفرع', value: (e: JournalEntry) => branchName(e.branch_id) },
     { title: 'الحركات', value: (e: JournalEntry) => (e.lines || []).length },
@@ -730,6 +767,45 @@ function JournalTab() {
           <Form.Item name="description" label="البيان" rules={[{ required: true, message: 'أدخل البيان' }]}>
             <Input.TextArea rows={2} placeholder="وصف القيد" />
           </Form.Item>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="partner_kind" label="القيد على"
+                tooltip="سيبه فاضي لو القيد مش على طرف — إقفال أو تسوية بين حسابات">
+                <Select allowClear placeholder="بدون طرف" options={PARTNER_KINDS}
+                  onChange={() => { form.setFieldValue('partner_id', undefined);
+                    setPartnerName(''); }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item noStyle shouldUpdate={(a, b) => a.partner_kind !== b.partner_kind}>
+                {({ getFieldValue }) => {
+                  const kind = getFieldValue('partner_kind');
+                  return (
+                    <Form.Item name="partner_id" label={kind === 'supplier' ? 'المورد' : 'العميل'}>
+                      <PartyField
+                        kind={kind === 'supplier' ? 'supplier' : 'customer'}
+                        disabled={!kind}
+                        style={{ width: '100%' }}
+                        // الاسم بييجي من الاختيار نفسه، فالشاشة مابتحمّلش كشف
+                        // العملاء كله عشان تعرض اسم واحد.
+                        options={(() => {
+                          const id = getFieldValue('partner_id');
+                          return id && partnerName ? [{ value: id, label: partnerName }] : [];
+                        })()}
+                        onPicked={(party) => setPartnerName(party.name)}
+                      />
+                    </Form.Item>
+                  );
+                }}
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="due_date" label="تاريخ الاستحقاق"
+                tooltip="سيبه فاضي ياخد تاريخ القيد — يعني مستحق فوراً">
+                <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Divider orientation="right">حركات القيد المزدوج</Divider>
           {lines.map((l) => (

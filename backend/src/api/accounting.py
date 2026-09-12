@@ -24,6 +24,8 @@ from src.auth.rbac import (
     CAP_ACCOUNTING_TRIAL_BALANCE_READ,
 )
 from src.core.db import get_db
+from src.models.customer import Customer
+from src.models.employee import Employee
 from src.models.journal import JOURNAL_KIND_LABEL, Journal, JournalKind
 from src.models.ledger import (
     Account,
@@ -32,12 +34,15 @@ from src.models.ledger import (
     EntryState,
     LedgerEntry,
     LedgerLine,
+    PartnerKind,
 )
+from src.models.supplier import Supplier
 from src.services import (
     account_routing_service,
     chart_service,
     journal_registry,
     journal_service,
+    move_registry,
     opening_balance_service,
     trial_balance_service,
 )
@@ -112,6 +117,9 @@ class JournalLineIn(BaseModel):
     amount: Decimal
     statement: str | None = None
     cost_center_id: int | None = None
+    # (المرحلة ٢) شريك السطر. مالوش قيمة ⇒ بياخد شريك القيد.
+    partner_kind: str | None = None
+    partner_id: int | None = None
 
 
 class JournalEntryCreate(BaseModel):
@@ -122,6 +130,11 @@ class JournalEntryCreate(BaseModel):
     journal_id: int | None = None
     # "posted" يرحّل على طول (السلوك القديم)، "draft" بيسيبه مسودة ناقصة.
     state: str = EntryState.posted.value
+    # (المرحلة ٢) القيد على مين، وامتى مستحق. الاتنين اختياريين: القيد اللي مالوش
+    # شريك (إقفال، تسوية بين حسابات) بيفضل من غير — وده صح مش نقص.
+    partner_kind: str | None = None
+    partner_id: int | None = None
+    due_date: DateType | None = None
     # سطر واحد كفاية للمسودة. المرحّل بيتفرض عليه التوازن في `ledger_service`، وده شرط
     # أقوى من «سطرين»: قيد بسطرين مش متوازنين كان بيعدّي من هنا قبل كده.
     lines: list[JournalLineIn] = Field(min_length=1)
@@ -134,6 +147,9 @@ class JournalEntryUpdate(BaseModel):
     description: str | None = None
     branch_id: int | None = None
     journal_id: int | None = None
+    partner_kind: str | None = None
+    partner_id: int | None = None
+    due_date: DateType | None = None
     lines: list[JournalLineIn] | None = None
 
 
@@ -168,6 +184,9 @@ class JournalLineOut(BaseModel):
     amount: Decimal
     statement: str | None = None
     cost_center_id: int | None = None
+    partner_kind: str | None = None
+    partner_id: int | None = None
+    date_maturity: date | None = None
 
 
 class JournalEntryOut(BaseModel):
@@ -189,6 +208,14 @@ class JournalEntryOut(BaseModel):
     # مجموع الدائن كمان، عشان الواجهة توري الفرق من غير ما تحسبه من السطور.
     total_credit: Decimal = Decimal("0.00")
     balanced: bool = True
+    # المرحلة ٢ — نوع المستند والشريك والاستحقاق.
+    move_type: str | None = None
+    move_type_label: str | None = None
+    partner_kind: str | None = None
+    partner_id: int | None = None
+    # الاسم بيتجاب مع القايمة في استعلام واحد — الرقم لوحده مابيقولش حاجة للي بيقرا.
+    partner_name: str | None = None
+    due_date: date | None = None
 
 
 class OpeningLineIn(BaseModel):
@@ -257,7 +284,36 @@ def _account_out(db: Session, acc: Account, *, with_children: bool = False,
     )
 
 
-def _entry_out(entry: LedgerEntry) -> JournalEntryOut:
+def _partner_names(db: Session, entries) -> dict[tuple[str, int], str]:
+    """أسماء الشركاء اللي على القيود دي — استعلام واحد لكل نوع.
+
+    الرقم لوحده مابيقولش حاجة للي بيقرا الشاشة، وجلب الاسم لكل قيد على حدة بيحوّل
+    قايمة من ٥٠٠ قيد لـ٥٠٠ رحلة للقاعدة.
+    """
+    wanted: dict[str, set[int]] = {}
+    for entry in entries:
+        if entry.partner_kind and entry.partner_id:
+            wanted.setdefault(entry.partner_kind, set()).add(entry.partner_id)
+    if not wanted:
+        return {}
+    models = {
+        PartnerKind.customer.value: Customer,
+        PartnerKind.supplier.value: Supplier,
+        PartnerKind.employee.value: Employee,
+    }
+    out: dict[tuple[str, int], str] = {}
+    for kind, ids in wanted.items():
+        model = models.get(kind)
+        if model is None:
+            continue
+        for row_id, name in db.execute(
+            select(model.id, model.name).where(model.id.in_(ids))
+        ).all():
+            out[(kind, int(row_id))] = name
+    return out
+
+
+def _entry_out(entry: LedgerEntry, partner_names: dict | None = None) -> JournalEntryOut:
     total = sum(
         (l.amount for l in entry.lines if l.direction == Direction.debit), Decimal("0.00")
     )
@@ -278,10 +334,18 @@ def _entry_out(entry: LedgerEntry) -> JournalEntryOut:
         balanced=(total == total_credit),
         lines=[
             JournalLineOut(account_id=l.account_id, direction=l.direction, amount=l.amount,
-                           statement=l.statement, cost_center_id=l.cost_center_id)
+                           statement=l.statement, cost_center_id=l.cost_center_id,
+                           partner_kind=l.partner_kind, partner_id=l.partner_id,
+                           date_maturity=l.date_maturity)
             for l in entry.lines
         ],
         total=total,
+        move_type=entry.move_type,
+        move_type_label=move_registry.MOVE_TYPE_LABEL.get(entry.move_type or ""),
+        partner_kind=entry.partner_kind,
+        partner_id=entry.partner_id,
+        partner_name=(partner_names or {}).get((entry.partner_kind, entry.partner_id)),
+        due_date=entry.invoice_date_due,
     )
 
 
@@ -395,6 +459,8 @@ def list_journal_entries(
     cost_center_id: int | None = None,
     journal_id: int | None = None,
     state: str | None = None,
+    partner_kind: str | None = None,
+    partner_id: int | None = None,
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[JournalEntryOut]:
@@ -420,7 +486,13 @@ def list_journal_entries(
         stmt = stmt.where(
             LedgerEntry.lines.any(LedgerLine.cost_center_id == cost_center_id)
         )
-    return [_entry_out(e) for e in db.scalars(stmt.order_by(LedgerEntry.id)).all()]
+    if partner_kind is not None:
+        stmt = stmt.where(LedgerEntry.partner_kind == partner_kind)
+    if partner_id is not None:
+        stmt = stmt.where(LedgerEntry.partner_id == partner_id)
+    entries = db.scalars(stmt.order_by(LedgerEntry.id)).all()
+    names = _partner_names(db, entries)
+    return [_entry_out(e, names) for e in entries]
 
 
 @router.get("/journal-entries/{entry_id}", response_model=JournalEntryOut)
@@ -432,7 +504,7 @@ def get_journal_entry(
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "Entry not found"})
-    return _entry_out(entry)
+    return _entry_out(entry, _partner_names(db, [entry]))
 
 
 @router.post("/journal-entries", response_model=JournalEntryOut, status_code=status.HTTP_201_CREATED)
@@ -449,18 +521,22 @@ def post_journal_entry(
             description=body.description,
             branch_id=body.branch_id,
             lines=[
-                JournalLineInput(l.account_id, l.direction, l.amount, l.statement, l.cost_center_id)
+                JournalLineInput(l.account_id, l.direction, l.amount, l.statement,
+                                 l.cost_center_id, l.partner_kind, l.partner_id)
                 for l in body.lines
             ],
             actor_user_id=current.id,
             journal_id=body.journal_id,
             state=body.state,
+            partner_kind=body.partner_kind,
+            partner_id=body.partner_id,
+            invoice_date_due=body.due_date,
         )
     except JournalError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "journal_invalid", "message": str(exc)})
     db.commit()
-    return _entry_out(entry)
+    return _entry_out(entry, _partner_names(db, [entry]))
 
 
 @router.patch("/journal-entries/{entry_id}", response_model=JournalEntryOut)
@@ -481,8 +557,11 @@ def update_journal_entry(
             db, entry_id=entry_id, actor_user_id=current.id,
             entry_date=body.date, description=body.description,
             branch_id=body.branch_id, journal_id=body.journal_id,
+            partner_kind=body.partner_kind, partner_id=body.partner_id,
+            invoice_date_due=body.due_date,
             lines=None if body.lines is None else [
-                JournalLineInput(l.account_id, l.direction, l.amount, l.statement, l.cost_center_id)
+                JournalLineInput(l.account_id, l.direction, l.amount, l.statement,
+                                 l.cost_center_id, l.partner_kind, l.partner_id)
                 for l in body.lines
             ],
         )
@@ -490,7 +569,7 @@ def update_journal_entry(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "journal_invalid", "message": str(exc)})
     db.commit()
-    return _entry_out(entry)
+    return _entry_out(entry, _partner_names(db, [entry]))
 
 
 @router.post("/journal-entries/{entry_id}/post", response_model=JournalEntryOut)
@@ -509,7 +588,7 @@ def post_draft_entry(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "journal_invalid", "message": str(exc)})
     db.commit()
-    return _entry_out(entry)
+    return _entry_out(entry, _partner_names(db, [entry]))
 
 
 @router.post("/journal-entries/{entry_id}/reset-to-draft", response_model=JournalEntryOut)
@@ -528,7 +607,7 @@ def reset_entry_to_draft(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "journal_conflict", "message": str(exc)})
     db.commit()
-    return _entry_out(entry)
+    return _entry_out(entry, _partner_names(db, [entry]))
 
 
 @router.post("/journal-entries/{entry_id}/cancel", response_model=JournalEntryOut)
@@ -547,7 +626,7 @@ def cancel_journal_entry(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "journal_conflict", "message": str(exc)})
     db.commit()
-    return _entry_out(entry)
+    return _entry_out(entry, _partner_names(db, [entry]))
 
 
 # --- دفاتر اليومية ---------------------------------------------------------------------------
@@ -644,7 +723,7 @@ def reverse_journal_entry(
     except JournalError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "journal_conflict", "message": str(exc)})
     db.commit()
-    return _entry_out(reversal)
+    return _entry_out(reversal, _partner_names(db, [reversal]))
 
 
 # --- Opening balances ------------------------------------------------------------------------
@@ -669,7 +748,7 @@ def post_opening_balances(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "opening_invalid", "message": str(exc)})
     db.commit()
-    return _entry_out(entry)
+    return _entry_out(entry, _partner_names(db, [entry]))
 
 
 # --- Trial balance ---------------------------------------------------------------------------

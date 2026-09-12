@@ -73,6 +73,36 @@ class EntryState(str, enum.Enum):
     cancelled = "cancelled"
 
 
+class MoveType(str, enum.Enum):
+    """نوع المستند المحاسبي — نفس `move_type` بتاع أودو.
+
+    أودو مافيهوش «فاتورة» و«قيد»: فيه `account.move` واحد، والنوع ده هو اللي بيقول
+    هو إيه. اللي مالوش نوع منهم (سند، شيك، راتب، إهلاك) بيبقى `entry` — وده نفس
+    اللي بيعمله أودو بالظبط مع المدفوعات والقيود العادية.
+
+    نص مش `Enum` في القاعدة، لنفس سبب `EntryState`: العمود بيتضاف بـALTER TABLE.
+    """
+
+    entry = "entry"
+    out_invoice = "out_invoice"    # فاتورة بيع
+    out_refund = "out_refund"      # مردود بيع
+    in_invoice = "in_invoice"      # فاتورة شرا
+    in_refund = "in_refund"        # مردود شرا
+
+
+class PartnerKind(str, enum.Enum):
+    """الشريك ده مين — عميل ولا مورد ولا موظف.
+
+    أودو عنده `res.partner` واحد للتلاتة، وعندنا تلات جداول منفصلة. فالشريك بيتكتب
+    نوع + رقم، زي `Account.owner_ref` الموجود من ٠٠١ — أرخص من جدول شركاء موحّد
+    يتبني دلوقتي ويتعمله نقل من تلات جداول شغّالة.
+    """
+
+    customer = "customer"
+    supplier = "supplier"
+    employee = "employee"
+
+
 class Account(Base):
     """A balance-bearing bucket and a node in the chart of accounts (005).
 
@@ -144,6 +174,20 @@ class LedgerEntry(Base):
     # مالهاش رقم عشان الأرقام تفضل متصلة من غير فجوات لمسودة اتمسحت.
     number: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # --- المرحلة ٢: القيد هو المستند (`account.move`) ---------------------------------
+    # نوع المستند. NULL = قيد قديم قبل سكربت النقل، وبيتقرا `entry` زي ما أودو بيعمل
+    # مع أي حركة مالهاش نوع.
+    move_type: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # الشريك على مستوى المستند — مين الفاتورة دي عليه. السطر ممكن يخالفه (قيد راتب
+    # فيه عشرين موظف)، فالحساب الحقيقي بيتعمل من سطور، وده للعرض والتصفية.
+    partner_kind: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    partner_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    # تاريخ الاستحقاق. من غير شروط دفع بيتحط بإيد، وافتراضيه تاريخ القيد — يعني
+    # «مستحق دلوقتي»، وهو الصح لفاتورة نقدي.
+    invoice_date_due: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    # حالة الدفع — بتتحسب من متبقّي السطور في المرحلة ٣ (تسوية). العمود بيتضاف دلوقتي
+    # عشان النقل يعدّي مرة واحدة على جدول فيه ملايين السطور بدل مرتين.
+    payment_state: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     description: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     # Accounting/business date (005). User-chosen; the trial balance filters by this, NOT
     # created_at (opening balances are intentionally back-dated). NULL for legacy posts,
@@ -192,6 +236,15 @@ class LedgerLine(Base):
     cost_center_id: Mapped[int | None] = mapped_column(
         ForeignKey("cost_center.id"), nullable=True, index=True
     )
+    # --- المرحلة ٢: الشريك والاستحقاق على السطر -------------------------------------
+    # الشريك على السطر نفسه زي `account.move.line.partner_id`. ده اللي بيخلّي دفتر
+    # الشريك وأعمار الديون يتحسبوا من الدفتر مباشرة بدل ما يمرّوا على جدول المستندات —
+    # والقيد اللي فيه أكتر من شريك (راتب، تحصيل مندوب) يتقسّم صح.
+    partner_kind: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    partner_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    # تاريخ استحقاق السطر. الأعمار بتترتب عليه هو مش على تاريخ القيد: الفاتورة
+    # المؤجّلة عمرها بيبدأ من استحقاقها.
+    date_maturity: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
 
     entry: Mapped[LedgerEntry] = relationship(back_populates="lines")
     account: Mapped[Account] = relationship(back_populates="lines")

@@ -324,6 +324,14 @@ def _load_permission_overrides() -> None:
 _ADDED_INDEXES: list[tuple[str, str, str]] = [
     # (اسم الفهرس، الجدول، الأعمدة)
     ("ix_point_record_inspection_id", "point_record", "inspection_id"),
+    # (المرحلة ٢) «وريني كل حركة العميل ده» بتلف على كل سطور الدفتر من غير الفهرس ده.
+    ("ix_ledger_line_partner", "ledger_line", "partner_kind, partner_id"),
+    ("ix_ledger_entry_partner", "ledger_entry", "partner_kind, partner_id"),
+    ("ix_ledger_entry_move_type", "ledger_entry", "move_type"),
+    # (المرحلة ١) الدفتر والحالة اتضافوا بـALTER فمافيش فهرس عليهم على السيرفر —
+    # وكل شاشة حسابات بتصفّي بالحالة.
+    ("ix_ledger_entry_journal_id", "ledger_entry", "journal_id"),
+    ("ix_ledger_entry_state", "ledger_entry", "state"),
 ]
 
 
@@ -369,6 +377,17 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("ledger_entry", "state", "VARCHAR(12)"),
     ("ledger_entry", "number", "VARCHAR(32)"),
     ("ledger_entry", "posted_at", "TIMESTAMP"),
+    # (المرحلة ٢) القيد هو المستند: نوعه، وعلى مين، وامتى مستحق.
+    ("ledger_entry", "move_type", "VARCHAR(16)"),
+    ("ledger_entry", "partner_kind", "VARCHAR(12)"),
+    ("ledger_entry", "partner_id", "BIGINT"),
+    ("ledger_entry", "invoice_date_due", "DATE"),
+    ("ledger_entry", "payment_state", "VARCHAR(16)"),
+    # الشريك على السطر كمان — القيد اللي فيه أكتر من شريك بيتقسّم صح، ودفتر الشريك
+    # وأعمار الديون بيتحسبوا من الدفتر مباشرة.
+    ("ledger_line", "partner_kind", "VARCHAR(12)"),
+    ("ledger_line", "partner_id", "BIGINT"),
+    ("ledger_line", "date_maturity", "DATE"),
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
     ("sales_invoice", "client_uuid", "VARCHAR(64)"),
     ("voucher", "client_uuid", "VARCHAR(64)"),

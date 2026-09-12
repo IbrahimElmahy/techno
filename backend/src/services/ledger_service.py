@@ -14,8 +14,16 @@ from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
 from src.models.journal import Journal
-from src.models.ledger import Account, Direction, EntryState, LedgerEntry, LedgerLine
-from src.services import journal_registry
+from src.models.ledger import (
+    Account,
+    Direction,
+    EntryState,
+    LedgerEntry,
+    LedgerLine,
+    MoveType,
+    PartnerKind,
+)
+from src.services import journal_registry, move_registry
 
 
 class LedgerError(Exception):
@@ -29,6 +37,12 @@ class LineInput:
     amount: Decimal
     statement: str | None = None  # per-line بيان (005); ignored by 001/002/003 callers
     cost_center_id: int | None = None  # optional analytical dimension (006)
+    # الشريك على السطر (المرحلة ٢). بيتساب `None` في الغالب وبيتورث من القيد؛ بيتحط
+    # هنا في القيد اللي فيه أكتر من شريك — قيد الرواتب بيقيّد عشرين موظف مرة واحدة.
+    partner_kind: PartnerKind | str | None = None
+    partner_id: int | None = None
+    # استحقاق السطر. `None` = يورث استحقاق القيد.
+    date_maturity: date | None = None
 
 
 def _validate_lines(lines: list[LineInput]) -> None:
@@ -128,23 +142,51 @@ def _assert_period_open(db: Session, when: date | None) -> None:
     return
 
 
-def _build_lines(lines: list[LineInput]) -> list[LedgerLine]:
-    return [
-        LedgerLine(
-            account_id=ln.account_id,
-            direction=ln.direction,
-            amount=to_money(ln.amount),
-            statement=ln.statement,
-            cost_center_id=ln.cost_center_id,
+def _as_value(kind) -> str | None:
+    """`PartnerKind.customer` أو "customer" — الاتنين بيتكتبوا نص في القاعدة."""
+    if kind is None:
+        return None
+    return kind.value if isinstance(kind, PartnerKind) else str(kind)
+
+
+def _build_lines(
+    lines: list[LineInput],
+    *,
+    partner_kind: str | None = None,
+    partner_id: int | None = None,
+    date_maturity: date | None = None,
+) -> list[LedgerLine]:
+    """يبني السطور، وبيورّث شريك القيد واستحقاقه للسطر اللي ماقالش بتاعه.
+
+    التوريث ده هو اللي بيخلّي الـ٢٧ نداء الموجودين ياخدوا الشريك من غير ما حد فيهم
+    يتغيّر: المستند بيقول «الفاتورة دي على العميل ده» مرة واحدة، والسطور بتاخدها.
+    """
+    built: list[LedgerLine] = []
+    for ln in lines:
+        # النوع والرقم بيتورّثوا مع بعض: السطر اللي قال شريكه بيغلب بالكامل، واللي
+        # سكت بياخد بتاع القيد بالكامل. خلطهم كان هيدّي «مورد برقم عميل».
+        own = _as_value(ln.partner_kind) is not None or ln.partner_id is not None
+        built.append(
+            LedgerLine(
+                account_id=ln.account_id,
+                direction=ln.direction,
+                amount=to_money(ln.amount),
+                statement=ln.statement,
+                cost_center_id=ln.cost_center_id,
+                partner_kind=_as_value(ln.partner_kind) if own else partner_kind,
+                partner_id=ln.partner_id if own else partner_id,
+                date_maturity=ln.date_maturity or date_maturity,
+            )
         )
-        for ln in lines
-    ]
+    return built
 
 
 def _stamp_posted(db: Session, entry: LedgerEntry) -> None:
-    """يحط القيد في دفتره ويصرف له رقمه ويعلّمه مرحّل."""
+    """يحط القيد في دفتره ونوعه ويصرف له رقمه ويعلّمه مرحّل."""
     if entry.journal_id is None:
         entry.journal_id = journal_registry.resolve(db, entry.entry_type).id
+    if entry.move_type is None:
+        entry.move_type = move_registry.move_type_for(entry.entry_type).value
     entry.state = EntryState.posted.value
     entry.posted_at = datetime.now()
     if not entry.number:
@@ -166,6 +208,10 @@ def post_entry(
     entry_date: date | None = None,
     journal_id: int | None = None,
     state: str = EntryState.posted.value,
+    move_type: MoveType | str | None = None,
+    partner_kind: PartnerKind | str | None = None,
+    partner_id: int | None = None,
+    invoice_date_due: date | None = None,
 ) -> LedgerEntry:
     """يكتب قيد. الافتراضي مرحّل ومتوازن وبرقم؛ `state="draft"` بيسيبه ناقص وبلا رقم.
 
@@ -177,6 +223,14 @@ def post_entry(
     if state == EntryState.posted.value:
         _assert_balanced(lines)
     _assert_period_open(db, entry_date)
+    kind = _as_value(partner_kind)
+    # الاستحقاق الافتراضي هو تاريخ القيد — «مستحق دلوقتي»، وهو الصح للنقدي. اللي
+    # بيبيع أجل بيبعت التاريخ بنفسه لحد ما شروط الدفع تتعمل.
+    #
+    # والقيد اللي جه من غير تاريخ (فاتورة اتكتبت من غير ما حد يحدد يومها) بياخد
+    # النهارده: تاريخه المحاسبي الفعلي هو `created_at` زي ما بقية الكود بيقراه،
+    # وسيبان الاستحقاق فاضي معناه إنه بيختفي من تقرير الأعمار خالص.
+    due = invoice_date_due or entry_date or date.today()
     entry = LedgerEntry(
         entry_type=entry_type,
         description=description,
@@ -187,8 +241,16 @@ def post_entry(
         entry_date=entry_date,
         journal_id=journal_id,
         state=state,
+        move_type=(
+            move_type.value if isinstance(move_type, MoveType)
+            else move_type or move_registry.move_type_for(entry_type).value
+        ),
+        partner_kind=kind,
+        partner_id=partner_id,
+        invoice_date_due=due,
     )
-    entry.lines = _build_lines(lines)
+    entry.lines = _build_lines(lines, partner_kind=kind, partner_id=partner_id,
+                               date_maturity=due)
     db.add(entry)
     db.flush()
     if state == EntryState.posted.value:
@@ -202,7 +264,10 @@ def post_entry(
 
 def _entry_lines_as_input(entry: LedgerEntry) -> list[LineInput]:
     return [
-        LineInput(ln.account_id, ln.direction, ln.amount, ln.statement, ln.cost_center_id)
+        LineInput(
+            ln.account_id, ln.direction, ln.amount, ln.statement, ln.cost_center_id,
+            ln.partner_kind, ln.partner_id, ln.date_maturity,
+        )
         for ln in entry.lines
     ]
 
@@ -217,12 +282,17 @@ def create_draft(
     branch_id: int | None = None,
     entry_date: date | None = None,
     journal_id: int | None = None,
+    partner_kind: PartnerKind | str | None = None,
+    partner_id: int | None = None,
+    invoice_date_due: date | None = None,
 ) -> LedgerEntry:
     """قيد مسودة — مايدخلش الحسابات ومالوش رقم لحد ما يتّرحّل."""
     return post_entry(
         db, entry_type=entry_type, actor_user_id=actor_user_id, lines=lines,
         description=description, branch_id=branch_id, entry_date=entry_date,
         journal_id=journal_id, state=EntryState.draft.value,
+        partner_kind=partner_kind, partner_id=partner_id,
+        invoice_date_due=invoice_date_due,
     )
 
 
@@ -234,7 +304,12 @@ def replace_lines(db: Session, *, entry: LedgerEntry, lines: list[LineInput]) ->
     for line in list(entry.lines):
         db.delete(line)
     db.flush()
-    entry.lines = _build_lines(lines)
+    entry.lines = _build_lines(
+        lines,
+        partner_kind=entry.partner_kind,
+        partner_id=entry.partner_id,
+        date_maturity=entry.invoice_date_due or entry.entry_date,
+    )
     db.flush()
     return entry
 
@@ -319,6 +394,11 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
         reverses_entry_id=original_id,
         # Reversal nets in the original's accounting period (005 analysis finding A/C).
         entry_date=original.entry_date,
+        # العكسي بيفضل على نفس الشريك وبنوع مقلوب (فاتورة ← مردود)، زي إشعار الدائن.
+        move_type=move_registry.reversed_move_type(original.move_type),
+        partner_kind=original.partner_kind,
+        partner_id=original.partner_id,
+        invoice_date_due=original.invoice_date_due,
     )
 
 

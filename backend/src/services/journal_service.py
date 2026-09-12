@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from src.models.ledger import Account, Direction, EntryState, LedgerEntry
+from src.models.ledger import Account, Direction, EntryState, LedgerEntry, PartnerKind
 from src.services import audit_service, chart_service, cost_center_service, ledger_service
 from src.services.ledger_service import LedgerError, LineInput
 
@@ -29,6 +29,9 @@ class JournalLineInput:
     amount: Decimal
     statement: str | None = None
     cost_center_id: int | None = None  # optional analytical dimension (006)
+    # (المرحلة ٢) الشريك على السطر — القيد اللي بيقفل على عميل بعينه بيتقال هنا.
+    partner_kind: PartnerKind | str | None = None
+    partner_id: int | None = None
 
 
 def _validate_accounts(db: Session, lines: list[JournalLineInput]) -> None:
@@ -54,7 +57,10 @@ def _validate_accounts(db: Session, lines: list[JournalLineInput]) -> None:
 
 def _to_line_inputs(lines: list[JournalLineInput]) -> list[LineInput]:
     return [
-        LineInput(ln.account_id, ln.direction, ln.amount, ln.statement, ln.cost_center_id)
+        LineInput(
+            ln.account_id, ln.direction, ln.amount, ln.statement, ln.cost_center_id,
+            ln.partner_kind, ln.partner_id,
+        )
         for ln in lines
     ]
 
@@ -70,6 +76,9 @@ def post_entry(
     entry_type: str = "journal",
     journal_id: int | None = None,
     state: str = EntryState.posted.value,
+    partner_kind: PartnerKind | str | None = None,
+    partner_id: int | None = None,
+    invoice_date_due: date | None = None,
 ) -> LedgerEntry:
     """يكتب قيد يومية بإيد المستخدم. `state="draft"` بيسيبه ناقص ومن غير رقم."""
     _validate_accounts(db, lines)
@@ -84,6 +93,9 @@ def post_entry(
             entry_date=entry_date,
             journal_id=journal_id,
             state=state,
+            partner_kind=partner_kind,
+            partner_id=partner_id,
+            invoice_date_due=invoice_date_due,
         )
     except LedgerError as exc:  # غير متوازن / مبلغ مش موجب / سطور فاضية
         raise JournalError(str(exc)) from exc
@@ -108,12 +120,17 @@ def create_draft(
     actor_user_id: int,
     entry_type: str = "journal",
     journal_id: int | None = None,
+    partner_kind: PartnerKind | str | None = None,
+    partner_id: int | None = None,
+    invoice_date_due: date | None = None,
 ) -> LedgerEntry:
     """مسودة قيد — مش بتدخل الحسابات ومش لازم تتوازن."""
     return post_entry(
         db, entry_date=entry_date, description=description, branch_id=branch_id,
         lines=lines, actor_user_id=actor_user_id, entry_type=entry_type,
         journal_id=journal_id, state=EntryState.draft.value,
+        partner_kind=partner_kind, partner_id=partner_id,
+        invoice_date_due=invoice_date_due,
     )
 
 
@@ -127,6 +144,9 @@ def update_draft(
     branch_id: int | None = None,
     journal_id: int | None = None,
     lines: list[JournalLineInput] | None = None,
+    partner_kind: PartnerKind | str | None = None,
+    partner_id: int | None = None,
+    invoice_date_due: date | None = None,
 ) -> LedgerEntry:
     """يعدّل مسودة. المرحّل مايوصلش هنا — يترجّع مسودة الأول."""
     entry = db.get(LedgerEntry, entry_id)
@@ -134,6 +154,15 @@ def update_draft(
         raise JournalError("القيد مش موجود.")
     if entry.state != EntryState.draft.value:
         raise JournalError("القيد ده مش مسودة — رجّعه مسودة الأول عشان تعدّله.")
+    if partner_kind is not None or partner_id is not None:
+        entry.partner_kind = (
+            partner_kind.value if isinstance(partner_kind, PartnerKind) else partner_kind
+        )
+        entry.partner_id = partner_id
+    if invoice_date_due is not None:
+        entry.invoice_date_due = invoice_date_due
+    # الشريك بيتظبط قبل السطور مش بعدها: `replace_lines` بيورّث شريك القيد للسطر
+    # اللي ماقالش بتاعه، فلو اتظبط بعدها كانت السطور الجديدة هتورث الشريك القديم.
     if lines is not None:
         _validate_accounts(db, lines)
         try:

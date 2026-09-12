@@ -16,7 +16,7 @@ from src.services import numbering
 
 from src.core.money import ZERO, to_money
 from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
-from src.models.ledger import Account, AccountNature, AccountType, Direction
+from src.models.ledger import Account, AccountNature, AccountType, Direction, PartnerKind
 from src.services import audit_service, ledger_service, treasury_service, voucher_service
 from src.services.ledger_service import LineInput
 
@@ -65,6 +65,15 @@ def _positive(amount) -> Decimal:
     return value
 
 
+def _cheque_partner(cheque) -> tuple[PartnerKind | None, int | None]:
+    """شريك الشيك — العميل اللي دفعه أو المورد اللي اتحرّر له (المرحلة ٢)."""
+    if cheque.customer_id is not None:
+        return PartnerKind.customer, cheque.customer_id
+    if cheque.supplier_id is not None:
+        return PartnerKind.supplier, cheque.supplier_id
+    return None, None
+
+
 def register_cheque(
     db: Session, *, direction: ChequeDirection, cheque_number: str, amount, due_date: date,
     actor_user_id: int, issue_date: date | None = None, bank_name: str | None = None,
@@ -101,9 +110,13 @@ def register_cheque(
     )
     db.add(cheque)
     db.flush()
+    partner_kind, partner_id = _cheque_partner(cheque)
     entry = ledger_service.post_entry(
         db, entry_type="cheque_register", actor_user_id=actor_user_id,
         description=description or statement, entry_date=issued,
+        partner_kind=partner_kind, partner_id=partner_id,
+        # استحقاق الشيك هو استحقاق السطر — الأعمار بتترتب عليه، مش على يوم تحريره.
+        invoice_date_due=due_date,
         lines=[LineInput(debit, Direction.debit, value, statement=statement),
                LineInput(credit, Direction.credit, value, statement=statement)],
     )
@@ -142,9 +155,10 @@ def settle_cheque(
         debit, credit = holding.id, treasury.account_id
         statement = "صرف شيك"
 
+    partner_kind, partner_id = _cheque_partner(cheque)
     entry = ledger_service.post_entry(
         db, entry_type="cheque_settle", actor_user_id=actor_user_id, description=statement,
-        entry_date=when,
+        entry_date=when, partner_kind=partner_kind, partner_id=partner_id,
         lines=[LineInput(debit, Direction.debit, cheque.amount, statement=statement),
                LineInput(credit, Direction.credit, cheque.amount, statement=statement)],
     )
@@ -175,6 +189,7 @@ def bounce_cheque(db: Session, *, cheque_id: int, actor_user_id: int,
     entry = ledger_service.post_entry(
         db, entry_type="cheque_bounce", actor_user_id=actor_user_id,
         description="ارتداد شيك", entry_date=when,
+        partner_kind=PartnerKind.customer, partner_id=cheque.customer_id,
         lines=[LineInput(party.account_id, Direction.debit, cheque.amount,
                          statement="ارتداد شيك"),
                LineInput(holding.id, Direction.credit, cheque.amount,

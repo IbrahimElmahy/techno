@@ -22,7 +22,7 @@ from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
 from src.services import customer_merge_service
 from src.services.customer_merge_service import MergeError
-from src.models.ledger import Account, AccountNature, Direction
+from src.models.ledger import Account, AccountNature, Direction, PartnerKind
 from src.models.role import RoleName
 from src.models.supplier import Supplier, SupplierAccount
 from src.models.user import User
@@ -160,10 +160,20 @@ def _create(
     )
     db.add(voucher)
     db.flush()
+    # (المرحلة ٢) السند على مين. ده اللي بيخلّي التسوية في المرحلة ٣ تعرف تقفل
+    # التحصيل ده على فواتير العميل ده بالذات بدل ما تشوف حركة على حساب.
+    if customer_id is not None:
+        v_partner_kind, v_partner_id = PartnerKind.customer, customer_id
+    elif supplier_id is not None:
+        v_partner_kind, v_partner_id = PartnerKind.supplier, supplier_id
+    else:
+        # تحويل بين خزنتين أو مصروف — مالوش شريك، وده صح مش نقص.
+        v_partner_kind, v_partner_id = None, None
     entry = ledger_service.post_entry(
         db, entry_type=entry_type, actor_user_id=actor_user_id,
         description=description or statement,
         entry_date=voucher.voucher_date,
+        partner_kind=v_partner_kind, partner_id=v_partner_id,
         lines=[
             LineInput(debit_account_id, Direction.debit, amount, statement=statement),
             *(
