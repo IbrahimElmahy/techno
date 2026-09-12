@@ -6,6 +6,7 @@ proportionally (cash_refund/credit_reduction are system-derived, not caller-set)
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger, Date, DateTime, Enum, ForeignKey, Integer, String, func,
@@ -42,6 +43,15 @@ class SalesInvoice(Base):
     revenue_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     # The customer's own paper number — kept ALONGSIDE our generated document_number, never instead.
     external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # حساب العميل **قبل** الفاتورة دي، ساعة ترحيلها.
+    #
+    # الورقة اللي بتتسلّم للعميل بتقول «الحساب السابق» — والرقم ده بيتغيّر مع كل حركة
+    # بعد كده. لو اتحسب وقت الطباعة، ورقة اتطبعت تاني الشهر الجاي بتقول رقم تاني لنفس
+    # المستند، واللي بيقارن الورقتين بيلاقي تناقض مالوش تفسير. فبيتقفل هنا وقت الترحيل.
+    #
+    # `None` = فاتورة اترحّلت قبل ما العمود ده يوجد — الورقة ساعتها مابتعرضش السطر
+    # بدل ما تخترع صفر.
+    prior_balance: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)

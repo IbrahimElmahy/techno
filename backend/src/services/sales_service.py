@@ -378,7 +378,21 @@ def create_sale(
     if replace_invoice_id and existing is None:
         raise SalesError("الفاتورة اللي بتتعدّل مش موجودة.")
 
+    # **حساب العميل قبل الفاتورة دي — بيتقفل هنا، قبل ما القيد يترحّل.**
+    #
+    # الورقة اللي بتتسلّم للعميل بتقول «الحساب السابق»، والرقم ده بيتغيّر مع كل حركة
+    # بعده. لو اتحسب وقت الطباعة، نسخة تانية من نفس المستند الشهر الجاي بتقول رقم تاني
+    # — واللي بيقارن الورقتين بيلاقي تناقض مالوش تفسير. فبيتقرا **دلوقتي** ويتخزّن.
+    #
+    # وبيتقاس على حسابات العميل كلها مش على حساب الخط ده وحده: اللي العميل بيسأل عنه
+    # وهو واقف هو «عليّا كام»، مش «عليّا كام على الأبيض».
+    prior_balance = ledger_service.total_balance_of(
+        db,
+        [a.account_id for a in db.scalars(
+            select(CustomerAccount).where(CustomerAccount.customer_id == customer_id)).all()],
+    )
     invoice = existing or SalesInvoice(
+        prior_balance=prior_balance,
         document_number=_doc_number(db, SalesInvoice, "SINV"),
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,

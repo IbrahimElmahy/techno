@@ -895,9 +895,30 @@ export default function Invoices() {
   };
 
   // Close the create page and clear it, so reopening starts fresh.
+  /**
+   * «رجوع» بيسأل قبل ما الشغل يضيع.
+   *
+   * كان بيخرج على طول، وزرار الرجوع في ركن الشاشة جنب زراير بتتضغط كتير — والفاتورة
+   * اللي اتكتبت سطر سطر بتروح بضغطة غلط من غير ولا سؤال، ومافيش مسوّدة بتتحفظ لوحدها.
+   *
+   * والمستند اللي بيتعرض للقراية بس (`viewOnly`) بيقفل من غير سؤال: مافيش حاجة تضيع،
+   * والسؤال ساعتها عقبة مالهاش سبب.
+   */
   const closeCreate = () => {
-    resetDocument();
-    setCreateVisible(false);
+    const hasWork = !viewOnly
+      && (lines.length > 0 || selectedCustomerId != null || Number(cashAmount || 0) > 0);
+    if (!hasWork) { resetDocument(); setCreateVisible(false); return; }
+    Modal.confirm({
+      title: 'تسيب المستند؟',
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: lines.length
+        ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} ج.م — هيروحوا ومش هيرجعوا.`
+        : 'اللي كتبته هيروح ومش هيرجع.',
+      okText: 'اخرج واسيبه',
+      okButtonProps: { danger: true },
+      cancelText: 'أكمّل المستند',
+      onOk: () => { resetDocument(); setCreateVisible(false); },
+    });
   };
 
   // Type a product name → it's added to the invoice immediately (POS-style, fastest path).
@@ -1776,6 +1797,9 @@ export default function Invoices() {
       cash: Math.min(Number(inv.cash_amount || 0), Number(inv.net || 0) + Number(inv.tax_amount || 0)),
       credit: Math.max(0, Number(inv.credit_amount || 0)),
       entryId: (inv as any).ledger_entry_id ?? null,
+      // حساب العميل قبل الفاتورة، متقفّل وقت الترحيل. بيتقرا من المستند مش من رصيد
+      // العميل دلوقتي — الرصيد بيتغيّر مع كل حركة، ونفس الورقة كانت هتطلع برقمين.
+      priorBalance: (inv as any).prior_balance ?? null,
       totalPoints: (inv.lines || []).reduce(
         (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
       // (030) The paper number belongs on the printed document — it is how the customer's own

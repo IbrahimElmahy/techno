@@ -128,6 +128,9 @@ class SaleCreate(BaseModel):
     coupons: list[InvoiceCouponIn] = []
     # The day the sale happened — dates the document and its ledger entry alike.
     invoice_date: date | None = None
+    # حساب العميل قبل الفاتورة — اتقفل وقت الترحيل. `None` لفاتورة أقدم من العمود،
+    # والورقة ساعتها بتسيب السطر بدل ما تخترع صفر.
+    prior_balance: Decimal | None = None
     # مصروفات الفاتورة — billed (على العميل، بتزيد الصافي) أو operating (على الشركة).
     expenses: list[InvoiceExpenseIn] = []
     # (031) أبيض ولا بولي — which of the customer's accounts this invoice posts to.
@@ -739,6 +742,7 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         rep_id=inv.rep_id, external_document_number=inv.external_document_number,
         coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
         coupon_count=inv.coupon_count, invoice_date=inv.invoice_date,
+        prior_balance=getattr(inv, "prior_balance", None),
         expenses_billed=getattr(inv, "expenses_billed", None),
         expenses_operating=getattr(inv, "expenses_operating", None),
         notes=inv.notes,

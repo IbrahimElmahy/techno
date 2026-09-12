@@ -635,6 +635,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           total: _total,
           notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
           couponsJson: _couponsJson(),
+          // الرقم اللي المندوب قاله للعميل وهو واقف قدامه — بيتخزّن مع الفاتورة مش
+          // بيتقرا وقت الطباعة، لأن الكاش بيتغيّر مع أول مزامنة بعدها.
+          prevBalance: _prevBalance,
           lines: _lines,
         );
         if (!mounted) return;
@@ -661,6 +664,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         total: _total,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
         couponsJson: _couponsJson(),
+        prevBalance: _prevBalance,
         lines: _lines,
       );
       if (!mounted) return;
@@ -769,9 +773,68 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
 
+  /// فيه حاجة اتكتبت تروح لو خرج دلوقتي؟
+  ///
+  /// شاشة فاضية الخروج منها مايضيّعش حاجة، والسؤال ساعتها بيبقى عقبة مالهاش سبب —
+  /// اللي بيفتح الشاشة بالغلط بيقفلها بضغطة.
+  bool get _hasWork =>
+      _lines.isNotEmpty ||
+      _customer != null ||
+      _coupons.any((c) => !c.isEmpty) ||
+      _notes.text.trim().isNotEmpty;
+
+  /// بيسأل قبل ما الشغل يضيع. بيرجّع هل يخرج فعلاً.
+  ///
+  /// الرجوع كان بيخرج على طول، وزرار الرجوع جنب زراير بتتضغط كتير — والفاتورة اللي
+  /// المندوب قعد يكتبها قدام العميل بتروح بضغطة غلط، من غير ولا سؤال. ومافيش مسوّدة
+  /// بتتحفظ لوحدها، فاللي ضاع مايترجعش.
+  Future<bool> _confirmLeave() async {
+    if (!_hasWork || _saving) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.danger),
+            SizedBox(width: 8),
+            Expanded(child: Text('تسيب الفاتورة؟')),
+          ]),
+          content: Text(_lines.isEmpty
+              ? 'اللي كتبته هيروح ومش هيترجع.'
+              : 'فيها ${_lines.length} صنف بإجمالي ${_money(_total)} ج.م — '
+                  'هتروح كلها ومش هترجع.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dctx, false),
+                child: const Text('أكمّل الفاتورة')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              onPressed: () => Navigator.pop(dctx, true),
+              child: const Text('اخرج واسيبها'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return leave == true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      // `false` معناها الرجوع مايتمّش لوحده — بيعدّي على السؤال الأول. وبيتحسب من
+      // `_hasWork` عشان الشاشة الفاضية ماتسألش.
+      canPop: !_hasWork,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (!await _confirmLeave()) return;
+        if (!mounted) return;
+        // `this.context` مش اللي جاية من `build` — الفحص `mounted` بتاع الـState،
+        // والمحلّل مابيربطش بينه وبين متغيّر تاني اسمه `context`.
+        Navigator.pop(this.context);
+      },
+      child: Scaffold(
       appBar: AppBar(title: Text(_isEditing ? 'تعديل فاتورة' : 'فاتورة بيع')),
       // عمود، مش `ListView` واحدة للشاشة كلها.
       //
@@ -787,6 +850,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         ],
       ),
       bottomNavigationBar: _bottomBar(),
+      ),
     );
   }
 

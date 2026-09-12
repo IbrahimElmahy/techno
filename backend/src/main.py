@@ -335,6 +335,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("employee", "receivable_account_id", "BIGINT"),
     # (ما بعد البيع) الرقم التاني للمالك — الملف بيدّي رقمين لأغلبهم.
     ("owner", "phone2", "VARCHAR(32)"),
+    # حساب العميل قبل الفاتورة — بيتقفل وقت الترحيل عشان الورقة تقول نفس الرقم لو اتطبعت تاني.
+    ("sales_invoice", "prior_balance", "DECIMAL(18,2)"),
     # جهاز واحد بس لكل حساب — الجلسة المقبولة حالياً، مصدرها، ووقت فتحها.
     ("user", "session_id", "VARCHAR(64)"),
     ("user", "session_client", "VARCHAR(16)"),

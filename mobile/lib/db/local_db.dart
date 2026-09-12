@@ -13,7 +13,15 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 22, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 23, onUpgrade: (d, from, to) async {
+      if (from < 23) {
+        // v23: حساب العميل قبل الفاتورة — الورقة بتقول للعميل حسابه كامل، مش رقم
+        // الفاتورة لوحده. بيتخزّن ساعة الحفظ لأنه الرقم اللي المندوب قاله له وهو
+        // واقف قدامه؛ قراءته وقت الطباعة من الكاش بترجّع رقم تاني بعد أي مزامنة.
+        try {
+          await d.execute('ALTER TABLE sale_invoice ADD COLUMN prev_balance REAL');
+        } catch (_) {}
+      }
       if (from < 22) {
         // v22: المحجوز على إذن تحويل معلّق. من غيره الجهاز بيعتبر البضاعة اللي المندوب
         // طلب يرجّعها لسه متاحة للبيع، والإذن بيقع على المسؤول عند الاعتماد.
@@ -666,6 +674,8 @@ class LocalDb {
     String? family,
     /// الكوبونات المصروفة مع الفاتورة، JSON — صف لكل فئة بمداه. `null` = مافيش.
     String? couponsJson,
+    /// حساب العميل **قبل** الفاتورة دي — بيتخزّن مش بيتحسب وقت الطباعة.
+    double? prevBalance,
     required List<SaleDraftLine> lines,
   }) async {
     final d = await db;
@@ -681,6 +691,7 @@ class LocalDb {
         'notes': notes,
         'family': family,
         'coupons': couponsJson,
+        'prev_balance': prevBalance,
         'synced': 0,
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -715,6 +726,7 @@ class LocalDb {
     String? notes,
     String? family,
     String? couponsJson,
+    double? prevBalance,
     required List<SaleDraftLine> lines,
   }) async {
     final d = await db;
@@ -731,6 +743,7 @@ class LocalDb {
           'notes': notes,
           'family': family,
           'coupons': couponsJson,
+          'prev_balance': prevBalance,
         },
         where: 'local_id = ? AND synced = 0',
         whereArgs: [localId],
@@ -1032,6 +1045,8 @@ CREATE TABLE sale_invoice(
   notes TEXT,
   family TEXT,
   coupons TEXT,
+  -- حساب العميل قبل الفاتورة دي، زي ما كان ساعة الحفظ.
+  prev_balance REAL,
   synced INTEGER NOT NULL DEFAULT 0,
   document_number TEXT,
   created_at TEXT NOT NULL
