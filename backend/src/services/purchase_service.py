@@ -89,6 +89,10 @@ def create_purchase(
     replace_invoice_id: int | None = None,
     # مركز التكلفة على المستند — بيتورّث لسطور القيد.
     cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
@@ -222,6 +226,7 @@ def create_purchase(
         entry_date=invoice.purchase_date,
         partner_kind=PartnerKind.supplier, partner_id=invoice.supplier_id,
         cost_center_id=invoice.cost_center_id,
+        cost_center_distribution=cost_center_distribution,
     )
     invoice.ledger_entry_id = entry.id
     db.flush()
@@ -432,6 +437,10 @@ def create_standalone_purchase_return(
     # التعديل الحر — نفس فكرة الفاتورة: المردود يتبني مكان واحد موجود بنفس رقمه.
     replace_return_id: int | None = None,
     cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> PurchaseReturn:
     """مردود شرا مستقل — **نسخة من فاتورة الشرا بالعكس**.
 
@@ -566,6 +575,7 @@ def create_standalone_purchase_return(
         entry_date=ret.return_date,
         partner_kind=PartnerKind.supplier, partner_id=supplier_id,
         cost_center_id=cost_center_id,
+        cost_center_distribution=cost_center_distribution,
     )
     ret.ledger_entry_id = entry.id
     db.flush()

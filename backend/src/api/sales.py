@@ -32,7 +32,9 @@ from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse, WarehouseType
-from src.services import coupon_receipt_service, reconcile_service, sales_service
+from src.services import (
+    analytic_read, coupon_receipt_service, reconcile_service, sales_service,
+)
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
@@ -118,6 +120,8 @@ class SaleCreate(BaseModel):
     notes: str | None = None
     # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
     cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
@@ -189,6 +193,8 @@ class StandaloneReturnCreate(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
     # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
     cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
     statement1: str | None = Field(default=None, max_length=200)
     statement2: str | None = Field(default=None, max_length=200)
     statement3: str | None = Field(default=None, max_length=200)
@@ -223,6 +229,8 @@ class SalesInvoiceOut(BaseModel):
     notes: str | None = None
     # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
     cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
     # «الحساب الفرعي» on their invoice list — the account this sale is posted to. Set on every
     # invoice since 030 and never returned, so the column that names where the money landed could
     # not be shown beside the money.
@@ -278,6 +286,8 @@ class SalesInvoiceDetail(BaseModel):
     cash_account_id: int
     ledger_entry_id: int | None = None
     cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
     lines: list[InvoiceLineOut]
     # The coupon books handed over, one row per kind — read back so the printed invoice can name
     # them instead of showing a bare range.
@@ -542,6 +552,7 @@ def _build_sale(
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
             cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution,
             coupon_serial_from=body.coupon_serial_from,
             coupon_serial_to=body.coupon_serial_to, coupon_count=body.coupon_count,
             invoice_date=body.invoice_date,
@@ -995,6 +1006,7 @@ def create_standalone_return(
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
             cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             return_date=body.return_date,
         )
@@ -1070,6 +1082,7 @@ def update_standalone_return(
             statement1=body.statement1, statement2=body.statement2,
             statement3=body.statement3, return_date=body.return_date,
             cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution,
             replace_return_id=return_id,
         )
     except SalesError as exc:
@@ -1151,6 +1164,10 @@ def get_sale(
         id=inv.id,
         document_number=inv.document_number,
         cost_center_id=getattr(inv, "cost_center_id", None),
+        # التوزيع بيترجع من سطور القيد مش من عمود على المستند — مافيش نسختين من
+        # نفس الحقيقة يختلفوا أول ما حد يعدّل القيد من الأستاذ العام.
+        cost_center_distribution=analytic_read.distribution_of_entry(
+            db, inv.ledger_entry_id),
         customer_id=inv.customer_id,
         gross=inv.gross,
         combined_pct=inv.combined_pct,

@@ -240,6 +240,10 @@ def create_sale(
     # المبيعات كانوا بينزلوا «غير موزّع»، وتقرير أرباح المراكز كان بيبقى فاضي من
     # الحاجة الوحيدة اللي بتولّد ربح أصلاً.
     cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> SalesInvoice:
     # فاتورة كوبونات بس — من غير أي صنف.
     #
@@ -536,6 +540,7 @@ def create_sale(
             # تتقفل على الفاتورة دي بالذات، وأعمار الديون بتتحسب من جدول المستندات.
             partner_kind=PartnerKind.customer, partner_id=invoice.customer_id,
             cost_center_id=invoice.cost_center_id,
+            cost_center_distribution=cost_center_distribution,
         )
         invoice.ledger_entry_id = entry.id
     else:
@@ -930,6 +935,10 @@ def create_standalone_return(
     # التعديل الحر — نفس فكرة الفاتورة: المرتجع يتبني مكان واحد موجود بنفس رقمه.
     replace_return_id: int | None = None,
     cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> SalesReturn:
     """A sales return built like a sale but reversed (028): pick a customer + items directly (no
     originating invoice), goods go back INTO stock, and the customer is credited (cash refund from a
@@ -1097,6 +1106,7 @@ def create_standalone_return(
         entry_date=ret.return_date,
         partner_kind=PartnerKind.customer, partner_id=ret.customer_id,
         cost_center_id=getattr(ret, "cost_center_id", None),
+        cost_center_distribution=cost_center_distribution,
     )
     ret.ledger_entry_id = entry.id
     db.flush()

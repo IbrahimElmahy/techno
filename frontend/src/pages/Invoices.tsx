@@ -14,6 +14,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
+import CostCenterSplit from '../components/CostCenterSplit';
 import DocumentBar from '../components/DocumentBar';
 import { api } from '../api/client';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
@@ -1464,6 +1465,7 @@ export default function Invoices() {
             // (030) document fields
             external_document_number: values.external_document_number || undefined,
             cost_center_id: values.cost_center_id ?? null,
+            cost_center_distribution: values.cost_center_distribution ?? null,
             invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
             // Coupons handed over with this invoice, as the serial range off the book. Kept on the
             // invoice because that is what proves which coupons were his when they come back in.
@@ -1700,6 +1702,7 @@ export default function Invoices() {
         external_document_number: det.external_document_number,
         notes: det.notes,
         cost_center_id: (det as any).cost_center_id ?? null,
+        cost_center_distribution: (det as any).cost_center_distribution ?? null,
         statement1: det.statement1,
         statement2: det.statement2,
         statement3: det.statement3,
@@ -2455,8 +2458,15 @@ export default function Invoices() {
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="cost_center_id" label="مركز التكلفة" style={{ marginBottom: 8 }}>
-                <CostCenterField />
+              <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
+                <Space.Compact style={{ width: '100%' }}>
+                  <Form.Item name="cost_center_id" noStyle>
+                    <CostCenterField />
+                  </Form.Item>
+                  <Form.Item name="cost_center_distribution" noStyle>
+                    <CostCenterSplit size="middle" disabled={viewOnly} />
+                  </Form.Item>
+                </Space.Compact>
               </Form.Item>
             </Col>
           </Row>

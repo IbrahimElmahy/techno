@@ -14,6 +14,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
+import CostCenterSplit from '../components/CostCenterSplit';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
@@ -479,6 +480,7 @@ export default function Purchases() {
         external_document_number: (det as any).external_document_number || '',
         notes: (det as any).notes || '',
         cost_center_id: (det as any).cost_center_id ?? null,
+        cost_center_distribution: (det as any).cost_center_distribution ?? null,
       });
       setPurchaseDate((det as any).purchase_date
         ? dayjs((det as any).purchase_date)
@@ -1033,6 +1035,7 @@ export default function Purchases() {
             variable_discount_pct: variableDiscount || 0,
             external_document_number: values.external_document_number || null,
             cost_center_id: values.cost_center_id ?? null,
+            cost_center_distribution: values.cost_center_distribution ?? null,
             // «الحساب» — الحساب اللي القيد بينزل عليه. الحقل كان موجود في السيرفر من ٠٣٠ والشاشة
             // مكانتش بتبعته خالص، فكل فاتورة كانت بتترحّل على الافتراضي مهما كان قصد الكاتب.
             // خانة «الحساب» اتشالت من الترويسة — القيد بينزل على حساب المشتريات الافتراضي.
@@ -1370,8 +1373,15 @@ export default function Purchases() {
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
-              <Form.Item name="cost_center_id" label="مركز التكلفة" style={{ marginBottom: 8 }}>
-                <CostCenterField />
+              <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
+                <Space.Compact style={{ width: '100%' }}>
+                  <Form.Item name="cost_center_id" noStyle>
+                    <CostCenterField />
+                  </Form.Item>
+                  <Form.Item name="cost_center_distribution" noStyle>
+                    <CostCenterSplit size="middle" disabled={viewOnly} />
+                  </Form.Item>
+                </Space.Compact>
               </Form.Item>
             </Col>
             {([1, 2, 3] as const).map((n) => (
