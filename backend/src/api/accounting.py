@@ -887,7 +887,7 @@ class LockDatesIn(BaseModel):
     note: str | None = None
 
 
-@router.get("/lock-dates", response_model=LockDatesOut)
+@router.get("/accounting/lock-dates", response_model=LockDatesOut)
 def get_lock_dates(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
@@ -898,7 +898,7 @@ def get_lock_dates(
                         period_lock_date=row.period_lock_date)
 
 
-@router.put("/lock-dates", response_model=LockDatesOut)
+@router.put("/accounting/lock-dates", response_model=LockDatesOut)
 def set_lock_dates(
     body: LockDatesIn,
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),

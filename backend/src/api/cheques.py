@@ -13,7 +13,12 @@ from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
 from src.models.cheque import ChequeDirection, ChequeStatus
 from src.models.role import RoleName
-from src.services import cheque_service, financial_reports_service
+from src.services import (
+    cash_flow_service,
+    cheque_service,
+    financial_reports_service,
+    partner_ledger_service,
+)
 from src.services.cheque_service import ChequeError
 from src.services.ledger_service import LedgerError
 from src.services.treasury_service import TreasuryError
@@ -268,3 +273,115 @@ def aging(
             else financial_reports_service.payables_aging(db, as_of=as_of))
     return [AgingRowOut(party_id=r.party_id, party_name=r.party_name, total=r.total,
                         buckets=r.buckets) for r in rows]
+
+
+# ------------------------------------------------- دفتر الشريك (المرحلة ٤ — موديل أودو)
+
+
+class PartnerLedgerLineOut(BaseModel):
+    line_id: int
+    entry_id: int
+    entry_number: str | None = None
+    entry_date: date
+    date_maturity: date | None = None
+    journal_code: str | None = None
+    move_type: str | None = None
+    move_type_label: str | None = None
+    account_id: int
+    account_code: str | None = None
+    account_name: str | None = None
+    description: str = ""
+    statement: str | None = None
+    debit: Decimal
+    credit: Decimal
+    balance: Decimal
+    residual: Decimal | None = None
+    reconcile_number: str | None = None
+
+
+class PartnerLedgerRowOut(BaseModel):
+    partner_kind: str
+    partner_id: int
+    partner_name: str
+    opening: Decimal
+    debit: Decimal
+    credit: Decimal
+    closing: Decimal
+    open_residual: Decimal
+    lines: list[PartnerLedgerLineOut]
+
+
+@router.get("/reports/partner-ledger", response_model=list[PartnerLedgerRowOut])
+def partner_ledger(
+    partner_kind: str | None = Query(default=None, pattern="^(customer|supplier|employee)$"),
+    partner_id: int | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    only_open: bool = Query(default=False),
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> list[PartnerLedgerRowOut]:
+    """دفتر الشريك — حركة كل طرف في الفترة برصيد جاري ومتبقّي كل سطر."""
+    rows = partner_ledger_service.partner_ledger(
+        db, partner_kind=partner_kind, partner_id=partner_id,
+        date_from=date_from, date_to=date_to, only_open=only_open)
+    return [
+        PartnerLedgerRowOut(
+            partner_kind=r.partner_kind, partner_id=r.partner_id,
+            partner_name=r.partner_name, opening=r.opening, debit=r.debit,
+            credit=r.credit, closing=r.closing, open_residual=r.open_residual,
+            lines=[PartnerLedgerLineOut(**vars(ln)) for ln in r.lines],
+        )
+        for r in rows
+    ]
+
+
+# --------------------------------------------- التدفق النقدي (المرحلة ٤ — موديل أودو)
+
+
+class CashFlowLineOut(BaseModel):
+    account_id: int | None = None
+    code: str | None = None
+    name: str | None = None
+    inflow: Decimal
+    outflow: Decimal
+    net: Decimal
+
+
+class CashFlowSectionOut(BaseModel):
+    key: str
+    label: str
+    net: Decimal
+    lines: list[CashFlowLineOut]
+
+
+class CashFlowOut(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    opening: Decimal
+    closing: Decimal
+    net_change: Decimal
+    consistent: bool
+    sections: list[CashFlowSectionOut]
+
+
+@router.get("/reports/cash-flow", response_model=CashFlowOut)
+def cash_flow(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> CashFlowOut:
+    """التدفق النقدي — حركة الخزن والبنوك منسوبة لحسابها المقابل."""
+    s = cash_flow_service.cash_flow(db, date_from=date_from, date_to=date_to)
+    return CashFlowOut(
+        date_from=s.date_from, date_to=s.date_to, opening=s.opening, closing=s.closing,
+        net_change=s.net_change, consistent=s.consistent,
+        sections=[
+            CashFlowSectionOut(
+                key=sec.key, label=sec.label, net=sec.net,
+                lines=[CashFlowLineOut(**vars(ln)) for ln in sec.lines],
+            )
+            for sec in s.sections
+        ],
+    )
