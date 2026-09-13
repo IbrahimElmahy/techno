@@ -84,6 +84,19 @@ const MENU: Item[] = [
 /** المسار من غير الاستعلام — المقارنة بتتم عليه عشان تبويب جوّه الشاشة مايكسرش التحديد. */
 const bare = (key: string) => key.split('?')[0];
 
+/**
+ * الشاشات اللي الشريط ده بيتعرض عليها — وهي نفسها اللي الشجرة الجانبية بتتخبى فيها.
+ *
+ * القايمتين لازم يفضلوا نفس القايمة: إخفاء الشجرة على شاشة مالهاش شريط أفقي بيسيب
+ * اللي فيها من غير أي طريق يخرج بيه.
+ */
+export const ACCOUNTING_PATHS = new Set([
+  '/accounting', '/general-ledger', '/finance-reports', '/reconciliation',
+]);
+
+export const isAccountingPath = (path?: string | null) =>
+  !!path && ACCOUNTING_PATHS.has(bare(path));
+
 export default function AccountingNav() {
   const navigate = useNavigate();
   const { pathname } = useLocation();

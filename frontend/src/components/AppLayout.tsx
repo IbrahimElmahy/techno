@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Button, Tabs, theme, Dropdown, Space, Avatar, Modal, Result } from 'antd';
+import {
+  Layout, Menu, Button, Tabs, theme, Dropdown, Space, Avatar, Modal, Result, Tooltip,
+} from 'antd';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -23,6 +25,7 @@ import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
 } from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
+import { isAccountingPath } from './AccountingNav';
 import RowDensityControl from './RowDensity';
 import FullscreenToggle from './FullscreenToggle';
 import Logo from './Logo';
@@ -66,6 +69,16 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  /**
+   * الشجرة بتتخبى في شاشات المحاسبة — الشريط الأفقي فوقها بيغطّيها.
+   *
+   * حاجتين مختلفتين: `collapsed` هو طيّ الشجرة لأيقونات (قرار المستخدم في أي
+   * شاشة)، و`showTree` هو إظهارها تاني في شاشة بتخبّيها. لو خلطناهم، اللي فتح
+   * الشجرة في المحاسبة كان هيلاقيها مطويّة في كل الشاشات التانية كمان.
+   *
+   * وبيترجع `false` لما تسيب المحاسبة: القرار بتاع الشاشة دي، مش إعداد دايم.
+   */
+  const [showTree, setShowTree] = useState(false);
   const { user, logout } = useAuth();
   const { tabs, activeId, openTab, activateTab, closeTab } = useTabs();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -172,6 +185,12 @@ export default function AppLayout() {
 
   // The active tab's base path drives the sidebar highlight.
   const activeBase = activeId || '/dashboard';
+  const onAccounting = isAccountingPath(activeBase);
+  const treeHidden = onAccounting && !showTree;
+
+  useEffect(() => {
+    if (!onAccounting && showTree) setShowTree(false);
+  }, [onAccounting, showTree]);
 
   const userDropdownItems = [
     {
@@ -237,11 +256,14 @@ export default function AppLayout() {
         reverseArrow
         width={250}
         theme="light"
+        // `display: none` مش إلغاء المكوّن: الشجرة بتفضل محمّلة ومفتوحة على نفس
+        // المجموعة، فالرجوع ليها بيرجّعها زي ما سبتها مش من أولها.
         style={{
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           zIndex: 10,
           height: '100vh',
           overflow: 'hidden',
+          display: treeHidden ? 'none' : undefined,
         }}
       >
         {/* Flex column so the logo stays pinned and the menu scrolls when items overflow. */}
@@ -296,12 +318,19 @@ export default function AppLayout() {
             zIndex: 9,
           }}
         >
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
-          />
+          {/* نفس الزرار بيعمل حاجتين حسب الشاشة: في المحاسبة بيرجّع الشجرة أو
+              يخبّيها، وفي غيرها بيطويها لأيقونات زي ما كان. */}
+          <Tooltip title={onAccounting
+            ? (treeHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية')
+            : (collapsed ? 'فتح القائمة' : 'طي القائمة')}>
+            <Button
+              type="text"
+              icon={(onAccounting ? treeHidden : collapsed)
+                ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => (onAccounting ? setShowTree(!showTree) : setCollapsed(!collapsed))}
+              style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
+            />
+          </Tooltip>
           {/* Chrome-style tab strip — one tab per open section, each keeps its page mounted. */}
           <Tabs
             hideAdd
