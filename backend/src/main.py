@@ -390,6 +390,13 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("ledger_entry", "partner_id", "BIGINT"),
     ("ledger_entry", "invoice_date_due", "DATE"),
     ("ledger_entry", "payment_state", "VARCHAR(16)"),
+    # مركز التكلفة على المستندات — الخانة كانت في القيد اليدوي بس، فتقرير أرباح
+    # المراكز كان بيطلع كله «غير موزّع».
+    ("voucher", "cost_center_id", "BIGINT"),
+    ("sales_invoice", "cost_center_id", "BIGINT"),
+    ("sales_return", "cost_center_id", "BIGINT"),
+    ("purchase_invoice", "cost_center_id", "BIGINT"),
+    ("purchase_return", "cost_center_id", "BIGINT"),
     # (المرحلة ٤) سلسلة التجزئة — فاضيين في كل دفتر مش شغّال عليه `restrict_mode_hash`.
     ("ledger_entry", "secure_sequence_number", "BIGINT"),
     ("ledger_entry", "inalterable_hash", "VARCHAR(64)"),

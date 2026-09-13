@@ -54,6 +54,8 @@ class ReceiptIn(BaseModel):
     # (033) رقم الجهاز — بيخلّي إعادة الرفع من تطبيق المندوب ترجّع نفس السند بدل ما تقيّد
     # التحصيل مرتين وتنقص مديونية العميل بالضعف.
     client_uuid: str | None = None
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class PaymentIn(BaseModel):
@@ -64,6 +66,8 @@ class PaymentIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class HandoverIn(BaseModel):
@@ -76,6 +80,8 @@ class HandoverIn(BaseModel):
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class ExpenseIn(BaseModel):
@@ -86,6 +92,8 @@ class ExpenseIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class CashTransferIn(BaseModel):
@@ -95,6 +103,8 @@ class CashTransferIn(BaseModel):
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class TreasuryIn(BaseModel):
@@ -155,6 +165,7 @@ class VoucherOut(BaseModel):
     # (031) أنهي مديونية سدّدها. Returned as well as stored — the screen prints it on the sheet
     # the customer signs, and a field that goes in and never comes back is a field nobody can use.
     family: str | None = None
+    cost_center_id: int | None = None
     ledger_entry_id: int | None
     is_reversal: bool
 
@@ -220,6 +231,7 @@ def _out(v) -> VoucherOut:
         voucher_date=v.voucher_date, payment_method=v.payment_method, reference=v.reference,
         description=v.description, ledger_entry_id=v.ledger_entry_id,
         family=getattr(v, "family", None),
+        cost_center_id=getattr(v, "cost_center_id", None),
         is_reversal=v.reverses_id is not None,
     )
 
@@ -308,7 +320,7 @@ def create_receipt(
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
             family=body.family, on_total=body.on_total,
-            client_uuid=body.client_uuid)
+            client_uuid=body.client_uuid, cost_center_id=body.cost_center_id)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -331,7 +343,8 @@ def create_payment(
             db, supplier_id=body.supplier_id, amount=body.amount, actor_user_id=current.id,
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference, payment_method=body.payment_method)
+            reference=body.reference, payment_method=body.payment_method,
+            cost_center_id=body.cost_center_id)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -354,7 +367,8 @@ def create_handover(
         v = voucher_service.create_handover(
             db, rep_user_id=body.rep_user_id, amount=body.amount, actor_user_id=current.id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference, family=body.family)
+            reference=body.reference, family=body.family,
+            cost_center_id=body.cost_center_id)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -377,7 +391,8 @@ def create_expense(
             db, expense_account_id=body.expense_account_id, amount=body.amount,
             actor_user_id=current.id, actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference, payment_method=body.payment_method)
+            reference=body.reference, payment_method=body.payment_method,
+            cost_center_id=body.cost_center_id)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -399,7 +414,8 @@ def create_cash_transfer(
         v = voucher_service.create_cash_transfer(
             db, from_treasury_id=body.from_treasury_id, to_treasury_id=body.to_treasury_id,
             amount=body.amount, actor_user_id=current.id, voucher_date=body.voucher_date,
-            description=body.description, reference=body.reference)
+            description=body.description, reference=body.reference,
+            cost_center_id=body.cost_center_id)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()

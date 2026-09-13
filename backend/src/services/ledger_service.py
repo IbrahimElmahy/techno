@@ -159,11 +159,14 @@ def _build_lines(
     partner_kind: str | None = None,
     partner_id: int | None = None,
     date_maturity: date | None = None,
+    cost_center_id: int | None = None,
 ) -> list[LedgerLine]:
-    """يبني السطور، وبيورّث شريك القيد واستحقاقه للسطر اللي ماقالش بتاعه.
+    """يبني السطور، وبيورّث شريك القيد واستحقاقه ومركز تكلفته للسطر اللي ماقالش بتاعه.
 
     التوريث ده هو اللي بيخلّي الـ٢٧ نداء الموجودين ياخدوا الشريك من غير ما حد فيهم
     يتغيّر: المستند بيقول «الفاتورة دي على العميل ده» مرة واحدة، والسطور بتاخدها.
+    ونفس الحكاية مع مركز التكلفة: المستند بيقول «ده بتاع المعرض» مرة، والسطور كلها
+    بتتعلّم — والسطر اللي حدّد مركزه بنفسه (القيد اليدوي) بيغلب.
     """
     built: list[LedgerLine] = []
     for ln in lines:
@@ -176,7 +179,7 @@ def _build_lines(
                 direction=ln.direction,
                 amount=to_money(ln.amount),
                 statement=ln.statement,
-                cost_center_id=ln.cost_center_id,
+                cost_center_id=ln.cost_center_id or cost_center_id,
                 partner_kind=_as_value(ln.partner_kind) if own else partner_kind,
                 partner_id=ln.partner_id if own else partner_id,
                 date_maturity=ln.date_maturity or date_maturity,
@@ -238,6 +241,9 @@ def post_entry(
     partner_kind: PartnerKind | str | None = None,
     partner_id: int | None = None,
     invoice_date_due: date | None = None,
+    # مركز تكلفة المستند كله. بيتورّث لكل سطر مالوش مركز بتاعه، فالمستند بيقوله مرة
+    # واحدة بدل ما كل نداء يفضّل يكرّره على سطوره.
+    cost_center_id: int | None = None,
 ) -> LedgerEntry:
     """يكتب قيد. الافتراضي مرحّل ومتوازن وبرقم؛ `state="draft"` بيسيبه ناقص وبلا رقم.
 
@@ -276,7 +282,7 @@ def post_entry(
         invoice_date_due=due,
     )
     entry.lines = _build_lines(lines, partner_kind=kind, partner_id=partner_id,
-                               date_maturity=due)
+                               date_maturity=due, cost_center_id=cost_center_id)
     db.add(entry)
     db.flush()
     if state == EntryState.posted.value:

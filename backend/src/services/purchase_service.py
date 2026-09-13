@@ -87,6 +87,8 @@ def create_purchase(
     variable_discount_pct: Decimal = ZERO,
     # التعديل الحر — نفس فكرة البيع: الفاتورة تتبني مكان واحدة موجودة بنفس رقمها.
     replace_invoice_id: int | None = None,
+    # مركز التكلفة على المستند — بيتورّث لسطور القيد.
+    cost_center_id: int | None = None,
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
@@ -150,8 +152,10 @@ def create_purchase(
         # Defaulted here rather than in the column so a purchase always carries a real day — a
         # NULL would push every report that groups by day into guessing.
         purchase_date=purchase_date or date.today(),
+        cost_center_id=cost_center_id,
     )
     if existing is not None:
+        existing.cost_center_id = cost_center_id
         existing.supplier_id = supplier_id
         existing.location_kind = location_kind
         existing.location_id = location_id
@@ -217,6 +221,7 @@ def create_purchase(
         # فالفاتورة اللي اتسجّلت متأخرة كانت بتقع في شهر غير شهرها.
         entry_date=invoice.purchase_date,
         partner_kind=PartnerKind.supplier, partner_id=invoice.supplier_id,
+        cost_center_id=invoice.cost_center_id,
     )
     invoice.ledger_entry_id = entry.id
     db.flush()
@@ -296,6 +301,7 @@ def return_purchase(
         # Defaulted here rather than on the column: returns recorded before this existed have no
         # captured day, and a column default would have invented one for them.
         return_date=return_date or date.today(), notes=notes,
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     db.add(ret)
     db.flush()
@@ -325,6 +331,9 @@ def return_purchase(
         description=f"Purchase return {ret.document_number}",
         entry_date=ret.return_date,
         partner_kind=PartnerKind.supplier, partner_id=inv.supplier_id,
+        # المردود بيرجع على نفس مركز الفاتورة — غير كده المصروف بينزل على مركز والرد
+        # بيطلع من «غير موزّع».
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     ret.ledger_entry_id = entry.id
     db.flush()
@@ -422,6 +431,7 @@ def create_standalone_purchase_return(
     statement3: str | None = None,
     # التعديل الحر — نفس فكرة الفاتورة: المردود يتبني مكان واحد موجود بنفس رقمه.
     replace_return_id: int | None = None,
+    cost_center_id: int | None = None,
 ) -> PurchaseReturn:
     """مردود شرا مستقل — **نسخة من فاتورة الشرا بالعكس**.
 
@@ -491,6 +501,7 @@ def create_standalone_purchase_return(
         gross=gross, variable_discount_pct=variable, combined_pct=variable, value=value,
         ledger_entry_id=None, actor_user_id=actor_user_id,
         return_date=return_date or date.today(), notes=notes,
+        cost_center_id=cost_center_id,
         expense_account_id=expense_account_id,
         external_document_number=external_document_number,
         statement1=statement1, statement2=statement2, statement3=statement3,
@@ -554,6 +565,7 @@ def create_standalone_purchase_return(
         description=f"Standalone purchase return {ret.document_number}",
         entry_date=ret.return_date,
         partner_kind=PartnerKind.supplier, partner_id=supplier_id,
+        cost_center_id=cost_center_id,
     )
     ret.ledger_entry_id = entry.id
     db.flush()

@@ -116,6 +116,8 @@ class SaleCreate(BaseModel):
     revenue_account_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
@@ -185,6 +187,8 @@ class StandaloneReturnCreate(BaseModel):
     revenue_account_id: int | None = None
     external_document_number: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=500)
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
     statement1: str | None = Field(default=None, max_length=200)
     statement2: str | None = Field(default=None, max_length=200)
     statement3: str | None = Field(default=None, max_length=200)
@@ -217,6 +221,8 @@ class SalesInvoiceOut(BaseModel):
     rep_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
     # «الحساب الفرعي» on their invoice list — the account this sale is posted to. Set on every
     # invoice since 030 and never returned, so the column that names where the money landed could
     # not be shown beside the money.
@@ -271,6 +277,7 @@ class SalesInvoiceDetail(BaseModel):
     credit_amount: Decimal
     cash_account_id: int
     ledger_entry_id: int | None = None
+    cost_center_id: int | None = None
     lines: list[InvoiceLineOut]
     # The coupon books handed over, one row per kind — read back so the printed invoice can name
     # them instead of showing a bare range.
@@ -534,6 +541,7 @@ def _build_sale(
             can_sell_below=can_sell_below,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
+            cost_center_id=body.cost_center_id,
             coupon_serial_from=body.coupon_serial_from,
             coupon_serial_to=body.coupon_serial_to, coupon_count=body.coupon_count,
             invoice_date=body.invoice_date,
@@ -737,6 +745,7 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         expenses_billed=getattr(inv, "expenses_billed", None),
         expenses_operating=getattr(inv, "expenses_operating", None),
         notes=inv.notes,
+        cost_center_id=getattr(inv, "cost_center_id", None),
         revenue_account_id=inv.revenue_account_id,
     )
 
@@ -985,6 +994,7 @@ def create_standalone_return(
             actor_role=current.role, actor_user_id=current.id, family=body.family,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
+            cost_center_id=body.cost_center_id,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             return_date=body.return_date,
         )
@@ -1059,6 +1069,7 @@ def update_standalone_return(
             external_document_number=body.external_document_number, notes=body.notes,
             statement1=body.statement1, statement2=body.statement2,
             statement3=body.statement3, return_date=body.return_date,
+            cost_center_id=body.cost_center_id,
             replace_return_id=return_id,
         )
     except SalesError as exc:
@@ -1139,6 +1150,7 @@ def get_sale(
         coupons=_inv_out(inv, db).coupons,
         id=inv.id,
         document_number=inv.document_number,
+        cost_center_id=getattr(inv, "cost_center_id", None),
         customer_id=inv.customer_id,
         gross=inv.gross,
         combined_pct=inv.combined_pct,

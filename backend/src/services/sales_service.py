@@ -236,6 +236,10 @@ def create_sale(
     # الـid. أثر القديمة بيتشال قبل البناء (شوف `document_edit_service`)، فاللي بيطلع في
     # الآخر مستند واحد، مش مستند وتصحيحه.
     replace_invoice_id: int | None = None,
+    # مركز التكلفة على المستند كله — بيتورّث لسطور القيد. من غيره الإيراد وتكلفة
+    # المبيعات كانوا بينزلوا «غير موزّع»، وتقرير أرباح المراكز كان بيبقى فاضي من
+    # الحاجة الوحيدة اللي بتولّد ربح أصلاً.
+    cost_center_id: int | None = None,
 ) -> SalesInvoice:
     # فاتورة كوبونات بس — من غير أي صنف.
     #
@@ -397,6 +401,7 @@ def create_sale(
         coupon_count=_coupon_count(coupon_serial_from, coupon_serial_to, coupon_count),
         invoice_date=invoice_date,
         client_uuid=client_uuid,
+        cost_center_id=cost_center_id,
     )
     if existing is not None:
         # نفس الحقول اللي البناء بيملاها، بس على صف موجود. `client_uuid` مابيتلمسش —
@@ -426,6 +431,7 @@ def create_sale(
         existing.coupon_serial_from = (coupon_serial_from or None)
         existing.coupon_serial_to = (coupon_serial_to or None)
         existing.coupon_count = _coupon_count(coupon_serial_from, coupon_serial_to, coupon_count)
+        existing.cost_center_id = cost_center_id
         if invoice_date is not None:
             existing.invoice_date = invoice_date
         invoice.lines.clear()
@@ -529,6 +535,7 @@ def create_sale(
             # (المرحلة ٢) الفاتورة قيد على عميل. من غير السطرين دول الدفعة مابتعرفش
             # تتقفل على الفاتورة دي بالذات، وأعمار الديون بتتحسب من جدول المستندات.
             partner_kind=PartnerKind.customer, partner_id=invoice.customer_id,
+            cost_center_id=invoice.cost_center_id,
         )
         invoice.ledger_entry_id = entry.id
     else:
@@ -805,6 +812,8 @@ def return_sale(
         credit_reduction=credit_reduction, ledger_entry_id=None, actor_user_id=actor_user_id,
         # المرتجع بياخد فرع فاتورته: البضاعة رجعت للمكان اللي خرجت منه.
         branch_id=getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id),
+        # ومركزها كمان — الرد لازم يرجع على نفس النشاط اللي البيع اتحسب عليه.
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     db.add(ret)
     db.flush()
@@ -865,6 +874,9 @@ def return_sale(
         description=f"Sales return {ret.document_number}",
         entry_date=ret.return_date,
         partner_kind=PartnerKind.customer, partner_id=inv.customer_id,
+        # المردود بيرجع على نفس مركز الفاتورة — غير كده الربح بينزل من مركز والرد
+        # بيطلع من «غير موزّع»، والمركز بيفضل مكتوب عليه ربح مارجعش.
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     ret.ledger_entry_id = entry.id
     db.flush()
@@ -917,6 +929,7 @@ def create_standalone_return(
     return_date=None,
     # التعديل الحر — نفس فكرة الفاتورة: المرتجع يتبني مكان واحد موجود بنفس رقمه.
     replace_return_id: int | None = None,
+    cost_center_id: int | None = None,
 ) -> SalesReturn:
     """A sales return built like a sale but reversed (028): pick a customer + items directly (no
     originating invoice), goods go back INTO stock, and the customer is credited (cash refund from a
@@ -1006,9 +1019,11 @@ def create_standalone_return(
         # Defaulted here rather than in the column so a return always carries a real day — a NULL
         # would push every report that groups by day into guessing.
         return_date=return_date or date.today(),
+        cost_center_id=cost_center_id,
         ledger_entry_id=None, actor_user_id=actor_user_id,
     )
     if existing is not None:
+        existing.cost_center_id = cost_center_id
         existing.customer_id = customer_id
         existing.family = family
         existing.origin_location_kind = origin_location_kind
@@ -1081,6 +1096,7 @@ def create_standalone_return(
         description=f"Sales return {ret.document_number}",
         entry_date=ret.return_date,
         partner_kind=PartnerKind.customer, partner_id=ret.customer_id,
+        cost_center_id=getattr(ret, "cost_center_id", None),
     )
     ret.ledger_entry_id = entry.id
     db.flush()

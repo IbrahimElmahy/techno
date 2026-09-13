@@ -18,6 +18,7 @@ import {
 import PartyField from '../components/PartyField';
 import { entryTypeLabel } from '../components/labels';
 import dayjs, { Dayjs } from 'dayjs';
+import CostCenterField from '../components/CostCenterField';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
@@ -1161,6 +1162,9 @@ const Vouchers: React.FC = () => {
                   <Form.Item name="reference" label="المرجع">
                     <Input placeholder="رقم الإيصال" style={{ width: 140 }} />
                   </Form.Item>
+                  <Form.Item name="cost_center_id" label="مركز التكلفة">
+                    <CostCenterField />
+                  </Form.Item>
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />
                   </Form.Item>
@@ -1210,6 +1214,9 @@ const Vouchers: React.FC = () => {
                   </Form.Item>
                   <Form.Item name="reference" label="المرجع">
                     <Input placeholder="رقم الشيك/الإيصال" style={{ width: 150 }} />
+                  </Form.Item>
+                  <Form.Item name="cost_center_id" label="مركز التكلفة">
+                    <CostCenterField />
                   </Form.Item>
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />
@@ -1270,6 +1277,9 @@ const Vouchers: React.FC = () => {
                   <Form.Item name="reference" label="المرجع">
                     <Input placeholder="رقم الإيصال" style={{ width: 140 }} />
                   </Form.Item>
+                  <Form.Item name="cost_center_id" label="مركز التكلفة">
+                    <CostCenterField />
+                  </Form.Item>
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />
                   </Form.Item>
@@ -1305,6 +1315,9 @@ const Vouchers: React.FC = () => {
                   <TreasuryField treasuries={treasuries} />
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
+                  </Form.Item>
+                  <Form.Item name="cost_center_id" label="مركز التكلفة">
+                    <CostCenterField />
                   </Form.Item>
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />

@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
+import CostCenterField from '../components/CostCenterField';
 import { api } from '../api/client';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
@@ -1461,6 +1462,7 @@ export default function Invoices() {
             }),
             // (030) document fields
             external_document_number: values.external_document_number || undefined,
+            cost_center_id: values.cost_center_id ?? null,
             invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
             // Coupons handed over with this invoice, as the serial range off the book. Kept on the
             // invoice because that is what proves which coupons were his when they come back in.
@@ -1696,6 +1698,7 @@ export default function Invoices() {
         rep_id: det.rep_id,
         external_document_number: det.external_document_number,
         notes: det.notes,
+        cost_center_id: (det as any).cost_center_id ?? null,
         statement1: det.statement1,
         statement2: det.statement2,
         statement3: det.statement3,
@@ -2421,6 +2424,11 @@ export default function Invoices() {
             <Col xs={12} md={6}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" disabled={viewOnly} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item name="cost_center_id" label="مركز التكلفة" style={{ marginBottom: 8 }}>
+                <CostCenterField />
               </Form.Item>
             </Col>
           </Row>

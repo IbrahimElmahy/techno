@@ -58,6 +58,8 @@ class PurchaseCreate(BaseModel):
     expense_account_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
@@ -110,6 +112,8 @@ class PurchaseListOut(BaseModel):
     purchase_date: str | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
     # (٨) الأعمدة اللي سجل الشرا عند العميل بيعرضها والسجل عندنا مكانش بيرجّعها.
     #
     # `gross` و`combined_pct` و`net` و`tax_amount` كانوا **معرّفين فوق من الأول وماكانوش
@@ -167,6 +171,8 @@ class PurchaseReturnListOut(BaseModel):
     # storing a date that came back from nothing, so the screen could write it and never see it.
     return_date: date | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
     external_document_number: str | None = None
     expense_account_id: int | None = None
     gross: Decimal = Decimal("0")
@@ -230,6 +236,7 @@ def list_purchases(
             credit_amount=p.credit_amount, created_at=str(p.created_at),
             purchase_date=str(p.purchase_date) if p.purchase_date else None,
             external_document_number=p.external_document_number, notes=p.notes,
+            cost_center_id=getattr(p, "cost_center_id", None),
             gross=gross, combined_pct=p.combined_pct or 0, net=net,
             tax_amount=to_money(p.tax_amount or 0),
             branch_id=branch_id, branch_name=branches.get(branch_id) if branch_id else None,
@@ -288,6 +295,7 @@ def list_purchase_returns(
             purchase_invoice_id=r.purchase_invoice_id,
             purchase_document_number=inv.document_number if inv else None,
             return_date=r.return_date, notes=r.notes,
+            cost_center_id=getattr(r, "cost_center_id", None),
             supplier_id=sup_id, supplier_name=names.get(sup_id) if sup_id else None,
             value=r.value, created_at=str(r.created_at),
             external_document_number=r.external_document_number,
@@ -348,6 +356,7 @@ def get_purchase_return(
         purchase_invoice_id=r.purchase_invoice_id,
         purchase_document_number=inv.document_number if inv else None,
         return_date=r.return_date, notes=r.notes,
+        cost_center_id=getattr(r, "cost_center_id", None),
         supplier_id=supplier.id if supplier else None,
         supplier_name=supplier.name if supplier else None,
         value=r.value, created_at=str(r.created_at),
@@ -369,7 +378,9 @@ def get_purchase_return(
 @router.get("/{purchase_id}", response_model=PurchaseDetailOut)
 def get_purchase(
     purchase_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    # كان اسمه `_` والجسم بينادي `current` — يعني فتح أي فاتورة شرا كان بيرمي ٥٠٠
+    # على طول. الاسم هو كل الإصلاح.
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> PurchaseDetailOut:
     p = db.get(PurchaseInvoice, purchase_id)
@@ -387,6 +398,7 @@ def get_purchase(
         cash_amount=p.cash_amount, credit_amount=p.credit_amount, created_at=str(p.created_at),
         purchase_date=str(p.purchase_date) if p.purchase_date else None,
         external_document_number=p.external_document_number, notes=p.notes,
+        cost_center_id=getattr(p, "cost_center_id", None),
         location_kind=p.location_kind.value, location_id=p.location_id,
         lines=[PurchaseLineOut(item_id=ln.item_id, quantity=ln.quantity, unit_price=ln.unit_price,
                                discount_pct=ln.discount_pct,
@@ -439,6 +451,7 @@ def update_purchase(
             actor_role=current.role, actor_user_id=current.id,
             rep_id=body.rep_id, expense_account_id=body.expense_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
+            cost_center_id=body.cost_center_id,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             purchase_date=body.purchase_date,
             variable_discount_pct=body.variable_discount_pct,
@@ -487,6 +500,7 @@ def create_purchase(
             actor_role=current.role, actor_user_id=current.id,
             rep_id=body.rep_id, expense_account_id=body.expense_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
+            cost_center_id=body.cost_center_id,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             purchase_date=body.purchase_date,
             variable_discount_pct=body.variable_discount_pct,
@@ -543,6 +557,8 @@ class StandaloneReturnIn(BaseModel):
     lines: list[StandaloneReturnLineIn]
     return_date: date | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
     expense_account_id: int | None = None
     variable_discount_pct: Decimal = Decimal("0")
     external_document_number: str | None = None
@@ -578,6 +594,7 @@ def create_standalone_purchase_return(
             } for ln in body.lines],
             actor_role=current.role, actor_user_id=current.id,
             return_date=body.return_date, notes=body.notes,
+            cost_center_id=body.cost_center_id,
             expense_account_id=body.expense_account_id,
             variable_discount_pct=body.variable_discount_pct,
             external_document_number=body.external_document_number,
@@ -622,6 +639,7 @@ def update_purchase_return(
             } for ln in body.lines],
             actor_role=current.role, actor_user_id=current.id,
             return_date=body.return_date, notes=body.notes,
+            cost_center_id=body.cost_center_id,
             expense_account_id=body.expense_account_id,
             external_document_number=body.external_document_number,
             statement1=body.statement1, statement2=body.statement2,

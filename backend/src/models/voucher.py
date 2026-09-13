@@ -39,6 +39,12 @@ class Voucher(Base):
                                                   index=True)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    # مركز التكلفة — «السند ده بتاع أنهي نشاط». اختياري زي كل مكان تاني، وبيتكتب على
+    # سطور القيد كلها عشان كشف الحساب يعرض عمود متسق. أهم حالة هي سند المصروف: من
+    # غيره المصروف بينزل في «غير موزّع» وتقرير أرباح المراكز بيبقى فاضي من المصروفات.
+    cost_center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cost_center.id"), nullable=True, index=True
+    )
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     # (033) رقم الجهاز — نفس فكرة الفاتورة بالظبط: المندوب بيحصّل وهو من غير شبكة، ولو
     # الاتصال قطع بعد ما السند اتكتب وقبل ما الرد يوصل، إعادة الرفع كانت هتقيّد التحصيل

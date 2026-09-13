@@ -43,6 +43,10 @@ class SalesInvoice(Base):
     # The customer's own paper number — kept ALONGSIDE our generated document_number, never instead.
     external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # مركز التكلفة — «المستند ده بتاع أنهي نشاط». اختياري، وبيتورّث لسطور القيد كلها.
+    cost_center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cost_center.id"), nullable=True, index=True
+    )
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -194,6 +198,10 @@ class SalesReturn(Base):
     revenue_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # مركز التكلفة — «المستند ده بتاع أنهي نشاط». اختياري، وبيتورّث لسطور القيد كلها.
+    cost_center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cost_center.id"), nullable=True, index=True
+    )
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
