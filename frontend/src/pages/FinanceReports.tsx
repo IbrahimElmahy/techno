@@ -19,6 +19,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import AccountingNav from '../components/AccountingNav';
 import { useQueryTab } from '../components/useQueryTab';
 import { printDocument } from '../print/brand';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -184,6 +185,7 @@ const FinanceReports: React.FC = () => {
 
   return (
     <div>
+      <AccountingNav />
       <Space wrap style={{ marginBottom: 16 }}>
         <div style={{ width: 280 }}>
           <DateRangeFilter value={range as any} onChange={(v) => setRange(v as any)} />

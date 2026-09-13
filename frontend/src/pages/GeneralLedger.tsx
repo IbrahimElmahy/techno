@@ -13,6 +13,7 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { useQueryTab } from '../components/useQueryTab';
+import AccountingNav from '../components/AccountingNav';
 import ChartTab from './ledger/ChartTab';
 import JournalTab from './ledger/JournalTab';
 import TrialBalanceTab from './ledger/TrialBalanceTab';
@@ -22,6 +23,8 @@ import IntegrityTab from './ledger/IntegrityTab';
 export default function GeneralLedger() {
   const [activeTab, selectTab] = useQueryTab('chart');
   return (
+    <>
+    <AccountingNav />
     <Tabs
       activeKey={activeTab} onChange={selectTab}
       items={[
@@ -32,5 +35,6 @@ export default function GeneralLedger() {
         { key: 'integrity', label: <span><SafetyCertificateOutlined /> سلامة الدفاتر</span>, children: <IntegrityTab /> },
       ]}
     />
+    </>
   );
 }

@@ -9,6 +9,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { api } from '../api/client';
+import AccountingNav from '../components/AccountingNav';
 import { egp } from '../utils/accounts';
 import { normalizeAr } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
@@ -247,6 +248,8 @@ export default function Reconciliation() {
   );
 
   return (
+    <>
+    <AccountingNav />
     <Card
       title="تسوية الحسابات"
       extra={
@@ -424,5 +427,6 @@ export default function Reconciliation() {
         ]}
       />
     </Card>
+    </>
   );
 }

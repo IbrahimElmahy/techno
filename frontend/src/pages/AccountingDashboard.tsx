@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import AccountingNav from '../components/AccountingNav';
 
 /**
  * لوحة المحاسبة — كارت لكل دفتر، زي أول شاشة في محاسبة أودو.
@@ -87,10 +88,11 @@ export default function AccountingDashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  if (loading) return <Skeleton active paragraph={{ rows: 8 }} />;
+  if (loading) return <><AccountingNav /><Skeleton active paragraph={{ rows: 8 }} /></>;
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <AccountingNav />
       <Space wrap>
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         <Button icon={<BankOutlined />} onClick={() => navigate('/general-ledger?tab=trial')}>
