@@ -25,115 +25,12 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
-
-interface ReportLine {
-  account_id: number;
-  code: string | null;
-  name: string | null;
-  amount: string;
-}
-
-interface IncomeStatement {
-  income: ReportLine[];
-  expenses: ReportLine[];
-  total_income: string;
-  total_expenses: string;
-  net_profit: string;
-}
-
-interface BalanceSheet {
-  assets: ReportLine[];
-  liabilities: ReportLine[];
-  equity: ReportLine[];
-  total_assets: string;
-  total_liabilities: string;
-  total_equity: string;
-  net_profit: string;
-  balanced: boolean;
-}
-
-interface AgingRow {
-  party_id: number;
-  party_name: string;
-  total: string;
-  buckets: Record<string, string>;
-}
-
-interface PartnerLedgerLine {
-  line_id: number;
-  entry_id: number;
-  entry_number: string | null;
-  entry_date: string;
-  date_maturity: string | null;
-  journal_code: string | null;
-  move_type_label: string | null;
-  account_code: string | null;
-  account_name: string | null;
-  description: string;
-  statement: string | null;
-  debit: string;
-  credit: string;
-  balance: string;
-  residual: string | null;
-  reconcile_number: string | null;
-}
-
-interface PartnerLedgerRow {
-  partner_kind: string;
-  partner_id: number;
-  partner_name: string;
-  opening: string;
-  debit: string;
-  credit: string;
-  closing: string;
-  open_residual: string;
-  lines: PartnerLedgerLine[];
-}
-
-interface CashFlowLine {
-  account_id: number | null;
-  code: string | null;
-  name: string | null;
-  inflow: string;
-  outflow: string;
-  net: string;
-}
-
-interface CashFlowSection {
-  key: string;
-  label: string;
-  net: string;
-  lines: CashFlowLine[];
-}
-
-interface CashFlow {
-  opening: string;
-  closing: string;
-  net_change: string;
-  consistent: boolean;
-  sections: CashFlowSection[];
-}
-
-interface VatReturn {
-  rate_pct: string;
-  output_tax: string;
-  input_tax: string;
-  net_payable: string;
-}
-
-interface CommissionRow {
-  rep_user_id: number;
-  rep_name: string;
-  basis: string;
-  rate_pct: string;
-  base_amount: string;
-  commission: string;
-}
-
-const money = (v: string | number) =>
-  Number(v).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const BUCKETS = ['0-30', '31-60', '61-90', '90+'];
+import PartnerLedgerTab from './financeReports/PartnerLedgerTab';
+import CashFlowTab from './financeReports/CashFlowTab';
+import {
+  AgingRow, BalanceSheet, CommissionRow, IncomeStatement, ReportLine, VatReturn,
+  BUCKETS, money,
+} from './financeReports/types';
 
 const FinanceReports: React.FC = () => {
   const navigate = useNavigate();
@@ -148,13 +45,6 @@ const FinanceReports: React.FC = () => {
   const [aging, setAging] = useState<AgingRow[]>([]);
   const [agingParty, setAgingParty] = useQueryTab('customers', 'side') as
     unknown as ['customers' | 'suppliers', (v: 'customers' | 'suppliers') => void];
-  const [partnerRows, setPartnerRows] = useState<PartnerLedgerRow[]>([]);
-  const [partnerKind, setPartnerKind] = useQueryTab('customer', 'pkind') as
-    unknown as [string, (v: string) => void];
-  const [onlyOpen, setOnlyOpen] = useState(false);
-  const [partnerLoading, setPartnerLoading] = useState(false);
-  const [cash, setCash] = useState<CashFlow | null>(null);
-  const [cashLoading, setCashLoading] = useState(false);
   const [vat, setVat] = useState<VatReturn | null>(null);
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -196,35 +86,6 @@ const FinanceReports: React.FC = () => {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
-
-  // التقريرين الجداد بيقروا الدفتر كله، فبيتحمّلوا لما تبويبهم يتفتح بس — مش مع كل
-  // فتحة للصفحة زي اللي قبلهم.
-  const loadPartner = useCallback(async () => {
-    setPartnerLoading(true);
-    try {
-      const r = await api.get<PartnerLedgerRow[]>('/api/v1/reports/partner-ledger', {
-        params: { ...params(), partner_kind: partnerKind, only_open: onlyOpen },
-      });
-      setPartnerRows(r.data);
-    } catch {
-    } finally {
-      setPartnerLoading(false);
-    }
-  }, [params, partnerKind, onlyOpen]);
-
-  const loadCash = useCallback(async () => {
-    setCashLoading(true);
-    try {
-      const r = await api.get<CashFlow>('/api/v1/reports/cash-flow', { params: params() });
-      setCash(r.data);
-    } catch {
-    } finally {
-      setCashLoading(false);
-    }
-  }, [params]);
-
-  useEffect(() => { if (tab === 'partner') loadPartner(); }, [tab, loadPartner]);
-  useEffect(() => { if (tab === 'cashflow') loadCash(); }, [tab, loadCash]);
 
   const printBlock = (title: string, bodyHtml: string) => {
     printDocument(
@@ -488,214 +349,12 @@ const FinanceReports: React.FC = () => {
           {
             key: 'partner',
             label: 'دفتر الشريك',
-            children: (
-              <Card
-                title="دفتر الشريك"
-                extra={
-                  <Space>
-                    <Select
-                      value={partnerKind}
-                      style={{ width: 140 }}
-                      onChange={(v) => setPartnerKind(v)}
-                      options={[
-                        { value: 'customer', label: 'العملاء' },
-                        { value: 'supplier', label: 'الموردين' },
-                        { value: 'employee', label: 'الموظفين' },
-                      ]}
-                    />
-                    <Select
-                      value={onlyOpen ? 'open' : 'all'}
-                      style={{ width: 170 }}
-                      onChange={(v) => setOnlyOpen(v === 'open')}
-                      options={[
-                        { value: 'all', label: 'كل الأطراف' },
-                        { value: 'open', label: 'اللي عليه مفتوح بس' },
-                      ]}
-                    />
-                    <Button icon={<ReloadOutlined />} onClick={loadPartner}
-                            loading={partnerLoading}>تحديث</Button>
-                  </Space>
-                }
-              >
-                <Table<PartnerLedgerRow>
-                  rowKey={(r) => `${r.partner_kind}:${r.partner_id}`}
-                  size="small"
-                  loading={partnerLoading}
-                  dataSource={partnerRows}
-                  pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
-                  expandable={{
-                    expandedRowRender: (row) => (
-                      <Table<PartnerLedgerLine>
-                        rowKey="line_id"
-                        size="small"
-                        pagination={false}
-                        dataSource={row.lines}
-                        columns={[
-                          { title: 'التاريخ', dataIndex: 'entry_date', width: 110 },
-                          {
-                            title: 'المستند',
-                            key: 'doc',
-                            width: 180,
-                            render: (_: unknown, r: PartnerLedgerLine) => (
-                              <Button type="link" size="small"
-                                onClick={() => navigate(`/general-ledger?doc=${r.entry_id}`)}>
-                                {r.entry_number || `#${r.entry_id}`}
-                              </Button>
-                            ),
-                          },
-                          { title: 'النوع', dataIndex: 'move_type_label', width: 120 },
-                          {
-                            title: 'البيان',
-                            key: 'text',
-                            render: (_: unknown, r: PartnerLedgerLine) =>
-                              r.statement || r.description || '',
-                          },
-                          { title: 'الاستحقاق', dataIndex: 'date_maturity', width: 110 },
-                          {
-                            title: 'مدين', dataIndex: 'debit', width: 120, align: 'left' as const,
-                            render: (v: string) => (Number(v) ? money(v) : ''),
-                          },
-                          {
-                            title: 'دائن', dataIndex: 'credit', width: 120, align: 'left' as const,
-                            render: (v: string) => (Number(v) ? money(v) : ''),
-                          },
-                          {
-                            title: 'الرصيد', dataIndex: 'balance', width: 130, align: 'left' as const,
-                            render: (v: string) => <b>{money(v)}</b>,
-                          },
-                          {
-                            title: 'المتبقّي', dataIndex: 'residual', width: 120, align: 'left' as const,
-                            render: (v: string | null) =>
-                              v === null ? '—' : Number(v) ? money(v) : <Tag color="green">مقفول</Tag>,
-                          },
-                          {
-                            title: 'المطابقة', dataIndex: 'reconcile_number', width: 110,
-                            render: (v: string | null) => (v ? <Tag>{v}</Tag> : ''),
-                          },
-                        ]}
-                      />
-                    ),
-                  }}
-                  columns={[
-                    { title: 'الطرف', dataIndex: 'partner_name' },
-                    {
-                      title: 'أول المدة', dataIndex: 'opening', width: 130, align: 'left' as const,
-                      render: (v: string) => money(v),
-                    },
-                    {
-                      title: 'مدين', dataIndex: 'debit', width: 130, align: 'left' as const,
-                      render: (v: string) => money(v),
-                    },
-                    {
-                      title: 'دائن', dataIndex: 'credit', width: 130, align: 'left' as const,
-                      render: (v: string) => money(v),
-                    },
-                    {
-                      title: 'آخر المدة', dataIndex: 'closing', width: 140, align: 'left' as const,
-                      render: (v: string) => <b>{money(v)}</b>,
-                    },
-                    {
-                      title: 'المفتوح', dataIndex: 'open_residual', width: 130, align: 'left' as const,
-                      render: (v: string) => (Number(v) ? money(v) : ''),
-                    },
-                    {
-                      title: '',
-                      key: 'reconcile',
-                      width: 110,
-                      render: (_: unknown, r: PartnerLedgerRow) => (
-                        <Button type="link" size="small" icon={<LinkOutlined />}
-                          onClick={() => navigate(
-                            `/reconciliation?kind=${r.partner_kind}&partner=${r.partner_id}`)}>
-                          تسوية
-                        </Button>
-                      ),
-                    },
-                  ]}
-                />
-              </Card>
-            ),
+            children: <PartnerLedgerTab params={params} />,
           },
           {
             key: 'cashflow',
             label: 'التدفق النقدي',
-            children: (
-              <Card
-                title="التدفق النقدي"
-                extra={
-                  <Button icon={<ReloadOutlined />} onClick={loadCash}
-                          loading={cashLoading}>تحديث</Button>
-                }
-              >
-                {cash && (
-                  <>
-                    {!cash.consistent && (
-                      <Alert
-                        type="warning" showIcon style={{ marginBottom: 12 }}
-                        message="فيه قيد فيه حركة خزينة ومش متوازن — الفرق طالع في «غير موزّع»."
-                      />
-                    )}
-                    <Row gutter={16} style={{ marginBottom: 16 }}>
-                      <Col span={8}>
-                        <Card size="small">
-                          <Statistic title="نقدية أول المدة" value={Number(cash.opening)} precision={2} />
-                        </Card>
-                      </Col>
-                      <Col span={8}>
-                        <Card size="small">
-                          <Statistic
-                            title="صافي التغيّر" value={Number(cash.net_change)} precision={2}
-                            valueStyle={{ color: Number(cash.net_change) >= 0 ? '#2e9e6b' : '#d64545' }}
-                          />
-                        </Card>
-                      </Col>
-                      <Col span={8}>
-                        <Card size="small">
-                          <Statistic title="نقدية آخر المدة" value={Number(cash.closing)} precision={2}
-                                     valueStyle={{ color: '#0e4c6d' }} />
-                        </Card>
-                      </Col>
-                    </Row>
-                    {cash.sections.map((sec) => (
-                      <Table<CashFlowLine>
-                        key={sec.key}
-                        rowKey={(r) => `${sec.key}:${r.account_id ?? 'x'}`}
-                        size="small"
-                        pagination={false}
-                        style={{ marginBottom: 16 }}
-                        loading={cashLoading}
-                        dataSource={sec.lines}
-                        title={() => (
-                          <Space>
-                            <b>{sec.label}</b>
-                            <Tag color={Number(sec.net) >= 0 ? 'green' : 'red'}>{money(sec.net)}</Tag>
-                          </Space>
-                        )}
-                        columns={[
-                          {
-                            title: 'الحساب المقابل',
-                            key: 'acc',
-                            render: (_: unknown, r: CashFlowLine) =>
-                              r.name || r.code || `#${r.account_id}`,
-                          },
-                          {
-                            title: 'داخل', dataIndex: 'inflow', width: 150, align: 'left' as const,
-                            render: (v: string) => (Number(v) ? money(v) : ''),
-                          },
-                          {
-                            title: 'خارج', dataIndex: 'outflow', width: 150, align: 'left' as const,
-                            render: (v: string) => (Number(v) ? money(v) : ''),
-                          },
-                          {
-                            title: 'الصافي', dataIndex: 'net', width: 150, align: 'left' as const,
-                            render: (v: string) => <b>{money(v)}</b>,
-                          },
-                        ]}
-                      />
-                    ))}
-                  </>
-                )}
-              </Card>
-            ),
+            children: <CashFlowTab params={params} />,
           },
           {
             key: 'vat',
