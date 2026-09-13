@@ -14,6 +14,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
+import DocumentBar from '../components/DocumentBar';
 import { api } from '../api/client';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
@@ -2327,6 +2328,33 @@ export default function Invoices() {
             </Space>
           }
         >
+        {/* شريط المستند — المسار والمكان في السجل والحالة، فوق شريط الأدوات.
+            الأسهم بتمشي على نفس الترتيب المفلتر اللي المستخدم شايفه. */}
+        <DocumentBar
+          listLabel="فواتير البيع"
+          listTo="/invoices"
+          title={viewInvoice
+            ? (viewInvoice.document_number || `#${viewInvoice.id}`)
+            : editingInvoice
+              ? `تعديل #${editingInvoice.id}`
+              : 'فاتورة جديدة'}
+          position={viewInvoice
+            ? invoices.findIndex((r: any) => r.id === viewInvoice.id) + 1 || null
+            : null}
+          total={viewInvoice ? invoices.length : null}
+          onPrev={viewInvoice && neighbour(-1)
+            ? () => { const n = neighbour(-1); if (n) openDetail(n); } : undefined}
+          onNext={viewInvoice && neighbour(1)
+            ? () => { const n = neighbour(1); if (n) openDetail(n); } : undefined}
+          steps={[
+            { key: 'draft', label: 'مسودة' },
+            { key: 'posted', label: 'مرحّل', color: 'green' },
+            { key: 'voided', label: 'مردود / ملغي', color: 'volcano' },
+          ]}
+          current={!viewInvoice && !editingInvoice
+            ? 'draft'
+            : (viewInvoice || editingInvoice)?.voided ? 'voided' : 'posted'}
+        />
         <DocumentToolbar actions={docToolbar()} />
         {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — نفس فاتورة الشرا. */}
         <Form form={createForm} layout="vertical" size="small" className="doc-form"
