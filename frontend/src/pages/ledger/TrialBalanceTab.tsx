@@ -18,6 +18,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { api } from '../../api/client';
+import AccountItems from './AccountItems';
 import { useQueryTab } from '../../components/useQueryTab';
 import {
   APPEARS_IN_LABEL, CostCenter, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
@@ -181,6 +182,19 @@ export default function TrialBalanceTab() {
                 {...trialKb.tableProps}
                 key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={trialBalanceTabCols.columns}
                 loading={loading} pagination={false} size="small"
+                expandable={{
+                  // الفرد بيفتح بنود الحساب في نفس الفترة — ده «دفتر الأستاذ
+                  // العام» بتاع أودو: الرقم في الميزان بيفرد على القيود اللي وراه.
+                  expandedRowRender: (r: any) => (
+                    <AccountItems
+                      accountId={r.account_id}
+                      dateFrom={range?.[0]?.format('YYYY-MM-DD')}
+                      dateTo={range?.[1]?.format('YYYY-MM-DD')}
+                    />
+                  ),
+                  rowExpandable: (r: any) =>
+                    Number(r.period_debit || 0) !== 0 || Number(r.period_credit || 0) !== 0,
+                }}
                 style={{ marginBottom: 18 }}
                 title={() => <strong>{label}</strong>}
                 locale={{ emptyText: 'لا توجد حسابات في هذا القسم' }}
@@ -200,6 +214,19 @@ export default function TrialBalanceTab() {
               {...trialKb.tableProps}
               rowKey="account_id" columns={trialBalanceTabCols.columns} pagination={false} size="small"
               dataSource={shownRows.filter((r) => !r.nature)}
+              expandable={{
+                // الفرد بيفتح بنود الحساب في نفس الفترة — ده «دفتر الأستاذ
+                // العام» بتاع أودو: الرقم في الميزان بيفرد على القيود اللي وراه.
+                expandedRowRender: (r: any) => (
+                  <AccountItems
+                    accountId={r.account_id}
+                    dateFrom={range?.[0]?.format('YYYY-MM-DD')}
+                    dateTo={range?.[1]?.format('YYYY-MM-DD')}
+                  />
+                ),
+                rowExpandable: (r: any) =>
+                  Number(r.period_debit || 0) !== 0 || Number(r.period_credit || 0) !== 0,
+              }}
               title={() => <strong style={{ color: '#d46b08' }}>بدون تصنيف</strong>}
             />
           )}
