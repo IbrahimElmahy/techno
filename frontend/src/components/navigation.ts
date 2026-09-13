@@ -262,16 +262,36 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/ops-reports?view=cheques-by-status', label: 'الشيكات بالحالة', roles: R(BOOKS) },
         ],
       },
+      /**
+       * دفاتر اليومية وسلامتها — الاتنين مالهمش مقابل في a5، فمكانهم قرارنا إحنا.
+       *
+       * تحت «اداره الحسابات» جنب القيد الحر: الدفتر هو بيت القيد ومصدر رقمه، واللي
+       * بيكتب قيد هو اللي بيسأل «القيد ده نزل في أنهي دفتر».
+       */
+      {
+        key: 'grp-journals',
+        label: 'دفاتر اليومية',
+        children: [
+          { key: '/general-ledger?tab=journals', label: 'الدفاتر', roles: R(BOOKS) },
+          { key: '/general-ledger?tab=integrity', label: 'سلامة الدفاتر', roles: R(BOOKS) },
+        ],
+      },
       {
         key: 'grp-acct-reports',
         label: 'تقارير المحاسبية',
         children: [
           { key: '/general-ledger?tab=trial', label: 'دفتر الإستاذ', roles: R(BOOKS), a5: '/ledger' },
+          // دفتر الشريك جنب دفتر الأستاذ عن قصد: الأول بيمشي على حساب والتاني على
+          // طرف، واللي بيدوّر على واحد فيهم بيبقى بيسأل نفس السؤال من ناحية تانية.
+          { key: '/finance-reports?tab=partner', label: 'دفتر الشريك', roles: R(BOOKS) },
           { key: '/finance-reports?tab=sheet', label: 'ميزانية ختامية', roles: R(BOOKS), a5: '/finalbalancesheet' },
           { key: '/finance-reports?tab=sheet&period=1', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
           { key: '/finance-reports?tab=income', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
           { key: '/finance-reports?tab=income&period=1', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
           // نفس أرقام قائمة الدخل، مقسومة — فمكانها جنبها.
+          // التدفق النقدي جنب قائمة الدخل: الأولى بتقول كسبنا كام والتانية بتقول
+          // الفلوس اتحركت إزاي، والفرق بينهم هو السؤال اللي بيتسأل.
+          { key: '/finance-reports?tab=cashflow', label: 'التدفق النقدي', roles: R(BOOKS) },
           { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: R(BOOKS) },
           { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
         ],
