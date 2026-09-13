@@ -25,6 +25,7 @@ from src.services import (
     chart_service,
     document_resolver,
     ledger_service,
+    lock_date_service,
     statement_service,
     treasury_service,
     voucher_service,
@@ -523,9 +524,13 @@ def get_period_lock(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> PeriodLockOut:
-    lock = treasury_service.current_lock(db)
-    return PeriodLockOut(locked_through=lock.locked_through if lock else None,
-                         note=lock.note if lock else None)
+    # القيمة الشغّالة بقت في `accounting_setting` (المرحلة ٤)؛ جدول `period_lock`
+    # بقى سجل تاريخي بيقول مين قفل وإمتى وليه — فالملاحظة لسه بتتقرا منه.
+    row = lock_date_service.get_settings(db)
+    last = treasury_service.current_lock(db)
+    db.commit()
+    return PeriodLockOut(locked_through=row.period_lock_date,
+                         note=last.note if last else None)
 
 
 @router.post("/period-lock", response_model=PeriodLockOut,
@@ -540,10 +545,15 @@ def set_period_lock(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             {"code": "forbidden", "message": "إقفال الفترة للأدمن أو المحاسب فقط."})
-    lock = treasury_service.set_lock(db, through=body.locked_through,
-                                     actor_user_id=current.id, note=body.note)
+    row = lock_date_service.get_settings(db)
+    lock_date_service.set_lock_dates(
+        db, actor_user_id=current.id,
+        fiscalyear_lock_date=row.fiscalyear_lock_date,
+        period_lock_date=body.locked_through,
+        note=body.note,
+    )
     db.commit()
-    return PeriodLockOut(locked_through=lock.locked_through, note=lock.note)
+    return PeriodLockOut(locked_through=body.locked_through, note=body.note)
 
 
 @router.delete("/vouchers/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT)

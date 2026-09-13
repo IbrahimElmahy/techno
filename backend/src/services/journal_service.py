@@ -188,7 +188,7 @@ def update_draft(
 def post_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry:
     """يرحّل مسودة — هنا بس بيتفرض التوازن، وهنا بس بيتصرف الرقم."""
     try:
-        entry = ledger_service.post_draft(db, entry_id=entry_id)
+        entry = ledger_service.post_draft(db, entry_id=entry_id, actor_user_id=actor_user_id)
     except LedgerError as exc:
         raise JournalError(str(exc)) from exc
     audit_service.record(
@@ -201,7 +201,7 @@ def post_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry
 def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry:
     """يرجّع قيد مرحّل لمسودة — بيخرج من الحسابات، ورقمه بيفضل محجوز."""
     try:
-        entry = ledger_service.reset_to_draft(db, entry_id=entry_id)
+        entry = ledger_service.reset_to_draft(db, entry_id=entry_id, actor_user_id=actor_user_id)
     except LedgerError as exc:
         raise JournalError(str(exc)) from exc
     audit_service.record(
@@ -214,7 +214,7 @@ def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerE
 def cancel_entry(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry:
     """يلغي قيد — بيخرج من كل الحسابات وبيفضل موجود برقمه للمراجعة."""
     try:
-        entry = ledger_service.cancel_entry(db, entry_id=entry_id)
+        entry = ledger_service.cancel_entry(db, entry_id=entry_id, actor_user_id=actor_user_id)
     except LedgerError as exc:
         raise JournalError(str(exc)) from exc
     audit_service.record(

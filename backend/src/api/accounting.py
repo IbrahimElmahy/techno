@@ -42,6 +42,7 @@ from src.services import (
     chart_service,
     journal_registry,
     journal_service,
+    lock_date_service,
     move_registry,
     opening_balance_service,
     reconcile_service,
@@ -869,3 +870,51 @@ def set_account_routing(
     rows = account_routing_service.current_routing(db, branch_id=branch_id)
     db.commit()
     return [RoutingOut(**r) for r in rows]
+
+
+# --------------------------------------------------------------- أقفال التواريخ (المرحلة ٤)
+
+
+class LockDatesOut(BaseModel):
+    fiscalyear_lock_date: DateType | None = None
+    period_lock_date: DateType | None = None
+
+
+class LockDatesIn(BaseModel):
+    # `None` في الاتنين معناه «ارفع القفل» — نفس الشاشة بتحط وبترفع.
+    fiscalyear_lock_date: DateType | None = None
+    period_lock_date: DateType | None = None
+    note: str | None = None
+
+
+@router.get("/lock-dates", response_model=LockDatesOut)
+def get_lock_dates(
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    db: Session = Depends(get_db),
+) -> LockDatesOut:
+    row = lock_date_service.get_settings(db)
+    db.commit()  # الصف بيتعمل أول مرة يتقرا
+    return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,
+                        period_lock_date=row.period_lock_date)
+
+
+@router.put("/lock-dates", response_model=LockDatesOut)
+def set_lock_dates(
+    body: LockDatesIn,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
+    db: Session = Depends(get_db),
+) -> LockDatesOut:
+    """يحط تاريخي القفل. للأدمن بس — دي حاجة بتقفل على الكل حتى المحاسب."""
+    if not current.is_admin:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {"code": "forbidden", "message": "أقفال التواريخ للأدمن بس."})
+    row = lock_date_service.set_lock_dates(
+        db, actor_user_id=current.id,
+        fiscalyear_lock_date=body.fiscalyear_lock_date,
+        period_lock_date=body.period_lock_date,
+        note=body.note,
+    )
+    db.commit()
+    return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,
+                        period_lock_date=row.period_lock_date)

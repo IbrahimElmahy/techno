@@ -23,7 +23,8 @@ from src.models.ledger import (
     MoveType,
     PartnerKind,
 )
-from src.services import journal_registry, move_registry
+from src.services import journal_registry, lock_date_service, move_registry
+from src.services.lock_date_service import LockDateError
 
 
 class LedgerError(Exception):
@@ -128,18 +129,21 @@ def _assert_balanced(lines: list[LineInput]) -> None:
         )
 
 
-def _assert_period_open(db: Session, when: date | None) -> None:
-    """إقفال الفترة — اتشال بطلب العميل، والدالة سايبة كعلامة على المكان.
+def _assert_period_open(
+    db: Session, when: date | None, actor_user_id: int | None = None
+) -> None:
+    """إقفال الفترة — رجع في المرحلة ٤، والقرار كله في `lock_date_service`.
 
-    كانت بترفض أي ترحيل بتاريخ جوّه شهر الحسابات قفلته: «الفترة مقفلة حتى ٣١/٠٧ — لا يمكن
-    الترحيل بتاريخ ٢٥/٠٧». دي قاعدة دفتر أستاذ صح للنظام اللي بيتقفل بميزانية مدققة
-    وبتتقدّم لجهة برّه؛ الشركة دي مش بتشتغل كده، والفاتورة اللي اتأخرت شهر لازم تتكتب
-    بتاريخها الحقيقي مش بتاريخ النهارده.
+    كان اتشال بطلب العميل عشان الفاتورة اللي اتأخرت شهر تتكتب بتاريخها الحقيقي. رجع
+    بتاريخين زي أودو، **والاتنين فاضيين** لحد ما الأدمن يحطهم — فالسلوك الافتراضي
+    هو نفسه اللي العميل طلبه بالظبط: مافيش حاجة مقفولة.
 
-    الدالة سايبة فاضية بدل ما نداءها يتشال من `post_entry`: المكان ده هو الطريق الوحيد
-    اللي بيدخل الدفتر، ولو رجع يوم قفل الفترة، هيرجع هنا — مش في سبع حتة مختلفة.
+    النداء فضل هنا مش في سبع حتة: المكان ده هو الطريق الوحيد اللي بيدخل الدفتر.
     """
-    return
+    try:
+        lock_date_service.assert_open(db, when, actor_user_id=actor_user_id)
+    except LockDateError as exc:
+        raise LedgerError(str(exc)) from exc
 
 
 def _as_value(kind) -> str | None:
@@ -230,7 +234,7 @@ def post_entry(
     _validate_lines(lines)
     if state == EntryState.posted.value:
         _assert_balanced(lines)
-    _assert_period_open(db, entry_date)
+    _assert_period_open(db, entry_date, actor_user_id)
     kind = _as_value(partner_kind)
     # الاستحقاق الافتراضي هو تاريخ القيد — «مستحق دلوقتي»، وهو الصح للنقدي. اللي
     # بيبيع أجل بيبعت التاريخ بنفسه لحد ما شروط الدفع تتعمل.
@@ -322,7 +326,7 @@ def replace_lines(db: Session, *, entry: LedgerEntry, lines: list[LineInput]) ->
     return entry
 
 
-def post_draft(db: Session, *, entry_id: int) -> LedgerEntry:
+def post_draft(db: Session, *, entry_id: int, actor_user_id: int | None = None) -> LedgerEntry:
     """يرحّل مسودة: بيتحقق من التوازن، بيحطها في دفترها، وبيصرف لها رقم."""
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
@@ -334,7 +338,7 @@ def post_draft(db: Session, *, entry_id: int) -> LedgerEntry:
     inputs = _entry_lines_as_input(entry)
     _validate_lines(inputs)
     _assert_balanced(inputs)
-    _assert_period_open(db, entry.entry_date)
+    _assert_period_open(db, entry.entry_date, actor_user_id or entry.actor_user_id)
     _stamp_posted(db, entry)
     db.flush()
     return entry
@@ -365,7 +369,7 @@ def _release_residuals(db: Session, entry: LedgerEntry) -> None:
     entry.payment_state = None
 
 
-def reset_to_draft(db: Session, *, entry_id: int) -> LedgerEntry:
+def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int | None = None) -> LedgerEntry:
     """يرجّع قيد مرحّل لمسودة — بيخرج من الحسابات وبيسيب رقمه محجوز.
 
     الرقم مابيرجعش للطابور: لو رجع، القيد اللي بعده كان هياخد رقم اتشاف قبل كده على
@@ -376,6 +380,8 @@ def reset_to_draft(db: Session, *, entry_id: int) -> LedgerEntry:
         raise LedgerError("القيد مش موجود.")
     if entry.state == EntryState.draft.value:
         return entry
+    # الخروج من الحسابات بيغيّر ميزانية الشهر بالظبط زي الدخول — فالقفل بيمنع الاتنين.
+    _assert_period_open(db, entry.entry_date, actor_user_id or entry.actor_user_id)
     _release_residuals(db, entry)
     entry.state = EntryState.draft.value
     entry.posted_at = None
@@ -383,11 +389,13 @@ def reset_to_draft(db: Session, *, entry_id: int) -> LedgerEntry:
     return entry
 
 
-def cancel_entry(db: Session, *, entry_id: int) -> LedgerEntry:
+def cancel_entry(db: Session, *, entry_id: int, actor_user_id: int | None = None) -> LedgerEntry:
     """يلغي قيد — بيخرج من كل الحسابات والتقارير وبيفضل موجود بتاريخه ورقمه."""
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
         raise LedgerError("القيد مش موجود.")
+    if entry.state == EntryState.posted.value:
+        _assert_period_open(db, entry.entry_date, actor_user_id or entry.actor_user_id)
     _release_residuals(db, entry)
     entry.state = EntryState.cancelled.value
     db.flush()
