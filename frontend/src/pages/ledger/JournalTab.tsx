@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import GroupedTable from '../../components/GroupedTable';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { api } from '../../api/client';
 import { useQueryTab } from '../../components/useQueryTab';
@@ -284,6 +285,9 @@ export default function JournalTab() {
     return out;
   }, [searchParams]);
 
+  // «تجميع بـ» — نفس الصفوف مقسومة، مش صفوف أقل. الفلتر بيشيل والتجميع بيرتّب.
+  const [groupBy, setGroupBy] = useState<string | null>(null);
+
   const filter = useListFilter(entries, {
     initialValues,
     search: (e) => [
@@ -474,6 +478,14 @@ export default function JournalTab() {
         showDateRange range={filter.range} onRangeChange={filter.setRange}
         onReset={filter.reset}
         total={entries.length} shown={filter.filtered.length}
+        groupBy={groupBy} onGroupByChange={setGroupBy}
+        groupOptions={[
+          { value: 'journal', label: 'الدفتر' },
+          { value: 'state', label: 'الحالة' },
+          { value: 'type', label: 'نوع القيد' },
+          { value: 'partner', label: 'الشريك' },
+          { value: 'month', label: 'الشهر' },
+        ]}
         filters={[
           { key: 'entry_type', placeholder: 'نوع القيد', span: 4,
             options: Object.entries(TYPE_LABEL).map(([v, m]) => ({ value: v, label: m.t })) },
@@ -490,7 +502,40 @@ export default function JournalTab() {
         ]}
       />
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{journalTabCols.control}</div>
-      <Table {...entryKb.tableProps} rowKey="id" loading={loading} dataSource={filter.filtered} columns={journalTabCols.columns} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+      <GroupedTable<JournalEntry>
+        {...entryKb.tableProps}
+        rowKey="id"
+        loading={loading}
+        dataSource={filter.filtered}
+        columns={journalTabCols.columns}
+        pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+        groupBy={groupBy}
+        groups={[
+          { value: 'journal', label: 'الدفتر',
+            of: (e) => (e.journal_id
+              ? { key: String(e.journal_id), label: e.journal_name || e.journal_code || '-' }
+              : null),
+            sum: (e) => Number(e.total) },
+          { value: 'state', label: 'الحالة',
+            of: (e) => ({ key: e.state ?? 'posted',
+              label: { posted: 'مرحّل', draft: 'مسودة', cancelled: 'ملغي' }[e.state ?? 'posted'] }),
+            sum: (e) => Number(e.total) },
+          { value: 'type', label: 'نوع القيد',
+            of: (e) => ({ key: e.entry_type, label: entryTypeLabel(e.entry_type) }),
+            sum: (e) => Number(e.total) },
+          { value: 'partner', label: 'الشريك',
+            of: (e) => (e.partner_id
+              ? { key: `${e.partner_kind}:${e.partner_id}`,
+                  label: e.partner_name || `#${e.partner_id}` }
+              : null),
+            sum: (e) => Number(e.total) },
+          { value: 'month', label: 'الشهر',
+            of: (e) => (e.date
+              ? { key: e.date.slice(0, 7), label: e.date.slice(0, 7) }
+              : null),
+            sum: (e) => Number(e.total) },
+        ]}
+      />
 
       <TabModal footer={null} centered
         title={editing ? `تعديل مسودة ${editing.number ?? `#${editing.id}`}` : 'قيد يومية جديد'}
