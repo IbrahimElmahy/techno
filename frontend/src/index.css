@@ -717,3 +717,21 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 
 
+
+/*
+ * شريط الأقسام العلوي — كل الأقسام بتتعرض، وبتلفّ لما المكان يضيق.
+ *
+ * antd بيرسم القايمة الأفقية صف واحد مايلفّش (`flex-wrap: nowrap`) وبيخبّي الزيادة
+ * تحت «…». القسم اللي اتخبى بيبقى موجود ومش باين، واللي بيدوّر عليه بيفتكره مش
+ * موجود — فاللفّ أرخص. والارتفاع بيبقى `auto` عشان السطر التاني يلاقي مكان.
+ */
+.top-nav.ant-menu-horizontal {
+  flex-wrap: wrap;
+  height: auto;
+  row-gap: 0;
+}
+.top-nav.ant-menu-horizontal > .ant-menu-item,
+.top-nav.ant-menu-horizontal > .ant-menu-submenu {
+  /* الحشو الافتراضي ٢٠ بكسل على كل جنب — كتير لقايمة فيها ١١ قسم بأسماء عربية. */
+  padding-inline: 10px;
+}

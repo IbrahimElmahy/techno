@@ -5,6 +5,8 @@ import {
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
   UserOutlined,
   LogoutOutlined,
   DashboardOutlined,
@@ -26,7 +28,7 @@ import {
 } from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
 import RowDensityControl from './RowDensity';
-import FullscreenToggle from './FullscreenToggle';
+import { useFullscreen } from './FullscreenToggle';
 import Logo from './Logo';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
@@ -89,6 +91,7 @@ export default function AppLayout() {
   });
   const { user, logout } = useAuth();
   const { activeId, openTab } = useTabs();
+  const [fullscreen, toggleFullscreen] = useFullscreen();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -209,6 +212,33 @@ export default function AppLayout() {
       type: 'divider' as const,
     },
     {
+      /*
+       * ارتفاع الصف وملء الشاشة نزلوا هنا من الشريط.
+       *
+       * الاتنين إعدادات بتتظبط مرة كل كام يوم، وكانوا واخدين مكان دايم في صف بيتزاحم
+       * على عرضه مع أقسام النظام كلها. الاسم كمان اتشال من جنب الأيقونة: الأيقونة
+       * بتقول «ده انت» والاسم جوّه القايمة، واللي بيسأل «انا داخل بمين» بيفتحها.
+       */
+      key: 'density',
+      label: (
+        // الوقفة دي عشان اختيار الارتفاع مايقفلش القايمة — بتتجرّب على الجدول اللي
+        // وراها، واللي بيجرّب بيعدّي على التلاتة.
+        <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
+          <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>ارتفاع الصف</div>
+          <RowDensityControl />
+        </div>
+      ),
+    },
+    {
+      key: 'fullscreen',
+      icon: fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />,
+      label: fullscreen ? 'خروج من ملء الشاشة' : 'ملء الشاشة',
+      onClick: toggleFullscreen,
+    },
+    {
+      type: 'divider' as const,
+    },
+    {
       key: 'logout',
       danger: true,
       icon: <LogoutOutlined />,
@@ -310,8 +340,12 @@ export default function AppLayout() {
         <Header
           style={{
             flexShrink: 0,
-            height: 48,
-            lineHeight: '48px',
+            // `minHeight` مش `height`: لما القايمة تلفّ لسطر تاني الشريط بيطول معاها
+            // بدل ما البنود تتقصّ.
+            minHeight: 48,
+            height: 'auto',
+            lineHeight: '46px',
+            flexWrap: 'wrap',
             padding: 0,
             background: colorBgContainer,
             display: 'flex',
@@ -351,13 +385,20 @@ export default function AppLayout() {
             selectedKeys={[activeBase]}
             items={filteredMenuItems.map(({ icon, ...rest }: any) => rest)}
             onClick={handleMenuClick}
-            // `minWidth: 0` عشان القايمة تعرف تضيق وتلمّ الزيادة تحت «…» بدل ما تدفع
-            // شريط التبويبات لسطر تاني.
+            /*
+             * `disabledOverflow` — الأقسام كلها بتتعرض، ومفيش «…» بتلمّ الزيادة.
+             *
+             * القايمة الافتراضية بتقيس العرض وبتخبّي اللي مش لاقي مكان تحت تلات نقط.
+             * ده منطقي في شريط أدوات، وغلط في قايمة تنقّل: القسم اللي اتخبى بيبقى
+             * موجود ومش باين، واللي بيدوّر عليه بيفتكره مش موجود. لما المكان يضيق
+             * بتلفّ لسطر تاني — سطر زيادة أرخص من قسم مختفي.
+             */
+            disabledOverflow
+            className="top-nav"
             style={{
               flex: '0 1 auto', minWidth: 0, borderBottom: 'none',
-              lineHeight: '46px', background: 'transparent',
+              background: 'transparent',
             }}
-            overflowedIndicator={<AppstoreOutlined />}
           />
 
           {/* المساحة الفاضية بتدفع المستخدم لآخر الشريط. */}
@@ -366,15 +407,13 @@ export default function AppLayout() {
           <div style={{
             paddingLeft: 16, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
           }}>
-            {/* ارتفاع الصف — في الهيدر عشان يبان إنه على النظام كله، مش إعداد شاشة واحدة. */}
-            <RowDensityControl />
-            {/* وملء الشاشة جنبه: الاتنين بيجاوبوا نفس السؤال — «وريني سطور أكتر». */}
-            <FullscreenToggle />
+            {/* الأيقونة وبس — الاسم والإعدادات جوّه القايمة. الصف العلوي شغله يعرض
+                الأقسام، وكل بكسل بياخده حاجة تانية بيتاخد منها. */}
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
-              <Space size={6} style={{ cursor: 'pointer' }}>
-                <Avatar size={26} style={{ backgroundColor: '#6AB42D' }} icon={<UserOutlined />} />
-                <span className="ant-avatar-string">{user?.name}</span>
-              </Space>
+              <Tooltip title={user?.name}>
+                <Avatar size={28} style={{ backgroundColor: '#6AB42D', cursor: 'pointer' }}
+                        icon={<UserOutlined />} />
+              </Tooltip>
             </Dropdown>
           </div>
         </Header>
