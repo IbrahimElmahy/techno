@@ -66,6 +66,11 @@ class Journal(Base):
     is_system: Mapped[bool] = mapped_column(default=False, nullable=False)
     # ترتيب العرض في القوايم — الافتتاحي الأول والمتنوعة في الآخر.
     sort_order: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
+    # (المرحلة ٤) سلسلة التجزئة — `restrict_mode_hash_table` بتاع أودو. مقفولة
+    # افتراضياً: الدفتر اللي بتتشغّل عليه بيقفل على نفسه (القيد مايرجعش مسودة
+    # ومايتلغيش ومستنده مايتعدّلش)، فدي حاجة بتتشغّل على دفتر المبيعات لما الفواتير
+    # تبقى متسلّمة، مش على دفتر التسويات.
+    restrict_mode_hash: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

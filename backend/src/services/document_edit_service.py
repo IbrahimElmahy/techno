@@ -158,6 +158,17 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
     """
     if entry_id is None:
         return
+    # (المرحلة ٤) القيد في دفتر متجزّأ مايتحذفش: حذفه بيكسر سلسلة كل اللي بعده.
+    # التعديل والحذف في النظام ده بيمرّوا كلهم من هنا، فالحارس مكانه هنا.
+    from src.services import secure_hash_service
+
+    entry = db.get(LedgerEntry, entry_id)
+    if entry is not None:
+        try:
+            secure_hash_service.assert_alterable(entry)
+        except secure_hash_service.HashChainError as exc:
+            raise DocumentEditError(str(exc)) from exc
+
     reversals = db.scalars(select(LedgerEntry.id).where(
         LedgerEntry.reverses_entry_id == entry_id)).all()
     ids = [entry_id, *reversals]

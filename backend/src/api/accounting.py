@@ -46,6 +46,7 @@ from src.services import (
     move_registry,
     opening_balance_service,
     reconcile_service,
+    secure_hash_service,
     trial_balance_service,
 )
 from src.services.account_routing_service import RoutingError
@@ -169,6 +170,7 @@ class JournalOut(BaseModel):
     active: bool
     is_system: bool
     sort_order: int
+    restrict_mode_hash: bool = False
 
 
 class JournalCreate(BaseModel):
@@ -183,6 +185,7 @@ class JournalUpdate(BaseModel):
     kind: str | None = None
     active: bool | None = None
     sort_order: int | None = None
+    restrict_mode_hash: bool | None = None
 
 
 class JournalLineOut(BaseModel):
@@ -663,6 +666,7 @@ def _journal_out(j: Journal) -> JournalOut:
         id=j.id, code=j.code, name=j.name, kind=j.kind,
         kind_label=JOURNAL_KIND_LABEL.get(j.kind, j.kind),
         active=j.active, is_system=j.is_system, sort_order=j.sort_order,
+        restrict_mode_hash=bool(j.restrict_mode_hash),
     )
 
 
@@ -722,6 +726,20 @@ def update_journal(
         journal.kind = body.kind
     if body.sort_order is not None:
         journal.sort_order = body.sort_order
+    if body.restrict_mode_hash is not None:
+        # الإطفاء ممنوع بعد ما يتجزّأ قيد: السلسلة موجودة في القاعدة، وإطفاء الخانة
+        # كان هيسيبها موجودة وبلا حارس — وده أسوأ من إنها ماتشتغلش أصلاً.
+        if not body.restrict_mode_hash and db.scalar(
+            select(LedgerEntry.id).where(
+                LedgerEntry.journal_id == journal.id,
+                LedgerEntry.inalterable_hash.is_not(None),
+            ).limit(1)
+        ) is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                {"code": "hash_locked",
+                 "message": "الدفتر ده فيه قيود متجزّأة — السلسلة مابتتقفلش بعد ما تبدأ."})
+        journal.restrict_mode_hash = body.restrict_mode_hash
     if body.active is not None:
         # دفتر النظام مايتقفلش: فيه كود بيوجّه قيود عليه، وقفله معناه قيود من غير دفتر.
         if journal.is_system and not body.active:
@@ -918,3 +936,31 @@ def set_lock_dates(
     db.commit()
     return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,
                         period_lock_date=row.period_lock_date)
+
+
+# ------------------------------------------- سلامة الدفاتر (المرحلة ٤ — سلسلة التجزئة)
+
+
+class JournalIntegrityOut(BaseModel):
+    journal_id: int
+    journal_code: str
+    journal_name: str
+    restricted: bool
+    entries: int
+    first_number: str | None = None
+    last_number: str | None = None
+    first_date: DateType | None = None
+    last_date: DateType | None = None
+    intact: bool
+    broken_entry_id: int | None = None
+    broken_number: str | None = None
+    problems: list[str] = []
+
+
+@router.get("/accounting/integrity", response_model=list[JournalIntegrityOut])
+def check_integrity(
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    db: Session = Depends(get_db),
+) -> list[JournalIntegrityOut]:
+    """تقرير سلامة الدفاتر — بيعيد حساب سلسلة كل دفتر وبيوقف على أول قيد اتلمس."""
+    return [JournalIntegrityOut(**vars(r)) for r in secure_hash_service.check_all(db)]

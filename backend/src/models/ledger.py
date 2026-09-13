@@ -193,6 +193,11 @@ class LedgerEntry(Base):
     # حالة الدفع — بتتحسب من متبقّي السطور في المرحلة ٣ (تسوية). العمود بيتضاف دلوقتي
     # عشان النقل يعدّي مرة واحدة على جدول فيه ملايين السطور بدل مرتين.
     payment_state: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # (المرحلة ٤) سلسلة التجزئة — بتتملي بس لو دفتر القيد شغّال عليه `restrict_mode_hash`.
+    # الرقم بيقول مكان القيد في سلسلة دفتره، والبصمة محسوبة من محتواه + بصمة اللي قبله،
+    # فتغيير مليم في قيد قديم بيكسر كل اللي بعده وتقرير السلامة بيوقف عليه.
+    secure_sequence_number: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    inalterable_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     description: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     # Accounting/business date (005). User-chosen; the trial balance filters by this, NOT
     # created_at (opening balances are intentionally back-dated). NULL for legacy posts,

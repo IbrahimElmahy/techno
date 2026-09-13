@@ -185,6 +185,16 @@ def _build_lines(
     return built
 
 
+def _assert_not_hashed(entry: LedgerEntry) -> None:
+    """القيد في دفتر متجزّأ مايخرجش من الحسابات — الغلط بيتصحّح بقيد عكسي."""
+    from src.services import secure_hash_service
+
+    try:
+        secure_hash_service.assert_alterable(entry)
+    except secure_hash_service.HashChainError as exc:
+        raise LedgerError(str(exc)) from exc
+
+
 def _stamp_posted(db: Session, entry: LedgerEntry) -> None:
     """يحط القيد في دفتره ونوعه ويصرف له رقمه ويعلّمه مرحّل، ويفتح متبقّي سطوره."""
     if entry.journal_id is None:
@@ -205,6 +215,10 @@ def _stamp_posted(db: Session, entry: LedgerEntry) -> None:
 
     reconcile_service.stamp_residuals(db, entry)
     entry.payment_state = reconcile_service.payment_state_of(entry)
+    # (المرحلة ٤) البصمة آخر حاجة: بتتحسب من الرقم والسطور بعد ما اتصرفوا.
+    from src.services import secure_hash_service
+
+    secure_hash_service.stamp(db, entry)
 
 
 def post_entry(
@@ -380,6 +394,7 @@ def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int | None = No
         raise LedgerError("القيد مش موجود.")
     if entry.state == EntryState.draft.value:
         return entry
+    _assert_not_hashed(entry)
     # الخروج من الحسابات بيغيّر ميزانية الشهر بالظبط زي الدخول — فالقفل بيمنع الاتنين.
     _assert_period_open(db, entry.entry_date, actor_user_id or entry.actor_user_id)
     _release_residuals(db, entry)
@@ -395,6 +410,7 @@ def cancel_entry(db: Session, *, entry_id: int, actor_user_id: int | None = None
     if entry is None:
         raise LedgerError("القيد مش موجود.")
     if entry.state == EntryState.posted.value:
+        _assert_not_hashed(entry)
         _assert_period_open(db, entry.entry_date, actor_user_id or entry.actor_user_id)
     _release_residuals(db, entry)
     entry.state = EntryState.cancelled.value

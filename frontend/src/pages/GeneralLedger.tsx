@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, Tooltip, message, Radio,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
   ReloadOutlined, SearchOutlined, DownloadOutlined, PrinterOutlined,
   ProfileOutlined, CheckCircleOutlined, EditOutlined, StopOutlined, LinkOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -60,6 +61,7 @@ interface Journal {
   active: boolean;
   is_system: boolean;
   sort_order: number;
+  restrict_mode_hash: boolean;
 }
 
 interface JournalEntry {
@@ -125,6 +127,7 @@ export default function GeneralLedger() {
         { key: 'journal', label: <span><FileAddOutlined /> القيود اليومية</span>, children: <JournalTab /> },
         { key: 'trial', label: <span><BankOutlined /> ميزان المراجعة</span>, children: <TrialBalanceTab /> },
         { key: 'journals', label: <span><ProfileOutlined /> الدفاتر</span>, children: <JournalsTab /> },
+        { key: 'integrity', label: <span><SafetyCertificateOutlined /> سلامة الدفاتر</span>, children: <IntegrityTab /> },
       ]}
     />
   );
@@ -1141,6 +1144,112 @@ function TrialBalanceTab() {
   );
 }
 
+interface JournalIntegrity {
+  journal_id: number;
+  journal_code: string;
+  journal_name: string;
+  restricted: boolean;
+  entries: number;
+  first_number: string | null;
+  last_number: string | null;
+  first_date: string | null;
+  last_date: string | null;
+  intact: boolean;
+  broken_entry_id: number | null;
+  broken_number: string | null;
+  problems: string[];
+}
+
+/**
+ * تبويب سلامة الدفاتر — بيعيد حساب سلسلة التجزئة من أولها وبيقارن.
+ *
+ * التقرير ده مالوش لازمة غير على الدفتر اللي السلسلة شغّالة عليه؛ الباقي بيتعرض
+ * عشان اللي بيقرا يشوف إيه اللي متغطّى وإيه اللي لأ — «مافيش تقرير» مش نفس
+ * «كله سليم».
+ */
+function IntegrityTab() {
+  const [rows, setRows] = useState<JournalIntegrity[]>([]);
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get('/api/v1/accounting/integrity');
+      setRows(data);
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const covered = rows.filter((r) => r.restricted);
+  const broken = covered.filter((r) => !r.intact);
+
+  return (
+    <Card
+      title="سلامة الدفاتر"
+      extra={<Button icon={<ReloadOutlined />} onClick={load} loading={loading}>فحص</Button>}
+    >
+      <div style={{ marginBottom: 12, color: '#888', fontSize: 13 }}>
+        كل قيد في دفتر عليه سلسلة بياخد بصمة محسوبة من محتواه ومن بصمة القيد اللي قبله.
+        الفحص ده بيعيد حسابها من أول السلسلة — فأي تغيير حصل من ورا النظام بيوقف عليه
+        بالظبط، هو وكل اللي بعده.
+      </div>
+      {covered.length === 0 ? (
+        <Empty description="مافيش دفتر شغّالة عليه سلسلة التجزئة — شغّلها من تبويب «الدفاتر»." />
+      ) : broken.length === 0 ? (
+        <Tag color="green" style={{ marginBottom: 12, fontSize: 14, padding: '4px 10px' }}>
+          كل الدفاتر المغطّاة سليمة
+        </Tag>
+      ) : (
+        <Tag color="red" style={{ marginBottom: 12, fontSize: 14, padding: '4px 10px' }}>
+          فيه {broken.length} دفتر سلسلته مكسورة
+        </Tag>
+      )}
+      <Table<JournalIntegrity>
+        rowKey="journal_id" size="small" pagination={false} loading={loading}
+        dataSource={rows}
+        columns={[
+          { title: 'الدفتر', key: 'j', render: (_: any, r) => (
+            <Space size={4}><Tag color="purple">{r.journal_code}</Tag>{r.journal_name}</Space>
+          ) },
+          { title: 'السلسلة', dataIndex: 'restricted', width: 110,
+            render: (on: boolean) => (
+              <Tag color={on ? 'blue' : 'default'}>{on ? 'شغّالة' : 'مقفولة'}</Tag>
+            ) },
+          { title: 'قيود متجزّأة', dataIndex: 'entries', width: 110 },
+          { title: 'من', key: 'from', width: 190,
+            render: (_: any, r) => (r.first_number
+              ? `${r.first_number} · ${r.first_date || ''}` : '') },
+          { title: 'إلى', key: 'to', width: 190,
+            render: (_: any, r) => (r.last_number
+              ? `${r.last_number} · ${r.last_date || ''}` : '') },
+          { title: 'النتيجة', key: 'res', width: 240,
+            render: (_: any, r) => {
+              if (!r.restricted || r.entries === 0) return <span style={{ color: '#888' }}>—</span>;
+              if (r.intact) return <Tag color="green">سليمة</Tag>;
+              return (
+                <Space size={4}>
+                  <Tag color="red">مكسورة</Tag>
+                  <Button type="link" size="small"
+                    onClick={() => navigate(`/general-ledger?doc=${r.broken_entry_id}`)}>
+                    {r.broken_number || `#${r.broken_entry_id}`}
+                  </Button>
+                </Space>
+              );
+            } },
+          { title: 'ملاحظات', dataIndex: 'problems',
+            render: (p: string[]) => (p?.length
+              ? <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                  {p.map((t, i) => <li key={i} style={{ color: '#d64545' }}>{t}</li>)}
+                </ul>
+              : '') },
+        ]}
+      />
+    </Card>
+  );
+}
+
+
 /** تبويب الدفاتر — عرض دفاتر اليومية وإضافة دفتر للعميل. */
 function JournalsTab() {
   const [rows, setRows] = useState<Journal[]>([]);
@@ -1186,6 +1295,17 @@ function JournalsTab() {
     } catch (err) { console.error(err); }
   };
 
+  // التشغيل قرار مالوش رجعة: أول ما يتجزّأ قيد في الدفتر، السلسلة موجودة في القاعدة
+  // والسيرفر بيرفض إطفاءها — عشان ماتفضلش موجودة وبلا حارس.
+  const toggleHash = async (j: Journal) => {
+    try {
+      await api.patch(`/api/v1/journals/${j.id}`, { restrict_mode_hash: !j.restrict_mode_hash });
+      message.success(j.restrict_mode_hash ? 'اتقفلت السلسلة' : 'اتشغّلت السلسلة'); load();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'مانفعش');
+    }
+  };
+
   const columns = [
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 90,
       render: (c: string) => <Tag color="purple">{c}</Tag> },
@@ -1198,6 +1318,17 @@ function JournalsTab() {
           <Tag color={a ? 'green' : 'default'}>{a ? 'شغّال' : 'مقفول'}</Tag>
           {r.is_system && <Tag color="blue">نظام</Tag>}
         </Space>
+      ) },
+    { title: 'سلسلة التجزئة', dataIndex: 'restrict_mode_hash', key: 'restrict_mode_hash', width: 190,
+      render: (on: boolean, r: Journal) => (
+        <Tooltip title={on
+          ? 'شغّالة. الإطفاء بيترفض بعد ما يتجزّأ أول قيد.'
+          : 'التشغيل بيدّي كل قيد جديد بصمة — ومايرجعش مسودة ولا يتحذف، ومستنده مايتعدّلش.'}>
+          <Space size={6}>
+            <Switch size="small" checked={!!on} onChange={() => toggleHash(r)} />
+            <span style={{ color: '#888' }}>{on ? 'شغّالة' : 'مقفولة'}</span>
+          </Space>
+        </Tooltip>
       ) },
     { title: '', key: 'actions', width: 160,
       render: (_: any, r: Journal) => (
@@ -1226,6 +1357,10 @@ function JournalsTab() {
       <div style={{ marginBottom: 12, color: '#888', fontSize: 13 }}>
         كل قيد بيعيش في دفتر، والدفتر بيدّيه رقمه المتسلسل — <code>INV/2026/00001</code>.
         الترقيم بيتصفّر مع كل سنة، والسنة بتتاخد من تاريخ القيد مش من تاريخ النهارده.
+        <br />
+        <b>سلسلة التجزئة</b> بتدّي كل قيد بصمة محسوبة من محتواه ومن بصمة اللي قبله، فأي
+        تغيير من ورا النظام بيبان في «سلامة الدفاتر». تشغيلها بيقفل الدفتر على نفسه —
+        قيده مايرجعش مسودة ومايتحذفش — وبتتشغّل على الدفتر اللي فواتيره اتسلّمت بس.
       </div>
       <Table rowKey="id" loading={loading} dataSource={rows} columns={columns}
         pagination={false} size="small" />

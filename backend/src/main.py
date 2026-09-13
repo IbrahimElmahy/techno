@@ -390,6 +390,11 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("ledger_entry", "partner_id", "BIGINT"),
     ("ledger_entry", "invoice_date_due", "DATE"),
     ("ledger_entry", "payment_state", "VARCHAR(16)"),
+    # (المرحلة ٤) سلسلة التجزئة — فاضيين في كل دفتر مش شغّال عليه `restrict_mode_hash`.
+    ("ledger_entry", "secure_sequence_number", "BIGINT"),
+    ("ledger_entry", "inalterable_hash", "VARCHAR(64)"),
+    # nullable زي بقية اللي هنا — الصف القديم بيرجع NULL و`bool(None)` = مقفول.
+    ("journal", "restrict_mode_hash", "BOOLEAN"),
     # الشريك على السطر كمان — القيد اللي فيه أكتر من شريك بيتقسّم صح، ودفتر الشريك
     # وأعمار الديون بيتحسبوا من الدفتر مباشرة.
     ("ledger_line", "partner_kind", "VARCHAR(12)"),
