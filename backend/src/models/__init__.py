@@ -11,6 +11,8 @@ from src.models.customer import Customer, CustomerAccount
 # Site inspections / معاينات (015-inspections-mobile).
 from src.models.inspection import Inspection, InspectionItem  # noqa: E402
 from src.models.inspection_item_type import InspectionItemType  # noqa: E402
+# التوزيع التحليلي — السطر على أكتر من مركز تكلفة.
+from src.models.analytic import LedgerLineDistribution  # noqa: E402
 # إعدادات المحاسبة — أقفال التواريخ (المرحلة ٤ — موديل أودو).
 from src.models.accounting_setting import AccountingSetting  # noqa: E402
 # دفاتر اليومية (المرحلة ١ — موديل أودو).

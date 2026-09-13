@@ -125,6 +125,9 @@ class JournalLineIn(BaseModel):
     amount: Decimal
     statement: str | None = None
     cost_center_id: int | None = None
+    # التوزيع التحليلي: `{"3": 60, "7": 40}` ومجموعه ١٠٠. لما يتحط بيغلب
+    # `cost_center_id` — السطر متقسّم فمافيش مركز واحد يتكتب عليه.
+    cost_center_distribution: dict[str, Decimal] | None = None
     # (المرحلة ٢) شريك السطر. مالوش قيمة ⇒ بياخد شريك القيد.
     partner_kind: str | None = None
     partner_id: int | None = None
@@ -197,6 +200,7 @@ class JournalLineOut(BaseModel):
     partner_kind: str | None = None
     partner_id: int | None = None
     date_maturity: date | None = None
+    cost_center_distribution: dict[str, Decimal] | None = None
     # `None` = السطر ده مش على حساب بيتقفل؛ صفر = اتقفل بالكامل.
     amount_residual: Decimal | None = None
     full_reconcile_id: int | None = None
@@ -353,6 +357,9 @@ def _entry_out(entry: LedgerEntry, partner_names: dict | None = None) -> Journal
         lines=[
             JournalLineOut(account_id=l.account_id, direction=l.direction, amount=l.amount,
                            statement=l.statement, cost_center_id=l.cost_center_id,
+                           cost_center_distribution=(
+                               {str(d.cost_center_id): Decimal(d.percent)
+                                for d in l.distributions} or None),
                            partner_kind=l.partner_kind, partner_id=l.partner_id,
                            date_maturity=l.date_maturity,
                            amount_residual=l.amount_residual,
@@ -512,8 +519,17 @@ def list_journal_entries(
     if to is not None:
         stmt = stmt.where(LedgerEntry.entry_date <= to)
     if cost_center_id is not None:  # entries that touch this cost center on any line (006)
+        # والسطر المتقسّم كمان — حصته في جدول التوزيع و`cost_center_id` بتاعه فاضي.
+        from src.models.analytic import LedgerLineDistribution
+
         stmt = stmt.where(
-            LedgerEntry.lines.any(LedgerLine.cost_center_id == cost_center_id)
+            LedgerEntry.lines.any(
+                (LedgerLine.cost_center_id == cost_center_id)
+                | LedgerLine.id.in_(
+                    select(LedgerLineDistribution.line_id).where(
+                        LedgerLineDistribution.cost_center_id == cost_center_id)
+                )
+            )
         )
     if partner_kind is not None:
         stmt = stmt.where(LedgerEntry.partner_kind == partner_kind)
@@ -551,7 +567,8 @@ def post_journal_entry(
             branch_id=body.branch_id,
             lines=[
                 JournalLineInput(l.account_id, l.direction, l.amount, l.statement,
-                                 l.cost_center_id, l.partner_kind, l.partner_id)
+                                 l.cost_center_id, l.partner_kind, l.partner_id,
+                                 l.cost_center_distribution)
                 for l in body.lines
             ],
             actor_user_id=current.id,
@@ -590,7 +607,8 @@ def update_journal_entry(
             invoice_date_due=body.due_date,
             lines=None if body.lines is None else [
                 JournalLineInput(l.account_id, l.direction, l.amount, l.statement,
-                                 l.cost_center_id, l.partner_kind, l.partner_id)
+                                 l.cost_center_id, l.partner_kind, l.partner_id,
+                                 l.cost_center_distribution)
                 for l in body.lines
             ],
         )

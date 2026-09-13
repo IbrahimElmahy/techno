@@ -266,6 +266,13 @@ class LedgerLine(Base):
 
     entry: Mapped[LedgerEntry] = relationship(back_populates="lines")
     account: Mapped[Account] = relationship(back_populates="lines")
+    # حصص التوزيع التحليلي — فاضية في الحالة الشايعة (مركز واحد على العمود فوق).
+    # `selectin` عشان عرض قيد بسطوره مايبقاش استعلام لكل سطر.
+    distributions: Mapped[list["LedgerLineDistribution"]] = relationship(  # noqa: F821
+        "LedgerLineDistribution",
+        primaryjoin="LedgerLine.id == foreign(LedgerLineDistribution.line_id)",
+        lazy="selectin", viewonly=True,
+    )
 
 
 class LedgerImmutableError(Exception):

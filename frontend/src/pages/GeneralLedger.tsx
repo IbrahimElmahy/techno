@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
+import CostCenterSplit from '../components/CostCenterSplit';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import {
@@ -50,6 +51,7 @@ interface JournalLine {
   amount: string;
   statement: string | null;
   cost_center_id?: number | null;
+  cost_center_distribution?: Record<string, number> | null;
 }
 
 interface Journal {
@@ -112,6 +114,7 @@ interface LineDraft {
   amount: number;
   statement: string;
   cost_center_id?: number | null;
+  cost_center_distribution?: Record<string, number> | null;
 }
 
 const flatten = <T extends { children?: T[] | null }>(node: T): T[] =>
@@ -448,6 +451,7 @@ function JournalTab() {
       key: String(i + 1), account_id: l.account_id, direction: l.direction,
       amount: Number(l.amount), statement: l.statement ?? '',
       cost_center_id: l.cost_center_id ?? null,
+      cost_center_distribution: l.cost_center_distribution ?? null,
     })));
     setDrawer(true);
   };
@@ -473,6 +477,7 @@ function JournalTab() {
       lines: valid.map((l) => ({
         account_id: l.account_id, direction: l.direction, amount: l.amount.toFixed(2),
         statement: l.statement || null, cost_center_id: l.cost_center_id || null,
+        cost_center_distribution: l.cost_center_distribution || null,
       })),
     };
     try {
@@ -642,6 +647,12 @@ function JournalTab() {
               </span>
               {acctLabel(l.account_id)}: <strong>{egp(l.amount)}</strong>
               {ccLabel(l.cost_center_id) && <Tag style={{ marginInlineStart: 6 }} color="geekblue">{ccLabel(l.cost_center_id)}</Tag>}
+              {/* السطر المتقسّم مالوش مركز واحد يتكتب — فبيتكتب توزيعه بالنِسَب. */}
+              {l.cost_center_distribution && Object.entries(l.cost_center_distribution).map(([cc, pct]) => (
+                <Tag key={cc} style={{ marginInlineStart: 6 }} color="purple">
+                  {ccLabel(Number(cc))} {Number(pct)}٪
+                </Tag>
+              ))}
             </div>
           ))}
         </div>
@@ -864,11 +875,23 @@ function JournalTab() {
                 <Input size="small" placeholder="بيان السطر (اختياري)"
                   value={l.statement} onChange={(e) => setLine(l.key, 'statement', e.target.value)} />
               </Col>
-              <Col span={10} style={{ marginTop: 4 }}>
+              <Col span={7} style={{ marginTop: 4 }}>
                 <Select size="small" allowClear placeholder="مركز التكلفة (اختياري)" style={{ width: '100%' }}
-                  showSearch optionFilterProp="label" value={l.cost_center_id ?? undefined}
+                  showSearch optionFilterProp="label"
+                  disabled={!!l.cost_center_distribution}
+                  value={l.cost_center_id ?? undefined}
                   onChange={(v) => setLine(l.key, 'cost_center_id', v ?? null)}
                   options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
+              </Col>
+              <Col span={3} style={{ marginTop: 4 }}>
+                {/* السطر المتقسّم مالوش مركز واحد — فالقايمة بتتقفل والتوزيع هو اللي بيتكتب. */}
+                <CostCenterSplit
+                  value={l.cost_center_distribution}
+                  onChange={(v) => {
+                    setLine(l.key, 'cost_center_distribution', v);
+                    if (v) setLine(l.key, 'cost_center_id', null);
+                  }}
+                />
               </Col>
             </Row>
           ))}

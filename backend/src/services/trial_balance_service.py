@@ -93,7 +93,17 @@ def trial_balance(
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     if cost_center_id is not None:  # optional analytical scope (006)
-        stmt = stmt.where(LedgerLine.cost_center_id == cost_center_id)
+        # السطر المتقسّم مالوش `cost_center_id`، وحصته في جدول التوزيع — فالتصفية
+        # لازم تشوف الاتنين، وإلا الميزان المفلتر بمركز بيرمي كل السطور المقسّمة.
+        from src.models.analytic import LedgerLineDistribution
+
+        stmt = stmt.where(
+            (LedgerLine.cost_center_id == cost_center_id)
+            | LedgerLine.id.in_(
+                select(LedgerLineDistribution.line_id).where(
+                    LedgerLineDistribution.cost_center_id == cost_center_id)
+            )
+        )
 
     buckets: dict[int, _Bucket] = {}
     for line, entry in db.execute(stmt).all():

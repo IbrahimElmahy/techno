@@ -94,6 +94,8 @@ class ExpenseIn(BaseModel):
     payment_method: str | None = Field(default=None, max_length=32)
     # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
+    # توزيع تحليلي بدل المركز الواحد — `{"3": 60, "7": 40}` ومجموعه ١٠٠.
+    cost_center_distribution: dict[str, Decimal] | None = None
 
 
 class CashTransferIn(BaseModel):
@@ -392,7 +394,8 @@ def create_expense(
             actor_user_id=current.id, actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
-            cost_center_id=body.cost_center_id)
+            cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()

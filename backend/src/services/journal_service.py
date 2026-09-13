@@ -32,6 +32,8 @@ class JournalLineInput:
     # (المرحلة ٢) الشريك على السطر — القيد اللي بيقفل على عميل بعينه بيتقال هنا.
     partner_kind: PartnerKind | str | None = None
     partner_id: int | None = None
+    # توزيع تحليلي على السطر: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    cost_center_distribution: dict | None = None
 
 
 def _validate_accounts(db: Session, lines: list[JournalLineInput]) -> None:
@@ -53,13 +55,21 @@ def _validate_accounts(db: Session, lines: list[JournalLineInput]) -> None:
             raise JournalError(
                 "مركز التكلفة ده مش موجود أو مقفول."
             )
+        if ln.cost_center_distribution:
+            from src.services import analytic_service
+
+            try:
+                analytic_service.validate(
+                    db, analytic_service.normalize(ln.cost_center_distribution))
+            except analytic_service.AnalyticError as exc:
+                raise JournalError(str(exc)) from exc
 
 
 def _to_line_inputs(lines: list[JournalLineInput]) -> list[LineInput]:
     return [
         LineInput(
             ln.account_id, ln.direction, ln.amount, ln.statement, ln.cost_center_id,
-            ln.partner_kind, ln.partner_id,
+            ln.partner_kind, ln.partner_id, None, ln.cost_center_distribution,
         )
         for ln in lines
     ]

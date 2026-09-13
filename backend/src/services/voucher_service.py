@@ -149,6 +149,8 @@ def _create(
     # بيقرا سطور الإيراد والمصروف وبس، فتعليم سطر الخزينة مابيغيّرش رقم فيه؛ بس كشف
     # الحساب بيعرض العمود على أي سطر، فتعليم الطرفين بيخلّي الكشف متسق مع نفسه.
     cost_center_id: int | None = None,
+    # وتوزيع تحليلي بدل المركز الواحد — إيجار بيتقسّم على فرعين مثلاً.
+    cost_center_distribution: dict | None = None,
 ) -> Voucher:
     voucher = Voucher(
         document_number=_doc_number(db, kind), kind=kind, amount=amount,
@@ -180,6 +182,7 @@ def _create(
         entry_date=voucher.voucher_date,
         partner_kind=v_partner_kind, partner_id=v_partner_id,
         cost_center_id=cost_center_id,
+        cost_center_distribution=cost_center_distribution,
         lines=[
             LineInput(debit_account_id, Direction.debit, amount, statement=statement),
             *(
@@ -313,6 +316,7 @@ def create_expense(
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None,
     cost_center_id: int | None = None,
+    cost_center_distribution: dict | None = None,
 ) -> Voucher:
     """سند مصروف — إيجار/مرتبات/بنزين… مدين حساب المصروف ودائن الخزينة."""
     value = _positive(amount)
@@ -340,6 +344,7 @@ def create_expense(
         statement=f"مصروف — {account.name or account.code or ''}".strip(),
         treasury_id=safe_id,
         cost_center_id=cost_center_id,
+        cost_center_distribution=cost_center_distribution,
     )
 
 

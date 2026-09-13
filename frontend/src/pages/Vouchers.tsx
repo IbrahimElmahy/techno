@@ -19,6 +19,7 @@ import PartyField from '../components/PartyField';
 import { entryTypeLabel } from '../components/labels';
 import dayjs, { Dayjs } from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
+import CostCenterSplit from '../components/CostCenterSplit';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
@@ -1316,8 +1317,17 @@ const Vouchers: React.FC = () => {
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
-                  <Form.Item name="cost_center_id" label="مركز التكلفة">
-                    <CostCenterField />
+                  {/* المصروف هو سند الوحيد اللي بيلمس حساب نتيجة، فهو الوحيد اللي
+                      التوزيع بيفرق فيه — إيجار بيتقسّم على فرعين مثلاً. */}
+                  <Form.Item label="مركز التكلفة">
+                    <Space align="start">
+                      <Form.Item name="cost_center_id" noStyle>
+                        <CostCenterField style={{ width: 220 }} />
+                      </Form.Item>
+                      <Form.Item name="cost_center_distribution" noStyle>
+                        <CostCenterSplit size="middle" />
+                      </Form.Item>
+                    </Space>
                   </Form.Item>
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />

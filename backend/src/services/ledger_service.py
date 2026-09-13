@@ -44,6 +44,9 @@ class LineInput:
     partner_id: int | None = None
     # استحقاق السطر. `None` = يورث استحقاق القيد.
     date_maturity: date | None = None
+    # توزيع تحليلي: `{cost_center_id: percent}` ومجموعه ١٠٠. لما يتحط، بيغلب
+    # `cost_center_id` — السطر متقسّم، فمافيش مركز واحد يتكتب عليه.
+    cost_center_distribution: dict | None = None
 
 
 def _validate_lines(lines: list[LineInput]) -> None:
@@ -188,6 +191,35 @@ def _build_lines(
     return built
 
 
+def _distribution_rows(db, line_id):
+    from src.models.analytic import LedgerLineDistribution
+
+    return db.scalars(
+        select(LedgerLineDistribution).where(LedgerLineDistribution.line_id == line_id)
+    ).all()
+
+
+def _apply_distributions(db, built, inputs, document_distribution) -> None:
+    """يكتب حصص التوزيع بعد ما السطور تاخد `id`.
+
+    بعد الـ`flush` مش قبله: الحصة بتشاور على `ledger_line.id`، واللي لسه ماتكتبش
+    مالوش رقم يتشاور عليه.
+    """
+    from src.services import analytic_service
+
+    for line, source in zip(built, inputs):
+        shares = source.cost_center_distribution or (
+            document_distribution if source.cost_center_id is None else None
+        )
+        if shares:
+            # التوزيع الغلط غلط في القيد، فبيطلع كـ`LedgerError` — كل نداء بيكتب
+            # مستند بيمسك النوع ده أصلاً وبيرجّع ٤٠٩ بدل ٥٠٠.
+            try:
+                analytic_service.set_distribution(db, line=line, shares=shares)
+            except analytic_service.AnalyticError as exc:
+                raise LedgerError(str(exc)) from exc
+
+
 def _assert_not_hashed(entry: LedgerEntry) -> None:
     """القيد في دفتر متجزّأ مايخرجش من الحسابات — الغلط بيتصحّح بقيد عكسي."""
     from src.services import secure_hash_service
@@ -244,6 +276,8 @@ def post_entry(
     # مركز تكلفة المستند كله. بيتورّث لكل سطر مالوش مركز بتاعه، فالمستند بيقوله مرة
     # واحدة بدل ما كل نداء يفضّل يكرّره على سطوره.
     cost_center_id: int | None = None,
+    # وتوزيع المستند كله — نفس التوريث: السطر اللي مالوش توزيع ولا مركز بياخده.
+    cost_center_distribution: dict | None = None,
 ) -> LedgerEntry:
     """يكتب قيد. الافتراضي مرحّل ومتوازن وبرقم؛ `state="draft"` بيسيبه ناقص وبلا رقم.
 
@@ -285,6 +319,7 @@ def post_entry(
                                date_maturity=due, cost_center_id=cost_center_id)
     db.add(entry)
     db.flush()
+    _apply_distributions(db, entry.lines, lines, cost_center_distribution)
     if state == EntryState.posted.value:
         _stamp_posted(db, entry)
         db.flush()
@@ -343,6 +378,7 @@ def replace_lines(db: Session, *, entry: LedgerEntry, lines: list[LineInput]) ->
         date_maturity=entry.invoice_date_due or entry.entry_date,
     )
     db.flush()
+    _apply_distributions(db, entry.lines, lines, None)
     return entry
 
 
@@ -445,6 +481,12 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
             amount=line.amount,
             statement=line.statement,
             cost_center_id=line.cost_center_id,  # reversal nets within the same cost center (006)
+            # والتوزيع كمان — العكسي لازم يلغي نفس الحصص اللي الأصل وزّعها، وإلا
+            # المركز بيفضل شايل مصروف اتعكس.
+            cost_center_distribution={
+                int(r.cost_center_id): to_money(r.percent)
+                for r in _distribution_rows(db, line.id)
+            } or None,
         )
         for line in original.lines
     ]
