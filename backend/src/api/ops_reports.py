@@ -19,6 +19,7 @@ from src.core.db import get_db
 from src.lib import analysis_reports, ops_reports
 from src.lib.analysis_reports import AnalysisReportError
 from src.lib.ops_reports import OpsReportError
+from src.services import analytic_items_service
 
 router = APIRouter(tags=["ops-reports"], prefix="/reports")
 
@@ -131,3 +132,22 @@ def profitability_breakdown(
             db, dimension=dimension, key=key, date_from=date_from, date_to=date_to)
     except AnalysisReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/analytic-items")
+def analytic_items(
+    cost_center_id: int | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    include_unassigned: bool = Query(False),
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """البنود التحليلية — كل حصة مركز تكلفة كسطر بمستندها وحسابها ومبلغها.
+
+    التفصيل بالحساب بيقول «الرقم ده من أنهي حسابات»، وده بيقول «من أنهي مستندات» —
+    والتاني هو اللي بيتراجع عليه، لأن المستند هو اللي ممكن يتفتح ويتصلّح.
+    """
+    return analytic_items_service.analytic_items(
+        db, cost_center_id=cost_center_id, date_from=date_from, date_to=date_to,
+        include_unassigned=include_unassigned)
