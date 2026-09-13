@@ -66,6 +66,7 @@ const Returns = lazy(() => import('../pages/Returns'));
 const Loyalty = lazy(() => import('../pages/Loyalty'));
 const Treasury = lazy(() => import('../pages/Treasury'));
 const GeneralLedger = lazy(() => import('../pages/GeneralLedger'));
+const AccountingDashboard = lazy(() => import('../pages/AccountingDashboard'));
 const Audit = lazy(() => import('../pages/Audit'));
 const Reports = lazy(() => import('../pages/Reports'));
 const TradeReports = lazy(() => import('../pages/TradeReports'));
@@ -148,6 +149,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/voucher-keys" element={<VoucherKeys />} />
       <Route path="/finance-reports" element={<FinanceReports />} />
       <Route path="/general-ledger" element={<GeneralLedger />} />
+      <Route path="/accounting" element={<AccountingDashboard />} />
       <Route path="/loyalty" element={<Loyalty />} />
       <Route path="/audit" element={<Audit />} />
       <Route path="/inspections" element={<Inspections />} />

@@ -216,6 +216,13 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     key: 'grp-accounts',
     label: 'اداره الحسابات',
     children: [
+      /**
+       * لوحة المحاسبة — أول حاجة في القايمة عشان هي أول حاجة تتفتح.
+       *
+       * مالهاش مقابل في a5 (نظامهم بيبدأ من سجل)، فمافيش مكان محفوظ بتتزحزح منه.
+       * الكارت بيقول «فيه مسودتين هنا وألف مفتوحة هناك» قبل ما حد يفتح شاشة.
+       */
+      { key: '/accounting', label: 'لوحة المحاسبة', roles: R(BOOKS) },
       { key: '/account-statement', label: 'كشف حساب', roles: R(BOOKS), a5: '/entriesreport' },
       { key: '/general-ledger?tab=journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
       { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },

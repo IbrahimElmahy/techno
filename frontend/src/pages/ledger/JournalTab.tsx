@@ -15,7 +15,7 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { api } from '../../api/client';
 import { useQueryTab } from '../../components/useQueryTab';
@@ -272,7 +272,20 @@ export default function JournalTab() {
   const branchName = (id: number | null) =>
     id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام';
 
+  // الوصول من لوحة المحاسبة: الكارت بيقول «مسودتين في دفتر المبيعات» والضغطة
+  // لازم تفتح الاتنين دول بالظبط، مش السجل كله وبعدين المستخدم يفلتر بإيده.
+  const [searchParams] = useSearchParams();
+  const initialValues = React.useMemo(() => {
+    const out: Record<string, any> = {};
+    const journal = searchParams.get('journal');
+    const state = searchParams.get('state');
+    if (journal) out.journal_id = Number(journal);
+    if (state) out.state = state;
+    return out;
+  }, [searchParams]);
+
   const filter = useListFilter(entries, {
+    initialValues,
     search: (e) => [
       e.id, e.number, e.journal_code, e.journal_name,
       e.description, entryTypeLabel(e.entry_type), e.entry_type,

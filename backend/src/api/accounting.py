@@ -39,6 +39,7 @@ from src.models.ledger import (
 from src.models.supplier import Supplier
 from src.services import (
     account_routing_service,
+    accounting_dashboard_service,
     chart_service,
     journal_registry,
     journal_service,
@@ -982,3 +983,15 @@ def check_integrity(
 ) -> list[JournalIntegrityOut]:
     """تقرير سلامة الدفاتر — بيعيد حساب سلسلة كل دفتر وبيوقف على أول قيد اتلمس."""
     return [JournalIntegrityOut(**vars(r)) for r in secure_hash_service.check_all(db)]
+
+
+# --------------------------------------------- لوحة المحاسبة (كروت الدفاتر — شكل أودو)
+
+
+@router.get("/accounting/dashboard", response_model=dict)
+def accounting_dashboard(
+    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """كارت لكل دفتر وكل خزنة — الأرقام اللي بتقول «فيه حاجة مستنياك هنا»."""
+    return accounting_dashboard_service.dashboard(db)
