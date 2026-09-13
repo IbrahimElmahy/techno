@@ -25,7 +25,6 @@ import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
 } from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
-import { isAccountingPath } from './AccountingNav';
 import RowDensityControl from './RowDensity';
 import FullscreenToggle from './FullscreenToggle';
 import Logo from './Logo';
@@ -70,15 +69,24 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
   /**
-   * الشجرة بتتخبى في شاشات المحاسبة — الشريط الأفقي فوقها بيغطّيها.
+   * القايمة بقت فوق، والشجرة الجانبية بقت اختيارية — زي أودو.
    *
-   * حاجتين مختلفتين: `collapsed` هو طيّ الشجرة لأيقونات (قرار المستخدم في أي
-   * شاشة)، و`showTree` هو إظهارها تاني في شاشة بتخبّيها. لو خلطناهم، اللي فتح
-   * الشجرة في المحاسبة كان هيلاقيها مطويّة في كل الشاشات التانية كمان.
+   * الشجرة كانت واخدة ٢٥٠ بكسل من عرض كل شاشة عشان تعرض نفس الأقسام اللي الشريط
+   * الأفقي بيعرضها في ٤٤ بكسل من الطول. الجداول هي اللي بتستفيد بالعرض ده.
    *
-   * وبيترجع `false` لما تسيب المحاسبة: القرار بتاع الشاشة دي، مش إعداد دايم.
+   * **بتتخبى مش بتتشال.** الترتيب نفسه متعمّد يحاكي a5 عشان اللي عارف مكان حاجة
+   * يلاقيها — والشريط الأفقي بيعرض **نفس** الشجرة بنفس الأسماء والترتيب، فاللي
+   * حافظ «اذن تحويل مخازن تحت اداره المخازن» بيلاقيها في نفس المكان بالظبط، بس
+   * أفقي. واللي عايز الشجرة ترجع بيضغط زرار واحد فوق.
    */
-  const [showTree, setShowTree] = useState(false);
+  const [showTree, setShowTree] = useState(() => {
+    try { return localStorage.getItem('nav.tree') === '1'; } catch { return false; }
+  });
+  const toggleTree = () => setShowTree((v) => {
+    // بيتفضّل: اللي بيشتغل بالشجرة مايرجعش يفتحها كل يوم.
+    try { localStorage.setItem('nav.tree', v ? '0' : '1'); } catch { /* private mode */ }
+    return !v;
+  });
   const { user, logout } = useAuth();
   const { tabs, activeId, openTab, activateTab, closeTab } = useTabs();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -185,12 +193,6 @@ export default function AppLayout() {
 
   // The active tab's base path drives the sidebar highlight.
   const activeBase = activeId || '/dashboard';
-  const onAccounting = isAccountingPath(activeBase);
-  const treeHidden = onAccounting && !showTree;
-
-  useEffect(() => {
-    if (!onAccounting && showTree) setShowTree(false);
-  }, [onAccounting, showTree]);
 
   const userDropdownItems = [
     {
@@ -263,7 +265,7 @@ export default function AppLayout() {
           zIndex: 10,
           height: '100vh',
           overflow: 'hidden',
-          display: treeHidden ? 'none' : undefined,
+          display: showTree ? undefined : 'none',
         }}
       >
         {/* Flex column so the logo stays pinned and the menu scrolls when items overflow. */}
@@ -318,16 +320,19 @@ export default function AppLayout() {
             zIndex: 9,
           }}
         >
-          {/* نفس الزرار بيعمل حاجتين حسب الشاشة: في المحاسبة بيرجّع الشجرة أو
-              يخبّيها، وفي غيرها بيطويها لأيقونات زي ما كان. */}
-          <Tooltip title={onAccounting
-            ? (treeHidden ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية')
-            : (collapsed ? 'فتح القائمة' : 'طي القائمة')}>
+          {/* العلامة كانت عايشة في الشجرة، والشجرة بقت مخبية — فنقلت هنا. النظام
+              من غير علامة بيبان كأنه اتفتح غلط. */}
+          {!showTree && (
+            <div style={{ paddingInlineStart: 12, display: 'flex', alignItems: 'center' }}>
+              <Logo variant="mark" width={26} />
+            </div>
+          )}
+          {/* الشجرة اختيارية دلوقتي — الزرار بيظهّرها ويخبّيها، والاختيار بيتفضّل. */}
+          <Tooltip title={showTree ? 'إخفاء القائمة الجانبية' : 'إظهار القائمة الجانبية'}>
             <Button
               type="text"
-              icon={(onAccounting ? treeHidden : collapsed)
-                ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => (onAccounting ? setShowTree(!showTree) : setCollapsed(!collapsed))}
+              icon={showTree ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+              onClick={toggleTree}
               style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
             />
           </Tooltip>
@@ -362,6 +367,36 @@ export default function AppLayout() {
             </Dropdown>
           </div>
         </Header>
+
+        {/*
+          * شريط الأقسام الأفقي — نفس شجرة `navigation.ts` بالظبط، بس فوق.
+          *
+          * الشجرة الجانبية كانت بتاخد ٢٥٠ بكسل من عرض كل شاشة عشان تعرض الأقسام
+          * دي، والجداول هي اللي بتستفيد بالعرض. الشريط بياخد ٤٤ بكسل من الطول
+          * وبيعرض نفس الحاجة.
+          *
+          * **نفس الترتيب ونفس الأسماء ونفس التداخل.** الترتيب متعمّد يحاكي a5
+          * عشان اللي عارف مكان حاجة يلاقيها من غير ما يسأل — فاللي حافظ «اذن
+          * تحويل مخازن تحت اداره المخازن» بيلاقيها في نفس المكان بالظبط. اللي
+          * اتغيّر هو الاتجاه وبس، مش التقسيمة.
+          *
+          * الأيقونات بتتشال هنا: على الشجرة كانت بتفرّق الأقسام بالعين وهي فوق
+          * بعض؛ في صف أفقي هي اللي بتاكل العرض اللي الأسماء محتاجاه.
+          */}
+        <div style={{
+          flexShrink: 0, background: colorBgContainer,
+          boxShadow: '0 1px 4px rgba(0,21,41,0.06)', zIndex: 8,
+        }}>
+          <Menu
+            mode="horizontal"
+            selectedKeys={[activeBase]}
+            items={filteredMenuItems.map(({ icon, ...rest }: any) => rest)}
+            onClick={handleMenuClick}
+            style={{ borderBottom: 'none', lineHeight: '40px' }}
+            overflowedIndicator={<AppstoreOutlined />}
+          />
+        </div>
+
         {/* minHeight:0 lets this flex child actually shrink, so the box below can scroll
             instead of stretching the page. */}
         <Content style={{
