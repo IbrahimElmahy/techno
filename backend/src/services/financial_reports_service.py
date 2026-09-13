@@ -95,14 +95,16 @@ def _label(acc: Account) -> tuple[str | None, str | None]:
 
 
 def _movements(
-    db: Session, *, date_from: date | None, date_to: date | None
+    db: Session, *, date_from: date | None, date_to: date | None,
+    posted_only: bool = True,
 ) -> dict[int, Decimal]:
     """account_id -> signed movement (by the account's normal side) within the window."""
     rows = db.scalars(
         select(LedgerLine).options(selectinload(LedgerLine.entry),
                                    selectinload(LedgerLine.account))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
-        .where(ledger_service.is_posted_sql())  # المسودة والملغي بره القوائم
+        # «المرحّل بس» افتراضياً؛ «كل القيود» بتضم المسودة. الملغي بره في الحالتين.
+        .where(ledger_service.in_books_sql(posted_only))
     ).all()
     totals: dict[int, Decimal] = {}
     for line in rows:
@@ -135,10 +137,12 @@ def _by_nature(
 
 
 def income_statement(
-    db: Session, *, date_from: date | None = None, date_to: date | None = None
+    db: Session, *, date_from: date | None = None, date_to: date | None = None,
+    posted_only: bool = True,
 ) -> IncomeStatement:
     """قائمة الدخل — الإيرادات ناقص المصروفات خلال الفترة."""
-    totals = _movements(db, date_from=date_from, date_to=date_to)
+    totals = _movements(db, date_from=date_from, date_to=date_to,
+                        posted_only=posted_only)
     income, total_income = _by_nature(db, totals, AccountNature.income)
     expenses, total_expenses = _by_nature(db, totals, AccountNature.expense)
     return IncomeStatement(
@@ -148,9 +152,10 @@ def income_statement(
     )
 
 
-def balance_sheet(db: Session, *, as_of: date | None = None) -> BalanceSheet:
+def balance_sheet(db: Session, *, as_of: date | None = None,
+                  posted_only: bool = True) -> BalanceSheet:
     """الميزانية — الأصول = الالتزامات + حقوق الملكية (متضمنة أرباح الفترة)."""
-    totals = _movements(db, date_from=None, date_to=as_of)
+    totals = _movements(db, date_from=None, date_to=as_of, posted_only=posted_only)
     assets, total_assets = _by_nature(db, totals, AccountNature.asset)
     liabilities, total_liabilities = _by_nature(db, totals, AccountNature.liability)
     equity, total_equity = _by_nature(db, totals, AccountNature.equity)
@@ -275,3 +280,51 @@ def payables_aging(db: Session, *, as_of: date | None = None) -> list[AgingRow]:
     }
     names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
     return _aging_for_accounts(db, account_by_party=account_by_party, names=names, as_of=when)
+
+
+# --------------------------------------------------- المقارنة (سلوك تقارير أودو المشترك)
+
+
+def income_statement_compared(db: Session, options) -> dict:
+    """قائمة الدخل ومعاها نفس التقرير لفترة المقارنة — ونسبة الفرق.
+
+    الرقم لوحده مابيقولش «كويس ولا وحش»؛ اللي بيقول هو اللي جنبه. الفرق بيتحسب
+    على مستوى الحساب مش الإجمالي بس، عشان اللي شايف مصروف زاد ٢٠٪ يعرف أنهي حساب
+    فيه زوّد.
+    """
+    from src.services import report_options as ro
+
+    current = income_statement(db, date_from=options.date_from, date_to=options.date_to,
+                               posted_only=options.posted_only)
+    out = {"current": current, "comparison": None, "comparison_label": None}
+    if not options.compares:
+        return out
+    prev_from, prev_to = ro.comparison_window(options)
+    out["comparison"] = income_statement(db, date_from=prev_from, date_to=prev_to,
+                                         posted_only=options.posted_only)
+    out["comparison_label"] = ro.comparison_label(options)
+    return out
+
+
+def balance_sheet_compared(db: Session, options) -> dict:
+    """الميزانية ومعاها نفس التقرير على تاريخ المقارنة."""
+    from src.services import report_options as ro
+
+    current = balance_sheet(db, as_of=options.date_to, posted_only=options.posted_only)
+    out = {"current": current, "comparison": None, "comparison_label": None}
+    if not options.compares:
+        return out
+    _, prev_to = ro.comparison_window(options)
+    out["comparison"] = balance_sheet(db, as_of=prev_to, posted_only=options.posted_only)
+    out["comparison_label"] = ro.comparison_label(options)
+    return out
+
+
+def delta(now, before) -> dict:
+    """الفرق ونسبته. النسبة `None` لما اللي قبله صفر — القسمة على صفر مش «زيادة ١٠٠٪»."""
+    now, before = to_money(now or 0), to_money(before or 0)
+    diff = to_money(now - before)
+    return {
+        "amount": str(diff),
+        "pct": str(to_money(diff / before * 100)) if before else None,
+    }

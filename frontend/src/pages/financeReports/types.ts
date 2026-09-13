@@ -14,6 +14,10 @@ export interface IncomeStatement {
   total_income: string;
   total_expenses: string;
   net_profit: string;
+  // الخيارات المشتركة — بتيجي مع التقرير نفسه عشان اللي بيقراه يعرف اتبنى إزاي.
+  posted_only?: boolean;
+  comparison_label?: string | null;
+  comparison?: IncomeStatement | null;
 }
 
 export interface BalanceSheet {
@@ -25,6 +29,9 @@ export interface BalanceSheet {
   total_equity: string;
   net_profit: string;
   balanced: boolean;
+  posted_only?: boolean;
+  comparison_label?: string | null;
+  comparison?: BalanceSheet | null;
 }
 
 export interface AgingRow {

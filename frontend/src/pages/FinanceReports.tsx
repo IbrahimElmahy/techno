@@ -27,6 +27,9 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import PartnerLedgerTab from './financeReports/PartnerLedgerTab';
 import CashFlowTab from './financeReports/CashFlowTab';
+import ReportOptionsBar, {
+  DEFAULT_REPORT_OPTIONS, DeltaCell, ReportOptions as RptOptions, reportParams,
+} from '../components/ReportOptionsBar';
 import {
   AgingRow, BalanceSheet, CommissionRow, IncomeStatement, ReportLine, VatReturn,
   BUCKETS, money,
@@ -48,6 +51,8 @@ const FinanceReports: React.FC = () => {
   const [vat, setVat] = useState<VatReturn | null>(null);
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // خيارات التقارير المشتركة — «كل القيود» والمقارنة، زي أودو.
+  const [opts, setOpts] = useState<RptOptions>(DEFAULT_REPORT_OPTIONS);
 
   const agingFilter = useListFilter(aging, { search: (r) => [r.party_name] });
   const commissionFilter = useListFilter(commissions, { search: (r) => [r.rep_name] });
@@ -64,9 +69,10 @@ const FinanceReports: React.FC = () => {
     try {
       const p = params();
       const [i, b, a, v, c] = await Promise.all([
-        api.get<IncomeStatement>('/api/v1/reports/income-statement', { params: p }),
+        api.get<IncomeStatement>('/api/v1/reports/income-statement',
+          { params: { ...p, ...reportParams(opts) } }),
         api.get<BalanceSheet>('/api/v1/reports/balance-sheet', {
-          params: p.date_to ? { as_of: p.date_to } : {},
+          params: { ...(p.date_to ? { as_of: p.date_to } : {}), ...reportParams(opts) },
         }),
         api.get<AgingRow[]>('/api/v1/reports/aging', { params: { party: agingParty } }),
         api.get<VatReturn>('/api/v1/reports/vat-return', { params: p }),
@@ -81,7 +87,7 @@ const FinanceReports: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [params, agingParty]);
+  }, [params, agingParty, opts]);
 
   useEffect(() => {
     loadAll();
@@ -119,6 +125,38 @@ const FinanceReports: React.FC = () => {
     ...numberColumn<ReportLine>((r) => r.amount),
     render: (v: string) => money(v),
   };
+  /**
+   * أعمدة المقارنة — بتظهر لما تتطلب بس.
+   *
+   * الحساب بيتلاقى في الفترة التانية بـ`account_id`، مش بترتيبه: الحساب اللي
+   * ماتحرّكش السنة اللي فاتت مش موجود في قايمتها أصلاً، والمطابقة بالترتيب كانت
+   * هتزحلق الأرقام سطر.
+   */
+  const priorOf = (rows: ReportLine[] | undefined, id: number) =>
+    rows?.find((r) => r.account_id === id)?.amount ?? '0';
+
+  const compareCols = (prior: ReportLine[] | undefined, goodWhenUp: boolean) => (
+    prior ? [
+      {
+        title: 'المقارنة',
+        key: 'prior',
+        width: 150,
+        align: 'left' as const,
+        render: (_: any, r: ReportLine) => money(priorOf(prior, r.account_id)),
+      },
+      {
+        title: 'الفرق',
+        key: 'delta',
+        width: 170,
+        align: 'left' as const,
+        render: (_: any, r: ReportLine) => (
+          <DeltaCell now={r.amount} before={priorOf(prior, r.account_id)}
+                     goodWhenUp={goodWhenUp} />
+        ),
+      },
+    ] : []
+  );
+
   const nameCol = {
     title: 'الحساب',
     ...textColumn(acctRows, (r: ReportLine) => r.name || r.code || `#${r.account_id}`),
@@ -191,6 +229,9 @@ const FinanceReports: React.FC = () => {
         <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>
           تحديث
         </Button>
+        {/* الخيارات على الشريط العلوي مش جوّه كل تبويب: هي على التقرير المعروض
+            أياً كان، وده اللي بيخلّي اللي اتعلّمها في واحد يلاقيها في التاني. */}
+        <ReportOptionsBar value={opts} onChange={setOpts} />
       </Space>
 
       <Tabs
@@ -248,7 +289,7 @@ const FinanceReports: React.FC = () => {
                         </Card>
                       </Col>
                     </Row>
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol, ...compareCols(income.comparison?.income, true)]} />
                     <Table
                       {...acctKb.tableProps}
                       rowKey="account_id"
@@ -257,7 +298,7 @@ const FinanceReports: React.FC = () => {
                       style={{ marginTop: 16 }}
                       title={() => 'المصروفات'}
                       dataSource={income.expenses}
-                      columns={[nameCol, amountCol]}
+                      columns={[nameCol, amountCol, ...compareCols(income.comparison?.expenses, false)]}
                     />
                   </>
                 )}
@@ -285,9 +326,9 @@ const FinanceReports: React.FC = () => {
                       <Descriptions.Item label="حقوق الملكية">{money(sheet.total_equity)}</Descriptions.Item>
                       <Descriptions.Item label="أرباح الفترة">{money(sheet.net_profit)}</Descriptions.Item>
                     </Descriptions>
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol]} />
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol]} />
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.assets, true)]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.liabilities, false)]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.equity, true)]} />
                   </>
                 )}
               </Card>

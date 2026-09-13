@@ -13,6 +13,7 @@ from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
 from src.models.cheque import ChequeDirection, ChequeStatus
 from src.models.role import RoleName
+from src.services.report_options import ReportOptions
 from src.services import (
     cash_flow_service,
     cheque_service,
@@ -77,6 +78,10 @@ class IncomeStatementOut(BaseModel):
     total_income: Decimal
     total_expenses: Decimal
     net_profit: Decimal
+    # الخيارات المشتركة — نفس الشكل في كل تقرير.
+    posted_only: bool = True
+    comparison_label: str | None = None
+    comparison: "IncomeStatementOut | None" = None
 
 
 class BalanceSheetOut(BaseModel):
@@ -89,6 +94,9 @@ class BalanceSheetOut(BaseModel):
     total_equity: Decimal
     net_profit: Decimal
     balanced: bool
+    posted_only: bool = True
+    comparison_label: str | None = None
+    comparison: "BalanceSheetOut | None" = None
 
 
 class AgingRowOut(BaseModel):
@@ -232,32 +240,59 @@ def list_cheques(
 def income_statement(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    # سلوك تقارير أودو المشترك — نفس الخيارين في كل تقرير بنفس المعنى.
+    posted_only: bool = Query(default=True),
+    comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> IncomeStatementOut:
-    """قائمة الدخل."""
-    s = financial_reports_service.income_statement(db, date_from=date_from, date_to=date_to)
+    """قائمة الدخل — مع عمود مقارنة اختياري."""
+    options = ReportOptions(date_from=date_from, date_to=date_to,
+                            posted_only=posted_only, comparison=comparison)
+    both = financial_reports_service.income_statement_compared(db, options)
+    s = both["current"]
+    prev = both["comparison"]
     return IncomeStatementOut(
         date_from=s.date_from, date_to=s.date_to, income=_lines(s.income),
         expenses=_lines(s.expenses), total_income=s.total_income,
         total_expenses=s.total_expenses, net_profit=s.net_profit,
+        posted_only=posted_only,
+        comparison_label=both["comparison_label"],
+        comparison=(IncomeStatementOut(
+            date_from=prev.date_from, date_to=prev.date_to, income=_lines(prev.income),
+            expenses=_lines(prev.expenses), total_income=prev.total_income,
+            total_expenses=prev.total_expenses, net_profit=prev.net_profit,
+        ) if prev else None),
     )
 
 
 @router.get("/reports/balance-sheet", response_model=BalanceSheetOut)
 def balance_sheet(
     as_of: date | None = Query(default=None),
+    posted_only: bool = Query(default=True),
+    comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> BalanceSheetOut:
-    """الميزانية / المركز المالي."""
-    s = financial_reports_service.balance_sheet(db, as_of=as_of)
-    return BalanceSheetOut(
-        as_of=s.as_of, assets=_lines(s.assets), liabilities=_lines(s.liabilities),
-        equity=_lines(s.equity), total_assets=s.total_assets,
-        total_liabilities=s.total_liabilities, total_equity=s.total_equity,
-        net_profit=s.net_profit, balanced=s.balanced,
-    )
+    """الميزانية / المركز المالي — مع عمود مقارنة اختياري."""
+    options = ReportOptions(date_to=as_of, posted_only=posted_only, comparison=comparison)
+    both = financial_reports_service.balance_sheet_compared(db, options)
+    s = both["current"]
+    prev = both["comparison"]
+
+    def out(x: object) -> BalanceSheetOut:
+        return BalanceSheetOut(
+            as_of=x.as_of, assets=_lines(x.assets), liabilities=_lines(x.liabilities),
+            equity=_lines(x.equity), total_assets=x.total_assets,
+            total_liabilities=x.total_liabilities, total_equity=x.total_equity,
+            net_profit=x.net_profit, balanced=x.balanced,
+        )
+
+    result = out(s)
+    result.posted_only = posted_only
+    result.comparison_label = both["comparison_label"]
+    result.comparison = out(prev) if prev else None
+    return result
 
 
 @router.get("/reports/aging", response_model=list[AgingRowOut])

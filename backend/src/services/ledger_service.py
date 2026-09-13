@@ -92,6 +92,21 @@ def is_posted_sql():
     return LedgerEntry.state.is_(None) | (LedgerEntry.state == EntryState.posted.value)
 
 
+def in_books_sql(posted_only: bool = True):
+    """شرط «القيد ده يتحسب في التقرير» — بيحترم خيار «كل القيود».
+
+    `posted_only=True` (الافتراضي) = المرحّل بس، زي ما التقارير شغّالة من الأول.
+    `False` بيضم **المسودة كمان** — أودو بيسمّيها «All entries»، والمحاسب في آخر
+    الشهر بيستعملها عشان يشوف أثر اللي لسه ما اتّرحّلش قبل ما يرحّله.
+
+    **الملغي بيفضل بره في الحالتين.** «كل القيود» معناها كل اللي ممكن يبقى حقيقة،
+    والملغي حاجة اتقرر إنها مش حقيقة — ضمّها كان هيخلّي «كل القيود» رقم مالوش معنى.
+    """
+    if posted_only:
+        return is_posted_sql()
+    return LedgerEntry.state.is_(None) | (LedgerEntry.state != EntryState.cancelled.value)
+
+
 def posted_line_cond():
     """نفس الشرط في صيغة EXISTS — للـLEFT JOIN.
 
