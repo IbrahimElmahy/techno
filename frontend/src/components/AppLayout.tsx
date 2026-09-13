@@ -88,7 +88,7 @@ export default function AppLayout() {
     return !v;
   });
   const { user, logout } = useAuth();
-  const { tabs, activeId, openTab, activateTab, closeTab } = useTabs();
+  const { activeId, openTab } = useTabs();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -300,17 +300,18 @@ export default function AppLayout() {
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         {/*
-          * شريط واحد فوق: المستندات المفتوحة + المستخدم + ارتفاع الصف.
+          * شريط واحد فوق: الأقسام والمستخدم، وخلاص.
           *
-          * كانوا شريطين فوق بعض — واحد فيه اسم المستخدم بس، وتحته شريط التبويبات — يعني
-          * ٩٦ بكسل من طول الشاشة بتروح في حاجة مش داتا. دلوقتي شريط واحد بارتفاع ٤٤:
-          * التبويبات في النص وهي أكتر حاجة الإيد بتوصلها، والمستخدم على جنب.
+          * كانوا تلات شرايط — اسم المستخدم، وتبويبات المستندات المفتوحة، والأقسام —
+          * يعني ١٤٠ بكسل من طول الشاشة بتروح في حاجة مش داتا. بقوا صف واحد بارتفاع ٤٨.
+          *
+          * وقايمة الأقسام بتلمّ الزيادة تحت «…» لما الشاشة تصغر، فمابتدفعش حاجة لسطر تاني.
           */}
         <Header
           style={{
             flexShrink: 0,
-            height: 44,
-            lineHeight: '44px',
+            height: 48,
+            lineHeight: '48px',
             padding: 0,
             background: colorBgContainer,
             display: 'flex',
@@ -336,22 +337,32 @@ export default function AppLayout() {
               style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
             />
           </Tooltip>
-          {/* Chrome-style tab strip — one tab per open section, each keeps its page mounted. */}
-          <Tabs
-            hideAdd
-            type="editable-card"
-            size="small"
-            activeKey={activeId || undefined}
-            onChange={activateTab}
-            onEdit={(key, action) => { if (action === 'remove') closeTab(key as string); }}
-            style={{ flex: 1, minWidth: 0, alignSelf: 'flex-end' }}
-            tabBarStyle={{ margin: 0, borderBottom: 'none' }}
-            items={tabs.map((t) => ({
-              key: t.id,
-              label: t.title,
-              closable: tabs.length > 1,
-            }))}
+          {/*
+            * الأقسام — نفس شجرة `navigation.ts` بالظبط، بس أفقي.
+            *
+            * نفس الترتيب ونفس الأسماء ونفس التداخل: الترتيب متعمّد يحاكي a5 عشان اللي
+            * عارف مكان حاجة يلاقيها من غير ما يسأل. اللي اتغيّر هو الاتجاه وبس.
+            *
+            * الأيقونات بتتشال: على الشجرة كانت بتفرّق الأقسام بالعين وهي فوق بعض؛ في صف
+            * أفقي هي اللي بتاكل العرض اللي الأسماء محتاجاه.
+            */}
+          <Menu
+            mode="horizontal"
+            selectedKeys={[activeBase]}
+            items={filteredMenuItems.map(({ icon, ...rest }: any) => rest)}
+            onClick={handleMenuClick}
+            // `minWidth: 0` عشان القايمة تعرف تضيق وتلمّ الزيادة تحت «…» بدل ما تدفع
+            // شريط التبويبات لسطر تاني.
+            style={{
+              flex: '0 1 auto', minWidth: 0, borderBottom: 'none',
+              lineHeight: '46px', background: 'transparent',
+            }}
+            overflowedIndicator={<AppstoreOutlined />}
           />
+
+          {/* المساحة الفاضية بتدفع المستخدم لآخر الشريط. */}
+          <div style={{ flex: 1, minWidth: 0 }} />
+
           <div style={{
             paddingLeft: 16, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
           }}>
@@ -367,35 +378,6 @@ export default function AppLayout() {
             </Dropdown>
           </div>
         </Header>
-
-        {/*
-          * شريط الأقسام الأفقي — نفس شجرة `navigation.ts` بالظبط، بس فوق.
-          *
-          * الشجرة الجانبية كانت بتاخد ٢٥٠ بكسل من عرض كل شاشة عشان تعرض الأقسام
-          * دي، والجداول هي اللي بتستفيد بالعرض. الشريط بياخد ٤٤ بكسل من الطول
-          * وبيعرض نفس الحاجة.
-          *
-          * **نفس الترتيب ونفس الأسماء ونفس التداخل.** الترتيب متعمّد يحاكي a5
-          * عشان اللي عارف مكان حاجة يلاقيها من غير ما يسأل — فاللي حافظ «اذن
-          * تحويل مخازن تحت اداره المخازن» بيلاقيها في نفس المكان بالظبط. اللي
-          * اتغيّر هو الاتجاه وبس، مش التقسيمة.
-          *
-          * الأيقونات بتتشال هنا: على الشجرة كانت بتفرّق الأقسام بالعين وهي فوق
-          * بعض؛ في صف أفقي هي اللي بتاكل العرض اللي الأسماء محتاجاه.
-          */}
-        <div style={{
-          flexShrink: 0, background: colorBgContainer,
-          boxShadow: '0 1px 4px rgba(0,21,41,0.06)', zIndex: 8,
-        }}>
-          <Menu
-            mode="horizontal"
-            selectedKeys={[activeBase]}
-            items={filteredMenuItems.map(({ icon, ...rest }: any) => rest)}
-            onClick={handleMenuClick}
-            style={{ borderBottom: 'none', lineHeight: '40px' }}
-            overflowedIndicator={<AppstoreOutlined />}
-          />
-        </div>
 
         {/* minHeight:0 lets this flex child actually shrink, so the box below can scroll
             instead of stretching the page. */}
