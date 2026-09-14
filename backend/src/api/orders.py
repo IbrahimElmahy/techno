@@ -18,11 +18,13 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ
 from src.core.db import get_db
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import discounts
 from src.models.catalog import Item
 from src.models.customer import Customer
 from src.models.supplier import Supplier
 from src.models.trade_order import OrderKind, OrderStatus, TradeOrder, TradeOrderLine
 from src.auth import branch_scope
+from src.services import sales_service
 
 # Guarded by the read capability on purpose: an order posts nothing — no stock, no ledger, no
 # debt — so it carries none of the risk the write capabilities exist to gate. The real gate is on
@@ -193,7 +195,7 @@ def create_order(
             raise HTTPException(422, {"code": "validation",
                                       "message": "خصم السطر لازم يكون بين صفر و٩٩٫٩٩."})
         before = to_money(quantity * to_money(raw.unit_price))
-        line_total = to_money(before * (to_money(100) - line_pct) / to_money(100))
+        line_total = discounts.apply(before, line_pct)
         gross = to_money(gross + before)
         net = to_money(net + line_total)
         db.add(TradeOrderLine(
@@ -202,7 +204,9 @@ def create_order(
             unit_factor=to_qty(raw.unit_factor) if raw.unit_factor is not None else None,
             discount_pct=line_pct, line_total=line_total, notes=raw.notes))
     order.gross = gross
-    order.total = to_money(net * (to_money(100) - doc_pct) / to_money(100))
+    # وخصم المحل الثابت معاهم — الورقة لازم تقول الرقم اللي الفاتورة هتقوله، والفاتورة
+    # بتنزّله على كل مستند. من غيره الورقة بتوعد بسعر والفاتورة بتطلع بسعر تاني.
+    order.total = discounts.apply(net, sales_service.fixed_discount_pct(db), doc_pct)
     db.flush()
     out = _out(db, order)
     db.commit()

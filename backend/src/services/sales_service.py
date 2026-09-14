@@ -1007,7 +1007,13 @@ def create_standalone_return(
         gross += line_total
         built.append((ln, unit_price, line_total, factor))
     gross = to_money(gross)
-    net = compute_net(gross, variable)
+    # **الخصم الثابت بينزل هنا كمان — زي الفاتورة بالظبط.**
+    #
+    # المرتجع الحر كان بياخد الخصم المتغيّر بس. يعني محل خصمه الثابت ١٠٪ بيبيع
+    # بـ٩٠ ويرجّع ١٠٠ على نفس البضاعة — عشرة بتطلع من الخزنة على كل مية من غير ما
+    # حد يقصدها. الرد لازم يتحسب بنفس القاعدة اللي البيع اتحسب بيها.
+    fixed = fixed_discount_pct(db)
+    net = discounts.apply(gross, fixed, variable)
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     refund_total = to_money(net + tax)
     if to_money(cash_refund) + to_money(credit_reduction) != refund_total:
@@ -1034,7 +1040,8 @@ def create_standalone_return(
         branch_id=branch_for(db, actor_user_id=actor_user_id,
                              location_kind=origin_location_kind,
                              location_id=origin_location_id),
-        gross=gross, combined_pct=variable, value=net, tax_amount=tax,
+        # النسبة المجمّعة للعرض — الخصمين ورا بعض، نفس اللي الصافي اتحسب بيه.
+        gross=gross, combined_pct=discounts.combine(fixed, variable), value=net, tax_amount=tax,
         cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),
         cash_account_id=cash_acc.id if cash_acc else None,
         rep_id=rep_id, revenue_account_id=revenue_account_id,
@@ -1054,7 +1061,7 @@ def create_standalone_return(
         existing.origin_location_kind = origin_location_kind
         existing.origin_location_id = origin_location_id
         existing.gross = gross
-        existing.combined_pct = variable
+        existing.combined_pct = discounts.combine(fixed, variable)
         existing.value = net
         existing.tax_amount = tax
         existing.cash_refund = to_money(cash_refund)

@@ -29,10 +29,11 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CATALOG_READ
 from src.core.db import get_db
 from src.core.money import to_money, to_qty
+from src.lib import discounts
 from src.models.catalog import Item, PriceTier
 from src.models.stock import LocationKind
 from src.models.warehouse import Warehouse
-from src.services import pricing_service, stock_service, tax_service
+from src.services import pricing_service, sales_service, stock_service, tax_service
 from src.services.pricing_service import PricingError
 
 router = APIRouter(tags=["price-display"], prefix="/price-display")
@@ -92,8 +93,13 @@ def lookup(
     # counter display quoting a carton price for a piece is the same error as quoting the wrong
     # item. The invoice is where an alternate unit gets chosen.
     unit_price = to_money(Decimal(str(base)))
-    discount_pct = Decimal(str(item.default_discount_pct or 0))
-    after_discount = to_money(unit_price * (Decimal("1") - discount_pct / Decimal("100")))
+    item_pct = Decimal(str(item.default_discount_pct or 0))
+    # خصم المحل الثابت بينزل على كل فاتورة، فلازم ينزل على الشاشة كمان — وإلا
+    # الشاشة بتقول رقم أعلى من اللي هيتكتب في الفاتورة بعد دقيقة. والاتنين ورا
+    # بعض زي كل مكان تاني في النظام (`src/lib/discounts.py`).
+    shop_pct = sales_service.fixed_discount_pct(db)
+    discount_pct = discounts.combine(item_pct, shop_pct)
+    after_discount = discounts.apply(unit_price, item_pct, shop_pct)
     vat_pct = tax_service.vat_rate(db)
     with_vat = to_money(after_discount + tax_service.tax_on(after_discount, vat_pct))
 

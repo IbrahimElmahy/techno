@@ -499,7 +499,10 @@ def create_standalone_purchase_return(
         })
 
     gross = to_money(gross)
-    value = to_money(gross * (Decimal("1") - variable / Decimal("100")))
+    # الخصم الثابت بينزل هنا كمان — زي فاتورة الشرا بالظبط. المردود الحر كان
+    # بياخد المتغيّر بس، فبيتخصم من المورد أكتر من اللي اتشرى بيه.
+    fixed = sales_service.fixed_discount_pct(db)
+    value = discounts.apply(gross, fixed, variable)
 
     existing = db.get(PurchaseReturn, replace_return_id) if replace_return_id else None
     if replace_return_id and existing is None:
@@ -514,7 +517,8 @@ def create_standalone_purchase_return(
         branch_id=branch_for(db, actor_user_id=actor_user_id,
                              location_kind=origin_location_kind,
                              location_id=origin_location_id),
-        gross=gross, variable_discount_pct=variable, combined_pct=variable, value=value,
+        gross=gross, variable_discount_pct=variable,
+        combined_pct=discounts.combine(fixed, variable), value=value,
         ledger_entry_id=None, actor_user_id=actor_user_id,
         return_date=return_date or date.today(), notes=notes,
         cost_center_id=cost_center_id,
@@ -528,7 +532,7 @@ def create_standalone_purchase_return(
         existing.origin_location_id = origin_location_id
         existing.gross = gross
         existing.variable_discount_pct = variable
-        existing.combined_pct = variable
+        existing.combined_pct = discounts.combine(fixed, variable)
         existing.value = value
         existing.ledger_entry_id = None
         existing.notes = notes
