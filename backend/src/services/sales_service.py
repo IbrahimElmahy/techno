@@ -772,10 +772,21 @@ def return_sale(
     if inv is None:
         raise SalesError("فاتورة البيع مش موجودة.")
     # (008) carry the line's unit_factor so the return reverses stock in base units.
+    # **السعر اللي الفاتورة حسبته فعلاً، مش سعر القايمة.**
+    #
+    # المرتجع كان بيرجّع `unit_price` زي ما هو — من غير خصم السطر ولا خصم الفاتورة.
+    # صنف اتباع بـ٢٠ وعليه خصم سطر ٢٠٪ وخصم فاتورة ١٠٪ العميل دفع فيه ١٤٫٤٠، ولما
+    # يرجّعه كان بياخد ٢٠. يعني كل مرتجع بخصم بيدّي العميل فلوس زيادة، وكل «تعديل»
+    # لفاتورة (بيترحّل كمرتجع كامل) كان بيسيب فرق في مديونيته.
+    #
+    # الخصمين بيتحسبوا بنفس ترتيب الفاتورة: خصم السطر على السطر، وخصم المستند على
+    # المجموع مرة واحدة — عشان المرتجع الكامل يطلع `inv.net` بالظبط، مش تقريبه.
     sold = {
-        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
+        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor),
+                     Decimal(ln.discount_pct or 0))
         for ln in inv.lines
     }
+    doc_pct = Decimal(getattr(inv, "combined_pct", 0) or 0)
     # (030) Each sold line remembers the warehouse it left from, so the return puts the goods back
     # exactly there. Lines written before 030 fall back to the invoice's own location.
     sold_from = {
@@ -799,8 +810,8 @@ def return_sale(
             raise SalesError(
                 f"مرتجعات الفاتورة دي وصلت للكمية المباعة خلاص — "
                 f"اتباع {sold[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
-        value += to_money(qty * sold[item_id][1])
-    value = to_money(value)
+        value += discounts.apply(qty * sold[item_id][1], sold[item_id][3])
+    value = discounts.apply(value, doc_pct)
 
     # VAT (021): a partial return gives back the same share of the tax that was charged, so a
     # full return leaves neither revenue nor tax behind.

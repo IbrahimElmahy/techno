@@ -270,10 +270,15 @@ def return_purchase(
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
         raise PurchaseError("فاتورة الشراء مش موجودة.")
+    # السعر اللي الفاتورة حسبته فعلاً، مش سعر القايمة — نفس علّة مرتجع البيع
+    # بالظبط: المرتجع كان بيخصم من المورد سعر من غير خصومات الفاتورة، فالمردود
+    # بيطلع أكبر من اللي اتشرى وفرق بيفضل على حسابه.
     purchased = {
-        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
+        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor),
+                     Decimal(ln.discount_pct or 0))
         for ln in inv.lines
     }
+    doc_pct = Decimal(getattr(inv, "combined_pct", 0) or 0)
     # (030) Each received line remembers its warehouse, so the return takes the goods back out of
     # exactly that one. Lines written before 030 fall back to the invoice's own location.
     received_into = {
@@ -292,8 +297,8 @@ def return_purchase(
             raise PurchaseError(
                 f"مرتجعات الفاتورة دي وصلت للكمية المشتراة خلاص — "
                 f"اتشرى {purchased[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
-        value += to_money(qty * purchased[item_id][1])
-    value = to_money(value)
+        value += discounts.apply(qty * purchased[item_id][1], purchased[item_id][3])
+    value = discounts.apply(value, doc_pct)
 
     # Proportional split from the original purchase's cash/credit composition.
     cash_refund = to_money(value * to_money(inv.cash_amount) / to_money(inv.total)) if inv.total else ZERO
