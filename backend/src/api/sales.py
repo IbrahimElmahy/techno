@@ -437,6 +437,38 @@ def rep_bundle(
     on_hand = {r[0]: Decimal(str(r[5] or 0)) for r in held}
     live = [r for r in held if on_hand[r[0]] > 0]
 
+    # **أصناف كل مخزن** — اللي إذن التحويل بيطلب منها.
+    #
+    # المنتقي في شاشة الإذن كان بيعرض عهدة المندوب هو: كل اللي في العربية، ومافيش
+    # غيره. والإذن أصلاً بيتكتب عشان يطلب حاجة **مش** معاه — فالمندوب كان بيختار
+    # المخزن، وتفتح له قايمة عربيته، ويدوّر على صنف موجود في المخزن ومش لاقيه.
+    #
+    # القايمة بتنزل مع الحزمة زي كل حاجة تانية، عشان الإذن يتكتب في الشارع من غير
+    # شبكة. والكميات **مش** نازلة معاها عن قصد: الطلب بيتكتب بالاحتياج، والمندوب
+    # اللي شايف «عندك ٦٠» بيكتب ٦٠ مكان المية اللي محتاجها — فالمكتب يستلم رصيد
+    # مش طلب. الاسم والفئة بس، والباقي عند اللي بيراجع.
+    scoped = db.scalars(_scoped_warehouses(current)).all()
+    warehouse_items: dict[str, list[dict]] = {}
+    if scoped:
+        wh_rows = db.execute(
+            select(StockMovement.location_id, Item.id, Item.name,
+                   Item.unit_of_measure, Item.category,
+                   func.coalesce(func.sum(signed), 0).label("qty"))
+            .join(Item, Item.id == StockMovement.item_id)
+            .where(StockMovement.location_kind == LocationKind.warehouse,
+                   StockMovement.location_id.in_([w.id for w in scoped]))
+            .group_by(StockMovement.location_id, Item.id, Item.name,
+                      Item.unit_of_measure, Item.category)
+            .order_by(Item.name)
+        ).all()
+        for wid, item_id, name, unit, category, qty in wh_rows:
+            if Decimal(str(qty or 0)) <= 0:
+                continue
+            warehouse_items.setdefault(str(wid), []).append({
+                "item_id": item_id, "name": name, "unit": unit,
+                "category": cat_label.get(category, category),
+            })
+
     # أسعار الفئات للأصناف اللي معاه بس — استعلام واحد، مش واحد لكل صنف.
     tiers: dict[int, dict[str, str]] = {}
     if live:
@@ -466,8 +498,10 @@ def rep_bundle(
         # واللي مالوش فرع (admin) بيشوف الكل زي ما هو في الويب.
         "warehouses": [
             {"id": w.id, "name": w.name, "kind": w.warehouse_type.value}
-            for w in db.scalars(_scoped_warehouses(current)).all()
+            for w in scoped
         ],
+        # أصناف كل مخزن — المفتاح رقم المخزن كنص، والقيمة أصنافه اللي فيها رصيد.
+        "warehouse_items": warehouse_items,
         # صناديق المندوب هو بس — واحد لكل خط، باسمه اللي على الصندوق في المكتب.
         #
         # a5 بيدّي كل مندوب صندوقين، «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)»،

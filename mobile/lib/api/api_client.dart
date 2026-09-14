@@ -329,6 +329,23 @@ class ApiClient {
       for (final w in ((body['warehouses'] as List?) ?? []))
         {'id': w['id'], 'name': '${w['name']}', 'kind': w['kind'] as String?}
     ]);
+    // وأصناف كل مخزن معاها — إذن التحويل بيطلب من المخزن، فالقايمة اللي بتتعرض
+    // لازم تكون أصنافه هو مش أصناف عربية المندوب.
+    //
+    // المفتاح راجع نص من JSON، فبيترجع رقم هنا — الجدول بيخزّنه INTEGER عشان
+    // الاستعلام يقارن رقم برقم.
+    final whItems = (body['warehouse_items'] as Map?) ?? const {};
+    await LocalDb.instance.replaceWarehouseItems([
+      for (final e in whItems.entries)
+        for (final i in (e.value as List? ?? const []))
+          {
+            'warehouse_id': int.tryParse('${e.key}') ?? 0,
+            'item_id': i['item_id'] as int,
+            'name': '${i['name']}',
+            'unit': i['unit'] as String?,
+            'category': _text(i['category']),
+          }
+    ]);
     // صناديقه هو بس — واحد لكل خط، باسمه اللي على الصندوق في المكتب.
     //
     // بينزلوا مع الحزمة مش وقت الحفظ، لأن المندوب بيكتب في الشارع من غير شبكة. الصندوق

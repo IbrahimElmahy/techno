@@ -13,7 +13,12 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 21, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 22, onUpgrade: (d, from, to) async {
+      if (from < 22) {
+        // v22: أصناف كل مخزن — منتقي إذن التحويل كان بيعرض عهدة المندوب، والإذن
+        // أصلاً بيتكتب عشان يطلب حاجة مش معاه.
+        try { await d.execute(_warehouseItemTable); } catch (_) {}
+      }
       if (from < 18) {
         // v18: صناديق المندوب — واحد لكل خط. الصندوق بيتحدد من نوع الفاتورة لوحده،
         // والجهاز لازم يكون شايله عشان يعرضه وهو في الشارع من غير شبكة.
@@ -170,6 +175,7 @@ class LocalDb {
           'PRIMARY KEY(category, value))');
       await d.execute('CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)');
       await d.execute(_warehouseTable);
+      await d.execute(_warehouseItemTable);
       await d.execute(_treasuryTable);
       await d.execute(_transferTable);
       await d.execute(_transferLineTable);
@@ -711,6 +717,43 @@ class LocalDb {
     return d.query('warehouse', orderBy: 'name');
   }
 
+  /// أصناف كل مخزن — بتنزل مع الحزمة عشان إذن التحويل يتكتب من غير شبكة.
+  ///
+  /// كاش مش دفتر: بتتحط كلها مكان اللي قبلها، لأن اللي بيقول «إيه اللي في المخزن»
+  /// هو السيرفر وقت السحب.
+  Future<void> replaceWarehouseItems(List<Map<String, Object?>> rows) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('warehouse_item');
+      final batch = tx.batch();
+      for (final r in rows) {
+        batch.insert('warehouse_item', r,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  /// أصناف مخزن واحد كـ[SaleItem] عشان منتقي الأصناف يتعامل مع نوع واحد.
+  ///
+  /// الرصيد والسعر بيرجعوا صفر عن قصد — إذن التحويل مافيهوش فلوس، والطلب بيتكتب
+  /// بالاحتياج مش بالرصيد، فالأرقام دي مش نازلة من السيرفر أصلاً.
+  Future<List<SaleItem>> warehouseItems(int warehouseId) async {
+    final d = await db;
+    final rows = await d.query('warehouse_item',
+        where: 'warehouse_id = ?', whereArgs: [warehouseId], orderBy: 'name');
+    return [
+      for (final r in rows)
+        SaleItem(
+          itemId: r['item_id'] as int,
+          name: '${r['name']}',
+          unit: r['unit'] as String?,
+          category: r['category'] as String?,
+          onHand: 0,
+        )
+    ];
+  }
+
   // ------------------------------------------------------------------ صناديق المندوب
 
   /// بتحطّ صناديق المندوب مكان اللي قبلها — كاش مش دفتر، زي الأصناف والمخازن بالظبط.
@@ -1000,6 +1043,21 @@ CREATE TABLE warehouse(
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   kind TEXT
+)''';
+
+/// أصناف كل مخزن — اللي إذن التحويل بيطلب منها.
+///
+/// المفتاح مركّب (مخزن + صنف) لأن نفس الصنف بيبقى في أكتر من مخزن، والسؤال دايماً
+/// «إيه اللي في المخزن ده» مش «الصنف ده فين». مافيش كميات هنا عن قصد — الطلب
+/// بيتكتب بالاحتياج، والرصيد قرار اللي بيراجع.
+const _warehouseItemTable = '''
+CREATE TABLE warehouse_item(
+  warehouse_id INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  unit TEXT,
+  category TEXT,
+  PRIMARY KEY(warehouse_id, item_id)
 )''';
 
 /// صناديق المندوب — بتنزل مع حزمته عشان الشاشة تعرض الصندوق وهو من غير شبكة.
