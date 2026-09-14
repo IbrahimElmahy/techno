@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.services import numbering
 
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import discounts
 from src.models.catalog import Item
 from src.models.ledger import Account, Direction, PartnerKind
 from src.models.purchasing import (
@@ -105,9 +106,10 @@ def create_purchase(
 
     fixed = sales_service.fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
-    combined = fixed + variable
-    if combined >= Decimal("100") or variable < ZERO:
-        raise PurchaseError("الخصم المجمّع لازم يكون أقل من ١٠٠٪ والخصم المتغيّر مايكونش بالسالب.")
+    # خصم بعد خصم — نفس قاعدة البيع بالظبط (`src/lib/discounts.py`).
+    combined = discounts.combine(fixed, variable)
+    if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
+        raise PurchaseError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
 
     gross = ZERO
     built: list[tuple[PurchaseLine, Decimal, Decimal, Decimal | None]] = []
@@ -130,7 +132,7 @@ def create_purchase(
     gross = to_money(gross)
     # The invoice discount comes off the summed lines ONCE — applying it per line instead gives
     # different money on the same numbers, and the sale settles it this way.
-    net = sales_service.compute_net(gross, combined)
+    net = discounts.apply(gross, fixed, variable)
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     total = to_money(net + tax)
     if to_money(cash_amount) + to_money(credit_amount) != total:

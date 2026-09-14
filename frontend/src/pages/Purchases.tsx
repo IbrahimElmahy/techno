@@ -34,6 +34,7 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import { money } from '../utils/money';
+import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /** الاسم القديم في الشاشة دي — نفس الدالة. */
@@ -713,11 +714,10 @@ export default function Purchases() {
   // نفس ترتيب فاتورة البيع: خصم السطر ينزل على سطره، السطور تتجمع، وخصم الفاتورة ينزل على
   // المجموع مرة واحدة. الشاشة بتحسبه محلياً عشان المشتري يشوف الرقم وهو بيكتب — والسيرفر هو
   // اللي بيحسبه الحسبة النهائية، فلو اختلفوا الفاتورة بتترفض بدل ما تعدّي بالرقم الغلط.
-  const lineTotal = (it: PurchaseItem) => {
-    const before = Number(it.quantity || 0) * (it.unit_price || 0);
-    const disc = Math.min(99.99, (it.discount_pct ?? 0) + (it.fixed_discount_pct ?? 0));
-    return before * (1 - disc / 100);
-  };
+  // خصم بعد خصم: المتغيّر بيتحسب على الباقي بعد الثابت، مش على السعر الأصلي.
+  const lineTotal = (it: PurchaseItem) =>
+    applyPct(Number(it.quantity || 0) * (it.unit_price || 0),
+             it.fixed_discount_pct, it.discount_pct);
 
   const grossTotal = purchaseItems.reduce((sum, it) => sum + lineTotal(it), 0);
   const invoiceTotal = grossTotal * (1 - (variableDiscount || 0) / 100);
@@ -1050,8 +1050,8 @@ export default function Purchases() {
               quantity: Number(l.quantity || 0),
               unit_price: l.unit_price,
               unit: l.unit,
-              // الاتنين بيتجمعوا — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
-              discount_pct: (l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0) || null,
+              // الاتنين ورا بعض — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
+              discount_pct: combinePct(l.fixed_discount_pct, l.discount_pct) || null,
               warehouse_id: l.warehouse_id,
             })),
             // The day the goods were received, taken from the first door — not the day this row was

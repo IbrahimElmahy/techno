@@ -17,6 +17,7 @@ from src.services import numbering
 
 from src.core import hooks
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import discounts
 from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
 from src.services import customer_service
@@ -189,6 +190,7 @@ def fixed_discount_pct(db: Session) -> Decimal:
 
 
 def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
+    """الصافي من **نسبة واحدة**. الخصمين ورا بعض بيعدّوا على `discounts.apply`."""
     return to_money(Decimal(gross) * (Decimal("1") - Decimal(combined_pct) / Decimal("100")))
 
 
@@ -263,9 +265,12 @@ def create_sale(
         raise SalesError("الفاتورة لازم يكون فيها صنف أو دفتر كوبونات على الأقل.")
     fixed = fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
-    combined = fixed + variable
-    if combined >= Decimal("100") or variable < ZERO:
-        raise SalesError("الخصم المجمّع لازم يكون أقل من ١٠٠٪ والخصم المتغيّر مايكونش بالسالب.")
+    # خصم بعد خصم: المتغيّر بيتحسب على الباقي بعد الثابت، مش على السعر الأصلي.
+    # `combined` هي الحصيلة الفعلية — بتتكتب على المستند للعرض، والصافي بيتحسب
+    # بالنِسَب الأصلية عشان تقريبها لمنزلتين مايدخلش في الفلوس.
+    combined = discounts.combine(fixed, variable)
+    if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
+        raise SalesError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
 
     customer = db.get(Customer, customer_id)
 
@@ -329,7 +334,7 @@ def create_sale(
         gross += line_total
         built.append((ln, unit_price, line_total, tier, factor, line_disc))
     gross = to_money(gross)
-    net = compute_net(gross, combined)
+    net = discounts.apply(gross, fixed, variable)
     # VAT (021): zero rate ⇒ tax 0 and `payable == net`, i.e. the original contract exactly.
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     billed_expenses, operating_expenses = _split_expenses(db, expenses)

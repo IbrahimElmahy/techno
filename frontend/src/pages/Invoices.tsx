@@ -36,6 +36,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
+import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 // الأنواع والثوابت وبنّائي الأعمدة اتفصلوا — الشاشة كانت ٣١٢٠ سطر.
@@ -321,7 +322,9 @@ export default function Invoices() {
       family: s.family,
       gross: Number(s.gross || 0),
       combined_pct: Number(s.combined_pct || 0),
-      discount_value: Number(s.gross || 0) * (Number(s.combined_pct || 0) / 100),
+      // الفرق نفسه، مش النسبة × الإجمالي: النسبة المجمّعة مقرّبة لمنزلتين، والطرح
+      // بيدّي القرش الصح مهما كانت الخصومات.
+      discount_value: Number(s.gross || 0) - Number(s.net || 0),
       net: Number(s.net || 0),
       cash_amount: Number(s.cash_amount || 0),
       credit_amount: Number(s.credit_amount || 0),
@@ -351,7 +354,7 @@ export default function Invoices() {
       family: r.family || null,
       gross: Number(r.gross || 0),
       combined_pct: Number(r.combined_pct || 0),
-      discount_value: Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100),
+      discount_value: Number(r.gross || 0) - Number(r.net || 0),
       net: Number(r.net || 0),
       cash_amount: Number(r.cash_refund || 0),
       credit_amount: Number(r.credit_reduction || 0),
@@ -479,8 +482,9 @@ export default function Invoices() {
     return prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
   };
 
+  // خصم بعد خصم: المتغيّر على الباقي بعد خصم الصنف، مش مجموع النسبتين.
   const lineDiscountPct = (l: SaleLineItem) =>
-    Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
+    Math.min(99.99, combinePct(l.fixed_discount, l.variable_discount));
 
   /**
    * الكمية بعد ما الحارس يقيسها على المتاح.
@@ -523,11 +527,10 @@ export default function Invoices() {
     setPickerOpen(true);
   };
 
-  // A line's amount AFTER its own (fixed + variable) discount.
-  const lineTotal = (l: SaleLineItem) => {
-    const disc = Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
-    return Number(l.quantity || 0) * l.unit_price * (1 - disc / 100);
-  };
+  // A line's amount AFTER its own discounts — the variable one comes off what the
+  // fixed one left, not off the list price.
+  const lineTotal = (l: SaleLineItem) =>
+    applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount, l.variable_discount);
 
   // Loyalty points a line earns = the product's point value × quantity.
   const linePoints = (l: SaleLineItem) =>
@@ -1146,8 +1149,9 @@ export default function Invoices() {
                 tier: l.tier,
                 unit: l.unit,
                 unit_price: l.unit_price.toFixed(2),
-                // Combined per-line discount: the item's fixed + the typed variable.
-                discount_pct: ((l.fixed_discount || 0) + (l.variable_discount || 0)).toFixed(2),
+                // Combined per-line discount: the typed variable applied to what the
+                // item's fixed discount left — one effective rate for the server.
+                discount_pct: combinePct(l.fixed_discount, l.variable_discount).toFixed(2),
                 serials: prod?.is_serialized ? parseSerials(l.serials) : null,
                 // (030) Only sent when it differs from the document's, so the server keeps its
                 // "fall back to the document" behaviour for everything else.

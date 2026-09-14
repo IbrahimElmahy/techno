@@ -425,29 +425,21 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   }
 }
 
-/// **صافي سعر الوحدة** — بعد الخصمين — والنسبة تحته بخط صغير.
+/// **صافي سعر الوحدة** — بعد الخصمين، لوحده.
 ///
-/// الرقم الكبير هو اللي بيتضرب في الكمية ويطلع الإجمالي، فالعميل يقدر يراجع الورقة
-/// بضربة واحدة. والنسبة تحته مش زينة: من غيرها الورقة بتقول سعر أقل من سعر القايمة
-/// من غير ما تقول ليه، واللي بيقارن بفاتورة قديمة مايعرفش الفرق خصم ولا تغيير سعر.
+/// الرقم ده هو اللي بيتضرب في الكمية ويطلع الإجمالي، فالعميل يراجع الورقة بضربة
+/// واحدة. سعر القايمة والنسبة كانوا بيتكتبوا تحته بخط صغير واتشالوا بطلب صاحب
+/// الشغل — الورقة اللي بتروح للعميل بتقول اللي هيدفعه، والمقارنة بسعر القايمة شغل
+/// جوّه مش على الفاتورة.
 pw.Widget _netPriceCell(SaleDraftLine l) {
   final net = l.discountPct > 0
       ? l.unitPrice * (1 - l.discountPct / 100)
       : l.unitPrice;
   return pw.Padding(
     padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-    child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.center,
-      children: [
-        pw.Text(_money(net),
-            textAlign: pw.TextAlign.center,
-            style: const pw.TextStyle(fontSize: 10)),
-        if (l.discountPct > 0)
-          pw.Text('قبل الخصم ${_money(l.unitPrice)} · خصم ${_trim(l.discountPct)}%',
-              textAlign: pw.TextAlign.center,
-              style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600)),
-      ],
-    ),
+    child: pw.Text(_money(net),
+        textAlign: pw.TextAlign.center,
+        style: const pw.TextStyle(fontSize: 10)),
   );
 }
 

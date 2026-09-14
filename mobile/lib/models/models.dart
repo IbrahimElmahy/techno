@@ -278,10 +278,18 @@ class SaleDraftLine {
     this.variableDiscountPct = 0,
   });
 
-  /// الاتنين مع بعض — وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده بيشيل خصم واحد.
-  /// و`99.99` سقف مقصود: خصم ١٠٠٪ معناه سطر بصفر، ودي حاجة تتعمل بمسح السطر مش بخصم.
-  double get discountPct =>
-      (fixedDiscountPct + variableDiscountPct).clamp(0, 99.99).toDouble();
+  /// الاتنين ورا بعض — **خصم بعد خصم**، مش جمع: المتغيّر بيتحسب على الباقي بعد
+  /// الثابت. ١٠٪ ثم ٥٪ = ١٤٫٥٪ مش ١٥٪. نفس قاعدة `backend/src/lib/discounts.py`
+  /// و`frontend/src/utils/discounts.ts` — التلاتة لازم يطلعوا نفس الرقم وإلا
+  /// المندوب بيشوف إجمالي في إيده والسيرفر بيسجّل غيره.
+  ///
+  /// وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده بيشيل خصم واحد. و`99.99` سقف
+  /// مقصود: خصم ١٠٠٪ معناه سطر بصفر، ودي حاجة تتعمل بمسح السطر مش بخصم.
+  double get discountPct => ((1 -
+              (1 - fixedDiscountPct / 100) * (1 - variableDiscountPct / 100)) *
+          100)
+      .clamp(0, 99.99)
+      .toDouble();
 
   double get gross => quantity * unitPrice;
   double get net => gross * (1 - discountPct / 100);

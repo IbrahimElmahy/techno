@@ -37,6 +37,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
+import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /**
@@ -339,11 +340,11 @@ export default function Returns() {
     return groups;
   }, [lines]);
 
-  /** الاتنين مع بعض — الثابت والمتغيّر، زي فاتورة البيع بالظبط. */
+  /** الاتنين ورا بعض — خصم بعد خصم، زي فاتورة البيع بالظبط. */
   const lineDiscountPct = (l: ReturnLineItem) =>
-    Math.min(99.99, (l.fixed_discount || 0) + (l.discount || 0));
+    Math.min(99.99, combinePct(l.fixed_discount, l.discount));
   const lineTotal = (l: ReturnLineItem) =>
-    Number(l.quantity || 0) * l.unit_price * (1 - lineDiscountPct(l) / 100);
+    applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount, l.discount);
   const linePoints = (l: ReturnLineItem) =>
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
