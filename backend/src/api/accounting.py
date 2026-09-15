@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import (
     CAP_ACCOUNTING_CHART_READ,
@@ -392,10 +393,12 @@ def list_accounts(
     tree: bool = False,
     postable_only: bool = False,
     active: bool | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[AccountOut]:
-    stmt = select(Account)
+    # كل فرع له شجرته: ١٬٣٧٠ حساب في أكتوبر و٢٬٤٠٨ في العلياء. من غير الفلترة دي
+    # مدير الفرع كان بيفتح دليل الحسابات ويلاقي شجرة الفرع التاني معاه.
+    stmt = branch_scope.scope(select(Account), Account, current)
     if tree:
         stmt = stmt.where(Account.parent_id.is_(None))
     if postable_only:
@@ -498,11 +501,17 @@ def list_journal_entries(
     state: str | None = None,
     partner_kind: str | None = None,
     partner_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[JournalEntryOut]:
-    stmt = select(LedgerEntry).where(
-        LedgerEntry.entry_type.in_(["journal", "opening_balance", "reversal"])
+    # **دفتر اليومية بيتفلتر بالفرع.** كان مدير فرع أكتوبر بيفتح القيود ويلاقي
+    # الـ٢٠٬٥٣٠ كلهم — دفتر الشركة كامل بكل فروعها. و`branch_id` اللي في المدخلات
+    # بيضيّق جوّه اللي هو شايفه أصلاً، مابيوسّعش.
+    stmt = branch_scope.scope(
+        select(LedgerEntry).where(
+            LedgerEntry.entry_type.in_(["journal", "opening_balance", "reversal"])
+        ),
+        LedgerEntry, current,
     )
     if journal_id is not None:
         stmt = stmt.where(LedgerEntry.journal_id == journal_id)
