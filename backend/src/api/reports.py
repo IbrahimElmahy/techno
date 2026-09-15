@@ -72,7 +72,7 @@ def trade_report(
     party_id: int | None = Query(None),
     item_id: int | None = Query(None),
     warehouse_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
     """Sales/purchase figures at any level and grouping, with profit where cost was captured.
@@ -85,6 +85,9 @@ def trade_report(
             db, doc_type=doc_type, level=level, group_by=group_by,
             date_from=date_from, date_to=date_to, party_id=party_id,
             item_id=item_id, warehouse_id=warehouse_id,
+            # مستندات الفرع بس — المستندات نفسها مفلترة من زمان في سجلاتها،
+            # والتقرير كان لسه بيجمّع عليها كلها.
+            branch_id=branch_scope.visible_branch_id(current),
         )
     except trade_reports.TradeReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc

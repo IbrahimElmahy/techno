@@ -120,6 +120,7 @@ def partner_ledger(
     date_from: date | None = None,
     date_to: date | None = None,
     only_open: bool = False,
+    branch_id: int | None = None,
 ) -> list[PartnerLedgerRow]:
     """كشف كل شريك في الفترة — رصيد أول المدة، الحركات، ورصيد آخر المدة.
 
@@ -145,12 +146,18 @@ def partner_ledger(
     if not accounts:
         return []
 
-    lines = db.scalars(
+    stmt = (
         select(LedgerLine)
         .options(selectinload(LedgerLine.entry).selectinload(LedgerEntry.journal))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(LedgerLine.account_id.in_(list(accounts)), ledger_service.is_posted_sql())
-    ).all()
+    )
+    # دفتر الشريك بتاع الفرع — نفس الشريك ممكن يتعامل مع الفرعين، وكل فرع بيشوف
+    # حركته هو. غير كده مدير الفرع بيقرا مديونية اتعملت في فرع تاني.
+    if branch_id is not None:
+        stmt = stmt.where(
+            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    lines = db.scalars(stmt).all()
     if not lines:
         return []
 

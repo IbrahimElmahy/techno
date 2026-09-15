@@ -125,7 +125,8 @@ def _signed(line: LedgerLine) -> Decimal:
 
 
 def cash_flow(
-    db: Session, *, date_from: date | None = None, date_to: date | None = None
+    db: Session, *, date_from: date | None = None, date_to: date | None = None,
+    branch_id: int | None = None,
 ) -> CashFlow:
     """التدفق النقدي في الفترة، مقسوم على تشغيل/استثمار/تمويل."""
     liquidity = liquidity_account_ids(db)
@@ -143,12 +144,17 @@ def cash_flow(
     if not entry_ids:
         return empty
 
-    lines = db.scalars(
+    stmt = (
         select(LedgerLine)
         .options(selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(LedgerLine.entry_id.in_(list(entry_ids)), ledger_service.is_posted_sql())
-    ).all()
+    )
+    # التدفق النقدي بتاع الفرع — خزنة الفرع وحركتها، مش خزن الشركة كلها.
+    if branch_id is not None:
+        stmt = stmt.where(
+            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    lines = db.scalars(stmt).all()
 
     by_entry: dict[int, list[LedgerLine]] = {}
     for line in lines:

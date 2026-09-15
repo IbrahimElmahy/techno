@@ -359,13 +359,14 @@ def partner_ledger(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     only_open: bool = Query(default=False),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[PartnerLedgerRowOut]:
     """دفتر الشريك — حركة كل طرف في الفترة برصيد جاري ومتبقّي كل سطر."""
     rows = partner_ledger_service.partner_ledger(
         db, partner_kind=partner_kind, partner_id=partner_id,
-        date_from=date_from, date_to=date_to, only_open=only_open)
+        date_from=date_from, date_to=date_to, only_open=only_open,
+        branch_id=branch_scope.visible_branch_id(current))
     return [
         PartnerLedgerRowOut(
             partner_kind=r.partner_kind, partner_id=r.partner_id,
@@ -410,11 +411,12 @@ class CashFlowOut(BaseModel):
 def cash_flow(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> CashFlowOut:
     """التدفق النقدي — حركة الخزن والبنوك منسوبة لحسابها المقابل."""
-    s = cash_flow_service.cash_flow(db, date_from=date_from, date_to=date_to)
+    s = cash_flow_service.cash_flow(db, date_from=date_from, date_to=date_to,
+                                    branch_id=branch_scope.visible_branch_id(current))
     return CashFlowOut(
         date_from=s.date_from, date_to=s.date_to, opening=s.opening, closing=s.closing,
         net_change=s.net_change, consistent=s.consistent,
