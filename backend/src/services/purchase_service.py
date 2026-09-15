@@ -27,9 +27,10 @@ from src.models.purchasing import (
 )
 from src.models.role import RoleName
 from src.models.stock import LocationKind, StockDirection
-from src.models.supplier import Supplier, SupplierAccount
+from src.models.supplier import Supplier
 from src.services import (
     account_resolver,
+    supplier_service,
     audit_service,
     ledger_service,
     sales_service,
@@ -100,9 +101,9 @@ def create_purchase(
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
         raise PurchaseError("المورد مش موجود.")
-    supplier_acc = db.scalar(
-        select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id)
-    )
+    # الحساب بيتفتح لو مش موجود — زي البيع بالظبط. كان بيرمي المستند كله برسالة
+    # «المورد ده مالوش حساب دائنين»، واللي قدامه فاتورة مايقدرش يعمل بيها حاجة.
+    supplier_acc = supplier_service.require_account(db, supplier_id)
 
     fixed = sales_service.fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
@@ -216,8 +217,6 @@ def create_purchase(
     if to_money(cash_amount) > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_amount)))
     if to_money(credit_amount) > ZERO:
-        if supplier_acc is None:
-            raise PurchaseError("المورد ده مالوش حساب دائنين.")
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit, to_money(credit_amount)))
     entry = ledger_service.post_entry(
         db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
@@ -330,9 +329,7 @@ def return_purchase(
     # Reverse money proportionally: credit purchases_expense V; debit cash Cr + supplier_payable Pr.
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
     expense_acc = account_resolver.purchases_expense_account(db)
-    supplier_acc = db.scalar(
-        select(SupplierAccount).where(SupplierAccount.supplier_id == inv.supplier_id)
-    )
+    supplier_acc = supplier_service.require_account(db, inv.supplier_id)
     entry_lines = [LineInput(expense_acc.id, Direction.credit, value)]
     if cash_refund > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.debit, cash_refund))
@@ -570,11 +567,7 @@ def create_standalone_purchase_return(
                    else account_resolver.purchases_expense_account(db))
     if expense_acc is None:
         raise PurchaseError("حساب المشتريات مش موجود.")
-    supplier_acc = db.scalar(
-        select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id)
-    )
-    if supplier_acc is None:
-        raise PurchaseError("المورد ده مالوش حساب.")
+    supplier_acc = supplier_service.require_account(db, supplier_id)
 
     entry = ledger_service.post_entry(
         db, entry_type="purchase_return", actor_user_id=actor_user_id,

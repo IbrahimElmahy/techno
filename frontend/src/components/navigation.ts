@@ -228,7 +228,13 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
       // تسوية الحسابات — «الفاتورة دي اتدفعت بإيه». مالهاش شاشة عندهم لأن نظامهم
       // مابيقفلش دفعة على فاتورة أصلاً؛ دي الحاجة اللي أودو بيعملها وهما لأ.
-      { key: '/reconciliation', label: 'تسوية الحسابات', roles: BOOKS },
+      //
+      // **التبويبين الاتنين في القايمة، مش واحد.** الشاشة بتفتح على «المفتوح»
+      // و«المطابَق» جوّاها تبويب. اللي بيدوّر على «إيه اللي اتطابق الشهر ده» مالوش
+      // طريق يوصله من القايمة — لازم يفتح شاشة تانية ويدوس تبويب. المدخل اللي في
+      // القايمة لازم يوصّل للشاشة اللي المستخدم عايزها، مش للشاشة اللي جنبها.
+      { key: '/reconciliation?tab=open', label: 'تسوية — المفتوح', roles: BOOKS },
+      { key: '/reconciliation?tab=matched', label: 'تسوية — المطابَق', roles: BOOKS },
       {
         key: 'grp-balances',
         label: 'الأرصدة',
@@ -255,6 +261,10 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
+          // تبويبين مبنيين ومفيش حاجة في القايمة بتوصّلهم — اللي عايزهم كان لازم
+          // يفتح السندات ويدوّر عليهم بين ستة تبويبات.
+          { key: '/vouchers?tab=treasury-movement', label: 'حركة الخزينة', roles: R(BOOKS) },
+          { key: '/vouchers?tab=statement', label: 'كشف حساب السندات', roles: R(BOOKS) },
         ],
       },
       {
@@ -301,6 +311,9 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/finance-reports?tab=cashflow', label: 'التدفق النقدي', roles: R(BOOKS) },
           { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: R(BOOKS) },
           { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
+          // الإقرار الضريبي — تبويب مبني من زمان ومفيش حاجة في القايمة بتوصّله.
+          // اللي محتاجه كان لازم يعرف إنه جوّه «التقارير المالية» ويدوس تبويب.
+          { key: '/finance-reports?tab=vat', label: 'الإقرار الضريبي', roles: R(BOOKS) },
         ],
       },
     ],
