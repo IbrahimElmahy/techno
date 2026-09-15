@@ -36,10 +36,12 @@ def production_report(
 @router.get("/inventory")
 def inventory_report(
     warehouse_id: int | None = Query(None), item_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.inventory(db, warehouse_id=warehouse_id, item_id=item_id)
+    # مخازن الفرع بس — المخازن نفسها مفلترة، والجرد كان بيجمّع عليها كلها.
+    return reporting.inventory(db, warehouse_id=warehouse_id, item_id=item_id,
+                               branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/wastage")
@@ -56,10 +58,11 @@ def wastage_report(
 @router.get("/stagnant")
 def stagnant_report(
     days: int = Query(90, ge=0), warehouse_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id)
+    return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id,
+                                    branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/trade")
@@ -106,12 +109,13 @@ def stock_as_of_report(
     date_to: str | None = Query(None, description="Alias for as_of — the day the balance is read"),
     warehouse_id: int | None = Query(None),
     item_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
     """جرد حق تاريخ — every movement up to that day, nothing after it, valued at cost."""
     return stocktake.stock_as_of(db, as_of=date_to or as_of,
-                                 warehouse_id=warehouse_id, item_id=item_id)
+                                 warehouse_id=warehouse_id, item_id=item_id,
+                                 branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/reorder")

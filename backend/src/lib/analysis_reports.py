@@ -39,18 +39,23 @@ class AnalysisReportError(ValueError):
     """طلب تقرير مالوش معنى — بيترد ٤٢٢."""
 
 
-def _pnl_lines(db: Session, *, date_from: date | None, date_to: date | None):
+def _pnl_lines(db: Session, *, date_from: date | None, date_to: date | None,
+               branch_id: int | None = None):
     """كل سطر إيراد أو مصروف في الفترة، ومعاه القيد بتاعه.
 
     Only income and expense lines: this is profitability, and an asset movement is neither. The
     balance sheet is a different report and stays one.
     """
-    rows = db.scalars(
+    stmt = (
         select(LedgerLine).options(
             selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(ledger_service.is_posted_sql())  # المسودة مش ربح ولا خسارة
-    ).all()
+    )
+    if branch_id is not None:
+        stmt = stmt.where(
+            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    rows = db.scalars(stmt).all()
     for line in rows:
         nature = effective_nature(line.account)
         if nature not in (AccountNature.income, AccountNature.expense):
@@ -73,6 +78,7 @@ def profitability(
     date_from=None,
     date_to=None,
     include_unassigned: bool = True,
+    branch_id: int | None = None,
 ) -> dict:
     """أرباح وخسائر لكل مركز تكلفة (أو لكل فرع) في فترة."""
     if dimension not in DIMENSIONS:
@@ -82,7 +88,7 @@ def profitability(
              if dimension == "cost_center"
              else {b.id: b.name for b in db.scalars(select(Branch)).all()})
 
-    rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to))
+    rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to, branch_id=branch_id))
     # الحصص بتتجاب لكل السطور مرة واحدة — استعلام لكل سطر كان بيبقى ألف استعلام.
     dists = (analytic_service.distributions_for(db, [ln.id for ln, _n, _s in rows_in])
              if dimension == "cost_center" else {})
@@ -152,7 +158,7 @@ def account_breakdown(
     if dimension not in DIMENSIONS:
         raise AnalysisReportError(f"بُعد مش معروف: {dimension}")
 
-    rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to))
+    rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to, branch_id=branch_id))
     dists = (analytic_service.distributions_for(db, [ln.id for ln, _n, _s in rows_in])
              if dimension == "cost_center" else {})
 

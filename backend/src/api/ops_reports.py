@@ -6,6 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
     CAP_ACCOUNTING_TRIAL_BALANCE_READ,
@@ -105,14 +106,17 @@ def profitability(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     include_unassigned: bool = Query(True),
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     """أرباح وخسائر لكل مركز تكلفة أو لكل فرع — بتتقرا من الدفتر مش من المستندات."""
     try:
         return analysis_reports.profitability(
             db, dimension=dimension, date_from=date_from, date_to=date_to,
-            include_unassigned=include_unassigned)
+            include_unassigned=include_unassigned,
+            # مدير الفرع بيشوف ربحية فرعه. و«مقارنة الفروع» بتفضل للأدمن — هو
+            # الوحيد اللي `branch_id` بتاعه `None` فبيشوف الفروع كلها جنب بعض.
+            branch_id=branch_scope.visible_branch_id(current))
     except AnalysisReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
