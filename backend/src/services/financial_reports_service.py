@@ -96,16 +96,28 @@ def _label(acc: Account) -> tuple[str | None, str | None]:
 
 def _movements(
     db: Session, *, date_from: date | None, date_to: date | None,
-    posted_only: bool = True,
+    posted_only: bool = True, branch_id: int | None = None,
 ) -> dict[int, Decimal]:
-    """account_id -> signed movement (by the account's normal side) within the window."""
-    rows = db.scalars(
+    """account_id -> signed movement (by the account's normal side) within the window.
+
+    `branch_id` بيحصر القراءة على فرع واحد. ده قلب التقارير المالية كلها — قائمة
+    الدخل والميزانية وميزان المراجعة بيعدّوا من هنا — فالفلترة هنا بتقفل التلاتة
+    مرة واحدة بدل ما تتكرر في كل تقرير.
+
+    القيد اللي مالوش فرع (`NULL`) بيدخل مع الكل: دي قيود اتكتبت قبل ما العزل
+    يتعمل، وإخفاؤها بيخلّي الميزانية تنقص من غير سبب ظاهر.
+    """
+    stmt = (
         select(LedgerLine).options(selectinload(LedgerLine.entry),
                                    selectinload(LedgerLine.account))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         # «المرحّل بس» افتراضياً؛ «كل القيود» بتضم المسودة. الملغي بره في الحالتين.
         .where(ledger_service.in_books_sql(posted_only))
-    ).all()
+    )
+    if branch_id is not None:
+        stmt = stmt.where(
+            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    rows = db.scalars(stmt).all()
     totals: dict[int, Decimal] = {}
     for line in rows:
         when = _effective_date(line.entry)
@@ -138,11 +150,11 @@ def _by_nature(
 
 def income_statement(
     db: Session, *, date_from: date | None = None, date_to: date | None = None,
-    posted_only: bool = True,
+    posted_only: bool = True, branch_id: int | None = None,
 ) -> IncomeStatement:
     """قائمة الدخل — الإيرادات ناقص المصروفات خلال الفترة."""
     totals = _movements(db, date_from=date_from, date_to=date_to,
-                        posted_only=posted_only)
+                        posted_only=posted_only, branch_id=branch_id)
     income, total_income = _by_nature(db, totals, AccountNature.income)
     expenses, total_expenses = _by_nature(db, totals, AccountNature.expense)
     return IncomeStatement(
@@ -153,9 +165,10 @@ def income_statement(
 
 
 def balance_sheet(db: Session, *, as_of: date | None = None,
-                  posted_only: bool = True) -> BalanceSheet:
+                  posted_only: bool = True, branch_id: int | None = None) -> BalanceSheet:
     """الميزانية — الأصول = الالتزامات + حقوق الملكية (متضمنة أرباح الفترة)."""
-    totals = _movements(db, date_from=None, date_to=as_of, posted_only=posted_only)
+    totals = _movements(db, date_from=None, date_to=as_of, posted_only=posted_only,
+                        branch_id=branch_id)
     assets, total_assets = _by_nature(db, totals, AccountNature.asset)
     liabilities, total_liabilities = _by_nature(db, totals, AccountNature.liability)
     equity, total_equity = _by_nature(db, totals, AccountNature.equity)
@@ -171,18 +184,23 @@ def balance_sheet(db: Session, *, as_of: date | None = None,
 
 
 def _aging_for_accounts(
-    db: Session, *, account_by_party: dict[int, int], names: dict[int, str], as_of: date
+    db: Session, *, account_by_party: dict[int, int], names: dict[int, str], as_of: date,
+    branch_id: int | None = None,
 ) -> list[AgingRow]:
     """FIFO-apply credits against debits per party, then bucket what is left by age."""
     wanted = {account_id: party_id for party_id, account_id in account_by_party.items()}
     if not wanted:
         return []
-    rows = db.scalars(
+    stmt = (
         select(LedgerLine)
         .options(selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(LedgerLine.account_id.in_(list(wanted)), ledger_service.is_posted_sql())
-    ).all()
+    )
+    if branch_id is not None:
+        stmt = stmt.where(
+            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    rows = db.scalars(stmt).all()
 
     # السطر اللي ليه متبقّي بيتقرا من متبقّيه بتاريخ استحقاقه؛ واللي لسه NULL (قبل ما
     # سكربت النقل يعدّي) بياخد الطريقة القديمة. الفصل ده مؤقت بطبعه وبيفضى لوحده.
@@ -260,7 +278,8 @@ def _aging_for_accounts(
     return result
 
 
-def receivables_aging(db: Session, *, as_of: date | None = None) -> list[AgingRow]:
+def receivables_aging(db: Session, *, as_of: date | None = None,
+                      branch_id: int | None = None) -> list[AgingRow]:
     """أعمار ديون العملاء."""
     when = as_of or date.today()
     account_by_party = {
@@ -268,10 +287,12 @@ def receivables_aging(db: Session, *, as_of: date | None = None) -> list[AgingRo
         for acc in db.scalars(select(CustomerAccount)).all()
     }
     names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
-    return _aging_for_accounts(db, account_by_party=account_by_party, names=names, as_of=when)
+    return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
+                               as_of=when, branch_id=branch_id)
 
 
-def payables_aging(db: Session, *, as_of: date | None = None) -> list[AgingRow]:
+def payables_aging(db: Session, *, as_of: date | None = None,
+                   branch_id: int | None = None) -> list[AgingRow]:
     """أعمار مستحقات الموردين."""
     when = as_of or date.today()
     account_by_party = {
@@ -279,13 +300,14 @@ def payables_aging(db: Session, *, as_of: date | None = None) -> list[AgingRow]:
         for acc in db.scalars(select(SupplierAccount)).all()
     }
     names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
-    return _aging_for_accounts(db, account_by_party=account_by_party, names=names, as_of=when)
+    return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
+                               as_of=when, branch_id=branch_id)
 
 
 # --------------------------------------------------- المقارنة (سلوك تقارير أودو المشترك)
 
 
-def income_statement_compared(db: Session, options) -> dict:
+def income_statement_compared(db: Session, options, *, branch_id: int | None = None) -> dict:
     """قائمة الدخل ومعاها نفس التقرير لفترة المقارنة — ونسبة الفرق.
 
     الرقم لوحده مابيقولش «كويس ولا وحش»؛ اللي بيقول هو اللي جنبه. الفرق بيتحسب
@@ -295,27 +317,29 @@ def income_statement_compared(db: Session, options) -> dict:
     from src.services import report_options as ro
 
     current = income_statement(db, date_from=options.date_from, date_to=options.date_to,
-                               posted_only=options.posted_only)
+                               posted_only=options.posted_only, branch_id=branch_id)
     out = {"current": current, "comparison": None, "comparison_label": None}
     if not options.compares:
         return out
     prev_from, prev_to = ro.comparison_window(options)
     out["comparison"] = income_statement(db, date_from=prev_from, date_to=prev_to,
-                                         posted_only=options.posted_only)
+                                         posted_only=options.posted_only, branch_id=branch_id)
     out["comparison_label"] = ro.comparison_label(options)
     return out
 
 
-def balance_sheet_compared(db: Session, options) -> dict:
+def balance_sheet_compared(db: Session, options, *, branch_id: int | None = None) -> dict:
     """الميزانية ومعاها نفس التقرير على تاريخ المقارنة."""
     from src.services import report_options as ro
 
-    current = balance_sheet(db, as_of=options.date_to, posted_only=options.posted_only)
+    current = balance_sheet(db, as_of=options.date_to, posted_only=options.posted_only,
+                            branch_id=branch_id)
     out = {"current": current, "comparison": None, "comparison_label": None}
     if not options.compares:
         return out
     _, prev_to = ro.comparison_window(options)
-    out["comparison"] = balance_sheet(db, as_of=prev_to, posted_only=options.posted_only)
+    out["comparison"] = balance_sheet(db, as_of=prev_to, posted_only=options.posted_only,
+                                      branch_id=branch_id)
     out["comparison_label"] = ro.comparison_label(options)
     return out
 

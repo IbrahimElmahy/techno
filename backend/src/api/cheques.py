@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
@@ -243,13 +244,16 @@ def income_statement(
     # سلوك تقارير أودو المشترك — نفس الخيارين في كل تقرير بنفس المعنى.
     posted_only: bool = Query(default=True),
     comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> IncomeStatementOut:
     """قائمة الدخل — مع عمود مقارنة اختياري."""
     options = ReportOptions(date_from=date_from, date_to=date_to,
                             posted_only=posted_only, comparison=comparison)
-    both = financial_reports_service.income_statement_compared(db, options)
+    # مدير الفرع بيشوف قائمة دخل فرعه. المستندات مفلترة من زمان، والتقرير كان
+    # لسه بيجمّع على الشركة كلها — يعني رقم مش بتاعه على شاشته.
+    both = financial_reports_service.income_statement_compared(
+        db, options, branch_id=branch_scope.visible_branch_id(current))
     s = both["current"]
     prev = both["comparison"]
     return IncomeStatementOut(
@@ -271,12 +275,13 @@ def balance_sheet(
     as_of: date | None = Query(default=None),
     posted_only: bool = Query(default=True),
     comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> BalanceSheetOut:
     """الميزانية / المركز المالي — مع عمود مقارنة اختياري."""
     options = ReportOptions(date_to=as_of, posted_only=posted_only, comparison=comparison)
-    both = financial_reports_service.balance_sheet_compared(db, options)
+    both = financial_reports_service.balance_sheet_compared(
+        db, options, branch_id=branch_scope.visible_branch_id(current))
     s = both["current"]
     prev = both["comparison"]
 
@@ -299,13 +304,14 @@ def balance_sheet(
 def aging(
     party: str = Query(default="customers", pattern="^(customers|suppliers)$"),
     as_of: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[AgingRowOut]:
     """أعمار الديون — عملاء أو موردين."""
-    rows = (financial_reports_service.receivables_aging(db, as_of=as_of)
+    branch_id = branch_scope.visible_branch_id(current)
+    rows = (financial_reports_service.receivables_aging(db, as_of=as_of, branch_id=branch_id)
             if party == "customers"
-            else financial_reports_service.payables_aging(db, as_of=as_of))
+            else financial_reports_service.payables_aging(db, as_of=as_of, branch_id=branch_id))
     return [AgingRowOut(party_id=r.party_id, party_name=r.party_name, total=r.total,
                         buckets=r.buckets) for r in rows]
 
