@@ -172,7 +172,10 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
 
     transfer.status = TransferStatus.approved
     transfer.approved_by = approver_user_id
-    transfer.approved_at = datetime(2026, 1, 1)  # set by caller-side clock in prod; fixed for tests
+    # ساعة حقيقية. كان `datetime(2026, 1, 1)` والتعليق بيقول إن اللي بينادي بيظبطه في
+    # الإنتاج — ومحدّش بيظبطه: `api/transfers.py` مابيلمسش الحقل. فكل إذن اتعتمد من
+    # الشاشة مكتوب عليه إنه اتعتمد أول يناير. `reject` جنبه بيستخدم `utcnow` من الأول.
+    transfer.approved_at = datetime.utcnow()
     transfer.out_movement_id = out_mv.id
     transfer.in_movement_id = in_mv.id
     db.flush()
@@ -258,6 +261,38 @@ def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
                          before={"doc": doc})
 
 
+def _refuse_if_dest_goes_negative(db, transfer, lines) -> None:
+    """الإلغاء اللي هيخلّي الوجهة تحت الصفر بيتمنع — واللي بيتمنع بيتسمّى بالاسم.
+
+    الإلغاء بيقول «البضاعة دي ماوصلتش». لكن لو الوجهة باعت منها خلاص، فهي وصلت وراحت،
+    والإلغاء ساعتها بيكتب رصيد سالب — يعني كمية مش موجودة فيزيائياً بتدخل في التكلفة
+    والجرد والمتاح، وده بالظبط الخلل اللي «فحص النظام» بيصرّخ منه.
+
+    حصل فعلاً: إذن TRF-000004 اتلغى فبقى صنفين في «مخزن السياره ( د )» بـ`-1` و`-2`.
+
+    والرسالة بتقول الأصناف بأسمائها وبكام هتنزل، عشان اللي قدامه يعرف إنه محتاج جردة
+    أو إذن رجوع بالفرق، مش «مايتلغاش» وخلاص.
+    """
+    from src.models.stock import LocationKind as _LK
+
+    if transfer.dest_location_kind != _LK.warehouse:
+        return
+    short = []
+    for ln in lines:
+        on_hand = Decimal(str(stock_service.on_hand(
+            db, ln.item_id, transfer.dest_location_kind, transfer.dest_location_id)))
+        after = on_hand - Decimal(str(ln.quantity))
+        if after < 0:
+            item = db.get(Item, ln.item_id)
+            short.append(f"«{item.name if item else ln.item_id}» هينزل لـ{after}")
+    if short:
+        raise TransferError(
+            "الإلغاء هيخلّي الوجهة برصيد سالب — يعني البضاعة وصلت واتباعت، فمش ممكن "
+            "نقول إنها ماوصلتش: " + "، ".join(short[:5])
+            + (f" وكمان {len(short) - 5}" if len(short) > 5 else "")
+            + ". اعمل إذن رجوع بالكمية اللي لسه موجودة، أو اظبط الجردة الأول.")
+
+
 def cancel(db, *, transfer_id: int, actor_user_id: int,
            reason: str | None = None) -> StockTransfer:
     """إلغاء إذن معتمد — البضاعة ترجع لمصدرها والإذن يفضل في السجل «ملغي».
@@ -273,6 +308,7 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
 
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()
+    _refuse_if_dest_goes_negative(db, transfer, lines)
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None:
@@ -292,7 +328,15 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
 
     _drop_movements(db, transfer, lines)
 
-    transfer.status = TransferStatus.rejected
+    # **«ملغي» مش «مرفوض».**
+    #
+    # الاتنين كانوا بيتكتبوا `rejected`، والسجل بقى بيقول عن إذن راحت بضاعته ورجعت إنه
+    # «مرفوض» — والشاشة مكتوب فيها تحت المرفوض «الإذن المرفوض لم تتحرك فيه أي بضاعة».
+    # يعني المستند بيكدب على اللي بيقراه بعد شهر.
+    #
+    # والفرق حقيقي: المرفوض حد بصّ على طلب ومشّاهوش، والملغي راح ورجع. `reversed`
+    # موجودة في الموديل من الأول والشاشة بتسمّيها «ملغي» — بس محدّش كان بيكتبها.
+    transfer.status = TransferStatus.reversed
     transfer.reject_reason = (reason or "اتلغى بعد الاعتماد")[:240]
     db.flush()
     audit_service.record(db, action="transfer.cancel", actor_user_id=actor_user_id,
