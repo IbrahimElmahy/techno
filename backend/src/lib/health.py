@@ -27,7 +27,7 @@ already taught us what an N+1 does to a serverless request — 233 round trips, 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import case, func, select
@@ -170,6 +170,37 @@ def check_reorder(db: Session, on_hand, labels) -> list[Issue]:
     return out
 
 
+def _last_sold(db: Session) -> dict[tuple[int, int], date]:
+    """آخر يوم اتباع فيه كل (صنف × مخزن) — **بتاريخ الفاتورة، مش بوقت الاستيراد**.
+
+    ده كان بيتقرا من `StockMovement.created_at`، وده وقت كتابة السطر في قاعدتنا مش وقت
+    الحركة. ونقل a5 كتب أربعة وأربعين ألف حركة في تسع أيام، والفواتير اللي وراها ممتدة
+    من يناير. فكل حركة منقولة كانت مكتوب عليها إنها حصلت الأسبوع اللي فات.
+
+    والنتيجة إن التقرير كان بيكدب في الاتجاهين: الصنف اللي آخر بيعة له في يناير كان
+    بيبان متحرّك، و«راكد أكتر من ٩٠ يوم» كانت مقولة على نظام عمره تسع أيام.
+
+    فبيتقاس بتاريخ الفاتورة اللي الحركة طالعة منها، والحركة اللي مالهاش فاتورة بتقع
+    على `created_at` — تحويل أو تسوية، ووقت كتابته هو وقته فعلاً.
+
+    واستعلام واحد مجمّع زي باقي الفحوصات: الصفحة دي بتتحمّل مع كل فتحة للرئيسية،
+    فالقراءة اللي بتكبر مع عدد الحركات هي اللي بتخلّيها تقع بعد سنة.
+    """
+    when = func.coalesce(SalesInvoice.invoice_date, func.date(StockMovement.created_at))
+    rows = db.execute(
+        select(StockMovement.item_id, StockMovement.location_id, func.max(when))
+        .select_from(StockMovement)
+        .join(SalesInvoice,
+              (SalesInvoice.id == StockMovement.source_doc_id)
+              & (StockMovement.source_doc_type == "sales_invoice"),
+              isouter=True)
+        .where(StockMovement.location_kind == LocationKind.warehouse,
+               StockMovement.direction == StockDirection.out)
+        .group_by(StockMovement.item_id, StockMovement.location_id)
+    ).all()
+    return {(iid, lid): day for iid, lid, day in rows if day is not None}
+
+
 def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
                    now: datetime | None = None) -> Issue | None:
     """بضاعة راكدة — رصيد موجود ومحصلش عليه بيع من كذا شهر.
@@ -179,24 +210,13 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
     """
     now = now or datetime.utcnow()
     cutoff = (now.date() if isinstance(now, datetime) else now) - timedelta(days=days)
-
-    last_out = {
-        (iid, lid): when
-        for iid, lid, when in db.execute(
-            select(StockMovement.item_id, StockMovement.location_id,
-                   func.max(StockMovement.created_at))
-            .where(StockMovement.location_kind == LocationKind.warehouse,
-                   StockMovement.direction == StockDirection.out)
-            .group_by(StockMovement.item_id, StockMovement.location_id)
-        ).all()
-    }
+    last_out = _last_sold(db)
 
     rows = []
     for iid, kind, lid, qty in on_hand:
         if kind != LocationKind.warehouse.value or qty <= ZERO:
             continue
-        when = last_out.get((iid, lid))
-        day = when.date() if isinstance(when, datetime) else when
+        day = last_out.get((iid, lid))
         if day is not None and day >= cutoff:
             continue
         rows.append({"label": labels.get(iid, f"#{iid}"),

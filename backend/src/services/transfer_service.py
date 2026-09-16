@@ -181,6 +181,34 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
     return transfer
 
 
+def _drop_movements(db, transfer, lines) -> None:
+    """حركات الإذن بتتشال — بعد ما اللي بيشاور عليها يسيبها.
+
+    الرصيد مشتق من الحركات، فشيل الحركة بيرجّع الرصيد لوحده. بس الإذن نفسه وسطوره
+    بيمسكوا `out_movement_id`/`in_movement_id`، والمفتاح الأجنبي في بوستجرس بيتفحص
+    **على طول** مش آخر المعاملة. فالحذف الأول كان بيقع:
+
+        ForeignKeyViolation: update or delete on table "stock_movement" violates
+        foreign key constraint "stock_transfer_out_movement_id_fkey"
+
+    يعني «إلغاء الإذن» كان بيرجّع 500 لكل إذن معتمد، والبضاعة بتفضل في المخزن الغلط.
+    الترتيب هنا مقصود: تفضية المشاورات، `flush` عشان الـUPDATE يوصل للقاعدة قبل الحذف،
+    وبعدين الحذف.
+    """
+    from src.models.stock import StockMovement
+
+    for ln in lines:
+        ln.out_movement_id = None
+        ln.in_movement_id = None
+    transfer.out_movement_id = None
+    transfer.in_movement_id = None
+    db.flush()
+
+    db.execute(sa_delete(StockMovement).where(
+        StockMovement.source_doc_type == "transfer",
+        StockMovement.source_doc_id == transfer.id))
+
+
 def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
     """حذف إذن التحويل — بيروح هو وحركته، مش بيتعكس.
 
@@ -218,10 +246,7 @@ def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
                     to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
                     quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
 
-        from src.models.stock import StockMovement
-        db.execute(sa_delete(StockMovement).where(
-            StockMovement.source_doc_type == "transfer",
-            StockMovement.source_doc_id == transfer.id))
+        _drop_movements(db, transfer, lines)
 
     doc = transfer.document_number
     db.execute(sa_delete(StockTransferLine).where(
@@ -265,18 +290,10 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
                 to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
                 quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
 
-    from src.models.stock import StockMovement
-    db.execute(sa_delete(StockMovement).where(
-        StockMovement.source_doc_type == "transfer",
-        StockMovement.source_doc_id == transfer.id))
+    _drop_movements(db, transfer, lines)
 
     transfer.status = TransferStatus.rejected
     transfer.reject_reason = (reason or "اتلغى بعد الاعتماد")[:240]
-    for ln in lines:
-        ln.out_movement_id = None
-        ln.in_movement_id = None
-    transfer.out_movement_id = None
-    transfer.in_movement_id = None
     db.flush()
     audit_service.record(db, action="transfer.cancel", actor_user_id=actor_user_id,
                          entity_type="stock_transfer", entity_id=transfer.id,
