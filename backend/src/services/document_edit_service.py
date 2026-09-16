@@ -29,6 +29,8 @@
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -178,6 +180,29 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
 
 # ---------------------------------------------------------------- فاتورة البيع
 
+def frozen_costs(db: Session, invoice: SalesInvoice) -> dict[int, Decimal]:
+    """تكلفة الوحدة **الأساسية** لكل صنف على الفاتورة، قبل ما سطورها تتشال.
+
+    التعديل بيمسح السطور ويبنيها من جديد، والبناء بيجمّد التكلفة من متوسط **النهارده**.
+    يعني تصليح رقم تليفون في فاتورة من أربع شهور كان بيعيد كتابة تكلفة بضاعتها بسعر
+    النهارده — والتعليق جنب السطر نفسه بيقول العكس: «هذه الفاتورة هامشها لازم يفضل زي
+    ما كان يوم البيع».
+
+    والفرق مش بسيط: على داتا العميل متوسط التكلفة اتحرك بين ٦٪ و٥٢٪ على أكتر الأصناف
+    مبيعاً. يعني أي تعديل على فاتورة قديمة كان بيغيّر ربحها وربح عميلها وشهرها.
+
+    بتترجّع **مقسومة على `unit_factor`** — يعني تكلفة الوحدة الأساسية. السطر الجديد
+    ممكن يتكتب بوحدة تانية، فالتخزين بالوحدة الأساسية بيخلّي الرقم يتعاد ضربه صح.
+    """
+    out: dict[int, Decimal] = {}
+    for ln in invoice.lines:
+        if ln.unit_cost is None:
+            continue
+        factor = Decimal(str(ln.unit_factor or 1)) or Decimal("1")
+        out[ln.item_id] = Decimal(str(ln.unit_cost)) / factor
+    return out
+
+
 def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) -> None:
     """بيشيل كل أثر فاتورة بيع من النظام — من غير ما يمس الفاتورة نفسها.
 
@@ -192,8 +217,8 @@ def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) ->
     """
     _drop_points(db, sales_invoice_id=invoice.id)
     _restore_serials(db, sold_invoice_id=invoice.id,
-                     document_type="sales_invoice", document_id=invoice.id)
-    _restore_batches(db, document_type="sales_invoice", document_id=invoice.id)
+                     document_type=StockDoc.SALE, document_id=invoice.id)
+    _restore_batches(db, document_type=StockDoc.SALE, document_id=invoice.id)
     _drop_stock(db, source_doc_type=StockDoc.SALE, source_doc_id=invoice.id)
     entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None
@@ -326,9 +351,9 @@ def _resell_serials(db: Session, *, document_type: str, document_id: int,
 def purge_sales_return(db: Session, ret: SalesReturn) -> None:
     """بيشيل كل أثر مرتجع مبيعات — البضاعة تخرج تاني والفلوس ترجع زي ما كانت."""
     _drop_points(db, sales_return_id=ret.id)
-    _resell_serials(db, document_type="sales_return", document_id=ret.id,
+    _resell_serials(db, document_type=StockDoc.SALE_RETURN, document_id=ret.id,
                     invoice_id=ret.sales_invoice_id)
-    _restore_batches(db, document_type="sales_return", document_id=ret.id)
+    _restore_batches(db, document_type=StockDoc.SALE_RETURN, document_id=ret.id)
     _drop_stock(db, source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id)
     entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
@@ -352,7 +377,7 @@ def delete_sales_return(db: Session, *, return_id: int, actor_user_id: int) -> N
 # ---------------------------------------------------------------- مردود الشراء
 
 def purge_purchase_return(db: Session, ret: PurchaseReturn) -> None:
-    _restore_batches(db, document_type="purchase_return", document_id=ret.id)
+    _restore_batches(db, document_type=StockDoc.PURCHASE_RETURN, document_id=ret.id)
     _drop_stock(db, source_doc_type=StockDoc.PURCHASE_RETURN, source_doc_id=ret.id)
     entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
@@ -376,8 +401,8 @@ def delete_purchase_return(db: Session, *, return_id: int, actor_user_id: int) -
 # ---------------------------------------------------------------- فاتورة الشراء
 
 def purge_purchase(db: Session, invoice: PurchaseInvoice) -> None:
-    _restore_serials(db, document_type="purchase_invoice", document_id=invoice.id)
-    _restore_batches(db, document_type="purchase_invoice", document_id=invoice.id)
+    _restore_serials(db, document_type=StockDoc.PURCHASE, document_id=invoice.id)
+    _restore_batches(db, document_type=StockDoc.PURCHASE, document_id=invoice.id)
     _drop_stock(db, source_doc_type=StockDoc.PURCHASE, source_doc_id=invoice.id)
     entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None

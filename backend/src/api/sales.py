@@ -614,6 +614,7 @@ def rep_bundle(
 def _build_sale(
     db: Session, body: "SaleCreate", current: CurrentUser, *,
     replace_invoice_id: int | None = None,
+    keep_costs: dict[int, Decimal] | None = None,
 ) -> SalesInvoice:
     """بيبني الفاتورة من الجسم — سواء جديدة أو مكان واحدة موجودة.
 
@@ -650,6 +651,7 @@ def _build_sale(
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             client_uuid=body.client_uuid,
             replace_invoice_id=replace_invoice_id,
+            keep_costs=keep_costs,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -703,11 +705,15 @@ def update_sale(
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     try:
         document_edit_service.assert_sale_editable(db, inv)
+        # التكلفة المجمّدة بتتقرا **قبل** التفضية، لأن التفضية بتمسح السطور اللي شايلاها.
+        # من غيرها البناء بيجمّد تكلفة النهارده على فاتورة قديمة — شوف `frozen_costs`.
+        kept_costs = document_edit_service.frozen_costs(db, inv)
         document_edit_service.purge_sale(db, inv)
     except DocumentEditError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "edit_blocked", "message": str(exc)})
-    inv = _build_sale(db, body, current, replace_invoice_id=sale_id)
+    inv = _build_sale(db, body, current, replace_invoice_id=sale_id,
+                      keep_costs=kept_costs)
     db.commit()
     return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 

@@ -15,7 +15,7 @@ from src.core.money import to_qty
 from src.models.catalog import (
     Item, ItemSerial, ItemSerialMovement, SerialMovementKind, SerialStatus,
 )
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.services import stock_service
 
 
@@ -159,7 +159,7 @@ def relocate(
     db.flush()
     for row in rows:
         _log(db, row, SerialMovementKind.relocated, location_kind=to_kind, location_id=to_id,
-             document_type="transfer", document_id=transfer_id, actor_user_id=actor_user_id)
+             document_type=StockDoc.TRANSFER, document_id=transfer_id, actor_user_id=actor_user_id)
     return list(rows)
 
 
@@ -186,7 +186,7 @@ def mark_sold(
         row.sold_invoice_id = invoice_id
         # No location: the unit left. Recording the origin here would keep sold units in a
         # store's list of what it holds.
-        _log(db, row, SerialMovementKind.sold, document_type="sales_invoice",
+        _log(db, row, SerialMovementKind.sold, document_type=StockDoc.SALE,
              document_id=invoice_id, actor_user_id=actor_user_id)
     db.flush()
 
@@ -215,7 +215,7 @@ def restore_free(
         row.location_id = origin_id
         row.sold_invoice_id = None
         _log(db, row, SerialMovementKind.returned, location_kind=origin_kind,
-             location_id=origin_id, document_type="sales_return",
+             location_id=origin_id, document_type=StockDoc.SALE_RETURN,
              document_id=document_id, actor_user_id=actor_user_id)
 
 
@@ -239,6 +239,6 @@ def restore_for_return(
         row.location_id = origin_id
         row.sold_invoice_id = None
         _log(db, row, SerialMovementKind.returned, location_kind=origin_kind,
-             location_id=origin_id, document_type="sales_invoice", document_id=invoice_id,
+             location_id=origin_id, document_type=StockDoc.SALE, document_id=invoice_id,
              actor_user_id=actor_user_id)
     db.flush()

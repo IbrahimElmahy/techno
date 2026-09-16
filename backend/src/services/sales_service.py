@@ -216,6 +216,10 @@ def create_sale(
     # الخزنة اللي اتختارت من البوباب. فاضية ⇒ تتستنتج من الخط.
     cash_account_id: int | None = None,
     can_sell_below: bool = False,
+    # (التعديل) تكلفة الوحدة الأساسية اللي كانت مجمّدة على الفاتورة قبل ما تتفضّى.
+    # الصنف اللي فيها بياخد رقمه القديم؛ اللي مش فيها (سطر اتزوّد دلوقتي) بياخد
+    # متوسط النهارده. شوف `document_edit_service.frozen_costs`.
+    keep_costs: dict[int, Decimal] | None = None,
     # (030) document fields — all optional so every pre-030 caller keeps working unchanged.
     rep_id: int | None = None,
     revenue_account_id: int | None = None,
@@ -480,9 +484,17 @@ def create_sale(
             direction=StockDirection.out, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type=StockDoc.SALE, source_doc_id=invoice.id,
         )
-        # (030) Freeze the cost of goods as it stands NOW. Later purchases move the average for
-        # future sales; this invoice's margin must stay exactly what it was on the day.
-        unit_cost = to_money(costing_service.average_cost(db, ln.item_id) * factor)
+        # (030) التكلفة بتتجمّد على الفاتورة عشان هامشها مايتحركش بعد كده: المشتريات
+        # الجاية بتحرّك المتوسط للمبيعات الجاية، مش للفاتورة دي.
+        #
+        # **والتعديل مش بيعيد تجميدها.** كان بيعيده — التفضية بتمسح السطور والبناء
+        # بيحسب من متوسط النهارده — فتصليح أي حاجة في فاتورة قديمة كان بيكتب تكلفة
+        # النهارده مكان تكلفة يومها، والهامش يتحرك من غير ما حد يطلب ده. السطر اللي
+        # كان موجود بياخد رقمه القديم، واللي اتزوّد في التعديل بياخد متوسط النهارده
+        # لأنه فعلاً بيع جديد.
+        kept = (keep_costs or {}).get(ln.item_id)
+        base_cost = kept if kept is not None else costing_service.average_cost(db, ln.item_id)
+        unit_cost = to_money(Decimal(str(base_cost)) * factor)
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                              unit_price=unit_price, discount_pct=line_disc,
@@ -509,7 +521,7 @@ def create_sale(
                 batch_service.consume_fefo(
                     db, item_id=ln.item_id, location_kind=line_kind,
                     location_id=line_loc, quantity=base_qty,
-                    document_type="sales_invoice", document_id=invoice.id,
+                    document_type=StockDoc.SALE, document_id=invoice.id,
                     actor_user_id=actor_user_id,
                 )
             except batch_service.BatchError as exc:
