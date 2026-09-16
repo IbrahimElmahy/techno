@@ -260,6 +260,22 @@ def _lines_of(c: Ctx, rows: list[list[str]], store_col: int, label: str):
     return out
 
 
+def _line_pct(qty, price, total):
+    """نسبة خصم السطر من أرقامه — `a5` بيدّي الإجمالي بعد الخصم وماعندوش عمود نسبة.
+
+    كان بيتكتب `ZERO` بالثابت، فالسطر بيطلع صح في الفلوس وأخرس في السبب: ٢٠٨ × ١٠٠
+    والإجمالي ١٨٬٧٢٠ ومافيش خانة بتقول ليه. والرقم مش بيتخترع — هو محسوب من نفس
+    الرقمين اللي بيتحفظوا على السطر.
+    """
+    raw = Decimal(str(qty or 0)) * Decimal(str(price or 0))
+    if raw <= 0:
+        return ZERO
+    pct = (Decimal("100") * (Decimal("1") - Decimal(str(total or 0)) / raw)).quantize(
+        Decimal("0.01"))
+    # الزيادة (إجمالي أكبر من الكمية × السعر) مش خصم، وتسجيلها كخصم بيخفي السؤال.
+    return pct if ZERO < pct < Decimal("100") else ZERO
+
+
 def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("S", h[H_ID])
     if num in c.taken:
@@ -292,7 +308,7 @@ def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     for it, wh, qty, price, total, cost in ls:
         c.db.add(SalesInvoiceLine(
             invoice_id=inv.id, item_id=it.id, quantity=qty, unit_price=price,
-            line_total=total, discount_pct=ZERO,
+            line_total=total, discount_pct=_line_pct(qty, price, total),
             location_kind=LocationKind.warehouse, location_id=wh.id,
             unit_cost=cost or None))
         c.move(it.id, wh.id, "sale", StockDirection.out, qty, "sales_invoice", inv.id)
