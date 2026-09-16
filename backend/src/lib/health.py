@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from src.core.money import to_money, to_qty
 from src.models.catalog import Item, ItemKind, ItemPrice
-from src.models.ledger import Account, LedgerEntry, LedgerLine
+from src.models.ledger import Account, AccountType, LedgerEntry, LedgerLine
 from src.services import ledger_service
 from src.models.sales import SalesInvoice, SalesInvoiceLine
 from src.models.stock import LocationKind, StockDirection, StockDoc, StockMovement
@@ -380,6 +380,47 @@ def check_unbalanced_entries(db: Session) -> Issue | None:
     )
 
 
+def check_accounts_without_nature(db: Session) -> Issue | None:
+    """حساب عليه رصيد ومالوش طبيعة — بيسقط من الميزانية في صمت.
+
+    الميزانية بتصنّف كل حساب من `nature`، ولو فاضية بتقع على خريطة النوع. والنوع
+    `user_defined` مش في الخريطة — بالتعريف، لأنه الحساب اللي العميل عمله بنفسه.
+    فالحساب اللي جامع الاتنين (نوع `user_defined` وطبيعة فاضية) بيتسقّط من الأصول
+    والالتزامات وحقوق الملكية كلهم، ورصيده بيختفي من الوجهين.
+
+    وساعتها الميزانية مابتوزنش والدفتر موزون — يعني الرقم مش ضايع، هو بس مش متصنّف.
+    حصل فعلاً: أربع حسابات بـ٩٧٬٦٠٠٫٩٦ ج.م خلّوا الميزانية مقفولة بفرق بالمليم.
+
+    والفحص ده هو اللي بيخلّي الحالة دي مسموعة: `balanced=False` جوّه التقرير بيبان
+    لواحد فتح الميزانية، وده بيبان لأي حد بيفتح الرئيسية.
+    """
+    signed = func.sum(case(
+        (LedgerLine.direction == "debit", LedgerLine.amount), else_=-LedgerLine.amount))
+    rows = db.execute(
+        select(Account.id, Account.code, Account.name, signed)
+        .join(LedgerLine, LedgerLine.account_id == Account.id)
+        .where(Account.nature.is_(None),
+               Account.account_type == AccountType.user_defined)
+        .group_by(Account.id, Account.code, Account.name)
+    ).all()
+    bad = [(i, c, n, b) for i, c, n, b in rows if abs(to_money(b or 0)) > Decimal("0.005")]
+    if not bad:
+        return None
+    total = sum((to_money(b) for _i, _c, _n, b in bad), ZERO)
+    return Issue(
+        key="account_no_nature",
+        title="حسابات مالهاش تصنيف بتسقط من الميزانية",
+        group="الحسابات",
+        severity="high",
+        count=len(bad),
+        hint=f"رصيدهم {_money(total)} ج.م مش ظاهر لا في الأصول ولا الالتزامات — "
+             "الميزانية بتقفل بفرق بسببهم.",
+        link="/chart-of-accounts",
+        samples=[{"label": f"{c or ''} {n or f'#{i}'}".strip(), "detail": _money(b)}
+                 for i, c, n, b in sorted(bad, key=lambda r: -abs(r[3]))[:SAMPLE]],
+    )
+
+
 def check_negative_treasuries(db: Session) -> Issue | None:
     """خزنة برصيد سالب — مفيش خزنة بتطلع أكتر من اللي فيها."""
     signed = case(
@@ -600,6 +641,7 @@ def run_all(db: Session, *, now: datetime | None = None) -> dict:
         check_empty_invoices(db),
         check_unbalanced_entries(db),
         check_negative_treasuries(db),
+        check_accounts_without_nature(db),
         check_duplicate_customers(db),
         check_overdue_cheques(db, now=now),
         check_expired_reservations(db, now=now),
