@@ -26,7 +26,7 @@ from src.models.purchasing import (
     PurchaseReturnLine,
 )
 from src.models.role import RoleName
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.models.supplier import Supplier
 from src.services import (
     account_resolver,
@@ -197,7 +197,7 @@ def create_purchase(
         stock_service.post_movement(
             db, item_id=ln.item_id, location_kind=line_kind, location_id=line_loc,
             movement_type="purchase_in", direction=StockDirection.in_, quantity=base_qty,
-            actor_user_id=actor_user_id, source_doc_type="purchase", source_doc_id=invoice.id,
+            actor_user_id=actor_user_id, source_doc_type=StockDoc.PURCHASE, source_doc_id=invoice.id,
         )
         invoice.lines.append(
             PurchaseInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
@@ -322,7 +322,7 @@ def return_purchase(
         stock_service.post_movement(
             db, item_id=item_id, location_kind=out_kind, location_id=out_loc,
             movement_type="purchase_return_out", direction=StockDirection.out, quantity=base_qty,
-            actor_user_id=actor_user_id, source_doc_type="purchase_return", source_doc_id=ret.id,
+            actor_user_id=actor_user_id, source_doc_type=StockDoc.PURCHASE_RETURN, source_doc_id=ret.id,
         )
         ret.lines.append(PurchaseReturnLine(item_id=item_id, quantity=Decimal(qty)))
 
@@ -550,7 +550,7 @@ def create_standalone_purchase_return(
             db, item_id=b["item_id"], location_kind=b["location_kind"],
             location_id=b["location_id"], movement_type="purchase_return_out",
             direction=StockDirection.out, quantity=to_qty(b["quantity"] * b["factor"]),
-            actor_user_id=actor_user_id, source_doc_type="purchase_return",
+            actor_user_id=actor_user_id, source_doc_type=StockDoc.PURCHASE_RETURN,
             source_doc_id=ret.id,
         )
         ret.lines.append(PurchaseReturnLine(

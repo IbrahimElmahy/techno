@@ -58,7 +58,7 @@ from src.models.sales import (
     SalesReturnLine,
 )
 from src.models.sales_expense import SalesInvoiceExpense
-from src.models.stock import StockMovement
+from src.models.stock import StockDoc, StockMovement
 from src.services.audit_service import record as audit_record
 from src.core.money import to_qty
 
@@ -194,7 +194,7 @@ def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) ->
     _restore_serials(db, sold_invoice_id=invoice.id,
                      document_type="sales_invoice", document_id=invoice.id)
     _restore_batches(db, document_type="sales_invoice", document_id=invoice.id)
-    _drop_stock(db, source_doc_type="sale", source_doc_id=invoice.id)
+    _drop_stock(db, source_doc_type=StockDoc.SALE, source_doc_id=invoice.id)
     entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None
     db.execute(delete(SalesInvoiceExpense).where(
@@ -329,7 +329,7 @@ def purge_sales_return(db: Session, ret: SalesReturn) -> None:
     _resell_serials(db, document_type="sales_return", document_id=ret.id,
                     invoice_id=ret.sales_invoice_id)
     _restore_batches(db, document_type="sales_return", document_id=ret.id)
-    _drop_stock(db, source_doc_type="sale_return", source_doc_id=ret.id)
+    _drop_stock(db, source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id)
     entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
     db.execute(delete(SalesReturnLine).where(SalesReturnLine.return_id == ret.id))
@@ -353,7 +353,7 @@ def delete_sales_return(db: Session, *, return_id: int, actor_user_id: int) -> N
 
 def purge_purchase_return(db: Session, ret: PurchaseReturn) -> None:
     _restore_batches(db, document_type="purchase_return", document_id=ret.id)
-    _drop_stock(db, source_doc_type="purchase_return", source_doc_id=ret.id)
+    _drop_stock(db, source_doc_type=StockDoc.PURCHASE_RETURN, source_doc_id=ret.id)
     entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
     db.execute(delete(PurchaseReturnLine).where(PurchaseReturnLine.return_id == ret.id))
@@ -378,7 +378,7 @@ def delete_purchase_return(db: Session, *, return_id: int, actor_user_id: int) -
 def purge_purchase(db: Session, invoice: PurchaseInvoice) -> None:
     _restore_serials(db, document_type="purchase_invoice", document_id=invoice.id)
     _restore_batches(db, document_type="purchase_invoice", document_id=invoice.id)
-    _drop_stock(db, source_doc_type="purchase", source_doc_id=invoice.id)
+    _drop_stock(db, source_doc_type=StockDoc.PURCHASE, source_doc_id=invoice.id)
     entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None
     db.execute(delete(PurchaseInvoiceLine).where(

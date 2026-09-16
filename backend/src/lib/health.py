@@ -38,7 +38,7 @@ from src.models.catalog import Item, ItemKind, ItemPrice
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 from src.services import ledger_service
 from src.models.sales import SalesInvoice, SalesInvoiceLine
-from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.stock import LocationKind, StockDirection, StockDoc, StockMovement
 from src.models.treasury import Treasury
 from src.models.employee import Employee
 from src.models.role import Role, RoleName
@@ -192,7 +192,7 @@ def _last_sold(db: Session) -> dict[tuple[int, int], date]:
         .select_from(StockMovement)
         .join(SalesInvoice,
               (SalesInvoice.id == StockMovement.source_doc_id)
-              & (StockMovement.source_doc_type == "sales_invoice"),
+              & (StockMovement.source_doc_type == StockDoc.SALE),
               isouter=True)
         .where(StockMovement.location_kind == LocationKind.warehouse,
                StockMovement.direction == StockDirection.out)

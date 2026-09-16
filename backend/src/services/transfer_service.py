@@ -15,7 +15,7 @@ from src.services import numbering
 
 from src.core.money import to_qty
 from src.models.role import RoleName
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.models.transfer import (
     StockTransfer, StockTransferLine, TransferRoute, TransferStatus)
 from src.models.user import User
@@ -26,19 +26,12 @@ from src.services import (
     audit_service, batch_service, serial_service, stock_service,
 )
 
-# نوع مستند حركة المخزون بتاعة إذن التحويل.
+# نوع مستند حركة المخزون بتاعة إذن التحويل — من `StockDoc` عشان يفضل واحد.
 #
-# **كان اسمين لنفس الحاجة.** الخدمة هنا بتكتب `"transfer"`، ونقل a5 كتب
-# `"stock_transfer"` — ٦٤٬٥٩٨ حركة على ٢٬٤٩١ إذن مقابل ٤٦ حركة على ٣.
-#
-# والإلغاء والحذف بيدوّروا على `"transfer"` بس. يعني إلغاء أي إذن منقول من a5 —
-# وده تسعة وتسعين في المية منهم — كان **بينجح من غير ما يرجّع بضاعة**: الحالة
-# بتبقى «ملغي» والحركات مكانها، فالمستند بيقول إن البضاعة رجعت وهي ماتحركتش.
-# اتقاس على نسخة من الإنتاج بإذن AL-T52: المصدر فضل ٣٣ والمفروض يبقى ٣٥.
-#
-# الاسم المختار هو اسم الجدول (`stock_transfer`) لأنه اللي الداتا كلها عليه —
-# والـ٤٦ التانيين اتوحّدوا معاه بـ`normalize_transfer_doc_type`.
-MOVEMENT_DOC = "stock_transfer"
+# كان مكتوب هنا `"transfer"` بينما نقل a5 كتب `"stock_transfer"`، فالإلغاء والحذف
+# كانوا بيدوّروا على اسم عليه ٤٦ حركة بس ويسيبوا الـ٦٤ ألف التانيين. الشرح الكامل
+# لكل الأنواع في `StockDoc`.
+MOVEMENT_DOC = StockDoc.TRANSFER
 
 _ROUTE_KINDS = {
     TransferRoute.central_to_branch: (LocationKind.warehouse, LocationKind.warehouse),

@@ -32,7 +32,7 @@ from src.models.sales import (
     SalesSetting,
 )
 from src.models.sales_expense import ExpenseKind, SalesInvoiceExpense
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.services import (
     reservation_service,
     account_resolver,
@@ -478,7 +478,7 @@ def create_sale(
             db, item_id=ln.item_id, location_kind=line_kind,
             location_id=line_loc, movement_type="sale_out",
             direction=StockDirection.out, quantity=base_qty, actor_user_id=actor_user_id,
-            source_doc_type="sale", source_doc_id=invoice.id,
+            source_doc_type=StockDoc.SALE, source_doc_id=invoice.id,
         )
         # (030) Freeze the cost of goods as it stands NOW. Later purchases move the average for
         # future sales; this invoice's margin must stay exactly what it was on the day.
@@ -862,7 +862,7 @@ def return_sale(
             db, item_id=item_id, location_kind=back_kind,
             location_id=back_loc, movement_type="sale_return_in",
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
-            source_doc_type="sale_return", source_doc_id=ret.id,
+            source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id,
         )
         ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty),
                                          location_kind=back_kind, location_id=back_loc,
@@ -1108,7 +1108,7 @@ def create_standalone_return(
             db, item_id=ln.item_id, location_kind=back_kind,
             location_id=back_loc, movement_type="sale_return_in",
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
-            source_doc_type="sale_return", source_doc_id=ret.id,
+            source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id,
         )
         if item is not None and item.is_serialized:
             ser = [s.strip() for s in (ln.serials or []) if s.strip()]
