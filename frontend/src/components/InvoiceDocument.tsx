@@ -51,14 +51,28 @@ export interface InvoiceDoc {
   repName?: string | null;
   /** «حساب العميل» — the party's ledger account, for the file copy. */
   partyAccount?: string | null;
+  /**
+   * حساب العميل **قبل** المستند ده، زي ما كان ساعة الترحيل (`prior_balance`).
+   *
+   * بيتقرا من المستند مش بيتحسب دلوقتي: رصيد العميل بيتغيّر مع كل حركة، ولو الورقة
+   * حسبته وقت الطباعة يبقى نفس المستند بيطلع برقمين في تاريخين. `null`/undefined =
+   * مستند أقدم من العمود، والسطر ساعتها مابيتعرضش بدل ما يخترع صفر.
+   */
+  priorBalance?: string | number | null;
 }
 
 
 const n = (v: any) =>
   Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// **«طلب بيع» مش «فاتورة مبيعات».**
+//
+// الورقة اللي بتتسلّم للعميل بتتطبع ساعة البيع، وكلمة «فاتورة» عليها بتخلّيها تقرا
+// كمستند ضريبي وهي مش كده. الفاتورة الرسمية بتطلع من المحاسبة بعد الترحيل. الورقة دي
+// بتقول اتفقنا على إيه واستلم إيه — مش بتقوم مقام ورق قانوني.
+// (المشتريات والمرتجع زي ما هما: التسمية دي بتاعة اللي بيتسلّم للعميل.)
 const titleOf = (d: InvoiceDoc) => (
-  d.kind === 'sale' ? 'فاتورة مبيعات'
+  d.kind === 'sale' ? 'طلب بيع'
     : d.kind === 'sale_return' ? 'مرتجع مبيعات'
       : 'فاتورة مشتريات');
 
@@ -124,6 +138,9 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
     ${anyPts ? `<td>${pts(l.points)}</td>` : ''}
     <td>${n(l.line_total)}</td></tr>`).join('');
   const discount = Number(d.gross || 0) - Number(d.net || 0);
+  // نفس حساب النسخة اللي على الشاشة بالحرف — الورقة المطبوعة والمعروضة لازم يقولوا
+  // نفس الأرقام، وده المكان اللي بيفترقوا فيه لو كل واحد حسب لوحده.
+  const dPrior = d.priorBalance == null || d.kind !== 'sale' ? null : Number(d.priorBalance);
   const body = `
     <table class="grid">
       <thead><tr><th>#</th><th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th><th>الوحدة</th>
@@ -131,6 +148,8 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>
     <table class="totals">
+      ${dPrior != null ? `<tr><td>الحساب السابق</td>
+        <td style="text-align:left">${n(dPrior)} ج.م</td></tr>` : ''}
       <tr><td>الإجمالي قبل الخصم</td><td style="text-align:left">${n(d.gross)} ج.م</td></tr>
       ${discount > 0 ? `<tr><td>الخصم (${Number(d.discountPct || 0)}%)</td>
         <td style="text-align:left">${n(discount)} ج.م</td></tr>` : ''}
@@ -141,6 +160,8 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
           <td style="text-align:left">${n(d.cash)} ج.م</td></tr>
       <tr><td>${creditLabel(d)}</td><td style="text-align:left">${n(d.credit)} ج.م</td></tr>` : ''}
       <tr><td>${payableLabel(d)}</td><td style="text-align:left">${n(payable(d))} ج.م</td></tr>
+      ${dPrior != null ? `<tr><td>الرصيد بعد الطلب</td>
+        <td style="text-align:left">${n(dPrior + payable(d) - Number(d.cash || 0))} ج.م</td></tr>` : ''}
       ${Number(d.totalPoints || 0) > 0 ? `<tr><td>نقاط الولاء المكتسبة</td>
         <td style="text-align:left">${pts(d.totalPoints)} نقطة</td></tr>` : ''}
     </table>
@@ -197,7 +218,18 @@ export default function InvoiceDocument({
   const anyLineWarehouse =
     new Set(doc.lines.map((l) => l.warehouse).filter(Boolean)).size > 1;
   const pts = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+  // **الحساب كامل، مش رقم الورقة لوحدها.**
+  //
+  // العميل اللي عليه حساب من قبل بيقرا «الإجمالي المستحق» على إنه كل اللي عليه، فبيدفع
+  // على أساسه ويتفاجئ بعدين. فالورقة بقت بتقول اللي البائع بيقوله بلسانه: كان عليك كذا،
+  // والطلب ده بكذا، ودفعت كذا، فالباقي كذا.
+  //
+  // الرقم جاي من المستند (`prior_balance` المتقفّل وقت الترحيل) — مش بيتحسب دلوقتي.
+  const prior = doc.priorBalance == null ? null : Number(doc.priorBalance);
   const totals: [string, string, boolean?][] = [
+    ...(prior != null && doc.kind === 'sale'
+      ? ([['الحساب السابق', `${n(prior)} ج.م`]] as [string, string][])
+      : []),
     ['الإجمالي قبل الخصم', `${n(doc.gross)} ج.م`],
     ...(discount > 0
       ? ([[`الخصم (${Number(doc.discountPct || 0)}%)`, `${n(discount)} ج.م`]] as [string, string][])
@@ -209,6 +241,11 @@ export default function InvoiceDocument({
     [cashLabel(doc), `${n(doc.cash)} ج.م`],
     [creditLabel(doc), `${n(doc.credit)} ج.م`],
     [payableLabel(doc), `${n(payable(doc))} ج.م`, true],
+    ...(prior != null && doc.kind === 'sale'
+      ? ([['الرصيد بعد الطلب',
+           `${n(prior + payable(doc) - Number(doc.cash || 0))} ج.م`, true]] as
+          [string, string, boolean][])
+      : []),
     ...(Number(doc.totalPoints || 0) > 0
       ? ([['نقاط الولاء المكتسبة', `${pts(doc.totalPoints)} نقطة`]] as [string, string][])
       : []),

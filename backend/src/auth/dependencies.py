@@ -64,6 +64,22 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "unauthorized", "message": "Inactive or unknown user"},
         )
+    # جهاز واحد بس لكل حساب.
+    #
+    # التوكن بيحمل `sid` ساعة إصداره، والمخزّن على المستخدم هو الوحيد المقبول. أول ما
+    # الحساب يتفتح على جهاز تاني القيمة بتتغيّر، فالجهاز القديم بيتقفل من أول طلب.
+    # التوكن مستقل بذاته (JWT) فمفيش طريقة تانية تسحبه قبل ما صلاحيته تخلص.
+    #
+    # `session_id` فاضية = مستخدم ما دخلش من بعد الميزة دي (أو عمل Logout). بنسيب توكنه
+    # يعدّي بدل ما نطلّع كل الناس بره ساعة النشر؛ أول تسجيل دخول بيثبّت القفل.
+    if user.session_id and payload.get("sid") != user.session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "code": "session_replaced",
+                "message": "تم تسجيل الدخول بهذا الحساب من جهاز آخر — الحساب لجهاز واحد فقط.",
+            },
+        )
     role = db.get(Role, user.role_id)
     return CurrentUser(
         id=user.id,

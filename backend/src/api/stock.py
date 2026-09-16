@@ -42,6 +42,18 @@ class LocationStockRow(BaseModel):
     category: str | None = None
     unit_of_measure: str | None = None
     on_hand: Decimal
+    # المحجوز على أذونات تحويل **معلّقة** طالعة من نفس المكان.
+    #
+    # الإذن مابيحرّكش مخزون لحد الاعتماد، فالرصيد بيفضل قايل إن البضاعة موجودة — واللي
+    # بيكتب إذن تاني (أو بيبيع) بيلاقيها متاحة وهي متعهّدة خلاص. الاتنين بيعدّوا، وواحد
+    # منهم بيقع على اللي بيعتمد بعدين، وهو مش صاحب الغلطة.
+    pending_out: Decimal = Decimal("0")
+
+    @property
+    def free(self) -> Decimal:
+        """اللي ينفع يتحرّك دلوقتي — الرصيد ناقص المتعهّد عليه."""
+        v = self.on_hand - self.pending_out
+        return v if v > 0 else Decimal("0")
 
 
 def _assert_readable(db: Session, current: CurrentUser, kind: LocationKind, location_id: int) -> None:
@@ -184,6 +196,9 @@ def stock_by_location(
     location_kind: LocationKind,
     location_id: int,
     only_available: bool = True,
+    # الإذن اللي بيتعدّل دلوقتي — سطوره متحسوبة في `pending_out` وهي بتاعته هو، فلو
+    # اتخصمت عليه كمان يبقى بيتحاسب مرتين على نفس البضاعة ومايقدرش يحفظ نفسه زي ما هو.
+    exclude_transfer_id: int | None = None,
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[LocationStockRow]:
@@ -210,12 +225,51 @@ def stock_by_location(
         .group_by(Item.id, Item.code, Item.name, Item.category, Item.unit_of_measure)
         .order_by(Item.name)
     ).all()
+    pending = _pending_out(db, location_kind, location_id, exclude_transfer_id)
     out = [
         LocationStockRow(item_id=r[0], code=r[1], name=r[2], category=r[3],
-                         unit_of_measure=r[4], on_hand=Decimal(str(r[5] or 0)))
+                         unit_of_measure=r[4], on_hand=Decimal(str(r[5] or 0)),
+                         pending_out=pending.get(r[0], Decimal("0")))
         for r in rows
     ]
-    return [r for r in out if r.on_hand > 0] if only_available else out
+    # `only_available` معناها «اللي ينفع يتحرّك»، مش «اللي الرصيد بيقوله». صنف كل رصيده
+    # متعهّد على إذن معلّق مابينفعش يتحوّل، فمابيتعرضش أصلاً — نفس السبب اللي بيخلّي
+    # الصنف اللي رصيده صفر مش في القايمة.
+    return [r for r in out if r.free > 0] if only_available else out
+
+
+def _pending_out(db: Session, kind: LocationKind, location_id: int,
+                 exclude_transfer_id: int | None = None) -> dict[int, Decimal]:
+    """الكمية المتعهّد عليها لكل صنف على أذونات تحويل معلّقة طالعة من المكان ده.
+
+    نفس قاعدة `transfer_service.approve` بالحرف: الإذن اللي له سطور بيتحرّك بسطوره،
+    والإذن القديم اللي مالوش سطور بيتحرّك برأسه. أي قاعدة تانية هنا معناها إن اللي
+    اتحجز مش هو اللي هيتصرف.
+    """
+    from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
+
+    q = select(StockTransfer.id, StockTransfer.item_id, StockTransfer.quantity).where(
+        StockTransfer.status == TransferStatus.pending,
+        StockTransfer.source_location_kind == kind,
+        StockTransfer.source_location_id == location_id,
+    )
+    if exclude_transfer_id is not None:
+        q = q.where(StockTransfer.id != exclude_transfer_id)
+    rows = db.execute(q).all()
+    if not rows:
+        return {}
+    by_transfer: dict[int, list[tuple[int, Decimal]]] = {}
+    for ln in db.scalars(select(StockTransferLine).where(
+            StockTransferLine.transfer_id.in_([r[0] for r in rows]))).all():
+        by_transfer.setdefault(ln.transfer_id, []).append(
+            (ln.item_id, Decimal(str(ln.quantity))))
+    out: dict[int, Decimal] = {}
+    for tid, item_id, qty in rows:
+        for line_item, line_qty in (by_transfer.get(tid) or [(item_id, Decimal(str(qty or 0)))]):
+            if line_item is None:
+                continue
+            out[line_item] = out.get(line_item, Decimal("0")) + line_qty
+    return out
 
 
 # ----------------------------------------------------- إذن إضافة / إذن صرف (B5)

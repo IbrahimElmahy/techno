@@ -1,6 +1,9 @@
 """Auth router (T030): POST /auth/login, GET /auth/me. FR-001."""
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -73,9 +76,21 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
         )
     role = db.get(Role, user.role_id)
     ttl = settings.mobile_token_ttl if body.client == "mobile" else settings.access_token_ttl
+    # جهاز واحد بس: الدخول الجديد بيسحب الجلسة من اللي كان فاتح.
+    #
+    # التوكن بقى فيه `sid`، و`get_current_user` بيقارنه باللي مخزّن على المستخدم. لمّا
+    # الحساب يتفتح على جهاز تاني، القيمة بتتغيّر، فتوكن الجهاز الأول بيتقفل من أول طلب
+    # — من غير ما نستنى صلاحيته تخلص. اخترنا «الأحدث يكسب» مش «الأول يمنع» عشان جهاز
+    # اتسرق أو اتكسر ما يقفلش الحساب على صاحبه لحد ما التوكن ينتهي.
+    previous_sid = user.session_id
+    sid = uuid.uuid4().hex
+    user.session_id = sid
+    user.session_client = (body.client or "web")[:16]
+    user.session_started_at = datetime.now(UTC).replace(tzinfo=None)
     token = create_access_token(
         {
             "sub": str(user.id),
+            "sid": sid,
             "role": role.name.value,
             "branch_id": user.branch_id,
             "rep_id": user.id if role.name.value == "sales_rep" else None,
@@ -83,10 +98,36 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
         ttl_seconds=ttl,
     )
     audit_service.record(
-        db, action="login.success", actor_user_id=user.id, entity_type="user", entity_id=user.id
+        db,
+        action="login.success",
+        actor_user_id=user.id,
+        entity_type="user",
+        entity_id=user.id,
+        after={"client": user.session_client, "replaced_session": bool(previous_sid)},
     )
     db.commit()
     return TokenResponse(access_token=token, expires_in=ttl)
+
+
+@router.post("/auth/logout")
+def logout(
+    current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
+) -> dict[str, bool]:
+    """Release the device slot so the next login anywhere starts clean.
+
+    Not the security boundary — a new login supersedes the old session on its own. This is so a
+    user who signs out properly does not leave a session hanging on the account.
+    """
+    user = db.get(User, current.id)
+    if user is not None:
+        user.session_id = None
+        user.session_client = None
+        user.session_started_at = None
+        audit_service.record(
+            db, action="logout", actor_user_id=user.id, entity_type="user", entity_id=user.id
+        )
+        db.commit()
+    return {"ok": True}
 
 
 @router.post("/auth/refresh", response_model=TokenResponse)
@@ -108,9 +149,12 @@ def refresh(
         )
     role = db.get(Role, user.role_id)
     ttl = settings.access_token_ttl
+    # نفس الجلسة بتتجدّد — ماتتبدّلش. لو ولّدنا `sid` جديدة هنا، التجديد الدوري نفسه
+    # كان هيبقى «دخول من جهاز تاني» في عين الجهاز اللي فاتح تاني تاب.
     token = create_access_token(
         {
             "sub": str(user.id),
+            "sid": user.session_id,
             "role": role.name.value,
             "branch_id": user.branch_id,
             "rep_id": user.id if role.name.value == "sales_rep" else None,

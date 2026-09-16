@@ -174,9 +174,12 @@ def _assert_lines_available(
                     f"المتاح {available} أقل من المطلوب {needed} — فيه {held} محجوزة لعميل تاني "
                     f"(صنف {item_id}، {kind.value} {loc_id})."
                 )
+            # نفس جملة `post_movement` بالحرف — الرفض ده بيسبقه بخطوة واحدة، ومالوش
+            # سبب يتكلّم بلغة تانية. اللي كان مكتوب هنا («No-negative-stock: on-hand 0
+            # < requested out 5 (item 2063, warehouse 37)») كان بيوصل للمندوب في شاشة
+            # المزامنة على تليفونه بالشكل ده بالظبط: رقم صنف مايعرفوش وجملة إنجليزية.
             raise stock_service.StockError(
-                f"No-negative-stock: on-hand {on_hand} < requested out {needed} "
-                f"(item {item_id}, {kind.value} {loc_id})."
+                stock_service.not_enough_message(db, item_id, kind, loc_id, available, needed)
             )
 
 
@@ -388,7 +391,21 @@ def create_sale(
     if replace_invoice_id and existing is None:
         raise SalesError("الفاتورة اللي بتتعدّل مش موجودة.")
 
+    # **حساب العميل قبل الفاتورة دي — بيتقفل هنا، قبل ما القيد يترحّل.**
+    #
+    # الورقة اللي بتتسلّم للعميل بتقول «الحساب السابق»، والرقم ده بيتغيّر مع كل حركة
+    # بعده. لو اتحسب وقت الطباعة، نسخة تانية من نفس المستند الشهر الجاي بتقول رقم تاني
+    # — واللي بيقارن الورقتين بيلاقي تناقض مالوش تفسير. فبيتقرا **دلوقتي** ويتخزّن.
+    #
+    # وبيتقاس على حسابات العميل كلها مش على حساب الخط ده وحده: اللي العميل بيسأل عنه
+    # وهو واقف هو «عليّا كام»، مش «عليّا كام على الأبيض».
+    prior_balance = ledger_service.total_balance_of(
+        db,
+        [a.account_id for a in db.scalars(
+            select(CustomerAccount).where(CustomerAccount.customer_id == customer_id)).all()],
+    )
     invoice = existing or SalesInvoice(
+        prior_balance=prior_balance,
         document_number=_doc_number(db, SalesInvoice, "SINV"),
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,

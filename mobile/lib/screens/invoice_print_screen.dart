@@ -66,7 +66,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   Widget build(BuildContext context) {
     final inv = widget.invoice;
     final synced = (inv['synced'] as int?) == 1;
-    final title = synced ? (inv['document_number'] as String? ?? 'فاتورة') : 'مسودّة فاتورة';
+    final title = synced ? (inv['document_number'] as String? ?? 'طلب بيع') : 'طلب بيع';
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: _loading
@@ -157,6 +157,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final total = (inv['total'] as num?)?.toDouble() ?? 0;
     final cash = (inv['cash_amount'] as num?)?.toDouble() ?? 0;
     final credit = (inv['credit_amount'] as num?)?.toDouble() ?? 0;
+    // حساب العميل قبل الطلب ده. `null` = مستند اتكتب قبل ما العمود ده يوجد —
+    // الورقة ساعتها بتقول اللي كانت بتقوله زي ما هي، مش بتخترع صفر.
+    final prev = (inv['prev_balance'] as num?)?.toDouble();
     final family = inv['family'] as String?;
     // الكوبونات المصروفة مع الفاتورة. من غيرها الفاتورة اللي كوبونات بس بتطلع ورقة
     // فاضية بإجمالي صفر — والعميل ماخد دفتر في إيده والورقة مش قايلة حاجة عنه.
@@ -209,11 +212,19 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                                 fontWeight: pw.FontWeight.bold,
                                 color: PdfColors.white)),
                       pw.Text(
-                          // الورقة بتقول عن نفسها إيه هي. «فاتورة بيع» على ورقة
-                          // مالهاش أصناف بتخلي اللي بيمسكها يدوّر على بضاعة مافيش.
+                          // **«طلب بيع» مش «فاتورة بيع».**
+                          //
+                          // الورقة دي بتتكتب في الشارع وبتتطبع من تليفون المندوب.
+                          // كلمة «فاتورة» عليها بتخلّيها تقرا كمستند ضريبي، وهي
+                          // مش كده: الفاتورة الرسمية بتطلع من المكتب بعد ما المستند
+                          // يترحّل. الورقة اللي في إيد العميل بتقول اتفقنا على إيه،
+                          // مش بتقوم مقام ورق قانوني.
+                          //
+                          // والورقة اللي مالهاش أصناف بتقول إنها كوبونات — كلمة
+                          // «بيع» عليها بتخلي اللي بيمسكها يدوّر على بضاعة مافيش.
                           _lines.isEmpty && coupons.isNotEmpty
                               ? 'إذن تسليم كوبونات'
-                              : 'فاتورة بيع',
+                              : 'طلب بيع',
                           style: const pw.TextStyle(
                               fontSize: 11, color: PdfColors.white)),
                     ],
@@ -270,7 +281,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 pw.SizedBox(width: 12),
                 pw.Expanded(
                   child: pw.Column(children: [
-                    _row('نوع الفاتورة', family ?? '—'),
+                    _row('نوع الطلب', family ?? '—'),
                     _row('التاريخ', '${inv['invoice_date']}'),
                   ]),
                 ),
@@ -392,11 +403,24 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
                   borderRadius: pw.BorderRadius.circular(4),
                 ),
+                // **الحساب كامل، مش رقم الطلب لوحده.**
+                //
+                // كانت بتقول «الباقي على العميل» وتقصد آجل الطلب ده بس. والعميل
+                // اللي عليه حساب من قبل بيقرا الرقم ده على إنه كل اللي عليه، فبيدفع
+                // على أساسه ويتفاجئ بعدين. فالورقة بقت بتقول اللي المندوب بيقوله
+                // بلسانه: كان عليك كذا، والطلب ده بكذا، ودفعت كذا، فالباقي كذا.
+                //
+                // و«الحساب السابق» بيتقرا من المستند نفسه (`prev_balance`) — اتخزّن
+                // ساعة الحفظ. قراءته من كاش العملاء وقت الطباعة بترجّع رقم تاني بعد
+                // أي مزامنة، فالورقة المتطبوعة تاني تقول غير الأولانية لنفس الطلب.
                 child: pw.Column(children: [
-                  _total('إجمالي الفاتورة', _money(total)),
+                  if (prev != null) _total('الحساب السابق', _money(prev)),
+                  _total('إجمالي الطلب', _money(total)),
                   _total('المدفوع نقداً', _money(cash)),
                   pw.Divider(height: 8, color: PdfColors.grey400),
-                  _total('الباقي على العميل', _money(credit), big: true),
+                  _total(prev == null ? 'الباقي على العميل' : 'إجمالي المستحق',
+                      _money(prev == null ? credit : prev + total - cash),
+                      big: true),
                 ]),
               ),
             ]),

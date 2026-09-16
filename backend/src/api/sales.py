@@ -30,6 +30,7 @@ from src.models.lookup import LookupOption
 from src.models.loyalty import CouponType
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
 from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse, WarehouseType
 from src.services import (
@@ -134,6 +135,9 @@ class SaleCreate(BaseModel):
     coupons: list[InvoiceCouponIn] = []
     # The day the sale happened — dates the document and its ledger entry alike.
     invoice_date: date | None = None
+    # حساب العميل قبل الفاتورة — اتقفل وقت الترحيل. `None` لفاتورة أقدم من العمود،
+    # والورقة ساعتها بتسيب السطر بدل ما تخترع صفر.
+    prior_balance: Decimal | None = None
     # مصروفات الفاتورة — billed (على العميل، بتزيد الصافي) أو operating (على الشركة).
     expenses: list[InvoiceExpenseIn] = []
     # (031) أبيض ولا بولي — which of the customer's accounts this invoice posts to.
@@ -435,6 +439,42 @@ def rep_bundle(
         .order_by(Item.name)
     ).all()
     on_hand = {r[0]: Decimal(str(r[5] or 0)) for r in held}
+
+    # البضاعة المحجوزة على إذن تحويل **معلّق** طالع من نفس المكان.
+    #
+    # الإذن مابيحرّكش مخزون لحد الاعتماد، فالعهدة بتفضل قايلة إن البضاعة موجودة — والمندوب
+    # اللي طلب يرجّع ٥ للمخزن يقدر يبيعهم وهو مستني الاعتماد، ولما المسؤول يعتمد الإذن
+    # بيقع لأن الرصيد راح. الاتنين اتعملوا صح كل واحد لوحده، والتصادم بيظهر عند حد تالت
+    # بعد ساعات.
+    #
+    # فالكمية دي بتنزل مع الحزمة، والتطبيق بيطرحها من المتاح للبيع — الرصيد اللي في إيد
+    # المندوب بيبقى صادق وهو في الشارع بدل ما يتصحّح عند الاعتماد.
+    pending_out: dict[int, Decimal] = {}
+    _pending_q = (
+        select(StockTransfer.id, StockTransfer.item_id, StockTransfer.quantity)
+        .where(StockTransfer.status == TransferStatus.pending,
+               StockTransfer.source_location_kind == store_kind,
+               StockTransfer.source_location_id == store_id)
+    )
+    _pending_rows = db.execute(_pending_q).all()
+    if _pending_rows:
+        _ids = [r[0] for r in _pending_rows]
+        _lines_by_transfer: dict[int, list[tuple[int, Decimal]]] = {}
+        for ln in db.scalars(
+            select(StockTransferLine).where(StockTransferLine.transfer_id.in_(_ids))
+        ).all():
+            _lines_by_transfer.setdefault(ln.transfer_id, []).append(
+                (ln.item_id, Decimal(str(ln.quantity))))
+        for tid, item_id, qty in _pending_rows:
+            # نفس قاعدة `transfer_service.approve`: السطور لو موجودة هي اللي بتتحرّك،
+            # وإذن قديم من غير سطور بيتحرّك برأسه. أي قاعدة تانية هنا معناها إن اللي
+            # اتحجز مش هو اللي هيتصرف.
+            rows = _lines_by_transfer.get(tid) or [(item_id, Decimal(str(qty or 0)))]
+            for line_item, line_qty in rows:
+                if line_item is None:
+                    continue
+                pending_out[line_item] = pending_out.get(line_item, Decimal("0")) + line_qty
+
     live = [r for r in held if on_hand[r[0]] > 0]
 
     # **أصناف كل مخزن** — اللي إذن التحويل بيطلب منها.
@@ -547,6 +587,8 @@ def rep_bundle(
                 "default_discount_pct": str(r[3]) if r[3] is not None else None,
                 "base_price": str(r[4]) if r[4] is not None else None,
                 "on_hand": str(on_hand[r[0]]),
+                # محجوز على إذن تحويل معلّق — بيتطرح من المتاح للبيع على الجهاز.
+                "pending_out": str(pending_out.get(r[0], Decimal("0"))),
                 "category": cat_label.get(r[6], r[6]),
                 "tier_prices": tiers.get(r[0], {}),
             }
@@ -787,6 +829,7 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         rep_id=inv.rep_id, external_document_number=inv.external_document_number,
         coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
         coupon_count=inv.coupon_count, invoice_date=inv.invoice_date,
+        prior_balance=getattr(inv, "prior_balance", None),
         expenses_billed=getattr(inv, "expenses_billed", None),
         expenses_operating=getattr(inv, "expenses_operating", None),
         notes=inv.notes,

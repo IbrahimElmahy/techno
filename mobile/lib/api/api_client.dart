@@ -316,6 +316,8 @@ class ApiClient {
           // فئته فاضية بيتخزّن بـnull، والشاشة بتلمّه تحت «بدون فئة» — مابيتخفيش.
           category: _text(i['category']),
           onHand: double.tryParse('${i['on_hand']}') ?? 0,
+          // محجوز على إذن تحويل معلّق. سيرفر قديم مابيرجّعهاش ⇒ صفر، والسلوك زي ما كان.
+          pendingOut: double.tryParse('${i['pending_out'] ?? 0}') ?? 0,
           basePrice: double.tryParse('${i['base_price']}'),
           defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
           tierPrices: {

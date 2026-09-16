@@ -5,6 +5,7 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'invoice_print_screen.dart';
+import 'sale_invoice_screen.dart';
 
 /// فواتير الجهاز — اللي راحت واللي لسه.
 ///
@@ -269,18 +270,48 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        // الطباعة متاحة للمسودّة كمان: المندوب بيسيب ورقة عند العميل وهو
-                        // في الشارع، والفاتورة ساعتها لسه في الطابور. الورقة نفسها بتقول
-                        // إنها مسودّة بدل ما تدّعي رقم مالوش وجود.
-                        TextButton.icon(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => InvoicePrintScreen(invoice: r)),
+                        // **اللي في الطابور بيتعدّل ومابيتطبعش. واللي وصل بيتطبع
+                        // ومابيتعدّلش.**
+                        //
+                        // الورقة اللي بتتطبع من مسودّة بتدّعي فاتورة مالهاش وجود عند
+                        // المكتب: الفاتورة ممكن تترفض عند الرفع (رصيد مايكفيش مثلاً)
+                        // أو تتعدّل قبل ما ترفع، والورقة اللي في إيد العميل ساعتها
+                        // بتقول حاجة تانية خالص.
+                        //
+                        // وأول ما توصل السيرفر بقت مستند بقيد ومخزون اتحرّك — تعديلها
+                        // على الجهاز بعد كده بيخلّي الورقة والدفتر يقولوا رقمين. التصحيح
+                        // ساعتها بمرتجع من المكتب، والاتنين بيبانوا.
+                        if (synced)
+                          TextButton.icon(
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => InvoicePrintScreen(invoice: r)),
+                            ),
+                            icon: const Icon(Icons.print_outlined),
+                            label: const Text('طباعة / PDF'),
+                          )
+                        else
+                          TextButton.icon(
+                            onPressed: () async {
+                              final changed = await Navigator.push<bool>(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                        SaleInvoiceScreen(existing: r)),
+                              );
+                              if (changed == true) _load();
+                            },
+                            icon: const Icon(Icons.edit_outlined),
+                            label: const Text('تعديل'),
                           ),
-                          icon: const Icon(Icons.print_outlined),
-                          label: const Text('طباعة / PDF'),
-                        ),
+                        if (!synced)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: Text('الطباعة بعد ما ترفع',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.black45)),
+                          ),
                         // **مافيش «امسح».** الفاتورة اللي لسه على الجهاز مستند اتكتب
                         // فعلاً: العميل استلم بضاعة وورقة، والرصيد اتحسب عليها في
                         // التطبيق. مسحها بتشيل الأثر الوحيد اللي بيقول إنها حصلت —

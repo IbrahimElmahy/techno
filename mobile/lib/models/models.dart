@@ -204,6 +204,19 @@ class SaleItem {
   /// كومة مش قايمة. الفئة هنا **عرض بس** — مالهاش أي دخل بالسعر ولا بالرصيد.
   final String? category;
   final double onHand;
+
+  /// الكمية المحجوزة على إذن تحويل **معلّق** طالع من عربيته.
+  ///
+  /// الإذن مابيحرّكش مخزون لحد الاعتماد، فالعهدة بتفضل قايلة إن البضاعة معاه. من غير
+  /// الرقم ده المندوب اللي طلب يرجّع ٥ للمخزن يبيعهم وهو مستني الاعتماد، والإذن بيقع
+  /// على المسؤول بعدين — والغلطة بتظهر عند حد تالت بعد ساعات.
+  final double pendingOut;
+
+  /// اللي ينفع يتباع فعلاً = اللي في العربية ناقص المحجوز على إذن معلّق.
+  double get sellable {
+    final v = onHand - pendingOut;
+    return v > 0 ? v : 0;
+  }
   final double? basePrice;
   final double defaultDiscountPct;
   final Map<String, double> tierPrices;
@@ -214,6 +227,7 @@ class SaleItem {
     this.unit,
     this.category,
     this.onHand = 0,
+    this.pendingOut = 0,
     this.basePrice,
     this.defaultDiscountPct = 0,
     this.tierPrices = const {},
@@ -229,6 +243,7 @@ class SaleItem {
         'unit': unit,
         'category': category,
         'on_hand': onHand,
+        'pending_out': pendingOut,
         'base_price': basePrice,
         'default_discount_pct': defaultDiscountPct,
         // الفئات بتتخزّن نص «فئة=سعر» مفصولين بفاصلة — عمود واحد بدل جدول تاني لحاجة
@@ -242,6 +257,7 @@ class SaleItem {
         unit: r['unit'] as String?,
         category: r['category'] as String?,
         onHand: (r['on_hand'] as num?)?.toDouble() ?? 0,
+        pendingOut: (r['pending_out'] as num?)?.toDouble() ?? 0,
         basePrice: (r['base_price'] as num?)?.toDouble(),
         defaultDiscountPct: (r['default_discount_pct'] as num?)?.toDouble() ?? 0,
         tierPrices: {

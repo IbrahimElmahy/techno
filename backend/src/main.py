@@ -351,6 +351,12 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("employee", "receivable_account_id", "BIGINT"),
     # (ما بعد البيع) الرقم التاني للمالك — الملف بيدّي رقمين لأغلبهم.
     ("owner", "phone2", "VARCHAR(32)"),
+    # حساب العميل قبل الفاتورة — بيتقفل وقت الترحيل عشان الورقة تقول نفس الرقم لو اتطبعت تاني.
+    ("sales_invoice", "prior_balance", "DECIMAL(18,2)"),
+    # جهاز واحد بس لكل حساب — الجلسة المقبولة حالياً، مصدرها، ووقت فتحها.
+    ("user", "session_id", "VARCHAR(64)"),
+    ("user", "session_client", "VARCHAR(16)"),
+    ("user", "session_started_at", "TIMESTAMP"),
     ("purchase_return", "expense_account_id", "BIGINT"),
     ("purchase_return", "external_document_number", "VARCHAR(40)"),
     ("purchase_return", "statement1", "VARCHAR(200)"),
@@ -955,9 +961,15 @@ def _ensure_columns(engine) -> None:
         cols = {c["name"] for c in inspector.get_columns(table)}
         if column in cols:
             continue
+        # الاسم بيتحوّط باللهجة: جدول اسمه `user` كلمة محجوزة في بوستجرس، و`ALTER TABLE
+        # user` بيقع بخطأ نحوي — والخطأ هنا بيتبلع عند مستوى info، فالعمود كان هيفضل
+        # ناقص في صمت على السيرفر وحده.
+        quote = engine.dialect.identifier_preparer.quote
         try:
             with engine.begin() as conn:
-                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                conn.execute(
+                    text(f"ALTER TABLE {quote(table)} ADD COLUMN {quote(column)} {ddl}")
+                )
         except Exception as exc:  # pragma: no cover — best-effort
             logging.getLogger("uvicorn.error").info(
                 "ensure column %s.%s skipped: %s", table, column, exc
