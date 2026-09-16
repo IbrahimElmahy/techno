@@ -26,6 +26,20 @@ from src.services import (
     audit_service, batch_service, serial_service, stock_service,
 )
 
+# نوع مستند حركة المخزون بتاعة إذن التحويل.
+#
+# **كان اسمين لنفس الحاجة.** الخدمة هنا بتكتب `"transfer"`، ونقل a5 كتب
+# `"stock_transfer"` — ٦٤٬٥٩٨ حركة على ٢٬٤٩١ إذن مقابل ٤٦ حركة على ٣.
+#
+# والإلغاء والحذف بيدوّروا على `"transfer"` بس. يعني إلغاء أي إذن منقول من a5 —
+# وده تسعة وتسعين في المية منهم — كان **بينجح من غير ما يرجّع بضاعة**: الحالة
+# بتبقى «ملغي» والحركات مكانها، فالمستند بيقول إن البضاعة رجعت وهي ماتحركتش.
+# اتقاس على نسخة من الإنتاج بإذن AL-T52: المصدر فضل ٣٣ والمفروض يبقى ٣٥.
+#
+# الاسم المختار هو اسم الجدول (`stock_transfer`) لأنه اللي الداتا كلها عليه —
+# والـ٤٦ التانيين اتوحّدوا معاه بـ`normalize_transfer_doc_type`.
+MOVEMENT_DOC = "stock_transfer"
+
 _ROUTE_KINDS = {
     TransferRoute.central_to_branch: (LocationKind.warehouse, LocationKind.warehouse),
     TransferRoute.central_to_rep: (LocationKind.warehouse, LocationKind.custody),
@@ -134,13 +148,13 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
             db, item_id=item_id, location_kind=transfer.source_location_kind,
             location_id=transfer.source_location_id, movement_type="transfer_out",
             direction=StockDirection.out, quantity=quantity, actor_user_id=approver_user_id,
-            source_doc_type="transfer", source_doc_id=transfer.id,
+            source_doc_type=MOVEMENT_DOC, source_doc_id=transfer.id,
         )
         in_mv = stock_service.post_movement(
             db, item_id=item_id, location_kind=transfer.dest_location_kind,
             location_id=transfer.dest_location_id, movement_type="transfer_in",
             direction=StockDirection.in_, quantity=quantity, actor_user_id=approver_user_id,
-            source_doc_type="transfer", source_doc_id=transfer.id,
+            source_doc_type=MOVEMENT_DOC, source_doc_id=transfer.id,
         )
         if line is not None:
             line.out_movement_id = out_mv.id
@@ -208,7 +222,7 @@ def _drop_movements(db, transfer, lines) -> None:
     db.flush()
 
     db.execute(sa_delete(StockMovement).where(
-        StockMovement.source_doc_type == "transfer",
+        StockMovement.source_doc_type == MOVEMENT_DOC,
         StockMovement.source_doc_id == transfer.id))
 
 

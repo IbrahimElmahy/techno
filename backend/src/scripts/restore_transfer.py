@@ -58,7 +58,7 @@ def main() -> None:
         if t.status not in REOPENABLE:
             raise SystemExit(f"الإذن حالته «{t.status.value}» — الملغي والمرفوض بس هما اللي يترجعوا.")
         left = db.scalar(select(func.count(StockMovement.id)).where(
-            StockMovement.source_doc_type == "transfer",
+            StockMovement.source_doc_type == transfer_service.MOVEMENT_DOC,
             StockMovement.source_doc_id == t.id))
         if left:
             raise SystemExit(f"الإذن لسه عليه {left} حركة — لو اترجّع هتتكتب مرتين.")
@@ -104,7 +104,7 @@ def main() -> None:
         print()
         print(f"رجع: {t.document_number} حالته «{t.status.value}»")
         n = db.scalar(select(func.count(StockMovement.id)).where(
-            StockMovement.source_doc_type == "transfer",
+            StockMovement.source_doc_type == transfer_service.MOVEMENT_DOC,
             StockMovement.source_doc_id == t.id))
         print(f"حركات اتكتبت: {n}")
     finally:
