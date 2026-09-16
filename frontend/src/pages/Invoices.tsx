@@ -36,6 +36,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
+import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -100,6 +101,8 @@ export default function Invoices() {
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
   const [editingInvoice, setEditingInvoice] = useState<{ id: number; voided: boolean } | null>(null);
+  // بصمة المستند لحظة ما اتفتح للتعديل — المرجع اللي «اتغيّر ولا لأ؟» بيتقاس عليه.
+  const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
 
   // Forms
   const [createForm] = Form.useForm();
@@ -576,6 +579,7 @@ export default function Invoices() {
     setViewInvoice(null);
     setViewReturns([]);
     setEditingInvoice(null);
+    setOpenedFingerprint(null);
     setLines([]);
     setCouponRows([blankCoupon()]);
     setCustomerCoupons([]);
@@ -602,6 +606,45 @@ export default function Invoices() {
     createForm.resetFields();
   };
 
+  /**
+   * بصمة المستند من حقوله اللي بتتعدّل — مش كل الحالة.
+   *
+   * `key` بتاع السطر متولّد من `Date.now()` فبيتغيّر مع كل إعادة بناء، والرصيد والأسعار
+   * المحمّلة بتتحدّث من السيرفر لوحدها. الحاجات دي لو دخلت البصمة، كل فاتورة محفوظة
+   * هتبان متغيّرة أول ما تتفتح — وهي دي المشكلة اللي بنحلها.
+   */
+  const fingerprintOf = (v: {
+    lines: SaleLineItem[]; discountPct: any; cashAmount: any; invoiceDate: any;
+    family: any; couponRows: any[]; form: any;
+  }) => fingerprint({
+    lines: v.lines.map((l) => ({
+      item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
+      fixed_discount: l.fixed_discount, variable_discount: l.variable_discount,
+      warehouse_id: l.warehouse_id, unit: l.unit, tier: l.tier, serials: l.serials,
+    })),
+    discountPct: v.discountPct,
+    cashAmount: v.cashAmount,
+    invoiceDate: v.invoiceDate ? dayjs(v.invoiceDate).format('YYYY-MM-DD') : null,
+    family: v.family,
+    coupons: (v.couponRows || []).map((c: any) => ({
+      coupon_kind: c.coupon_kind, count: c.count,
+      serial_from: c.serial_from, serial_to: c.serial_to,
+    })),
+    form: {
+      customer_id: v.form?.customer_id, rep_id: v.form?.rep_id,
+      external_document_number: v.form?.external_document_number,
+      notes: v.form?.notes, cost_center_id: v.form?.cost_center_id,
+      cost_center_distribution: v.form?.cost_center_distribution,
+      statement1: v.form?.statement1, statement2: v.form?.statement2,
+      statement3: v.form?.statement3,
+    },
+  });
+
+  const currentFingerprint = () => fingerprintOf({
+    lines, discountPct, cashAmount, invoiceDate, family: invoiceFamily,
+    couponRows, form: createForm.getFieldsValue(),
+  });
+
   // Close the create page and clear it, so reopening starts fresh.
   /**
    * «رجوع» بيسأل قبل ما الشغل يضيع.
@@ -613,19 +656,30 @@ export default function Invoices() {
    * والسؤال ساعتها عقبة مالهاش سبب.
    */
   const closeCreate = () => {
-    const hasWork = !viewOnly
-      && (lines.length > 0 || selectedCustomerId != null || Number(cashAmount || 0) > 0);
-    if (!hasWork) { resetDocument(); setCreateVisible(false); return; }
+    const leave = () => { resetDocument(); setCreateVisible(false); };
+    const verdict = verdictOnLeave({
+      readOnly: viewOnly,
+      savedDocument: editingInvoice != null,
+      now: currentFingerprint(),
+      whenOpened: openedFingerprint,
+      hasWork: lines.length > 0 || selectedCustomerId != null || Number(cashAmount || 0) > 0,
+    });
+    if (verdict === 'silent') { leave(); return; }
     Modal.confirm({
-      title: 'تسيب المستند؟',
+      title: verdict === 'confirm-edit' ? 'تسيب التعديل؟' : 'تسيب المستند؟',
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
-      content: lines.length
-        ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} ج.م — هيروحوا ومش هيرجعوا.`
-        : 'اللي كتبته هيروح ومش هيرجع.',
-      okText: 'اخرج واسيبه',
+      // الفاتورة المحفوظة مش بتضيع — اللي بيضيع هو التعديل اللي مااتحفظش. والجملة
+      // القديمة («فيه ٥ صنف هيروحوا ومش هيرجعوا») كانت بتقول العكس على مستند موجود
+      // على السيرفر، فاللي بيقراها بيفتكر إنه بيمسح فاتورة.
+      content: verdict === 'confirm-edit'
+        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
+        : lines.length
+          ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} ج.م — هيروحوا ومش هيرجعوا.`
+          : 'اللي كتبته هيروح ومش هيرجع.',
+      okText: verdict === 'confirm-edit' ? 'اخرج من غير حفظ' : 'اخرج واسيبه',
       okButtonProps: { danger: true },
-      cancelText: 'أكمّل المستند',
-      onOk: () => { resetDocument(); setCreateVisible(false); },
+      cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
+      onOk: leave,
     });
   };
 
@@ -1461,25 +1515,47 @@ export default function Invoices() {
       // فالورقة الراجعة بعد شهر بتترفض. `coupon_rows` سايبة كمان عشان لو رد قديم
       // متكاش في مكان تاني.
       const couponSrc = det.coupons ?? det.coupon_rows;
-      if (couponSrc && couponSrc.length) {
-        setCouponRows(couponSrc.map((cr: any) => ({
+      // بيتبني في متغيّر الأول عشان البصمة تاخد نفس الصفوف اللي الشاشة اتعبّت بيها.
+      const loadedCoupons = (couponSrc && couponSrc.length)
+        ? couponSrc.map((cr: any) => ({
           key: cr.id || String(Math.random()),
           coupon_kind: cr.coupon_kind,
           count: cr.count,
           serial_from: cr.serial_from,
           serial_to: cr.serial_to,
-        })));
-      } else if (det.coupon_serial_from || det.coupon_serial_to) {
-        setCouponRows([{
-          key: '1',
-          coupon_kind: det.coupon_kind || undefined,
-          count: det.coupon_count,
-          serial_from: det.coupon_serial_from,
-          serial_to: det.coupon_serial_to,
-        }]);
-      } else {
-        setCouponRows([blankCoupon()]);
-      }
+        }))
+        : (det.coupon_serial_from || det.coupon_serial_to)
+          ? [{
+            key: '1',
+            coupon_kind: det.coupon_kind || undefined,
+            count: det.coupon_count,
+            serial_from: det.coupon_serial_from,
+            serial_to: det.coupon_serial_to,
+          }]
+          : [blankCoupon()];
+      setCouponRows(loadedCoupons);
+
+      // البصمة بتتاخد من القيم اللي لسه اتبنت فوق، مش من الحالة: `setLines` وإخواته
+      // مابيتنفّذوش في نفس اللفّة، فقراية الحالة هنا بترجّع اللي كان قبل الفتح.
+      setOpenedFingerprint(fingerprintOf({
+        lines: refilled,
+        discountPct: Number(det.variable_discount_pct ?? det.discount_pct ?? 0),
+        cashAmount: Number(det.cash_amount) || 0,
+        invoiceDate: dayjs(det.invoice_date || det.created_at || undefined),
+        family: det.family || null,
+        couponRows: loadedCoupons,
+        form: {
+          customer_id: det.customer_id,
+          rep_id: det.rep_id,
+          external_document_number: det.external_document_number,
+          notes: det.notes,
+          cost_center_id: (det as any).cost_center_id ?? null,
+          cost_center_distribution: (det as any).cost_center_distribution ?? null,
+          statement1: det.statement1,
+          statement2: det.statement2,
+          statement3: det.statement3,
+        },
+      }));
 
       setCreateVisible(true);
     } catch (err: any) {

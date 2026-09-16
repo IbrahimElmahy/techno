@@ -34,6 +34,7 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import { money } from '../utils/money';
+import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -302,6 +303,8 @@ export default function Purchases() {
    * بيفرّق بينهم هو إن الحفظ بيعكس القديمة الأول.
    */
   const [editingId, setEditingId] = useState<number | null>(null);
+  // بصمة الفاتورة لحظة ما اتفتحت للتعديل — مرجع «اتغيّر ولا لأ؟». `null` = مستند جديد.
+  const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   /** الفاتورة اللي معروضة في بوباب الطباعة — معاينة، مش صفحة. */
   const [preview, setPreview] = useState<PurchaseDetail | null>(null);
@@ -486,7 +489,7 @@ export default function Purchases() {
       setPurchaseDate((det as any).purchase_date
         ? dayjs((det as any).purchase_date)
         : ((det as any).created_at ? dayjs((det as any).created_at) : dayjs()));
-      setPurchaseItems((det.lines || []).map((l: any, i: number) => ({
+      const loadedItems: PurchaseItem[] = (det.lines || []).map((l: any, i: number) => ({
         key: `${Date.now()}-${i}`,
         item_id: l.item_id,
         quantity: Number(l.quantity) || null,
@@ -495,12 +498,31 @@ export default function Purchases() {
         discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
         fixed_discount_pct: null,
         warehouse_id: l.line_location_id ?? det.location_id ?? null,
-      })));
+      }));
+      setPurchaseItems(loadedItems);
       setStickyWarehouseId(((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
       [...new Set((det.lines || []).map((l: any) => l.item_id))].forEach((id) => fetchUnits(id as number));
       setCashAmount(Number(det.cash_amount) || 0);
       setCreditAmount(Number(det.credit_amount) || 0);
       setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
+      // البصمة بتتاخد حتى والشاشة للقراية: اللي هيدوس «تعديل» بعد كده محتاج مرجع
+      // يتقارن عليه، وإلا أي خروج بعد الفتح هيسأل من غير ما يتغيّر حاجة.
+      setOpenedFingerprint(fingerprintOf({
+        items: loadedItems,
+        variableDiscount: Number((det as any).variable_discount_pct) || 0,
+        cashAmount: Number(det.cash_amount) || 0,
+        creditAmount: Number(det.credit_amount) || 0,
+        purchaseDate: (det as any).purchase_date
+          ? dayjs((det as any).purchase_date)
+          : ((det as any).created_at ? dayjs((det as any).created_at) : dayjs()),
+        form: {
+          supplier_id: det.supplier_id,
+          external_document_number: (det as any).external_document_number || '',
+          notes: (det as any).notes || '',
+          cost_center_id: (det as any).cost_center_id ?? null,
+          cost_center_distribution: (det as any).cost_center_distribution ?? null,
+        },
+      }));
       setCreateVisible(true);
     } catch (err: any) {
       console.error(err);
@@ -933,7 +955,7 @@ export default function Purchases() {
     });
     setPurchaseDate((det as any).purchase_date
       ? dayjs((det as any).purchase_date) : dayjs());
-    setPurchaseItems((det.lines || []).map((l: any, i: number) => ({
+    const loadedItems: PurchaseItem[] = (det.lines || []).map((l: any, i: number) => ({
       key: `${Date.now()}-${i}`,
       item_id: l.item_id,
       quantity: Number(l.quantity) || null,
@@ -942,7 +964,8 @@ export default function Purchases() {
       discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
       fixed_discount_pct: null,
       warehouse_id: l.line_location_id ?? det.location_id ?? null,
-    })));
+    }));
+    setPurchaseItems(loadedItems);
     setStickyWarehouseId(
       ((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
     [...new Set((det.lines || []).map((l: any) => l.item_id))]
@@ -951,6 +974,19 @@ export default function Purchases() {
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
     setDetail(null);
+    // البصمة من القيم اللي لسه اتبنت فوق مش من الحالة: الـsetters مابيتنفّذوش في نفس
+    // اللفّة، فقراية الحالة هنا بترجّع اللي كان قبل الفتح.
+    setOpenedFingerprint(fingerprintOf({
+      items: loadedItems,
+      variableDiscount: Number((det as any).variable_discount_pct) || 0,
+      cashAmount: Number(det.cash_amount) || 0,
+      creditAmount: Number(det.credit_amount) || 0,
+      purchaseDate: (det as any).purchase_date ? dayjs((det as any).purchase_date) : dayjs(),
+      form: {
+        supplier_id: det.supplier_id,
+        warehouse_id: det.location_id ?? undefined,
+      },
+    }));
     setCreateVisible(true);
   };
 
@@ -1169,15 +1205,80 @@ export default function Purchases() {
 
 
 
-  /** رجوع للسجل — والشاشة بترجع فاضية عشان الفاتورة الجاية تبدأ من نضيف. */
+  /** بصمة الفاتورة من حقولها اللي بتتعدّل — `key` بتاع السطر بره لأنه متولّد بالوقت. */
+  const fingerprintOf = (v: {
+    items: PurchaseItem[]; variableDiscount: any; cashAmount: any; creditAmount: any;
+    purchaseDate: any; form: any;
+  }) => fingerprint({
+    lines: v.items
+      .filter((l) => l.item_id !== null)
+      .map((l) => ({
+        item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
+        unit: l.unit, discount_pct: l.discount_pct,
+        fixed_discount_pct: l.fixed_discount_pct, warehouse_id: l.warehouse_id,
+      })),
+    variableDiscount: v.variableDiscount,
+    cashAmount: v.cashAmount,
+    creditAmount: v.creditAmount,
+    purchaseDate: v.purchaseDate ? dayjs(v.purchaseDate).format('YYYY-MM-DD') : null,
+    form: {
+      supplier_id: v.form?.supplier_id,
+      warehouse_id: v.form?.warehouse_id,
+      external_document_number: v.form?.external_document_number,
+      notes: v.form?.notes,
+      cost_center_id: v.form?.cost_center_id,
+      cost_center_distribution: v.form?.cost_center_distribution,
+    },
+  });
+
+  const currentFingerprint = () => fingerprintOf({
+    items: purchaseItems, variableDiscount, cashAmount, creditAmount, purchaseDate,
+    form: form.getFieldsValue(),
+  });
+
+  /**
+   * رجوع للسجل — وبيسأل الأول لو الخروج هيضيّع شغل.
+   *
+   * كان بيقفل على طول من غير أي سؤال: فاتورة شرا اتكتبت سطر سطر بتضيع بضغطة غلط على
+   * زرار في ركن الشاشة، ومافيش مسوّدة بتتحفظ لوحدها. وشاشة البيع كانت في الاتجاه
+   * التاني — بتسأل حتى على فاتورة محفوظة ماتغيّرش فيها حاجة. القاعدة واحدة دلوقتي
+   * (`utils/unsavedWork`): السؤال بيظهر لما الخروج **يكلّف** حاجة، وبس.
+   */
   const closeCreate = () => {
-    setCreateVisible(false);
-    setDetail(null);
-    setDocResult(null);
-    setNewStep(null);
-    // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
-    // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
-    setEditingId(null);
+    const leave = () => {
+      setCreateVisible(false);
+      setDetail(null);
+      setDocResult(null);
+      setNewStep(null);
+      // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
+      // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
+      setEditingId(null);
+      setOpenedFingerprint(null);
+    };
+    const typed = purchaseItems.filter((l) => l.item_id !== null);
+    const verdict = verdictOnLeave({
+      readOnly: viewOnly,
+      savedDocument: editingId != null,
+      now: currentFingerprint(),
+      whenOpened: openedFingerprint,
+      hasWork: typed.length > 0
+        || form.getFieldValue('supplier_id') != null
+        || Number(cashAmount || 0) > 0,
+    });
+    if (verdict === 'silent') { leave(); return; }
+    Modal.confirm({
+      title: verdict === 'confirm-edit' ? 'تسيب التعديل؟' : 'تسيب المستند؟',
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: verdict === 'confirm-edit'
+        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
+        : typed.length
+          ? `فيه ${typed.length} صنف مكتوب — هيروحوا ومش هيرجعوا.`
+          : 'اللي كتبته هيروح ومش هيرجع.',
+      okText: verdict === 'confirm-edit' ? 'اخرج من غير حفظ' : 'اخرج واسيبه',
+      okButtonProps: { danger: true },
+      cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
+      onOk: leave,
+    });
   };
 
   /**
