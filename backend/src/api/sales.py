@@ -260,6 +260,13 @@ class SalesInvoiceOut(BaseModel):
     # عائلة الفاتورة — أبيض ولا تكنو. مش «النوع»: دي بتقول الفاتورة على أنهي حساب، والنوع
     # بيقول العميل ده إيه. الفلتر في الشريط بيشتغل عليها.
     family: str | None = None
+    # حساب العميل قبل الفاتورة دي، زي ما اتقفل وقت الترحيل.
+    #
+    # كان بيتحسب ويتخزّن في العمود، وبعدين مايخرجش من هنا خالص: الباني بيبعته
+    # والموديل مافيهوش الحقل، فـPydantic بيرميه في صمت. النتيجة إن الورقة اللي
+    # بتتطبع من الويب مالهاش طريقة تعرف الرقم أصلاً، والتليفون اللي بيقرا فاتورة
+    # مش هو اللي كتبها بيطبع من غير سطر «الحساب السابق».
+    prior_balance: Decimal | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
 
@@ -292,6 +299,13 @@ class SalesInvoiceDetail(BaseModel):
     cost_center_id: int | None = None
     # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
     cost_center_distribution: dict[str, Decimal] | None = None
+    # حساب العميل قبل الفاتورة دي، زي ما اتقفل وقت الترحيل.
+    #
+    # كان بيتحسب ويتخزّن في العمود، وبعدين مايخرجش من هنا خالص: الباني بيبعته
+    # والموديل مافيهوش الحقل، فـPydantic بيرميه في صمت. النتيجة إن الورقة اللي
+    # بتتطبع من الويب مالهاش طريقة تعرف الرقم أصلاً، والتليفون اللي بيقرا فاتورة
+    # مش هو اللي كتبها بيطبع من غير سطر «الحساب السابق».
+    prior_balance: Decimal | None = None
     lines: list[InvoiceLineOut]
     # The coupon books handed over, one row per kind — read back so the printed invoice can name
     # them instead of showing a bare range.
@@ -1253,6 +1267,7 @@ def get_sale(
         credit_amount=inv.credit_amount,
         cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
+        prior_balance=getattr(inv, "prior_balance", None),
         lines=[
             InvoiceLineOut(
                 item_id=line.item_id,

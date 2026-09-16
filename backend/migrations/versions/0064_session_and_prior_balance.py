@@ -12,6 +12,13 @@
 لو اتحسب وقت الطباعة، ورقة اتطبعت تاني بعد شهر بتقول رقم تاني لنفس المستند. بيفضل
 `NULL` للفواتير القديمة، والورقة ساعتها بتخفي السطر بدل ما تخترع صفر.
 
+## بتسأل الأول
+
+الترحيلة دي بتلحق أعمدة موجودة فعلاً في بعض القواعد: اللي اتبنت بـ`create_all` من
+الموديلات بعد ما `main` زوّدهم فيها الأعمدة دي خلقة، واللي من قبله مالهاش. فبتقرا
+الجدول وتزوّد الناقص بس — غير كده الترحيلة بتقع على
+«column already exists» على نص القواعد، وترحيلة بتقع على نص الأماكن مش ترحيلة.
+
 Revision ID: 0064_session_and_prior_balance
 Revises: 0063_stock_count_kind
 """
@@ -23,17 +30,33 @@ down_revision = "0063_stock_count_kind"
 branch_labels = None
 depends_on = None
 
+_COLUMNS = [
+    ("user", lambda: sa.Column("session_id", sa.String(64), nullable=True)),
+    ("user", lambda: sa.Column("session_client", sa.String(16), nullable=True)),
+    ("user", lambda: sa.Column("session_started_at", sa.DateTime(), nullable=True)),
+    ("sales_invoice", lambda: sa.Column("prior_balance", sa.Numeric(18, 2), nullable=True)),
+]
+
+
+def _existing(table: str) -> set[str]:
+    insp = sa.inspect(op.get_bind())
+    return {c["name"] for c in insp.get_columns(table)}
+
 
 def upgrade() -> None:
-    op.add_column("user", sa.Column("session_id", sa.String(64), nullable=True))
-    op.add_column("user", sa.Column("session_client", sa.String(16), nullable=True))
-    op.add_column("user", sa.Column("session_started_at", sa.DateTime(), nullable=True))
-    op.add_column("sales_invoice", sa.Column(
-        "prior_balance", sa.Numeric(18, 2), nullable=True))
+    for table in {t for t, _ in _COLUMNS}:
+        have = _existing(table)
+        for t, make in _COLUMNS:
+            if t != table:
+                continue
+            col = make()
+            if col.name not in have:
+                op.add_column(table, col)
 
 
 def downgrade() -> None:
-    op.drop_column("sales_invoice", "prior_balance")
-    op.drop_column("user", "session_started_at")
-    op.drop_column("user", "session_client")
-    op.drop_column("user", "session_id")
+    for table in {t for t, _ in _COLUMNS}:
+        have = _existing(table)
+        for t, make in reversed(_COLUMNS):
+            if t == table and make().name in have:
+                op.drop_column(table, make().name)
