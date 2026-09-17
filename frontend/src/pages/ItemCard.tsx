@@ -96,7 +96,13 @@ export default function ItemCard() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
+  /**
+   * **الفترة ممكن تكون نص فاضية.** `RangePicker` بيرجّع `[null, null]` أو `[Dayjs, null]`
+   * لما اللي بيستعمله يمسح طرف واحد، والنوع `[Dayjs, Dayjs]` بيخفي ده — فالفحص
+   * `if (range)` بيعدّي و`.format` بتنهار على `null`. نفس العطل اللي كان بيفضّي كشف
+   * الحساب. `fullRange()` هي المكان الوحيد اللي بيقرّر إن الفترة مكتملة.
+   */
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [movementType, setMovementType] = useState<string | undefined>();
   const [card, setCard] = useState<CardOut | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,15 +117,20 @@ export default function ItemCard() {
       .catch(console.error);
   }, []);
 
+  /** الطرفين مع بعض، أو `null` — الفترة النص مالهاش معنى هنا. */
+  const fullRange = (): [Dayjs, Dayjs] | null =>
+    (range && range[0] && range[1] ? [range[0], range[1]] : null);
+
   const load = async () => {
     if (!itemId) { setCard(null); return; }
     setLoading(true);
     try {
       const params: any = {};
       if (warehouseId) { params.location_kind = 'warehouse'; params.location_id = warehouseId; }
-      if (range) {
-        params.date_from = range[0].format('YYYY-MM-DD');
-        params.date_to = range[1].format('YYYY-MM-DD');
+      const r = fullRange();
+      if (r) {
+        params.date_from = r[0].format('YYYY-MM-DD');
+        params.date_to = r[1].format('YYYY-MM-DD');
       }
       if (movementType) params.movement_type = movementType;
       const res = await api.get(`/api/v1/items/${itemId}/card`, { params });
@@ -255,6 +266,9 @@ export default function ItemCard() {
         ? (docKindOf(r.source_doc_type)
             ? <DocumentLink kind={docKindOf(r.source_doc_type)!} id={id} size="small"
                 label={r.document_number || `#${id}`}
+                // التعديل للفاتورة اللي اتكتبت عندنا بس. المنقولة من a5
+                // (`sales_invoice`) بتتفتح للعرض: تعديلها بيخلّي نسختنا تفرق عن
+                // نظامهم وهما لسه شغّالين عليه.
                 allowEdit={r.source_doc_type === 'sale'} />
             : <Tag>{r.source_doc_type} #{id}</Tag>)
         : '-') },

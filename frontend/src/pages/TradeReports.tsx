@@ -39,7 +39,7 @@ type Level = 'document' | 'line';
 type GroupBy = 'none' | 'party' | 'item' | 'warehouse';
 
 const DOC_LABELS: Record<DocType, string> = {
-  sale: 'فواتير البيع',
+  sale: 'طلبات البيع',
   sale_return: 'مرتجعات البيع',
   purchase: 'فواتير الشراء',
   purchase_return: 'مرتجعات الشراء',

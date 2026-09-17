@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, TeamOutlined,
-  DeleteOutlined, ExclamationCircleOutlined,
+  DeleteOutlined, ExclamationCircleOutlined, EyeOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
@@ -246,6 +246,26 @@ export default function Warehouses() {
   };
 
   /**
+   * رجوع المخزن المخفي.
+   *
+   * الإخفاء كان طريق في اتجاه واحد: دوسة غلط على السلة الزرقا بتشيل المخزن من كل
+   * قايمة اختيار، ومافيش في الشاشة حاجة ترجّعه — الصف بيفضل مكتوب عليه «مخفي» وبس.
+   * والباك إند بيقبل `active: true` من الأول، فاللي كان ناقص هو الزرار.
+   *
+   * ومافيش سؤال قبلها عن قصد: الإظهار مابيمسحش حاجة ولا بيحرّك بضاعة — بيرجّع المخزن
+   * للقوايم، وأسوأ نتيجة ليه إنك تخفيه تاني بدوسة.
+   */
+  const onActivate = async (record: WarehouseRecord) => {
+    try {
+      await api.patch(`/api/v1/warehouses/${record.id}`, { active: true });
+      message.success(`رجع «${record.name}» للقوايم`);
+      fetchAll();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر إظهار المخزن');
+    }
+  };
+
+  /**
    * حذف المخزن — **للغلط في الإدخال بس، والإخفاء جنبه للباقي.**
    *
    * المخزن اللي عليه حركة اسمه على كل إذن تحويل وكل حركة مخزون؛ الباك إند بيعدّ
@@ -345,9 +365,14 @@ export default function Warehouses() {
           <Tooltip title="تعديل">
             <Button type="text" icon={<EditOutlined />} onClick={() => openEdit(record)} />
           </Tooltip>
-          {record.active && (
+          {record.active ? (
             <Tooltip title="إخفاء">
               <Button type="text" icon={<StopOutlined />} onClick={() => onDeactivate(record)} />
+            </Tooltip>
+          ) : (
+            <Tooltip title="إظهار">
+              <Button type="text" style={{ color: '#6AB42D' }} icon={<EyeOutlined />}
+                onClick={() => onActivate(record)} />
             </Tooltip>
           )}
           <Tooltip title="حذف نهائي">

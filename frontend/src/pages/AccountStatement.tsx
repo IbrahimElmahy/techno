@@ -84,7 +84,18 @@ export default function AccountStatement() {
   const [itemId, setItemId] = useState<number | undefined>(u0.item);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [warehouseId, setWarehouseId] = useState<number | undefined>(u0.wh);
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
+  /**
+   * **الفترة ممكن تكون نص فاضية، مش فاضية أو مكتملة وخلاص.**
+   *
+   * `RangePicker` بيرجّع `[null, null]` أو `[Dayjs, null]` لما اللي بيستعمله يمسح طرف
+   * واحد — والنوع المكتوب `[Dayjs, Dayjs] | null` بيخفي ده، فالفحص `if (range)` بيعدّي
+   * والسطر اللي بعده بينده `.isSame` على `null`. النتيجة انهيار غير ملتقط بيفضّي
+   * الشاشة كلها مش بيكسر خانة.
+   *
+   * `fullRange()` هي المكان الوحيد اللي بيقرّر «الفترة دي مكتملة ولا لأ» — وبترجّع
+   * الطرفين أو `null`، فمفيش حتة بتفترض من نفسها.
+   */
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(
     u0.from && u0.to ? [dayjs(u0.from), dayjs(u0.to)] : null,
   );
   const [expandedKeys, setExpandedKeys] = useState<readonly React.Key[]>([]);
@@ -118,9 +129,10 @@ export default function AccountStatement() {
       setLoading(true);
       try {
         const params: any = {};
-        if (range) {
-          params.date_from = range[0].format('YYYY-MM-DD');
-          params.date_to = range[1].format('YYYY-MM-DD');
+        const r = fullRange();
+        if (r) {
+          params.date_from = r[0].format('YYYY-MM-DD');
+          params.date_to = r[1].format('YYYY-MM-DD');
         }
         let res;
         if (accountId) {
@@ -142,9 +154,10 @@ export default function AccountStatement() {
     setLoading(true);
     try {
       const params: any = {};
-      if (range) {
-        params.date_from = range[0].format('YYYY-MM-DD');
-        params.date_to = range[1].format('YYYY-MM-DD');
+      const r = fullRange();
+      if (r) {
+        params.date_from = r[0].format('YYYY-MM-DD');
+        params.date_to = r[1].format('YYYY-MM-DD');
       }
       if (warehouseId) {
         params.location_kind = 'warehouse';
@@ -269,10 +282,15 @@ export default function AccountStatement() {
     },
     { label: 'السنة دي', get: () => [dayjs().startOf('year'), dayjs()] },
   ];
+  /** الطرفين مع بعض، أو `null` — الفترة النص مالهاش معنى هنا. */
+  const fullRange = (): [Dayjs, Dayjs] | null =>
+    (range && range[0] && range[1] ? [range[0], range[1]] : null);
+
   const presetActive = (p: { get: () => [Dayjs, Dayjs] }) => {
-    if (!range) return false;
+    const r = fullRange();
+    if (!r) return false;
     const [s, e] = p.get();
-    return range[0].isSame(s, 'day') && range[1].isSame(e, 'day');
+    return r[0].isSame(s, 'day') && r[1].isSame(e, 'day');
   };
 
   useEffect(() => {
@@ -491,9 +509,9 @@ export default function AccountStatement() {
         title: isItem ? 'كشف صنف' : 'كشف حساب',
         meta: [
           [isItem ? 'الصنف' : 'الحساب', statement.account_name ?? ''],
-          ...(range ? [[
+          ...(fullRange() ? [[
             'الفترة',
-            `${range[0].format('YYYY/MM/DD')} ← ${range[1].format('YYYY/MM/DD')}`,
+            `${fullRange()![0].format('YYYY/MM/DD')} ← ${fullRange()![1].format('YYYY/MM/DD')}`,
           ] as [string, string]] : []),
           ...(isItem && warehouseId
             ? [['المخزن',

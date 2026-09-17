@@ -195,7 +195,7 @@ def deactivate_component(
 def employee_salary(
     employee_id: int,
     on: date | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
     """هيكل الراتب الساري في يوم — ومعاه كل النسخ عشان الزيادات تتقري."""

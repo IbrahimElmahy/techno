@@ -14,20 +14,11 @@ import DateRangeFilter from './DateRangeFilter';
  */
 
 /** Fold the spelling variants Arabic users type interchangeably into one comparable form. */
-export function normalizeAr(value: any): string {
-  return String(value ?? '')
-    .replace(/[ً-ْٰ]/g, '')          // tashkeel
-    .replace(/[أإآٱ]/g, 'ا') // أ إ آ ٱ → ا
-    .replace(/ى/g, 'ي')                    // ى → ي
-    .replace(/ة/g, 'ه')                    // ة → ه
-    .replace(/ؤ/g, 'و')                    // ؤ → و
-    .replace(/ئ/g, 'ي')                    // ئ → ي
-    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)) // ٠-٩ → 0-9
-    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
+// اتنقلت لـ`utils/arabicSort` — نفس التوحيد بيستعمله الترتيب كمان، ونسختين منه معناها
+// إن البحث يلاقي صنف والترتيب يحطّه في مكان تاني. بتتصدّر من هنا كمان فاللي بيستوردها
+// من هنا مابيتلمسش.
+export { normalizeAr } from '../utils/arabicSort';
+import { normalizeAr } from '../utils/arabicSort';
 
 export interface FilterDef {
   key: string;

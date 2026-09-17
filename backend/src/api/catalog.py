@@ -5,9 +5,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, status, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
+from src.lib import arabic
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import (
     CAP_CATALOG_READ,
@@ -28,7 +30,7 @@ from src.models.catalog import (
     PriceTier,
     SerialStatus,
 )
-from src.models.stock import LocationKind
+from src.models.stock import LocationKind, StockMovement
 from src.lib import item_card as item_card_lib
 from src.services import audit_service, item_profile_service, serial_service
 from src.services.serial_service import SerialError
@@ -142,7 +144,7 @@ def list_items(
     stock_filter: str | None = None,  # all | in_stock | out_of_stock | negative | moved
     limit: int | None = None,
     offset: int = 0,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemOut]:
     """List items with search + filters; each row carries its total on-hand quantity.
@@ -154,6 +156,34 @@ def list_items(
         select(Item), q=q, kind=kind.value if kind else None, category=category,
         active=active, warehouse_id=warehouse_id,
     )
+    # **عزل الفروع — الكتالوج مشترك والصنف مالوش عمود فرع.**
+    #
+    # `Item` مافيهوش `branch_id`: الفرعين بيتشاركوا الجدول، والنقل بيفرّق بينهم ببادئة
+    # الكود (`AL-`) — وهي قاعدة عايشة في سكربتات الاستيراد مش في الموديل. فمستخدم
+    # العلياء كان بيفتح كشف الأصناف ويلاقي أصناف أكتوبر معاه، ويفتح كارت واحد منهم
+    # فيلاقي مخازن فرع تاني.
+    #
+    # **والفرع بيتحدد بالحركة مش بالكود:** الحركة بتحمل `branch_id` من مكانها، فـ«الصنف
+    # اللي اتحرّك في الفرع ده» حقيقة مكتوبة في الداتا. نفس القاعدة اللي حزمة المندوب
+    # بتستعملها في `sales.rep_bundle`، فمافيش تعريفين للفرع بيفرقوا مع الوقت.
+    #
+    # ⚠️ **والصنف اللي مااتحركش خالص بيفضل ظاهر للكل.** اتقاس: ١٬٥٣٢ صنف من ٢٬٦٤٠ مالهمش
+    # ولا حركة. الفلترة بالحركة لوحدها كانت هتخفيهم من الفرعين — والصنف الجديد اللي
+    # لسه متسجّل ومااتباعش يختفي من الكشف معناه إن محدش يقدر يبيعه أصلاً. الفرع بيخفي
+    # شغل الفرع التاني، مش الكتالوج الساكن.
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is not None:
+        moved_here = (select(StockMovement.item_id)
+                      .where(or_(StockMovement.branch_id == branch_id,
+                                 StockMovement.branch_id.is_(None)))
+                      .distinct())
+        moved_anywhere = select(StockMovement.item_id).distinct()
+        stmt = stmt.where(or_(Item.id.in_(moved_here),
+                              Item.id.not_in(moved_anywhere)))
+    # **الترتيب أبجدي عربي، ومحسوب في SQL.** الكشف كان راجع بترتيب القاعدة — يعني
+    # بترتيب الإدخال فعلياً — واللي بيدوّر على اسم في ٢٬٦٤٠ صنف مالوش طريق غير الفلتر.
+    # والتوحيد في `src.lib.arabic` عشان الهمزة والتاء المربوطة مايفرّقوش الاسم الواحد.
+    stmt = stmt.order_by(arabic.sort_key(Item.name), Item.name)
     # فلتر المخزون بيشتغل على الصفوف بعد ما تتحمّل، فالتقطيع بيتم بعده مش قبله — وإلا
     # «الأصناف اللي رصيدها صفر» بترجع أقل من اللي فيه فعلاً.
     if limit is not None and not stock_filter:
@@ -707,7 +737,7 @@ def item_card(
     date_to: str | None = Query(None),
     movement_type: str | None = Query(None),
     direction: str | None = Query(None, description="in | out"),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     """كارت الصنف — every movement with the balance before and after it.
@@ -720,6 +750,7 @@ def item_card(
             db, item_id=item_id, location_kind=location_kind, location_id=location_id,
             date_from=date_from, date_to=date_to, movement_type=movement_type,
             direction=direction,
+            branch_id=branch_scope.visible_branch_id(current),
         )
     except item_card_lib.ItemCardError as exc:
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { compareArabic, sortByName } from '../utils/arabicSort';
 import {
   Button, Col, Empty, Input, Row, Space, Tag
 } from 'antd';
@@ -51,9 +52,26 @@ export default function ProductPickerModal({
   const [cursor, setCursor] = useState(0);
   const [bulk, setBulk] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
-  // بيبتدي مطفي — والفلتر ده بيخفي أصناف، فاللي بيخفي لازم يكون المستخدم هو اللي طلبه.
-  // شغّال بالافتراضي معناه إن الصنف بيختفي من القايمة من غير ما حد يعرف ليه.
-  const [onlyAvailableStock, setOnlyAvailableStock] = useState(false);
+  /**
+   * **بيبتدي شغّال: الصنف اللي مافيش منه حاجة في المخزن مابيظهرش.**
+   *
+   * كان بيبتدي مطفي، بحجّة إن الفلتر بيخفي أصناف فلازم المستخدم هو اللي يطلبه. والحجّة
+   * دي صح في المطلق وغلط هنا: اللي فاتح الشباك بيبيع من مخزن بعينه، والصنف اللي رصيده
+   * صفر فيه **مايتباعش**. فالقايمة الكاملة بتحطّ قدامه مية صنف يقدر يختار منهم تلاتين،
+   * وبتخلّيه يلاقي اللي بيدوّر عليه وسط أصناف مالهاش لازمة في اللحظة دي.
+   *
+   * والإخفاء **مش صامت**: الزرار فوق مكتوب عليه «✓ المتاح في المخزن فقط» وهو مفعّل،
+   * وضغطة واحدة بترجّع الكتالوج كله. اللي بيدوّر على صنف مش لاقيه بيشوف السبب قدامه.
+   *
+   * والاختيار بيتفتكر في المتصفح: اللي فتح الكتالوج كله عشان يشوف صنف ناقص، مش عايز
+   * يعيد الضغطة مع كل فاتورة.
+   */
+  const [onlyAvailableStock, setOnlyAvailableStock] = useState(() => {
+    try {
+      const v = localStorage.getItem('picker.onlyAvailable');
+      return v === null ? true : v === '1';
+    } catch { return true; }
+  });
   const searchRef = useRef<any>(null);
 
   /** `availableFor` بتوصل دالة جديدة كل رندر من الشاشة اللي بتنده الشباك، ولو دخلت
@@ -67,7 +85,14 @@ export default function ProductPickerModal({
     let list = activeCategory ? products.filter((p) => p.category === activeCategory) : products;
     const needle = normalizeAr(query);
     if (needle) {
-      list = products.filter((p) => normalizeAr(p.name).includes(needle)
+      // البحث جوّه الفئة المختارة، مش في الكتالوج كله.
+      //
+      // كان بيبتدي من `products` تاني، فالفئة اللي المستخدم دوسها بتتلغي أول ما يكتب حرف —
+      // يدوّر على «كوع» وهو واقف على فئة واحدة فيرجع له كل كوع في الشركة. اللي بيختار فئة
+      // قال بيدوّر فين؛ الكتابة بعدها تضييق للنطاق ده مش إلغاء له.
+      //
+      // والبحث في الكتالوج كله لسه موجود — بـ«كل الفئات» فوق قايمة الفئات.
+      list = list.filter((p) => normalizeAr(p.name).includes(needle)
         || normalizeAr(p.code || '').includes(needle));
     }
     const avail = availableRef.current;
@@ -77,7 +102,13 @@ export default function ProductPickerModal({
         return av === null || av > 0;
       });
     }
-    return list;
+    // **الترتيب أبجدي عربي، آخر خطوة قبل العرض.**
+    //
+    // القايمة جاية من الكتالوج بترتيب السيرفر، وبعد الفلترة بتفضل على ترتيبه — بس اللي
+    // بيدوّر بعينه في شباك فيه آلاف الصنف محتاج الاسم يكون في مكانه. والتوحيد في
+    // `normalizeAr` عشان الهمزة والتاء المربوطة مايفرّقوش الاسم الواحد، وفي `numeric`
+    // عشان «ماسورة 2» تيجي قبل «ماسورة 10» مش بعدها.
+    return sortByName(list, (p) => p.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, activeCategory, products, disableOutOfStock, onlyAvailableStock]);
 
@@ -147,7 +178,9 @@ export default function ProductPickerModal({
         <div style={{ flex: 1, minWidth: 260 }}>
           <Input
             ref={searchRef} size="large" allowClear value={query}
-            placeholder="ابحث بالاسم أو الكود — أو اختر فئة من جنب"
+            placeholder={activeCategory
+              ? `ابحث في «${categoryLabels[activeCategory] || activeCategory}» بالاسم أو الكود`
+              : 'ابحث بالاسم أو الكود — أو اختر فئة من جنب'}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
           />
@@ -159,7 +192,12 @@ export default function ProductPickerModal({
           <Button
             type={onlyAvailableStock ? 'primary' : 'default'}
             ghost={onlyAvailableStock}
-            onClick={() => setOnlyAvailableStock(!onlyAvailableStock)}
+            onClick={() => {
+              const next = !onlyAvailableStock;
+              setOnlyAvailableStock(next);
+              try { localStorage.setItem('picker.onlyAvailable', next ? '1' : '0'); }
+              catch { /* متصفح مقفّل التخزين — الاختيار بيعيش للجلسة دي */ }
+            }}
           >
             {onlyAvailableStock ? '✓ المتاح في المخزن فقط' : 'عرض كل الأصناف'}
           </Button>
@@ -169,11 +207,23 @@ export default function ProductPickerModal({
       <Row gutter={12}>
         <Col xs={24} md={7}>
           <div style={{ maxHeight: '52vh', overflowY: 'auto' }}>
-            {categories.map((c) => {
-              const active = c === activeCategory && !query;
+            {/* من غيرها الفئة بتبقى طريق في اتجاه واحد: تدوسها ومافيش حاجة تشيلها، والبحث
+                يفضل محبوس فيها. */}
+            <div
+              onClick={() => onCategoryChange(null)}
+              style={{
+                padding: '8px 10px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
+                background: activeCategory === null ? '#6AB42D' : '#f6faf3',
+                color: activeCategory === null ? '#fff' : undefined,
+                border: '1px solid #e6efe3', fontWeight: activeCategory === null ? 700 : 400,
+              }}>
+              كل الفئات
+            </div>
+            {[...categories].sort(compareArabic).map((c) => {
+              const active = c === activeCategory;
               return (
                 <div key={c}
-                  onClick={() => { setQuery(''); onCategoryChange(c); }}
+                  onClick={() => onCategoryChange(c)}
                   style={{
                     padding: '8px 10px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
                     background: active ? '#6AB42D' : '#f6faf3',
@@ -198,7 +248,11 @@ export default function ProductPickerModal({
           <div ref={listRef} style={{ maxHeight: '52vh', overflowY: 'auto' }} onKeyDown={onKeyDown}>
             {visible.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={query ? 'لا يوجد صنف بهذا الاسم' : (onlyAvailableStock ? 'لا توجد أصناف برصيد متاح في هذا المخزن' : 'لا توجد أصناف')} />
+                description={query
+                  ? (activeCategory
+                    ? `لا يوجد صنف بهذا الاسم في «${categoryLabels[activeCategory] || activeCategory}» — جرّب «كل الفئات»`
+                    : 'لا يوجد صنف بهذا الاسم')
+                  : (onlyAvailableStock ? 'لا توجد أصناف برصيد متاح في هذا المخزن' : 'لا توجد أصناف')} />
             ) : rendered.map((p, i) => {
               const available = availableFor ? availableFor(p.id) : null;
               // الصفر بيتقال، مابيمنعش. الصنف اللي مش في المكان ده بيبقى غالباً في مكان

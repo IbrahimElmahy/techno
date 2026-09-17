@@ -1046,7 +1046,7 @@ export default function CustomerProfile() {
                 },
                 {
                   key: 'invoices',
-                  label: `فواتير البيع (${data.invoices.length})`,
+                  label: `طلبات البيع (${data.invoices.length})`,
                   children: (
                     <>
                       <ListToolbar

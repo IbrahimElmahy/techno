@@ -177,8 +177,17 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
       meta: headMeta(d, o),
       note: NOTE[d.kind],
       hide: {
-        logo: !o.logo,
-        companyName: !o.companyName,
+        // **ورقة البيع بتطلع من غير هوية الشركة — بقرار، مش بمفتاح.**
+        //
+        // دي مش مستند ضريبي: الفاتورة الرسمية بتطلع من المحاسبة بعد الترحيل. ورقة
+        // بشعار الشركة واسمها وعنوانها بتقرا كفاتورة مهما كان المكتوب عليها، واللي
+        // بيستلمها مش هيفرّق. فالهوية بتتشال من الأصل بدل ما تتسّاب لمفتاح ينساه حد.
+        //
+        // ومفتاحَي «شعار الشركة» و«اسم الشركة» لسه بيشتغلوا على المشتريات والمرتجعات —
+        // ودول بيتخفوا من قايمة المفاتيح على شاشة البيع عشان مايبقوش وعد كداب.
+        logo: d.kind === 'sale' || !o.logo,
+        companyName: d.kind === 'sale' || !o.companyName,
+        companyFooter: d.kind === 'sale',
         invoiceNumber: !o.invoiceNumber,
         invoiceTitle: !o.invoiceTitle,
       },
@@ -251,9 +260,15 @@ export default function InvoiceDocument({
       : []),
   ];
 
+  // المعاينة على الشاشة لازم تبقى هي هي الورقة اللي هتطلع من الطابعة. ورقة البيع
+  // بتتطبع من غير هوية الشركة، فالمعاينة مالهاش تعرضها — وإلا اللي بيراجع قبل ما يطبع
+  // بيوافق على ورقة غير اللي العميل هياخدها.
+  const plain = doc.kind === 'sale';
+
   return (
     <div style={{ background: '#fff' }}>
       {/* Letterhead */}
+      {!plain && (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: 16, paddingBottom: 12, borderBottom: `3px solid ${BRAND.green}`,
@@ -266,7 +281,8 @@ export default function InvoiceDocument({
         </div>
         <Logo width={150} />
       </div>
-      <div style={{ height: 4, background: BRAND.orange, marginTop: 3 }} />
+      )}
+      {!plain && <div style={{ height: 4, background: BRAND.orange, marginTop: 3 }} />}
 
       {/* Title + number */}
       <div style={{

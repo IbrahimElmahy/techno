@@ -247,6 +247,28 @@ def cancel_transfer(
     return _out(t)
 
 
+@router.get("/{transfer_id}", response_model=TransferOut)
+def get_transfer(
+    transfer_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    """إذن تحويل واحد بالرقم.
+
+    **ليه لازم يكون موجود:** الشاشة كانت بتدوّر على الإذن في القايمة المحمّلة عندها، فأي
+    رابط لإذن بره الصفحة دي — من كارت الصنف أو كشف الحساب أو رابط متبعوت — كان بيقول
+    «مش في القائمة المعروضة» وهو موجود في القاعدة. الرابط لازم يفتح المستند، مش يعتمد
+    على إنه صادف إنه محمّل.
+
+    والعزل هنا مش أقل من عزل القايمة: `may_see` بتمنع فرع من إنه يفتح إذن فرع تاني
+    بالرقم المباشر — وإلا الرابط بيبقى باب خلفي حوالين الفلترة.
+    """
+    t = db.get(StockTransfer, transfer_id)
+    if t is None or not branch_scope.may_see(current, t):
+        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود."})
+    return _out(t)
+
+
 @router.delete("/{transfer_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_transfer(
     transfer_id: int,

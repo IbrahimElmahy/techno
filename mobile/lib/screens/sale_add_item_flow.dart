@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../db/local_db.dart';
+import '../models/arabic_sort.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
@@ -27,6 +28,15 @@ class SaleAddItemFlow {
     required Map<int, double> alreadyOnInvoice,
     required String? priceTier,
     required void Function(SaleItem item, double quantity) onAdd,
+    // **إذن التحويل بيختار من كتالوج الفرع كله، مش من العربية.**
+    //
+    // البيع بيختار من اللي معاه — مايبيعش حاجة مش موجودة. والإذن بالظبط هو طلب اللي
+    // **مش** معاه، فقصر قايمته على العربية بيخفي الصنف اللي خلص خالص، وهو أكتر واحد
+    // محتاج يتطلب. الشاشة كانت بتوريه اللي معاه وتسأله عايز تطلب إيه.
+    bool fromFullCatalog = false,
+    /// قايمة جاهزة بدل القراية من الجهاز — أصناف المخزن اللي اتختار في إذن التحويل.
+    /// `null` = اقرا من الجهاز زي ما كنت.
+    List<SaleItem>? items0,
     // البيع بيتحد بالمتاح في العربية؛ طلب التحويل **من المخزن** لأ — المندوب بيطلب
     // حاجة مش معاه أصلاً، والمتاح عنده معلومة مش حد. المسؤول هو اللي بيراجع الكميات.
     bool capToAvailable = true,
@@ -37,7 +47,15 @@ class SaleAddItemFlow {
     // السعر على إذن تحويل زحمة — مافيش فلوس في المستند ده.
     bool showPrice = true,
   }) async {
-    final items = await LocalDb.instance.saleItems();
+    final items = items0 ??
+        (fromFullCatalog
+            ? await LocalDb.instance.catalogItems()
+            : await LocalDb.instance.saleItems());
+    // **الترتيب أبجدي، مرة واحدة هنا.** القايمة جاية من تلات مصادر (السيرفر، كتالوج
+    // الجهاز، عهدة المندوب) وكل واحد بترتيبه، فالمندوب كان بيلاقي نفس الشاشة مرتّبة
+    // بشكل مختلف على حسب من فين فتحها. والترتيب في `arabic_sort` عشان الهمزة والتاء
+    // المربوطة مايفرّقوش الاسم الواحد.
+    sortByName<SaleItem>(items, (i) => i.name);
     final free = await LocalDb.instance.availableForSaleAll();
     if (!context.mounted) return;
 
@@ -149,7 +167,7 @@ List<MapEntry<String, int>> _categoriesOf(List<SaleItem> items) {
       if ((a.key == _noCategory) != (b.key == _noCategory)) {
         return a.key == _noCategory ? 1 : -1;
       }
-      return a.key.compareTo(b.key);
+      return compareArabic(a.key, b.key);
     });
 }
 
@@ -267,10 +285,14 @@ class _CategoryDialog extends StatelessWidget {
   }
 }
 
-/// بوباب الصنف — أصناف الفئة، والبحث بيدوّر في **كل** الأصناف.
+/// بوباب الصنف — أصناف الفئة، والبحث جوّه الفئة اللي هو فاتحها.
 ///
-/// اللي بيكتب اسم صنف عايز يلاقيه. لو البحث اتحبس في الفئة المفتوحة كان هيشوف «مافيش
-/// نتيجة» على صنف موجود في عربيته تحت فئة تانية — وده أوحش من قايمة طويلة، لأنه بيكدب.
+/// كان بيدوّر في كل الأصناف، فالفئة اللي المندوب اختارها بتتلغي أول ما يكتب حرف. اللي
+/// بيختار فئة قال بيدوّر فين، والكتابة بعدها تضييق للنطاق ده مش إلغاء له.
+///
+/// **بس البحث مايكدبش.** الخوف القديم كان في محلّه: «مفيش نتيجة» على صنف موجود في
+/// عربيته تحت فئة تانية أوحش من قايمة طويلة. فلو فيه نتايج برّه الفئة، البوباب بيقول
+/// عددها وبيدّي زرار يوسّع البحث — مابيخفيهاش ومابيفرضهاش.
 class _SaleItemDialog extends StatefulWidget {
   const _SaleItemDialog({
     required this.items,
@@ -299,6 +321,9 @@ class _SaleItemDialog extends StatefulWidget {
 class _SaleItemDialogState extends State<_SaleItemDialog> {
   final _search = TextEditingController();
 
+  /// وسّع البحث لكل الأصناف — بيتفتح بإيد المستخدم، وبيتقفل أول ما يمسح اللي كتبه.
+  bool _searchAll = false;
+
   @override
   void dispose() {
     _search.dispose();
@@ -308,31 +333,58 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   double _availableOf(SaleItem it) =>
       (widget.free[it.itemId] ?? 0) - (widget.onInvoice[it.itemId] ?? 0);
 
+  String get _query => _search.text.trim().toLowerCase();
+
+  bool _matches(SaleItem it) => it.name.toLowerCase().contains(_query);
+
+  bool _inCategory(SaleItem it) => _categoryOf(it) == widget.category;
+
   List<SaleItem> get _visible {
-    final q = _search.text.trim().toLowerCase();
-    if (q.isNotEmpty) {
+    if (_query.isEmpty) {
       return [
         for (final it in widget.items)
-          if (it.name.toLowerCase().contains(q)) it
+          if (_inCategory(it)) it
       ];
     }
     return [
       for (final it in widget.items)
-        if (_categoryOf(it) == widget.category) it
+        if (_matches(it) && (_searchAll || _inCategory(it))) it
     ];
+  }
+
+  /// النتايج اللي برّه الفئة — الرقم ده هو اللي بيمنع البحث من إنه يكدب.
+  int get _elsewhere {
+    if (_query.isEmpty || _searchAll) return 0;
+    var n = 0;
+    for (final it in widget.items) {
+      if (_matches(it) && !_inCategory(it)) n++;
+    }
+    return n;
+  }
+
+  void _onSearchChanged() {
+    // مسح اللي مكتوب بيرجّع البوباب لفئته — التوسيع كان جواب على بحث، والبحث خلص.
+    if (_query.isEmpty) _searchAll = false;
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final searching = _search.text.trim().isNotEmpty;
+    final searching = _query.isNotEmpty;
     final rows = _visible;
+    final elsewhere = _elsewhere;
     return AlertDialog(
       titlePadding: const EdgeInsets.fromLTRB(20, 18, 12, 0),
       contentPadding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       title: Row(
         children: [
           Expanded(
-            child: Text(searching ? 'نتايج البحث' : widget.category,
+            child: Text(
+                searching
+                    ? (_searchAll
+                        ? 'نتايج البحث في كل الأصناف'
+                        : 'نتايج البحث في ${widget.category}')
+                    : widget.category,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -351,22 +403,39 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
           children: [
             TextField(
               controller: _search,
-              onChanged: (_) => setState(() {}),
+              onChanged: (_) => _onSearchChanged(),
               decoration: InputDecoration(
-                hintText: 'ابحث في كل الأصناف...',
+                hintText: _searchAll
+                    ? 'ابحث في كل الأصناف...'
+                    : 'ابحث في ${widget.category}...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _search.text.isEmpty
                     ? null
                     : IconButton(
                         icon: const Icon(Icons.clear),
-                        onPressed: () => setState(_search.clear),
+                        onPressed: () {
+                          _search.clear();
+                          _onSearchChanged();
+                        },
                       ),
               ),
             ),
             const SizedBox(height: 8),
             Expanded(
               child: rows.isEmpty
-                  ? const Center(child: Text('مفيش أصناف هنا'))
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          searching
+                              ? (_searchAll
+                                  ? 'مفيش صنف بالاسم ده'
+                                  : 'مفيش صنف بالاسم ده في ${widget.category}')
+                              : 'مفيش أصناف هنا',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
                   : ListView.separated(
                       itemCount: rows.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
@@ -383,7 +452,10 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                           if (it.unit != null && !widget.showAvailable)
                             '${it.unit}',
                           if (widget.showPrice)
-                            '${_money(it.priceFor(widget.priceTier))} ج.م',
+                            '${_money(it.netPriceFor(widget.priceTier))} ج.م'
+                                '${it.defaultDiscountPct > 0
+                                    ? ' (بعد خصم ${_fmt(it.defaultDiscountPct)}%)'
+                                    : ''}',
                         ];
                         return ListTile(
                           enabled: !out,
@@ -400,6 +472,25 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                       },
                     ),
             ),
+            // الصنف اللي في عربيته تحت فئة تانية لازم يعرف إنه موجود — من غير السطر ده
+            // «مفيش صنف بالاسم ده» بتبقى كدبة، وهو اللي يقرّر يوسّع ولا لأ.
+            if (elsewhere > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 4),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: TextButton.icon(
+                    icon: const Icon(Icons.travel_explore, size: 18),
+                    onPressed: () => setState(() => _searchAll = true),
+                    label: Text(
+                      elsewhere == 1
+                          ? 'فيه نتيجة واحدة في فئة تانية — دوّر في كل الأصناف'
+                          : 'فيه $elsewhere نتايج في فئات تانية — دوّر في كل الأصناف',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -458,7 +549,9 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final price = widget.item.priceFor(widget.priceTier);
+    // الصافي مش الخام — نفس الرقم اللي اتعرض في قايمة الأصناف، ونفس اللي الفاتورة
+    // هتحسبه. تلات شاشات بتقول رقمين مختلفين لنفس الصنف كانت هي المشكلة.
+    final price = widget.item.netPriceFor(widget.priceTier);
     final total = _typed * price;
     return AlertDialog(
       title: Text(widget.item.name,
@@ -474,6 +567,9 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
             Text(
                 widget.showPrice
                     ? 'السعر: ${_money(price)} ج.م'
+                        '${widget.item.defaultDiscountPct > 0
+                            ? ' (بعد خصم ${_fmt(widget.item.defaultDiscountPct)}%)'
+                            : ''}'
                         '${widget.showAvailable ? ' · المتاح: ${_fmt(widget.available)}' : ''}'
                     : widget.showAvailable
                         ? 'عندك في العربية: ${_fmt(widget.available)}'

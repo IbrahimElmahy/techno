@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
+from src.core import clock
+
 from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import Session
 
@@ -92,7 +94,16 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         source_location_kind=source_kind, source_location_id=source_id,
         dest_location_kind=dest_kind, dest_location_id=dest_id,
         status=TransferStatus.pending, initiated_by=initiated_by,
-        transfer_date=transfer_date,
+        # **تاريخ فاضي بيبقى «النهارده»، مابيتسابش `NULL`.**
+        #
+        # العميل هو اللي بيبعت التاريخ، وتطبيق المندوب مابيبعتوش أصلاً — فالإذن كان
+        # بينزل من غير تاريخ خالص: ٥ من ٩ أذون مكتوبة عندنا `transfer_date = NULL`.
+        # والشاشة والورقة بيسيبوا الخانة فاضية، والفرز بالتاريخ بيرميهم برّه أي مدى،
+        # فالإذن بيختفي من كشف اليوم اللي اتعمل فيه.
+        #
+        # و«النهارده» بتيجي من `clock.today()` مش `date.today()` — الساعة بتتحسب بفرق
+        # التوقيت بتاع الشغل، والمستند اللي بيتكتب الساعة ١ بالليل بيتقيّد على يومه.
+        transfer_date=transfer_date or clock.today(),
         branch_id=branch_for(db, actor_user_id=initiated_by,
                              location_kind=source_kind, location_id=source_id),
     )
@@ -181,6 +192,37 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
     return transfer
 
 
+# نوعَي المستند على حركة المخزون — **الاتنين، مش واحد**.
+#
+# الخدمة الحيّة بتكتب `transfer` والنقل من a5 بيكتب `stock_transfer`. لغتين لنفس
+# الحاجة في مكانين، والحذف كان بيدوّر على واحدة بس — فالإذن المنقول بيتمسح وحركته
+# بتفضل، والبضاعة مابترجعش لمصدرها وماحدش بيعرف.
+_TRANSFER_DOC_TYPES = ("transfer", "stock_transfer")
+
+
+def _drop_movements(db, transfer, lines) -> None:
+    """بيشيل حركات الإذن — **بعد ما يفك اللي بيشاور عليها**.
+
+    `stock_transfer.out_movement_id` / `in_movement_id` مفاتيح خارجية حقيقية على
+    `stock_movement`. مسح الحركة والرأس لسه بيشاور عليها = خرق مفتاح خارجي، والـAPI
+    بيرمي 500 والشاشة بتقول «تعذر الاتصال بالسيرفر».
+
+    فالإشارات بتتفك الأول وبيتعمل `flush` — الترتيب هنا هو الإصلاح نفسه، مش تنظيم.
+    """
+    from src.models.stock import StockMovement
+
+    for ln in lines:
+        ln.out_movement_id = None
+        ln.in_movement_id = None
+    transfer.out_movement_id = None
+    transfer.in_movement_id = None
+    db.flush()
+
+    db.execute(sa_delete(StockMovement).where(
+        StockMovement.source_doc_type.in_(_TRANSFER_DOC_TYPES),
+        StockMovement.source_doc_id == transfer.id))
+
+
 def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
     """حذف إذن التحويل — بيروح هو وحركته، مش بيتعكس.
 
@@ -218,10 +260,7 @@ def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
                     to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
                     quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
 
-        from src.models.stock import StockMovement
-        db.execute(sa_delete(StockMovement).where(
-            StockMovement.source_doc_type == "transfer",
-            StockMovement.source_doc_id == transfer.id))
+        _drop_movements(db, transfer, lines)
 
     doc = transfer.document_number
     db.execute(sa_delete(StockTransferLine).where(
@@ -265,18 +304,10 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
                 to_kind=transfer.source_location_kind, to_id=transfer.source_location_id,
                 quantity=ln.quantity, transfer_id=transfer.id, actor_user_id=actor_user_id)
 
-    from src.models.stock import StockMovement
-    db.execute(sa_delete(StockMovement).where(
-        StockMovement.source_doc_type == "transfer",
-        StockMovement.source_doc_id == transfer.id))
+    _drop_movements(db, transfer, lines)
 
     transfer.status = TransferStatus.rejected
     transfer.reject_reason = (reason or "اتلغى بعد الاعتماد")[:240]
-    for ln in lines:
-        ln.out_movement_id = None
-        ln.in_movement_id = None
-    transfer.out_movement_id = None
-    transfer.in_movement_id = None
     db.flush()
     audit_service.record(db, action="transfer.cancel", actor_user_id=actor_user_id,
                          entity_type="stock_transfer", entity_id=transfer.id,

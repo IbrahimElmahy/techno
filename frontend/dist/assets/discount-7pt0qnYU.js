@@ -1,0 +1,1 @@
+const o=99.99,r=t=>{const n=Number(t??0);return!Number.isFinite(n)||n<=0?0:n>100?100:n},c=t=>Math.round((t+Number.EPSILON)*100)/100;function i(...t){const n=t.reduce((e,u)=>e*(1-r(u)/100),1);return Math.min(99.99,c(100*(1-n)))}function s(t,n){return Number(t??0)*(1-r(n)/100)}export{o as M,i as c,s as n};

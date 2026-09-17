@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from src.services import numbering
 
+from src.lib import discounts
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item
 from src.models.ledger import Account, Direction
@@ -99,7 +100,7 @@ def create_purchase(
 
     fixed = sales_service.fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
-    combined = fixed + variable
+    combined = discounts.combine(fixed, variable)
     if combined >= Decimal("100") or variable < ZERO:
         raise PurchaseError("الخصم المجمّع لازم يكون أقل من ١٠٠٪ والخصم المتغيّر مايكونش بالسالب.")
 

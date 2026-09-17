@@ -320,7 +320,7 @@ class PurchaseReturnDetailOut(PurchaseReturnListOut):
 @router.get("/returns/{return_id}", response_model=PurchaseReturnDetailOut)
 def get_purchase_return(
     return_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> PurchaseReturnDetailOut:
     """المردود بسطوره — «رجّعنا إيه بالظبط».
@@ -369,7 +369,7 @@ def get_purchase_return(
 @router.get("/{purchase_id}", response_model=PurchaseDetailOut)
 def get_purchase(
     purchase_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> PurchaseDetailOut:
     p = db.get(PurchaseInvoice, purchase_id)

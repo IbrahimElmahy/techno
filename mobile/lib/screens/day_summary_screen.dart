@@ -90,11 +90,21 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
                                   fontSize: 18, fontWeight: FontWeight.w800)),
                         ),
                         const Divider(height: 1),
+                        // **التحصيل فوق مجموع السطرين دول.** الرقم الكبير لوحده بيتسأل
+                        // عنه «جه منين»، والمندوب بيعدّ الفلوس في إيده مش بيصدّق شاشة.
                         ListTile(
                           leading: const Icon(Icons.payments_outlined),
                           title: const Text('نقدي على الفواتير'),
                           subtitle: const Text('اللي اتدفع مع البيع نفسه'),
                           trailing: Text(_money(_t['cash_on_invoices'] ?? 0),
+                              style: const TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.account_balance_wallet_outlined),
+                          title: const Text('دفعات عامة'),
+                          subtitle: const Text('تحصيل من حساب العميل، مش على فاتورة'),
+                          trailing: Text(_money(_t['receipts'] ?? 0),
                               style: const TextStyle(fontWeight: FontWeight.w700)),
                         ),
                       ],

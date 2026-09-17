@@ -12,7 +12,7 @@ import 'customer_profile_screen.dart';
 import 'debts_screen.dart';
 import 'day_summary_screen.dart';
 import 'my_stock_screen.dart';
-import 'transfer_request_screen.dart';
+import 'transfers_review_screen.dart';
 import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
 import 'review_screen.dart';
@@ -239,11 +239,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   _BigAction(
                     icon: Icons.swap_horiz_outlined,
                     color: AppColors.accent,
-                    title: 'طلب تحويل بضاعة',
-                    subtitle: 'من مخزن لمخزن أو من عربيتك — بيستنى الاعتماد',
+                    title: 'طلبات التحويل',
+                    subtitle: 'اطلب بضاعة أو رجّعها — وشوف اللي طلبته وعدّله',
+                    // **بتفتح على القايمة مش على طلب فاضي.**
+                    //
+                    // كانت بتفتح شاشة الطلب على طول، فاللي كتب طلب ماكانش عنده أي طريق
+                    // يشوفه تاني ولا يعدّله — ولا حتى يعرف إذا كان اترفع ولا لسه.
+                    // والقايمة فيها زرار «طلب جديد» فالطريق للطلب الجديد ضغطة واحدة زي
+                    // ما كان.
                     onTap: () async {
                       await Navigator.push(context, MaterialPageRoute(
-                          builder: (_) => const TransferRequestScreen()));
+                          builder: (_) => const TransfersReviewScreen()));
                       _refresh();
                     },
                   ),

@@ -151,9 +151,21 @@ class SalesInvoiceLine(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # list price snapshot (pre-discount)
-    # Per-line discount % applied to this line (027): the item's fixed discount + a typed
-    # variable discount, combined. line_total = quantity × unit_price × (1 − discount_pct/100).
+    # Per-line discount % applied to this line (027): the item's fixed discount and a typed
+    # variable discount, **compounded** (10% then 5% = 14.5%, not 15% — `src.lib.discounts`).
+    # line_total = quantity × unit_price × (1 − discount_pct/100). This is the number the money
+    # is built on, so it stays the authority; the two below only say how it was reached.
     discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
+    # ...and the two halves it was reached by, kept apart so a reviewer can tell what the COMPANY
+    # discounted from what the REP gave away. Combining them into one number lost exactly the
+    # answer to the question everybody asks when a total looks small, and the screen that read the
+    # invoice back had to guess — it showed the whole thing as «خصم ثابت» and «خصم متغير ٠».
+    #
+    # **NULL means "not recorded", not zero.** Lines written before this column — and every line
+    # imported from a5 — genuinely do not know the split, and a written 0 would claim they do.
+    # Readers fall back to showing the combined number when these are NULL.
+    fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False)  # AFTER the line discount
     # Resolved price tier snapshot (007); NULL for legacy 002 lines.
     price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)

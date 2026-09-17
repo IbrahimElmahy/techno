@@ -71,8 +71,54 @@ class ApiClient {
         .timeout(const Duration(seconds: 20));
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final body = jsonDecode(utf8.decode(r.bodyBytes));
+
+    // **مستخدم تاني على نفس الجهاز = داتا الأول لازم تمشي.**
+    //
+    // الخروج بيمسح التوكن وبس، فاللي بيدخل بعده كان بيلاقي «فواتيري» مليانة فواتير
+    // مندوب تاني و«بضاعتي» بعربيته. دي بيانات حد على شاشة مش بتاعته.
+    //
+    // **وماتتمسحش وفيها شغل ما اترفعش.** المسح ساعتها بيضيّع فاتورة العميل ماسك
+    // ورقتها. فالتبديل بيتمنع ويتقال السبب بالعدد، والحل إنه يرجع بحسابه ويزامن.
+    // **صاحب الداتا اللي على الجهاز** — مش اسم آخر واحد دخل.
+    //
+    // الفرق مهم: `username` كان بيتكتب عند الدخول وبس، فجهاز اتسطّب عليه نسخة قديمة
+    // أو اتمسح منه المفتاح بيبقى صاحبه «مجهول» — والمقارنة بتعدّي وداتا اللي فات
+    // بتفضل. `data_owner` بيتكتب مع كل دخول ومع كل سحب، والمجهول بيتعامل كأنه حد
+    // تاني: الجهاز فيه داتا مش معروف بتاعة مين، فمابتفضلش.
+    final owner = (await LocalDb.instance.getKv('data_owner') ??
+            await LocalDb.instance.getKv('username'))
+        ?.trim()
+        .toLowerCase();
+    final me = username.trim().toLowerCase();
+    final hasData = await LocalDb.instance.hasUserData();
+
+    if (hasData && owner != me) {
+      // **الشغل اللي ما اترفعش بيمنع المسح** — بيضيّع فاتورة العميل ماسك ورقتها.
+      final pending = await LocalDb.instance.pendingByKind();
+      if (pending.isNotEmpty) {
+        final what = pending.entries.map((e) => '${e.value} ${e.key}').join(' · ');
+        final who = owner == null ? 'مستخدم سابق' : '«$owner»';
+        throw ApiException(
+            0,
+            'على الجهاز شغل لـ$who لسه ما اترفعش ($what). '
+            'ادخل بحسابه وزامن الأول، وبعدين سجّل دخول بالحساب الجديد.');
+      }
+      await LocalDb.instance.wipeUserData();
+
+      // **والتأكيد جزء من العملية مش زيادة.** المسح اللي بيفشل في صمت أوحش من إنه
+      // مايتعملش: الشاشة بتفتح على داتا حد تاني واللي بيبص عليها فاكرها بتاعته.
+      final left = await LocalDb.instance.userDataCounts();
+      if (left.isNotEmpty) {
+        final what = left.entries.map((e) => '${e.value} ${e.key}').join(' · ');
+        throw ApiException(
+            0, 'مقدرناش نمسح داتا المستخدم اللي قبلك من الجهاز ($what). '
+                'امسح بيانات التطبيق من إعدادات الموبايل وجرّب تاني.');
+      }
+    }
+
     await LocalDb.instance.setKv('token', body['access_token'] as String);
     await LocalDb.instance.setKv('username', username);
+    await LocalDb.instance.setKv('data_owner', me);
   }
 
   /// Pull the inspection point-items + lookups + customers into the offline cache.
@@ -326,6 +372,20 @@ class ApiClient {
           },
         )
     ]);
+    // كتالوج الفرع — أصناف إذن التحويل. سيرفر قديم مابيرجّعهوش ⇒ الجدول بيفضل زي ما
+    // هو، و`catalogItems()` بترجع لأصناف العربية: أضيق من اللازم بس مش شاشة فاضية.
+    final catalog = body['catalog'] as List?;
+    if (catalog != null) {
+      await LocalDb.instance.replaceCatalogItems([
+        for (final i in catalog)
+          SaleItem(
+            itemId: i['item_id'] as int,
+            name: i['name'] as String,
+            unit: i['unit'] as String?,
+            category: _text(i['category']),
+          )
+      ]);
+    }
     // المخازن — عشان إذن التحويل يتكتب والجهاز من غير شبكة.
     await LocalDb.instance.replaceWarehouses([
       for (final w in ((body['warehouses'] as List?) ?? []))
@@ -358,7 +418,15 @@ class ApiClient {
   ///
   /// وواحدة واحدة مش دفعة: الفاتورة اللي بتترفض (البضاعة مش موجودة، العميل اتنقل لمندوب
   /// تاني) لازم تتقال لصاحبها بسببها، ودفعة واحدة كانت هتوقّف الباقي معاها.
-  Future<int> pushSaleInvoices() async {
+  /// [refreshStock] = بعد ما الفاتورة تترفع، اسحب رصيد العربية من السيرفر.
+  ///
+  /// **من غيره الرصيد بيرجع للرقم اللي قبل البيع.** الجهاز بيطرح فواتير الطابور من
+  /// المتاح (`availableForSaleAll`)، والرصيد المخزّن (`sale_item.on_hand`) لقطة من آخر
+  /// سحب. أول ما الفاتورة تترفع بتخرج من الطابور فالطرح بيقف — والرقم المخزّن لسه من
+  /// قبل البيع، فالعربية بتقول أكتر من اللي فيها وبتخالف النظام لحد أول مزامنة كاملة.
+  ///
+  /// `false` في المزامنة الشاملة بس، لأنها بتسحب الحزمة بنفسها بعد الرفع على طول.
+  Future<int> pushSaleInvoices({bool refreshStock = true}) async {
     final pending = await LocalDb.instance.saleInvoices(synced: false);
     var sent = 0;
     final storeId = int.tryParse(await LocalDb.instance.getKv('store_id') ?? '');
@@ -407,7 +475,13 @@ class ApiClient {
                       'item_id': l.itemId,
                       'quantity': '${l.quantity}',
                       'unit_price': '${l.unitPrice}',
+                      // المجموع المركّب — للسيرفر القديم اللي مايعرفش القسمة.
                       'discount_pct': '${l.discountPct}',
+                      // ...والنصّين، عشان الفاتورة تفضل عارفة الشركة خصمت كام والمندوب
+                      // زوّد كام. من غيرهم الشاشة الكبيرة كانت بتحطّ الخصم كله في خانة
+                      // «خصم ثابت» وتقول «متغيّر ٠» — يعني بتنسب للشركة خصم ماعملتهوش.
+                      'fixed_discount_pct': '${l.fixedDiscountPct}',
+                      'variable_discount_pct': '${l.variableDiscountPct}',
                     }
                 ],
               }))
@@ -423,6 +497,13 @@ class ApiClient {
       // فاتورة اترفضت مالهاش لازمة تفضل تحاول لوحدها في الخلفية — السبب لازم يوصل للمندوب.
       throw ApiException(r.statusCode,
           'فاتورة ${inv['customer_name']}: ${_error(r)}');
+    }
+    if (sent > 0 && refreshStock) {
+      // فشله مش فشل للرفع: الفاتورة وصلت خلاص، وده تحديث للشاشة. المزامنة الجاية
+      // بتجيبه، فالوقوع هنا بيأخّر رقم مش بيضيّع مستند.
+      try {
+        await pullSalesBundle();
+      } catch (_) {}
     }
     return sent;
   }
@@ -459,6 +540,8 @@ class ApiClient {
                   'location_kind': t['dest_kind'],
                   'location_id': t['dest_id'],
                 },
+                // تاريخ الطلب زي ما المندوب كتبه. فاضي ⇒ السيرفر بيحط تاريخ اليوم.
+                'transfer_date': t['transfer_date'],
               }))
           .timeout(const Duration(seconds: 60));
       if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
@@ -549,6 +632,41 @@ class ApiClient {
   ///
   /// مش من كاش المزامنة عن قصد: الشاشة دي أصلاً محتاجة شبكة (الرصيد بيتغيّر من
   /// المكتب كمان)، ورقم من الكاش جنب رقم حي بيطلعوا مختلفين ومحدش عارف مين الصح.
+  /// اللي في مكان واحد بالظبط — أصناف المخزن اللي المندوب اختاره في إذن التحويل.
+  ///
+  /// **لأن الطلب من مخزن مش من كتالوج.** المندوب بيطلب من «المخزن الرئيسى»، والصنف
+  /// اللي مش موجود هناك مايتطلبش منه — عرضه بيخلّي المكتب يستلم طلب مايقدرش ينفّذه.
+  /// وكتالوج الفرع كله أوسع من اللازم: بيعرض أصناف مخازن تانية وأصناف اتوقفت.
+  ///
+  /// **نداء وقت الاختيار، مش مع الحزمة.** أرصدة كل مخازن الفرع مع بعض حاجة كبيرة تتحمّل
+  /// على تليفون كل مزامنة وتبوظ أول ما حد يبيع. والمندوب وهو بيطلب من مخزن بيبقى
+  /// غالباً في مكان فيه شبكة. ولو مافيش، الشاشة بترجع لكتالوج الفرع بدل ما تقف.
+  Future<List<SaleItem>> stockAtLocation(String kind, int id) async {
+    final r = await http
+        .get(
+            await _uri('/stock/by-location', {
+              'location_kind': kind,
+              'location_id': '$id',
+              'only_available': 'true',
+            }),
+            headers: await _headers())
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    final rows = jsonDecode(utf8.decode(r.bodyBytes)) as List;
+    return [
+      for (final i in rows)
+        SaleItem(
+          itemId: i['item_id'] as int,
+          name: i['name'] as String,
+          unit: _text(i['unit_of_measure']),
+          category: _text(i['category']),
+          onHand: double.tryParse('${i['on_hand']}') ?? 0,
+          pendingOut: double.tryParse('${i['pending_out'] ?? 0}') ?? 0,
+        )
+    ];
+  }
+
   Future<List<Map<String, dynamic>>> customerAccounts(int customerId) async {
     final r = await http
         .get(await _uri('/customers/$customerId/accounts'), headers: await _headers())

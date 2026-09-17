@@ -37,6 +37,10 @@ class AutoSync extends ChangeNotifier {
 
   /// بتشتغل أول ما الشاشة الرئيسية تفتح. بتتخطى بهدوء لو:
   /// مافيش نت، أو واحدة شغّالة، أو واحدة نجحت من أقل من [_cooldown].
+  /// المزامنة اللي بتحصل لوحدها — بتفتح الشاشة، بتسحب لتحت، بيعدّي وقت.
+  ///
+  /// **مابترفعش فواتير البيع.** الفاتورة بتترفع لما المندوب يدوس «مزامنة الآن» وبس —
+  /// شوف [run].
   Future<void> maybeRun({bool force = false}) async {
     if (_running) return;
     if (!force && _lastRun != null &&
@@ -45,11 +49,21 @@ class AutoSync extends ChangeNotifier {
     }
     if (await LocalDb.instance.getKv('token') == null) return; // مش داخل
     if (!force && !await _online()) return;
-    await run();
+    await run(includeSales: false);
   }
 
-  /// نفس شغل زرار «مزامنة الآن» — بترفع الطابور وبعدين بتسحب.
-  Future<void> run() async {
+  /// بترفع الطابور وبعدين بتسحب.
+  ///
+  /// [includeSales] = ترفع فواتير البيع كمان. **`false` في المزامنة التلقائية بقرار
+  /// صاحب النظام:** الفاتورة مابترفعش لوحدها، بترفع لما المندوب يدوس «مزامنة الآن».
+  ///
+  /// السبب إن الرفع قرار مش خلفية: الفاتورة اللي وصلت السيرفر بقت مستند بقيد ومخزون
+  /// اتحرّك، ومابتتعدّلش من الجهاز بعدها. فالمندوب اللي لسه بيراجع فاتورته كان بيلاقيها
+  /// اترفعت من ورا ضهره وقفلت في وشّه. لما الرفع يبقى بدوسة، اللحظة دي بتبقى بإيده.
+  ///
+  /// والباقي (المعاينات · التحصيلات · الكوبونات · أذون التحويل) بيفضل بيترفع لوحده —
+  /// دول مالهمش نفس القفل، وتأخيرهم بيضيّع شغل.
+  Future<void> run({bool includeSales = true}) async {
     if (_running) return;
     _running = true;
     _set(AutoSyncState.running, 'بيزامن...');
@@ -83,7 +97,10 @@ class AutoSync extends ChangeNotifier {
       final coupons = await step(ApiClient.instance.pushCouponReceipts);
       // الرفع قبل السحب: الرفع بيخصم من العهدة على السيرفر، والسحب اللي بعده بيجيب
       // الرصيد بعد الخصم. العكس بيرجّع أرقام قديمة على طول.
-      final invoices = await step(ApiClient.instance.pushSaleInvoices);
+      // `refreshStock: false` — السحب بيحصل تحت على طول، فمافيش لزوم لندائين.
+      final invoices = includeSales
+          ? await step(() => ApiClient.instance.pushSaleInvoices(refreshStock: false))
+          : 0;
       final collected = await step(ApiClient.instance.pushReceipts);
       final permits = await step(ApiClient.instance.pushTransfers);
       await ApiClient.instance.pullReferenceData();

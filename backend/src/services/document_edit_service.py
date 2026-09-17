@@ -139,14 +139,39 @@ def _restore_batches(db: Session, *, document_type: str, document_id: int) -> No
         StockBatchMovement.document_id == document_id))
 
 
+# نوع المستند → **كل** القيم اللي ممكن تكون متكتوبة على حركته.
+#
+# **قيمتين لنفس المستند، مش واحدة.** الخدمة الحيّة بتكتب `sale` والمستورد من a5 بيكتب
+# `sales_invoice`؛ `purchase` مقابل `purchase_invoice`؛ `sale_return` مقابل
+# `sales_return`. لغتين لنفس الحاجة اتكتبوا في مكانين ومحدش بيفرضهم يتفقوا.
+#
+# والحذف كان بيمرّر وحدة بس، فالمستند المنقول من a5 كان **يتمسح وحركته تفضل**: بضاعة
+# بتتحرك من غير ورقة تفسّرها — مالهاش سطر ولا رقم ولا بتظهر في كارت الصنف ولا في أي
+# كشف، وبتفضل في الرصيد للأبد. واللي بيدوّر على السبب مابيلاقيش، لأن السبب اتمسح.
+#
+# اتقاس على قاعدة الإنتاج: إذن واحد (`stock_transfer#2527`) ساب ١٦ حركة بتنقل ٥٣ وحدة
+# بين مخزنين في العلياء — وكان الفرق الوحيد الباقي بيننا وبين a5 بعد طرح مستنداتنا.
+#
+# والـid مش بيتصادم: القيمتين بيوصفوا نفس الجدول، فـ`sale` و`sales_invoice` بيشاوروا
+# على نفس `sales_invoice.id`.
+_STOCK_DOC_TYPES: dict[str, tuple[str, ...]] = {
+    "sale": ("sale", "sales_invoice"),
+    "sale_return": ("sale_return", "sales_return"),
+    "purchase": ("purchase", "purchase_invoice"),
+    "purchase_return": ("purchase_return",),
+}
+
+
 def _drop_stock(db: Session, *, source_doc_type: str, source_doc_id: int) -> None:
-    """حركات المخزون بتاعة المستند — بتتشال خالص.
+    """حركات المخزون بتاعة المستند — بتتشال خالص، **بكل أسمائها**.
 
     الرصيد مشتق من الحركات (مافيش رصيد مخزّن)، فشيل الحركة بيرجّع الرصيد لوحده. وده
-    السبب اللي بيخلي الطريقة دي ممكنة أصلاً.
+    السبب اللي بيخلي الطريقة دي ممكنة أصلاً — وهو كمان السبب اللي بيخلّي الحركة
+    الناجية أخطر من الصف اللي فضل: الرصيد بيفضل غلط ومافيش حاجة تقول ليه.
     """
     db.execute(delete(StockMovement).where(
-        StockMovement.source_doc_type == source_doc_type,
+        StockMovement.source_doc_type.in_(
+            _STOCK_DOC_TYPES.get(source_doc_type, (source_doc_type,))),
         StockMovement.source_doc_id == source_doc_id))
 
 

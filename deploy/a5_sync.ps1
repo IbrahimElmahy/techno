@@ -65,7 +65,11 @@ $Exports = @(
     @{ Sql = 'exp_hdr.sql';   Out = 'a5_hdr.tsv'      },
     @{ Sql = 'exp_lines.sql'; Out = 'a5_lines.tsv'    },
     @{ Sql = 'exp_acc.sql';   Out = 'a5_acclines.tsv' },
-    @{ Sql = 'exp_bal.sql';   Out = 'a5_bal.tsv'      }
+    @{ Sql = 'exp_bal.sql';   Out = 'a5_bal.tsv'      },
+    # رصيد الصنف **في كل مخزن** — للتحقق. `exp_bal.sql` بيدّي رصيد الشركة كلها،
+    # وده بيدّي توزيعه: نفس الإجمالي ممكن يتوزّع غلط على المخازن والرقم الكلي يفضل
+    # مظبوط وماحدش ياخد باله.
+    @{ Sql = 'exp_bal_by_store.sql'; Out = 'a5_bal_store.tsv' }
 )
 
 # كشوف بفاصل tab وصف عناوين. المسار فيه {tag} أو {db} بيتبدّل بالفرع.
@@ -151,6 +155,66 @@ if ($failed) {
 if ($ExportOnly) {
     Say '✔ تصدير بس — خلص.'
     exit 0
+}
+
+# **المستند اللي اتعدّل في a5 بعد ما نقلناه بيتهد ويتبني تاني — قبل الاستيراد.**
+#
+# `import_a5_docs` بيتخطّى المستند اللي رقمه موجود، وده اللي بيخلّيه آمن يتعاد كل ليلة.
+# بس العميل بيعدّل مستنداته عندهم بعد النقل — سطر يتزاد، كمية تتغيّر — والتخطّي بيخلّي
+# نسختنا مجمّدة على اللي كان، وبيبان كفرق في الرصيد مالوش تفسير. `rebuild_a5_docs` بيشيل
+# نسختنا بالكامل (سطورها وحركات مخزونها) ويسيب الاستيراد يبنيها من أول وجديد، فالتحويلات
+# والمخزون بيرجعوا مطابقين. ومابيلمسش مستند إحنا عملناه — بيشتغل على اللي في تصدير a5 بس.
+foreach ($b in $Branches) {
+    Say ("-- {0} · rebuild_a5_docs --" -f $b.Name)
+    $pyArgs = @('-m', 'src.scripts.rebuild_a5_docs', '--dir', $b.Dir, '--branch', $b.Name, '--yes')
+    if ($b.Prefix) { $pyArgs += @('--prefix', $b.Prefix) }
+    Push-Location "$Rootackend"
+    try {
+        $env:PYTHONIOENCODING = 'utf-8'
+        $out = & $Py @pyArgs 2>&1
+        Say ("  " + (($out | Select-Object -Last 4) -join ' | '))
+        if ($LASTEXITCODE -ne 0) { Say ("  X كود الخروج {0}" -f $LASTEXITCODE); $failed = $true }
+    } finally { Pop-Location }
+}
+
+# **والحساب اللي الدفتر بيقيّد عليه بيتعمل قبل القيود.**
+#
+# `import_a5_ledger` بيتخطّى **سطر** القيد لو حسابه مش موجود — مش القيد كله. فالقيد بينزل
+# بطرف واحد، وبيفضل كده للأبد لأن `external_ref` بتاعه اتكتب والتشغيلة اللي بعديها
+# بتتخطّاه حتى بعد ما الحساب يتعمل. اتقاس: قيد واحد (`a5:AL-119625`) قعد بمدين ١٤٥٬٠٥٠
+# ومن غير دائن، لأن حساب «تكنو بايت» اتعمل بعد الاستيراد بيوم. والليلة اللي بيتعمل فيها
+# تاجر جديد وبيتباع له في نفس اليوم هي بالظبط اللي بتعيد السباق ده.
+foreach ($b in $Branches) {
+    Say ("-- {0} · add_missing_a5_accounts --" -f $b.Name)
+    $pyArgs = @('-m', 'src.scripts.add_missing_a5_accounts', '--dir', $b.Dir, '--branch', $b.Name, '--yes')
+    if ($b.Prefix) { $pyArgs += @('--prefix', $b.Prefix) }
+    Push-Location "$Rootackend"
+    try {
+        $env:PYTHONIOENCODING = 'utf-8'
+        $out = & $Py @pyArgs 2>&1
+        Say ("  " + (($out | Select-Object -Last 3) -join ' | '))
+        if ($LASTEXITCODE -ne 0) { Say ("  X كود الخروج {0}" -f $LASTEXITCODE); $failed = $true }
+    } finally { Pop-Location }
+}
+
+# **والقيد اللي اتعدّل بيتهد كمان — مش المستند بس.**
+#
+# `import_a5_ledger` بيتخطّى القيد اللي `external_ref` بتاعه موجود، فالقيد اللي اتعدّل عند
+# العميل بيفضل مجمّد. والمستند بيتصلّح (الخطوة اللي فوق) والقيد لأ — فالفاتورة بتقول رقم
+# وكشف الحساب بيقول رقم تاني، ومحدش يعرف مين الصح. اتقاس: ١٧ قيد بـ٣٧٨ ألف جنيه على
+# الفرعين. `rebuild_a5_ledger` بيشيلهم ويفك ربطهم بالفواتير، والاستيراد اللي بعده بيبنيهم
+# ويربطهم تاني.
+foreach ($b in $Branches) {
+    Say ("-- {0} · rebuild_a5_ledger --" -f $b.Name)
+    $pyArgs = @('-m', 'src.scripts.rebuild_a5_ledger', '--dir', $b.Dir, '--branch', $b.Name, '--yes')
+    if ($b.Prefix) { $pyArgs += @('--prefix', $b.Prefix) }
+    Push-Location "$Rootackend"
+    try {
+        $env:PYTHONIOENCODING = 'utf-8'
+        $out = & $Py @pyArgs 2>&1
+        Say ("  " + (($out | Select-Object -Last 3) -join ' | '))
+        if ($LASTEXITCODE -ne 0) { Say ("  X كود الخروج {0}" -f $LASTEXITCODE); $failed = $true }
+    } finally { Pop-Location }
 }
 
 foreach ($b in $Branches) {

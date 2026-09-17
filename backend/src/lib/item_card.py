@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.models.catalog import Item, StockBatchMovement
@@ -78,6 +78,7 @@ def card(
     date_to: str | date | None = None,
     movement_type: str | None = None,
     direction: str | None = None,
+    branch_id: int | None = None,
 ) -> dict:
     item = db.get(Item, item_id)
     if item is None:
@@ -96,6 +97,17 @@ def card(
     day_to = _parse_day(date_to)
 
     stmt = select(StockMovement).where(StockMovement.item_id == item_id)
+    # **عزل الفروع — الكارت بيقول حركة فرع اللي بيقراه.**
+    #
+    # الكتالوج مشترك بين الفرعين (`Item` مالوش `branch_id`)، فمستخدم العلياء كان بيفتح
+    # كارت صنف ويلاقي قدامه «مخزن اكتوبر» و«مخزن الفيوم» بأرصدتهم. الحركة هي اللي
+    # بتحمل الفرع (`StockMovement.branch_id` بيتاخد من مكانها)، فالفلترة عليها.
+    #
+    # و`NULL` داخل مع الفرع — نفس قاعدة `branch_scope.scope` بالحرف: الحركة المكتوبة
+    # قبل العزل مالهاش فرع، وإخفاؤها بيفضّي الكارت بدل ما يعزله.
+    if branch_id is not None:
+        stmt = stmt.where(or_(StockMovement.branch_id == branch_id,
+                              StockMovement.branch_id.is_(None)))
     if kind is not None:
         stmt = stmt.where(
             StockMovement.location_kind == kind,

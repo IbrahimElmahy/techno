@@ -64,6 +64,7 @@ from src.models.transfer import (
 from src.models.user import User
 from src.models.warehouse import Warehouse
 from src.scripts.import_a5 import _clean, _money, _read, mine
+from src.lib import discounts
 from src.services import account_resolver, stock_service
 
 ZERO = Decimal("0")
@@ -289,10 +290,15 @@ def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
         cash_account_id=c.treasury.id, actor_user_id=c.admin.id)
     c.db.add(inv)
     c.db.flush()
+    # **الخصم بيتحسب من السطر، مش بيتساب صفر.**
+    #
+    # a5 بيكتب سعر الوحدة الخام وإجمالي السطر بعد الخصم، والنسبة اللي بينهم مش في
+    # عمود بنقراه. كانت بتتساب صفر، فالسطر المنقول بيقول «٢٥ × ٢٠٨ = ٤٬١٦٠» والضرب
+    # مابيطلعش — وكشف المبيعات بيقول خصم صفر على فاتورة خصمها ٢٠٪.
     for it, wh, qty, price, total, cost in ls:
         c.db.add(SalesInvoiceLine(
             invoice_id=inv.id, item_id=it.id, quantity=qty, unit_price=price,
-            line_total=total, discount_pct=ZERO,
+            line_total=total, discount_pct=discounts.implied_pct(qty * price, total),
             location_kind=LocationKind.warehouse, location_id=wh.id,
             unit_cost=cost or None))
         c.move(it.id, wh.id, "sale", StockDirection.out, qty, "sales_invoice", inv.id)
@@ -326,7 +332,9 @@ def _sale_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     for it, wh, qty, price, total, cost in ls:
         c.db.add(SalesReturnLine(
             return_id=ret.id, item_id=it.id, quantity=qty, unit_price=price,
-            line_total=total, location_kind=LocationKind.warehouse, location_id=wh.id,
+            line_total=total,
+            discount_pct=discounts.implied_pct(qty * price, total),
+            location_kind=LocationKind.warehouse, location_id=wh.id,
             unit_cost=cost or None))
         c.move(it.id, wh.id, "sales_return", StockDirection.in_, qty,
                "sales_return", ret.id)
@@ -366,7 +374,9 @@ def _purchase(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     for it, wh, qty, price, total, _cost in ls:
         c.db.add(PurchaseInvoiceLine(
             invoice_id=inv.id, item_id=it.id, quantity=qty, unit_price=price,
-            line_total=total, line_location_kind=LocationKind.warehouse,
+            line_total=total,
+            discount_pct=discounts.implied_pct(qty * price, total),
+            line_location_kind=LocationKind.warehouse,
             line_location_id=wh.id))
         c.move(it.id, wh.id, "purchase", StockDirection.in_, qty,
                "purchase_invoice", inv.id)
@@ -401,7 +411,8 @@ def _purchase_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     for it, wh, qty, price, total, _cost in ls:
         c.db.add(PurchaseReturnLine(
             return_id=ret.id, item_id=it.id, quantity=qty, unit_price=price,
-            line_total=total))
+            line_total=total,
+            discount_pct=discounts.implied_pct(qty * price, total)))
         c.move(it.id, wh.id, "purchase_return", StockDirection.out, qty,
                "purchase_return", ret.id)
     c.taken.add(num)

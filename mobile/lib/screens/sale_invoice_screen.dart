@@ -3,8 +3,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../api/api_client.dart';
 import '../db/local_db.dart';
+import '../models/discount.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'invoice_print_screen.dart';
@@ -61,7 +61,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// غير في تقرير آخر الشهر.
   DateTime get _date => DateTime.now();
   final _notes = TextEditingController();
-  final _cash = TextEditingController(text: '0');
+  // فاضية، مش «٠» — نفس قاعدة خانة الكمية.
+  //
+  // الصفر المكتوب في خانة انت جاي تكتب فيها هو رقم مستنّي نصّه يتمسح: «٠» وبعدها «١»
+  // بتطلع «٠١» أو «١٠» حسب مكان المؤشر، والمندوب بيقبض ١٠ ورا الرقم ١. والفاضي هنا
+  // بيتقرا صفر أصلاً (`_cashAmount`)، فمافيش معنى ضايع.
+  final _cash = TextEditingController();
 
   /// الكوبونات المصروفة مع الفاتورة — صف لكل فئة دفتر، زي النظام على الويب.
   final List<SaleCouponRow> _coupons = [];
@@ -143,16 +148,16 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     setState(() {
       _customer = cust;
       _family = r['family'] as String?;
-      _cash.text = _trim((r['cash_amount'] as num?)?.toDouble() ?? 0);
+      _cash.text = _blank((r['cash_amount'] as num?)?.toDouble() ?? 0);
       _notes.text = (r['notes'] as String?) ?? '';
       _lines
         ..clear()
         ..addAll(lines);
       for (final l in _lines) {
-        _qtyCtl[l.itemId] = TextEditingController(text: _trim(l.quantity));
-        _priceCtl[l.itemId] = TextEditingController(text: _trim(l.unitPrice));
+        _qtyCtl[l.itemId] = TextEditingController(text: _blank(l.quantity));
+        _priceCtl[l.itemId] = TextEditingController(text: _blank(l.unitPrice));
         _discCtl[l.itemId] =
-            TextEditingController(text: _trim(l.variableDiscountPct));
+            TextEditingController(text: _blank(l.variableDiscountPct));
       }
       _coupons
         ..clear()
@@ -293,8 +298,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // الخانات عندها كنترولرز، والموديل لسه متغيّر من برّه — فلازم تتبلّغ، وإلا
       // السطر يتسعّر على فئة العميل والخانة تفضل واقفة على السعر القديم.
       for (final l in _lines) {
-        _priceCtl[l.itemId]?.text = _trim(l.unitPrice);
-        _discCtl[l.itemId]?.text = _trim(l.variableDiscountPct);
+        _priceCtl[l.itemId]?.text = _blank(l.unitPrice);
+        _discCtl[l.itemId]?.text = _blank(l.variableDiscountPct);
       }
     });
   }
@@ -502,15 +507,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// الفاتورة محفوظة خلاص والرفع ده مكسب زيادة. **والسقف مقصود**: الرفع العادي مهلته
   /// ٩٠ ثانية عشان الشبكة الضعيفة تعدّي، لكن هنا المندوب واقف والعميل مستني الورقة —
   /// شبكة زفت مش سبب يوقّفه، والطابور بيرفع في المزامنة على مهله.
-  Future<bool> _pushNow() async {
-    try {
-      return await ApiClient.instance
-              .pushSaleInvoices()
-              .timeout(const Duration(seconds: 8), onTimeout: () => 0) >
-          0;
-    } catch (_) {
-      return false; // الطابور بيحاول تاني في شاشة المزامنة
-    }
+  /// أرصدة الخطين قبل الطلب، JSON — بتتخزّن مع الطلب عشان الورقة تقولهم كل واحد
+  /// لوحده. `null` لما العميل حسابه مش مقسوم: سطر واحد ساعتها أصدق من سطرين فاضيين.
+  String? _prevBalancesJson() {
+    final b = _customer?.familyBalances ?? const <String, double>{};
+    if (b.isEmpty) return null;
+    return jsonEncode({for (final e in b.entries) e.key: e.value});
   }
 
   Future<void> _save() async {
@@ -558,6 +560,18 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       }
     }
     if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
+    // خصم ١٠٠٪ أو أكتر بيترفض، مابيتقصّش.
+    //
+    // المحرك بيقصّ أي رقم فوق ١٠٠ عند ٩٩٫٩٩ عشان السطر مايبقاش بصفر. القصّ ده صح جوّه
+    // الحساب وغلط عند الكتابة: المندوب اللي كتب مبلغ (١٠٠ج) في خانة نسبة كانت فاتورته
+    // بتتحفظ وتترفع بخصم ٩٩٫٩٩٪ — عشرين تى بـ٢٢٫٥ بتطلع بخمسة صاغ، وماحدش شاف رسالة.
+    // حصلت فعلاً في SINV-000023 وSINV-000025.
+    for (final l in _lines) {
+      if (l.variableDiscountPct >= 100) {
+        return _say('خصم «${l.itemName}» ${_qty(l.variableDiscountPct)}٪ — '
+            'الخانة دي نسبة مش مبلغ. اكتب رقم أقل من ١٠٠.');
+      }
+    }
     final over = await _overCustody();
     if (over.isNotEmpty) return _warnOverCustody(over);
     // **المدفوع ممكن يزيد عن أي حاجة — والسيرفر بيقبلها ويقيّدها صح.**
@@ -638,6 +652,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           // الرقم اللي المندوب قاله للعميل وهو واقف قدامه — بيتخزّن مع الفاتورة مش
           // بيتقرا وقت الطباعة، لأن الكاش بيتغيّر مع أول مزامنة بعدها.
           prevBalance: _prevBalance,
+          prevBalancesJson: _prevBalancesJson(),
           lines: _lines,
         );
         if (!mounted) return;
@@ -648,7 +663,6 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           Navigator.pop(context, true);
           return;
         }
-        await _pushNow();
         if (!mounted) return;
         Navigator.pop(context, true);
         return;
@@ -665,18 +679,20 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
         couponsJson: _couponsJson(),
         prevBalance: _prevBalance,
+        prevBalancesJson: _prevBalancesJson(),
         lines: _lines,
       );
       if (!mounted) return;
       // محاولة رفع سريعة — بسقف ٨ ثواني.
       //
-      // الفاتورة محفوظة خلاص، والرفع ده مكسب زيادة: لو الشبكة موجودة بيجيب رقم المستند
-      // فيطلع على الورقة. ولو مافيش شبكة، `SocketException` بترجع على طول ومحدش بيستنى.
+      // **الحفظ مابيرفعش — الرفع بدوسة «مزامنة الآن».**
       //
-      // **والسقف مقصود.** الرفع العادي مهلته ٩٠ ثانية عشان الشبكة الضعيفة تعدّي؛ لكن هنا
-      // المندوب واقف بيتفرّج على «بيحفظ…» والعميل مستني الورقة. شبكة زفت مش سبب يوقّفه —
-      // الطابور بيرفع في المزامنة على مهله.
-      final pushed = await _pushNow();
+      // كان بيحاول يرفع على طول بعد الحفظ بسقف ٨ ثواني. والرفع مش خلفية: الفاتورة اللي
+      // وصلت السيرفر بقت مستند بقيد ومخزون اتحرّك، ومابتتعدّلش من الجهاز بعدها. فاللي
+      // لسه بيراجع فاتورته كان بيلاقيها اتقفلت في وشّه من غير ما يطلب.
+      //
+      // الفاتورة محفوظة على الجهاز في الحالتين — اللي اتغيّر هو **إمتى** تروح، بقرار
+      // المندوب لا بقرار الشاشة.
       if (!mounted) return;
       // **الورقة مابتطلعش غير لما الفاتورة توصل النظام.**
       //
@@ -689,10 +705,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // اللي رفعت. الفرق بيبان لما يبقى في الطابور فاتورة تانية بتعدّي وواحدة بترفض.
       final rows = await LocalDb.instance.saleInvoices();
       final saved = rows.firstWhere((r) => r['local_id'] == localId, orElse: () => {});
-      final landed = pushed && (saved['synced'] as int?) == 1;
+      // اللي اترفعت خلاص (تعديل لفاتورة مرفوعة) بتطبع؛ الجديدة بتستنى المزامنة.
+      final landed = (saved['synced'] as int?) == 1;
       if (!mounted) return;
       if (!landed) {
-        _say('الفاتورة اتحفظت على الجهاز — الطباعة بعد ما ترفع. تقدر تعدّلها لحد ساعتها.');
+        _say('اتحفظت على الجهاز. اعمل «مزامنة الآن» عشان ترفعها وتطبعها — '
+            'وتقدر تعدّلها لحد ساعتها.');
         Navigator.pop(context, true);
         return;
       }
@@ -718,7 +736,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   void _syncQtyField(SaleDraftLine l) {
     final c = _qtyCtl[l.itemId];
     if (c == null) return;
-    final t = _trim(l.quantity);
+    final t = _blank(l.quantity);
     if (c.text == t) return;
     // `c.text = t` بيرمي المؤشر على موضع غير صالح (-1) — توثيق Flutter نفسه بيقول
     // إن الـsetter ده للاختبارات. والنتيجة إن الرقم الجاي بيتكتب في **أول** الخانة:
@@ -1065,7 +1083,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     final l = _lines[i];
     // مفتاح بالصنف عشان حالة الخانات تفضل مع سطرها لو اتمسح سطر من النص.
     final ctl = _qtyCtl.putIfAbsent(
-        l.itemId, () => TextEditingController(text: _trim(l.quantity)));
+        l.itemId, () => TextEditingController(text: _blank(l.quantity)));
     return Card(
       key: ValueKey(l.itemId),
       margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
@@ -1144,7 +1162,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   child: _inlineField(
                     label: 'السعر',
                     controller: _priceCtl.putIfAbsent(l.itemId,
-                        () => TextEditingController(text: _trim(l.unitPrice))),
+                        () => TextEditingController(text: _blank(l.unitPrice))),
                     onChanged: (v) => setState(() => l.unitPrice = v),
                     // **الصنف اللي عليه خصم ثابت، سعره سعر القايمة — مايتكتبش فوقه.**
                     //
@@ -1171,7 +1189,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     // ورّت الصافي كان اللي يكتب فيه يبقى بيكتب في خانة معناها اتغيّر
                     // تحت إيده. الشارة «ثابت ١٠٪» جنب السطر بتقول الخصم جه منين.
                     netPrice: l.fixedDiscountPct > 0
-                        ? l.unitPrice * (1 - l.discountPct / 100)
+                        ? netOf(l.unitPrice, l.discountPct)
                         : null,
                   ),
                 ),
@@ -1182,7 +1200,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     controller: _discCtl.putIfAbsent(
                         l.itemId,
                         () => TextEditingController(
-                            text: _trim(l.variableDiscountPct))),
+                            text: _blank(l.variableDiscountPct))),
                     onChanged: (v) =>
                         setState(() => l.variableDiscountPct = v),
                   ),
@@ -1581,6 +1599,13 @@ String _trim(double v) {
   final s = v.toStringAsFixed(3);
   return s.replaceFirst(RegExp(r'\.?0+$'), '');
 }
+
+/// نفس [_trim] بس **الصفر بيرجع فاضي** — ده اللي بيتحط في خانة بيتكتب فيها.
+///
+/// «٠» مكتوبة في خانة رقم مش قيمة، دي عقبة: اللي بيكتب «٥» على «٠» بيطلع «٠٥» أو
+/// «٥٠». وكل الخانات دي بتقرا الفاضي صفر، فمافيش فرق في المعنى — الفرق في إن الرقم
+/// اللي بيتكتب هو الرقم اللي المندوب قصده.
+String _blank(double v) => v == 0 ? '' : _trim(v);
 
 /// سطر كميته أكتر من المتاح، ومعاه المتاح وقت القياس.
 class _OverLine {

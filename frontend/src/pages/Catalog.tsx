@@ -10,6 +10,7 @@ import {
   UnorderedListOutlined, DownloadOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { netOf } from '../utils/discount';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
@@ -671,6 +672,39 @@ export default function Catalog() {
         return price ? `${money(price)} ج.م` : '-';
       },
     },
+    {
+      // **الخصم الثابت على الصنف** — جنب السعر مش في شاشة تانية.
+      //
+      // الرقم ده بيتطبّق لوحده على كل سطر بيع للصنف ده (`fixed_discount_pct`)، فاللي
+      // بيراجع سعر القايمة لازم يشوف جنبه الخصم اللي بيمشي معاه — وإلا بيقارن ١٦٦٫٢٥
+      // بفاتورة كاتبة ١٤٩٫٦٣ ويدوّر على فرق مالوش تفسير في الشاشة اللي قدامه.
+      //
+      // والصافي مكتوب تحته: مصدره `default_discount_pct` واللي جنبه، فمافيش حساب في
+      // دماغ حد.
+      title: 'خصم ثابت',
+      key: 'default_discount_pct',
+      width: 120,
+      align: 'left' as const,
+      sorter: (a: ItemRecord, b: ItemRecord) =>
+        Number(a.default_discount_pct || 0) - Number(b.default_discount_pct || 0),
+      render: (_: any, r: ItemRecord) => {
+        const pct = Number(r.default_discount_pct || 0);
+        if (!pct) return <span style={{ color: '#bfbfbf' }}>—</span>;
+        const price = Number(r.consumer_price ?? r.sale_price ?? 0);
+        return (
+          <div style={{ lineHeight: 1.35 }}>
+            <Tag color="orange" style={{ marginInlineEnd: 0, fontWeight: 700 }}>
+              {pct.toFixed(pct % 1 === 0 ? 0 : 2)}%
+            </Tag>
+            {price > 0 && (
+              <div style={{ fontSize: 11, color: '#8c8c8c' }}>
+                صافي {money(netOf(price, pct))} ج.م
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
     // ---- ours, kept after theirs ----
     {
       title: 'الرصيد',
@@ -1106,7 +1140,7 @@ export default function Catalog() {
                   {({ getFieldValue }) => {
                     const row = getFieldValue(['prices', tier.key]) || {};
                     const price = Number(row.price || 0);
-                    const net = price * (1 - Number(row.discount_pct || 0) / 100)
+                    const net = netOf(price, row.discount_pct)
                       * (1 + Number(row.vat_pct || 0) / 100);
                     return (
                       <InputNumber value={Number(net.toFixed(2))} disabled

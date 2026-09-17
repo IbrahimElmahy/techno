@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../db/local_db.dart';
+import '../models/arabic_sort.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
@@ -79,12 +80,17 @@ class _MyStockScreenState extends State<MyStockScreen> {
     for (final it in _items) {
       m.putIfAbsent(_categoryOf(it), () => []).add(it);
     }
+    // الفئات أبجدياً، و«بدون فئة» في الآخر دايماً — مش اسم، دي بقية القايمة.
+    // والأصناف جوّه كل فئة أبجدياً كمان: القايمة اللي المندوب بيدوّر فيها بعينه.
+    for (final e in m.entries) {
+      sortByName<SaleItem>(e.value, (i) => i.name);
+    }
     final entries = m.entries.toList()
       ..sort((a, b) {
         if ((a.key == _noCategory) != (b.key == _noCategory)) {
           return a.key == _noCategory ? 1 : -1;
         }
-        return a.key.compareTo(b.key);
+        return compareArabic(a.key, b.key);
       });
     return entries;
   }

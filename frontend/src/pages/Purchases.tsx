@@ -14,6 +14,8 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useDocRoute } from '../components/useDocRoute';
+import { useDraft } from '../components/useDraft';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import TotalsLadder from '../components/TotalsLadder';
@@ -437,16 +439,16 @@ export default function Purchases() {
    * بيوصل لشاشة بتفرّجه عليها. الفرق بين الاتنين هو نية اللي ضغط، والرابط هو اللي
    * بيقولها.
    */
-  useEffect(() => {
-    const docId = searchParams.get('doc') || searchParams.get('edit');
-    const wantsEdit = !!searchParams.get('edit');
-    if (!docId || handledIntent.current === docId) return;
-    handledIntent.current = docId;
-    setSearchParams({}, { replace: true });
-    const target = purchases.find((p) => p.id === Number(docId)) || ({ id: Number(docId), kind: 'purchase' } as PurchaseRecord);
-    if (wantsEdit) openRow(target);
-    else openDetail(target);
-  }, [searchParams, purchases]);
+  // الفاتورة المفتوحة جزء من العنوان، فالـ«رجوع» بيقفلها ويرجّع للكشف — `useDocRoute`.
+  const { markOpen, markClosed } = useDocRoute<PurchaseRecord>({
+    rows: purchases,
+    openId: (viewPurchase?.id ?? editingId) ?? null,
+    open: (row, mode) => { if (mode === 'edit') openRow(row); else openDetail(row); },
+    close: () => closeCreate(),
+    loading,
+    // `openDetail` بيجيب الفاتورة بالرقم بنفسه، فالصف المبدئي كفاية.
+    fetchOne: async (id) => ({ id, kind: 'purchase' } as PurchaseRecord),
+  });
 
   /**
    * فتح فاتورة شراء — على نفس الصفحة اللي بتتكتب فيها.
@@ -467,6 +469,7 @@ export default function Purchases() {
   };
 
   const openDetail = async (record: PurchaseRecord) => {
+    markOpen(record.id);
     try {
       const res = await api.get(`/api/v1/purchases/${record.id}`);
       const det: PurchaseDetail = res.data;
@@ -1060,6 +1063,8 @@ export default function Purchases() {
           setDocResult(res.data);
           message.success(editingId !== null
             ? 'تم حفظ الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
+          // بعد ما السيرفر رد بنجاح وبس — المرفوضة بتفضل مسودّة.
+          discardDraft();
           setEditingId(null);
           form.resetFields();
           setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
@@ -1164,11 +1169,65 @@ export default function Purchases() {
 
 
   /** رجوع للسجل — والشاشة بترجع فاضية عشان الفاتورة الجاية تبدأ من نضيف. */
+  /** المسودّة — نفس قاعدة طلب البيع بالحرف. الشرح في `useDraft`. */
+  const draftPayload = useMemo(() => ({
+    supplier_id: form.getFieldValue('supplier_id') ?? null,
+    purchase_date: purchaseDate ? dayjs(purchaseDate).format('YYYY-MM-DD') : null,
+    items: purchaseItems,
+    variableDiscount,
+    cashAmount,
+    creditAmount,
+    notes: form.getFieldValue('notes') ?? null,
+    external_document_number: form.getFieldValue('external_document_number') ?? null,
+  }), [form, purchaseDate, purchaseItems, variableDiscount, cashAmount, creditAmount]);
+
+  const {
+    drafts, savedAt: draftSavedAt, discard: discardDraft,
+    remove: removeDraft, adopt: adoptDraft,
+  } = useDraft({
+    kind: 'purchase',
+    payload: draftPayload,
+    // المستند الموجود (عرض أو تعديل) مالوش مسودّة — ده مستند عند المكتب خلاص.
+    paused: Boolean(viewPurchase || editingId),
+    isEmpty: (x: any) => !x.supplier_id
+      && !(x.items || []).some((l: any) => l.item_id != null),
+    title: (x: any) => {
+      const name = suppliers.find((v) => v.id === x.supplier_id)?.name || 'بدون مورّد';
+      const n = (x.items || []).filter((l: any) => l.item_id != null).length;
+      return `${name} — ${n} صنف`;
+    },
+  });
+
+  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
+  const resumeDraft = (d: any) => {
+    const x = d.payload || {};
+    adoptDraft(d.id);
+    setEditingId(null);
+    setViewPurchase(null);
+    setViewOnly(false);
+    setNewStep(null);
+    setCreateVisible(true);
+    form.setFieldsValue({
+      supplier_id: x.supplier_id ?? undefined,
+      notes: x.notes ?? undefined,
+      external_document_number: x.external_document_number ?? undefined,
+    });
+    if (x.purchase_date) setPurchaseDate(dayjs(x.purchase_date));
+    setPurchaseItems(x.items?.length ? x.items : [{
+      key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+      discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
+    setVariableDiscount(Number(x.variableDiscount) || 0);
+    setCashAmount(Number(x.cashAmount) || 0);
+    setCreditAmount(Number(x.creditAmount) || 0);
+  };
+
   const closeCreate = () => {
     setCreateVisible(false);
     setDetail(null);
     setDocResult(null);
     setNewStep(null);
+    setViewPurchase(null);
+    markClosed();
     // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
     // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
     setEditingId(null);
@@ -1542,9 +1601,10 @@ export default function Purchases() {
       width: 100,
       filters: [{ text: 'فاتورة شراء', value: 'purchase' }, { text: 'مردود شراء', value: 'return' }],
       onFilter: (v: any, r: PurchaseRecord) => r.kind === v,
-      render: (v: string) => (v === 'return'
-        ? <Tag color="orange" style={{ fontWeight: 600 }}>مردود شراء</Tag>
-        : <Tag color="blue" style={{ fontWeight: 600 }}>فاتورة شراء</Tag>),
+      render: (v: string) => (
+        v === 'draft' ? <Tag color="gold" style={{ fontWeight: 600 }}>مسودّة</Tag>
+          : v === 'return' ? <Tag color="orange" style={{ fontWeight: 600 }}>مردود شراء</Tag>
+            : <Tag color="blue" style={{ fontWeight: 600 }}>فاتورة شراء</Tag>),
     },
     {
       title: 'رقم المستند',
@@ -1552,9 +1612,13 @@ export default function Purchases() {
       key: 'document_number',
       width: 140,
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
-      render: (doc: string, r: PurchaseRecord) => (
+      render: (doc: string, r: any) => (
         <Space direction="vertical" size={0}>
-          <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>
+          {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
+          <Tag color={r.kind === 'draft' ? 'gold'
+            : r.kind === 'purchase' ? 'blue' : 'orange'}>
+            {r.kind === 'draft' ? 'مسودّة — لسه ما اترحّلتش' : doc}
+          </Tag>
           {r.parent_document_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.parent_document_number}</span>
           )}
@@ -1813,10 +1877,34 @@ export default function Purchases() {
       <Table
         {...listKb.tableProps}
         size="small"
-        dataSource={purchasesFilter.filtered}
+        // المسودّات فوق المستندات. **وبرّه `purchasesFilter.filtered` عن قصد**:
+        // الإجماليات والتصدير بيتبنوا منه، والمسودّة مش مشتريات.
+        dataSource={[
+          ...(drafts || []).map((d: any) => {
+            const x = d.payload || {};
+            const ls = (x.items || []).filter((l: any) => l.item_id != null);
+            const gross = ls.reduce((t: number, l: any) =>
+              t + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
+            return {
+              id: d.id, kind: 'draft', __draft: d,
+              document_number: 'مسودّة',
+              parent_document_number: null,
+              external_document_number: null,
+              purchase_date: String(x.purchase_date || d.updated_at || '').slice(0, 10),
+              created_at: d.updated_at,
+              supplier_id: x.supplier_id ?? null,
+              gross, net: gross, total: gross,
+            } as any;
+          }),
+          ...purchasesFilter.filtered,
+        ]}
+        rowClassName={(r: any) => (r.kind === 'draft' ? 'row-draft' : '')}
         columns={listCols.columns}
         // فاتورة ومرتجع ممكن يكون ليهم نفس الـid — المفتاح لازم يشيل النوع كمان.
         rowKey={(r: PurchaseRecord) => `${r.kind}-${r.id}`}
+        onRow={(r: any) => (r.kind === 'draft'
+          ? { onClick: () => resumeDraft(r.__draft), style: { cursor: 'pointer' } }
+          : {})}
         loading={listLoading}
         // نفس قاعدة باقي السجلات: كل عمود بمقاسه، والزيادة بتتمرّر — مش بتتوزّع على
         // عمود واحد فتطلع فراغ في نص الجدول.

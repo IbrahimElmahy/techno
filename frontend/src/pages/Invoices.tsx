@@ -14,6 +14,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
+import { combineDiscounts, netOf } from '../utils/discount';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
@@ -483,7 +484,15 @@ export default function Invoices() {
       family: s.family,
       gross: Number(s.gross || 0),
       combined_pct: Number(s.combined_pct || 0),
-      discount_value: Number(s.gross || 0) * (Number(s.combined_pct || 0) / 100),
+      // **الخصم = خصم السطور + خصم المستند.**
+      //
+      // `combined_pct` خصم المستند وبس، وهو صفر على كل فاتورة تقريباً — والخصم
+      // الحقيقي عايش على السطر. الكشف كان بيقول «خصم ٠» على فاتورة خصمها ٢٠٪،
+      // والفاتورة نفسها لما تتفتح بتقول الرقم الصح. الكشف هو اللي بيتبص عليه.
+      discount_value: Number(s.line_discount || 0)
+        + Number(s.gross || 0) * (Number(s.combined_pct || 0) / 100),
+      // النسبة بتتقاس على الإجمالي **قبل** خصم السطور — وإلا ٢٠٪ بتطلع ٢٥٪.
+      discount_base: Number(s.gross_before_line_discount || 0) || Number(s.gross || 0),
       net: Number(s.net || 0),
       cash_amount: Number(s.cash_amount || 0),
       credit_amount: Number(s.credit_amount || 0),
@@ -509,6 +518,7 @@ export default function Invoices() {
       gross: Number(r.gross || 0),
       combined_pct: Number(r.combined_pct || 0),
       discount_value: Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100),
+      discount_base: Number(r.gross || 0),
       net: Number(r.net || 0),
       cash_amount: Number(r.cash_refund || 0),
       credit_amount: Number(r.credit_reduction || 0),
@@ -636,8 +646,9 @@ export default function Invoices() {
     return prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
   };
 
+  /** خصم السطر — الثابت وبعده المتغيّر. المحرك في `utils/discount`. */
   const lineDiscountPct = (l: SaleLineItem) =>
-    Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
+    combineDiscounts(l.fixed_discount, l.variable_discount);
 
   /**
    * الكمية بعد ما الحارس يقيسها على المتاح.
@@ -680,11 +691,9 @@ export default function Invoices() {
     setPickerOpen(true);
   };
 
-  // A line's amount AFTER its own (fixed + variable) discount.
-  const lineTotal = (l: SaleLineItem) => {
-    const disc = Math.min(99.99, (l.fixed_discount || 0) + (l.variable_discount || 0));
-    return Number(l.quantity || 0) * l.unit_price * (1 - disc / 100);
-  };
+  // A line's amount AFTER its own discounts — الثابت وبعده المتغيّر، مش مجموعين.
+  const lineTotal = (l: SaleLineItem) =>
+    netOf(Number(l.quantity || 0) * l.unit_price, lineDiscountPct(l));
 
   // Loyalty points a line earns = the product's point value × quantity.
   const linePoints = (l: SaleLineItem) =>
@@ -692,7 +701,7 @@ export default function Invoices() {
 
   // Invoice computations: per-line discounts first, then the invoice-total discount.
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
-  const netTotal = grossTotal * (1 - discountPct / 100);
+  const netTotal = netOf(grossTotal, discountPct);
 
   /**
    * أعمدة شبكة سطور الفاتورة كبيانات — بأبعاد متناسقة ومساحات مريحة.
@@ -1462,8 +1471,14 @@ export default function Invoices() {
                 tier: l.tier,
                 unit: l.unit,
                 unit_price: l.unit_price.toFixed(2),
-                // Combined per-line discount: the item's fixed + the typed variable.
-                discount_pct: ((l.fixed_discount || 0) + (l.variable_discount || 0)).toFixed(2),
+                // Combined per-line discount: the item's fixed compounded with the typed
+                // variable. Kept for a server that predates the split.
+                discount_pct: lineDiscountPct(l).toFixed(2),
+                // ...and the two halves, so the invoice READ BACK can still tell them apart.
+                // Without them the screen had to put the whole discount in «خصم ثابت» and show
+                // «خصم متغير ٠» — which reads as a company discount the company never gave.
+                fixed_discount_pct: Number(l.fixed_discount || 0).toFixed(2),
+                variable_discount_pct: Number(l.variable_discount || 0).toFixed(2),
                 serials: prod?.is_serialized ? parseSerials(l.serials) : null,
                 // (030) Only sent when it differs from the document's, so the server keeps its
                 // "fall back to the document" behaviour for everything else.
@@ -1561,6 +1576,13 @@ export default function Invoices() {
   // click the list is already loaded and only the parameter changes. Splitting them into an effect
   // per dependency broke the second case — the list never changed, so nothing ever fired, and
   // clicking the same statement line a second time did nothing.
+  /**
+   * الرابط الجاي من بره بيفتح الفاتورة — مرة واحدة، والبارامتر بيتمسح بعدها.
+   *
+   * ⚠️ **وده مش `useDocRoute`.** جرّبت أربط الشاشة دي بيه (عشان «رجوع» يقفل الفاتورة
+   * ويرجّع للكشف) ومعاه المسودّات، والشاشة طلعت **بيضا** عند العميل. الاتنين اتشالوا من
+   * هنا لحد ما يبان الخطأ الحقيقي في الكونسول — شاشة مابتفتحش مش مقايضة مع أي تحسين.
+   */
   const pendingIntent = useRef<{ id: number; mode: 'view' | 'edit' } | null>(null);
 
   useEffect(() => {
@@ -1580,8 +1602,6 @@ export default function Invoices() {
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
 
-
-
   /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
   const neighbour = (step: number) => {
     if (!viewInvoice) return null;
@@ -1593,12 +1613,31 @@ export default function Invoices() {
     return rows[at + step] ?? null;
   };
 
-  /** Extra header lines on the printed invoice: the paper number, and the coupon range if the
-   *  sale issued any — the customer's own proof of which serials are his. */
+  /** Extra header lines on the printed invoice: the paper number, and the coupon books the sale
+   *  issued — the customer's own proof of which serials are his.
+   *
+   *  **السطر لكل فئة، مش سطر واحد للكل.** الكوبونات بتتسجّل صف لكل فئة دفتر بمداه (وده
+   *  اللي التطبيق والويب الاتنين بيبعتوه)، والورقة كانت بتقرا الشكل القديم وحده —
+   *  `coupon_serial_from` على رأس الفاتورة. فاللي بيسلّم مية دهبي وخمسين فضي كانت ورقته
+   *  بتطلع من غير ولا كوبون، والعميل ماسك دفاتر مالهاش إثبات إنها اتسلّمت.
+   *
+   *  والشكل القديم سايب تحته: فواتير اتكتبت قبل الصفوف لسه بتتطبع صح. */
   const printMeta = (inv: any): [string, string][] | undefined => {
     const meta: [string, string][] = [];
     if (inv.external_document_number) meta.push(['رقم المستند', inv.external_document_number]);
-    if (inv.coupon_serial_from) {
+    const rows: any[] = inv.coupons ?? [];
+    const named = rows.filter(
+      (c) => c.coupon_kind || c.coupon_type_name || c.serial_from || c.serial_to);
+    if (named.length) {
+      for (const c of named) {
+        const kind = c.coupon_kind || c.coupon_type_name || 'كوبونات';
+        const n = c.count ?? couponCount(c.serial_from, c.serial_to);
+        const range = c.serial_from && c.serial_to
+          ? `من ${c.serial_from} إلى ${c.serial_to}`
+          : (c.serial_from || c.serial_to || '');
+        meta.push([kind, [n ? `${n} كوبون` : '', range].filter(Boolean).join(' — ')]);
+      }
+    } else if (inv.coupon_serial_from) {
       const count = inv.coupon_count ? `${inv.coupon_count} — ` : '';
       meta.push(['الكوبونات',
         `${count}من ${inv.coupon_serial_from} إلى ${inv.coupon_serial_to}`]);
@@ -1643,7 +1682,18 @@ export default function Invoices() {
     return () => cancelAnimationFrame(raf);
   }, [focusLineKey, lines.length, pickerOpen]);
 
-  /** How many coupons this invoice hands over — derived only when both serials are plain
+  /** إجمالي كوبونات الفاتورة — من صفوف الفئات، وإلا من المدى القديم اللي على الرأس.
+ *  العدد المكتوب أولاً، والمحسوب من المدى لو مش متكتوب. */
+function couponsTotal(inv: any): number {
+  const rows: any[] = inv?.coupons ?? [];
+  if (rows.length) {
+    return rows.reduce(
+      (t, c) => t + (c.count ?? couponCount(c.serial_from, c.serial_to) ?? 0), 0);
+  }
+  return inv?.coupon_count ?? couponCount(inv?.coupon_serial_from, inv?.coupon_serial_to) ?? 0;
+}
+
+/** How many coupons this invoice hands over — derived only when both serials are plain
    *  numbers, since a lettered book cannot be subtracted into a count anyone could check. */
   // Only the billed ones move money the customer owes; the operating ones are ours to bear.
 
@@ -1691,8 +1741,16 @@ export default function Invoices() {
           quantity: Number(l.quantity) || 1,
           unit_price: Number(l.unit_price) || 0,
           serials: '',
-          fixed_discount: Number(l.discount_pct) || 0,
-          variable_discount: 0,
+          // القسمة اللي اتسجّلت مع السطر. `null` معناها سطر مش عارف قسمته (اتكتب قبل
+          // العمود، أو اتنقل من a5) — وساعتها المجموع بيتعرض كله «ثابت» زي ما كان، لأن
+          // ده اللي كان معروف عنه وقتها. التخمين إنه متغيّر بيقول على المندوب حاجة
+          // ماعملهاش، والعكس بيقول على الشركة حاجة ماقالتهاش.
+          fixed_discount: l.fixed_discount_pct != null
+            ? Number(l.fixed_discount_pct)
+            : Number(l.discount_pct) || 0,
+          variable_discount: l.variable_discount_pct != null
+            ? Number(l.variable_discount_pct)
+            : 0,
           warehouse_id: l.warehouse_id ?? null,
         } as SaleLineItem;
       });
@@ -1842,9 +1900,10 @@ export default function Invoices() {
       dataIndex: 'doc_type',
       key: 'doc_type',
       width: 100,
-      render: (t: string) => t === 'sale'
-        ? <Tag color="green" style={{ fontWeight: 600 }}>فاتورة بيع</Tag>
-        : <Tag color="magenta" style={{ fontWeight: 600 }}>مرتجع بيع</Tag>,
+      render: (t: string) => (
+        t === 'draft' ? <Tag color="gold" style={{ fontWeight: 600 }}>مسودّة</Tag>
+          : t === 'sale' ? <Tag color="green" style={{ fontWeight: 600 }}>طلب بيع</Tag>
+            : <Tag color="magenta" style={{ fontWeight: 600 }}>مرتجع بيع</Tag>),
     },
     {
       title: 'رقم',
@@ -1877,7 +1936,14 @@ export default function Invoices() {
       sorter: (a: any, b: any) => (a.document_number || '').localeCompare(b.document_number || ''),
       render: (doc: string, r: any) => (
         <Space direction="vertical" size={0}>
-          <Tag color={r.doc_type === 'sale' ? 'blue' : 'volcano'}>{doc}</Tag>
+          {/* **المسودّة مالهاش رقم، وشارتها بتقول كده.**
+            *
+            * رقم جنبها كان هيخلّي اللي بيبص يفتكر إنها اترحّلت — والرقم بيتحجز وقت
+            * الترحيل مش قبله، فمافيش رقم يتكتب هنا أصلاً. */}
+          <Tag color={r.doc_type === 'draft' ? 'gold'
+            : r.doc_type === 'sale' ? 'blue' : 'volcano'}>
+            {r.doc_type === 'draft' ? 'مسودّة — لسه ما اترحّلتش' : doc}
+          </Tag>
           {r.original_invoice_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.original_invoice_number}</span>
           )}
@@ -1966,12 +2032,59 @@ export default function Invoices() {
       render: (val: number) => `${money(val)} ج.م`,
     },
     {
+      // دفاتر الكوبونات اللي اتسلّمت مع الفاتورة. عمود في الكشف لأن السؤال «سلّمنا
+      // الراجل كام كوبون» بيتسأل على القايمة، مش جوّه الفاتورة — وقبل كده الإجابة
+      // ماكانتش موجودة إلا لو فتحتها للتعديل.
+      title: 'كوبونات',
+      dataIndex: 'coupons',
+      key: 'coupons',
+      width: 120,
+      align: 'left' as const,
+      sorter: (a: any, b: any) => couponsTotal(a) - couponsTotal(b),
+      render: (_v: any, row: any) => {
+        const rows: any[] = row.coupons ?? [];
+        if (!rows.length) {
+          // الشكل القديم — مدى واحد على رأس الفاتورة، من غير فئة.
+          if (!row.coupon_serial_from) return '-';
+          return (
+            <Tooltip title={`من ${row.coupon_serial_from} إلى ${row.coupon_serial_to}`}>
+              <Tag color="gold">{row.coupon_count ?? '؟'} كوبون</Tag>
+            </Tooltip>
+          );
+        }
+        return (
+          <Tooltip
+            title={
+              <Space direction="vertical" size={0}>
+                {rows.map((c, i) => (
+                  <span key={i}>
+                    {c.coupon_kind || c.coupon_type_name || 'كوبونات'} —
+                    {' '}من {c.serial_from ?? '؟'} إلى {c.serial_to ?? '؟'}
+                  </span>
+                ))}
+              </Space>
+            }
+          >
+            <Tag color="gold">{couponsTotal(row)} كوبون</Tag>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      // النسبة من الخصم الفعلي ÷ الإجمالي قبله — مش `combined_pct` (خصم المستند وبس).
+      // وبمنزلة عشرية واحدة: الخصم المركّب بيطلع ١٤٫٥٪، والتقريب لصحيح بيقوله ١٥٪
+      // ويخلّي اللي بيراجع يدوّر على فرق مالوش وجود.
       title: 'خصم%',
-      dataIndex: 'combined_pct',
-      key: 'combined_pct',
+      dataIndex: 'discount_value',
+      key: 'discount_pct_effective',
       width: 80,
-      sorter: (a: any, b: any) => a.combined_pct - b.combined_pct,
-      render: (val: number) => `${Number(val || 0).toFixed(0)}%`,
+      sorter: (a: any, b: any) =>
+        (a.discount_value / (a.discount_base || 1)) - (b.discount_value / (b.discount_base || 1)),
+      render: (_val: number, r: any) => {
+        const base = Number(r.discount_base || 0);
+        const pct = base > 0 ? (Number(r.discount_value || 0) / base) * 100 : 0;
+        return `${pct.toFixed(pct % 1 === 0 ? 0 : 1)}%`;
+      },
     },
     {
       title: 'الصافى',
@@ -2286,10 +2399,10 @@ export default function Invoices() {
                 onClick={closeCreate}>رجوع</Button>
               <Typography.Text strong style={{ fontSize: 16 }}>
                 {viewInvoice
-                  ? `فاتورة بيع رقم: ${viewInvoice.document_number || ''}`
+                  ? `طلب بيع رقم: ${viewInvoice.document_number || ''}`
                   : editingInvoice
-                    ? `تعديل فاتورة بيع #${editingInvoice.id}`
-                    : 'تسجيل فاتورة بيع جديدة'}
+                    ? `تعديل طلب بيع #${editingInvoice.id}`
+                    : 'تسجيل طلب بيع جديد'}
               </Typography.Text>
               {viewInvoice && !viewOnly && (
                 <Tag color="orange" style={{ fontWeight: 600 }}>وضع التعديل</Tag>
@@ -2319,7 +2432,7 @@ export default function Invoices() {
           <Row gutter={16}>
             <Col xs={12} md={4}>
               <Form.Item label="نوع المستند" style={{ marginBottom: 8 }}>
-                <Input value="فاتورة بيع" readOnly style={{ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff', textAlign: 'center' }} />
+                <Input value="طلب بيع" readOnly style={{ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff', textAlign: 'center' }} />
               </Form.Item>
             </Col>
             <Col xs={12} md={4}>
@@ -2870,13 +2983,14 @@ export default function Invoices() {
               tableColumns={visibleColumns}
               style={{ marginInlineStart: 0 }}
             />
-            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts}
+                  hideKeys={['logo', 'companyName']} />
             <Button type="primary" icon={<PlusOutlined />}
               style={{ fontWeight: 600 }}
               // نفس تفضية «جديد» بالظبط. الزرار ده كان بيفتح الدورة على الحالة اللي
               // سايبها المستند اللي قبله — ودي كانت أقصر طريق لكوبونات فاتورة غلط.
               onClick={() => { resetDocument(); setNewStep('party'); }}>
-              تسجيل فاتورة بيع
+              تسجيل طلب بيع
             </Button>
           </Space>
         )}

@@ -1,6 +1,8 @@
 /// Plain models shared by the local DB, API client, and screens.
 library;
 
+import 'discount.dart';
+
 class CatalogItem {
   final int id;
   final String name;
@@ -234,8 +236,19 @@ class SaleItem {
   });
 
   /// سعر الصنف لعميل فئته دي — وبيرجع للسعر الأساسي لو الفئة مالهاش سعر خاص.
+  ///
+  /// **ده السعر الخام قبل الخصم الثابت.** سطر الفاتورة بيشيل الاتنين منفصلين (السعر
+  /// في خانة والخصم في خانة) عشان الورقة تقول للعميل خصم بكام — فالسطر لازم ياخد ده.
   double priceFor(String? tier) =>
       (tier != null ? tierPrices[tier] : null) ?? basePrice ?? 0;
+
+  /// السعر اللي العميل هيدفعه فعلاً — بعد الخصم الثابت بتاع الصنف.
+  ///
+  /// ده اللي بيتعرض وقت اختيار الصنف. اللي بيختار بيقارن بالرقم اللي بيقوله للعميل،
+  /// وعرض الخام بيخلّيه يقول رقم والفاتورة تطلع برقم أقل — فيرجع يشرح، أو أوحش: يحسب
+  /// إجمالي اليوم غلط في دماغه. الخصم مابيتخفيش، بيتحسب.
+  double netPriceFor(String? tier) =>
+      priceFor(tier) * (1 - defaultDiscountPct.clamp(0, 99.99) / 100);
 
   Map<String, Object?> toRow() => {
         'item_id': itemId,
@@ -294,13 +307,13 @@ class SaleDraftLine {
     this.variableDiscountPct = 0,
   });
 
-  /// الاتنين مع بعض — وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده بيشيل خصم واحد.
-  /// و`99.99` سقف مقصود: خصم ١٠٠٪ معناه سطر بصفر، ودي حاجة تتعمل بمسح السطر مش بخصم.
+  /// الخصمين ورا بعض — وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده خصم واحد.
+  /// المحرك في `discount.dart`.
   double get discountPct =>
-      (fixedDiscountPct + variableDiscountPct).clamp(0, 99.99).toDouble();
+      combineDiscounts([fixedDiscountPct, variableDiscountPct]);
 
   double get gross => quantity * unitPrice;
-  double get net => gross * (1 - discountPct / 100);
+  double get net => netOf(gross, discountPct);
 
   Map<String, Object?> toRow(int invoiceLocalId) => {
         'invoice_local_id': invoiceLocalId,

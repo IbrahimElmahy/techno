@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../db/local_db.dart';
+import '../models/discount.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
@@ -87,36 +88,72 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
           : SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () async {
-                          await Printing.layoutPdf(
-                              onLayout: (f) => _buildPdf(f),
-                              name: '$title.pdf');
-                        },
-                        icon: const Icon(Icons.print_outlined),
-                        label: const Text('طباعة'),
-                        style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48)),
+                    // **الورقة مابتخرجش قبل ما الفاتورة توصل النظام.**
+                    //
+                    // الورقة المطبوعة من مسودّة بتدّعي فاتورة مالهاش وجود عند المكتب:
+                    // العميل بيمسك ورق، والفاتورة لسه ممكن تتعدّل أو السيرفر يرفضها —
+                    // والورقة اللي في إيده ساعتها بتقول حاجة تانية خالص.
+                    //
+                    // والزرار **بيتقفل ومعاه السبب**، مش بيختفي: اللي مش لاقي «طباعة»
+                    // بيفتكر البرنامج بايظ، واللي شايفها مقفولة وجنبها السطر ده بيعرف
+                    // يعمل إيه — والحل دوسة واحدة في الشاشة الرئيسية.
+                    if (!synced)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF4E5),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFFD8A8)),
+                        ),
+                        child: const Text(
+                          'مسودّة — اعمل «مزامنة الآن» من الرئيسية عشان ترفعها، '
+                          'وبعدها تقدر تطبع وتبعت. لسه تقدر تعدّلها.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12.5, height: 1.4),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () async {
-                          // بتفتح شاشة المشاركة بتاعت النظام — واتساب وغيره.
-                          await Printing.sharePdf(
-                              bytes: await _buildPdf(PdfPageFormat.a4),
-                              filename: '$title.pdf');
-                        },
-                        icon: const Icon(Icons.share_outlined),
-                        label: const Text('إرسال'),
-                        style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.success,
-                            minimumSize: const Size.fromHeight(48)),
-                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: !synced
+                                ? null
+                                : () async {
+                                    await Printing.layoutPdf(
+                                        onLayout: (f) => _buildPdf(f),
+                                        name: '$title.pdf');
+                                  },
+                            icon: const Icon(Icons.print_outlined),
+                            label: const Text('طباعة'),
+                            style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(48)),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: !synced
+                                ? null
+                                : () async {
+                                    // شاشة المشاركة بتاعت النظام — واتساب وغيره.
+                                    await Printing.sharePdf(
+                                        bytes: await _buildPdf(PdfPageFormat.a4),
+                                        filename: '$title.pdf');
+                                  },
+                            icon: const Icon(Icons.share_outlined),
+                            label: const Text('إرسال'),
+                            style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.success,
+                                minimumSize: const Size.fromHeight(48)),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -141,17 +178,15 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
       arabic = await PdfGoogleFonts.cairoRegular();
     }
 
-    // اللوجو الحقيقي بدل اسم مكتوب. الورقة بتروح واتساب وبتتطبع وبتتصوّر — واللي
-    // بيمسكها لازم يعرف بتاعت مين من أول نظرة، وده شغل العلامة مش شغل سطر نص.
+    // **الورقة دي بتطلع من غير شعار ولا اسم شركة — بقرار.**
     //
-    // ولو الملف ضاع لأي سبب، الاسم بيرجع مكانه: ورقة باسم مكتوب أحسن من ورقة بتقع.
-    pw.MemoryImage? logo;
-    try {
-      final bytes = await rootBundle.load('assets/images/technotherm_logo.png');
-      logo = pw.MemoryImage(bytes.buffer.asUint8List());
-    } catch (_) {
-      logo = null;
-    }
+    // كانت بتحمل اللوجو وتكتب «تكنو ثيرم» لو الملف ضاع، عشان اللي بيمسكها يعرف بتاعت
+    // مين. بس دي مش فاتورة: الفاتورة الرسمية بتطلع من المكتب بعد الترحيل. وورقة عليها
+    // شعار الشركة واسمها بتقرا كفاتورة مهما كان المكتوب عليها، واللي بيستلمها مش
+    // هيفرّق — فالهوية بتتشال من الأصل. اللون بيفضل، فهو بيميّز الورقة من غير ما
+    // يدّعي إنها مستند رسمي.
+    //
+    // نفس القرار على النظام: `InvoiceDocument` بيخفي الترويسة والذيل لما النوع بيع.
 
     final theme = pw.ThemeData.withFont(base: arabic, bold: arabic);
     final total = (inv['total'] as num?)?.toDouble() ?? 0;
@@ -160,6 +195,12 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     // حساب العميل قبل الطلب ده. `null` = مستند اتكتب قبل ما العمود ده يوجد —
     // الورقة ساعتها بتقول اللي كانت بتقوله زي ما هي، مش بتخترع صفر.
     final prev = (inv['prev_balance'] as num?)?.toDouble();
+    // رصيد كل خط قبل الطلب — «أبيض» و«بولى». اتخزّن مع الطلب ساعة الحفظ، فالورقة
+    // اللي بتتطبع تاني بعد شهر بتقول نفس اللي قالته أول مرة.
+    //
+    // فاضي = عميل حسابه مش مقسوم على خطوط، والورقة بتقول «الحساب السابق» سطر واحد
+    // زي ما كانت. سطرين بأصفار على عميل مالوش غير حساب واحد بيسألوا سؤال مالوش لازمة.
+    final prevByFamily = _familyBalances(inv['prev_balances'] as String?);
     final family = inv['family'] as String?;
     // الكوبونات المصروفة مع الفاتورة. من غيرها الفاتورة اللي كوبونات بس بتطلع ورقة
     // فاضية بإجمالي صفر — والعميل ماخد دفتر في إيده والورقة مش قايلة حاجة عنه.
@@ -167,14 +208,52 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final now = DateTime.now().toIso8601String();
     final printedAt = '${now.substring(0, 10)} ${now.substring(11, 16)}';
 
+    // **`MultiPage` مش `Page` — الورقة بتتقسّم لما تكبر.**
+    //
+    // `pw.Page` صفحة واحدة مابتتقسّمش: اللي مايخشّش فيها **بيتقصّ ويروح**. فالفاتورة
+    // اللي فيها عشرين صنف كانت بتطلع PDF ناقص — والمندوب والعميل الاتنين بيبصوا على
+    // ورقة مقطوعة ومحدش فيهم يعرف إن فيه سطور مش موجودة، لأن مافيش حاجة بتقول.
+    //
+    // `MultiPage` بتكمّل على صفحة تانية، وجدول الأصناف بيتقسّم بينهم لوحده. ومن الصفحة
+    // التانية بتطلع ترويسة خفيفة بالاسم والرقم عشان اللي ماسك الورقة يعرف بتاعت مين.
     doc.addPage(
-      pw.Page(
+      pw.MultiPage(
         pageFormat: format,
         theme: theme,
         textDirection: pw.TextDirection.rtl,
-        build: (ctx) => pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-          children: [
+        margin: const pw.EdgeInsets.all(20),
+        // **ترويسة خفيفة من الصفحة التانية وطايلع.** الورقة اللي بتتفصل عن أختها
+        // بتبقى ورق سادة فيه أرقام: مين العميل وأنهي فاتورة؟ الترويسة الكاملة بلونها
+        // مالهاش لزوم تتكرر — الرقم والاسم كفاية عشان الورقة تعرّف نفسها.
+        header: (ctx) => ctx.pageNumber == 1
+            ? pw.SizedBox()
+            : pw.Container(
+                margin: const pw.EdgeInsets.only(bottom: 8),
+                padding: const pw.EdgeInsets.only(bottom: 4),
+                decoration: const pw.BoxDecoration(
+                  border: pw.Border(
+                      bottom: pw.BorderSide(width: 0.6, color: PdfColors.grey400)),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('${inv['customer_name'] ?? ''}',
+                        style: const pw.TextStyle(
+                            fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                    pw.Text(synced ? '${inv['document_number']}' : 'مسودّة',
+                        style: const pw.TextStyle(
+                            fontSize: 10, fontWeight: pw.FontWeight.bold)),
+                  ],
+                ),
+              ),
+        // رقم الصفحة — من غيره اللي بياخد ورقة مالوش أي طريق يعرف إن وراها كمان.
+        footer: (ctx) => pw.Container(
+          alignment: pw.Alignment.center,
+          margin: const pw.EdgeInsets.only(top: 6),
+          child: pw.Text('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+        ),
+        build: (ctx) => [
             // ترويسة بلون النظام — الورقة اللي بتوصل واتساب لازم تتعرف من أول نظرة
             // إنها بتاعت مين، مش سطر أسود على أبيض زي أي إيصال.
             pw.Container(
@@ -188,29 +267,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 crossAxisAlignment: pw.CrossAxisAlignment.center,
                 children: [
                   pw.Row(children: [
-                    // لوح أبيض تحت اللوجو — العلامة فيها أخضر وبرتقالي وسطر أسود، ولو
-                    // اترمت على الأزرق على طول بتتقرا لطشة. نفس اللوح اللي في التطبيق.
-                    if (logo != null) ...[
-                      pw.Container(
-                        padding: const pw.EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 5),
-                        decoration: pw.BoxDecoration(
-                          color: PdfColors.white,
-                          borderRadius: pw.BorderRadius.circular(5),
-                        ),
-                        child: pw.Image(logo, height: 30),
-                      ),
-                      pw.SizedBox(width: 10),
-                    ],
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      if (logo == null)
-                        pw.Text('تكنو ثيرم',
-                            style: const pw.TextStyle(
-                                fontSize: 20,
-                                fontWeight: pw.FontWeight.bold,
-                                color: PdfColors.white)),
                       pw.Text(
                           // **«طلب بيع» مش «فاتورة بيع».**
                           //
@@ -225,8 +284,12 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                           _lines.isEmpty && coupons.isNotEmpty
                               ? 'إذن تسليم كوبونات'
                               : 'طلب بيع',
+                          // كان ١١ وهو تحت اسم الشركة؛ بقى هو الوحيد في الترويسة،
+                          // فمينفعش يفضل بحجم سطر تابع.
                           style: const pw.TextStyle(
-                              fontSize: 11, color: PdfColors.white)),
+                              fontSize: 17,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.white)),
                     ],
                   ),
                   ]),
@@ -414,7 +477,15 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 // ساعة الحفظ. قراءته من كاش العملاء وقت الطباعة بترجّع رقم تاني بعد
                 // أي مزامنة، فالورقة المتطبوعة تاني تقول غير الأولانية لنفس الطلب.
                 child: pw.Column(children: [
-                  if (prev != null) _total('الحساب السابق', _money(prev)),
+                  // الخطوط الأول كل واحد لوحده، وتحتهم مجموعهم. المندوب بيتسأل
+                  // «أنا عليا كام في الأبيض؟» مش «أنا عليا كام؟» — والرقم المجمّع
+                  // لوحده مابيجاوبش، فبيرجع يفتح الشاشة قدام العميل.
+                  if (prevByFamily.isNotEmpty)
+                    for (final e in prevByFamily.entries)
+                      _total('ح سابق ${e.key}', _money(e.value)),
+                  if (prev != null)
+                    _total(prevByFamily.isEmpty ? 'الحساب السابق' : 'إجمالي الحساب السابق',
+                        _money(prev)),
                   _total('إجمالي الطلب', _money(total)),
                   _total('المدفوع نقداً', _money(cash)),
                   pw.Divider(height: 8, color: PdfColors.grey400),
@@ -428,7 +499,10 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               pw.SizedBox(height: 10),
               pw.Text('ملاحظات: ${inv['notes']}', style: const pw.TextStyle(fontSize: 10)),
             ],
-            pw.Spacer(),
+            // **من غير `Spacer`.** كانت بتدفع التوقيعات لآخر الصفحة الواحدة؛ وفي مستند
+            // بيتقسّم مالهاش ارتفاع تنتهي عنده فبترمي استثناء. التوقيعات بتيجي بعد آخر
+            // سطر — وده مكانها الصح على ورقة من صفحتين.
+            pw.SizedBox(height: 14),
             pw.Divider(color: PdfColors.grey400),
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -441,38 +515,25 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
             pw.Text('اتطبعت من تطبيق المندوب — $printedAt',
                 textAlign: pw.TextAlign.center,
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-          ],
-        ),
+        ],
       ),
     );
     return doc.save();
   }
 }
 
-/// **صافي سعر الوحدة** — بعد الخصمين — والنسبة تحته بخط صغير.
+/// **صافي سعر الوحدة** — بعد الخصمين، لوحده.
 ///
-/// الرقم الكبير هو اللي بيتضرب في الكمية ويطلع الإجمالي، فالعميل يقدر يراجع الورقة
-/// بضربة واحدة. والنسبة تحته مش زينة: من غيرها الورقة بتقول سعر أقل من سعر القايمة
-/// من غير ما تقول ليه، واللي بيقارن بفاتورة قديمة مايعرفش الفرق خصم ولا تغيير سعر.
+/// الرقم ده هو اللي بيتضرب في الكمية ويطلع الإجمالي، فالعميل يراجع الورقة بضربة واحدة.
+///
+/// **وسطر «قبل الخصم · خصم ٪» اتشال بطلب صاحب النظام.** كان تحت السعر بخط صغير عشان
+/// يقول الخصم راح فين. والورقة اللي بتتسلّم للعميل مش مكان الحساب ده — السعر اللي
+/// اتفقنا عليه هو اللي عليها، وتفصيل الخصم موجود في النظام لمين يسأل.
 pw.Widget _netPriceCell(SaleDraftLine l) {
   final net = l.discountPct > 0
-      ? l.unitPrice * (1 - l.discountPct / 100)
+      ? netOf(l.unitPrice, l.discountPct)
       : l.unitPrice;
-  return pw.Padding(
-    padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-    child: pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.center,
-      children: [
-        pw.Text(_money(net),
-            textAlign: pw.TextAlign.center,
-            style: const pw.TextStyle(fontSize: 10)),
-        if (l.discountPct > 0)
-          pw.Text('قبل الخصم ${_money(l.unitPrice)} · خصم ${_trim(l.discountPct)}%',
-              textAlign: pw.TextAlign.center,
-              style: const pw.TextStyle(fontSize: 6.5, color: PdfColors.grey600)),
-      ],
-    ),
-  );
+  return _cell(_money(net), center: true);
 }
 
 /// بيفك عمود الكوبونات (JSON) لصفوف. الفاضي أو المكسور بيرجّع قايمة فاضية — ورقة
@@ -502,6 +563,23 @@ pw.Widget _row(String label, String value) => pw.Padding(
     );
 
 /// لون النظام نفسه (`AppColors.primary`) — الورقة والشاشة بنفس الهوية.
+/// أرصدة الخطوط المتخزّنة مع الطلب. الصفر بيتشال — خط رصيده صفر مش معلومة.
+Map<String, double> _familyBalances(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const {};
+  try {
+    final m = jsonDecode(raw) as Map<String, dynamic>;
+    final out = <String, double>{};
+    for (final e in m.entries) {
+      final v = double.tryParse('${e.value}') ?? 0;
+      if (v.abs() > 0.001) out[e.key] = v;
+    }
+    return out;
+  } catch (_) {
+    // الصف القديم ممكن يكون فاضي أو بشكل تاني — الورقة بتطلع بسطر واحد، مابتقعش.
+    return const {};
+  }
+}
+
 const _brand = PdfColor.fromInt(0xFF0E4C6D);
 
 pw.Widget _cell(String text, {bool bold = false, bool white = false, bool center = false}) =>

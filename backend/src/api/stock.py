@@ -9,9 +9,11 @@ from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
+from src.lib import arabic
 from src.services import rep_store_service
 from src.models.catalog import Item, StockBatchMovement
 from src.models.customer import Customer
@@ -56,16 +58,30 @@ class LocationStockRow(BaseModel):
 
 
 def _assert_readable(db: Session, current: CurrentUser, kind: LocationKind, location_id: int) -> None:
-    """المندوب بيقرا رصيد مكانه هو بس — عهدته أو مخزنه.
+    """المندوب بيقرا مكانه هو، **ومخازن فرعه** — وعهدة حد تاني لأ.
 
-    كانت العهدة وحدها. المندوب اللي بضاعته على مخزن متسجّل عليه مكانش يقدر يقرا رصيده،
-    فالتطبيق بتاعه بيوريه صفر وهو واقف جنب بضاعة موجودة. القاعدة نفسها ما اتوسّعتش —
-    لسه مكانه هو بس — اللي اتوسّع هو **نوع** المكان اللي ممكن يبقى بتاعه.
+    كانت مكانه هو وبس. والمندوب بيطلب بضاعة من المخزن الرئيسي، وشاشة الطلب بتوريه أصناف
+    المصدر عشان مايطلبش حاجة مش موجودة — فكانت بتترفض بـ403 وهو واقف قدام المخزن.
+    والرسالة اللي كانت بتوصله «اتأكد من النت»، وهي مش نت.
+
+    **الفرق بين المخزن والعهدة مقصود.** المخزن مكان الشركة: كام قطعة فيه معلومة لأي حد
+    بيشتغل في الفرع، والمندوب شايف الكتالوج والأسعار أصلاً. **العهدة بضاعة راجل بعينه**
+    — رصيدها بيقول باع كام ولسه معاه كام، وده شغل المكتب مش شغل زميله. فالتوسعة على
+    المخازن وحدها، والعهدة فضلت مقفولة زي ما كانت.
+
+    وبفرعه: مندوب العلياء مايقراش مخازن أكتوبر. المخزن اللي مالوش فرع (مشترك) مفتوح للكل.
     """
     if current.rep_id is None:
         return
-    if not rep_store_service.is_own_store(db, current.rep_id, kind, location_id):
-        raise HTTPException(403, {"code": "forbidden", "message": "Not your stock location"})
+    if rep_store_service.is_own_store(db, current.rep_id, kind, location_id):
+        return
+    if kind == LocationKind.warehouse:
+        wh = db.get(Warehouse, location_id)
+        branch_id = branch_scope.visible_branch_id(current)
+        if wh is not None and (branch_id is None or wh.branch_id is None
+                               or wh.branch_id == branch_id):
+            return
+    raise HTTPException(403, {"code": "forbidden", "message": "Not your stock location"})
 
 
 class BatchReceiveIn(BaseModel):
@@ -222,7 +238,7 @@ def stock_by_location(
             StockMovement.location_id == location_id,
         )
         .group_by(Item.id, Item.code, Item.name, Item.category, Item.unit_of_measure)
-        .order_by(Item.name)
+        .order_by(arabic.sort_key(Item.name), Item.name)
     ).all()
     pending = _pending_out(db, location_kind, location_id, exclude_transfer_id)
     out = [

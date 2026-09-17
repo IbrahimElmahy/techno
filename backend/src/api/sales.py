@@ -27,11 +27,17 @@ from src.models.catalog import Item, ItemPrice, PriceTier
 from src.models.customer import Customer, CustomerAccount
 from src.models.lookup import LookupOption
 from src.models.loyalty import CouponType
-from src.models.sales import SalesInvoice, SalesInvoiceCoupon, SalesReturn
+from src.models.sales import (
+    SalesInvoice,
+    SalesInvoiceCoupon,
+    SalesInvoiceLine,
+    SalesReturn,
+)
 from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse, WarehouseType
+from src.lib import arabic
 from src.services import coupon_receipt_service, sales_service
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
@@ -70,6 +76,11 @@ class SaleLineIn(BaseModel):
     unit: str | None = None                # (008) unit of measure; None = base
     serials: list[str] | None = None       # (009) serials for a serialized item
     discount_pct: Decimal | None = None    # (027) per-line discount; None = item's fixed default
+    # ...and the two halves it is made of — الثابت بتاع الصنف، والمتغيّر اللي المندوب كتبه.
+    # لما الاتنين (أو واحد) يتبعتوا، السيرفر بيركّبهم بالمحرك وهُمّا اللي بيتحسب بيهم —
+    # `discount_pct` ساعتها بيتتجاهل. القديم اللي بيبعت المجموع وحده مابيتغيّرش عليه حاجة.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     # (030) serve this line from its own warehouse; None = the document's location
     warehouse_id: int | None = None
 
@@ -204,6 +215,16 @@ class SalesInvoiceOut(BaseModel):
     customer_id: int
     gross: Decimal
     combined_pct: Decimal
+    # **خصم السطور** — مجموع (الكمية × سعر الوحدة) ناقص مجموع إجمالي السطور.
+    #
+    # `combined_pct` خصم **المستند** وبس، وهو صفر على كل فاتورة تقريباً. الخصم الحقيقي
+    # عايش على السطر (`discount_pct`)، فكشف المبيعات كان بيقول «خصم ٠» على فاتورة
+    # خصمها ٢٠٪ — الرقم صح في الفاتورة لما تفتحها وغلط في الكشف اللي بيتبص عليه.
+    #
+    # بيتحسب باستعلام مجمّع واحد للصفحة كلها، مش سطر لكل فاتورة.
+    line_discount: Decimal = Decimal("0")
+    # الإجمالي **قبل** خصم السطور — اللي النسبة بتتقاس عليه.
+    gross_before_line_discount: Decimal = Decimal("0")
     net: Decimal
     cash_amount: Decimal
     credit_amount: Decimal
@@ -248,6 +269,10 @@ class InvoiceLineOut(BaseModel):
     quantity: Decimal
     unit_price: Decimal
     discount_pct: Decimal | None = None
+    # نصّي الخصم كما اتسجّلوا. `None` معناها السطر ده مش عارف القسمة (اتكتب قبل العمود،
+    # أو اتنقل من a5) — والشاشة ساعتها بتوري المجموع زي ما كانت، مش صفر مخترع.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     line_total: Decimal
     price_tier: PriceTier | None = None
     unit: str | None = None
@@ -412,7 +437,7 @@ def rep_bundle(
                StockMovement.location_id == store_id)
         .group_by(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
                   Item.sale_price, Item.category)
-        .order_by(Item.name)
+        .order_by(arabic.sort_key(Item.name), Item.name)
     ).all()
     on_hand = {r[0]: Decimal(str(r[5] or 0)) for r in held}
 
@@ -452,6 +477,25 @@ def rep_bundle(
                 pending_out[line_item] = pending_out.get(line_item, Decimal("0")) + line_qty
 
     live = [r for r in held if on_hand[r[0]] > 0]
+
+    # كتالوج الفرع كامل — **لإذن التحويل، مش للبيع**.
+    #
+    # `live` هو اللي في عربية المندوب، وهو الصح للبيع: مايبيعش حاجة مش معاه. بس إذن
+    # التحويل هو بالظبط طلب حاجة **مش معاه** — فلو القايمة اتقصرت على عربيته، الصنف
+    # اللي خلص منه خالص مايظهرش، وهو أكتر صنف محتاج يطلبه. الشاشة كانت بتوريه اللي معاه
+    # وتسأله يطلب إيه.
+    #
+    # **والفرع بيتحدد بالحركة مش بكود الصنف.** `Item` مالوش عمود فرع؛ النقل بيفرّق
+    # بالبادئة (`AL-`) وهي قاعدة عايشة في سكربتات الاستيراد مش في الموديل. الحركة
+    # بتحمل `branch_id` من مكانها، فـ«الصنف اللي اتحرّك في مخازن الفرع ده» حقيقة
+    # مكتوبة في الداتا — مش قاعدة تانية نخترعها هنا وتفضل تفرق عن اللي قبلها.
+    catalog_stmt = select(Item.id, Item.name, Item.unit_of_measure, Item.category)
+    if current.branch_id is not None:
+        catalog_stmt = catalog_stmt.where(Item.id.in_(
+            select(StockMovement.item_id)
+            .where(StockMovement.branch_id == current.branch_id).distinct()))
+    catalog = db.execute(
+        catalog_stmt.order_by(arabic.sort_key(Item.name), Item.name)).all()
 
     # أسعار الفئات للأصناف اللي معاه بس — استعلام واحد، مش واحد لكل صنف.
     tiers: dict[int, dict[str, str]] = {}
@@ -536,6 +580,12 @@ def rep_bundle(
             }
             for r in live
         ],
+        # الكتالوج: أصناف الفرع كلها بالاسم بس. من غير سعر ولا رصيد — إذن التحويل
+        # مالوش فلوس، والرصيد عند المندوب معلومة مضلّلة هنا (بيطلب احتياجه مش رصيده).
+        "catalog": [
+            {"item_id": c[0], "name": c[1], "unit": c[2], "category": c[3]}
+            for c in catalog
+        ],
     }
 
 
@@ -559,7 +609,8 @@ def _build_sale(
             variable_discount_pct=body.variable_discount_pct,
             cash_amount=body.cash_amount, credit_amount=body.credit_amount,
             lines=[SaleLine(l.item_id, l.quantity, l.tier, l.unit_price, l.unit, l.serials,
-                            l.discount_pct, l.warehouse_id)
+                            l.discount_pct, l.fixed_discount_pct, l.variable_discount_pct,
+                            l.warehouse_id)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, family=body.family,
             cash_account_id=body.cash_account_id,
@@ -702,10 +753,68 @@ def _row_names(db: Session, rows: list) -> tuple[dict[int, str], dict[int, str],
     return custs, types, {k: v for k, v in reps.items() if v}
 
 
+def _line_discounts(db: Session, rows: list[SalesInvoice]) -> dict[int, tuple[Decimal, Decimal]]:
+    """{رقم الفاتورة: (الإجمالي قبل خصم السطور، الخصم)} — استعلام واحد للصفحة كلها.
+
+    الاستعلام لكل فاتورة كان هيبقى ٦٠ نداء على صفحة واحدة، و٨٬٦٩٧ على الكشف كله.
+    """
+    if not rows:
+        return {}
+    before = func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price)
+    after = func.sum(SalesInvoiceLine.line_total)
+    out: dict[int, tuple[Decimal, Decimal]] = {}
+    for inv_id, b, a in db.execute(
+        select(SalesInvoiceLine.invoice_id, before, after)
+        .where(SalesInvoiceLine.invoice_id.in_([r.id for r in rows]))
+        .group_by(SalesInvoiceLine.invoice_id)
+    ).all():
+        gross_before = Decimal(str(b or 0))
+        net_lines = Decimal(str(a or 0))
+        gap = gross_before - net_lines
+        out[inv_id] = (gross_before, gap if gap > 0 else Decimal("0"))
+    return out
+
+
+def _page_coupons(db: Session, rows: list[SalesInvoice]) -> dict[int, list[InvoiceCouponOut]]:
+    """{رقم الفاتورة: دفاتر الكوبونات} — استعلامين للصفحة كلها.
+
+    الكشف كان بينده `_inv_out` من غير `db`، فـ`coupons` بترجع فاضية **دايماً**. والورقة
+    المطبوعة بتتبني من صف الكشف، فالكوبونات اللي اتسجّلت مع الفاتورة ماكانتش بتظهر لا في
+    القايمة ولا على الورقة — بتبان بس لما الفاتورة تتفتح للتعديل، وده مكان ماحدش بيدوّر
+    فيه على ورقة العميل.
+
+    والتحميل مجمّع مش لكل صف: استعلام لكل فاتورة كان هيبقى ٦٠ نداء على صفحة واحدة.
+    """
+    if not rows:
+        return {}
+    coupon_rows = db.scalars(
+        select(SalesInvoiceCoupon)
+        .where(SalesInvoiceCoupon.invoice_id.in_([r.id for r in rows]))
+    ).all()
+    if not coupon_rows:
+        return {}
+    type_names: dict[int, str] = {}
+    ids = [r.coupon_type_id for r in coupon_rows if r.coupon_type_id]
+    if ids:
+        type_names = dict(db.execute(
+            select(CouponType.id, CouponType.name).where(CouponType.id.in_(ids))
+        ).all())
+    out: dict[int, list[InvoiceCouponOut]] = {}
+    for r in coupon_rows:
+        out.setdefault(r.invoice_id, []).append(InvoiceCouponOut(
+            id=r.id, coupon_kind=r.coupon_kind, coupon_type_id=r.coupon_type_id,
+            count=r.count, serial_from=r.serial_from, serial_to=r.serial_to,
+            coupon_type_name=type_names.get(r.coupon_type_id),
+        ))
+    return out
+
+
 def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
-             names: tuple[dict[int, str], dict[int, str], dict[int, str]] | None = None
+             names: tuple[dict[int, str], dict[int, str], dict[int, str]] | None = None,
+             line_disc: tuple[Decimal, Decimal] | None = None,
+             coupons_in: list[InvoiceCouponOut] | None = None
              ) -> SalesInvoiceOut:
-    coupons: list[InvoiceCouponOut] = []
+    coupons: list[InvoiceCouponOut] = coupons_in or []
     if db is not None:
         rows = db.scalars(
             select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.invoice_id == inv.id)
@@ -728,7 +837,10 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
             for r in rows
         ]
     cust_names, cust_types, rep_names = names or ({}, {}, {})
+    disc = line_disc or (Decimal("0"), Decimal("0"))
     return SalesInvoiceOut(
+        gross_before_line_discount=disc[0],
+        line_discount=disc[1],
         family=inv.family,
         customer_type=cust_types.get(inv.customer_id),
         customer_name=cust_names.get(inv.customer_id),
@@ -804,7 +916,10 @@ def list_sales(
     rows = list(db.scalars(stmt).all())
     # مرة واحدة للصفحة كلها — كانت جوّه الحلقة، يعني نداء لكل صف.
     names = _row_names(db, rows)
-    return [_inv_out(i, names=names) for i in rows]
+    discs = _line_discounts(db, rows)
+    coups = _page_coupons(db, rows)
+    return [_inv_out(i, names=names, line_disc=discs.get(i.id),
+                     coupons_in=coups.get(i.id)) for i in rows]
 
 
 @router.get("/summary", response_model=dict)
@@ -1161,6 +1276,8 @@ def get_sale(
                 quantity=line.quantity,
                 unit_price=line.unit_price,
                 discount_pct=line.discount_pct,
+                fixed_discount_pct=line.fixed_discount_pct,
+                variable_discount_pct=line.variable_discount_pct,
                 line_total=line.line_total,
                 price_tier=line.price_tier,
                 unit=line.unit,

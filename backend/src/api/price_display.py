@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CATALOG_READ
 from src.core.db import get_db
+from src.lib import discounts
 from src.core.money import to_money, to_qty
 from src.models.catalog import Item, PriceTier
 from src.models.stock import LocationKind
@@ -93,7 +94,7 @@ def lookup(
     # item. The invoice is where an alternate unit gets chosen.
     unit_price = to_money(Decimal(str(base)))
     discount_pct = Decimal(str(item.default_discount_pct or 0))
-    after_discount = to_money(unit_price * (Decimal("1") - discount_pct / Decimal("100")))
+    after_discount = discounts.net_of(unit_price, discount_pct)
     vat_pct = tax_service.vat_rate(db)
     with_vat = to_money(after_discount + tax_service.tax_on(after_discount, vat_pct))
 
