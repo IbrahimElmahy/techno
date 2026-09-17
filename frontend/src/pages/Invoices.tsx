@@ -45,7 +45,7 @@ import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 import {
   CAP_NOTICE_MS, PAGE_SIZE, FAMILY_OPTIONS, TIER_LABELS, couponCount, blankCoupon,
   InvoiceRecord, ItemPrices, Customer, RepEmployee, Product, Warehouse, SaleLineItem,
-  ItemUnit, InvoiceDetail, InvoiceFilters, CouponRow,
+  ItemUnit, InvoiceDetail, InvoiceFilters, CouponRow, couponRowHasContent,
 } from './invoices/types';
 import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
@@ -1162,8 +1162,7 @@ export default function Invoices() {
     // الآجل بيتبعت للسيرفر، وهو بيتأكد منه — ولو اتساب فاضي بيحسبه من المستحق ناقص النقدي.
 
     const validLines = lines.filter((l) => l.item_id !== null);
-    const validCoupons = couponRows.filter(
-      (r) => Boolean(r.coupon_kind || r.serial_from || r.serial_to));
+    const validCoupons = couponRows.filter(couponRowHasContent);
     if (validLines.length === 0 && validCoupons.length === 0) {
       message.error('يرجى إضافة منتج أو تسجيل كوبونات لحفظ الفاتورة!');
       return;
@@ -1273,7 +1272,7 @@ export default function Invoices() {
             // Coupons handed over with this invoice, as the serial range off the book. Kept on the
             // invoice because that is what proves which coupons were his when they come back in.
             coupons: couponRows
-              .filter((r) => r.coupon_kind || r.serial_from || r.serial_to)
+              .filter(couponRowHasContent)
               .map((r) => ({
                 coupon_kind: r.coupon_kind ?? null,
                 // Sent as the range implies it. Sending a separately-typed number was how an invoice
@@ -1720,7 +1719,7 @@ export default function Invoices() {
   const docToolbar = (): ToolbarAction[] => {
     const isSaved = Boolean(viewInvoice || editingInvoice);
     const lineCount = lines.filter((l) => l.item_id !== null).length;
-    const couponCountVal = couponRows.filter((r) => Boolean(r.coupon_type_id || r.serial_from || r.serial_to)).length;
+    const couponCountVal = couponRows.filter(couponRowHasContent).length;
     const hasContent = lineCount > 0 || couponCountVal > 0;
     return [
       {
