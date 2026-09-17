@@ -28,3 +28,21 @@ export function applyPct(amount: number | string | null | undefined,
                          ...pcts: Array<number | string | null | undefined>) {
   return num(amount) * remainingFactor(...pcts);
 }
+
+/** أعلى خصم مسموح. ١٠٠٪ معناها سطر بصفر، ودي حاجة تتعمل بمسح السطر مش بخصم. */
+export const MAX_DISCOUNT_PCT = 99.99;
+
+/**
+ * المبلغ بعد نسبة خصم **واحدة جاهزة** — للسطر اللي خصمه متخزّن مركّب خلاص.
+ *
+ * مش نفس `applyPct(amount, pct)` في المعنى وإن كان نفس الحساب: دي بتقول «النسبة دي
+ * محسوبة خلاص، طبّقها»، والتانية بتقول «ركّب النِسب دي وطبّقها».
+ */
+export function netOf(amount: number | string | null | undefined,
+                      pct: number | string | null | undefined): number {
+  return applyPct(amount, pct);
+}
+
+/** أسماء قديمة — الملف `utils/discount.ts` اتشال، ودول عشان اللي بيستورده مايتكسرش. */
+export const combineDiscounts = combinePct;
+export const applyDiscounts = applyPct;

@@ -6,7 +6,7 @@ from src.models.contact import ContactPhone  # noqa: E402
 
 # Cost Centers (006) — analytical dimension.
 from src.models.cost_center import CostCenter  # noqa: E402
-from src.models.customer import Customer, CustomerAccount
+from src.models.customer import Customer, CustomerAccount, CustomerExternalRef
 
 # Site inspections / معاينات (015-inspections-mobile).
 from src.models.inspection import Inspection, InspectionItem  # noqa: E402
@@ -92,10 +92,12 @@ from src.models.hr_attendance import (  # noqa: E402
     AttendanceDay, AttendanceImport, EmployeeShiftAssignment, Holiday, WorkShift,
 )
 from src.models.owner import Owner  # noqa: E402
+from src.models.draft import DocumentDraft  # noqa: E402
 
 __all__ = [
     "AccountRouting",
-    "AuditLogEntry", "Item", "Customer", "CustomerAccount", "Account", "LedgerEntry",
+    "AuditLogEntry", "Item", "Customer", "CustomerAccount", "CustomerExternalRef",
+    "Account", "LedgerEntry",
     "LedgerLine", "Branch", "Governorate", "HeadOffice", "Territory", "Role", "User",
     "Custody", "Warehouse", "Supplier", "SupplierAccount", "StockLocator", "StockMovement",
     "PurchaseInvoice", "PurchaseInvoiceLine", "PurchaseReturn", "PurchaseReturnLine",

@@ -82,7 +82,10 @@ export default function Login() {
       // 3. Confirm login in auth context
       login(access_token, activeUser);
       message.success('تم تسجيل الدخول بنجاح');
-      navigate('/dashboard');
+      // **`replace` مش `push`.** الدخول كان بيدفع `/dashboard` فوق `/login`، فشاشة
+      // تسجيل الدخول بتفضل في تاريخ المتصفح تحت كل حاجة — وأول «رجوع» من الرئيسية
+      // بيوديك لها وانت داخل خلاص. الدخول مش صفحة بترجع لها، هو الباب.
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       // Errors are handled by the Axios response interceptor (displays warning toasts)
       localStorage.removeItem('token');

@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { useDraft } from '../components/useDraft';
 import { useAuth } from '../components/AuthProvider';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
@@ -213,6 +214,17 @@ export default function Transfers() {
     },
   ]), [warehouses, custodies]);
 
+  /** نفس القايمة من غير المصدر. الاستبعاد لازم يحصل **جوّه** المجموعة — المجموعة نفسها
+   *  مالهاش `value`، فالفلترة على المستوى الأعلى كانت بتعدّي كل حاجة والمصدر يفضل مختار
+   *  من الوجهة. والمجموعة اللي فضلت فاضية بتتشال عشان مايبانش عنوان تحته ولا خيار. */
+  const destOptions = useMemo(
+    () =>
+      locationOptions
+        .map((g) => ({ ...g, options: g.options.filter((o) => o.value !== source) }))
+        .filter((g) => g.options.length > 0),
+    [locationOptions, source],
+  );
+
   const locationName = (kind: string | null, id: number | null) => {
     if (!kind || id == null) return '-';
     const list = kind === 'warehouse' ? warehouses : custodies;
@@ -359,6 +371,17 @@ export default function Transfers() {
    * الرابط بييجي من كارت الصنف وكشفه: الحركة بتقول «تحويل» ورقم الإذن، والضغط عليه كان
    * بيوصل للقايمة واللي بيقرا يدوّر بنفسه على الرقم اللي لسه ضاغط عليه.
    */
+  /**
+   * الرابط الجاي من بره بيفتح الإذن — مرة واحدة، والبارامتر بيتمسح بعدها.
+   *
+   * الحركة في كارت الصنف وكشفه بتقول «تحويل» ورقم الإذن، والضغط عليه لازم يوصّل للإذن
+   * نفسه مش للقايمة اللي هو فيها.
+   *
+   * ⚠️ **وده مش `useDocRoute`.** جرّبت أربط الشاشة دي بيه عشان زرار «رجوع» يقفل الإذن
+   * ويرجّع للكشف — زي باقي شاشات المستندات. النتيجة إن الإذن بطّل يتفتح خالص، ومقدرتش
+   * أعيد المشكلة عندي عشان أعرف السبب بالظبط. فالخُطّاف اتشال من هنا وحده: «رجوع» أنضف
+   * من إن الإذن يفتح، بس إذن مابيفتحش مش مقايضة أصلاً. الشاشات التانية شغّالة بيه.
+   */
   const pendingDoc = useRef<number | null>(null);
   useEffect(() => {
     const doc = searchParams.get('doc') || searchParams.get('edit');
@@ -367,14 +390,62 @@ export default function Transfers() {
     if (!wanted || !transfers.length) return;
     pendingDoc.current = null;
     const target = transfers.find((t) => t.id === wanted);
-    if (target) openTransfer(target);
-    else message.warning(`إذن التحويل رقم ${wanted} مش في القائمة المعروضة`);
+    if (target) { openTransfer(target); return; }
+    // **مش في الصفحة المحمّلة ≠ مش موجود.** القايمة بصفحات، والرابط الجاي من كارت الصنف
+    // ممكن يبقى لإذن قديم برّه الصفحة. بنجيبه بالرقم.
+    api.get(`/api/v1/transfers/${wanted}`)
+      .then((r) => openTransfer(r.data))
+      .catch(() => message.warning(`إذن التحويل رقم ${wanted} مش موجود`));
   }, [searchParams, transfers]);
+
+  /** المسودّة — الطلب اللي اتكتب ولسه ما اتبعتش. الشرح في `useDraft`. */
+  const draftPayload = useMemo(() => ({
+    source, dest, lines, notes: null,
+  }), [source, dest, lines]);
+
+  const {
+    drafts, savedAt: draftSavedAt, discard: discardDraft,
+    remove: removeDraft, adopt: adoptDraft,
+  } = useDraft({
+    kind: 'transfer',
+    payload: draftPayload,
+    // الإذن الموجود (تحت الاعتماد أو معتمد) مالوش مسودّة — هو مستند عند المكتب خلاص.
+    paused: Boolean(editing),
+    isEmpty: (x: any) => !x.source && !(x.lines || []).length,
+    title: (x: any) => {
+      const from = x.source ? locationName(parseLoc(x.source).kind as any,
+                                           parseLoc(x.source).id) : 'بدون مصدر';
+      return `${from} — ${(x.lines || []).length} صنف`;
+    },
+  });
+
+  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
+  const resumeDraft = (d: any) => {
+    const x = d.payload || {};
+    adoptDraft(d.id);
+    setEditing(null);
+    setViewOnly(false);
+    setNewStep(null);
+    setSource(x.source ?? null);
+    setDest(x.dest ?? null);
+    setLines(x.lines || []);
+    setCreateVisible(true);
+    // **ورصيد المصدر بيتجاب معاها.** `setSource` لوحدها بتحطّ المصدر من غير ما تملا
+    // `sourceStock`، فالمسودّة بتتفتح بمصدر مكتوب ومنتقي أصناف فاضي — واللي بيستكمل
+    // بيفتكر إن المخزن خلص. `onSourceChange` هي اللي بتجيبه عادةً، والاستكمال مش
+    // بيعدّي منها.
+    if (x.source) loadSourceStock(x.source);
+  };
 
   const openTransfer = async (t: TransferRecord) => {
     setEditing(t);
     setDraftQty({});
-    setViewOnly(true);
+    /** الإذن اللي لسه تحت الاعتماد بيتفتح مفتوح لمين بيعتمد.
+     *
+     *  كان بيتفتح للقراءة دايماً، والمراجع لازم يدوس «تعديل» الأول عشان «رفض» وسلة الصنف
+     *  يبانوا أصلاً — وهو فاتح الإذن عشان يقرّر، مش عشان يتفرّج. اللي بيقرأ من غير صلاحية
+     *  اعتماد، والإذن المعتمد أو المرفوض، بيفضلوا للقراءة زي ما هما: دي بضاعة اتحركت خلاص. */
+    setViewOnly(!(t.status === 'pending' && canApprove));
     setTransferDate(dayjs(t.transfer_date || t.created_at || undefined));
     // A permit written before the lines table carries its item on the DOCUMENT and has no line
     // row, so there is nothing to PATCH and nothing to DELETE — and the page ended up inviting an
@@ -553,6 +624,8 @@ export default function Transfers() {
       message.success(approved
         ? `تم اعتماد إذن التحويل بـ${valid.length} صنف واتحرّك المخزون`
         : `اتسجّل طلب التحويل بـ${valid.length} صنف — بانتظار المراجعة والاعتماد`);
+      // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
+      discardDraft();
       closeCreate();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذّر تسجيل طلب التحويل');
@@ -565,7 +638,9 @@ export default function Transfers() {
 
   // السطر يفتح المستند نفسه — نفس اللي زرار «اعتماد» بيعمله، بالكيبورد وبالماوس.
   const listKb = useTableKeyboard<TransferRecord>({
-    rows: filter.filtered, rowKey: (t) => t.id, onOpen: (t) => openTransfer(t),
+    rows: filter.filtered, rowKey: (t) => t.id,
+    // المسودّة مش إذن — Enter عليها بيستكملها، مش بيحاول يفتحها كمستند مالوش مصدر.
+    onOpen: (t: any) => (t?.__isDraft ? resumeDraft(t.__draft) : openTransfer(t)),
   });
   /**
    * أسماء الأصناف.
@@ -625,7 +700,15 @@ export default function Transfers() {
   const [reviewStock, setReviewStock] = useState<Record<number, number>>({});
   useEffect(() => {
     const doc = editing;
-    if (!doc) { setReviewStock({}); return; }
+    // **المستند من غير مصدر مابيتسألش عن رصيده.**
+    //
+    // النداء كان بيروح بـ`location_kind` و`location_id` فاضيين، وaxios بيشيل الفاضي من
+    // العنوان — فالطلب بيوصل `?only_available=true` وبس والسيرفر بيرد 422. الشرط على
+    // وجود المستند وحده ماكانش كفاية: صف مالوش مصدر أصلاً (زي صف مسودّة) بيعدّي منه.
+    if (!doc || !doc.source_location_kind || doc.source_location_id == null) {
+      setReviewStock({});
+      return;
+    }
     api.get('/api/v1/stock/by-location', { params: {
       location_kind: doc.source_location_kind,
       location_id: doc.source_location_id, only_available: true } })
@@ -726,7 +809,18 @@ export default function Transfers() {
       return;
     }
     message.success('تم إلغاء الإذن — عدّله وأرسله للاعتماد من جديد');
+    await refillAsNew(t);
+    fetchTransfers();
+  };
 
+  /**
+   * بيفضّي النموذج ويملاه بمحتوى إذن موجود — **كطلب جديد، مش تعديل عليه**.
+   *
+   * بتتنده في حالتين: بعد إلغاء إذن معتمد عشان يتصحّح، ومن «نسخة في طلب جديد» على إذن
+   * مقفول (مرفوض أو ملغي). الاتنين بيعملوا نفس الحاجة — مستند جديد بنفس المحتوى —
+   * والفرق إن الأولانية بترجّع البضاعة الأول.
+   */
+  const refillAsNew = async (t: TransferRecord) => {
     // Refill from what it actually moved — including a legacy permit whose item is on the
     // document rather than in a lines row.
     const src = t.source_location_kind && t.source_location_id != null
@@ -761,7 +855,47 @@ export default function Transfers() {
       };
     }));
     setCreateVisible(true);
-    fetchTransfers();
+  };
+
+  /**
+   * زرار «تعديل» — بيقرا الحالة كلها، مش حالتين.
+   *
+   * **الرفض اللي كان بيحصل:** الشرط كان `approved ? يتلغي ويتفتح جديد : يتفتح للتعديل`،
+   * فأي حالة تانية — `rejected` أو `cancelled` — كانت بتقع في الـ`else` وتتفتح «للتعديل».
+   * والسيرفر بيرفض أي كتابة عليها (`_pending`: «الإذن ده مش تحت الاعتماد — مايتعدلش»)،
+   * فكل ضغطة حفظ أو إضافة صنف بترجع 409 والشاشة بتقول «تعذر التعديل» من غير سبب.
+   *
+   * **والحالة دي بتحصل في المسار العادي مش في حالة نادرة:** «تعديل» على إذن معتمد
+   * بيلغيه، والإلغاء بيحطّه `rejected`. فأول ما اللي بيعدّل يضغط «تعديل» تاني على نفس
+   * الإذن — وهو أول رد فعل طبيعي — بيقع في الفخ. اتقاس على اللوج: `POST /transfers/
+   * 2558/lines` رجع 409 مرتين على `TRF-000003` وهو `rejected`.
+   *
+   * الإذن المقفول **مايتعدلش** — ده مستند اتقفل بقرار. اللي ينفع نسخة منه في طلب جديد،
+   * والاتنين يفضلوا في السجل.
+   */
+  const openForEdit = async (t: TransferRecord) => {
+    if (t.status === 'approved') {
+      await editApproved(t);
+      return;
+    }
+    if (t.status === 'pending') {
+      await openTransfer(t);
+      setViewOnly(false);
+      message.info('إذن التحويل مفتوح الآن للتعديل');
+      return;
+    }
+    await openTransfer(t);
+    setViewOnly(true);
+    Modal.confirm({
+      title: 'الإذن ده مقفول',
+      content: t.status === 'rejected'
+        ? 'الإذن اتلغى أو اترفض، فمايتعدلش — المستند المقفول بيفضل زي ما هو في السجل. '
+          + 'تحب أعمل طلب جديد بنفس محتواه؟'
+        : 'الإذن ده مش تحت الاعتماد فمايتعدلش. تحب أعمل طلب جديد بنفس محتواه؟',
+      okText: 'اعمل طلب جديد بمحتواه',
+      cancelText: 'لأ، سيبه',
+      onOk: () => refillAsNew(t),
+    });
   };
 
   /**
@@ -879,7 +1013,7 @@ export default function Transfers() {
           }
           setDest(v);
         }}
-        warehouses={locationOptions.filter((o: any) => o.value !== source)}
+        warehouses={destOptions}
         okText="ابدأ"
         cancelText="رجوع"
         onCancel={() => setNewStep('source')}
@@ -895,6 +1029,58 @@ export default function Transfers() {
     </>
   );
 
+  /**
+   * سجل عمليات الإذن — مين عمل إيه وإمتى.
+   *
+   * What used to sit here was a review sheet: a read-only modal that opened over the list with an
+   * اعتماد button on it. So the screen that WROTE a permit and the screen that DECIDED on it were
+   * two different things, and an approver who found a wrong quantity fixed it through a popup that
+   * looked nothing like the form it was typed in.
+   *
+   * The document page does both now, and the sheet is gone — two ways to approve is one way too
+   * many. What survives from it is the reasoning: a decision is taken by READING the permit and
+   * being able to correct it, never from a «هل أنت متأكد؟» over a document nobody has opened. And
+   * there is still no delete: the way to say «مش هيتم» is to reject, which leaves the reason on
+   * the document.
+   */
+  const auditDialog = (
+    <DocumentAuditModal
+      entityType="stock_transfer" entityId={auditFor}
+      title="سجل عمليات إذن التحويل" userNames={userNames}
+      onClose={() => setAuditFor(null)} />
+  );
+
+  const rejectDialog = (
+    <TabModal
+      open={rejectOpen}
+      title="رفض إذن التحويل"
+      okText="ارفض" cancelText="تراجع"
+      okButtonProps={{ danger: true }}
+      onCancel={() => { setRejectOpen(false); setRejectReason(''); }}
+      onOk={rejectTransfer}
+      destroyOnHidden
+    >
+      <Alert type="info" showIcon style={{ marginBottom: 12 }}
+        message="لن تتحرك أي بضاعة"
+        description="الرفض ليس كـ«اعتمد ثم اعكس» — فلم ينزل شيء من الرف حتى يعود إليه." />
+      <Input.TextArea rows={3} value={rejectReason} autoFocus
+        placeholder="سبب الرفض — أول ما سيسأل عنه طالب التحويل"
+        onChange={(e: any) => setRejectReason(e.target.value)} />
+    </TabModal>
+  );
+
+  /** زي `doors` بالظبط: الشبابيك دي بتخصّ الفرعين.
+   *
+   *  «رفض» و«سجل العمليات» عايشين على شريط صفحة الإذن، وصفحة الإذن `return` مبكّر — والشباكين
+   *  كانوا متعرّفين في الـ`return` بتاع الكشف بس. يعني الدوسة بتظبط `rejectOpen = true` وعمرها
+   *  ما ترسم حاجة: زرار ميّت، مش زرار بيغلط. */
+  const dialogs = (
+    <>
+      {rejectDialog}
+      {auditDialog}
+    </>
+  );
+
   const transferToolbar = (): ToolbarAction[] => {
     const pending = editing?.status === 'pending';
     const isSaved = Boolean(editing);
@@ -903,14 +1089,7 @@ export default function Transfers() {
         onClick: startNew },
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
         disabled: !isSaved || !viewOnly,
-        onClick: () => {
-          if (editing?.status === 'approved' && canApprove) {
-            editApproved(editing);
-          } else {
-            setViewOnly(false);
-            message.info('إذن التحويل مفتوح الآن للتعديل');
-          }
-        } },
+        onClick: () => { if (editing) openForEdit(editing); } },
       ...(editing ? [] : [{
         key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         onClick: handleSubmit,
@@ -950,7 +1129,10 @@ export default function Transfers() {
   const columns = [
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number',
       sorter: (a: TransferRecord, b: TransferRecord) => (a.document_number || '').localeCompare(b.document_number || ''),
-      render: (doc: string) => <Tag color="blue">{doc}</Tag> },
+      // المسودّة مالهاش رقم — الرقم بيتحجز وقت الإرسال مش قبله.
+      render: (doc: string, r: any) => (r.__isDraft
+        ? <Tag color="gold">مسودّة — لسه ما اتبعتتش</Tag>
+        : <Tag color="blue">{doc}</Tag>) },
     { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
       render: (id: number | null) => nameOfItem(id) },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity',
@@ -988,15 +1170,7 @@ export default function Transfers() {
           {canApprove && (
             <Tooltip title="تعديل">
               <Button type="text" icon={<EditOutlined />}
-                onClick={async () => {
-                  if (record.status === 'approved') {
-                    editApproved(record);
-                  } else {
-                    await openTransfer(record);
-                    setViewOnly(false);
-                    message.info('إذن التحويل مفتوح الآن للتعديل');
-                  }
-                }} />
+                onClick={() => openForEdit(record)} />
             </Tooltip>
           )}
           {canApprove && (
@@ -1109,6 +1283,7 @@ export default function Transfers() {
     return (
       <div>
         {doors}
+        {dialogs}
         <DocumentToolbar actions={transferToolbar()} />
         <Card title={(
           <Space>
@@ -1340,50 +1515,10 @@ export default function Transfers() {
   };
 
 
-  /**
-   * سجل عمليات الإذن — مين عمل إيه وإمتى.
-   *
-   * What used to sit here was a review sheet: a read-only modal that opened over the list with an
-   * اعتماد button on it. So the screen that WROTE a permit and the screen that DECIDED on it were
-   * two different things, and an approver who found a wrong quantity fixed it through a popup that
-   * looked nothing like the form it was typed in.
-   *
-   * The document page does both now, and the sheet is gone — two ways to approve is one way too
-   * many. What survives from it is the reasoning: a decision is taken by READING the permit and
-   * being able to correct it, never from a «هل أنت متأكد؟» over a document nobody has opened. And
-   * there is still no delete: the way to say «مش هيتم» is to reject, which leaves the reason on
-   * the document.
-   */
-  const auditDialog = (
-    <DocumentAuditModal
-      entityType="stock_transfer" entityId={auditFor}
-      title="سجل عمليات إذن التحويل" userNames={userNames}
-      onClose={() => setAuditFor(null)} />
-  );
-
-  const rejectDialog = (
-    <TabModal
-      open={rejectOpen}
-      title="رفض إذن التحويل"
-      okText="ارفض" cancelText="تراجع"
-      okButtonProps={{ danger: true }}
-      onCancel={() => { setRejectOpen(false); setRejectReason(''); }}
-      onOk={rejectTransfer}
-      destroyOnHidden
-    >
-      <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message="لن تتحرك أي بضاعة"
-        description="الرفض ليس كـ«اعتمد ثم اعكس» — فلم ينزل شيء من الرف حتى يعود إليه." />
-      <Input.TextArea rows={3} value={rejectReason} autoFocus
-        placeholder="سبب الرفض — أول ما سيسأل عنه طالب التحويل"
-        onChange={(e: any) => setRejectReason(e.target.value)} />
-    </TabModal>
-  );
 
   return (
     <div>
-      {rejectDialog}
-      {auditDialog}
+      {dialogs}
       {/* The doors belong to BOTH branches. The create page is an early return, so a door declared
           only there unmounts at the instant it opens the page behind it — which is how the return
           ended up with a dialog on screen that no state could close. */}
@@ -1434,7 +1569,42 @@ export default function Transfers() {
 
         <Table
           {...listKb.tableProps}
-          dataSource={filter.filtered} columns={tableCols.columns} rowKey="id" loading={loading}
+          // المسودّات فوق، وبرّه `filter.filtered`: المسودّة مش إذن.
+          dataSource={[
+            ...(drafts || []).map((d: any) => {
+              const x = d.payload || {};
+              return {
+                id: -d.id, __draft: d, __isDraft: true,
+                document_number: 'مسودّة',
+                status: 'draft',
+                created_at: d.updated_at,
+                transfer_date: String(d.updated_at || '').slice(0, 10),
+                quantity: (x.lines || []).reduce(
+                  (t: number, l: any) => t + Number(l.quantity || 0), 0),
+              } as any;
+            }),
+            ...filter.filtered,
+          ]}
+          // **بيتركّبوا فوق بتوع لوحة المفاتيح، مش بيدهسوهم.**
+          //
+          // `listKb.tableProps` بيوفّر `onRow` و`rowClassName` — و`onRow` بتاعه هو اللي
+          // بيفتح الإذن بالضغط وبالكيبورد. تعريف تاني بعد الـspread بيشيله، فالكشف
+          // بيفضل شكله تمام والضغط على أي سطر مابيعملش حاجة.
+          rowClassName={(r: any) => [
+            r.__isDraft ? 'row-draft' : '',
+            listKb.tableProps.rowClassName?.(r) ?? '',
+          ].filter(Boolean).join(' ')}
+          onRow={(r: any) => {
+            const base = (listKb.tableProps.onRow?.(r) ?? {}) as any;
+            if (!r.__isDraft) return base;
+            // المسودّة مالهاش مستند يتفتح — الضغط بيستكملها.
+            return {
+              ...base,
+              onClick: () => resumeDraft(r.__draft),
+              style: { ...(base.style || {}), cursor: 'pointer' },
+            };
+          }}
+          columns={tableCols.columns} rowKey="id" loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         />

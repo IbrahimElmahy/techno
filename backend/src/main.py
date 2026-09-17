@@ -7,9 +7,10 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 import src.models.coupon_issue  # noqa: F401 — عشان create_all يشوف جداوله
 import src.services.loyalty_hooks  # noqa: F401 — registers 002 sale-event subscribers on import
-from src.api import (  # Sales & Inventory (002)  # After-Sales Loyalty (003)
+from src.api import (  # Sales & Inventory (002
     accounting,  # General Ledger (005)
     admin,  # Demo data seeding (system admin)
+    drafts,  # مسودّات المستندات — اللي اتكتب ولسه ما اترحّلش
     advances,  # السلف والجزاءات (HR-5)
     after_sales_reports,
     attachments,  # مرفقات الزيارات (صور المندوب)
@@ -182,6 +183,7 @@ def create_app() -> FastAPI:
     app.include_router(after_sales_reports.router, prefix=prefix)
     app.include_router(attachments.router, prefix=prefix)
     # Admin utilities (demo data seeding)
+    app.include_router(drafts.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
 
     @app.get("/health")
@@ -564,6 +566,10 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("account", "appears_in", "VARCHAR(24)"),
     ("item", "default_warehouse_id", "BIGINT"),
     ("sales_invoice_line", "discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
+    # نصّي الخصم — الثابت بتاع الصنف والمتغيّر اللي المندوب كتبه. NULL معناها «مش
+    # متسجّل» مش صفر: السطور القديمة والمستوردة من a5 فعلاً مش عارفة القسمة.
+    ("sales_invoice_line", "fixed_discount_pct", "NUMERIC(5,2)"),
+    ("sales_invoice_line", "variable_discount_pct", "NUMERIC(5,2)"),
     ("manufacturing_order", "material_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order", "resource_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order_consumption", "waste_quantity", "NUMERIC(18,3) NOT NULL DEFAULT 0"),

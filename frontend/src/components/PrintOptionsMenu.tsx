@@ -16,13 +16,20 @@ import {
  * «why is the logo missing?» has an answer in view.
  */
 export default function PrintOptionsMenu({
-  value, onChange,
+  value, onChange, hideKeys,
 }: {
   value: PrintOptions;
   onChange: (next: PrintOptions) => void;
+  /** مفاتيح مالهاش أثر على المستند ده — بتختفي بدل ما تتعرض وهي مش شغالة.
+   *
+   *  ورقة «طلب بيع» بتطلع من غير شعار ولا اسم شركة بقرار، مش بمفتاح. فمفتاح مكتوب
+   *  عليه «شعار الشركة» على شاشة البيع بيبقى وعد كداب: تفتحه ومايظهرش حاجة، وتقعد
+   *  تدوّر على العطل في الطابعة. والمفتاحين لسه شغالين على المشتريات والمرتجعات. */
+  hideKeys?: (keyof PrintOptions)[];
 }) {
   const set = (next: PrintOptions) => { savePrintOptions(next); onChange(next); };
-  const offCount = PRINT_OPTION_LABELS.filter((o) => !value[o.key]).length;
+  const shown = PRINT_OPTION_LABELS.filter((o) => !(hideKeys || []).includes(o.key));
+  const offCount = shown.filter((o) => !value[o.key]).length;
 
   return (
     <Dropdown
@@ -36,7 +43,7 @@ export default function PrintOptionsMenu({
             ما يُطبع على الفاتورة
           </div>
           <Space direction="vertical">
-            {PRINT_OPTION_LABELS.map((o) => (
+            {shown.map((o) => (
               <Checkbox
                 key={o.key}
                 checked={value[o.key]}

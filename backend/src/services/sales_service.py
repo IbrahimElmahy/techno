@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.services import numbering
 
 from src.core import hooks
+from src.lib import discounts
 from src.core.money import ZERO, to_money, to_qty
 from src.lib import discounts
 from src.models.catalog import Item, ItemKind, PriceTier
@@ -66,8 +67,16 @@ class SaleLine:
     unit: str | None = None                # (008) unit of measure; None = base unit
     serials: list[str] | None = None       # (009) serial numbers (required for serialized items)
     # (027) per-line discount %. None = use the item's fixed default; a number overrides it
-    # (the caller adds the item fixed + a typed variable and sends the total here).
+    # (the caller compounds the item fixed + a typed variable and sends the total here).
     discount_pct: Decimal | None = None
+    # ...and the two halves, so the invoice can say later what the COMPANY discounted and what
+    # the REP gave away. Optional: a caller that sends neither behaves exactly as before.
+    #
+    # **Sent together, they WIN over `discount_pct`** — compounded here by the one engine
+    # (`src.lib.discounts.combine`) rather than trusted from the client. Two clients computing
+    # the same number two ways is how they stop agreeing.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     # (030) the warehouse THIS line is served from. None = the document's own location, which is
     # what every pre-030 caller sends and what a rep selling from his custody still uses.
     warehouse_id: int | None = None
@@ -193,8 +202,12 @@ def fixed_discount_pct(db: Session) -> Decimal:
 
 
 def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
-    """الصافي من **نسبة واحدة**. الخصمين ورا بعض بيعدّوا على `discounts.apply`."""
-    return to_money(Decimal(gross) * (Decimal("1") - Decimal(combined_pct) / Decimal("100")))
+    """الصافي من **نسبة واحدة**. الخصمين ورا بعض بيعدّوا على `discounts.apply`.
+
+    الحساب في المحرك مش هنا: `× (1 - pct/100)` مكتوبة في مكان واحد بس في البايثون،
+    وإلا القاعدة بتتعدّل في المحرك وتفضل قديمة هنا.
+    """
+    return discounts.net_of(gross, combined_pct)
 
 
 def create_sale(
@@ -331,13 +344,28 @@ def create_sale(
         # and the item's rate applies, while 0 means «agreed, and it is nothing» and the item's
         # rate is deliberately cancelled. A column defaulted to zero could not tell those apart,
         # which is why the customer's discount is nullable.
-        line_disc = (Decimal(ln.discount_pct) if ln.discount_pct is not None
-                     else Decimal(customer.discount_pct) if customer.discount_pct is not None
-                     else Decimal(item.default_discount_pct or 0))
+        # الخصم متقال بنصّيه ⇒ المحرك بيركّبهم، وده اللي بيتخزّن. متقال مجموع ⇒ زي ما هو.
+        split = ln.fixed_discount_pct is not None or ln.variable_discount_pct is not None
+        if split:
+            for half, label in ((ln.fixed_discount_pct, "الثابت"),
+                                (ln.variable_discount_pct, "المتغيّر")):
+                if half is None:
+                    continue
+                if Decimal(half) < ZERO or Decimal(half) >= Decimal("100"):
+                    # ١٠٠٪ بتطلع سطر بصفر، والمتغيّر اللي جاي أكبر من ١٠٠ غالباً مبلغ
+                    # اتكتب في خانة نسبة — بيترفض هنا بدل ما يتقصّ لـ٩٩٫٩٩ ويعدّي.
+                    raise SalesError(
+                        f"الخصم {label} لازم يكون من صفر لأقل من ١٠٠٪ — جالي {half}.")
+            line_disc = discounts.combine(ln.fixed_discount_pct or ZERO,
+                                          ln.variable_discount_pct or ZERO)
+        else:
+            line_disc = (Decimal(ln.discount_pct) if ln.discount_pct is not None
+                         else Decimal(customer.discount_pct) if customer.discount_pct is not None
+                         else Decimal(item.default_discount_pct or 0))
         if line_disc < ZERO or line_disc >= Decimal("100"):
             raise SalesError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * unit_price
-        line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
+        line_total = discounts.net_of(line_before, line_disc)
         gross += line_total
         built.append((ln, unit_price, line_total, tier, factor, line_disc))
     gross = to_money(gross)
@@ -498,6 +526,9 @@ def create_sale(
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                              unit_price=unit_price, discount_pct=line_disc,
+                             # NULL لو العميل ماقالش القسمة — «مش متسجّل» مش صفر.
+                             fixed_discount_pct=ln.fixed_discount_pct,
+                             variable_discount_pct=ln.variable_discount_pct,
                              line_total=line_total, price_tier=tier,
                              unit=ln.unit, unit_factor=factor,
                              location_kind=line_kind, location_id=line_loc,
@@ -1032,7 +1063,7 @@ def create_standalone_return(
         if line_disc < ZERO or line_disc >= Decimal("100"):
             raise SalesError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * unit_price
-        line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
+        line_total = discounts.net_of(line_before, line_disc)
         gross += line_total
         built.append((ln, unit_price, line_total, factor))
     gross = to_money(gross)

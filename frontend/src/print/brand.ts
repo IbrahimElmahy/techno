@@ -27,6 +27,11 @@ export interface DocMeta {
     companyName?: boolean;
     invoiceNumber?: boolean;
     invoiceTitle?: boolean;
+    /** بيانات الشركة في الذيل — العنوان والتليفونات.
+     *
+     *  كانت بتتطبع دايماً من غير مفتاح، فالورقة اللي شعارها متشال كان اسم الشركة
+     *  وعنوانها لسه في رجلها. إخفاء النص وسيبان المصدر مش إخفاء. */
+    companyFooter?: boolean;
   };
 }
 
@@ -34,6 +39,16 @@ import { COMPANY, companyLines } from '../config/company';
 
 export const printStyles = `
   @page { size: A4; margin: 12mm; }
+  /* **الفاتورة الطويلة بتتقسّم على صفحات، وكل صفحة بتفضل مقروءة.**
+     المتصفح بيقسّم لوحده، بس من غير القواعد دي بيقطع السطر في نصّه ويسيب الصفحة
+     التانية بأرقام من غير عناوين — واللي ماسك الورقة التانية مايعرفش الرقم ده كمية
+     ولا سعر. table-header-group بيكرّر رأس الجدول، وbreak-inside بيمنع قطع السطر.
+     (من غير علامات باك-تِك هنا: النص ده جوّه template literal وبتقفله.) */
+  @media print {
+    thead { display: table-header-group; }
+    tfoot { display: table-footer-group; }
+    tr, .no-break { break-inside: avoid; page-break-inside: avoid; }
+  }
   * { box-sizing: border-box; }
   body {
     font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
@@ -109,11 +124,14 @@ export function letterhead(meta: DocMeta): string {
   ${metaRows ? `<table class="meta">${metaRows}</table>` : ''}`;
 }
 
-export function footer(note?: string): string {
-  return `<div class="foot">
-    <span>${note || 'هذا المستند صادر آلياً من نظام تكنو ثيرم.'}</span>
-    <span>${COMPANY.address} — ت: ${COMPANY.phones.join(' / ')}</span>
-  </div>`;
+export function footer(note?: string, hideCompany = false): string {
+  // الجملة الافتراضية نفسها بتسمّي الشركة، فالورقة اللي بتتشال منها الهوية بتسكت
+  // خالص بدل ما تقول «صادر آلياً من نظام تكنو ثيرم».
+  const left = note || (hideCompany ? '' : 'هذا المستند صادر آلياً من نظام تكنو ثيرم.');
+  const right = hideCompany
+    ? '' : `${COMPANY.address} — ت: ${COMPANY.phones.join(' / ')}`;
+  if (!left && !right) return '';
+  return `<div class="foot"><span>${left}</span><span>${right}</span></div>`;
 }
 
 /** Wrap a document body in the branded shell and open the browser's print dialog. */
@@ -122,7 +140,7 @@ export function printDocument(meta: DocMeta, bodyHtml: string): void {
 <title>${meta.title}${meta.number ? ` ${meta.number}` : ''}</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${printStyles}</style></head>
-<body><div class="sheet">${letterhead(meta)}${bodyHtml}${footer(meta.note)}</div>
+<body><div class="sheet">${letterhead(meta)}${bodyHtml}${footer(meta.note, Boolean(meta.hide?.companyFooter))}</div>
 <script>window.onload = function () { window.print(); };</script>
 </body></html>`;
   const win = window.open('', '_blank', 'width=1000,height=1000');

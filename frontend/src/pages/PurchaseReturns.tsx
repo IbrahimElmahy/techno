@@ -13,6 +13,8 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { useDocRoute } from '../components/useDocRoute';
+import { useDraft } from '../components/useDraft';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
@@ -166,23 +168,75 @@ export default function PurchaseReturns() {
 
   useEffect(() => { load(); }, []);
 
-  useEffect(() => {
-    const doc = searchParams.get('doc');
-    const edit = searchParams.get('edit');
-    if (doc || edit) {
-      pendingDoc.current = Number(doc || edit);
-      pendingEdit.current = !!edit;
-      setSearchParams({}, { replace: true });
-    }
-    const wanted = pendingDoc.current;
-    if (!wanted) return;
-    pendingDoc.current = null;
-    const target = rows.find((r) => r.id === wanted) || ({ id: wanted } as ReturnRow);
-    const wantsEdit = pendingEdit.current;
-    pendingEdit.current = false;
-    if (wantsEdit) editPosted(target);
-    else openReturn(target);
-  }, [searchParams, rows]);
+  // اتنقل فوق `useDocRoute`: الخُطّاف بيقرا `editingId` عشان يعرف إيه المفتوح.
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  // المردود المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
+  const { markOpen, markClosed } = useDocRoute<ReturnRow>({
+    rows,
+    openId: editingId,
+    open: (row, mode) => { if (mode === 'edit') editPosted(row); else openReturn(row); },
+    close: () => closeDoc(),
+    loading,
+    // `openReturn` بيجيب المستند بالرقم بنفسه، فالصف المبدئي كفاية.
+    fetchOne: async (id) => ({ id } as ReturnRow),
+  });
+
+  /** المسودّة — نفس قاعدة طلب البيع. الشرح في `useDraft`. */
+  const draftPayload = useMemo(() => ({
+    supplier_id: supplierFilter,
+    return_date: returnDate ? dayjs(returnDate).format('YYYY-MM-DD') : null,
+    lines: returnLines,
+    warehouseId,
+    notes,
+    externalNumber,
+    statements,
+    variableDiscount,
+  }), [supplierFilter, returnDate, returnLines, warehouseId, notes,
+       externalNumber, statements, variableDiscount]);
+
+  const {
+    drafts, savedAt: draftSavedAt, discard: discardDraft,
+    remove: removeDraft, adopt: adoptDraft,
+  } = useDraft({
+    kind: 'purchase_return',
+    payload: draftPayload,
+    paused: Boolean(viewing || editingId),
+    isEmpty: (x: any) => !x.supplier_id
+      && !(x.lines || []).some((l: any) => l.item_id != null),
+    title: (x: any) => {
+      const n = (x.lines || []).filter((l: any) => l.item_id != null).length;
+      return `مردود شرا — ${n} صنف`;
+    },
+  });
+
+  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
+  const resumeDraft = (d: any) => {
+    const x = d.payload || {};
+    adoptDraft(d.id);
+    setViewing(null);
+    setEditingId(null);
+    setViewOnly(false);
+    setNewStep(null);
+    setCreating(true);
+    setSupplierFilter(x.supplier_id ?? null);
+    if (x.return_date) setReturnDate(dayjs(x.return_date));
+    setReturnLines(x.lines || []);
+    setWarehouseId(x.warehouseId ?? null);
+    setNotes(x.notes || '');
+    setExternalNumber(x.externalNumber || '');
+    setStatements(x.statements?.length === 3 ? x.statements : ['', '', '']);
+    setVariableDiscount(Number(x.variableDiscount) || 0);
+  };
+
+  /** الرجوع للكشف — مكان واحد بدل تلات نسخ متفرّقة في الأزرار. */
+  const closeDoc = () => {
+    setCreating(false);
+    setEditingId(null);
+    setViewOnly(false);
+    setViewing(null);
+    markClosed();
+  };
 
   const returnedByPurchase = useMemo(() => {
     const m: Record<number, number> = {};
@@ -195,6 +249,7 @@ export default function PurchaseReturns() {
   const itemName = (id: number) => items.find((i) => i.id === id)?.name ?? `صنف #${id}`;
 
   const openReturn = async (row: ReturnRow) => {
+    markOpen(row.id);
     setViewLoading(true);
     try {
       const res = await api.get(`/api/v1/purchases/returns/${row.id}`);
@@ -226,12 +281,12 @@ export default function PurchaseReturns() {
     } finally { setViewLoading(false); }
   };
 
-  const [editingId, setEditingId] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
 
   const editPosted = async (row: ReturnRow) => {
     await openReturn(row);
+    markOpen(row.id, 'edit');
     setViewOnly(false);
     message.info('مردود الشراء مفتوح الآن للتعديل');
   };
@@ -240,6 +295,7 @@ export default function PurchaseReturns() {
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
     setEditingId(null); setSupplierFilter(null); setViewing(null); setViewOnly(false);
+    markClosed();
     setReturnLines([]); setWarehouseId(null);
     setExternalNumber(''); setStatements(['', '', '']);
     setVariableDiscount(0);
@@ -300,10 +356,7 @@ export default function PurchaseReturns() {
           if (!viewOnly && editingId) {
             openReturn({ id: editingId } as ReturnRow);
           } else if (returnLines.length > 0) {
-            setCreating(false);
-            setEditingId(null);
-            setViewOnly(false);
-            setViewing(null);
+            closeDoc();
           } else {
             setReturnLines([]);
           }
@@ -474,7 +527,14 @@ export default function PurchaseReturns() {
     if (!wh) return;
     try {
       const res = await api.get('/api/v1/stock/by-location', {
-        params: { location_kind: 'warehouse', location_id: wh, only_available: false },
+        params: {
+          location_kind: 'warehouse', location_id: wh, only_available: false,
+          // المردود المفتوح للتعديل مابيتحاسبش على نفسه: بضاعته طلعت من المخزن يوم ما
+          // اترحّل، فالرصيد من غير الاستثناء ده **بعده** — والحارس بيقيس الكميات
+          // المكتوبة عليه، يعني بيعامل اللي رجع للمورد على إنه كمية تانية لازم تتوفر.
+          // اللي ردّ آخر خمسة مايقدرش يفتح مردوده يصلّح سعر فيه.
+          ...(editingId ? { exclude_doc_type: 'purchase_return', exclude_doc_id: editingId } : {}),
+        },
       });
       const map: Record<number, number> = {};
       (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
@@ -487,11 +547,13 @@ export default function PurchaseReturns() {
     if (wh) await loadWarehouseStock(wh);
   };
 
+  // و`editingId` في العدّة كمان: فتح مردود للتعديل مابيغيّرش المخزن (هو نفسه مخزن
+  // المردود)، فمن غيرها الرصيد بيفضل اللي اتجاب قبل الفتح — يعني من غير الاستثناء.
   useEffect(() => {
     if (warehouseId) {
       loadWarehouseStock(warehouseId);
     }
-  }, [warehouseId, pickerOpen]);
+  }, [warehouseId, pickerOpen, editingId]);
 
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
@@ -721,6 +783,8 @@ export default function PurchaseReturns() {
       if (editingId !== null) await api.put(`/api/v1/purchases/returns/${editingId}`, body);
       else await api.post('/api/v1/purchases/returns', body);
       message.success(editingId !== null ? 'تم حفظ المردود' : 'تم تسجيل مردود الشراء');
+      // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
+      discardDraft();
       setEditingId(null);
       setReturnLines([]);
       setCreating(false);
@@ -759,7 +823,10 @@ export default function PurchaseReturns() {
     {
       title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', ellipsis: true, width: 140,
       ...textColumn(rows, (r: ReturnRow) => r.document_number),
-      render: (d: string) => <Tag color="volcano">{d}</Tag>,
+      // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
+      render: (d: string, r: any) => (r.__isDraft
+        ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+        : <Tag color="volcano">{d}</Tag>),
     },
     {
       title: 'الفاتورة رقم', dataIndex: 'purchase_document_number', key: 'purchase_document_number',
@@ -957,16 +1024,46 @@ export default function PurchaseReturns() {
 
         <Table
           {...kb.tableProps}
-          dataSource={filter.filtered} columns={visibleColumns} rowKey="id" loading={loading}
+          // المسودّات فوق، وبرّه `filter.filtered` عن قصد: الإجمالي بيتبني منه والمسودّة مش مردود.
+          dataSource={[
+            ...(drafts || []).map((d: any) => {
+              const x = d.payload || {};
+              const ls = (x.lines || []).filter((l: any) => l.item_id != null);
+              const value = ls.reduce((t: number, l: any) =>
+                t + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
+              return {
+                id: -d.id, __draft: d, __isDraft: true,
+                document_number: 'مسودّة',
+                created_at: d.updated_at,
+                return_date: String(x.return_date || d.updated_at || '').slice(0, 10),
+                supplier_id: x.supplier_id ?? null,
+                value,
+              } as any;
+            }),
+            ...filter.filtered,
+          ]}
+          columns={visibleColumns} rowKey="id" loading={loading}
           // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
           //
           // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
           // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
           // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           size="small" tableLayout="fixed"
-          rowClassName={(r) => [
+          rowClassName={(r: any) => [
+            r.__isDraft ? 'row-draft' : '',
             r.id === highlight ? 'row-arrived' : '', kb.rowClassName(r),
           ].filter(Boolean).join(' ')}
+          // بيتركّب فوق بتاع لوحة المفاتيح مش بيدهسه — `kb.tableProps.onRow` هو اللي
+          // بيفتح المستند بالضغط وبالكيبورد.
+          onRow={(r: any) => {
+            const base = (kb.tableProps.onRow?.(r) ?? {}) as any;
+            if (!r.__isDraft) return base;
+            return {
+              ...base,
+              onClick: () => resumeDraft(r.__draft),
+              style: { ...(base.style || {}), cursor: 'pointer' },
+            };
+          }}
           summary={(shown) => {
             const list = shown as readonly ReturnRow[];
             if (!list.length) return null;

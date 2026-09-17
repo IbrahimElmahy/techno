@@ -7,6 +7,8 @@ export interface WarehouseOption {
   value?: number | string;
   name?: string;
   label?: string;
+  /** مجموعة مش خيار — الشاشة اللي بتخلط مخازن وعهد بتبعت `{label, options:[...]}`. */
+  options?: WarehouseOption[];
 }
 
 export interface WarehouseGateProps {
@@ -42,12 +44,28 @@ export default function WarehouseGate({
   const selectedRef = useRef<number | string | null>(value ?? null);
   selectedRef.current = value ?? null;
 
+  /** الخيار المسطّح. المجموعة بتفضل مجموعة — `Select` بتاعة antd بتفهم `options` جوّه
+   *  الخيار كـ`OptGroup`، ولو سطّحناها العنوان نفسه بيبقى صف من غير `value` فمايتختارش. */
   const normalizedOptions = useMemo(() => {
-    return warehouses.map((w) => ({
+    const leaf = (w: WarehouseOption) => ({
       value: w.value !== undefined ? w.value : w.id,
       label: w.label !== undefined ? w.label : w.name,
-    }));
+    });
+    return warehouses.map((w) =>
+      w.options
+        ? { label: w.label !== undefined ? w.label : w.name, options: w.options.map(leaf) }
+        : leaf(w),
+    );
   }, [warehouses]);
+
+  /** الخيارات اللي ينفع تتختار فعلاً — عناوين المجموعات مش منها. */
+  const selectableOptions = useMemo(
+    () =>
+      normalizedOptions.flatMap((o: any) =>
+        o.options ? o.options : [o],
+      ) as { value?: number | string; label?: string }[],
+    [normalizedOptions],
+  );
 
   /** بصمة الخيارات كنص — الاعتماد على المصفوفة نفسها بيعمل حلقة.
    *
@@ -55,12 +73,12 @@ export default function WarehouseGate({
    *  ودي مصفوفة جديدة كل رندر. الـ`useMemo` بيعيد الحساب معاها، فالـeffect يشوف
    *  اعتماد اتغيّر ويشتغل تاني — ولو الخيار واحد بينده `onChange` و`onOk` كل رندر،
    *  يعني رندر لا نهائي. البصمة بتتغيّر لما المحتوى يتغيّر فعلاً بس. */
-  const optionsKey = normalizedOptions.map((o) => String(o.value)).join('|');
+  const optionsKey = selectableOptions.map((o) => String(o.value)).join('|');
 
   // لو المستخدم عنده مخزن واحد بس متاح، ما نسألوش — نحطّه ونعدّي على طول
   useEffect(() => {
-    if (open && autoAdvanceIfSingle && normalizedOptions.length === 1) {
-      const singleVal = normalizedOptions[0].value;
+    if (open && autoAdvanceIfSingle && selectableOptions.length === 1) {
+      const singleVal = selectableOptions[0].value;
       if (singleVal !== undefined) {
         onChange(singleVal);
         onOk();
@@ -69,7 +87,7 @@ export default function WarehouseGate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, autoAdvanceIfSingle, optionsKey]);
 
-  if (!open || (autoAdvanceIfSingle && normalizedOptions.length === 1)) {
+  if (!open || (autoAdvanceIfSingle && selectableOptions.length === 1)) {
     return null;
   }
 

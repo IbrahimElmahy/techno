@@ -46,13 +46,28 @@ const SCREEN: Record<DocKind, string> = {
  * map (transfer, manufacturing, inspection) have no single-document screen to open yet, and
  * returning null lets the caller keep showing the plain tag instead of a link that goes nowhere.
  */
+/**
+ * نوع المستند من `source_doc_type` اللي على حركة المخزون.
+ *
+ * **مصطلحين لنفس المستند، مش واحد.** الخدمة الحيّة بتكتب `sale` و`transfer`، والنقل من
+ * a5 بيكتب `sales_invoice` و`stock_transfer`. لغتين اتكتبوا في مكانين ومحدش بيفرضهم
+ * يتفقوا، والدالة دي كانت بتعرف الأولى بس — فكل مستند منقول (وده أغلب اللي في النظام)
+ * كان بيرجّع `null` وبيتعرض تاج ميّت: مكتوب عليه رقم المستند ومابيفتحش.
+ *
+ * والتصليح هنا مش في الشاشة: ده المكان الوحيد اللي بيترجم النوع، فكل شاشة بتنده منه
+ * اتصلحت مرة واحدة — كارت الصنف، كشف الحساب، كارت العميل.
+ */
 export function docKindOf(sourceDocType: string | null | undefined): DocKind | null {
   switch (sourceDocType) {
-    case 'sale': return 'invoice';
-    case 'sale_return': return 'return';
-    case 'purchase': return 'purchase';
+    case 'sale':
+    case 'sales_invoice': return 'invoice';
+    case 'sale_return':
+    case 'sales_return': return 'return';
+    case 'purchase':
+    case 'purchase_invoice': return 'purchase';
     case 'purchase_return': return 'purchase_return';
-    case 'transfer': return 'transfer';
+    case 'transfer':
+    case 'stock_transfer': return 'transfer';
     case 'stock_permit': return 'stock_permit';
     default: return null;
   }

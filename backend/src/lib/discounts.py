@@ -18,6 +18,16 @@
 
 الترتيب مالوش لازمة حسابياً — الضرب تبديلي — فـ«الثابت الأول» مش قاعدة، هو بس
 اللي بيتكتب على الورقة كده.
+
+⚠️ **والقاعدة دي مكتوبة تلات مرات، مرة لكل لغة** — مافيش طريقة تشارك كود بين بايثون
+وTypeScript وDart. التانيتين:
+
+    frontend/src/utils/discount.ts
+    mobile/lib/models/discount.dart
+
+أي تعديل هنا لازم يتعمل في التلاتة، والمثال (١٠٪ ثم ٥٪ = ١٤٫٥٪) مكتوب في التلاتة عشان
+أي واحدة تفرق تبان في أول قياس.
+
 """
 from __future__ import annotations
 
@@ -25,8 +35,11 @@ from decimal import Decimal
 
 from src.core.money import to_money
 
+ZERO = Decimal("0")
 HUNDRED = Decimal("100")
 ONE = Decimal("1")
+# أعلى خصم مسموح — `implied_pct` بتقف عنده.
+MAX_PCT = Decimal("99.99")
 
 
 def _factor(pct: Decimal | float | str | None) -> Decimal:
@@ -54,3 +67,36 @@ def combine(*pcts: Decimal | float | str | None) -> Decimal:
 def apply(amount: Decimal | float | str, *pcts: Decimal | float | str | None) -> Decimal:
     """المبلغ بعد الخصومات ورا بعض، مقرّب للقرش مرة واحدة في الآخر."""
     return to_money(Decimal(str(amount)) * remaining(*pcts))
+
+
+def net_of(amount, pct) -> Decimal:
+    """المبلغ بعد نسبة خصم **واحدة جاهزة** — للسطر اللي خصمه متخزّن مركّب خلاص.
+
+    مش نفس `apply(amount, pct)` في المعنى وإن كان نفس الحساب: دي بتقول «النسبة دي
+    محسوبة خلاص، طبّقها»، والتانية بتقول «ركّب النِسب دي وطبّقها». الاسم بيفرّق عشان
+    اللي بيقرا الكود يعرف هو في أنهي حالة.
+    """
+    return to_money(Decimal(str(amount or 0)) * _factor(pct))
+
+
+def implied_pct(before, after) -> Decimal:
+    """الخصم المستنتج من مبلغين — «كان كذا وبقى كذا، يبقى الخصم كام؟».
+
+        implied_pct(5200, 4160)    → Decimal('20.00')
+        implied_pct(1330, 1137.15) → Decimal('14.50')
+
+    **بيتستعمل في النقل من a5.** سطر الفاتورة عندهم بيشيل سعر الوحدة الخام وإجمالي
+    السطر بعد الخصم، والنسبة اللي بينهم مش متخزّنة في العمود اللي بنقراه — فبتتحسب.
+    مافيش تخمين هنا: الرقمين الاتنين حقيقيين والنسبة نتيجتهم.
+
+    الصفر بيرجع لما المبلغ الأساسي صفر أو الإجمالي أكبر منه (زيادة مش خصم) — ومابنكتبش
+    رقم سالب في خانة اسمها «خصم». والسقف ٩٩٫٩٩٪: خصم ١٠٠٪ معناه سطر بصفر، ودي حاجة
+    تتعمل بمسح السطر مش بخصم.
+    """
+    base = Decimal(str(before or 0))
+    net = Decimal(str(after or 0))
+    if base <= ZERO or net >= base:
+        return ZERO
+    pct = to_money(HUNDRED * (base - net) / base)
+    return pct if pct <= MAX_PCT else MAX_PCT
+

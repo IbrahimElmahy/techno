@@ -61,6 +61,7 @@ from src.models.sales import (
 )
 from src.models.sales_expense import SalesInvoiceExpense
 from src.models.stock import StockDoc, StockMovement
+from src.lib import stock_docs
 from src.services.audit_service import record as audit_record
 from src.core.money import to_qty
 
@@ -142,13 +143,17 @@ def _restore_batches(db: Session, *, document_type: str, document_id: int) -> No
 
 
 def _drop_stock(db: Session, *, source_doc_type: str, source_doc_id: int) -> None:
-    """حركات المخزون بتاعة المستند — بتتشال خالص.
+    """حركات المخزون بتاعة المستند — بتتشال خالص، **بكل أسمائها**.
 
     الرصيد مشتق من الحركات (مافيش رصيد مخزّن)، فشيل الحركة بيرجّع الرصيد لوحده. وده
-    السبب اللي بيخلي الطريقة دي ممكنة أصلاً.
+    السبب اللي بيخلي الطريقة دي ممكنة أصلاً — وهو كمان السبب اللي بيخلّي الحركة
+    الناجية أخطر من الصف اللي فضل: الرصيد بيفضل غلط ومافيش حاجة تقول ليه.
+
+    والأسماء بتتجاب من [stock_docs.names] — المستند الواحد ليه اسمين على الحركة (الخدمة
+    الحيّة بتكتب `sale` والمستورد بيكتب `sales_invoice`)، والشرح هناك.
     """
     db.execute(delete(StockMovement).where(
-        StockMovement.source_doc_type == source_doc_type,
+        StockMovement.source_doc_type.in_(stock_docs.names(source_doc_type)),
         StockMovement.source_doc_id == source_doc_id))
 
 

@@ -16,6 +16,9 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useDocRoute } from '../components/useDocRoute';
+import { useDraft } from '../components/useDraft';
+import { netOf } from '../utils/discounts';
 import ProductPickerModal from '../components/ProductPickerModal';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import TotalsLadder from '../components/TotalsLadder';
@@ -137,10 +140,9 @@ export default function Returns() {
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
   // `DocumentLink` has always claimed it could open a return in its own screen; this screen never
   // read the id, so «افتح المستند» landed on the list and left the reader to find the row again.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const pendingDoc = useRef<number | null>(null);
-  /** الرابط طالب تعديل مش عرض. مع `pendingDoc` لأن الاتنين بيتقروا في نفس اللحظة. */
-  const pendingEdit = useRef(false);
+  // السند المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
+  // وده كمان بيخلّي `?doc=` الجاي من `DocumentLink` يفتح السند فعلاً: الشاشة ماكانتش
+  // بتقرا الرقم أصلاً، فـ«افتح المستند» كان بيوصل للكشف واللي بيقرا يدوّر بنفسه.
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -255,6 +257,71 @@ export default function Returns() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
   const [viewReturn, setViewReturn] = useState<any>(null);
+
+  /** المسودّة — نفس قاعدة طلب البيع. الشرح في `useDraft`. */
+  const draftPayload = useMemo(() => ({
+    customer_id: customerId,
+    family: returnFamily,
+    return_date: returnDate ? dayjs(returnDate).format('YYYY-MM-DD') : null,
+    lines,
+    couponRows,
+    cashRefund,
+    discountPct,
+    docWarehouseId,
+    repId,
+    externalDocNumber,
+    docNotes,
+  }), [customerId, returnFamily, returnDate, lines, couponRows, cashRefund,
+       discountPct, docWarehouseId, repId, externalDocNumber, docNotes]);
+
+  const {
+    drafts, savedAt: draftSavedAt, discard: discardDraft,
+    remove: removeDraft, adopt: adoptDraft,
+  } = useDraft({
+    kind: 'sale_return',
+    payload: draftPayload,
+    paused: Boolean(viewReturn),
+    isEmpty: (x: any) => !x.customer_id
+      && !(x.lines || []).some((l: any) => l.item_id != null),
+    title: (x: any) => {
+      const name = customers.find((c) => c.id === x.customer_id)?.name || 'بدون عميل';
+      const n = (x.lines || []).filter((l: any) => l.item_id != null).length;
+      return `${name} — ${n} صنف`;
+    },
+  });
+
+  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
+  const resumeDraft = (d: any) => {
+    const x = d.payload || {};
+    adoptDraft(d.id);
+    closeCreate();
+    setCreateVisible(true);
+    setNewStep(null);
+    if (x.customer_id) {
+      createForm.setFieldsValue({ customer_id: x.customer_id });
+      onCustomerChange(x.customer_id);
+    }
+    setReturnFamily(x.family ?? null);
+    if (x.return_date) setReturnDate(dayjs(x.return_date));
+    setLines(x.lines || []);
+    setCouponRows(x.couponRows?.length ? x.couponRows : [blankCoupon()]);
+    setCashRefund(Number(x.cashRefund) || 0);
+    setDiscountPct(Number(x.discountPct) || 0);
+    setDocWarehouseId(x.docWarehouseId ?? null);
+    setRepId(x.repId ?? null);
+    setExternalDocNumber(x.externalDocNumber || '');
+    setDocNotes(x.docNotes || '');
+  };
+
+  const { markOpen, markClosed } = useDocRoute<ReturnRecord>({
+    rows: returns,
+    openId: viewReturn?.id ?? null,
+    open: (r) => openDetail(r),
+    close: () => closeCreate(),
+    loading,
+    // `openDetail` بيجيب السند بالرقم بنفسه، فالصف المبدئي كفاية.
+    fetchOne: async (id) => ({ id } as ReturnRecord),
+  });
   const [editingSourceId, setEditingSourceId] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
@@ -352,7 +419,7 @@ export default function Returns() {
   const totalReturnPoints = lines.reduce((sum, l) => sum + linePoints(l), 0);
 
   const grossTotal = lines.reduce((s, l) => s + lineTotal(l), 0);
-  const netTotal = grossTotal * (1 - discountPct / 100);
+  const netTotal = netOf(grossTotal, discountPct);
   const totalPoints = lines.reduce((s, l) => s + linePoints(l), 0);
 
   // Default the refund to a credit against the customer's account (cash stays 0 → full credit).
@@ -364,6 +431,7 @@ export default function Returns() {
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
 
   const closeCreate = () => {
+    markClosed();
     setCreateVisible(false);
     setViewOnly(false);
     setViewReturn(null);
@@ -824,6 +892,8 @@ export default function Returns() {
               message.success(editingSourceId
                 ? `اتحفظ المرتجع. رقم السند: ${res.data.document_number}`
                 : `تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
+              // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
+              discardDraft();
               closeCreate();
               fetchReturns();
             } catch (err: any) {
@@ -1014,6 +1084,7 @@ export default function Returns() {
    * والسند القديم بيفضل زي ما هو.
    */
   const openDetail = async (record: ReturnRecord) => {
+    markOpen(record.id);
     try {
       const res = await api.get(`/api/v1/sales/returns/${record.id}`);
       const det = res.data;
@@ -1503,7 +1574,10 @@ export default function Returns() {
     },
     {
       title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', ellipsis: true, width: 125,
-      render: (doc: string) => <Tag color="volcano">{doc}</Tag>,
+      // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
+      render: (doc: string, r: any) => (r.__isDraft
+        ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+        : <Tag color="volcano">{doc}</Tag>),
     },
     {
       // Which sale this undoes. The link was always stored and never shown.
@@ -1695,7 +1769,26 @@ export default function Returns() {
         </Row>
 
         <Table
-          dataSource={returns} columns={visibleColumns} rowKey="id" loading={loading}
+          // المسودّات فوق، وبرّه `returns` عن قصد: الإجماليات بتتبني منه والمسودّة مش مرتجع.
+          dataSource={[
+            ...(drafts || []).map((d: any) => {
+              const x = d.payload || {};
+              const ls = (x.lines || []).filter((l: any) => l.item_id != null);
+              const net = ls.reduce((t: number, l: any) =>
+                t + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
+              return {
+                id: -d.id, __draft: d, __isDraft: true,
+                document_number: 'مسودّة',
+                created_at: d.updated_at,
+                return_date: String(x.return_date || d.updated_at || '').slice(0, 10),
+                customer_id: x.customer_id ?? null,
+                net, value: net,
+              } as any;
+            }),
+            ...returns,
+          ]}
+          rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
+          columns={visibleColumns} rowKey="id" loading={loading}
           size="small" tableLayout="fixed"
           // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
           //
@@ -1703,7 +1796,10 @@ export default function Returns() {
           // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
           // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-          onRow={(record) => ({ onClick: () => openDetail(record), style: { cursor: 'pointer' } })}
+          onRow={(record: any) => ({
+            onClick: () => (record.__isDraft ? resumeDraft(record.__draft) : openDetail(record)),
+            style: { cursor: 'pointer' },
+          })}
         />
       </Card>
 

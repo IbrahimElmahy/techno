@@ -61,7 +61,7 @@ const ENTITY_LABEL: Record<string, string> = {
   cost_center: 'مركز تكلفة',
   employee: 'موظف',
   sales: 'فواتير المبيعات',
-  sales_invoice: 'فاتورة بيع',
+  sales_invoice: 'طلب بيع',
   sales_return: 'مرتجع مبيعات',
   purchases: 'المشتريات',
   transfers: 'أذون التحويل',

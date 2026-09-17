@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { netOf, MAX_DISCOUNT_PCT } from '../utils/discounts';
 import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
@@ -186,7 +187,7 @@ export default function Orders() {
   const lineGross = (l: DraftLine) => Number(l.quantity || 0) * Number(l.unit_price || 0);
   /** وبعد خصمه. خصم الورقة بيتحسب على المجموع، مش هنا. */
   const lineNet = (l: DraftLine) => lineGross(l)
-    * (1 - Math.min(99.99, Number(l.discount_pct || 0)) / 100);
+    * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100);
 
   /** قبل خصم الورقة، وبعده — نفس سُلّم الفاتورة. */
   /**
@@ -270,7 +271,7 @@ export default function Orders() {
 
   const grossTotal = lines.reduce((sum, l) => sum + lineGross(l), 0);
   const netBeforeDoc = lines.reduce((sum, l) => sum + lineNet(l), 0);
-  const draftTotal = netBeforeDoc * (1 - Math.min(99.99, discountPct) / 100);
+  const draftTotal = netOf(netBeforeDoc, Math.min(MAX_DISCOUNT_PCT, discountPct));
 
   /** One way in — the list buttons and F2 both come through here.
    *
@@ -362,7 +363,7 @@ export default function Orders() {
       total: money(l.line_total != null
         ? l.line_total
         : Number(l.quantity || 0) * Number(l.unit_price || 0)
-          * (1 - Math.min(99.99, Number(l.discount_pct || 0)) / 100)),
+          * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100)),
     }));
     const pct = Number(o.variable_discount_pct || 0);
     printReport(

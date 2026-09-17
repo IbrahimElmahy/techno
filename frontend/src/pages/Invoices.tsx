@@ -17,6 +17,7 @@ import CostCenterField from '../components/CostCenterField';
 import CostCenterSplit from '../components/CostCenterSplit';
 import DocumentBar from '../components/DocumentBar';
 import { api } from '../api/client';
+import { combineDiscounts, netOf } from '../utils/discounts';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
@@ -202,6 +203,10 @@ export default function Invoices() {
   // question. Stock can never go negative, so the form shows what is available and caps the
   // quantity rather than letting the user build a basket the server will refuse.
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
+  /** رقم الفاتورة المفتوحة للتعديل — بضاعتها بترجع للرصيد وقت العرض. الشرح في
+   *  `loadWarehouseStock`. `ref` مش `state` عشان الدالة بتتنده في نفس اللفّة اللي
+   *  بتتفتح فيها الفاتورة، قبل ما أي `setState` توصل. */
+  const excludeDocRef = useRef<number | null>(null);
   // (030) the party picker + what it filled into the document header
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   /**
@@ -346,8 +351,12 @@ export default function Invoices() {
       gross: Number(s.gross || 0),
       combined_pct: Number(s.combined_pct || 0),
       // الفرق نفسه، مش النسبة × الإجمالي: النسبة المجمّعة مقرّبة لمنزلتين، والطرح
-      // بيدّي القرش الصح مهما كانت الخصومات.
+      // بيدّي القرش الصح مهما كانت الخصومات. وبيشمل خصم السطور تلقائياً لأن `net`
+      // محسوب بعدها — وده اللي كان بيخلّي الكشف يقول «خصم ٠» على فاتورة خصمها ٢٠٪.
       discount_value: Number(s.gross || 0) - Number(s.net || 0),
+      // الأساس اللي النسبة بتتقاس عليه في عمود «خصم%» — الإجمالي **قبل** خصم السطور،
+      // وإلا ٢٠٪ بتطلع ٢٥٪.
+      discount_base: Number(s.gross_before_line_discount || 0) || Number(s.gross || 0),
       net: Number(s.net || 0),
       cash_amount: Number(s.cash_amount || 0),
       credit_amount: Number(s.credit_amount || 0),
@@ -378,6 +387,7 @@ export default function Invoices() {
       gross: Number(r.gross || 0),
       combined_pct: Number(r.combined_pct || 0),
       discount_value: Number(r.gross || 0) - Number(r.net || 0),
+      discount_base: Number(r.gross || 0),
       net: Number(r.net || 0),
       cash_amount: Number(r.cash_refund || 0),
       credit_amount: Number(r.credit_reduction || 0),
@@ -571,7 +581,7 @@ export default function Invoices() {
 
   // Invoice computations: per-line discounts first, then the invoice-total discount.
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
-  const netTotal = grossTotal * (1 - discountPct / 100);
+  const netTotal = netOf(grossTotal, discountPct);
 
   /**
    * أعمدة شبكة سطور الفاتورة كبيانات — بأبعاد متناسقة ومساحات مريحة.
@@ -626,6 +636,7 @@ export default function Invoices() {
     setFamilyAccounts([]);
     setInvoiceFamily(null);
     setAvailability({});
+    excludeDocRef.current = null;
     setParty(null);
     setDocWarehouseId(null);
     setPendingItems([]);
@@ -1024,12 +1035,26 @@ export default function Invoices() {
   };
 
   /** Load and cache what one warehouse holds. Called for the document's warehouse and for any
-   *  warehouse a line is switched to, so each line can be capped against the right stock. */
-  const loadWarehouseStock = async (warehouseId: number) => {
-    if (!warehouseId || availability[warehouseId]) return;
+   *  warehouse a line is switched to, so each line can be capped against the right stock.
+   *
+   *  **والفاتورة المفتوحة للتعديل مابتتحاسبش على نفسها.** بضاعتها اتخصمت من الرصيد يوم ما
+   *  اترحّلت، فالرقم اللي بيرجع من غير `exclude_doc_*` هو الرصيد **بعد** خصمها — والشاشة
+   *  بتقيس الكميات المكتوبة عليه، يعني بتعامل الخمسة اللي اتباعوا على إنهم خمسة جداد
+   *  محتاجين يتوفروا كمان. فاللي باع آخر خمسة مايقدرش يفتح فاتورته يصلّح سعر: الحارس
+   *  بيقول «مفيش رصيد» ويقصّ الكمية لصفر، عن بضاعة الفاتورة دي نفسها هي اللي واخداها.
+   *
+   *  والسيرفر وقت الحفظ بيعمل نفس الحاجة بترتيب تاني — بيشيل أثر الفاتورة القديمة الأول
+   *  وبعدين يقيس — فالاتنين بيقيسوا على نفس الرقم. */
+  const loadWarehouseStock = async (warehouseId: number, force = false) => {
+    if (!warehouseId) return;
+    if (!force && availability[warehouseId]) return;
     try {
       const res = await api.get('/api/v1/stock/by-location', {
-        params: { location_kind: 'warehouse', location_id: warehouseId, only_available: false },
+        params: {
+          location_kind: 'warehouse', location_id: warehouseId, only_available: false,
+          ...(excludeDocRef.current
+            ? { exclude_doc_type: 'sale', exclude_doc_id: excludeDocRef.current } : {}),
+        },
       });
       const map: Record<number, number> = {};
       (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
@@ -1258,6 +1283,11 @@ export default function Invoices() {
                 // Combined per-line discount: the typed variable applied to what the
                 // item's fixed discount left — one effective rate for the server.
                 discount_pct: combinePct(l.fixed_discount, l.variable_discount).toFixed(2),
+                // ...والنصّين، عشان الفاتورة اللي بتتقرا تاني تفضل عارفة القسمة. من غيرهم
+                // الشاشة بتحطّ الخصم كله في «خصم ثابت» وتقول «متغيّر ٠» — يعني بتنسب
+                // للشركة خصم ماعملتهوش. والقاعدة بقى فيها العمودين.
+                fixed_discount_pct: Number(l.fixed_discount || 0).toFixed(2),
+                variable_discount_pct: Number(l.variable_discount || 0).toFixed(2),
                 serials: prod?.is_serialized ? parseSerials(l.serials) : null,
                 // (030) Only sent when it differs from the document's, so the server keeps its
                 // "fall back to the document" behaviour for everything else.
@@ -1357,6 +1387,13 @@ export default function Invoices() {
   // click the list is already loaded and only the parameter changes. Splitting them into an effect
   // per dependency broke the second case — the list never changed, so nothing ever fired, and
   // clicking the same statement line a second time did nothing.
+  /**
+   * الرابط الجاي من بره بيفتح الفاتورة — مرة واحدة، والبارامتر بيتمسح بعدها.
+   *
+   * ⚠️ **وده مش `useDocRoute`.** جرّبت أربط الشاشة دي بيه (عشان «رجوع» يقفل الفاتورة
+   * ويرجّع للكشف) ومعاه المسودّات، والشاشة طلعت **بيضا** عند العميل. الاتنين اتشالوا من
+   * هنا لحد ما يبان الخطأ الحقيقي في الكونسول — شاشة مابتفتحش مش مقايضة مع أي تحسين.
+   */
   const pendingIntent = useRef<{ id: number; mode: 'view' | 'edit' } | null>(null);
 
   useEffect(() => {
@@ -1376,8 +1413,6 @@ export default function Invoices() {
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
 
-
-
   /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
   const neighbour = (step: number) => {
     if (!viewInvoice) return null;
@@ -1389,12 +1424,31 @@ export default function Invoices() {
     return rows[at + step] ?? null;
   };
 
-  /** Extra header lines on the printed invoice: the paper number, and the coupon range if the
-   *  sale issued any — the customer's own proof of which serials are his. */
+  /** Extra header lines on the printed invoice: the paper number, and the coupon books the sale
+   *  issued — the customer's own proof of which serials are his.
+   *
+   *  **السطر لكل فئة، مش سطر واحد للكل.** الكوبونات بتتسجّل صف لكل فئة دفتر بمداه (وده
+   *  اللي التطبيق والويب الاتنين بيبعتوه)، والورقة كانت بتقرا الشكل القديم وحده —
+   *  `coupon_serial_from` على رأس الفاتورة. فاللي بيسلّم مية دهبي وخمسين فضي كانت ورقته
+   *  بتطلع من غير ولا كوبون، والعميل ماسك دفاتر مالهاش إثبات إنها اتسلّمت.
+   *
+   *  والشكل القديم سايب تحته: فواتير اتكتبت قبل الصفوف لسه بتتطبع صح. */
   const printMeta = (inv: any): [string, string][] | undefined => {
     const meta: [string, string][] = [];
     if (inv.external_document_number) meta.push(['رقم المستند', inv.external_document_number]);
-    if (inv.coupon_serial_from) {
+    const rows: any[] = inv.coupons ?? [];
+    const named = rows.filter(
+      (c) => c.coupon_kind || c.coupon_type_name || c.serial_from || c.serial_to);
+    if (named.length) {
+      for (const c of named) {
+        const kind = c.coupon_kind || c.coupon_type_name || 'كوبونات';
+        const n = c.count ?? couponCount(c.serial_from, c.serial_to);
+        const range = c.serial_from && c.serial_to
+          ? `من ${c.serial_from} إلى ${c.serial_to}`
+          : (c.serial_from || c.serial_to || '');
+        meta.push([kind, [n ? `${n} كوبون` : '', range].filter(Boolean).join(' — ')]);
+      }
+    } else if (inv.coupon_serial_from) {
       const count = inv.coupon_count ? `${inv.coupon_count} — ` : '';
       meta.push(['الكوبونات',
         `${count}من ${inv.coupon_serial_from} إلى ${inv.coupon_serial_to}`]);
@@ -1449,7 +1503,18 @@ export default function Invoices() {
     return () => cancelAnimationFrame(raf);
   }, [focusLineKey, lines.length, pickerOpen]);
 
-  /** How many coupons this invoice hands over — derived only when both serials are plain
+  /** إجمالي كوبونات الفاتورة — من صفوف الفئات، وإلا من المدى القديم اللي على الرأس.
+ *  العدد المكتوب أولاً، والمحسوب من المدى لو مش متكتوب. */
+function couponsTotal(inv: any): number {
+  const rows: any[] = inv?.coupons ?? [];
+  if (rows.length) {
+    return rows.reduce(
+      (t, c) => t + (c.count ?? couponCount(c.serial_from, c.serial_to) ?? 0), 0);
+  }
+  return inv?.coupon_count ?? couponCount(inv?.coupon_serial_from, inv?.coupon_serial_to) ?? 0;
+}
+
+/** How many coupons this invoice hands over — derived only when both serials are plain
    *  numbers, since a lettered book cannot be subtracted into a count anyone could check. */
   // Only the billed ones move money the customer owes; the operating ones are ours to bear.
 
@@ -1497,13 +1562,36 @@ export default function Invoices() {
           quantity: Number(l.quantity) || 1,
           unit_price: Number(l.unit_price) || 0,
           serials: '',
-          fixed_discount: Number(l.discount_pct) || 0,
-          variable_discount: 0,
+          // القسمة اللي اتسجّلت مع السطر. `null` معناها سطر مش عارف قسمته (اتكتب قبل
+          // العمود، أو اتنقل من a5) — وساعتها المجموع بيتعرض كله «ثابت» زي ما كان، لأن
+          // ده اللي كان معروف عنه وقتها. التخمين إنه متغيّر بيقول على المندوب حاجة
+          // ماعملهاش، والعكس بيقول على الشركة حاجة ماقالتهاش.
+          fixed_discount: l.fixed_discount_pct != null
+            ? Number(l.fixed_discount_pct)
+            : Number(l.discount_pct) || 0,
+          variable_discount: l.variable_discount_pct != null
+            ? Number(l.variable_discount_pct)
+            : 0,
           warehouse_id: l.warehouse_id ?? null,
         } as SaleLineItem;
       });
 
       setLines(refilled);
+      const first = (det.lines || [])[0];
+
+      // رصيد المخازن اللي الفاتورة دي بتصرف منها — **وهي مطروحة من الحساب**.
+      //
+      // الشاشة كانت بتفتح الفاتورة من غير ما تجيب رصيد أي مخزن أصلاً، فالحارس بيقرا
+      // «غير معروف» على إنه صفر: كل سطر بيتقصّ على صفر وبيطلع «مفيش رصيد» — عن بضاعة
+      // مكتوبة قدامه في الفاتورة. والجلب من غير `excludeDocRef` كان هيحسّن الرسالة مش
+      // أكتر، لأن الرصيد ساعتها بعد خصم الفاتورة دي نفسها.
+      excludeDocRef.current = record.id;
+      setAvailability({});
+      const stores = new Set<number>(
+        (refilled.map((l) => l.warehouse_id).filter(Boolean) as number[]));
+      if (first?.warehouse_id) stores.add(first.warehouse_id);
+      await Promise.all([...stores].map((w) => loadWarehouseStock(w, true)));
+
       setDiscountPct(Number(det.variable_discount_pct ?? det.discount_pct ?? 0));
       setCashAmount(Number(det.cash_amount) || 0);
       setInvoiceDate(dayjs(det.invoice_date || det.created_at || undefined));
@@ -1522,7 +1610,6 @@ export default function Invoices() {
 
       setDocCashAccountId(det.cash_account_id ?? null);
       setSelectedCustomerId(det.customer_id);
-      const first = (det.lines || [])[0];
       if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
 
       if (det.customer_id) {
@@ -1867,10 +1954,10 @@ export default function Invoices() {
                 onClick={closeCreate}>رجوع</Button>
               <Typography.Text strong style={{ fontSize: 16 }}>
                 {viewInvoice
-                  ? `فاتورة بيع رقم: ${viewInvoice.document_number || ''}`
+                  ? `طلب بيع رقم: ${viewInvoice.document_number || ''}`
                   : editingInvoice
-                    ? `تعديل فاتورة بيع #${editingInvoice.id}`
-                    : 'تسجيل فاتورة بيع جديدة'}
+                    ? `تعديل طلب بيع #${editingInvoice.id}`
+                    : 'تسجيل طلب بيع جديد'}
               </Typography.Text>
               {viewInvoice && !viewOnly && (
                 <Tag color="orange" style={{ fontWeight: 600 }}>وضع التعديل</Tag>
@@ -1927,7 +2014,7 @@ export default function Invoices() {
           <Row gutter={16}>
             <Col xs={12} md={4}>
               <Form.Item label="نوع المستند" style={{ marginBottom: 8 }}>
-                <Input value="فاتورة بيع" readOnly style={{ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff', textAlign: 'center' }} />
+                <Input value="طلب بيع" readOnly style={{ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff', textAlign: 'center' }} />
               </Form.Item>
             </Col>
             <Col xs={12} md={4}>
@@ -2490,13 +2577,14 @@ export default function Invoices() {
               tableColumns={visibleColumns}
               style={{ marginInlineStart: 0 }}
             />
-            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts}
+                  hideKeys={['logo', 'companyName']} />
             <Button type="primary" icon={<PlusOutlined />}
               style={{ fontWeight: 600 }}
               // نفس تفضية «جديد» بالظبط. الزرار ده كان بيفتح الدورة على الحالة اللي
               // سايبها المستند اللي قبله — ودي كانت أقصر طريق لكوبونات فاتورة غلط.
               onClick={() => { resetDocument(); setNewStep('party'); }}>
-              تسجيل فاتورة بيع
+              تسجيل طلب بيع
             </Button>
           </Space>
         )}

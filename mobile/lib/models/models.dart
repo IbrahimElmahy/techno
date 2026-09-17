@@ -1,6 +1,8 @@
 /// Plain models shared by the local DB, API client, and screens.
 library;
 
+import 'discount.dart';
+
 class CatalogItem {
   final int id;
   final String name;
@@ -234,8 +236,19 @@ class SaleItem {
   });
 
   /// سعر الصنف لعميل فئته دي — وبيرجع للسعر الأساسي لو الفئة مالهاش سعر خاص.
+  ///
+  /// **ده السعر الخام قبل الخصم الثابت.** سطر الفاتورة بيشيل الاتنين منفصلين (السعر
+  /// في خانة والخصم في خانة) عشان الورقة تقول للعميل خصم بكام — فالسطر لازم ياخد ده.
   double priceFor(String? tier) =>
       (tier != null ? tierPrices[tier] : null) ?? basePrice ?? 0;
+
+  /// السعر اللي العميل هيدفعه فعلاً — بعد الخصم الثابت بتاع الصنف.
+  ///
+  /// ده اللي بيتعرض وقت اختيار الصنف. اللي بيختار بيقارن بالرقم اللي بيقوله للعميل،
+  /// وعرض الخام بيخلّيه يقول رقم والفاتورة تطلع برقم أقل — فيرجع يشرح، أو أوحش: يحسب
+  /// إجمالي اليوم غلط في دماغه. الخصم مابيتخفيش، بيتحسب.
+  double netPriceFor(String? tier) =>
+      priceFor(tier) * (1 - defaultDiscountPct.clamp(0, 99.99) / 100);
 
   Map<String, Object?> toRow() => {
         'item_id': itemId,
@@ -296,19 +309,18 @@ class SaleDraftLine {
 
   /// الاتنين ورا بعض — **خصم بعد خصم**، مش جمع: المتغيّر بيتحسب على الباقي بعد
   /// الثابت. ١٠٪ ثم ٥٪ = ١٤٫٥٪ مش ١٥٪. نفس قاعدة `backend/src/lib/discounts.py`
-  /// و`frontend/src/utils/discounts.ts` — التلاتة لازم يطلعوا نفس الرقم وإلا
-  /// المندوب بيشوف إجمالي في إيده والسيرفر بيسجّل غيره.
+  /// و`frontend/src/utils/discounts.ts` — التلاتة لازم يطلعوا نفس الرقم وإلا المندوب
+  /// بيشوف إجمالي في إيده والسيرفر بيسجّل غيره.
   ///
-  /// وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده بيشيل خصم واحد. و`99.99` سقف
-  /// مقصود: خصم ١٠٠٪ معناه سطر بصفر، ودي حاجة تتعمل بمسح السطر مش بخصم.
-  double get discountPct => ((1 -
-              (1 - fixedDiscountPct / 100) * (1 - variableDiscountPct / 100)) *
-          100)
-      .clamp(0, 99.99)
-      .toDouble();
+  /// وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده بيشيل خصم واحد.
+  ///
+  /// **والحساب في `discount.dart` مش هنا.** الصيغة مكتوبة مرة واحدة في اللغة دي، وإلا
+  /// القاعدة بتتعدّل في مكان وتفضل قديمة في التاني — والسقف (٩٩٫٩٩) جوّه المحرك كمان.
+  double get discountPct =>
+      combineDiscounts([fixedDiscountPct, variableDiscountPct]);
 
   double get gross => quantity * unitPrice;
-  double get net => gross * (1 - discountPct / 100);
+  double get net => netOf(gross, discountPct);
 
   Map<String, Object?> toRow(int invoiceLocalId) => {
         'invoice_local_id': invoiceLocalId,

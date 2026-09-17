@@ -220,7 +220,7 @@ def backup_database(
 @router.post("/restore")
 async def restore_database(
     file: UploadFile = File(...),
-    _: CurrentUser = Depends(_require_admin),
+    current: CurrentUser = Depends(_require_admin),
     db: Session = Depends(get_db),
 ) -> dict:
     """استبدال كل البيانات بمحتوى ملف نسخة احتياطية.

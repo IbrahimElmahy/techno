@@ -13,7 +13,7 @@
 
 export const ENTRY_TYPE_LABEL: Record<string, string> = {
   opening_balance: 'رصيد افتتاحي',
-  sale: 'فاتورة بيع',
+  sale: 'طلب بيع',
   sale_return: 'مرتجع بيع',
   purchase: 'فاتورة شراء',
   purchase_return: 'مرتجع شراء',
@@ -51,7 +51,7 @@ export const entryTypeLabel = (value: string | null | undefined): string =>
 
 /** أسماء المستندات اللي `DocumentLink` بيفتحها. */
 export const DOC_KIND_LABEL: Record<string, string> = {
-  invoice: 'فاتورة بيع',
+  invoice: 'طلب بيع',
   return: 'مرتجع بيع',
   purchase: 'فاتورة شراء',
   purchase_return: 'مرتجع شراء',

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -12,6 +12,8 @@ import {
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
+import { useDocRoute } from '../components/useDocRoute';
+import { useDraft } from '../components/useDraft';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -128,6 +130,7 @@ export default function StockPermits() {
   // An issue may only offer what the store actually holds — the API refuses the rest anyway,
   // but a picker that offers stock you do not have is a trap, not a feature.
   useEffect(() => {
+    // مافيش مخزن ⇒ مافيش نداء. النداء بمخزن فاضي بيوصل من غير بارامتر والسيرفر بيرد 422.
     if (kind !== 'issue' || !warehouseId) { setAvailable({}); return; }
     api.get('/api/v1/stock/by-location', { params: {
       location_kind: 'warehouse', location_id: warehouseId, only_available: true } })
@@ -148,6 +151,45 @@ export default function StockPermits() {
     dateOf: (p) => p.created_at,
   });
 
+  /** المسودّة — الإذن اللي اتكتب ولسه ما اترحّلش. الشرح في `useDraft`. */
+  const draftPayload = useMemo(() => ({
+    kind, warehouseId, lines, reason, notes,
+    permit_date: permitDate ? dayjs(permitDate).format('YYYY-MM-DD') : null,
+  }), [kind, warehouseId, lines, reason, notes, permitDate]);
+
+  const {
+    drafts, savedAt: draftSavedAt, discard: discardDraft,
+    remove: removeDraft, adopt: adoptDraft,
+  } = useDraft({
+    kind: 'stock_permit',
+    payload: draftPayload,
+    // الإذن المرحّل مالوش مسودّة — هو مستند اتحركت بيه بضاعة خلاص.
+    paused: Boolean(detail),
+    isEmpty: (x: any) => !x.warehouseId
+      && !(x.lines || []).some((l: any) => l.item_id != null),
+    title: (x: any) => {
+      const n = (x.lines || []).filter((l: any) => l.item_id != null).length;
+      const label = x.kind === 'issue' ? 'إذن صرف'
+        : x.kind === 'opening' ? 'أول المدة' : 'إذن إضافة';
+      return `${label} — ${n} صنف`;
+    },
+  });
+
+  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
+  const resumeDraft = (d: any) => {
+    const x = d.payload || {};
+    adoptDraft(d.id);
+    setDetail(null);
+    setNewStep(null);
+    if (x.kind) setKind(x.kind);
+    setWarehouseId(x.warehouseId ?? undefined);
+    setLines(x.lines || []);
+    setReason(x.reason || '');
+    setNotes(x.notes || '');
+    if (x.permit_date) setPermitDate(dayjs(x.permit_date));
+    setCreating(true);
+  };
+
   const resetDraft = () => {
     setLines([]); setReason(''); setNotes('');
     setPermitDate(dayjs()); setWarehouseId(undefined);
@@ -157,7 +199,7 @@ export default function StockPermits() {
   const startNew = () => { resetDraft(); setDetail(null); setCreating(false); setNewStep('warehouse'); };
 
   /** Open a posted permit on the same page it would have been written on. */
-  const openPermit = (p: Permit) => { setCreating(false); setDetail(p); };
+  const openPermit = (p: Permit) => { setCreating(false); setDetail(p); markOpen(p.id); };
 
   /**
    * `?doc=` — بيفتح الإذن اللي الرابط بيشاور عليه، زي إذن التحويل بالظبط.
@@ -165,20 +207,27 @@ export default function StockPermits() {
    * الحركة في كارت الصنف بتقول «إذن إضافة» ورقمه؛ والرابط لازم يوصّل للإذن نفسه مش
    * للقايمة اللي هو فيها.
    */
-  const pendingDoc = useRef<number | null>(null);
-  useEffect(() => {
-    const doc = searchParams.get('doc') || searchParams.get('edit');
-    if (doc) { pendingDoc.current = Number(doc); setSearchParams({}, { replace: true }); }
-    const wanted = pendingDoc.current;
-    if (!wanted || !permits.length) return;
-    pendingDoc.current = null;
-    const target = permits.find((x) => x.id === wanted);
-    if (target) openPermit(target);
-    else message.warning(`الإذن رقم ${wanted} مش في القائمة المعروضة`);
-  }, [searchParams, permits]);
+  // الإذن المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
+  const { markOpen, markClosed } = useDocRoute<Permit>({
+    rows: permits,
+    openId: detail?.id ?? null,
+    open: (x) => openPermit(x),
+    close: () => closeDoc(),
+    loading,
+    fetchOne: async (id) => {
+      try {
+        return (await api.get(`/api/v1/stock/permits/${id}`)).data as Permit;
+      } catch {
+        message.warning(`الإذن رقم ${id} مش موجود`);
+        return null;
+      }
+    },
+  });
 
   /** Leave the document, whichever kind it was. */
-  const closeDoc = () => { setCreating(false); setDetail(null); resetDraft(); };
+  const closeDoc = () => {
+    setCreating(false); setDetail(null); resetDraft(); markClosed();
+  };
 
   /** An item picked in the window becomes a line, and the caret goes to its quantity. */
   const addItem = (itemId: number) => {
@@ -225,6 +274,8 @@ export default function StockPermits() {
       });
       message.success(kind === 'issue' ? 'تم تسجيل إذن الصرف'
         : kind === 'opening' ? 'تم تسجيل بضاعة أول المدة' : 'تم تسجيل إذن الإضافة');
+      // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
+      discardDraft();
       setCreating(false); resetDraft(); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الإذن');
@@ -546,7 +597,10 @@ export default function StockPermits() {
 
   const columns: ColumnsType<Permit> = [
     { title: 'رقم الإذن', dataIndex: 'document_number',
-      render: (v: string) => <Tag>{v}</Tag> },
+      // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
+      render: (v: string, r: any) => (r.__isDraft
+        ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+        : <Tag>{v}</Tag>) },
     { title: 'النوع', dataIndex: 'kind',
       render: (k: Kind, r) => (
         <>
@@ -626,8 +680,26 @@ export default function StockPermits() {
       />
 
       <Table<Permit>
-        rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
-        onRow={(r) => ({ onClick: () => openPermit(r), style: { cursor: 'pointer' } })}
+        rowKey="id" size="small" loading={loading}
+        // المسودّات فوق، وبرّه `filter.filtered`: المسودّة مش إذن.
+        dataSource={[
+          ...(drafts || []).map((d: any) => {
+            const x = d.payload || {};
+            return {
+              id: -d.id, __draft: d, __isDraft: true,
+              document_number: 'مسودّة',
+              kind: x.kind || 'receipt',
+              created_at: d.updated_at,
+              warehouse_name: null,
+            } as any;
+          }),
+          ...filter.filtered,
+        ]}
+        rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
+        onRow={(r: any) => ({
+          onClick: () => (r.__isDraft ? resumeDraft(r.__draft) : openPermit(r)),
+          style: { cursor: 'pointer' },
+        })}
         locale={{ emptyText: 'لا توجد أذونات' }}
         pagination={{ defaultPageSize: 20, showSizeChanger: true }}
         columns={tableCols.columns}

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
@@ -5,6 +7,7 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'invoice_print_screen.dart';
+import 'sale_coupons_section.dart';
 import 'sale_invoice_screen.dart';
 
 /// فواتير الجهاز — اللي راحت واللي لسه.
@@ -230,6 +233,30 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
     );
   }
 
+  /// صفوف الكوبونات المخزّنة على الفاتورة (JSON). الفاضي أو المكسور بيرجّع قايمة فاضية —
+  /// كارت من غير كوبونات أحسن من كارت بيقول «خطأ».
+  List<Map<String, Object?>> _couponRows(Map<String, Object?> r) {
+    final raw = r['coupons'] as String?;
+    if (raw == null || raw.trim().isEmpty) return const [];
+    try {
+      final v = jsonDecode(raw);
+      if (v is! List) return const [];
+      return [for (final e in v) if (e is Map) Map<String, Object?>.from(e)];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// عدد الصف — المكتوب، وإلا محسوب من المدى. `couponCount` هي نفسها اللي الشاشة
+  /// بتكتب بيها، فالرقم هنا مابيخالفش اللي اتحفظ.
+  int _countOf(Map<String, Object?> c) =>
+      (c['count'] as int?) ??
+      couponCount(c['serial_from'] as String?, c['serial_to'] as String?) ??
+      0;
+
+  int _couponTotal(Map<String, Object?> r) =>
+      _couponRows(r).fold(0, (t, c) => t + _countOf(c));
+
   Widget _invoiceCard(Map<String, Object?> r) {
     final synced = (r['synced'] as int?) == 1;
     return Card(
@@ -243,6 +270,9 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
         subtitle: Text([
           r['invoice_date'] as String? ?? '',
           '${(r['total'] as num?)?.toStringAsFixed(2) ?? '0.00'} ج.م',
+          // العدد على السطر المقفول كمان — فاتورة كوبونات بس إجماليها صفر، وكانت
+          // بتبان في القايمة كأنها ورقة فاضية ماحصلش فيها حاجة.
+          if (_couponTotal(r) > 0) '${_couponTotal(r)} كوبون',
           if (synced) r['document_number'] as String? ?? '' else 'لسه على الجهاز',
         ].where((s) => s.isNotEmpty).join(' · ')),
         children: [
@@ -263,6 +293,26 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                           'إضافي ${_trim(l.variableDiscountPct)}%',
                       ].join(' — ')),
                       trailing: Text('${l.net.toStringAsFixed(2)} ج.م',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                  // الكوبونات المسلّمة — زي ما هي على الورقة المطبوعة بالظبط.
+                  //
+                  // كانت الشاشة بتعرض سطور الأصناف وبس، فالدفاتر اللي اتسلّمت للعميل
+                  // مابتبانش في أي مكان في التطبيق بعد الحفظ: المندوب اللي عايز يراجع
+                  // سلّم أنهي أرقام لازم يفتح الورقة. وفاتورة كوبونات بس (من غير أصناف)
+                  // كانت بتتفتح على كارت فاضي خالص.
+                  //
+                  // **والمدى هو المهم مش العدد**: يوم ما العميل يرجّع ورقة، اللي بيستلم
+                  // بيراجع رقمها على المدى ده عشان يعرف إنها اتصرفت في تسليمة حصلت فعلاً.
+                  for (final c in _couponRows(r))
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.confirmation_number_outlined,
+                          size: 20, color: AppColors.accent),
+                      title: Text('${c['coupon_kind'] ?? 'كوبونات'}'),
+                      subtitle: Text(
+                          'من ${c['serial_from'] ?? '—'} إلى ${c['serial_to'] ?? '—'}'),
+                      trailing: Text('${_countOf(c)} كوبون',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   Padding(
@@ -308,7 +358,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                         if (!synced)
                           const Padding(
                             padding: EdgeInsets.only(right: 8),
-                            child: Text('الطباعة بعد ما ترفع',
+                            child: Text('اعمل «مزامنة الآن» عشان تطبع',
                                 style: TextStyle(
                                     fontSize: 11, color: Colors.black45)),
                           ),

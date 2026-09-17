@@ -6,13 +6,14 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
+from src.lib import arabic, stock_docs
 from src.services import rep_store_service
 from src.models.catalog import Item, StockBatchMovement
 from src.models.customer import Customer
@@ -57,16 +58,30 @@ class LocationStockRow(BaseModel):
 
 
 def _assert_readable(db: Session, current: CurrentUser, kind: LocationKind, location_id: int) -> None:
-    """المندوب بيقرا رصيد مكانه هو بس — عهدته أو مخزنه.
+    """المندوب بيقرا مكانه هو، **ومخازن فرعه** — وعهدة حد تاني لأ.
 
-    كانت العهدة وحدها. المندوب اللي بضاعته على مخزن متسجّل عليه مكانش يقدر يقرا رصيده،
-    فالتطبيق بتاعه بيوريه صفر وهو واقف جنب بضاعة موجودة. القاعدة نفسها ما اتوسّعتش —
-    لسه مكانه هو بس — اللي اتوسّع هو **نوع** المكان اللي ممكن يبقى بتاعه.
+    كانت مكانه هو وبس. والمندوب بيطلب بضاعة من المخزن الرئيسي، وشاشة الطلب بتوريه أصناف
+    المصدر عشان مايطلبش حاجة مش موجودة — فكانت بتترفض بـ403 وهو واقف قدام المخزن.
+    والرسالة اللي كانت بتوصله «اتأكد من النت»، وهي مش نت.
+
+    **الفرق بين المخزن والعهدة مقصود.** المخزن مكان الشركة: كام قطعة فيه معلومة لأي حد
+    بيشتغل في الفرع، والمندوب شايف الكتالوج والأسعار أصلاً. **العهدة بضاعة راجل بعينه**
+    — رصيدها بيقول باع كام ولسه معاه كام، وده شغل المكتب مش شغل زميله. فالتوسعة على
+    المخازن وحدها، والعهدة فضلت مقفولة زي ما كانت.
+
+    وبفرعه: مندوب العلياء مايقراش مخازن أكتوبر. المخزن اللي مالوش فرع (مشترك) مفتوح للكل.
     """
     if current.rep_id is None:
         return
-    if not rep_store_service.is_own_store(db, current.rep_id, kind, location_id):
-        raise HTTPException(403, {"code": "forbidden", "message": "Not your stock location"})
+    if rep_store_service.is_own_store(db, current.rep_id, kind, location_id):
+        return
+    if kind == LocationKind.warehouse:
+        wh = db.get(Warehouse, location_id)
+        branch_id = branch_scope.visible_branch_id(current)
+        if wh is not None and (branch_id is None or wh.branch_id is None
+                               or wh.branch_id == branch_id):
+            return
+    raise HTTPException(403, {"code": "forbidden", "message": "Not your stock location"})
 
 
 class BatchReceiveIn(BaseModel):
@@ -199,6 +214,8 @@ def stock_by_location(
     # الإذن اللي بيتعدّل دلوقتي — سطوره متحسوبة في `pending_out` وهي بتاعته هو، فلو
     # اتخصمت عليه كمان يبقى بيتحاسب مرتين على نفس البضاعة ومايقدرش يحفظ نفسه زي ما هو.
     exclude_transfer_id: int | None = None,
+    exclude_doc_type: str | None = None,
+    exclude_doc_id: int | None = None,
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[LocationStockRow]:
@@ -206,13 +223,26 @@ def stock_by_location(
 
     Drives pickers that must only offer what is actually there (transfers, custody handovers):
     with `only_available` the caller never even sees an item it cannot move out.
+
+    ## `exclude_doc_type` + `exclude_doc_id` — المستند اللي بيتعدّل مايتحاسبش على نفسه
+
+    فاتورة مرحّلة خصمت بضاعتها خلاص، فالرصيد اللي بيرجع من غير الاستثناء ده **بعد**
+    خصمها. الشاشة اللي بتفتحها للتعديل بتقيس الكميات المكتوبة على الرقم ده، يعني بتعامل
+    الخمسة اللي اتباعوا على إنهم خمسة جداد لازم يتوفروا كمان — فاللي باع آخر خمسة في
+    المخزن مايقدرش يفتح فاتورته يصلّح سعر فيها: الشاشة بتقول «المتاح ٠» عن بضاعة
+    الفاتورة دي نفسها هي اللي واخداها.
+
+    والاستثناء بيرجّع حركة المستند ده للرصيد وقت العرض بس — مافيش حاجة بتتكتب. والسيرفر
+    وقت الحفظ بيعمل نفس الحاجة بترتيب تاني: `document_edit_service.purge_*` بتشيل الأثر
+    القديم فعلاً، وبعدها `_assert_lines_available` بتقيس على الرصيد بعد الشيل. فالشاشة
+    والسيرفر بيقيسوا على نفس الرقم بدل ما الشاشة تمنع حاجة السيرفر بيقبلها.
     """
     _assert_readable(db, current, location_kind, location_id)
     signed = case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
     )
-    rows = db.execute(
+    q = (
         select(
             Item.id, Item.code, Item.name, Item.category, Item.unit_of_measure,
             func.coalesce(func.sum(signed), 0).label("qty"),
@@ -222,8 +252,18 @@ def stock_by_location(
             StockMovement.location_kind == location_kind,
             StockMovement.location_id == location_id,
         )
-        .group_by(Item.id, Item.code, Item.name, Item.category, Item.unit_of_measure)
-        .order_by(Item.name)
+    )
+    if exclude_doc_type and exclude_doc_id:
+        # بكل أسماء المستند — المستورد من a5 بيكتب اسم تاني لنفس الحاجة، والشرح في
+        # `lib/stock_docs`. الاستثناء باسم واحد بيسيب نص الحركة محسوبة وهو أسوأ من
+        # ما يتعملش: الرقم بيبقى غلط من غير ما حد يعرف ليه.
+        q = q.where(~and_(
+            StockMovement.source_doc_type.in_(stock_docs.names(exclude_doc_type)),
+            StockMovement.source_doc_id == exclude_doc_id,
+        ))
+    rows = db.execute(
+        q.group_by(Item.id, Item.code, Item.name, Item.category, Item.unit_of_measure)
+        .order_by(arabic.sort_key(Item.name), Item.name)
     ).all()
     pending = _pending_out(db, location_kind, location_id, exclude_transfer_id)
     out = [

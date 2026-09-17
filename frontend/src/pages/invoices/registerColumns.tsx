@@ -167,12 +167,68 @@ export function buildRegisterColumns({
       render: (val: number) => `${money(val)} ج.م`,
     },
     {
+      // **النسبة من الفرق الحقيقي، مش من `combined_pct`.**
+      //
+      // `combined_pct` خصم المستند وحده، وهو صفر على كل فاتورة تقريباً — والخصم
+      // الحقيقي عايش على السطر. فالكشف كان بيقول «خصم ٠٪» على فاتورة خصمها ٢٠٪،
+      // والفاتورة نفسها لما تتفتح بتقول الرقم الصح. الكشف هو اللي بيتبص عليه.
+      //
+      // والأساس هو الإجمالي **قبل** خصم السطور (`discount_base`) — القسمة على الإجمالي
+      // بعد الخصم بتطلّع ٢٥٪ مكان ٢٠٪.
       title: 'خصم%',
-      dataIndex: 'combined_pct',
+      dataIndex: 'discount_value',
       key: 'combined_pct',
       width: 80,
-      sorter: (a: any, b: any) => a.combined_pct - b.combined_pct,
-      render: (val: number) => `${Number(val || 0).toFixed(0)}%`,
+      sorter: (a: any, b: any) =>
+        (a.discount_value / (a.discount_base || 1)) - (b.discount_value / (b.discount_base || 1)),
+      render: (_v: number, r: any) => {
+        const base = Number(r.discount_base || 0);
+        if (base <= 0) return '-';
+        const pct = (Number(r.discount_value || 0) / base) * 100;
+        return pct > 0 ? `${pct.toFixed(pct < 10 ? 1 : 0)}%` : '-';
+      },
+    },
+    {
+      // دفاتر الكوبونات اللي اتسلّمت مع الفاتورة. عمود في الكشف لأن السؤال «سلّمنا
+      // الراجل كام كوبون» بيتسأل على القايمة، مش جوّه الفاتورة — وقبل كده الإجابة
+      // ماكانتش موجودة إلا لو فتحتها للتعديل.
+      title: 'كوبونات',
+      dataIndex: 'coupons',
+      key: 'coupons',
+      width: 120,
+      align: 'left' as const,
+      render: (_v: any, row: any) => {
+        const rows: any[] = row.coupons ?? [];
+        const named = rows.filter(
+          (c) => c.coupon_kind || c.coupon_type_name || c.serial_from || c.serial_to);
+        if (!named.length) {
+          // الشكل القديم — مدى واحد على رأس الفاتورة، من غير فئة.
+          if (!row.coupon_serial_from) return '-';
+          return (
+            <Tooltip title={`من ${row.coupon_serial_from} إلى ${row.coupon_serial_to}`}>
+              <Tag color="gold">{row.coupon_count ?? '؟'} كوبون</Tag>
+            </Tooltip>
+          );
+        }
+        const total = named.reduce(
+          (t: number, c: any) => t + (c.count ?? 0), 0);
+        return (
+          <Tooltip
+            title={(
+              <Space direction="vertical" size={0}>
+                {named.map((c, i) => (
+                  <span key={i}>
+                    {c.coupon_kind || c.coupon_type_name || 'كوبونات'} —
+                    {' '}من {c.serial_from ?? '؟'} إلى {c.serial_to ?? '؟'}
+                  </span>
+                ))}
+              </Space>
+            )}
+          >
+            <Tag color="gold">{total} كوبون</Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       title: 'الصافى',
