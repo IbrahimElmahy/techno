@@ -528,7 +528,14 @@ export default function PurchaseReturns() {
     if (!wh) return;
     try {
       const res = await api.get('/api/v1/stock/by-location', {
-        params: { location_kind: 'warehouse', location_id: wh, only_available: false },
+        params: {
+          location_kind: 'warehouse', location_id: wh, only_available: false,
+          // المردود المفتوح للتعديل مابيتحاسبش على نفسه: بضاعته طلعت من المخزن يوم ما
+          // اترحّل، فالرصيد من غير الاستثناء ده **بعده** — والحارس بيقيس الكميات
+          // المكتوبة عليه، يعني بيعامل اللي رجع للمورد على إنه كمية تانية لازم تتوفر.
+          // اللي ردّ آخر خمسة مايقدرش يفتح مردوده يصلّح سعر فيه.
+          ...(editingId ? { exclude_doc_type: 'purchase_return', exclude_doc_id: editingId } : {}),
+        },
       });
       const map: Record<number, number> = {};
       (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
@@ -541,11 +548,13 @@ export default function PurchaseReturns() {
     if (wh) await loadWarehouseStock(wh);
   };
 
+  // و`editingId` في العدّة كمان: فتح مردود للتعديل مابيغيّرش المخزن (هو نفسه مخزن
+  // المردود)، فمن غيرها الرصيد بيفضل اللي اتجاب قبل الفتح — يعني من غير الاستثناء.
   useEffect(() => {
     if (warehouseId) {
       loadWarehouseStock(warehouseId);
     }
-  }, [warehouseId, pickerOpen]);
+  }, [warehouseId, pickerOpen, editingId]);
 
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);

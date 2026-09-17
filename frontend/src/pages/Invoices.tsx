@@ -357,6 +357,10 @@ export default function Invoices() {
   // question. Stock can never go negative, so the form shows what is available and caps the
   // quantity rather than letting the user build a basket the server will refuse.
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
+  /** رقم الفاتورة المفتوحة للتعديل — بضاعتها بترجع للرصيد وقت العرض. الشرح في
+   *  `loadWarehouseStock`. `ref` مش `state` عشان الدالة بتتنده في نفس اللفّة اللي
+   *  بتتفتح فيها الفاتورة، قبل ما أي `setState` توصل. */
+  const excludeDocRef = useRef<number | null>(null);
   // (030) the party picker + what it filled into the document header
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   /**
@@ -892,6 +896,7 @@ export default function Invoices() {
     setFamilyAccounts([]);
     setInvoiceFamily(null);
     setAvailability({});
+    excludeDocRef.current = null;
     setParty(null);
     setDocWarehouseId(null);
     setPendingItems([]);
@@ -1240,12 +1245,26 @@ export default function Invoices() {
   };
 
   /** Load and cache what one warehouse holds. Called for the document's warehouse and for any
-   *  warehouse a line is switched to, so each line can be capped against the right stock. */
-  const loadWarehouseStock = async (warehouseId: number) => {
-    if (!warehouseId || availability[warehouseId]) return;
+   *  warehouse a line is switched to, so each line can be capped against the right stock.
+   *
+   *  **والفاتورة المفتوحة للتعديل مابتتحاسبش على نفسها.** بضاعتها اتخصمت من الرصيد يوم ما
+   *  اترحّلت، فالرقم اللي بيرجع من غير `exclude_doc_*` هو الرصيد **بعد** خصمها — والشاشة
+   *  بتقيس الكميات المكتوبة عليه، يعني بتعامل الخمسة اللي اتباعوا على إنهم خمسة جداد
+   *  محتاجين يتوفروا كمان. فاللي باع آخر خمسة مايقدرش يفتح فاتورته يصلّح سعر: الحارس
+   *  بيقول «مفيش رصيد» ويقصّ الكمية لصفر، عن بضاعة الفاتورة دي نفسها هي اللي واخداها.
+   *
+   *  والسيرفر وقت الحفظ بيعمل نفس الحاجة بترتيب تاني — بيشيل أثر الفاتورة القديمة الأول
+   *  وبعدين يقيس — فالاتنين بيقيسوا على نفس الرقم. */
+  const loadWarehouseStock = async (warehouseId: number, force = false) => {
+    if (!warehouseId) return;
+    if (!force && availability[warehouseId]) return;
     try {
       const res = await api.get('/api/v1/stock/by-location', {
-        params: { location_kind: 'warehouse', location_id: warehouseId, only_available: false },
+        params: {
+          location_kind: 'warehouse', location_id: warehouseId, only_available: false,
+          ...(excludeDocRef.current
+            ? { exclude_doc_type: 'sale', exclude_doc_id: excludeDocRef.current } : {}),
+        },
       });
       const map: Record<number, number> = {};
       (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
@@ -1756,6 +1775,21 @@ function couponsTotal(inv: any): number {
       });
 
       setLines(refilled);
+      const first = (det.lines || [])[0];
+
+      // رصيد المخازن اللي الفاتورة دي بتصرف منها — **وهي مطروحة من الحساب**.
+      //
+      // الشاشة كانت بتفتح الفاتورة من غير ما تجيب رصيد أي مخزن أصلاً، فالحارس بيقرا
+      // «غير معروف» على إنه صفر: كل سطر بيتقصّ على صفر وبيطلع «مفيش رصيد» — عن بضاعة
+      // مكتوبة قدامه في الفاتورة. والجلب من غير `excludeDocRef` كان هيحسّن الرسالة مش
+      // أكتر، لأن الرصيد ساعتها بعد خصم الفاتورة دي نفسها.
+      excludeDocRef.current = record.id;
+      setAvailability({});
+      const stores = new Set<number>(
+        (refilled.map((l) => l.warehouse_id).filter(Boolean) as number[]));
+      if (first?.warehouse_id) stores.add(first.warehouse_id);
+      await Promise.all([...stores].map((w) => loadWarehouseStock(w, true)));
+
       setDiscountPct(Number(det.variable_discount_pct ?? det.discount_pct ?? 0));
       setCashAmount(Number(det.cash_amount) || 0);
       setInvoiceDate(dayjs(det.invoice_date || det.created_at || undefined));
@@ -1771,7 +1805,6 @@ function couponsTotal(inv: any): number {
       });
 
       setSelectedCustomerId(det.customer_id);
-      const first = (det.lines || [])[0];
       if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
 
       if (det.customer_id) {

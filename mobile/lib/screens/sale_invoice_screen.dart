@@ -163,6 +163,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         ..clear()
         ..addAll(_couponsFromJson(r['coupons'] as String?));
     });
+    // الخط الأساسي بيتاخد **بعد** ما الشاشة تمتلي، مش عند الفتح: اللي نزل دلوقتي هو
+    // الفاتورة زي ما هي، فأي فرق بعد كده هو اللي المندوب عمله بإيده.
+    //
+    // وجوّه `setState` عشان `canPop` تتقري من تاني: هي بتتحسب وقت الرسم، والرسم اللي
+    // فات كان لسه الخط الأساسي فيه فاضي.
+    setState(() => _baseline = _fingerprint);
   }
 
   List<SaleCouponRow> _couponsFromJson(String? raw) {
@@ -791,15 +797,50 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
   }
 
+  /// كل اللي على الشاشة في سطر واحد — بيتقارن بنفسه عشان نعرف اتغيّر ولا لأ.
+  ///
+  /// الخانات بتتقرا من الكنترولرات مش من الموديل: الكمية والسعر والخصم بيتكتبوا في
+  /// الخانة وبيتقروا منها عند الحفظ، فالمقارنة على الموديل وحده كانت هتفوّت رقم
+  /// المندوب لسه كاتبه.
+  String get _fingerprint {
+    final ls = [
+      for (final l in _lines)
+        '${l.itemId}:${_qtyCtl[l.itemId]?.text ?? l.quantity}'
+            ':${_priceCtl[l.itemId]?.text ?? l.unitPrice}'
+            ':${l.fixedDiscountPct}'
+            ':${_discCtl[l.itemId]?.text ?? l.variableDiscountPct}'
+    ];
+    final cs = [
+      for (final c in _coupons) '${c.kind ?? ''}|${c.serialFrom}|${c.serialTo}'
+    ];
+    return '${_customer?.id ?? ''}~${_family ?? ''}~${_cash.text.trim()}'
+        '~${_notes.text.trim()}~${ls.join(',')}~${cs.join(',')}';
+  }
+
+  /// اللي كانت الشاشة عليه أول ما فتحت — الخط اللي التغيير بيتقاس منه.
+  ///
+  /// `null` = لسه ما اتاخدتش (الفاتورة اللي بتتعدّل بتتحمّل من القاعدة بعد أول رسم)،
+  /// وساعتها الشاشة بتتعامل على إنها **ما اتغيّرتش**: لسه محدش كتب حاجة.
+  String? _baseline;
+
   /// فيه حاجة اتكتبت تروح لو خرج دلوقتي؟
   ///
   /// شاشة فاضية الخروج منها مايضيّعش حاجة، والسؤال ساعتها بيبقى عقبة مالهاش سبب —
   /// اللي بيفتح الشاشة بالغلط بيقفلها بضغطة.
-  bool get _hasWork =>
-      _lines.isNotEmpty ||
-      _customer != null ||
-      _coupons.any((c) => !c.isEmpty) ||
-      _notes.text.trim().isNotEmpty;
+  ///
+  /// **وفاتورة اتفتحت وما اتغيّرش فيها حاجة زيها زي الفاضية.** السؤال كان بيتحسب على
+  /// «فيه سطور؟»، والفاتورة اللي بتتعدّل بتتفتح وسطورها فيها من أول لحظة — فاللي بيفتحها
+  /// عشان يبصّ ويقفل بيتقال له «فيها ٥ صنف بإجمالي كذا، هتروح كلها ومش هترجع» عن فاتورة
+  /// محفوظة مش هيحصلها حاجة. التحذير اللي بيطلع على مافيش بيتعلّم إنه يتدوس من غير ما
+  /// يتقرا، وساعتها مابيحميش حاجة يوم ما يبقى صح.
+  bool get _hasWork {
+    final base = _baseline;
+    if (base != null) return _fingerprint != base;
+    return _lines.isNotEmpty ||
+        _customer != null ||
+        _coupons.any((c) => !c.isEmpty) ||
+        _notes.text.trim().isNotEmpty;
+  }
 
   /// بيسأل قبل ما الشغل يضيع. بيرجّع هل يخرج فعلاً.
   ///
@@ -813,19 +854,24 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       builder: (dctx) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Row(children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.danger),
-            SizedBox(width: 8),
-            Expanded(child: Text('تسيب الفاتورة؟')),
+          title: Row(children: [
+            const Icon(Icons.warning_amber_rounded, color: AppColors.danger),
+            const SizedBox(width: 8),
+            Expanded(child: Text(_isEditing ? 'تسيب التعديل؟' : 'تسيب الفاتورة؟')),
           ]),
-          content: Text(_lines.isEmpty
-              ? 'اللي كتبته هيروح ومش هيترجع.'
-              : 'فيها ${_lines.length} صنف بإجمالي ${_money(_total)} ج.م — '
-                  'هتروح كلها ومش هترجع.'),
+          // الفاتورة اللي بتتعدّل محفوظة أصلاً — اللي بيضيع هو التعديل وحده، فالرسالة
+          // بتقول كده بالظبط. «هتروح كلها» عن فاتورة في الطابور بتخوّف من حاجة مش
+          // بتحصل.
+          content: Text(_isEditing
+              ? 'التعديلات اللي عملتها هتروح، والفاتورة هتفضل زي ما كانت.'
+              : _lines.isEmpty
+                  ? 'اللي كتبته هيروح ومش هيترجع.'
+                  : 'فيها ${_lines.length} صنف بإجمالي ${_money(_total)} ج.م — '
+                      'هتروح كلها ومش هترجع.'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(dctx, false),
-                child: const Text('أكمّل الفاتورة')),
+                child: Text(_isEditing ? 'أكمّل التعديل' : 'أكمّل الفاتورة')),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
               onPressed: () => Navigator.pop(dctx, true),
@@ -1413,6 +1459,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
             TextField(
               controller: _notes,
               decoration: const InputDecoration(labelText: 'ملاحظات (اختياري)'),
+              // مافيش حاجة على الشاشة بتتغيّر بالملاحظة، بس `canPop` بيتقري وقت الرسم —
+              // ومن غير رسم، ملاحظة اتكتبت على فاتورة بتتعدّل مابتعملش فرق في «فيه
+              // تغيير؟»، والرجوع بيخرج من غير ما يسأل واللي اتكتب يروح.
+              onChanged: (_) => setState(() {}),
             ),
             // الكوبونات جوّه نفس الفاتورة — مش شاشة تانية. اللي بيسلّم دفتر بيسلّمه
             // مع البضاعة في نفس اللحظة، والمدى ده هو اللي المرتجع بيراجع عليه بعدين.
