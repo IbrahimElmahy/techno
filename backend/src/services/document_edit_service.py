@@ -29,6 +29,8 @@
 """
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -58,7 +60,7 @@ from src.models.sales import (
     SalesReturnLine,
 )
 from src.models.sales_expense import SalesInvoiceExpense
-from src.models.stock import StockMovement
+from src.models.stock import StockDoc, StockMovement
 from src.lib import stock_docs
 from src.services.audit_service import record as audit_record
 from src.core.money import to_qty
@@ -163,6 +165,17 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
     """
     if entry_id is None:
         return
+    # (المرحلة ٤) القيد في دفتر متجزّأ مايتحذفش: حذفه بيكسر سلسلة كل اللي بعده.
+    # التعديل والحذف في النظام ده بيمرّوا كلهم من هنا، فالحارس مكانه هنا.
+    from src.services import secure_hash_service
+
+    entry = db.get(LedgerEntry, entry_id)
+    if entry is not None:
+        try:
+            secure_hash_service.assert_alterable(entry)
+        except secure_hash_service.HashChainError as exc:
+            raise DocumentEditError(str(exc)) from exc
+
     reversals = db.scalars(select(LedgerEntry.id).where(
         LedgerEntry.reverses_entry_id == entry_id)).all()
     ids = [entry_id, *reversals]
@@ -171,6 +184,29 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
 
 
 # ---------------------------------------------------------------- فاتورة البيع
+
+def frozen_costs(db: Session, invoice: SalesInvoice) -> dict[int, Decimal]:
+    """تكلفة الوحدة **الأساسية** لكل صنف على الفاتورة، قبل ما سطورها تتشال.
+
+    التعديل بيمسح السطور ويبنيها من جديد، والبناء بيجمّد التكلفة من متوسط **النهارده**.
+    يعني تصليح رقم تليفون في فاتورة من أربع شهور كان بيعيد كتابة تكلفة بضاعتها بسعر
+    النهارده — والتعليق جنب السطر نفسه بيقول العكس: «هذه الفاتورة هامشها لازم يفضل زي
+    ما كان يوم البيع».
+
+    والفرق مش بسيط: على داتا العميل متوسط التكلفة اتحرك بين ٦٪ و٥٢٪ على أكتر الأصناف
+    مبيعاً. يعني أي تعديل على فاتورة قديمة كان بيغيّر ربحها وربح عميلها وشهرها.
+
+    بتترجّع **مقسومة على `unit_factor`** — يعني تكلفة الوحدة الأساسية. السطر الجديد
+    ممكن يتكتب بوحدة تانية، فالتخزين بالوحدة الأساسية بيخلّي الرقم يتعاد ضربه صح.
+    """
+    out: dict[int, Decimal] = {}
+    for ln in invoice.lines:
+        if ln.unit_cost is None:
+            continue
+        factor = Decimal(str(ln.unit_factor or 1)) or Decimal("1")
+        out[ln.item_id] = Decimal(str(ln.unit_cost)) / factor
+    return out
+
 
 def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) -> None:
     """بيشيل كل أثر فاتورة بيع من النظام — من غير ما يمس الفاتورة نفسها.
@@ -186,9 +222,9 @@ def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) ->
     """
     _drop_points(db, sales_invoice_id=invoice.id)
     _restore_serials(db, sold_invoice_id=invoice.id,
-                     document_type="sales_invoice", document_id=invoice.id)
-    _restore_batches(db, document_type="sales_invoice", document_id=invoice.id)
-    _drop_stock(db, source_doc_type="sale", source_doc_id=invoice.id)
+                     document_type=StockDoc.SALE, document_id=invoice.id)
+    _restore_batches(db, document_type=StockDoc.SALE, document_id=invoice.id)
+    _drop_stock(db, source_doc_type=StockDoc.SALE, source_doc_id=invoice.id)
     entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None
     db.execute(delete(SalesInvoiceExpense).where(
@@ -320,10 +356,10 @@ def _resell_serials(db: Session, *, document_type: str, document_id: int,
 def purge_sales_return(db: Session, ret: SalesReturn) -> None:
     """بيشيل كل أثر مرتجع مبيعات — البضاعة تخرج تاني والفلوس ترجع زي ما كانت."""
     _drop_points(db, sales_return_id=ret.id)
-    _resell_serials(db, document_type="sales_return", document_id=ret.id,
+    _resell_serials(db, document_type=StockDoc.SALE_RETURN, document_id=ret.id,
                     invoice_id=ret.sales_invoice_id)
-    _restore_batches(db, document_type="sales_return", document_id=ret.id)
-    _drop_stock(db, source_doc_type="sale_return", source_doc_id=ret.id)
+    _restore_batches(db, document_type=StockDoc.SALE_RETURN, document_id=ret.id)
+    _drop_stock(db, source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id)
     entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
     db.execute(delete(SalesReturnLine).where(SalesReturnLine.return_id == ret.id))
@@ -346,8 +382,8 @@ def delete_sales_return(db: Session, *, return_id: int, actor_user_id: int) -> N
 # ---------------------------------------------------------------- مردود الشراء
 
 def purge_purchase_return(db: Session, ret: PurchaseReturn) -> None:
-    _restore_batches(db, document_type="purchase_return", document_id=ret.id)
-    _drop_stock(db, source_doc_type="purchase_return", source_doc_id=ret.id)
+    _restore_batches(db, document_type=StockDoc.PURCHASE_RETURN, document_id=ret.id)
+    _drop_stock(db, source_doc_type=StockDoc.PURCHASE_RETURN, source_doc_id=ret.id)
     entry_id = ret.ledger_entry_id
     ret.ledger_entry_id = None
     db.execute(delete(PurchaseReturnLine).where(PurchaseReturnLine.return_id == ret.id))
@@ -370,9 +406,9 @@ def delete_purchase_return(db: Session, *, return_id: int, actor_user_id: int) -
 # ---------------------------------------------------------------- فاتورة الشراء
 
 def purge_purchase(db: Session, invoice: PurchaseInvoice) -> None:
-    _restore_serials(db, document_type="purchase_invoice", document_id=invoice.id)
-    _restore_batches(db, document_type="purchase_invoice", document_id=invoice.id)
-    _drop_stock(db, source_doc_type="purchase", source_doc_id=invoice.id)
+    _restore_serials(db, document_type=StockDoc.PURCHASE, document_id=invoice.id)
+    _restore_batches(db, document_type=StockDoc.PURCHASE, document_id=invoice.id)
+    _drop_stock(db, source_doc_type=StockDoc.PURCHASE, source_doc_id=invoice.id)
     entry_id = invoice.ledger_entry_id
     invoice.ledger_entry_id = None
     db.execute(delete(PurchaseInvoiceLine).where(

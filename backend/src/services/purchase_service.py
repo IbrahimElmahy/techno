@@ -15,10 +15,10 @@ from sqlalchemy.orm import Session
 
 from src.services import numbering
 
-from src.lib import discounts
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import discounts
 from src.models.catalog import Item
-from src.models.ledger import Account, Direction
+from src.models.ledger import Account, Direction, PartnerKind
 from src.models.purchasing import (
     PurchaseInvoice,
     PurchaseInvoiceLine,
@@ -26,10 +26,11 @@ from src.models.purchasing import (
     PurchaseReturnLine,
 )
 from src.models.role import RoleName
-from src.models.stock import LocationKind, StockDirection
-from src.models.supplier import Supplier, SupplierAccount
+from src.models.stock import LocationKind, StockDirection, StockDoc
+from src.models.supplier import Supplier
 from src.services import (
     account_resolver,
+    supplier_service,
     audit_service,
     ledger_service,
     sales_service,
@@ -88,21 +89,28 @@ def create_purchase(
     variable_discount_pct: Decimal = ZERO,
     # التعديل الحر — نفس فكرة البيع: الفاتورة تتبني مكان واحدة موجودة بنفس رقمها.
     replace_invoice_id: int | None = None,
+    # مركز التكلفة على المستند — بيتورّث لسطور القيد.
+    cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
         raise PurchaseError("المورد مش موجود.")
-    supplier_acc = db.scalar(
-        select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id)
-    )
+    # الحساب بيتفتح لو مش موجود — زي البيع بالظبط. كان بيرمي المستند كله برسالة
+    # «المورد ده مالوش حساب دائنين»، واللي قدامه فاتورة مايقدرش يعمل بيها حاجة.
+    supplier_acc = supplier_service.require_account(db, supplier_id)
 
     fixed = sales_service.fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
+    # خصم بعد خصم — نفس قاعدة البيع بالظبط (`src/lib/discounts.py`).
     combined = discounts.combine(fixed, variable)
-    if combined >= Decimal("100") or variable < ZERO:
-        raise PurchaseError("الخصم المجمّع لازم يكون أقل من ١٠٠٪ والخصم المتغيّر مايكونش بالسالب.")
+    if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
+        raise PurchaseError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
 
     gross = ZERO
     built: list[tuple[PurchaseLine, Decimal, Decimal, Decimal | None]] = []
@@ -125,7 +133,7 @@ def create_purchase(
     gross = to_money(gross)
     # The invoice discount comes off the summed lines ONCE — applying it per line instead gives
     # different money on the same numbers, and the sale settles it this way.
-    net = sales_service.compute_net(gross, combined)
+    net = discounts.apply(gross, fixed, variable)
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     total = to_money(net + tax)
     if to_money(cash_amount) + to_money(credit_amount) != total:
@@ -151,8 +159,10 @@ def create_purchase(
         # Defaulted here rather than in the column so a purchase always carries a real day — a
         # NULL would push every report that groups by day into guessing.
         purchase_date=purchase_date or date.today(),
+        cost_center_id=cost_center_id,
     )
     if existing is not None:
+        existing.cost_center_id = cost_center_id
         existing.supplier_id = supplier_id
         existing.location_kind = location_kind
         existing.location_id = location_id
@@ -187,7 +197,7 @@ def create_purchase(
         stock_service.post_movement(
             db, item_id=ln.item_id, location_kind=line_kind, location_id=line_loc,
             movement_type="purchase_in", direction=StockDirection.in_, quantity=base_qty,
-            actor_user_id=actor_user_id, source_doc_type="purchase", source_doc_id=invoice.id,
+            actor_user_id=actor_user_id, source_doc_type=StockDoc.PURCHASE, source_doc_id=invoice.id,
         )
         invoice.lines.append(
             PurchaseInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
@@ -207,13 +217,17 @@ def create_purchase(
     if to_money(cash_amount) > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_amount)))
     if to_money(credit_amount) > ZERO:
-        if supplier_acc is None:
-            raise PurchaseError("المورد ده مالوش حساب دائنين.")
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit, to_money(credit_amount)))
     entry = ledger_service.post_entry(
         db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=rep_id,
         description=f"Purchase {invoice.document_number}",
+        # (المرحلة ٢) القيد بتاريخ المستند وعلى المورد — كان بتاريخ النهارده وبلا شريك،
+        # فالفاتورة اللي اتسجّلت متأخرة كانت بتقع في شهر غير شهرها.
+        entry_date=invoice.purchase_date,
+        partner_kind=PartnerKind.supplier, partner_id=invoice.supplier_id,
+        cost_center_id=invoice.cost_center_id,
+        cost_center_distribution=cost_center_distribution,
     )
     invoice.ledger_entry_id = entry.id
     db.flush()
@@ -255,10 +269,15 @@ def return_purchase(
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
         raise PurchaseError("فاتورة الشراء مش موجودة.")
+    # السعر اللي الفاتورة حسبته فعلاً، مش سعر القايمة — نفس علّة مرتجع البيع
+    # بالظبط: المرتجع كان بيخصم من المورد سعر من غير خصومات الفاتورة، فالمردود
+    # بيطلع أكبر من اللي اتشرى وفرق بيفضل على حسابه.
     purchased = {
-        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
+        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor),
+                     Decimal(ln.discount_pct or 0))
         for ln in inv.lines
     }
+    doc_pct = Decimal(getattr(inv, "combined_pct", 0) or 0)
     # (030) Each received line remembers its warehouse, so the return takes the goods back out of
     # exactly that one. Lines written before 030 fall back to the invoice's own location.
     received_into = {
@@ -277,8 +296,8 @@ def return_purchase(
             raise PurchaseError(
                 f"مرتجعات الفاتورة دي وصلت للكمية المشتراة خلاص — "
                 f"اتشرى {purchased[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
-        value += to_money(qty * purchased[item_id][1])
-    value = to_money(value)
+        value += discounts.apply(qty * purchased[item_id][1], purchased[item_id][3])
+    value = discounts.apply(value, doc_pct)
 
     # Proportional split from the original purchase's cash/credit composition.
     cash_refund = to_money(value * to_money(inv.cash_amount) / to_money(inv.total)) if inv.total else ZERO
@@ -293,6 +312,7 @@ def return_purchase(
         # Defaulted here rather than on the column: returns recorded before this existed have no
         # captured day, and a column default would have invented one for them.
         return_date=return_date or date.today(), notes=notes,
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     db.add(ret)
     db.flush()
@@ -302,16 +322,14 @@ def return_purchase(
         stock_service.post_movement(
             db, item_id=item_id, location_kind=out_kind, location_id=out_loc,
             movement_type="purchase_return_out", direction=StockDirection.out, quantity=base_qty,
-            actor_user_id=actor_user_id, source_doc_type="purchase_return", source_doc_id=ret.id,
+            actor_user_id=actor_user_id, source_doc_type=StockDoc.PURCHASE_RETURN, source_doc_id=ret.id,
         )
         ret.lines.append(PurchaseReturnLine(item_id=item_id, quantity=Decimal(qty)))
 
     # Reverse money proportionally: credit purchases_expense V; debit cash Cr + supplier_payable Pr.
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
     expense_acc = account_resolver.purchases_expense_account(db)
-    supplier_acc = db.scalar(
-        select(SupplierAccount).where(SupplierAccount.supplier_id == inv.supplier_id)
-    )
+    supplier_acc = supplier_service.require_account(db, inv.supplier_id)
     entry_lines = [LineInput(expense_acc.id, Direction.credit, value)]
     if cash_refund > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.debit, cash_refund))
@@ -320,6 +338,11 @@ def return_purchase(
     entry = ledger_service.post_entry(
         db, entry_type="purchase_return", actor_user_id=actor_user_id, lines=entry_lines,
         description=f"Purchase return {ret.document_number}",
+        entry_date=ret.return_date,
+        partner_kind=PartnerKind.supplier, partner_id=inv.supplier_id,
+        # المردود بيرجع على نفس مركز الفاتورة — غير كده المصروف بينزل على مركز والرد
+        # بيطلع من «غير موزّع».
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     ret.ledger_entry_id = entry.id
     db.flush()
@@ -417,6 +440,11 @@ def create_standalone_purchase_return(
     statement3: str | None = None,
     # التعديل الحر — نفس فكرة الفاتورة: المردود يتبني مكان واحد موجود بنفس رقمه.
     replace_return_id: int | None = None,
+    cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> PurchaseReturn:
     """مردود شرا مستقل — **نسخة من فاتورة الشرا بالعكس**.
 
@@ -468,7 +496,10 @@ def create_standalone_purchase_return(
         })
 
     gross = to_money(gross)
-    value = to_money(gross * (Decimal("1") - variable / Decimal("100")))
+    # الخصم الثابت بينزل هنا كمان — زي فاتورة الشرا بالظبط. المردود الحر كان
+    # بياخد المتغيّر بس، فبيتخصم من المورد أكتر من اللي اتشرى بيه.
+    fixed = sales_service.fixed_discount_pct(db)
+    value = discounts.apply(gross, fixed, variable)
 
     existing = db.get(PurchaseReturn, replace_return_id) if replace_return_id else None
     if replace_return_id and existing is None:
@@ -483,9 +514,11 @@ def create_standalone_purchase_return(
         branch_id=branch_for(db, actor_user_id=actor_user_id,
                              location_kind=origin_location_kind,
                              location_id=origin_location_id),
-        gross=gross, variable_discount_pct=variable, combined_pct=variable, value=value,
+        gross=gross, variable_discount_pct=variable,
+        combined_pct=discounts.combine(fixed, variable), value=value,
         ledger_entry_id=None, actor_user_id=actor_user_id,
         return_date=return_date or date.today(), notes=notes,
+        cost_center_id=cost_center_id,
         expense_account_id=expense_account_id,
         external_document_number=external_document_number,
         statement1=statement1, statement2=statement2, statement3=statement3,
@@ -496,7 +529,7 @@ def create_standalone_purchase_return(
         existing.origin_location_id = origin_location_id
         existing.gross = gross
         existing.variable_discount_pct = variable
-        existing.combined_pct = variable
+        existing.combined_pct = discounts.combine(fixed, variable)
         existing.value = value
         existing.ledger_entry_id = None
         existing.notes = notes
@@ -517,7 +550,7 @@ def create_standalone_purchase_return(
             db, item_id=b["item_id"], location_kind=b["location_kind"],
             location_id=b["location_id"], movement_type="purchase_return_out",
             direction=StockDirection.out, quantity=to_qty(b["quantity"] * b["factor"]),
-            actor_user_id=actor_user_id, source_doc_type="purchase_return",
+            actor_user_id=actor_user_id, source_doc_type=StockDoc.PURCHASE_RETURN,
             source_doc_id=ret.id,
         )
         ret.lines.append(PurchaseReturnLine(
@@ -534,11 +567,7 @@ def create_standalone_purchase_return(
                    else account_resolver.purchases_expense_account(db))
     if expense_acc is None:
         raise PurchaseError("حساب المشتريات مش موجود.")
-    supplier_acc = db.scalar(
-        select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id)
-    )
-    if supplier_acc is None:
-        raise PurchaseError("المورد ده مالوش حساب.")
+    supplier_acc = supplier_service.require_account(db, supplier_id)
 
     entry = ledger_service.post_entry(
         db, entry_type="purchase_return", actor_user_id=actor_user_id,
@@ -547,6 +576,10 @@ def create_standalone_purchase_return(
             LineInput(supplier_acc.account_id, Direction.debit, value),
         ],
         description=f"Standalone purchase return {ret.document_number}",
+        entry_date=ret.return_date,
+        partner_kind=PartnerKind.supplier, partner_id=supplier_id,
+        cost_center_id=cost_center_id,
+        cost_center_distribution=cost_center_distribution,
     )
     ret.ledger_entry_id = entry.id
     db.flush()

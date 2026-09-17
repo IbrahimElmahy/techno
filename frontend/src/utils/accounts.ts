@@ -53,6 +53,9 @@ export interface ChartAccount {
   active: boolean;
   appears_in: string | null;
   main_level: string | null;
+  /** (المرحلة ٣) سطوره بتتقفل على بعضها في شاشة التسوية — ذمم العملاء والموردين
+   *  بتاخده من نوعها تلقائياً، والباقي بالإيد. */
+  reconcilable?: boolean;
   balance: string;
   /** Set for accounts opened FOR somebody — a customer, a supplier, a safe, a custody holder.
    *  They have no name of their own; this is derived from the owner on every read, so renaming

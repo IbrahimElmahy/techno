@@ -54,6 +54,51 @@ def _actor_id(scope) -> int | None:
     return None
 
 
+# اسم الكيان من المسار ← الاسم اللي الخدمات بتكتب بيه.
+#
+# **الميدل وير والخدمات كانوا بيسمّوا نفس الحاجة باسمين.** دي بتاخد الاسم من الرابط
+# (`/api/v1/transfers` ⇒ «transfers») والخدمة بتكتب اسم الجدول («stock_transfer»).
+# فنفس الحدث بيتسجّل مرتين بنوعين، وفلتر «النوع» في شاشة السجل بيعرض الحاجة الواحدة
+# مرتين — واللي بيختار واحد منهم بيخفي نص التاريخ عن نفسه من غير ما يعرف.
+#
+# فالرابط بيتترجم هنا لنفس القاموس. واللي مش في الجدول بيعدّي بكلمة الرابط زي ما هي:
+# مورد جديد اسمه واضح أحسن من `None`، والسطر ده بيتزوّد وقت ما يبقى ليه معنى.
+_ENTITY = {
+    "transfers": "stock_transfer",
+    "sales": "sales_invoice",
+    "purchases": "purchase_invoice",
+    "warehouses": "warehouse",
+    "users": "user",
+    "vouchers": "voucher",
+    "inspections": "inspection",
+    "customers": "customer",
+    "suppliers": "supplier",
+    "items": "item",
+    "branches": "branch",
+    "employees": "employee",
+    "cheques": "cheque",
+    "coupons": "coupon",
+    "coupon-receipts": "coupon_receipt",
+    "custodies": "custody",
+    "treasuries": "treasury",
+    "journal-entries": "ledger_entry",
+    "accounts": "account",
+    "journals": "journal",
+    "reservations": "reservation",
+    "stock-counts": "stock_count",
+    "cost-centers": "cost_center",
+    "fixed-assets": "fixed_asset",
+    "governorates": "governorate",
+    "territories": "territory",
+    "job-titles": "job_title",
+    "commission-rules": "commission_rule",
+    "orders": "manufacturing_order",
+    "wastage": "wastage_document",
+    "stock": "stock_permit",
+    "reps": "user",
+}
+
+
 def _describe(path: str, method: str) -> tuple[str, str | None, int | None]:
     """(الفعل، نوع الكيان، رقمه) من المسار.
 
@@ -73,7 +118,7 @@ def _describe(path: str, method: str) -> tuple[str, str | None, int | None]:
             break
     tail = segs[-1] if len(segs) > 1 and not segs[-1].isdigit() else None
     action = f"{resource}.{tail or _VERB.get(method, method.lower())}"
-    return action[:60], resource[:40], entity_id
+    return action[:60], _ENTITY.get(resource, resource)[:40], entity_id
 
 
 class RequestAuditMiddleware:

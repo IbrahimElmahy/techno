@@ -14,7 +14,7 @@ import {
   Descriptions,
   Alert,
 } from 'antd';
-import { ReloadOutlined, PrinterOutlined } from '@ant-design/icons';
+import { ReloadOutlined, PrinterOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTableColumns } from '../components/ColumnSettings';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -25,60 +25,15 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
-
-interface ReportLine {
-  account_id: number;
-  code: string | null;
-  name: string | null;
-  amount: string;
-}
-
-interface IncomeStatement {
-  income: ReportLine[];
-  expenses: ReportLine[];
-  total_income: string;
-  total_expenses: string;
-  net_profit: string;
-}
-
-interface BalanceSheet {
-  assets: ReportLine[];
-  liabilities: ReportLine[];
-  equity: ReportLine[];
-  total_assets: string;
-  total_liabilities: string;
-  total_equity: string;
-  net_profit: string;
-  balanced: boolean;
-}
-
-interface AgingRow {
-  party_id: number;
-  party_name: string;
-  total: string;
-  buckets: Record<string, string>;
-}
-
-interface VatReturn {
-  rate_pct: string;
-  output_tax: string;
-  input_tax: string;
-  net_payable: string;
-}
-
-interface CommissionRow {
-  rep_user_id: number;
-  rep_name: string;
-  basis: string;
-  rate_pct: string;
-  base_amount: string;
-  commission: string;
-}
-
-const money = (v: string | number) =>
-  Number(v).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const BUCKETS = ['0-30', '31-60', '61-90', '90+'];
+import PartnerLedgerTab from './financeReports/PartnerLedgerTab';
+import CashFlowTab from './financeReports/CashFlowTab';
+import ReportOptionsBar, {
+  DEFAULT_REPORT_OPTIONS, DeltaCell, ReportOptions as RptOptions, reportParams,
+} from '../components/ReportOptionsBar';
+import {
+  AgingRow, BalanceSheet, CommissionRow, IncomeStatement, ReportLine, VatReturn,
+  BUCKETS, money,
+} from './financeReports/types';
 
 const FinanceReports: React.FC = () => {
   const navigate = useNavigate();
@@ -96,6 +51,8 @@ const FinanceReports: React.FC = () => {
   const [vat, setVat] = useState<VatReturn | null>(null);
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
   const [loading, setLoading] = useState(false);
+  // خيارات التقارير المشتركة — «كل القيود» والمقارنة، زي أودو.
+  const [opts, setOpts] = useState<RptOptions>(DEFAULT_REPORT_OPTIONS);
 
   const agingFilter = useListFilter(aging, { search: (r) => [r.party_name] });
   const commissionFilter = useListFilter(commissions, { search: (r) => [r.rep_name] });
@@ -112,9 +69,10 @@ const FinanceReports: React.FC = () => {
     try {
       const p = params();
       const [i, b, a, v, c] = await Promise.all([
-        api.get<IncomeStatement>('/api/v1/reports/income-statement', { params: p }),
+        api.get<IncomeStatement>('/api/v1/reports/income-statement',
+          { params: { ...p, ...reportParams(opts) } }),
         api.get<BalanceSheet>('/api/v1/reports/balance-sheet', {
-          params: p.date_to ? { as_of: p.date_to } : {},
+          params: { ...(p.date_to ? { as_of: p.date_to } : {}), ...reportParams(opts) },
         }),
         api.get<AgingRow[]>('/api/v1/reports/aging', { params: { party: agingParty } }),
         api.get<VatReturn>('/api/v1/reports/vat-return', { params: p }),
@@ -129,7 +87,7 @@ const FinanceReports: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [params, agingParty]);
+  }, [params, agingParty, opts]);
 
   useEffect(() => {
     loadAll();
@@ -167,6 +125,38 @@ const FinanceReports: React.FC = () => {
     ...numberColumn<ReportLine>((r) => r.amount),
     render: (v: string) => money(v),
   };
+  /**
+   * أعمدة المقارنة — بتظهر لما تتطلب بس.
+   *
+   * الحساب بيتلاقى في الفترة التانية بـ`account_id`، مش بترتيبه: الحساب اللي
+   * ماتحرّكش السنة اللي فاتت مش موجود في قايمتها أصلاً، والمطابقة بالترتيب كانت
+   * هتزحلق الأرقام سطر.
+   */
+  const priorOf = (rows: ReportLine[] | undefined, id: number) =>
+    rows?.find((r) => r.account_id === id)?.amount ?? '0';
+
+  const compareCols = (prior: ReportLine[] | undefined, goodWhenUp: boolean) => (
+    prior ? [
+      {
+        title: 'المقارنة',
+        key: 'prior',
+        width: 150,
+        align: 'left' as const,
+        render: (_: any, r: ReportLine) => money(priorOf(prior, r.account_id)),
+      },
+      {
+        title: 'الفرق',
+        key: 'delta',
+        width: 170,
+        align: 'left' as const,
+        render: (_: any, r: ReportLine) => (
+          <DeltaCell now={r.amount} before={priorOf(prior, r.account_id)}
+                     goodWhenUp={goodWhenUp} />
+        ),
+      },
+    ] : []
+  );
+
   const nameCol = {
     title: 'الحساب',
     ...textColumn(acctRows, (r: ReportLine) => r.name || r.code || `#${r.account_id}`),
@@ -207,7 +197,24 @@ const FinanceReports: React.FC = () => {
       ...numberColumn<AgingRow>((r) => r.total),
       render: (v: string) => <b>{money(v)}</b>,
     },
-  ]), [agingParty, aging]);
+    // الرقم في التقرير ده مجموع فواتير بعينها — والزرار ده بيوصّل لها. من غيره
+    // اللي شايف «٤٠ ألف فوق ٩٠ يوم» لازم يفتح شاشة تانية ويدوّر على الطرف بإيده.
+    {
+      title: '',
+      key: 'reconcile',
+      width: 110,
+      render: (_: unknown, r: AgingRow) => (
+        <Button type="link" size="small" icon={<LinkOutlined />}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigate(`/reconciliation?kind=${agingParty === 'customers' ? 'customer' : 'supplier'}`
+              + `&partner=${r.party_id}`);
+          }}>
+          تسوية
+        </Button>
+      ),
+    },
+  ]), [agingParty, aging, navigate]);
   const agingCols = useTableColumns('finance-aging', agingColumns as any, {
     locked: ['party_name'],
     export: { name: 'أعمار الديون', rows: agingFilter.filtered },
@@ -222,6 +229,9 @@ const FinanceReports: React.FC = () => {
         <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>
           تحديث
         </Button>
+        {/* الخيارات على الشريط العلوي مش جوّه كل تبويب: هي على التقرير المعروض
+            أياً كان، وده اللي بيخلّي اللي اتعلّمها في واحد يلاقيها في التاني. */}
+        <ReportOptionsBar value={opts} onChange={setOpts} />
       </Space>
 
       <Tabs
@@ -279,7 +289,7 @@ const FinanceReports: React.FC = () => {
                         </Card>
                       </Col>
                     </Row>
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol, ...compareCols(income.comparison?.income, true)]} />
                     <Table
                       {...acctKb.tableProps}
                       rowKey="account_id"
@@ -288,7 +298,7 @@ const FinanceReports: React.FC = () => {
                       style={{ marginTop: 16 }}
                       title={() => 'المصروفات'}
                       dataSource={income.expenses}
-                      columns={[nameCol, amountCol]}
+                      columns={[nameCol, amountCol, ...compareCols(income.comparison?.expenses, false)]}
                     />
                   </>
                 )}
@@ -316,9 +326,9 @@ const FinanceReports: React.FC = () => {
                       <Descriptions.Item label="حقوق الملكية">{money(sheet.total_equity)}</Descriptions.Item>
                       <Descriptions.Item label="أرباح الفترة">{money(sheet.net_profit)}</Descriptions.Item>
                     </Descriptions>
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol]} />
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol]} />
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.assets, true)]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.liabilities, false)]} />
+                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.equity, true)]} />
                   </>
                 )}
               </Card>
@@ -376,6 +386,16 @@ const FinanceReports: React.FC = () => {
                 />
               </Card>
             ),
+          },
+          {
+            key: 'partner',
+            label: 'دفتر الشريك',
+            children: <PartnerLedgerTab params={params} />,
+          },
+          {
+            key: 'cashflow',
+            label: 'التدفق النقدي',
+            children: <CashFlowTab params={params} />,
           },
           {
             key: 'vat',

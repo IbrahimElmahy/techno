@@ -11,6 +11,12 @@ from src.models.customer import Customer, CustomerAccount, CustomerExternalRef
 # Site inspections / معاينات (015-inspections-mobile).
 from src.models.inspection import Inspection, InspectionItem  # noqa: E402
 from src.models.inspection_item_type import InspectionItemType  # noqa: E402
+# التوزيع التحليلي — السطر على أكتر من مركز تكلفة.
+from src.models.analytic import LedgerLineDistribution  # noqa: E402
+# إعدادات المحاسبة — أقفال التواريخ (المرحلة ٤ — موديل أودو).
+from src.models.accounting_setting import AccountingSetting  # noqa: E402
+# دفاتر اليومية (المرحلة ١ — موديل أودو).
+from src.models.journal import Journal, JournalSequence  # noqa: E402
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 
 # Settings → configurable dropdown lists (013).
@@ -31,6 +37,8 @@ from src.models.manufacturing import (  # noqa: E402
     ManufacturingOrderConsumption,
     ManufacturingOrderResource,
 )
+# التسوية (المرحلة ٣ — موديل أودو).
+from src.models.reconcile import FullReconcile, PartialReconcile  # noqa: E402
 from src.models.org import Branch, Governorate, HeadOffice, Territory
 from src.models.purchasing import (  # noqa: E402
     PurchaseInvoice,
@@ -110,4 +118,6 @@ __all__ = [
     "EmployeeAdvance", "EmployeeAdvanceInstalment", "PayrollAdjustment",
     "PayrollRun", "PayrollLine", "PayrollLineDetail", "PayrollRemittance",
     "Owner",
+    "Journal", "JournalSequence",
+    "FullReconcile", "PartialReconcile",
 ]

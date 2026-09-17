@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_LEDGER_POST, CAP_LEDGER_READ, CAP_LEDGER_REVERSE, CAP_TREASURY_READ
 from src.core.db import get_db
@@ -131,10 +132,13 @@ def post_ledger_entry(
 def list_ledger_entries(
     account_id: int | None = None,
     branch_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_LEDGER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_LEDGER_READ)),
     db: Session = Depends(get_db),
 ) -> list[LedgerEntryOut]:
-    stmt = select(LedgerEntry)
+    # الدفتر بيتفلتر بالفرع — و`branch_id` اللي في المدخلات بيضيّق جوّه اللي
+    # الشخص شايفه أصلاً، مابيوسّعش. من غير كده كان الرابط ده باب خلفي حوالين
+    # الفلترة اللي على `/journal-entries`.
+    stmt = branch_scope.scope(select(LedgerEntry), LedgerEntry, current)
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     entries = db.scalars(stmt).all()
@@ -143,9 +147,11 @@ def list_ledger_entries(
 
 @router.get("/ledger/accounts", response_model=list[AccountOut])
 def list_accounts(
-    _: CurrentUser = Depends(require_capability(CAP_LEDGER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_LEDGER_READ)),
     db: Session = Depends(get_db),
 ) -> list[AccountOut]:
+    # كل فرع له شجرته — نفس فلترة `/accounts` بالظبط، والاتنين لازم يقولوا نفس
+    # الحاجة وإلا الرابط الأقل شهرة بيبقى الباب الخلفي.
     return [
         AccountOut(
             id=a.id,
@@ -154,7 +160,7 @@ def list_accounts(
             normal_side=a.normal_side,
             active=a.active,
         )
-        for a in db.scalars(select(Account)).all()
+        for a in db.scalars(branch_scope.scope(select(Account), Account, current)).all()
     ]
 
 

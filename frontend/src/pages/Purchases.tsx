@@ -13,9 +13,9 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
+import CostCenterField from '../components/CostCenterField';
+import CostCenterSplit from '../components/CostCenterSplit';
 import { api } from '../api/client';
-import { useDocRoute } from '../components/useDocRoute';
-import { useDraft } from '../components/useDraft';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import TotalsLadder from '../components/TotalsLadder';
@@ -34,6 +34,8 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import { money } from '../utils/money';
+import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
+import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /** الاسم القديم في الشاشة دي — نفس الدالة. */
@@ -301,6 +303,8 @@ export default function Purchases() {
    * بيفرّق بينهم هو إن الحفظ بيعكس القديمة الأول.
    */
   const [editingId, setEditingId] = useState<number | null>(null);
+  // بصمة الفاتورة لحظة ما اتفتحت للتعديل — مرجع «اتغيّر ولا لأ؟». `null` = مستند جديد.
+  const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   /** الفاتورة اللي معروضة في بوباب الطباعة — معاينة، مش صفحة. */
   const [preview, setPreview] = useState<PurchaseDetail | null>(null);
@@ -439,16 +443,16 @@ export default function Purchases() {
    * بيوصل لشاشة بتفرّجه عليها. الفرق بين الاتنين هو نية اللي ضغط، والرابط هو اللي
    * بيقولها.
    */
-  // الفاتورة المفتوحة جزء من العنوان، فالـ«رجوع» بيقفلها ويرجّع للكشف — `useDocRoute`.
-  const { markOpen, markClosed } = useDocRoute<PurchaseRecord>({
-    rows: purchases,
-    openId: (viewPurchase?.id ?? editingId) ?? null,
-    open: (row, mode) => { if (mode === 'edit') openRow(row); else openDetail(row); },
-    close: () => closeCreate(),
-    loading,
-    // `openDetail` بيجيب الفاتورة بالرقم بنفسه، فالصف المبدئي كفاية.
-    fetchOne: async (id) => ({ id, kind: 'purchase' } as PurchaseRecord),
-  });
+  useEffect(() => {
+    const docId = searchParams.get('doc') || searchParams.get('edit');
+    const wantsEdit = !!searchParams.get('edit');
+    if (!docId || handledIntent.current === docId) return;
+    handledIntent.current = docId;
+    setSearchParams({}, { replace: true });
+    const target = purchases.find((p) => p.id === Number(docId)) || ({ id: Number(docId), kind: 'purchase' } as PurchaseRecord);
+    if (wantsEdit) openRow(target);
+    else openDetail(target);
+  }, [searchParams, purchases]);
 
   /**
    * فتح فاتورة شراء — على نفس الصفحة اللي بتتكتب فيها.
@@ -469,7 +473,6 @@ export default function Purchases() {
   };
 
   const openDetail = async (record: PurchaseRecord) => {
-    markOpen(record.id);
     try {
       const res = await api.get(`/api/v1/purchases/${record.id}`);
       const det: PurchaseDetail = res.data;
@@ -480,11 +483,13 @@ export default function Purchases() {
         supplier_id: det.supplier_id,
         external_document_number: (det as any).external_document_number || '',
         notes: (det as any).notes || '',
+        cost_center_id: (det as any).cost_center_id ?? null,
+        cost_center_distribution: (det as any).cost_center_distribution ?? null,
       });
       setPurchaseDate((det as any).purchase_date
         ? dayjs((det as any).purchase_date)
         : ((det as any).created_at ? dayjs((det as any).created_at) : dayjs()));
-      setPurchaseItems((det.lines || []).map((l: any, i: number) => ({
+      const loadedItems: PurchaseItem[] = (det.lines || []).map((l: any, i: number) => ({
         key: `${Date.now()}-${i}`,
         item_id: l.item_id,
         quantity: Number(l.quantity) || null,
@@ -493,12 +498,31 @@ export default function Purchases() {
         discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
         fixed_discount_pct: null,
         warehouse_id: l.line_location_id ?? det.location_id ?? null,
-      })));
+      }));
+      setPurchaseItems(loadedItems);
       setStickyWarehouseId(((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
       [...new Set((det.lines || []).map((l: any) => l.item_id))].forEach((id) => fetchUnits(id as number));
       setCashAmount(Number(det.cash_amount) || 0);
       setCreditAmount(Number(det.credit_amount) || 0);
       setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
+      // البصمة بتتاخد حتى والشاشة للقراية: اللي هيدوس «تعديل» بعد كده محتاج مرجع
+      // يتقارن عليه، وإلا أي خروج بعد الفتح هيسأل من غير ما يتغيّر حاجة.
+      setOpenedFingerprint(fingerprintOf({
+        items: loadedItems,
+        variableDiscount: Number((det as any).variable_discount_pct) || 0,
+        cashAmount: Number(det.cash_amount) || 0,
+        creditAmount: Number(det.credit_amount) || 0,
+        purchaseDate: (det as any).purchase_date
+          ? dayjs((det as any).purchase_date)
+          : ((det as any).created_at ? dayjs((det as any).created_at) : dayjs()),
+        form: {
+          supplier_id: det.supplier_id,
+          external_document_number: (det as any).external_document_number || '',
+          notes: (det as any).notes || '',
+          cost_center_id: (det as any).cost_center_id ?? null,
+          cost_center_distribution: (det as any).cost_center_distribution ?? null,
+        },
+      }));
       setCreateVisible(true);
     } catch (err: any) {
       console.error(err);
@@ -712,11 +736,10 @@ export default function Purchases() {
   // نفس ترتيب فاتورة البيع: خصم السطر ينزل على سطره، السطور تتجمع، وخصم الفاتورة ينزل على
   // المجموع مرة واحدة. الشاشة بتحسبه محلياً عشان المشتري يشوف الرقم وهو بيكتب — والسيرفر هو
   // اللي بيحسبه الحسبة النهائية، فلو اختلفوا الفاتورة بتترفض بدل ما تعدّي بالرقم الغلط.
-  const lineTotal = (it: PurchaseItem) => {
-    const before = Number(it.quantity || 0) * (it.unit_price || 0);
-    const disc = Math.min(99.99, (it.discount_pct ?? 0) + (it.fixed_discount_pct ?? 0));
-    return before * (1 - disc / 100);
-  };
+  // خصم بعد خصم: المتغيّر بيتحسب على الباقي بعد الثابت، مش على السعر الأصلي.
+  const lineTotal = (it: PurchaseItem) =>
+    applyPct(Number(it.quantity || 0) * (it.unit_price || 0),
+             it.fixed_discount_pct, it.discount_pct);
 
   const grossTotal = purchaseItems.reduce((sum, it) => sum + lineTotal(it), 0);
   const invoiceTotal = grossTotal * (1 - (variableDiscount || 0) / 100);
@@ -932,7 +955,7 @@ export default function Purchases() {
     });
     setPurchaseDate((det as any).purchase_date
       ? dayjs((det as any).purchase_date) : dayjs());
-    setPurchaseItems((det.lines || []).map((l: any, i: number) => ({
+    const loadedItems: PurchaseItem[] = (det.lines || []).map((l: any, i: number) => ({
       key: `${Date.now()}-${i}`,
       item_id: l.item_id,
       quantity: Number(l.quantity) || null,
@@ -941,7 +964,8 @@ export default function Purchases() {
       discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
       fixed_discount_pct: null,
       warehouse_id: l.line_location_id ?? det.location_id ?? null,
-    })));
+    }));
+    setPurchaseItems(loadedItems);
     setStickyWarehouseId(
       ((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
     [...new Set((det.lines || []).map((l: any) => l.item_id))]
@@ -950,6 +974,19 @@ export default function Purchases() {
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
     setDetail(null);
+    // البصمة من القيم اللي لسه اتبنت فوق مش من الحالة: الـsetters مابيتنفّذوش في نفس
+    // اللفّة، فقراية الحالة هنا بترجّع اللي كان قبل الفتح.
+    setOpenedFingerprint(fingerprintOf({
+      items: loadedItems,
+      variableDiscount: Number((det as any).variable_discount_pct) || 0,
+      cashAmount: Number(det.cash_amount) || 0,
+      creditAmount: Number(det.credit_amount) || 0,
+      purchaseDate: (det as any).purchase_date ? dayjs((det as any).purchase_date) : dayjs(),
+      form: {
+        supplier_id: det.supplier_id,
+        warehouse_id: det.location_id ?? undefined,
+      },
+    }));
     setCreateVisible(true);
   };
 
@@ -1033,6 +1070,8 @@ export default function Purchases() {
             cash_account_id: cashAccountId ?? undefined,
             variable_discount_pct: variableDiscount || 0,
             external_document_number: values.external_document_number || null,
+            cost_center_id: values.cost_center_id ?? null,
+            cost_center_distribution: values.cost_center_distribution ?? null,
             // «الحساب» — الحساب اللي القيد بينزل عليه. الحقل كان موجود في السيرفر من ٠٣٠ والشاشة
             // مكانتش بتبعته خالص، فكل فاتورة كانت بتترحّل على الافتراضي مهما كان قصد الكاتب.
             // خانة «الحساب» اتشالت من الترويسة — القيد بينزل على حساب المشتريات الافتراضي.
@@ -1047,8 +1086,8 @@ export default function Purchases() {
               quantity: Number(l.quantity || 0),
               unit_price: l.unit_price,
               unit: l.unit,
-              // الاتنين بيتجمعوا — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
-              discount_pct: (l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0) || null,
+              // الاتنين ورا بعض — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
+              discount_pct: combinePct(l.fixed_discount_pct, l.discount_pct) || null,
               warehouse_id: l.warehouse_id,
             })),
             // The day the goods were received, taken from the first door — not the day this row was
@@ -1063,8 +1102,6 @@ export default function Purchases() {
           setDocResult(res.data);
           message.success(editingId !== null
             ? 'تم حفظ الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
-          // بعد ما السيرفر رد بنجاح وبس — المرفوضة بتفضل مسودّة.
-          discardDraft();
           setEditingId(null);
           form.resetFields();
           setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
@@ -1168,69 +1205,80 @@ export default function Purchases() {
 
 
 
-  /** رجوع للسجل — والشاشة بترجع فاضية عشان الفاتورة الجاية تبدأ من نضيف. */
-  /** المسودّة — نفس قاعدة طلب البيع بالحرف. الشرح في `useDraft`. */
-  const draftPayload = useMemo(() => ({
-    supplier_id: form.getFieldValue('supplier_id') ?? null,
-    purchase_date: purchaseDate ? dayjs(purchaseDate).format('YYYY-MM-DD') : null,
-    items: purchaseItems,
-    variableDiscount,
-    cashAmount,
-    creditAmount,
-    notes: form.getFieldValue('notes') ?? null,
-    external_document_number: form.getFieldValue('external_document_number') ?? null,
-  }), [form, purchaseDate, purchaseItems, variableDiscount, cashAmount, creditAmount]);
-
-  const {
-    drafts, savedAt: draftSavedAt, discard: discardDraft,
-    remove: removeDraft, adopt: adoptDraft,
-  } = useDraft({
-    kind: 'purchase',
-    payload: draftPayload,
-    // المستند الموجود (عرض أو تعديل) مالوش مسودّة — ده مستند عند المكتب خلاص.
-    paused: Boolean(viewPurchase || editingId),
-    isEmpty: (x: any) => !x.supplier_id
-      && !(x.items || []).some((l: any) => l.item_id != null),
-    title: (x: any) => {
-      const name = suppliers.find((v) => v.id === x.supplier_id)?.name || 'بدون مورّد';
-      const n = (x.items || []).filter((l: any) => l.item_id != null).length;
-      return `${name} — ${n} صنف`;
+  /** بصمة الفاتورة من حقولها اللي بتتعدّل — `key` بتاع السطر بره لأنه متولّد بالوقت. */
+  const fingerprintOf = (v: {
+    items: PurchaseItem[]; variableDiscount: any; cashAmount: any; creditAmount: any;
+    purchaseDate: any; form: any;
+  }) => fingerprint({
+    lines: v.items
+      .filter((l) => l.item_id !== null)
+      .map((l) => ({
+        item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
+        unit: l.unit, discount_pct: l.discount_pct,
+        fixed_discount_pct: l.fixed_discount_pct, warehouse_id: l.warehouse_id,
+      })),
+    variableDiscount: v.variableDiscount,
+    cashAmount: v.cashAmount,
+    creditAmount: v.creditAmount,
+    purchaseDate: v.purchaseDate ? dayjs(v.purchaseDate).format('YYYY-MM-DD') : null,
+    form: {
+      supplier_id: v.form?.supplier_id,
+      warehouse_id: v.form?.warehouse_id,
+      external_document_number: v.form?.external_document_number,
+      notes: v.form?.notes,
+      cost_center_id: v.form?.cost_center_id,
+      cost_center_distribution: v.form?.cost_center_distribution,
     },
   });
 
-  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
-  const resumeDraft = (d: any) => {
-    const x = d.payload || {};
-    adoptDraft(d.id);
-    setEditingId(null);
-    setViewPurchase(null);
-    setViewOnly(false);
-    setNewStep(null);
-    setCreateVisible(true);
-    form.setFieldsValue({
-      supplier_id: x.supplier_id ?? undefined,
-      notes: x.notes ?? undefined,
-      external_document_number: x.external_document_number ?? undefined,
-    });
-    if (x.purchase_date) setPurchaseDate(dayjs(x.purchase_date));
-    setPurchaseItems(x.items?.length ? x.items : [{
-      key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
-      discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
-    setVariableDiscount(Number(x.variableDiscount) || 0);
-    setCashAmount(Number(x.cashAmount) || 0);
-    setCreditAmount(Number(x.creditAmount) || 0);
-  };
+  const currentFingerprint = () => fingerprintOf({
+    items: purchaseItems, variableDiscount, cashAmount, creditAmount, purchaseDate,
+    form: form.getFieldsValue(),
+  });
 
+  /**
+   * رجوع للسجل — وبيسأل الأول لو الخروج هيضيّع شغل.
+   *
+   * كان بيقفل على طول من غير أي سؤال: فاتورة شرا اتكتبت سطر سطر بتضيع بضغطة غلط على
+   * زرار في ركن الشاشة، ومافيش مسوّدة بتتحفظ لوحدها. وشاشة البيع كانت في الاتجاه
+   * التاني — بتسأل حتى على فاتورة محفوظة ماتغيّرش فيها حاجة. القاعدة واحدة دلوقتي
+   * (`utils/unsavedWork`): السؤال بيظهر لما الخروج **يكلّف** حاجة، وبس.
+   */
   const closeCreate = () => {
-    setCreateVisible(false);
-    setDetail(null);
-    setDocResult(null);
-    setNewStep(null);
-    setViewPurchase(null);
-    markClosed();
-    // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
-    // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
-    setEditingId(null);
+    const leave = () => {
+      setCreateVisible(false);
+      setDetail(null);
+      setDocResult(null);
+      setNewStep(null);
+      // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
+      // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
+      setEditingId(null);
+      setOpenedFingerprint(null);
+    };
+    const typed = purchaseItems.filter((l) => l.item_id !== null);
+    const verdict = verdictOnLeave({
+      readOnly: viewOnly,
+      savedDocument: editingId != null,
+      now: currentFingerprint(),
+      whenOpened: openedFingerprint,
+      hasWork: typed.length > 0
+        || form.getFieldValue('supplier_id') != null
+        || Number(cashAmount || 0) > 0,
+    });
+    if (verdict === 'silent') { leave(); return; }
+    Modal.confirm({
+      title: verdict === 'confirm-edit' ? 'تسيب التعديل؟' : 'تسيب المستند؟',
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: verdict === 'confirm-edit'
+        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
+        : typed.length
+          ? `فيه ${typed.length} صنف مكتوب — هيروحوا ومش هيرجعوا.`
+          : 'اللي كتبته هيروح ومش هيرجع.',
+      okText: verdict === 'confirm-edit' ? 'اخرج من غير حفظ' : 'اخرج واسيبه',
+      okButtonProps: { danger: true },
+      cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
+      onOk: leave,
+    });
   };
 
   /**
@@ -1425,6 +1473,18 @@ export default function Purchases() {
                 <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
+            <Col xs={24} md={6}>
+              <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
+                <Space.Compact style={{ width: '100%' }}>
+                  <Form.Item name="cost_center_id" noStyle>
+                    <CostCenterField />
+                  </Form.Item>
+                  <Form.Item name="cost_center_distribution" noStyle>
+                    <CostCenterSplit size="middle" disabled={viewOnly} />
+                  </Form.Item>
+                </Space.Compact>
+              </Form.Item>
+            </Col>
             {([1, 2, 3] as const).map((n) => (
               <Col xs={24} md={6} key={n}>
                 <Form.Item name={`statement${n}`} label={`بيان ${n}`}
@@ -1601,10 +1661,9 @@ export default function Purchases() {
       width: 100,
       filters: [{ text: 'فاتورة شراء', value: 'purchase' }, { text: 'مردود شراء', value: 'return' }],
       onFilter: (v: any, r: PurchaseRecord) => r.kind === v,
-      render: (v: string) => (
-        v === 'draft' ? <Tag color="gold" style={{ fontWeight: 600 }}>مسودّة</Tag>
-          : v === 'return' ? <Tag color="orange" style={{ fontWeight: 600 }}>مردود شراء</Tag>
-            : <Tag color="blue" style={{ fontWeight: 600 }}>فاتورة شراء</Tag>),
+      render: (v: string) => (v === 'return'
+        ? <Tag color="orange" style={{ fontWeight: 600 }}>مردود شراء</Tag>
+        : <Tag color="blue" style={{ fontWeight: 600 }}>فاتورة شراء</Tag>),
     },
     {
       title: 'رقم المستند',
@@ -1612,13 +1671,9 @@ export default function Purchases() {
       key: 'document_number',
       width: 140,
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
-      render: (doc: string, r: any) => (
+      render: (doc: string, r: PurchaseRecord) => (
         <Space direction="vertical" size={0}>
-          {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
-          <Tag color={r.kind === 'draft' ? 'gold'
-            : r.kind === 'purchase' ? 'blue' : 'orange'}>
-            {r.kind === 'draft' ? 'مسودّة — لسه ما اترحّلتش' : doc}
-          </Tag>
+          <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>
           {r.parent_document_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.parent_document_number}</span>
           )}
@@ -1877,34 +1932,10 @@ export default function Purchases() {
       <Table
         {...listKb.tableProps}
         size="small"
-        // المسودّات فوق المستندات. **وبرّه `purchasesFilter.filtered` عن قصد**:
-        // الإجماليات والتصدير بيتبنوا منه، والمسودّة مش مشتريات.
-        dataSource={[
-          ...(drafts || []).map((d: any) => {
-            const x = d.payload || {};
-            const ls = (x.items || []).filter((l: any) => l.item_id != null);
-            const gross = ls.reduce((t: number, l: any) =>
-              t + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
-            return {
-              id: d.id, kind: 'draft', __draft: d,
-              document_number: 'مسودّة',
-              parent_document_number: null,
-              external_document_number: null,
-              purchase_date: String(x.purchase_date || d.updated_at || '').slice(0, 10),
-              created_at: d.updated_at,
-              supplier_id: x.supplier_id ?? null,
-              gross, net: gross, total: gross,
-            } as any;
-          }),
-          ...purchasesFilter.filtered,
-        ]}
-        rowClassName={(r: any) => (r.kind === 'draft' ? 'row-draft' : '')}
+        dataSource={purchasesFilter.filtered}
         columns={listCols.columns}
         // فاتورة ومرتجع ممكن يكون ليهم نفس الـid — المفتاح لازم يشيل النوع كمان.
         rowKey={(r: PurchaseRecord) => `${r.kind}-${r.id}`}
-        onRow={(r: any) => (r.kind === 'draft'
-          ? { onClick: () => resumeDraft(r.__draft), style: { cursor: 'pointer' } }
-          : {})}
         loading={listLoading}
         // نفس قاعدة باقي السجلات: كل عمود بمقاسه، والزيادة بتتمرّر — مش بتتوزّع على
         // عمود واحد فتطلع فراغ في نص الجدول.

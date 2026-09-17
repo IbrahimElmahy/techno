@@ -34,6 +34,10 @@ class PurchaseInvoice(Base):
     # The SUPPLIER's own invoice number — kept alongside our generated document_number.
     external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # مركز التكلفة — «المستند ده بتاع أنهي نشاط». اختياري، وبيتورّث لسطور القيد كلها.
+    cost_center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cost_center.id"), nullable=True, index=True
+    )
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -142,6 +146,10 @@ class PurchaseReturn(Base):
     # the purchase in 0056; this is the fourth and last trade document to carry its own date.
     return_date: Mapped[object | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # مركز التكلفة — «المستند ده بتاع أنهي نشاط». اختياري، وبيتورّث لسطور القيد كلها.
+    cost_center_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cost_center.id"), nullable=True, index=True
+    )
     # Nullable so the row can be inserted before its ledger entry exists (Postgres enforces FKs;
     # a 0 placeholder would violate the constraint). Always set to the real id before commit.
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)

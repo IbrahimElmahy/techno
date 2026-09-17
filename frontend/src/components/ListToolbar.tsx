@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Button, Col, Input, Row, Select, Tag } from 'antd';
-import { SearchOutlined, ClearOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import {
+  SearchOutlined, ClearOutlined, DownOutlined, UpOutlined, GroupOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useScreenShortcuts } from './keyboard';
 import DateRangeFilter from './DateRangeFilter';
@@ -109,7 +111,7 @@ export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {
 export default function ListToolbar({
   query, onQueryChange, searchPlaceholder = 'بحث...', filters = [], values = {}, onValueChange,
   showDateRange = false, range, onRangeChange, onReset, total, shown, searchSpan = 6,
-  extra, searchRef: externalSearchRef,
+  extra, searchRef: externalSearchRef, groupBy, groupOptions = [], onGroupByChange,
 }: {
   query: string;
   onQueryChange: (v: string) => void;
@@ -125,6 +127,15 @@ export default function ListToolbar({
   total?: number;
   shown?: number;
   searchSpan?: number;
+  /**
+   * «تجميع بـ» — زي أودو: نفس الصفوف، مقسومة على المفتاح اللي اخترته.
+   *
+   * الفلتر بيشيل صفوف؛ التجميع بيسيبها كلها ويرتّبها. الاتنين بيتسألوا مع بعض («وريني
+   * فواتير الشهر ده مجمّعة بالعميل»)، فمكانهم واحد.
+   */
+  groupBy?: string | null;
+  groupOptions?: { value: string; label: string }[];
+  onGroupByChange?: (v: string | null) => void;
   /**
    * حاجة الشاشة عايزة تحطها جنب مربع البحث.
    *
@@ -189,6 +200,28 @@ export default function ListToolbar({
     />
   ));
 
+  const facets: { key: string; label: string; clear: () => void }[] = [];
+  if (query) {
+    facets.push({ key: '__q', label: `بحث: ${query}`, clear: () => onQueryChange('') });
+  }
+  for (const f of filters) {
+    const v = values[f.key];
+    if (v === undefined || v === null || v === '') continue;
+    const chosen = f.options?.find((o) => o.value === v);
+    facets.push({
+      key: f.key,
+      label: `${f.placeholder}: ${chosen ? chosen.label : String(v)}`,
+      clear: () => onValueChange?.(f.key, undefined),
+    });
+  }
+  if (range) {
+    facets.push({
+      key: '__range',
+      label: `التاريخ: ${range[0].format('YYYY-MM-DD')} ← ${range[1].format('YYYY-MM-DD')}`,
+      clear: () => onRangeChange?.(null),
+    });
+  }
+
   return (
     <>
       {/*
@@ -233,6 +266,20 @@ export default function ListToolbar({
           </div>
         )}
 
+        {groupOptions.length > 0 && (
+          <div style={{ flex: '0 1 190px', minWidth: 150 }}>
+            <Select
+              allowClear
+              style={{ width: '100%' }}
+              placeholder="تجميع بـ"
+              value={groupBy ?? undefined}
+              onChange={(v) => onGroupByChange?.(v ?? null)}
+              options={groupOptions}
+              suffixIcon={<GroupOutlined />}
+            />
+          </div>
+        )}
+
         {advanced.length > 0 && (
           <Button type="link" style={{ padding: 0, flex: '0 0 auto' }}
             icon={expanded ? <UpOutlined /> : <DownOutlined />}
@@ -250,6 +297,29 @@ export default function ListToolbar({
           </Tag>
         )}
       </div>
+
+      {/*
+        * الشرايح — «إيه اللي شغّال دلوقتي» مكتوب، مش مستنتج.
+        *
+        * الفلتر لما بيبقى قايمة مختارة فوق، اللي بيبص على قايمة ناقصة لازم يرجع بعينه على
+        * كل خانة عشان يعرف ليه ناقصة. الشريحة بتقول السبب بالاسم، وضغطة على × بتشيله —
+        * وده اللي بيخلّي «امسح الكل» مش الطريقة الوحيدة للرجوع.
+        */}
+      {facets.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {facets.map((f) => (
+            <Tag key={f.key} closable color="blue" onClose={f.clear}
+                 style={{ marginInlineEnd: 0 }}>
+              {f.label}
+            </Tag>
+          ))}
+          {facets.length > 1 && (
+            <Button type="link" size="small" style={{ padding: 0 }} onClick={onReset}>
+              امسح الكل
+            </Button>
+          )}
+        </div>
+      )}
 
       {expanded && advanced.length > 0 && (
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }} align="middle">

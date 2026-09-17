@@ -1,0 +1,1 @@
+const r=n=>Number(n||0);function c(...n){return n.reduce((t,e)=>t*(1-r(e)/100),1)}function o(...n){return(1-c(...n))*100}function u(n,...t){return r(n)*c(...t)}const a=99.99;function i(n,t){return u(n,t)}export{a as M,u as a,o as c,i as n};

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Select } from 'antd';
-import PartyPickerModal, { PartyKind } from './PartyPickerModal';
+import PartyPickerModal, { Party, PartyKind } from './PartyPickerModal';
 
 /**
  * خانة «مين» — a form field that answers the party question through the party WINDOW.
@@ -16,11 +16,18 @@ import PartyPickerModal, { PartyKind } from './PartyPickerModal';
  * shut (`open={false}`) so there is exactly one way in.
  */
 export default function PartyField({
-  kind, value, onChange, options, placeholder, style, disabled,
+  kind, value, onChange, onPicked, options, placeholder, style, disabled,
 }: {
   kind: PartyKind;
   value?: number;
   onChange?: (id: number) => void;
+  /**
+   * الطرف اللي اتختار كامل، مش رقمه بس.
+   *
+   * الشاشة اللي عندها الكشف كله محمّل بتلاقي الاسم من `options`؛ اللي مش محمّلاه —
+   * وتحميل آلاف الصفوف عشان اسم واحد مش مبرر — بتاخده من هنا وتعرضه.
+   */
+  onPicked?: (party: Party) => void;
   /** Names for the ids, so the chosen party reads as a name rather than a number. */
   options: { value: number; label: string }[];
   placeholder?: string;
@@ -45,7 +52,7 @@ export default function PartyField({
       <PartyPickerModal
         open={open}
         kind={kind}
-        onPick={(party) => { setOpen(false); onChange?.(party.id); }}
+        onPick={(party) => { setOpen(false); onChange?.(party.id); onPicked?.(party); }}
         onCancel={() => setOpen(false)}
       />
     </>

@@ -28,7 +28,7 @@ from src.models.hr_advance import (
     EmployeeAdvanceInstalment,
     PayrollAdjustment,
 )
-from src.models.ledger import AccountNature, Direction
+from src.models.ledger import AccountNature, Direction, PartnerKind
 from src.services import account_resolver, audit_service, ledger_service, numbering
 from src.services.ledger_service import LineInput
 
@@ -141,6 +141,9 @@ def create_advance(
             db, entry_type="employee_advance", actor_user_id=actor_user_id,
             entry_date=advance_date, branch_id=branch_id,
             description=f"سلفة {row.document_number}",
+            # (المرحلة ٢) السلفة على الموظف — حساب «سلف العاملين» واحد للكل، فمن غير
+            # الشريك هنا مافيش طريقة تقول «الراجل ده عليه كام» من الدفتر.
+            partner_kind=PartnerKind.employee, partner_id=employee_id,
             lines=[
                 # أصل: الموظف مديون بيها. لو اتقيدت مصروف، المرتب اللي هيسددها هيتقيد مصروف
                 # كمان والشركة هتتحمّل نفس الجنيه مرتين.

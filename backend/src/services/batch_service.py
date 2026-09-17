@@ -21,7 +21,7 @@ from src.core.money import to_qty
 from src.models.catalog import (
     BatchMovementKind, StockBatchMovement, Item, StockBatch,
 )
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.services import stock_service
 
 ZERO_QTY = Decimal("0.000")
@@ -211,13 +211,13 @@ def relocate(db: Session, *, item_id: int, from_kind: LocationKind, from_id: int
         return []
     taken = consume_fefo(db, item_id=item_id, location_kind=from_kind, location_id=from_id,
                          quantity=quantity, log_kind=BatchMovementKind.relocated_out,
-                         document_type="transfer", document_id=transfer_id,
+                         document_type=StockDoc.TRANSFER, document_id=transfer_id,
                          actor_user_id=actor_user_id)
     for expiry, qty in taken:
         _upsert(db, item_id=item_id, kind=to_kind, loc_id=to_id, expiry=expiry, quantity=qty)
         _log(db, item_id=item_id, expiry=expiry, location_kind=to_kind, location_id=to_id,
              kind=BatchMovementKind.relocated_in, quantity=qty,
-             document_type="transfer", document_id=transfer_id, actor_user_id=actor_user_id)
+             document_type=StockDoc.TRANSFER, document_id=transfer_id, actor_user_id=actor_user_id)
     db.flush()
     return taken
 
@@ -245,7 +245,7 @@ def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind
                     expiry=expiry_date, quantity=qty)
     _log(db, item_id=item_id, expiry=expiry_date, location_kind=location_kind,
          location_id=location_id, kind=BatchMovementKind.returned, quantity=qty,
-         document_type="sales_invoice", document_id=invoice_id, actor_user_id=actor_user_id)
+         document_type=StockDoc.SALE, document_id=invoice_id, actor_user_id=actor_user_id)
     return batch
 
 

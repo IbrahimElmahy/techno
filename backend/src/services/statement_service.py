@@ -18,6 +18,7 @@ from src.core.money import ZERO, to_money
 from src.models.cost_center import CostCenter
 from src.models.user import User
 from src.models.ledger import Account, LedgerEntry, LedgerLine
+from src.services import ledger_service
 
 
 class StatementError(Exception):
@@ -97,7 +98,8 @@ def account_statement(
     rows = db.scalars(
         select(LedgerLine)
         .options(selectinload(LedgerLine.entry))
-        .where(LedgerLine.account_id.in_(ids))
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(LedgerLine.account_id.in_(ids), ledger_service.is_posted_sql())
     ).all()
 
     # One query for the names rather than one per line: a statement can run to hundreds of rows.

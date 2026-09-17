@@ -44,6 +44,7 @@ const ItemCard = lazy(() => import('../pages/ItemCard'));
 const StockPermits = lazy(() => import('../pages/StockPermits'));
 const Stocktake = lazy(() => import('../pages/Stocktake'));
 const AccountStatement = lazy(() => import('../pages/AccountStatement'));
+const Reconciliation = lazy(() => import('../pages/Reconciliation'));
 const FixedAssets = lazy(() => import('../pages/FixedAssets'));
 const Employees = lazy(() => import('../pages/Employees'));
 const Departments = lazy(() => import('../pages/Departments'));
@@ -65,6 +66,7 @@ const Returns = lazy(() => import('../pages/Returns'));
 const Loyalty = lazy(() => import('../pages/Loyalty'));
 const Treasury = lazy(() => import('../pages/Treasury'));
 const GeneralLedger = lazy(() => import('../pages/GeneralLedger'));
+const AccountingDashboard = lazy(() => import('../pages/AccountingDashboard'));
 const Audit = lazy(() => import('../pages/Audit'));
 const Reports = lazy(() => import('../pages/Reports'));
 const TradeReports = lazy(() => import('../pages/TradeReports'));
@@ -125,6 +127,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/stock-permits" element={<StockPermits />} />
       <Route path="/stocktake" element={<Stocktake />} />
       <Route path="/account-statement" element={<AccountStatement />} />
+      <Route path="/reconciliation" element={<Reconciliation />} />
       <Route path="/fixed-assets" element={<FixedAssets />} />
       <Route path="/employees" element={<Employees />} />
       <Route path="/departments" element={<Departments />} />
@@ -146,6 +149,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/voucher-keys" element={<VoucherKeys />} />
       <Route path="/finance-reports" element={<FinanceReports />} />
       <Route path="/general-ledger" element={<GeneralLedger />} />
+      <Route path="/accounting" element={<AccountingDashboard />} />
       <Route path="/loyalty" element={<Loyalty />} />
       <Route path="/audit" element={<Audit />} />
       <Route path="/inspections" element={<Inspections />} />

@@ -25,7 +25,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
 from src.models.cost_center import CostCenter
-from src.models.ledger import AccountNature, LedgerLine
+from src.models.ledger import AccountNature, LedgerEntry, LedgerLine
+from src.services import analytic_service, ledger_service
 from src.models.org import Branch
 from src.services.financial_reports_service import _effective_date, effective_nature
 
@@ -38,16 +39,23 @@ class AnalysisReportError(ValueError):
     """طلب تقرير مالوش معنى — بيترد ٤٢٢."""
 
 
-def _pnl_lines(db: Session, *, date_from: date | None, date_to: date | None):
+def _pnl_lines(db: Session, *, date_from: date | None, date_to: date | None,
+               branch_id: int | None = None):
     """كل سطر إيراد أو مصروف في الفترة، ومعاه القيد بتاعه.
 
     Only income and expense lines: this is profitability, and an asset movement is neither. The
     balance sheet is a different report and stays one.
     """
-    rows = db.scalars(
+    stmt = (
         select(LedgerLine).options(
             selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
-    ).all()
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())  # المسودة مش ربح ولا خسارة
+    )
+    if branch_id is not None:
+        stmt = stmt.where(
+            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    rows = db.scalars(stmt).all()
     for line in rows:
         nature = effective_nature(line.account)
         if nature not in (AccountNature.income, AccountNature.expense):
@@ -70,6 +78,7 @@ def profitability(
     date_from=None,
     date_to=None,
     include_unassigned: bool = True,
+    branch_id: int | None = None,
 ) -> dict:
     """أرباح وخسائر لكل مركز تكلفة (أو لكل فرع) في فترة."""
     if dimension not in DIMENSIONS:
@@ -79,21 +88,30 @@ def profitability(
              if dimension == "cost_center"
              else {b.id: b.name for b in db.scalars(select(Branch)).all()})
 
+    rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to, branch_id=branch_id))
+    # الحصص بتتجاب لكل السطور مرة واحدة — استعلام لكل سطر كان بيبقى ألف استعلام.
+    dists = (analytic_service.distributions_for(db, [ln.id for ln, _n, _s in rows_in])
+             if dimension == "cost_center" else {})
+
     buckets: dict = {}
-    for line, nature, signed in _pnl_lines(db, date_from=date_from, date_to=date_to):
-        key = (line.cost_center_id if dimension == "cost_center"
-               else line.entry.branch_id)
-        if key is None and not include_unassigned:
-            continue
-        bucket = buckets.setdefault(key, {
-            "key": key, "label": names.get(key) or UNASSIGNED,
-            "income": ZERO, "expenses": ZERO, "lines": 0,
-        })
-        bucket["lines"] += 1
-        if nature == AccountNature.income:
-            bucket["income"] += signed
-        else:
-            bucket["expenses"] += signed
+    for line, nature, signed in rows_in:
+        # السطر المتقسّم بيدخل كذا دلو بحصته — ده كل الفرق بين التوزيع التحليلي
+        # والمركز الواحد، والباقي تحت زي ما هو.
+        parts = (analytic_service.shares_of(line, signed, dists.get(line.id))
+                 if dimension == "cost_center"
+                 else [(line.entry.branch_id, signed)])
+        for key, part in parts:
+            if key is None and not include_unassigned:
+                continue
+            bucket = buckets.setdefault(key, {
+                "key": key, "label": names.get(key) or UNASSIGNED,
+                "income": ZERO, "expenses": ZERO, "lines": 0,
+            })
+            bucket["lines"] += 1
+            if nature == AccountNature.income:
+                bucket["income"] += part
+            else:
+                bucket["expenses"] += part
 
     rows = [{
         "key": b["key"], "label": b["label"], "lines": b["lines"],
@@ -140,20 +158,26 @@ def account_breakdown(
     if dimension not in DIMENSIONS:
         raise AnalysisReportError(f"بُعد مش معروف: {dimension}")
 
+    rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to, branch_id=branch_id))
+    dists = (analytic_service.distributions_for(db, [ln.id for ln, _n, _s in rows_in])
+             if dimension == "cost_center" else {})
+
     buckets: dict = {}
-    for line, nature, signed in _pnl_lines(db, date_from=date_from, date_to=date_to):
-        row_key = (line.cost_center_id if dimension == "cost_center"
-                   else line.entry.branch_id)
-        if row_key != key:
-            continue
-        bucket = buckets.setdefault(line.account_id, {
-            "account_id": line.account_id,
-            "code": line.account.code,
-            "name": line.account.name or (line.account.account_type.value),
-            "nature": nature.value, "amount": ZERO, "lines": 0,
-        })
-        bucket["amount"] += signed
-        bucket["lines"] += 1
+    for line, nature, signed in rows_in:
+        parts = (analytic_service.shares_of(line, signed, dists.get(line.id))
+                 if dimension == "cost_center"
+                 else [(line.entry.branch_id, signed)])
+        for row_key, part in parts:
+            if row_key != key:
+                continue
+            bucket = buckets.setdefault(line.account_id, {
+                "account_id": line.account_id,
+                "code": line.account.code,
+                "name": line.account.name or (line.account.account_type.value),
+                "nature": nature.value, "amount": ZERO, "lines": 0,
+            })
+            bucket["amount"] += part
+            bucket["lines"] += 1
 
     rows = [{**b, "amount": str(to_money(b["amount"]))} for b in buckets.values()]
     rows.sort(key=lambda r: (r["nature"], r["code"] or ""))

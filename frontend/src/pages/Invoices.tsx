@@ -13,8 +13,11 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
+import CostCenterField from '../components/CostCenterField';
+import CostCenterSplit from '../components/CostCenterSplit';
+import DocumentBar from '../components/DocumentBar';
 import { api } from '../api/client';
-import { combineDiscounts, netOf } from '../utils/discount';
+import { combineDiscounts, netOf } from '../utils/discounts';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
@@ -34,181 +37,18 @@ import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
+import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
+import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
-/** نافذة كتم تكرار تحذير قص الكمية — بالملي ثانية. */
-const CAP_NOTICE_MS = 3000;
-
-// حجم الصفحة في شاشة الفواتير. الكشف كله بقى 6163 فاتورة بعد نقل داتا a5،
-// و«اعرض كل حاجة» بقى معناه 2.9 ميجا في كل فتحة. الفلترة والبحث على السيرفر
-// فالصفحة دي مش بتخفي حاجة عن اللي بيدوّر.
-const PAGE_SIZE = 300;
-
-interface InvoiceRecord {
-  id: number;
-  document_number: string;
-  customer_id: number;
-  gross: string;
-  combined_pct: string;
-  net: string;
-  cash_amount: string;
-  credit_amount: string;
-  ledger_entry_id: number;
-}
-
-/** أسعار صنف واحد بفئاته وخصوماته. */
-interface ItemPrices {
-  base: number | null;
-  tiers: Record<string, number>;
-  discounts: Record<string, number>;
-}
-
-interface Customer {
-  id: number;
-  name: string;
-  default_price_tier: string | null;
-  /** خصم العميل نفسه — بيسبق خصم الصنف. شوف `defaultFixedDiscount`. */
-  discount_pct: string | null;
-  // Every customer has exactly one rep, required since 001. It is the first link in the chain
-  // that lets choosing a customer fill in who is selling and which store the goods leave from.
-  rep_id: number;
-}
-
-/** An employee — the payroll record. `warehouse_id` is the store this person works out of, and
- *  `user_id` is the login they sell under. Together they turn a customer's rep into a store. */
-interface RepEmployee {
-  id: number;
-  name: string;
-  warehouse_id: number | null;
-  user_id: number | null;
-}
-
-
-/**
- * «نوع الفاتورة» — خط المنتجات: أبيض ولا بولي.
- *
- * القايمة دي كانت مكتوبة بإيدها في تلات حتت: خانة الترويسة، وفلتر الكشف، وعمود الكشف.
- * تلات نسخ لحاجة واحدة معناها إن اللي هيضيف خط رابع هيلاقي الشاشة بتقول حاجتين مختلفتين
- * على حسب إنت بتبص من فين. فبقت مصدر واحد، والبوّابة الجديدة بتقرا منه هي كمان بدل ما
- * تعمل نسخة رابعة.
- */
-const FAMILY_OPTIONS = [
-  { value: 'أبيض', label: 'أبيض' },
-  { value: 'بولي', label: 'بولي' },
-];
-
-const TIER_LABELS: Record<string, string> = {
-  commercial: 'تجاري',
-  semi_commercial: 'نصف تجاري',
-  wholesale: 'جملة',
-  semi_wholesale: 'نصف جملة',
-  consumer: 'مستهلك',
-};
-
-interface Product {
-  id: number;
-  code: string;
-  name: string;
-  sale_price: string | null;
-  is_serialized: boolean;
-  category: string | null;
-  default_discount_pct: string | null;   // the item's own fixed discount
-}
-
-interface Warehouse {
-  id: number;
-  name: string;
-}
-
-interface SaleLineItem {
-  key: string;
-  category: string | null;         // chosen first; filters the item list
-  item_id: number | null;
-  /** null = «not typed yet». A quantity box that starts at 1 makes «5» into «15» for anybody who
-   *  types without clearing it first, and the invoice is out by ten with nothing looking wrong. */
-  quantity: number | null;
-  unit_price: number;
-  tier: string | null;
-  unit: string | null;
-  serials: string;
-  fixed_discount: number;          // the item's own fixed discount (auto)
-  variable_discount: number | null;  // a typed extra discount on this line; null until typed
-  warehouse_id: number | null;     // (030) this line is served from its own warehouse
-}
-
-interface ItemUnit { name: string; factor: number; is_base: boolean; }
-
-interface InvoiceDetail {
-  id: number;
-  lines: Array<{
-    item_id: number;
-    quantity: string;
-    unit_price: string;
-    line_total: string;
-  }>;
-}
-
-interface InvoiceFilters {
-  q?: string;
-  customer_id?: number;
-  date_from?: string;
-  date_to?: string;
-  payment?: string;   // cash | credit | partial
-  rep_id?: number;
-  family?: string;
-}
-
-/**
- * كام كوبون بين رقمين — محسوبة، مش متكتوبة.
- *
- * The count was a field somebody typed beside «من ٥٠» and «إلى ١٠٠». Two ways to say one thing,
- * and they disagree the first time anybody edits the range and forgets the number — after which
- * the invoice claims a book size the serials do not support, and the receipt screen refuses
- * coupons the customer is holding.
- *
- * Inclusive: 50→100 is fifty-one coupons, because the customer is handed both of them.
- *
- * Serial numbers here are digits, sometimes with a prefix («A-1050»). Only the trailing digits are
- * compared, and when the two ends do not share a prefix — or either is not a number — the answer
- * is null rather than a guess. A wrong count is worse than no count: it posts.
- */
-export function couponCount(from?: string | null, to?: string | null): number | null {
-  const f = String(from ?? '').trim();
-  const t = String(to ?? '').trim();
-  if (!f || !t) return null;
-  const split = (v: string) => {
-    const m = v.match(/^(.*?)(\d+)$/);
-    return m ? { prefix: m[1], n: Number(m[2]) } : null;
-  };
-  const a = split(f);
-  const b = split(t);
-  if (!a || !b || a.prefix !== b.prefix) return null;
-  if (b.n < a.n) return null;      // «من ١٠٠ إلى ٥٠» is a typo, not a range of -49
-  return b.n - a.n + 1;
-}
-
-/** الكوبونات المصروفة مع الفاتورة — صف لكل نوع، مش صف واحد للكل.
- *
- * كان مدى واحد بيسجّل إن كوبونات اتسلّمت من غير ما يقول أنهي كوبونات: مية دهبي وخمسين
- * فضي بينهم خانتين. المدى فضل على كل صف لأنه هو اللي تطبيق المرتجعات بيراجع عليه الرقم
- * الراجع؛ والنوع هو اللي بيخلّي الدفاتر تقدر تقول اتصرف إيه. */
-interface CouponRow {
-  key: string;
-  // فئة الدفتر — عادي/فضي/ذهبي/ماسي. دي اللي بتحدد الكوبون مع رقمه، مش «كتالوج
-  // الكوبونات» اللي هو عروض استبدال النقاط.
-  coupon_kind?: string;
-  coupon_type_id?: number;
-  count?: number;
-  serial_from?: string;
-  serial_to?: string;
-}
-
-/** صف فاضي جديد. بيتعمل واحد من دول أول ما الفاتورة تتفتح، عشان الخانات تبقى قدام
- *  الواحد على طول من غير ما يدوس «إضافة» الأول. */
-function blankCoupon(): CouponRow {
-  return { key: `c${Date.now()}${Math.random().toString(36).slice(2, 7)}` };
-}
-
+// الأنواع والثوابت وبنّائي الأعمدة اتفصلوا — الشاشة كانت ٣١٢٠ سطر.
+import {
+  CAP_NOTICE_MS, PAGE_SIZE, FAMILY_OPTIONS, TIER_LABELS, couponCount, blankCoupon,
+  InvoiceRecord, ItemPrices, Customer, RepEmployee, Product, Warehouse, SaleLineItem,
+  ItemUnit, InvoiceDetail, InvoiceFilters, CouponRow,
+} from './invoices/types';
+import { buildLineColumns } from './invoices/lineColumns';
+import { buildRegisterColumns } from './invoices/registerColumns';
 export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
   // فئات الورق اللي بيتسلّم للعميل. مصدر واحد: قائمة «فئات الكوبونات» في الإعدادات.
@@ -262,6 +102,8 @@ export default function Invoices() {
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
   const [editingInvoice, setEditingInvoice] = useState<{ id: number; voided: boolean } | null>(null);
+  // بصمة المستند لحظة ما اتفتح للتعديل — المرجع اللي «اتغيّر ولا لأ؟» بيتقاس عليه.
+  const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
 
   // Forms
   const [createForm] = Form.useForm();
@@ -488,18 +330,21 @@ export default function Invoices() {
       family: s.family,
       gross: Number(s.gross || 0),
       combined_pct: Number(s.combined_pct || 0),
-      // **الخصم = خصم السطور + خصم المستند.**
-      //
-      // `combined_pct` خصم المستند وبس، وهو صفر على كل فاتورة تقريباً — والخصم
-      // الحقيقي عايش على السطر. الكشف كان بيقول «خصم ٠» على فاتورة خصمها ٢٠٪،
-      // والفاتورة نفسها لما تتفتح بتقول الرقم الصح. الكشف هو اللي بيتبص عليه.
-      discount_value: Number(s.line_discount || 0)
-        + Number(s.gross || 0) * (Number(s.combined_pct || 0) / 100),
-      // النسبة بتتقاس على الإجمالي **قبل** خصم السطور — وإلا ٢٠٪ بتطلع ٢٥٪.
+      // الفرق نفسه، مش النسبة × الإجمالي: النسبة المجمّعة مقرّبة لمنزلتين، والطرح
+      // بيدّي القرش الصح مهما كانت الخصومات. وبيشمل خصم السطور تلقائياً لأن `net`
+      // محسوب بعدها — وده اللي كان بيخلّي الكشف يقول «خصم ٠» على فاتورة خصمها ٢٠٪.
+      discount_value: Number(s.gross || 0) - Number(s.net || 0),
+      // الأساس اللي النسبة بتتقاس عليه في عمود «خصم%» — الإجمالي **قبل** خصم السطور،
+      // وإلا ٢٠٪ بتطلع ٢٥٪.
       discount_base: Number(s.gross_before_line_discount || 0) || Number(s.gross || 0),
       net: Number(s.net || 0),
       cash_amount: Number(s.cash_amount || 0),
       credit_amount: Number(s.credit_amount || 0),
+      // (المرحلة ٣) الصف الموحّد بينسخ بالاسم، فاللي مش مكتوب هنا بيوصل فاضي مهما
+      // كان الرد كامل — والتحصيل من دول.
+      payment_state: s.payment_state ?? null,
+      payment_state_label: s.payment_state_label ?? null,
+      residual: s.residual ?? null,
       ledger_entry_id: s.ledger_entry_id,
       raw: s,
     }));
@@ -521,7 +366,7 @@ export default function Invoices() {
       family: r.family || null,
       gross: Number(r.gross || 0),
       combined_pct: Number(r.combined_pct || 0),
-      discount_value: Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100),
+      discount_value: Number(r.gross || 0) - Number(r.net || 0),
       discount_base: Number(r.gross || 0),
       net: Number(r.net || 0),
       cash_amount: Number(r.cash_refund || 0),
@@ -650,9 +495,9 @@ export default function Invoices() {
     return prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
   };
 
-  /** خصم السطر — الثابت وبعده المتغيّر. المحرك في `utils/discount`. */
+  // خصم بعد خصم: المتغيّر على الباقي بعد خصم الصنف، مش مجموع النسبتين.
   const lineDiscountPct = (l: SaleLineItem) =>
-    combineDiscounts(l.fixed_discount, l.variable_discount);
+    Math.min(99.99, combinePct(l.fixed_discount, l.variable_discount));
 
   /**
    * الكمية بعد ما الحارس يقيسها على المتاح.
@@ -695,9 +540,10 @@ export default function Invoices() {
     setPickerOpen(true);
   };
 
-  // A line's amount AFTER its own discounts — الثابت وبعده المتغيّر، مش مجموعين.
+  // A line's amount AFTER its own discounts — the variable one comes off what the
+  // fixed one left, not off the list price.
   const lineTotal = (l: SaleLineItem) =>
-    netOf(Number(l.quantity || 0) * l.unit_price, lineDiscountPct(l));
+    applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount, l.variable_discount);
 
   // Loyalty points a line earns = the product's point value × quantity.
   const linePoints = (l: SaleLineItem) =>
@@ -710,144 +556,6 @@ export default function Invoices() {
   /**
    * أعمدة شبكة سطور الفاتورة كبيانات — بأبعاد متناسقة ومساحات مريحة.
    */
-  const lineColumns: EntryColumn<SaleLineItem>[] = [
-    { key: 'idx', title: '#', width: 28, locked: true,
-      cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
-    // المخزن بيتغيّر من السطر — بالإيد، ولوحده أبداً.
-    //
-    // تغييره هنا بيغيّر مخزن الفاتورة كمان، فالأصناف اللي بتتضاف بعده بتنزل على نفس
-    // المخزن من غير ما تتقال تاني. السطور اللي اتكتبت قبل كده بتفضل مكانها: اللي اتقال
-    // مرة مايتغيّرش من ورا اللي كتبه.
-    { key: 'warehouse', title: 'المخزن', minWidth: 120,
-      cell: (line) => (
-        viewOnly ? (
-          <span style={{ fontSize: 12 }}>{warehouses.find((w) => w.id === line.warehouse_id)?.name || '-'}</span>
-        ) : (
-          <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
-            value={line.warehouse_id ?? undefined}
-            onChange={(v) => {
-              handleLineChange(line.key, 'warehouse_id', v ?? null);
-              if (v != null) setDocWarehouseId(v as number);
-            }}
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
-        )
-      ) },
-    { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
-      cell: (line) => (
-        <b style={{ cursor: 'pointer', fontSize: 13 }} onClick={() => setPanelItemId(line.item_id)}>
-          {line.item_id ? productName(line.item_id) : 'اختر الصنف'}
-        </b>
-      ) },
-    { key: 'unit', title: 'الوحدة', minWidth: 80,
-      cell: (line) => (
-        viewOnly ? (
-          <span style={{ fontSize: 12 }}>{line.unit || 'أساسية'}</span>
-        ) : (
-          <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
-            value={line.unit ?? '__base__'}
-            onChange={(v) => handleLineChange(line.key, 'unit', v === '__base__' ? null : v)}
-            options={saleUnitOptions(line.item_id)} />
-        )
-      ) },
-    { key: 'quantity', title: 'الكمية', minWidth: 70, locked: true,
-      cellProps: (line) => (line.item_id != null
-        ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
-      cell: (line) => (
-        viewOnly ? (
-          <b>{Number(line.quantity || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b>
-        ) : (
-          <InputNumber size="small" style={{ width: '100%' }} min={0.001}
-            data-qty-key={line.key} data-grid-col="qty" keyboard={false}
-            placeholder="الكمية" value={line.quantity ?? undefined}
-            onChange={(val) => handleLineChange(line.key, 'quantity', val ?? null)}
-            onBlur={() => handleLineChange(line.key, 'quantity', checkedQuantity(line))}
-            onPressEnter={(e) => {
-              e.preventDefault();
-              handleLineChange(line.key, 'quantity', checkedQuantity(line));
-              advanceFrom(line.key);
-            }} />
-        )
-      ),
-      footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
-        .toLocaleString('ar-EG', { maximumFractionDigits: 3 }) },
-    { key: 'unit_price', title: 'سعر الوحدة', minWidth: 80,
-      cell: (line) => (
-        viewOnly ? (
-          <span>{money(line.unit_price)} ج.م</span>
-        ) : (
-          <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-            placeholder="السعر" value={line.unit_price}
-            onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
-            onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-        )
-      ),
-      footer: () => null },
-    { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
-      cellStyle: { whiteSpace: 'nowrap' },
-      cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
-      footer: (rows) => money(rows.reduce(
-        (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
-    { key: 'variable_discount', title: 'خصم متغير %', minWidth: 75,
-      cell: (line) => (
-        viewOnly ? (
-          <span>{line.variable_discount != null ? `${line.variable_discount}%` : '-'}</span>
-        ) : (
-          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
-            placeholder="متغير" value={line.variable_discount ?? undefined}
-            onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}
-            onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-        )
-      ),
-      footer: () => null },
-    { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 75,
-      cell: (line) => (
-        viewOnly ? (
-          <span>{line.fixed_discount ? `${line.fixed_discount}%` : '-'}</span>
-        ) : (
-          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
-            placeholder="ثابت" value={line.fixed_discount ?? undefined}
-            onChange={(v) => handleLineChange(line.key, 'fixed_discount', (v as number) ?? 0)}
-            onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-        )
-      ),
-      footer: () => null },
-    { key: 'total', title: 'الإجمالي', minWidth: 90, locked: true,
-      cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
-      cell: (line) => money(saleLineNet(line)),
-      footer: (rows) => money(rows.reduce((n, l) => n + saleLineNet(l), 0)) },
-    { key: 'points', title: 'النقاط', minWidth: 65,
-      cellStyle: { whiteSpace: 'nowrap', color: '#b26a00' },
-      // «مالوش نقط» و«لسه ماكتبتش الكمية» كانوا شكلهم واحد: شرطة. النقط = نقطة الصنف
-      // × الكمية، فسطر لسه كميته فاضية بيطلع صفر — واللي بيبص بيفتكر إن الصنف مالوش
-      // نقط أصلاً ويسأل ليه.
-      cell: (line) => {
-        const v = linePoints(line);
-        if (v) return v.toLocaleString('ar-EG', { maximumFractionDigits: 3 });
-        const per = line.item_id ? (pointValues[line.item_id] || 0) : 0;
-        if (per > 0) {
-          return (
-            <span style={{ color: '#b0b0b0' }} title={`${per} نقطة للوحدة`}>
-              × {per.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
-            </span>
-          );
-        }
-        return '-';
-      },
-      footer: () => (
-        <span style={{ color: '#b26a00' }}>
-          {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
-        </span>
-      ) },
-    { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
-      cell: (line) => (
-        viewOnly ? null : (
-          <Button size="small" danger type="text" icon={<DeleteOutlined />}
-            onClick={() => handleRemoveLine(line.key)} />
-        )
-      ),
-      footer: () => null },
-  ];
-  const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
 
   const totalPoints = lines.reduce((sum, line) => sum + linePoints(line), 0);
 
@@ -881,6 +589,7 @@ export default function Invoices() {
     setViewInvoice(null);
     setViewReturns([]);
     setEditingInvoice(null);
+    setOpenedFingerprint(null);
     setLines([]);
     setCouponRows([blankCoupon()]);
     setCustomerCoupons([]);
@@ -908,6 +617,45 @@ export default function Invoices() {
     createForm.resetFields();
   };
 
+  /**
+   * بصمة المستند من حقوله اللي بتتعدّل — مش كل الحالة.
+   *
+   * `key` بتاع السطر متولّد من `Date.now()` فبيتغيّر مع كل إعادة بناء، والرصيد والأسعار
+   * المحمّلة بتتحدّث من السيرفر لوحدها. الحاجات دي لو دخلت البصمة، كل فاتورة محفوظة
+   * هتبان متغيّرة أول ما تتفتح — وهي دي المشكلة اللي بنحلها.
+   */
+  const fingerprintOf = (v: {
+    lines: SaleLineItem[]; discountPct: any; cashAmount: any; invoiceDate: any;
+    family: any; couponRows: any[]; form: any;
+  }) => fingerprint({
+    lines: v.lines.map((l) => ({
+      item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
+      fixed_discount: l.fixed_discount, variable_discount: l.variable_discount,
+      warehouse_id: l.warehouse_id, unit: l.unit, tier: l.tier, serials: l.serials,
+    })),
+    discountPct: v.discountPct,
+    cashAmount: v.cashAmount,
+    invoiceDate: v.invoiceDate ? dayjs(v.invoiceDate).format('YYYY-MM-DD') : null,
+    family: v.family,
+    coupons: (v.couponRows || []).map((c: any) => ({
+      coupon_kind: c.coupon_kind, count: c.count,
+      serial_from: c.serial_from, serial_to: c.serial_to,
+    })),
+    form: {
+      customer_id: v.form?.customer_id, rep_id: v.form?.rep_id,
+      external_document_number: v.form?.external_document_number,
+      notes: v.form?.notes, cost_center_id: v.form?.cost_center_id,
+      cost_center_distribution: v.form?.cost_center_distribution,
+      statement1: v.form?.statement1, statement2: v.form?.statement2,
+      statement3: v.form?.statement3,
+    },
+  });
+
+  const currentFingerprint = () => fingerprintOf({
+    lines, discountPct, cashAmount, invoiceDate, family: invoiceFamily,
+    couponRows, form: createForm.getFieldsValue(),
+  });
+
   // Close the create page and clear it, so reopening starts fresh.
   /**
    * «رجوع» بيسأل قبل ما الشغل يضيع.
@@ -919,19 +667,30 @@ export default function Invoices() {
    * والسؤال ساعتها عقبة مالهاش سبب.
    */
   const closeCreate = () => {
-    const hasWork = !viewOnly
-      && (lines.length > 0 || selectedCustomerId != null || Number(cashAmount || 0) > 0);
-    if (!hasWork) { resetDocument(); setCreateVisible(false); return; }
+    const leave = () => { resetDocument(); setCreateVisible(false); };
+    const verdict = verdictOnLeave({
+      readOnly: viewOnly,
+      savedDocument: editingInvoice != null,
+      now: currentFingerprint(),
+      whenOpened: openedFingerprint,
+      hasWork: lines.length > 0 || selectedCustomerId != null || Number(cashAmount || 0) > 0,
+    });
+    if (verdict === 'silent') { leave(); return; }
     Modal.confirm({
-      title: 'تسيب المستند؟',
+      title: verdict === 'confirm-edit' ? 'تسيب التعديل؟' : 'تسيب المستند؟',
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
-      content: lines.length
-        ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} ج.م — هيروحوا ومش هيرجعوا.`
-        : 'اللي كتبته هيروح ومش هيرجع.',
-      okText: 'اخرج واسيبه',
+      // الفاتورة المحفوظة مش بتضيع — اللي بيضيع هو التعديل اللي مااتحفظش. والجملة
+      // القديمة («فيه ٥ صنف هيروحوا ومش هيرجعوا») كانت بتقول العكس على مستند موجود
+      // على السيرفر، فاللي بيقراها بيفتكر إنه بيمسح فاتورة.
+      content: verdict === 'confirm-edit'
+        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
+        : lines.length
+          ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} ج.م — هيروحوا ومش هيرجعوا.`
+          : 'اللي كتبته هيروح ومش هيرجع.',
+      okText: verdict === 'confirm-edit' ? 'اخرج من غير حفظ' : 'اخرج واسيبه',
       okButtonProps: { danger: true },
-      cancelText: 'أكمّل المستند',
-      onOk: () => { resetDocument(); setCreateVisible(false); },
+      cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
+      onOk: leave,
     });
   };
 
@@ -1490,12 +1249,12 @@ export default function Invoices() {
                 tier: l.tier,
                 unit: l.unit,
                 unit_price: l.unit_price.toFixed(2),
-                // Combined per-line discount: the item's fixed compounded with the typed
-                // variable. Kept for a server that predates the split.
-                discount_pct: lineDiscountPct(l).toFixed(2),
-                // ...and the two halves, so the invoice READ BACK can still tell them apart.
-                // Without them the screen had to put the whole discount in «خصم ثابت» and show
-                // «خصم متغير ٠» — which reads as a company discount the company never gave.
+                // Combined per-line discount: the typed variable applied to what the
+                // item's fixed discount left — one effective rate for the server.
+                discount_pct: combinePct(l.fixed_discount, l.variable_discount).toFixed(2),
+                // ...والنصّين، عشان الفاتورة اللي بتتقرا تاني تفضل عارفة القسمة. من غيرهم
+                // الشاشة بتحطّ الخصم كله في «خصم ثابت» وتقول «متغيّر ٠» — يعني بتنسب
+                // للشركة خصم ماعملتهوش. والقاعدة بقى فيها العمودين.
                 fixed_discount_pct: Number(l.fixed_discount || 0).toFixed(2),
                 variable_discount_pct: Number(l.variable_discount || 0).toFixed(2),
                 serials: prod?.is_serialized ? parseSerials(l.serials) : null,
@@ -1506,6 +1265,8 @@ export default function Invoices() {
             }),
             // (030) document fields
             external_document_number: values.external_document_number || undefined,
+            cost_center_id: values.cost_center_id ?? null,
+            cost_center_distribution: values.cost_center_distribution ?? null,
             invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
             // Coupons handed over with this invoice, as the serial range off the book. Kept on the
             // invoice because that is what proves which coupons were his when they come back in.
@@ -1666,6 +1427,16 @@ export default function Invoices() {
 
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
 
+  // الأعمدة بتتبني هنا مش فوق: `buildLineColumns` بتنادى وقت التعريف، فلازم كل اللي
+  // بتاخده يكون اتعرّف قبلها. اللي كان فوق كان بيقرا الدوال دي جوّه closures، فماكانش
+  // بيلمسها غير وقت الرسم.
+  const lineColumns = buildLineColumns({
+    viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
+    saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
+    advanceFrom, setDocWarehouseId, setPanelItemId,
+  });
+  const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
+
   // The row does not exist until React has painted it, so the caret is moved on the next tick
   // rather than inside the handler that created it.
   useEffect(() => {
@@ -1799,6 +1570,8 @@ function couponsTotal(inv: any): number {
         rep_id: det.rep_id,
         external_document_number: det.external_document_number,
         notes: det.notes,
+        cost_center_id: (det as any).cost_center_id ?? null,
+        cost_center_distribution: (det as any).cost_center_distribution ?? null,
         statement1: det.statement1,
         statement2: det.statement2,
         statement3: det.statement3,
@@ -1829,25 +1602,47 @@ function couponsTotal(inv: any): number {
       // فالورقة الراجعة بعد شهر بتترفض. `coupon_rows` سايبة كمان عشان لو رد قديم
       // متكاش في مكان تاني.
       const couponSrc = det.coupons ?? det.coupon_rows;
-      if (couponSrc && couponSrc.length) {
-        setCouponRows(couponSrc.map((cr: any) => ({
+      // بيتبني في متغيّر الأول عشان البصمة تاخد نفس الصفوف اللي الشاشة اتعبّت بيها.
+      const loadedCoupons = (couponSrc && couponSrc.length)
+        ? couponSrc.map((cr: any) => ({
           key: cr.id || String(Math.random()),
           coupon_kind: cr.coupon_kind,
           count: cr.count,
           serial_from: cr.serial_from,
           serial_to: cr.serial_to,
-        })));
-      } else if (det.coupon_serial_from || det.coupon_serial_to) {
-        setCouponRows([{
-          key: '1',
-          coupon_kind: det.coupon_kind || undefined,
-          count: det.coupon_count,
-          serial_from: det.coupon_serial_from,
-          serial_to: det.coupon_serial_to,
-        }]);
-      } else {
-        setCouponRows([blankCoupon()]);
-      }
+        }))
+        : (det.coupon_serial_from || det.coupon_serial_to)
+          ? [{
+            key: '1',
+            coupon_kind: det.coupon_kind || undefined,
+            count: det.coupon_count,
+            serial_from: det.coupon_serial_from,
+            serial_to: det.coupon_serial_to,
+          }]
+          : [blankCoupon()];
+      setCouponRows(loadedCoupons);
+
+      // البصمة بتتاخد من القيم اللي لسه اتبنت فوق، مش من الحالة: `setLines` وإخواته
+      // مابيتنفّذوش في نفس اللفّة، فقراية الحالة هنا بترجّع اللي كان قبل الفتح.
+      setOpenedFingerprint(fingerprintOf({
+        lines: refilled,
+        discountPct: Number(det.variable_discount_pct ?? det.discount_pct ?? 0),
+        cashAmount: Number(det.cash_amount) || 0,
+        invoiceDate: dayjs(det.invoice_date || det.created_at || undefined),
+        family: det.family || null,
+        couponRows: loadedCoupons,
+        form: {
+          customer_id: det.customer_id,
+          rep_id: det.rep_id,
+          external_document_number: det.external_document_number,
+          notes: det.notes,
+          cost_center_id: (det as any).cost_center_id ?? null,
+          cost_center_distribution: (det as any).cost_center_distribution ?? null,
+          statement1: det.statement1,
+          statement2: det.statement2,
+          statement3: det.statement3,
+        },
+      }));
 
       setCreateVisible(true);
     } catch (err: any) {
@@ -1927,317 +1722,12 @@ function couponsTotal(inv: any): number {
   //   row here would read «فاتورة بيع» and the column would carry no information.
   //   **ض.م · ض.م %** — VAT is held per price tier on the item, not as a figure on the document.
   //   **مراكز التكلفة** — the cost centre is a dimension on ledger entries, not on the invoice.
-  const columns = [
-    {
-      title: 'نوع المستند',
-      dataIndex: 'doc_type',
-      key: 'doc_type',
-      width: 100,
-      render: (t: string) => (
-        t === 'draft' ? <Tag color="gold" style={{ fontWeight: 600 }}>مسودّة</Tag>
-          : t === 'sale' ? <Tag color="green" style={{ fontWeight: 600 }}>طلب بيع</Tag>
-            : <Tag color="magenta" style={{ fontWeight: 600 }}>مرتجع بيع</Tag>),
-    },
-    {
-      title: 'رقم',
-      dataIndex: 'id',
-      key: 'id',
-      width: 70,
-      render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
-    },
-    {
-      title: 'التاريخ',
-      dataIndex: 'date',
-      key: 'date',
-      width: 95,
-      sorter: (a: any, b: any) => (a.date || '').localeCompare(b.date || ''),
-      render: (d: string) => d || '-',
-    },
-    {
-      title: 'مستند رقم',
-      dataIndex: 'external_document_number',
-      key: 'external_document_number', ellipsis: true,
-      width: 120,
-      sorter: (a: any, b: any) => (a.external_document_number || '').localeCompare(b.external_document_number || ''),
-      render: (v: string | null) => v || '-',
-    },
-    {
-      title: 'رقم المستند',
-      dataIndex: 'document_number',
-      key: 'document_number', ellipsis: true,
-      width: 130,
-      sorter: (a: any, b: any) => (a.document_number || '').localeCompare(b.document_number || ''),
-      render: (doc: string, r: any) => (
-        <Space direction="vertical" size={0}>
-          {/* **المسودّة مالهاش رقم، وشارتها بتقول كده.**
-            *
-            * رقم جنبها كان هيخلّي اللي بيبص يفتكر إنها اترحّلت — والرقم بيتحجز وقت
-            * الترحيل مش قبله، فمافيش رقم يتكتب هنا أصلاً. */}
-          <Tag color={r.doc_type === 'draft' ? 'gold'
-            : r.doc_type === 'sale' ? 'blue' : 'volcano'}>
-            {r.doc_type === 'draft' ? 'مسودّة — لسه ما اترحّلتش' : doc}
-          </Tag>
-          {r.original_invoice_number && (
-            <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.original_invoice_number}</span>
-          )}
-        </Space>
-      ),
-    },
-    {
-      title: 'الحساب الفرعي',
-      dataIndex: 'revenue_account_id',
-      key: 'revenue_account_id',
-      width: 140,
-      ellipsis: true,
-      render: (id: number | null) => {
-        if (!id) return <span style={{ color: '#8c8c8c' }}>الافتراضي</span>;
-        const a = postingAccounts.find((x: any) => x.id === id);
-        return a ? (a.name || a.code || `#${id}`) : `#${id}`;
-      },
-    },
-    {
-      title: 'جهه التعامل',
-      dataIndex: 'customer_id',
-      key: 'customer_id',
-      width: 190,
-      ellipsis: true,
-      sorter: (a: any, b: any) => {
-        const cA = a.customer_name || customers.find((c) => c.id === a.customer_id)?.name || '';
-        const cB = b.customer_name || customers.find((c) => c.id === b.customer_id)?.name || '';
-        return cA.localeCompare(cB);
-      },
-      render: (cId: number, row: any) => {
-        // الاسم جاي مع الصف؛ الكشف المحلي فاضل كخطة بديلة للصفوف القديمة.
-        const name = row.customer_name || customers.find((cust) => cust.id === cId)?.name;
-        return (
-          <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
-            {name || `عميل #${cId}`}
-          </a>
-        );
-      },
-    },
-    {
-      // عائلة الفاتورة — أبيض ولا بولي. عمود لوحده جنب «النوع» لأنهم بيجاوبوا سؤالين:
-      // ده بيقول الفاتورة على أنهي خط، و«النوع» بيقول العميل ده إيه.
-      title: 'نوع الفاتورة',
-      dataIndex: 'family',
-      key: 'family',
-      width: 100,
-      sorter: (a: any, b: any) => (a.family || '').localeCompare(b.family || ''),
-      render: (f: string | null) =>
-        f ? <Tag color={f === 'بولي' ? 'purple' : 'default'}>{f}</Tag> : '-',
-    },
-    {
-      // «النوع» = تصنيف العميل (تاجر/سباك/معرض)، مش عائلة الفاتورة.
-      title: 'النوع',
-      dataIndex: 'customer_type',
-      key: 'customer_type',
-      width: 90,
-      sorter: (a: any, b: any) =>
-        (a.customer_type || '').localeCompare(b.customer_type || ''),
-      render: (t: string | null) => t ? <Tag color="geekblue">{t}</Tag> : '-',
-    },
-    {
-      title: 'مندوب',
-      dataIndex: 'rep_id',
-      key: 'rep_id',
-      width: 95,
-      ellipsis: true,
-      render: (id: number | null, row: any) =>
-        row.rep_name || reps.find((r) => r.id === id)?.full_name || '-',
-    },
-    {
-      title: 'اجمالي قبل',
-      dataIndex: 'gross',
-      key: 'gross',
-      width: 115,
-      align: 'left' as const,
-      sorter: (a: any, b: any) => a.gross - b.gross,
-      render: (val: number) => `${money(val)} ج.م`,
-    },
-    {
-      title: 'خصم',
-      dataIndex: 'discount_value',
-      key: 'discount_value',
-      width: 105,
-      align: 'left' as const,
-      sorter: (a: any, b: any) => a.discount_value - b.discount_value,
-      render: (val: number) => `${money(val)} ج.م`,
-    },
-    {
-      // دفاتر الكوبونات اللي اتسلّمت مع الفاتورة. عمود في الكشف لأن السؤال «سلّمنا
-      // الراجل كام كوبون» بيتسأل على القايمة، مش جوّه الفاتورة — وقبل كده الإجابة
-      // ماكانتش موجودة إلا لو فتحتها للتعديل.
-      title: 'كوبونات',
-      dataIndex: 'coupons',
-      key: 'coupons',
-      width: 120,
-      align: 'left' as const,
-      sorter: (a: any, b: any) => couponsTotal(a) - couponsTotal(b),
-      render: (_v: any, row: any) => {
-        const rows: any[] = row.coupons ?? [];
-        if (!rows.length) {
-          // الشكل القديم — مدى واحد على رأس الفاتورة، من غير فئة.
-          if (!row.coupon_serial_from) return '-';
-          return (
-            <Tooltip title={`من ${row.coupon_serial_from} إلى ${row.coupon_serial_to}`}>
-              <Tag color="gold">{row.coupon_count ?? '؟'} كوبون</Tag>
-            </Tooltip>
-          );
-        }
-        return (
-          <Tooltip
-            title={
-              <Space direction="vertical" size={0}>
-                {rows.map((c, i) => (
-                  <span key={i}>
-                    {c.coupon_kind || c.coupon_type_name || 'كوبونات'} —
-                    {' '}من {c.serial_from ?? '؟'} إلى {c.serial_to ?? '؟'}
-                  </span>
-                ))}
-              </Space>
-            }
-          >
-            <Tag color="gold">{couponsTotal(row)} كوبون</Tag>
-          </Tooltip>
-        );
-      },
-    },
-    {
-      // النسبة من الخصم الفعلي ÷ الإجمالي قبله — مش `combined_pct` (خصم المستند وبس).
-      // وبمنزلة عشرية واحدة: الخصم المركّب بيطلع ١٤٫٥٪، والتقريب لصحيح بيقوله ١٥٪
-      // ويخلّي اللي بيراجع يدوّر على فرق مالوش وجود.
-      title: 'خصم%',
-      dataIndex: 'discount_value',
-      key: 'discount_pct_effective',
-      width: 80,
-      sorter: (a: any, b: any) =>
-        (a.discount_value / (a.discount_base || 1)) - (b.discount_value / (b.discount_base || 1)),
-      render: (_val: number, r: any) => {
-        const base = Number(r.discount_base || 0);
-        const pct = base > 0 ? (Number(r.discount_value || 0) / base) * 100 : 0;
-        return `${pct.toFixed(pct % 1 === 0 ? 0 : 1)}%`;
-      },
-    },
-    {
-      title: 'الصافى',
-      dataIndex: 'net',
-      key: 'net',
-      width: 115,
-      align: 'left' as const,
-      sorter: (a: any, b: any) => a.net - b.net,
-      render: (val: number, r: any) => (
-        <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#c41d7f' }}>
-          {r.doc_type === 'return' ? '-' : ''}{money(val)} ج.م
-        </strong>
-      ),
-    },
-    {
-      title: 'تم السداد',
-      dataIndex: 'cash_amount',
-      key: 'cash_amount',
-      width: 100,
-      align: 'left' as const,
-      sorter: (a: any, b: any) => a.cash_amount - b.cash_amount,
-      render: (val: number) => `${money(val)} ج.م`,
-    },
-    {
-      title: 'الباقى',
-      dataIndex: 'credit_amount',
-      key: 'credit_amount',
-      width: 100,
-      align: 'left' as const,
-      sorter: (a: any, b: any) => a.credit_amount - b.credit_amount,
-      render: (val: number) => {
-        const n = Number(val || 0);
-        return <span style={{ color: n > 0 ? '#cf1322' : undefined, fontWeight: n > 0 ? 600 : undefined }}>{money(n)} ج.م</span>;
-      },
-    },
-    {
-      title: 'ملاحظات',
-      dataIndex: 'notes',
-      key: 'notes',
-      width: 170,
-      ellipsis: true,
-      render: (v: string | null) => v || '-',
-    },
-    {
-      // العمود كان بلا اسم وبلا تثبيت، وسط جدول أعمدته مامتقاسّهاش الفاضي كله. النتيجة
-      // كانت شريط أبيض في نص السجل والأيقونات سايبة فيه — نفس السجلات التانية بتسمّيه
-      // وبتثبّته على الحافة، فالإيد بتلاقيه في نفس المكان في كل شاشة.
-      title: 'الإجراءات',
-      key: 'actions',
-      width: 130,
-      // Icons, like the row icons on their own lists. Four words apiece cost more width than
-      // «الصافى» and «الباقى» together — and those are the two numbers the list exists for.
-      render: (_: any, record: any) => {
-        const isSale = record.doc_type === 'sale';
-        return (
-          <Space size={2} onClick={(e) => e.stopPropagation()}>
-            <Tooltip title={isSale ? 'عرض الفاتورة' : 'عرض المرتجع'}>
-              <Button type="text" icon={<EyeOutlined />}
-                onClick={() => {
-                  if (isSale) {
-                    openDetail(record.raw || record);
-                  } else {
-                    navigate(`/returns?id=${record.id}`);
-                  }
-                }} />
-            </Tooltip>
-            {isSale && (
-              <Tooltip title="طباعة">
-                <Button type="text" icon={<PrinterOutlined />}
-                  onClick={async () => {
-                    const detRes = await api.get(`/api/v1/sales/${record.id}`).catch(() => null);
-                    if (detRes?.data) {
-                      const doc = invoiceDoc({ ...record, ...detRes.data });
-                      if (doc) printInvoice(doc, printOpts);
-                    }
-                  }} />
-              </Tooltip>
-            )}
-            {isSale && canEditInvoice && (
-              <Tooltip title="تعديل">
-                <Button type="text" icon={<EditOutlined />}
-                  onClick={() => handleEditInvoice(record.raw || record)} />
-              </Tooltip>
-            )}
-            {canDeleteInvoice && (
-              <Tooltip title="حذف">
-                <Button
-                  type="text"
-                  danger
-                  icon={<DeleteOutlined />}
-                  onClick={() => {
-                    Modal.confirm({
-                      title: isSale ? 'تأكيد حذف فاتورة البيع' : 'تأكيد حذف سند المرتجع',
-                      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
-                      content: (
-                        <div>
-                          <p>هل أنت متأكد من حذف {isSale ? 'فاتورة البيع' : 'سند المرتجع'} رقم: <b>{record.document_number}</b>؟</p>
-                          <p style={{ color: '#8c8c8c', fontSize: 13 }}>سيتم حذف المستند بالكامل وإلغاء أثره المحاسبي والمخزني.</p>
-                        </div>
-                      ),
-                      okText: 'نعم، احذف',
-                      okType: 'danger',
-                      cancelText: 'إلغاء',
-                      onOk: async () => {
-                        if (isSale) {
-                          await handleDeleteInvoice(record.raw || record);
-                        } else {
-                          await handleDeleteReturn(record.raw || record);
-                        }
-                      },
-                    });
-                  }}
-                />
-              </Tooltip>
-            )}
-          </Space>
-        );
-      },
-    },
-  ];
+  // الأعمدة اتفصلت لملفها — تعريف بلا حالة مالوش لازمة يقعد في نص الشاشة.
+  const columns = buildRegisterColumns({
+    customers, reps, postingAccounts, filters, printOpts, navigate, openDetail,
+    invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
+    handleDeleteReturn,
+  });
 
   // الأعمدة بعد الإخفاء والترتيب، محسوبة مرة واحدة: الجدول بيرسمها والتصدير بيكتبها، ولازم
   // يبقوا نفس القايمة — لو كل واحد نادى `apply` لوحده، ملف بيطلع بأعمدة غير اللي على الشاشة
@@ -2451,6 +1941,33 @@ function couponsTotal(inv: any): number {
             </Space>
           }
         >
+        {/* شريط المستند — المسار والمكان في السجل والحالة، فوق شريط الأدوات.
+            الأسهم بتمشي على نفس الترتيب المفلتر اللي المستخدم شايفه. */}
+        <DocumentBar
+          listLabel="فواتير البيع"
+          listTo="/invoices"
+          title={viewInvoice
+            ? (viewInvoice.document_number || `#${viewInvoice.id}`)
+            : editingInvoice
+              ? `تعديل #${editingInvoice.id}`
+              : 'فاتورة جديدة'}
+          position={viewInvoice
+            ? invoices.findIndex((r: any) => r.id === viewInvoice.id) + 1 || null
+            : null}
+          total={viewInvoice ? invoices.length : null}
+          onPrev={viewInvoice && neighbour(-1)
+            ? () => { const n = neighbour(-1); if (n) openDetail(n); } : undefined}
+          onNext={viewInvoice && neighbour(1)
+            ? () => { const n = neighbour(1); if (n) openDetail(n); } : undefined}
+          steps={[
+            { key: 'draft', label: 'مسودة' },
+            { key: 'posted', label: 'مرحّل', color: 'green' },
+            { key: 'voided', label: 'مردود / ملغي', color: 'volcano' },
+          ]}
+          current={!viewInvoice && !editingInvoice
+            ? 'draft'
+            : (viewInvoice || editingInvoice)?.voided ? 'voided' : 'posted'}
+        />
         <DocumentToolbar actions={docToolbar()} />
         {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — نفس فاتورة الشرا. */}
         <Form form={createForm} layout="vertical" size="small" className="doc-form"
@@ -2548,6 +2065,18 @@ function couponsTotal(inv: any): number {
             <Col xs={12} md={6}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" disabled={viewOnly} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={6}>
+              <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
+                <Space.Compact style={{ width: '100%' }}>
+                  <Form.Item name="cost_center_id" noStyle>
+                    <CostCenterField />
+                  </Form.Item>
+                  <Form.Item name="cost_center_distribution" noStyle>
+                    <CostCenterSplit size="middle" disabled={viewOnly} />
+                  </Form.Item>
+                </Space.Compact>
               </Form.Item>
             </Col>
           </Row>

@@ -15,7 +15,8 @@ from src.auth.rbac import CAP_HR_READ, CAP_HR_WRITE
 from src.core.db import get_db
 from src.models.employee import Employee, JobTitle
 from src.models.hr_org import Department, EmployeeTermination, TerminationKind
-from src.models.ledger import Account, Direction, LedgerLine
+from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
+from src.services import ledger_service
 from src.services import hr_service
 from src.services.hr_service import HrError
 
@@ -320,6 +321,9 @@ def employee_receivables(
                       (LedgerLine.direction == Direction.credit, LedgerLine.amount),
                       else_=0)), 0),
                   func.count())
+           # المرحّل بس — ذمة الموظف مالهاش دعوة بمسودة لسه ماتّرحّلتش.
+           .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+           .where(ledger_service.is_posted_sql())
            .group_by(LedgerLine.account_id))
     stats = {a: (d, c, n) for a, d, c, n in db.execute(agg).all()}
 

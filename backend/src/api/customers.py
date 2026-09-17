@@ -214,6 +214,7 @@ def customers_summary(
 ) -> CustomersSummaryOut:
     from sqlalchemy import case, func
     from src.models.ledger import Account, LedgerLine
+    from src.services import ledger_service
 
     base_stmt = customer_profile_service.apply_filters(
         _scope_filter(select(Customer), current),
@@ -231,7 +232,12 @@ def customers_summary(
     bal_subq = (
         select(CustomerAccount.customer_id, func.coalesce(func.sum(signed), 0).label("balance"))
         .join(Account, Account.id == CustomerAccount.account_id)
-        .join(LedgerLine, LedgerLine.account_id == Account.id, isouter=True)
+        # المرحّل بس؛ الشرط في ON عشان العميل اللي ماتحركش يفضل في الكشف بصفر.
+        .join(
+            LedgerLine,
+            (LedgerLine.account_id == Account.id) & ledger_service.posted_line_cond(),
+            isouter=True,
+        )
         .group_by(CustomerAccount.customer_id)
         .subquery()
     )

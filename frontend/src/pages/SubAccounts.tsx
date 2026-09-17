@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Table, Tag, Tooltip, message,
+  Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -112,7 +112,8 @@ export default function SubAccounts() {
   const onEdit = async (v: any) => {
     if (!editing) return;
     try {
-      await api.patch(`/api/v1/accounts/${editing.id}`, { name: v.name });
+      await api.patch(`/api/v1/accounts/${editing.id}`,
+        { name: v.name, reconcilable: !!v.reconcilable });
       message.success('اتعدّل الحساب');
       setEditing(null);
       load();
@@ -244,6 +245,17 @@ export default function SubAccounts() {
           <Input disabled={!isCreate} placeholder="مثال: 5101" />
         </Form.Item>
       </Col>
+      {!isCreate && (
+        <Col span={24}>
+          {/* (المرحلة ٣) الحساب اللي سطوره بتتقفل على بعضها بيظهر في شاشة التسوية.
+              ذمم العملاء والموردين بتاخده من نوعها من غير ما حد يفكّر؛ ده للحسابات
+              التانية اللي بتتقفل زي «شيكات تحت التحصيل» و«سلف العاملين». */}
+          <Form.Item name="reconcilable" label="قابل للتسوية" valuePropName="checked"
+            extra="سطوره هتظهر في شاشة تسوية الحسابات عشان تتقفل على بعضها">
+            <Switch checkedChildren="أيوه" unCheckedChildren="لأ" />
+          </Form.Item>
+        </Col>
+      )}
     </Row>
   );
 

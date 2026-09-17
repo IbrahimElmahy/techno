@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from src.core.money import to_money
 from src.models.catalog import Item, ItemKind
 from src.models.customer import CustomerAccount
-from src.models.ledger import Direction, LedgerLine
+from src.models.ledger import Direction, LedgerLine, PartnerKind
 from src.models.loyalty import (
     Coupon,
     CouponKind,
@@ -114,6 +114,7 @@ def _post_money_redemption(
             LineInput(receivable_id, Direction.credit, value, statement=note),
         ],
         description=f"Coupon {coupon.serial} redeemed ({mode.value})",
+        partner_kind=PartnerKind.customer, partner_id=coupon.customer_id,
     )
     red = CouponRedemption(
         coupon_id=coupon.id, mode=mode, value=value, customer_id=coupon.customer_id,
@@ -212,6 +213,7 @@ def reverse_redemption(db, *, coupon: Coupon, actor_user_id: int) -> CouponRedem
                 LineInput(expense.id, Direction.credit, to_money(original.value)),
             ],
             description=f"Reverse redemption of coupon {coupon.serial}",
+            partner_kind=PartnerKind.customer, partner_id=coupon.customer_id,
         )
         rev.ledger_entry_id = entry.id
     else:  # gift_product — reverse the stock movement (002 service)

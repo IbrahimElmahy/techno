@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Button, Tabs, theme, Dropdown, Space, Avatar, Modal, Result } from 'antd';
+import {
+  Layout, Menu, Button, Tabs, theme, Dropdown, Space, Avatar, Modal, Result, Tooltip,
+} from 'antd';
 import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  FullscreenOutlined,
+  FullscreenExitOutlined,
   UserOutlined,
   LogoutOutlined,
   DashboardOutlined,
@@ -24,7 +28,7 @@ import {
 } from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
 import RowDensityControl from './RowDensity';
-import FullscreenToggle from './FullscreenToggle';
+import { useFullscreen } from './FullscreenToggle';
 import Logo from './Logo';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
@@ -66,8 +70,28 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
+  /**
+   * القايمة بقت فوق، والشجرة الجانبية بقت اختيارية — زي أودو.
+   *
+   * الشجرة كانت واخدة ٢٥٠ بكسل من عرض كل شاشة عشان تعرض نفس الأقسام اللي الشريط
+   * الأفقي بيعرضها في ٤٤ بكسل من الطول. الجداول هي اللي بتستفيد بالعرض ده.
+   *
+   * **بتتخبى مش بتتشال.** الترتيب نفسه متعمّد يحاكي a5 عشان اللي عارف مكان حاجة
+   * يلاقيها — والشريط الأفقي بيعرض **نفس** الشجرة بنفس الأسماء والترتيب، فاللي
+   * حافظ «اذن تحويل مخازن تحت اداره المخازن» بيلاقيها في نفس المكان بالظبط، بس
+   * أفقي. واللي عايز الشجرة ترجع بيضغط زرار واحد فوق.
+   */
+  const [showTree, setShowTree] = useState(() => {
+    try { return localStorage.getItem('nav.tree') === '1'; } catch { return false; }
+  });
+  const toggleTree = () => setShowTree((v) => {
+    // بيتفضّل: اللي بيشتغل بالشجرة مايرجعش يفتحها كل يوم.
+    try { localStorage.setItem('nav.tree', v ? '0' : '1'); } catch { /* private mode */ }
+    return !v;
+  });
   const { user, logout } = useAuth();
-  const { tabs, activeId, openTab, activateTab, closeTab } = useTabs();
+  const { activeId, openTab } = useTabs();
+  const [fullscreen, toggleFullscreen] = useFullscreen();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -188,6 +212,33 @@ export default function AppLayout() {
       type: 'divider' as const,
     },
     {
+      /*
+       * ارتفاع الصف وملء الشاشة نزلوا هنا من الشريط.
+       *
+       * الاتنين إعدادات بتتظبط مرة كل كام يوم، وكانوا واخدين مكان دايم في صف بيتزاحم
+       * على عرضه مع أقسام النظام كلها. الاسم كمان اتشال من جنب الأيقونة: الأيقونة
+       * بتقول «ده انت» والاسم جوّه القايمة، واللي بيسأل «انا داخل بمين» بيفتحها.
+       */
+      key: 'density',
+      label: (
+        // الوقفة دي عشان اختيار الارتفاع مايقفلش القايمة — بتتجرّب على الجدول اللي
+        // وراها، واللي بيجرّب بيعدّي على التلاتة.
+        <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
+          <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>ارتفاع الصف</div>
+          <RowDensityControl />
+        </div>
+      ),
+    },
+    {
+      key: 'fullscreen',
+      icon: fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />,
+      label: fullscreen ? 'خروج من ملء الشاشة' : 'ملء الشاشة',
+      onClick: toggleFullscreen,
+    },
+    {
+      type: 'divider' as const,
+    },
+    {
       key: 'logout',
       danger: true,
       icon: <LogoutOutlined />,
@@ -237,11 +288,14 @@ export default function AppLayout() {
         reverseArrow
         width={250}
         theme="light"
+        // `display: none` مش إلغاء المكوّن: الشجرة بتفضل محمّلة ومفتوحة على نفس
+        // المجموعة، فالرجوع ليها بيرجّعها زي ما سبتها مش من أولها.
         style={{
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           zIndex: 10,
           height: '100vh',
           overflow: 'hidden',
+          display: showTree ? undefined : 'none',
         }}
       >
         {/* Flex column so the logo stays pinned and the menu scrolls when items overflow. */}
@@ -276,17 +330,22 @@ export default function AppLayout() {
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         {/*
-          * شريط واحد فوق: المستندات المفتوحة + المستخدم + ارتفاع الصف.
+          * شريط واحد فوق: الأقسام والمستخدم، وخلاص.
           *
-          * كانوا شريطين فوق بعض — واحد فيه اسم المستخدم بس، وتحته شريط التبويبات — يعني
-          * ٩٦ بكسل من طول الشاشة بتروح في حاجة مش داتا. دلوقتي شريط واحد بارتفاع ٤٤:
-          * التبويبات في النص وهي أكتر حاجة الإيد بتوصلها، والمستخدم على جنب.
+          * كانوا تلات شرايط — اسم المستخدم، وتبويبات المستندات المفتوحة، والأقسام —
+          * يعني ١٤٠ بكسل من طول الشاشة بتروح في حاجة مش داتا. بقوا صف واحد بارتفاع ٤٨.
+          *
+          * وقايمة الأقسام بتلمّ الزيادة تحت «…» لما الشاشة تصغر، فمابتدفعش حاجة لسطر تاني.
           */}
         <Header
           style={{
             flexShrink: 0,
-            height: 44,
-            lineHeight: '44px',
+            // `minHeight` مش `height`: لما القايمة تلفّ لسطر تاني الشريط بيطول معاها
+            // بدل ما البنود تتقصّ.
+            minHeight: 48,
+            height: 'auto',
+            lineHeight: '46px',
+            flexWrap: 'wrap',
             padding: 0,
             background: colorBgContainer,
             display: 'flex',
@@ -296,43 +355,69 @@ export default function AppLayout() {
             zIndex: 9,
           }}
         >
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
+          {/* العلامة كانت عايشة في الشجرة، والشجرة بقت مخبية — فنقلت هنا. النظام
+              من غير علامة بيبان كأنه اتفتح غلط. */}
+          {!showTree && (
+            <div style={{ paddingInlineStart: 12, display: 'flex', alignItems: 'center' }}>
+              <Logo variant="mark" width={26} />
+            </div>
+          )}
+          {/* الشجرة اختيارية دلوقتي — الزرار بيظهّرها ويخبّيها، والاختيار بيتفضّل. */}
+          <Tooltip title={showTree ? 'إخفاء القائمة الجانبية' : 'إظهار القائمة الجانبية'}>
+            <Button
+              type="text"
+              icon={showTree ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+              onClick={toggleTree}
+              style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
+            />
+          </Tooltip>
+          {/*
+            * الأقسام — نفس شجرة `navigation.ts` بالظبط، بس أفقي.
+            *
+            * نفس الترتيب ونفس الأسماء ونفس التداخل: الترتيب متعمّد يحاكي a5 عشان اللي
+            * عارف مكان حاجة يلاقيها من غير ما يسأل. اللي اتغيّر هو الاتجاه وبس.
+            *
+            * الأيقونات بتتشال: على الشجرة كانت بتفرّق الأقسام بالعين وهي فوق بعض؛ في صف
+            * أفقي هي اللي بتاكل العرض اللي الأسماء محتاجاه.
+            */}
+          <Menu
+            mode="horizontal"
+            selectedKeys={[activeBase]}
+            items={filteredMenuItems.map(({ icon, ...rest }: any) => rest)}
+            onClick={handleMenuClick}
+            /*
+             * `disabledOverflow` — الأقسام كلها بتتعرض، ومفيش «…» بتلمّ الزيادة.
+             *
+             * القايمة الافتراضية بتقيس العرض وبتخبّي اللي مش لاقي مكان تحت تلات نقط.
+             * ده منطقي في شريط أدوات، وغلط في قايمة تنقّل: القسم اللي اتخبى بيبقى
+             * موجود ومش باين، واللي بيدوّر عليه بيفتكره مش موجود. لما المكان يضيق
+             * بتلفّ لسطر تاني — سطر زيادة أرخص من قسم مختفي.
+             */
+            disabledOverflow
+            className="top-nav"
+            style={{
+              flex: '0 1 auto', minWidth: 0, borderBottom: 'none',
+              background: 'transparent',
+            }}
           />
-          {/* Chrome-style tab strip — one tab per open section, each keeps its page mounted. */}
-          <Tabs
-            hideAdd
-            type="editable-card"
-            size="small"
-            activeKey={activeId || undefined}
-            onChange={activateTab}
-            onEdit={(key, action) => { if (action === 'remove') closeTab(key as string); }}
-            style={{ flex: 1, minWidth: 0, alignSelf: 'flex-end' }}
-            tabBarStyle={{ margin: 0, borderBottom: 'none' }}
-            items={tabs.map((t) => ({
-              key: t.id,
-              label: t.title,
-              closable: tabs.length > 1,
-            }))}
-          />
+
+          {/* المساحة الفاضية بتدفع المستخدم لآخر الشريط. */}
+          <div style={{ flex: 1, minWidth: 0 }} />
+
           <div style={{
             paddingLeft: 16, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
           }}>
-            {/* ارتفاع الصف — في الهيدر عشان يبان إنه على النظام كله، مش إعداد شاشة واحدة. */}
-            <RowDensityControl />
-            {/* وملء الشاشة جنبه: الاتنين بيجاوبوا نفس السؤال — «وريني سطور أكتر». */}
-            <FullscreenToggle />
+            {/* الأيقونة وبس — الاسم والإعدادات جوّه القايمة. الصف العلوي شغله يعرض
+                الأقسام، وكل بكسل بياخده حاجة تانية بيتاخد منها. */}
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
-              <Space size={6} style={{ cursor: 'pointer' }}>
-                <Avatar size={26} style={{ backgroundColor: '#6AB42D' }} icon={<UserOutlined />} />
-                <span className="ant-avatar-string">{user?.name}</span>
-              </Space>
+              <Tooltip title={user?.name}>
+                <Avatar size={28} style={{ backgroundColor: '#6AB42D', cursor: 'pointer' }}
+                        icon={<UserOutlined />} />
+              </Tooltip>
             </Dropdown>
           </div>
         </Header>
+
         {/* minHeight:0 lets this flex child actually shrink, so the box below can scroll
             instead of stretching the page. */}
         <Content style={{

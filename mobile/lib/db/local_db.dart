@@ -13,27 +13,39 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 26, onUpgrade: (d, from, to) async {
-      if (from < 25) {
-        // v25: كتالوج الفرع — أصناف إذن التحويل.
-        //
-        // `sale_item` هو اللي في العربية، وهو الصح للبيع. إذن التحويل بيطلب اللي **مش**
-        // في العربية، فقايمته لازم تكون أوسع — والصنف اللي خلص خالص هو أكتر واحد
-        // محتاج يتطلب وكان مختفي من الشاشة.
-        //
-        // **الاسم `branch_catalog_item` مش `catalog_item`.** الاسم التاني محجوز من
-        // v1 لأصناف المعاينة (`id, name, category, points, my_stock`). v24 حاولت
-        // تعمله بأعمدة تانية، والـ`CREATE` وقع لأن الجدول موجود، والـ`catch` بلع
-        // الغلطة — فالإدخال بعدها بيقول «مافيش عمود اسمه item_id». وأوحش: الدالة
-        // كانت بتعمل `DELETE` على الجدول ده الأول، يعني كانت هتمسح كتالوج المعاينات
-        // لو الإدخال كان نجح.
+    // **نسخة ٢٧ بتعدّي على ترقيات الفرعين مع بعض.**
+    //
+    // الفرعين اشتغلوا بالتوازي وكل واحد صرف أرقام نسخ لحاجات مختلفة: `dev` خد ٢٢ و٢٤،
+    // و`main` خد ٢٢ و٢٥ و٢٦ — فالأجهزة اللي في الشارع دلوقتي كل واحد ناقصه ترقيات
+    // التاني. الرقم ده أعلى من الاتنين وبيعمل **كل** اللي فاتهم، وكل واحدة محميّة
+    // بـ`try`: اللي اتعمل قبل كده بيرمي وبيتتجاهل.
+    _db = await openDatabase(path, version: 27, onUpgrade: (d, from, to) async {
+      if (from < 27) {
+        // ── اللي جه من dev ──
+        // أصناف كل مخزن: منتقي إذن التحويل كان بيعرض عهدة المندوب، والإذن أصلاً
+        // بيتكتب عشان يطلب حاجة **مش** معاه.
+        try { await d.execute(_warehouseItemTable); } catch (_) {}
+        // المحجوز على إذن تحويل معلّق. من غيره الجهاز بيعتبر البضاعة اللي المندوب
+        // طلب يرجّعها لسه متاحة للبيع، والإذن بيقع على المسؤول عند الاعتماد.
+        try {
+          await d.execute(
+              'ALTER TABLE sale_item ADD COLUMN pending_out REAL NOT NULL DEFAULT 0');
+        } catch (_) {}
+
+        // ── اللي جه من main ──
+        // كتالوج الفرع. **الاسم `branch_catalog_item` مش `catalog_item`**: الاسم
+        // التاني محجوز من v1 لأصناف المعاينة، ومحاولة إعادة استعماله وقعت في صمت
+        // (الـ`CREATE` بيرمي والـ`catch` بيبلع) — وكانت هتمسح كتالوج المعاينات.
         try { await d.execute(_branchCatalogTable); } catch (_) {}
-        // **وأرصدة الخطين ساعة الحفظ.** `prev_balance` رقم واحد مجمّع، والورقة عايزة
-        // تقول «ح سابق أبيض» و«ح سابق بولى» كل واحد لوحده. وبيتخزّن مع الطلب لنفس
-        // السبب اللي `prev_balance` اتخزّن عشانه: الرقم اللي المندوب قاله للعميل وهو
-        // واقف قدامه، مش اللي الكاش بيقوله بعد أي مزامنة.
+        // أرصدة الخطين ساعة الحفظ — الورقة بتقول «ح سابق أبيض» و«بولى» كل واحد
+        // لوحده، بالرقم اللي المندوب قاله للعميل وهو واقف قدامه.
         try {
           await d.execute('ALTER TABLE sale_invoice ADD COLUMN prev_balances TEXT');
+        } catch (_) {}
+        // تاريخ طلب التحويل — المندوب بيكتبه، ومن غيره السيرفر بيحط تاريخ اليوم
+        // والطلب اللي على بضاعة خرجت امبارح بيتقيّد على اليوم الغلط.
+        try {
+          await d.execute('ALTER TABLE stock_transfer ADD COLUMN transfer_date TEXT');
         } catch (_) {}
       }
       if (from < 23) {
@@ -42,14 +54,6 @@ class LocalDb {
         // واقف قدامه؛ قراءته وقت الطباعة من الكاش بترجّع رقم تاني بعد أي مزامنة.
         try {
           await d.execute('ALTER TABLE sale_invoice ADD COLUMN prev_balance REAL');
-        } catch (_) {}
-      }
-      if (from < 22) {
-        // v22: المحجوز على إذن تحويل معلّق. من غيره الجهاز بيعتبر البضاعة اللي المندوب
-        // طلب يرجّعها لسه متاحة للبيع، والإذن بيقع على المسؤول عند الاعتماد.
-        try {
-          await d.execute(
-              'ALTER TABLE sale_item ADD COLUMN pending_out REAL NOT NULL DEFAULT 0');
         } catch (_) {}
       }
       if (from < 18) {
@@ -215,6 +219,7 @@ class LocalDb {
           'PRIMARY KEY(category, value))');
       await d.execute('CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT)');
       await d.execute(_warehouseTable);
+      await d.execute(_warehouseItemTable);
       await d.execute(_treasuryTable);
       await d.execute(_transferTable);
       await d.execute(_transferLineTable);
@@ -946,6 +951,43 @@ class LocalDb {
     return d.query('warehouse', orderBy: 'name');
   }
 
+  /// أصناف كل مخزن — بتنزل مع الحزمة عشان إذن التحويل يتكتب من غير شبكة.
+  ///
+  /// كاش مش دفتر: بتتحط كلها مكان اللي قبلها، لأن اللي بيقول «إيه اللي في المخزن»
+  /// هو السيرفر وقت السحب.
+  Future<void> replaceWarehouseItems(List<Map<String, Object?>> rows) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('warehouse_item');
+      final batch = tx.batch();
+      for (final r in rows) {
+        batch.insert('warehouse_item', r,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  /// أصناف مخزن واحد كـ[SaleItem] عشان منتقي الأصناف يتعامل مع نوع واحد.
+  ///
+  /// الرصيد والسعر بيرجعوا صفر عن قصد — إذن التحويل مافيهوش فلوس، والطلب بيتكتب
+  /// بالاحتياج مش بالرصيد، فالأرقام دي مش نازلة من السيرفر أصلاً.
+  Future<List<SaleItem>> warehouseItems(int warehouseId) async {
+    final d = await db;
+    final rows = await d.query('warehouse_item',
+        where: 'warehouse_id = ?', whereArgs: [warehouseId], orderBy: 'name');
+    return [
+      for (final r in rows)
+        SaleItem(
+          itemId: r['item_id'] as int,
+          name: '${r['name']}',
+          unit: r['unit'] as String?,
+          category: r['category'] as String?,
+          onHand: 0,
+        )
+    ];
+  }
+
   // ------------------------------------------------------------------ صناديق المندوب
 
   /// بتحطّ صناديق المندوب مكان اللي قبلها — كاش مش دفتر، زي الأصناف والمخازن بالظبط.
@@ -1321,6 +1363,21 @@ CREATE TABLE warehouse(
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   kind TEXT
+)''';
+
+/// أصناف كل مخزن — اللي إذن التحويل بيطلب منها.
+///
+/// المفتاح مركّب (مخزن + صنف) لأن نفس الصنف بيبقى في أكتر من مخزن، والسؤال دايماً
+/// «إيه اللي في المخزن ده» مش «الصنف ده فين». مافيش كميات هنا عن قصد — الطلب
+/// بيتكتب بالاحتياج، والرصيد قرار اللي بيراجع.
+const _warehouseItemTable = '''
+CREATE TABLE warehouse_item(
+  warehouse_id INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  unit TEXT,
+  category TEXT,
+  PRIMARY KEY(warehouse_id, item_id)
 )''';
 
 /// صناديق المندوب — بتنزل مع حزمته عشان الشاشة تعرض الصندوق وهو من غير شبكة.

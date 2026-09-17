@@ -25,6 +25,7 @@ from src.services import (
     chart_service,
     document_resolver,
     ledger_service,
+    lock_date_service,
     statement_service,
     treasury_service,
     voucher_service,
@@ -53,6 +54,8 @@ class ReceiptIn(BaseModel):
     # (033) رقم الجهاز — بيخلّي إعادة الرفع من تطبيق المندوب ترجّع نفس السند بدل ما تقيّد
     # التحصيل مرتين وتنقص مديونية العميل بالضعف.
     client_uuid: str | None = None
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class PaymentIn(BaseModel):
@@ -63,6 +66,8 @@ class PaymentIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class HandoverIn(BaseModel):
@@ -75,6 +80,8 @@ class HandoverIn(BaseModel):
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class ExpenseIn(BaseModel):
@@ -85,6 +92,10 @@ class ExpenseIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
+    # توزيع تحليلي بدل المركز الواحد — `{"3": 60, "7": 40}` ومجموعه ١٠٠.
+    cost_center_distribution: dict[str, Decimal] | None = None
 
 
 class CashTransferIn(BaseModel):
@@ -94,6 +105,8 @@ class CashTransferIn(BaseModel):
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
+    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
+    cost_center_id: int | None = None
 
 
 class TreasuryIn(BaseModel):
@@ -154,6 +167,7 @@ class VoucherOut(BaseModel):
     # (031) أنهي مديونية سدّدها. Returned as well as stored — the screen prints it on the sheet
     # the customer signs, and a field that goes in and never comes back is a field nobody can use.
     family: str | None = None
+    cost_center_id: int | None = None
     ledger_entry_id: int | None
     is_reversal: bool
 
@@ -219,6 +233,7 @@ def _out(v) -> VoucherOut:
         voucher_date=v.voucher_date, payment_method=v.payment_method, reference=v.reference,
         description=v.description, ledger_entry_id=v.ledger_entry_id,
         family=getattr(v, "family", None),
+        cost_center_id=getattr(v, "cost_center_id", None),
         is_reversal=v.reverses_id is not None,
     )
 
@@ -307,7 +322,7 @@ def create_receipt(
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
             family=body.family, on_total=body.on_total,
-            client_uuid=body.client_uuid)
+            client_uuid=body.client_uuid, cost_center_id=body.cost_center_id)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -330,7 +345,8 @@ def create_payment(
             db, supplier_id=body.supplier_id, amount=body.amount, actor_user_id=current.id,
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference, payment_method=body.payment_method)
+            reference=body.reference, payment_method=body.payment_method,
+            cost_center_id=body.cost_center_id)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -353,7 +369,8 @@ def create_handover(
         v = voucher_service.create_handover(
             db, rep_user_id=body.rep_user_id, amount=body.amount, actor_user_id=current.id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference, family=body.family)
+            reference=body.reference, family=body.family,
+            cost_center_id=body.cost_center_id)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -376,7 +393,9 @@ def create_expense(
             db, expense_account_id=body.expense_account_id, amount=body.amount,
             actor_user_id=current.id, actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
-            reference=body.reference, payment_method=body.payment_method)
+            reference=body.reference, payment_method=body.payment_method,
+            cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -398,7 +417,8 @@ def create_cash_transfer(
         v = voucher_service.create_cash_transfer(
             db, from_treasury_id=body.from_treasury_id, to_treasury_id=body.to_treasury_id,
             amount=body.amount, actor_user_id=current.id, voucher_date=body.voucher_date,
-            description=body.description, reference=body.reference)
+            description=body.description, reference=body.reference,
+            cost_center_id=body.cost_center_id)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -523,9 +543,13 @@ def get_period_lock(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> PeriodLockOut:
-    lock = treasury_service.current_lock(db)
-    return PeriodLockOut(locked_through=lock.locked_through if lock else None,
-                         note=lock.note if lock else None)
+    # القيمة الشغّالة بقت في `accounting_setting` (المرحلة ٤)؛ جدول `period_lock`
+    # بقى سجل تاريخي بيقول مين قفل وإمتى وليه — فالملاحظة لسه بتتقرا منه.
+    row = lock_date_service.get_settings(db)
+    last = treasury_service.current_lock(db)
+    db.commit()
+    return PeriodLockOut(locked_through=row.period_lock_date,
+                         note=last.note if last else None)
 
 
 @router.post("/period-lock", response_model=PeriodLockOut,
@@ -540,10 +564,15 @@ def set_period_lock(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             {"code": "forbidden", "message": "إقفال الفترة للأدمن أو المحاسب فقط."})
-    lock = treasury_service.set_lock(db, through=body.locked_through,
-                                     actor_user_id=current.id, note=body.note)
+    row = lock_date_service.get_settings(db)
+    lock_date_service.set_lock_dates(
+        db, actor_user_id=current.id,
+        fiscalyear_lock_date=row.fiscalyear_lock_date,
+        period_lock_date=body.locked_through,
+        note=body.note,
+    )
     db.commit()
-    return PeriodLockOut(locked_through=lock.locked_through, note=lock.note)
+    return PeriodLockOut(locked_through=body.locked_through, note=body.note)
 
 
 @router.delete("/vouchers/{voucher_id}", status_code=status.HTTP_204_NO_CONTENT)
