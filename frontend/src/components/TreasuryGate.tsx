@@ -193,6 +193,18 @@ export interface TreasuryAsk {
   /** خط المستند — «أبيض» / «بولي». منه بييجي الاقتراح. */
   family?: string | null;
   docLabel?: string;
+  /**
+   * الخزنة المكتوبة على المستند خلاص — للتعديل.
+   *
+   * **المستند اللي بيتعدّل مش بيتسأل من الأول.** كان بيتسأل: الشاشة مابتحمّلش
+   * `cash_account_id` بتاع الفاتورة، فالبوباب بيفتح فاضي وكأنها فاتورة جديدة. واللي
+   * بيعدّل سعر سطر بيلاقي نفسه بيختار خزنة تاني، ولو اختار غيرها الفلوس بتتنقل لخزنة
+   * تانية في صمت — التعديل بيمسح القيد القديم ويكتب الجديد على الحساب اللي اتقال.
+   *
+   * فالمكتوب على المستند بيتحط جاهز، واللي عايز يغيّره بيغيّره. الاقتراح من الخط
+   * بيفضل للمستند الجديد وحده.
+   */
+  preselect?: number | null;
 }
 
 /**
@@ -209,6 +221,11 @@ export function useTreasuryGate(enabled = true) {
 
   const suggested = useMemo(() => {
     if (!req) return null;
+    // المكتوب على المستند بيغلب الاقتراح: ده اللي حصل فعلاً، والاقتراح تخمين على
+    // اللي المفروض يحصل. وبيتفحص إنه لسه في القايمة — حساب اتقفل مايتحطش جاهز.
+    if (req.preselect != null && options.some((o) => o.value === req.preselect)) {
+      return req.preselect;
+    }
     if (req.family) {
       const hit = options.find((o) => o.family === req.family);
       return hit ? hit.value : null;

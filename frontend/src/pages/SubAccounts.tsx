@@ -15,6 +15,7 @@ import { ChartAccount, NATURE_COLOR, NATURE_LABEL, egp } from '../utils/accounts
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { normalizeAr } from '../components/ListToolbar';
+import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 
 function AccountGroup({ rows, columns, onOpen }: {
   rows: ChartAccount[];
@@ -84,7 +85,11 @@ export default function SubAccounts() {
 
   const accountName = (r: ChartAccount) => r.name || r.owner_name || '-';
 
-  const filtered = rows.filter((a) => {
+  // فحص النظام بيبعت أرقام الحسابات اللي فيها الخلل في الرابط — الشاشة بتفتح عليهم
+  // هم بس بدل ما تسيب اللي فتحها يدوّر في الكشف كله. `FocusedRows` بيشرح ليه.
+  const focus = useFocusedIds();
+
+  const filtered = focus.filter(rows, (a) => a.id).filter((a) => {
     const q = normalizeAr(search);
     if (!q) return true;
     return [a.code, accountName(a), parentName(a)].some((v) => normalizeAr(v).includes(q));
@@ -289,6 +294,8 @@ export default function SubAccounts() {
 
   return (
     <div>
+      <FocusedRowsBanner focus={focus} total={rows.length} noun="حساب"
+                         shown={filtered.length} />
       <Card
         title="الحسابات الفرعيه"
         extra={

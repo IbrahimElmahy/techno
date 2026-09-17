@@ -15,7 +15,7 @@ from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item
 from src.models.manufacturing import ManufacturingOrder, ManufacturingOrderConsumption
 from src.models.sales import SalesInvoice
-from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.stock import LocationKind, StockDirection, StockDoc, StockMovement
 from src.models.wastage import WastageDocument
 
 
@@ -193,16 +193,50 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
             "total_cost": str(to_money(total_cost))}
 
 
+def last_sold_by_item(db: Session) -> dict[int, date]:
+    """آخر يوم اتباع فيه كل صنف — **لعميل، وبتاريخ الفاتورة**.
+
+    حاجتين كانوا غلط هنا وفي فحص الرئيسية، وكل واحدة لوحدها بتكفي تخلّي التقرير
+    مالوش معنى:
+
+    * **التاريخ كان `created_at`** — وده وقت كتابة السطر في قاعدتنا مش وقت الحركة.
+      نقل a5 كتب ٤٤ ألف حركة في تسع أيام والفواتير وراها من يناير، فكل حركة منقولة
+      كانت مكتوب عليها إنها حصلت الأسبوع اللي فات.
+    * **التحويل كان بيتحسب حركة.** نقل البضاعة من المخزن الرئيسي لعربية المندوب مش
+      بيع — البضاعة لسه عندنا. فالصنف اللي بيتنقل ومابيتباعش كان بيبان متحرّك.
+
+    فالمقياس بقى: **اتباع لعميل امتى آخر مرة**، بتاريخ الفاتورة، ولكل صنف مرة واحدة
+    مهما كان في كام مخزن.
+    """
+    when = func.max(SalesInvoice.invoice_date)
+    rows = db.execute(
+        select(StockMovement.item_id, when)
+        .join(SalesInvoice, SalesInvoice.id == StockMovement.source_doc_id)
+        .where(StockMovement.source_doc_type == StockDoc.SALE,
+               StockMovement.direction == StockDirection.out)
+        .group_by(StockMovement.item_id)
+    ).all()
+    return {iid: d for iid, d in rows if d is not None}
+
+
 def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = None,
                    now: datetime | None = None, branch_id: int | None = None) -> dict:
-    """Items with positive stock and no OUT movement within `days` (or never) — slow/dead stock."""
+    """بضاعة عليها رصيد ومحصلش عليها بيع من `days` يوم — أو ولا مرة.
+
+    **الركود صفة الصنف مش صفة مكانه.** كان بيتحسب لكل (صنف × مخزن)، فالصنف اللي في
+    خمس مخازن وبيتباع من واحد بيتعدّ أربع مرات راكد. على داتا العميل ده كان بيطلّع
+    ٦٠٩ سطر من ٩٣٣ موقع رصيد — تلتين المخزن «راكد»، وتقرير بيقول كده مش تقرير.
+
+    بالقياس الصح — اتباع لعميل امتى — الرقم بقى ٢٤٩ صنف. والسطور بتفضل مفصّلة بالمخزن
+    عشان اللي هيتصرّف يعرف يروح فين، بس **القرار للصنف**.
+    """
     now = now or datetime.utcnow()
     cutoff = _as_date(now) - timedelta(days=days)
     names = _item_names(db)
     prices = {i.id: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
               for i in db.scalars(select(Item)).all()}
+    last_sold = last_sold_by_item(db)
 
-    # on-hand per (item, warehouse)
     signed = func.sum(case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
@@ -221,22 +255,18 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
         on_hand = to_qty(qty or 0)
         if on_hand <= to_qty(0):
             continue
-        last_out = db.scalar(
-            select(func.max(StockMovement.created_at)).where(
-                StockMovement.item_id == iid, StockMovement.location_id == wid,
-                StockMovement.location_kind == LocationKind.warehouse,
-                StockMovement.direction == StockDirection.out,
-            ))
-        last_out_date = _as_date(last_out) if last_out is not None else None
-        if last_out_date is not None and last_out_date >= cutoff:
-            continue  # moved recently — not stagnant
+        sold = last_sold.get(iid)
+        if sold is not None and sold >= cutoff:
+            continue                      # اتباع قريّب — مش راكد
         rows.append({
             "item_id": iid, "item_name": names.get(iid, ""), "warehouse_id": wid,
-            "on_hand": str(on_hand), "last_out_date": str(last_out_date) if last_out_date else None,
+            "on_hand": str(on_hand), "last_out_date": str(sold) if sold else None,
             "value": str(to_money(on_hand * prices.get(iid, ZERO))),
         })
     rows.sort(key=lambda r: (r["last_out_date"] or "", r["item_name"]))
-    return {"days": days, "as_of": str(_as_date(now)), "rows": rows}
+    return {"days": days, "as_of": str(_as_date(now)), "rows": rows,
+            # العدد اللي بيتقال للمستخدم — أصناف، مش مواقع رصيد.
+            "item_count": len({r["item_id"] for r in rows})}
 
 
 def sales(db: Session, *, date_from=None, date_to=None, period="month") -> dict:

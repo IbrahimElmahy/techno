@@ -48,6 +48,15 @@ from src.models.warehouse import Custody
 ZERO = Decimal("0")
 
 
+def _with_ids(link: str, ids) -> str:
+    """الرابط ومعاه أرقام الصفوف — بيحترم `?` اللي فيه أصلاً."""
+    ids = [int(i) for i in ids][:MAX_IDS]
+    if not ids:
+        return link
+    sep = "&" if "?" in link else "?"
+    return f"{link}{sep}ids={','.join(str(i) for i in ids)}"
+
+
 def _money(v) -> str:
     """Readable money in a sample line. `-36047.66` is a number; `-36,047.66` is an amount."""
     return f"{to_money(v or 0):,.2f}"
@@ -55,6 +64,9 @@ def _money(v) -> str:
 # How many examples travel with each finding. Enough to recognise the problem without turning the
 # response into the report it links to.
 SAMPLE = 5
+
+# أقصى عدد أرقام بتتحط في الرابط. أكتر من كده والرابط بيتكسر، والفلترة بتبقى بلا معنى.
+MAX_IDS = 200
 
 # Severity is about consequence, not about how many rows matched.
 #
@@ -85,6 +97,15 @@ class Issue:
     # على باب مقفول. حصل مع `/chart-of-accounts` (الصح `/general-ledger?tab=chart`).
     link: str
     samples: list[dict] = field(default_factory=list)
+    # أرقام الصفوف اللي فيها الخلل — الشاشة بتفتح عليهم هم بس.
+    #
+    # **«روح لشاشة الفواتير» مش إجابة.** الفحص بيقول «٤ فواتير بنودها من غير تكلفة»
+    # وبيوديك على ٨٬٦١٣ فاتورة تدوّر فيهم بنفسك على الأربعة. الأرقام بتتبعت هنا،
+    # والرابط بيحملها (`?ids=…`)، والشاشة بتفتح على الأربعة وبس ومعاهم زرار «اعرض الكل».
+    #
+    # بتتقصّ عند `MAX_IDS` — الرابط اللي فيه ألف رقم مابيتفتحش، واللي عنده ألف صف
+    # المشكلة عنده مش في الفلترة.
+    ids: list[int] = field(default_factory=list)
 
 
 def _on_hand_by_location(db: Session) -> list[tuple[int, str, int, Decimal]]:
@@ -133,7 +154,8 @@ def check_negative_stock(db: Session, on_hand, labels) -> Issue | None:
         count=len(bad),
         hint="الصنف طلع من مكان مكانش فيه — التكلفة والجرد والمتاح كلهم "
              "بيتحسبوا على كمية مش موجودة.",
-        link="/stock-balance",
+        link=_with_ids("/stock-balance", sorted({iid for iid, _k, _l, _q in bad})),
+        ids=sorted({iid for iid, _k, _l, _q in bad}),
         samples=[{"label": labels.get(iid, f"#{iid}"), "detail": f"{qty} في {kind} #{lid}"}
                  for iid, kind, lid, qty in bad[:SAMPLE]],
     )
@@ -151,10 +173,10 @@ def check_reorder(db: Session, on_hand, labels) -> list[Issue]:
             continue
         have = totals.get(item.id, ZERO)
         if item.min_stock is not None and have < to_qty(item.min_stock):
-            below.append({"label": f"{item.code} — {item.name}",
+            below.append({"item_id": item.id, "label": f"{item.code} — {item.name}",
                           "detail": f"عندك {have} والحد الأدنى {to_qty(item.min_stock)}"})
         elif item.max_stock is not None and have > to_qty(item.max_stock):
-            above.append({"label": f"{item.code} — {item.name}",
+            above.append({"item_id": item.id, "label": f"{item.code} — {item.name}",
                           "detail": f"عندك {have} والحد الأقصى {to_qty(item.max_stock)}"})
 
     out: list[Issue] = []
@@ -163,76 +185,72 @@ def check_reorder(db: Session, on_hand, labels) -> list[Issue]:
             key="below_min", title="أصناف تحت الحد الأدنى", group="رصيد المنتجات",
             severity="medium", count=len(below),
             hint="هتقف عن البيع لو مااشتريتش — والحد ده انتوا اللي حطتوه.",
-            link="/stock-alerts", samples=below[:SAMPLE],
+            link=_with_ids("/stock-alerts", [b["item_id"] for b in below]),
+            ids=[b["item_id"] for b in below], samples=below[:SAMPLE],
         ))
     if above:
         out.append(Issue(
             key="above_max", title="أصناف فوق الحد الأقصى", group="رصيد المنتجات",
             severity="low", count=len(above),
             hint="فلوس واقفة في بضاعة زيادة عن اللي قررتوه.",
-            link="/stock-alerts", samples=above[:SAMPLE],
+            link=_with_ids("/stock-alerts", [a["item_id"] for a in above]),
+            ids=[a["item_id"] for a in above], samples=above[:SAMPLE],
         ))
     return out
 
 
-def _last_sold(db: Session) -> dict[tuple[int, int], date]:
-    """آخر يوم اتباع فيه كل (صنف × مخزن) — **بتاريخ الفاتورة، مش بوقت الاستيراد**.
+def _last_sold(db: Session) -> dict[int, date]:
+    """آخر يوم اتباع فيه كل صنف — من `reporting` عشان الرئيسية والتقرير يقولوا رقم واحد.
 
-    ده كان بيتقرا من `StockMovement.created_at`، وده وقت كتابة السطر في قاعدتنا مش وقت
-    الحركة. ونقل a5 كتب أربعة وأربعين ألف حركة في تسع أيام، والفواتير اللي وراها ممتدة
-    من يناير. فكل حركة منقولة كانت مكتوب عليها إنها حصلت الأسبوع اللي فات.
-
-    والنتيجة إن التقرير كان بيكدب في الاتجاهين: الصنف اللي آخر بيعة له في يناير كان
-    بيبان متحرّك، و«راكد أكتر من ٩٠ يوم» كانت مقولة على نظام عمره تسع أيام.
-
-    فبيتقاس بتاريخ الفاتورة اللي الحركة طالعة منها، والحركة اللي مالهاش فاتورة بتقع
-    على `created_at` — تحويل أو تسوية، ووقت كتابته هو وقته فعلاً.
-
-    واستعلام واحد مجمّع زي باقي الفحوصات: الصفحة دي بتتحمّل مع كل فتحة للرئيسية،
-    فالقراءة اللي بتكبر مع عدد الحركات هي اللي بتخلّيها تقع بعد سنة.
+    كانت نسخة تانية هنا بقاعدة تانية: بتعد لكل (صنف × مخزن) وبتحسب التحويل حركة.
+    فالرئيسية كانت بتقول ٦٠٩ والتقرير بيقول رقم تالت، واللي بيقارن الاتنين مش لاقي
+    تفسير. القاعدة اتكتبت مرة واحدة في `reporting.last_sold_by_item`.
     """
-    when = func.coalesce(SalesInvoice.invoice_date, func.date(StockMovement.created_at))
-    rows = db.execute(
-        select(StockMovement.item_id, StockMovement.location_id, func.max(when))
-        .select_from(StockMovement)
-        .join(SalesInvoice,
-              (SalesInvoice.id == StockMovement.source_doc_id)
-              & (StockMovement.source_doc_type == StockDoc.SALE),
-              isouter=True)
-        .where(StockMovement.location_kind == LocationKind.warehouse,
-               StockMovement.direction == StockDirection.out)
-        .group_by(StockMovement.item_id, StockMovement.location_id)
-    ).all()
-    return {(iid, lid): day for iid, lid, day in rows if day is not None}
+    from src.lib.reporting import last_sold_by_item
+
+    return last_sold_by_item(db)
 
 
 def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
                    now: datetime | None = None) -> Issue | None:
     """بضاعة راكدة — رصيد موجود ومحصلش عليه بيع من كذا شهر.
 
-    The last-out date comes from ONE grouped query rather than one query per item×warehouse, which
-    is the difference between a page that loads and a request that times out.
+    **الركود صفة الصنف مش صفة مكانه.** كان بيتعدّ لكل (صنف × مخزن)، فالصنف اللي في
+    خمس مخازن وبيتباع من واحد بيتعدّ أربع مرات راكد. على داتا العميل ده كان بيطلّع
+    ٦٠٩ من ٩٣٣ موقع رصيد — تلتين المخزن «راكد»، ورقم زي ده محدّش بيتصرّف بناءً عليه.
+
+    وبقياس الصنف — اتباع لعميل امتى آخر مرة — الرقم بقى ٢٤٩. والقاعدة نفسها اللي
+    التقرير بيمشي بيها (`reporting.last_sold_by_item`) عشان الرئيسية والتقرير مايقولوش
+    رقمين.
     """
     now = now or datetime.utcnow()
     cutoff = (now.date() if isinstance(now, datetime) else now) - timedelta(days=days)
-    last_out = _last_sold(db)
+    last_sold = _last_sold(db)
 
-    rows = []
-    for iid, kind, lid, qty in on_hand:
+    # الرصيد بيتجمّع على الصنف كله: اللي في خمس مخازن صنف واحد، مش خمسة.
+    held: dict[int, Decimal] = {}
+    for iid, kind, _lid, qty in on_hand:
         if kind != LocationKind.warehouse.value or qty <= ZERO:
             continue
-        day = last_out.get((iid, lid))
+        held[iid] = held.get(iid, ZERO) + qty
+
+    rows = []
+    for iid, qty in held.items():
+        day = last_sold.get(iid)
         if day is not None and day >= cutoff:
             continue
-        rows.append({"label": labels.get(iid, f"#{iid}"),
-                     "detail": f"آخر بيع {day}" if day else "مخرجش من المخزن ولا مرة"})
+        rows.append({"item_id": iid, "label": labels.get(iid, f"#{iid}"),
+                     "detail": (f"آخر بيع {day} — عندك {to_qty(qty)}" if day
+                                else f"مااتباعش ولا مرة — عندك {to_qty(qty)}")})
     if not rows:
         return None
+    rows.sort(key=lambda r: r["label"])
     return Issue(
         key="stagnant", title=f"بضاعة راكدة أكتر من {days} يوم", group="رصيد المنتجات",
         severity="low", count=len(rows),
         hint="فلوس نايمة في المخزن — يا تتحرّك بعرض يا تتصفّى.",
-        link="/reports?view=stagnant", samples=rows[:SAMPLE],
+        link=_with_ids("/reports?view=stagnant", [r["item_id"] for r in rows]),
+        ids=[r["item_id"] for r in rows], samples=rows[:SAMPLE],
     )
 
 
@@ -318,41 +336,43 @@ def check_invoice_lines_without_cost(db: Session) -> Issue | None:
     which overstates the margin of the invoice, the customer, the item and the period at once.
     """
     rows = db.execute(
-        select(SalesInvoice.document_number, func.count(SalesInvoiceLine.id))
+        select(SalesInvoice.id, SalesInvoice.document_number, func.count(SalesInvoiceLine.id))
         .join(SalesInvoiceLine, SalesInvoiceLine.invoice_id == SalesInvoice.id)
         .where(SalesInvoiceLine.unit_cost.is_(None))
         .group_by(SalesInvoice.id, SalesInvoice.document_number)
     ).all()
     if not rows:
         return None
+    ids = [r[0] for r in rows]
     return Issue(
         key="invoice_no_cost", title="فواتير بنودها من غير تكلفة", group="فواتير العملاء",
         severity="high", count=len(rows),
         hint="الربح عليها بيتحسب وكأن التكلفة صفر — يعني ربح الفاتورة والعميل "
              "والصنف والشهر كله أعلى من الحقيقة.",
-        link="/invoices",
+        link=_with_ids("/invoices", ids), ids=ids,
         samples=[{"label": f"فاتورة {num}", "detail": f"{n} بند من غير تكلفة"}
-                 for num, n in rows[:SAMPLE]],
+                 for _i, num, n in rows[:SAMPLE]],
     )
 
 
 def check_empty_invoices(db: Session) -> Issue | None:
     """فاتورة من غير بنود — مستند بيقول باع ومش قايل باع إيه."""
     rows = db.execute(
-        select(SalesInvoice.document_number, SalesInvoice.net)
+        select(SalesInvoice.id, SalesInvoice.document_number, SalesInvoice.net)
         .outerjoin(SalesInvoiceLine, SalesInvoiceLine.invoice_id == SalesInvoice.id)
         .group_by(SalesInvoice.id, SalesInvoice.document_number, SalesInvoice.net)
         .having(func.count(SalesInvoiceLine.id) == 0)
     ).all()
     if not rows:
         return None
+    ids = [r[0] for r in rows]
     return Issue(
         key="invoice_no_lines", title="فواتير من غير بنود", group="فواتير العملاء",
         severity="high", count=len(rows),
         hint="مستند بيحمّل العميل مديونية ومش قايل اتباعله إيه.",
-        link="/invoices",
+        link=_with_ids("/invoices", ids), ids=ids,
         samples=[{"label": f"فاتورة {num}", "detail": f"صافي {_money(net)}"}
-                 for num, net in rows[:SAMPLE]],
+                 for _i, num, net in rows[:SAMPLE]],
     )
 
 
@@ -420,7 +440,9 @@ def check_accounts_without_nature(db: Session) -> Issue | None:
         count=len(bad),
         hint=f"رصيدهم {_money(total)} ج.م مش ظاهر لا في الأصول ولا الالتزامات — "
              "الميزانية بتقفل بفرق بسببهم.",
-        link="/general-ledger?tab=chart",
+        # الحسابات دي فرعية (ذمم عملاء وموردين)، فشاشتها «الحسابات الفرعيه».
+        link=_with_ids("/sub-accounts", [i for i, _c, _n, _b in bad]),
+        ids=[i for i, _c, _n, _b in bad],
         samples=[{"label": f"{c or ''} {n or f'#{i}'}".strip(), "detail": _money(b)}
                  for i, c, n, b in sorted(bad, key=lambda r: -abs(r[3]))[:SAMPLE]],
     )

@@ -868,6 +868,12 @@ def list_sales(
     rep_id: int | None = None,            # (030)
     family: str | None = None,
     external_document_number: str | None = None,  # (030)
+    # أرقام فواتير بعينها — بييجي من رابط فحص النظام في الرئيسية.
+    #
+    # لازم يتفلتر **هنا** مش في الشاشة: الشاشة بتحمّل صفحة (٦٠٠ صف) وبتفلتر اللي
+    # عندها، فالفحص اللي بيقول «٤ فواتير» كان بيعرض اللي منهم في الصفحة المحمّلة بس —
+    # واحدة من أربعة، والتلاتة التانيين مش باينين ومافيش حاجة بتقول إنهم اتخفوا.
+    ids: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
@@ -881,6 +887,11 @@ def list_sales(
     ماتخليش الأرقام تكدب.
     """
     stmt = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
+    if ids:
+        wanted = [int(x) for x in ids.split(",") if x.strip().lstrip("-").isdigit()]
+        # قايمة فاضية بعد التنضيف معناها إن اللي اتبعت مش أرقام — والرد ساعتها
+        # لازم يبقى فاضي مش «كل حاجة»، وإلا الفلتر الغلط بيبان زي ما فيش فلتر.
+        stmt = stmt.where(SalesInvoice.id.in_(wanted or [-1]))
     if rep_id is not None:
         stmt = stmt.where(SalesInvoice.rep_id == rep_id)
     if family:

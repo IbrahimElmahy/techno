@@ -3,6 +3,7 @@ import {
   Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Row, Col, Divider, Empty,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
+import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import {
   FileExcelOutlined, ReloadOutlined, BuildOutlined, DatabaseOutlined,
   DeleteOutlined, HourglassOutlined, ShoppingOutlined,
@@ -415,6 +416,10 @@ function StagnantTab({ warehouses }: TabProps) {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
+  // فحص النظام بيبعت أرقام الأصناف الراكدة في الرابط — التقرير بيفتح عليهم هم بس.
+  const focus = useFocusedIds();
+  const shownRows = focus.filter(rows, (r: any) => r.item_id);
+
   const stagnantTabCols = useTableColumns('rep-stagnant', columns, {
     export: { name: 'الرواكد', rows },
   });
@@ -432,9 +437,11 @@ function StagnantTab({ warehouses }: TabProps) {
         {asOf && <Tag color="default">حتى تاريخ: {dayjs(asOf).format('YYYY-MM-DD')}</Tag>}
       </Space>
 
+      <FocusedRowsBanner focus={focus} total={rows.length} noun="صنف"
+                         shown={shownRows.length} />
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{stagnantTabCols.control}</div>
       <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-        dataSource={rows} columns={stagnantTabCols.columns}
+        dataSource={shownRows} columns={stagnantTabCols.columns}
         rowClassName={(r) => (r.last_out_date === null ? 'stagnant-never-moved' : '')}
         onRow={(r) => (r.last_out_date === null ? { style: { background: '#fff1f0' } } : {})}
         summary={(data) => {

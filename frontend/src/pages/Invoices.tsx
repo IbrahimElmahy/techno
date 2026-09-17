@@ -37,6 +37,7 @@ import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money } from '../utils/money';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
+import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -103,6 +104,9 @@ export default function Invoices() {
   const [editingInvoice, setEditingInvoice] = useState<{ id: number; voided: boolean } | null>(null);
   // بصمة المستند لحظة ما اتفتح للتعديل — المرجع اللي «اتغيّر ولا لأ؟» بيتقاس عليه.
   const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
+  // الخزنة المكتوبة على الفاتورة اللي اتفتحت للتعديل — بتتحط جاهزة في بوباب الخزنة
+  // بدل ما يسأل من الأول. `null` للفاتورة الجديدة.
+  const [docCashAccountId, setDocCashAccountId] = useState<number | null>(null);
 
   // Forms
   const [createForm] = Form.useForm();
@@ -260,6 +264,14 @@ export default function Invoices() {
   const [serverSummary, setServerSummary] = useState<any>(null);
   const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return'>('all');
 
+  // فحص النظام بيبعت أرقام الفواتير اللي فيها الخلل في الرابط. من غير ده الزرار
+  // بيوديك على الكشف كله وتدوّر انت على الأربعة اللي هو عارفهم. `FocusedRows` بيشرح.
+  const focus = useFocusedIds();
+  // `fetchInvoices` مش معمولة بـ`useCallback`، فالمرجع أضمن من المتغيّر: بيتقرا وقت
+  // النداء مش وقت التعريف.
+  const focusRef = useRef<string | null>(null);
+  focusRef.current = focus.ids ? Array.from(focus.ids).join(',') : null;
+
   // Filtering happens on the server so it covers ALL invoices, not just the loaded page.
   const fetchInvoices = async (override?: InvoiceFilters) => {
     const active = override ?? filters;
@@ -272,8 +284,13 @@ export default function Invoices() {
       // صفحة واحدة مش الكشف كله: 6163 فاتورة = 2.9 ميجا و47 ثانية على الشبكة، والمهلة
       // 30 ثانية — فالشاشة كانت بتفصل وتقول «فشل الاتصال». الإجماليات جاية من السيرفر
       // عشان تفضل على الكشف كله مش على الصفحة.
+      // أرقام فحص النظام بتتبعت للسيرفر مش بتتفلتر هنا: الشاشة بتحمّل صفحة، والفلترة
+      // المحلية كانت بتعرض اللي من الأربعة في الصفحة دي بس — واحدة، والتلاتة مختفيين.
+      const focusIds = focusRef.current;
       const [salesRes, returnsRes, sumRes] = await Promise.all([
-        api.get('/api/v1/sales', { params: { ...params, limit: PAGE_SIZE } }),
+        api.get('/api/v1/sales', {
+          params: { ...params, limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
+        }),
         api.get('/api/v1/sales/returns', { params: { limit: PAGE_SIZE } })
           .catch(() => ({ data: [] })),
         api.get('/api/v1/sales/summary', { params }).catch(() => ({ data: null })),
@@ -304,6 +321,9 @@ export default function Invoices() {
   };
 
   // Unified list merging sales and sales returns
+  // فحص النظام بيبعت أرقام الفواتير اللي فيها الخلل في الرابط. من غير ده الزرار
+  // بيوديك على الكشف كله وتدوّر انت على الأربعة اللي هو عارفهم. `FocusedRows` بيشرح.
+
   const unifiedRecords = useMemo(() => {
     const saleRows = (invoices || []).map((s: any) => ({
       id: s.id,
@@ -376,6 +396,16 @@ export default function Invoices() {
 
     return combined.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
   }, [invoices, salesReturns, docKindFilter]);
+
+  /** الكشف بعد فلتر «ودّيني على اللي فيه المشكلة» — أو هو زي ما هو لو مافيش فلتر. */
+  // الأرقام اتغيّرت (دوس «اعرض الكل» أو جه من الرئيسية) ⇒ الكشف يتجاب من جديد.
+  const focusKey = focusRef.current ?? '';
+  useEffect(() => { fetchInvoices(); /* eslint-disable-next-line */ }, [focusKey]);
+
+  const focusedRecords = useMemo(
+    () => focus.filter(unifiedRecords, (r: any) => r.id),
+    [focus, unifiedRecords],
+  );
 
   // Live summary of sales, returns, and net sales
   const summary = useMemo(() => {
@@ -580,6 +610,7 @@ export default function Invoices() {
     setViewReturns([]);
     setEditingInvoice(null);
     setOpenedFingerprint(null);
+    setDocCashAccountId(null);
     setLines([]);
     setCouponRows([blankCoupon()]);
     setCustomerCoupons([]);
@@ -1192,6 +1223,7 @@ export default function Invoices() {
         direction: 'in',
         family: invoiceFamily,
         docLabel: 'فاتورة البيع',
+        preselect: docCashAccountId,
       },
       async (cashAccountId) => {
         try {
@@ -1489,6 +1521,7 @@ export default function Invoices() {
         statement3: det.statement3,
       });
 
+      setDocCashAccountId(det.cash_account_id ?? null);
       setSelectedCustomerId(det.customer_id);
       const first = (det.lines || [])[0];
       if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
@@ -2593,8 +2626,10 @@ export default function Invoices() {
           </Col>
         </Row>
 
+        <FocusedRowsBanner focus={focus} total={unifiedRecords.length} noun="فاتورة"
+                           shown={focusedRecords.length} />
         <Table
-          dataSource={unifiedRecords}
+          dataSource={focusedRecords}
           columns={visibleColumns}
           size="small"
           tableLayout="fixed"
