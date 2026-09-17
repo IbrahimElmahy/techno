@@ -40,6 +40,7 @@ def stock_as_of(
     as_of: str | date | None = None,
     warehouse_id: int | None = None,
     item_id: int | None = None,
+    branch_id: int | None = None,
 ) -> dict:
     day = None
     if as_of:
@@ -63,6 +64,14 @@ def stock_as_of(
         # Compared against the UTC instant the business day ends, not against `date()` of a
         # UTC timestamp — those differ by the office's offset every night after midnight.
         stmt = stmt.where(StockMovement.created_at < clock.day_end_utc(day))
+    if branch_id is not None:
+        # مخازن الفرع بس. الجرد بيتجمّع على (صنف × مكان)، والمكان هو اللي بيخصّ فرع.
+        from src.models.warehouse import Warehouse
+
+        mine = {w.id for w in db.scalars(
+            select(Warehouse).where(Warehouse.branch_id == branch_id)).all()}
+        stmt = stmt.where(StockMovement.location_kind == LocationKind.warehouse,
+                          StockMovement.location_id.in_(mine or {-1}))
     if warehouse_id is not None:
         stmt = stmt.where(StockMovement.location_kind == LocationKind.warehouse,
                           StockMovement.location_id == warehouse_id)

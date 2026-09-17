@@ -43,6 +43,7 @@ from src.api import (  # Sales & Inventory (002
     price_display,  # شاشة معلومات المنتج (031)
     product_points,
     purchases,
+    reconciliation,  # التسوية (المرحلة ٣ — موديل أودو)
     rep_reports,
     reports,
     reps,
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
     app.include_router(voucher_keys.router, prefix=prefix)
     # General Ledger (005)
     app.include_router(accounting.router, prefix=prefix)
+    app.include_router(reconciliation.router, prefix=prefix)
     # Cost Centers (006)
     app.include_router(cost_centers.router, prefix=prefix)
     # Settings → configurable dropdown lists (013)
@@ -231,6 +233,8 @@ def create_app() -> FastAPI:
         _backfill_branch(engine)
         _migrate_appears_in(engine)
         _ensure_coupon_kind_tiers(engine)
+        _seed_journals(engine)
+        _mark_reconcilable_accounts(engine)
         _load_permission_overrides()
     except Exception as exc:  # pragma: no cover — never let a transient DB hiccup crash boot
         import logging
@@ -325,6 +329,18 @@ def _load_permission_overrides() -> None:
 _ADDED_INDEXES: list[tuple[str, str, str]] = [
     # (اسم الفهرس، الجدول، الأعمدة)
     ("ix_point_record_inspection_id", "point_record", "inspection_id"),
+    # (المرحلة ٢) «وريني كل حركة العميل ده» بتلف على كل سطور الدفتر من غير الفهرس ده.
+    ("ix_ledger_line_partner", "ledger_line", "partner_kind, partner_id"),
+    ("ix_ledger_entry_partner", "ledger_entry", "partner_kind, partner_id"),
+    ("ix_ledger_entry_move_type", "ledger_entry", "move_type"),
+    # (المرحلة ١) الدفتر والحالة اتضافوا بـALTER فمافيش فهرس عليهم على السيرفر —
+    # وكل شاشة حسابات بتصفّي بالحالة.
+    ("ix_ledger_entry_journal_id", "ledger_entry", "journal_id"),
+    ("ix_ledger_entry_state", "ledger_entry", "state"),
+    # (المرحلة ٣) شاشة المطابقة بتدوّر على المفتوح بس — من غير الفهرس ده بتلف على
+    # كل سطور الدفتر عشان تلاقي عشرين سطر.
+    ("ix_ledger_line_residual", "ledger_line", "amount_residual"),
+    ("ix_ledger_line_full_reconcile", "ledger_line", "full_reconcile_id"),
 ]
 
 
@@ -367,6 +383,43 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("sales_invoice_coupon", "coupon_kind", "VARCHAR(24)"),
     # مرجع المصدر للقيد — استيراد الدفتر من نظام برّه بيتعاد من غير تكرار ولا تخطّي.
     ("ledger_entry", "external_ref", "VARCHAR(60)"),
+    # (المرحلة ١ — دفاتر اليومية) الدفتر والحالة والرقم.
+    #
+    # `state` بيتضاف NULL على كل القديم عن قصد، و`ledger_service.is_posted_sql` بيعامل
+    # NULL على إنه «مرحّل»: المسودة مالهاش وجود قبل المرحلة دي، فكل قيد قديم مرحّل.
+    # سكربت `backfill_journals` بيملاه بـ'posted' وبيدّي كل قيد دفتره ورقمه.
+    ("ledger_entry", "journal_id", "BIGINT"),
+    ("ledger_entry", "state", "VARCHAR(12)"),
+    ("ledger_entry", "number", "VARCHAR(32)"),
+    ("ledger_entry", "posted_at", "TIMESTAMP"),
+    # (المرحلة ٢) القيد هو المستند: نوعه، وعلى مين، وامتى مستحق.
+    ("ledger_entry", "move_type", "VARCHAR(16)"),
+    ("ledger_entry", "partner_kind", "VARCHAR(12)"),
+    ("ledger_entry", "partner_id", "BIGINT"),
+    ("ledger_entry", "invoice_date_due", "DATE"),
+    ("ledger_entry", "payment_state", "VARCHAR(16)"),
+    # مركز التكلفة على المستندات — الخانة كانت في القيد اليدوي بس، فتقرير أرباح
+    # المراكز كان بيطلع كله «غير موزّع».
+    ("voucher", "cost_center_id", "BIGINT"),
+    ("sales_invoice", "cost_center_id", "BIGINT"),
+    ("sales_return", "cost_center_id", "BIGINT"),
+    ("purchase_invoice", "cost_center_id", "BIGINT"),
+    ("purchase_return", "cost_center_id", "BIGINT"),
+    # (المرحلة ٤) سلسلة التجزئة — فاضيين في كل دفتر مش شغّال عليه `restrict_mode_hash`.
+    ("ledger_entry", "secure_sequence_number", "BIGINT"),
+    ("ledger_entry", "inalterable_hash", "VARCHAR(64)"),
+    # nullable زي بقية اللي هنا — الصف القديم بيرجع NULL و`bool(None)` = مقفول.
+    ("journal", "restrict_mode_hash", "BOOLEAN"),
+    # الشريك على السطر كمان — القيد اللي فيه أكتر من شريك بيتقسّم صح، ودفتر الشريك
+    # وأعمار الديون بيتحسبوا من الدفتر مباشرة.
+    ("ledger_line", "partner_kind", "VARCHAR(12)"),
+    ("ledger_line", "partner_id", "BIGINT"),
+    ("ledger_line", "date_maturity", "DATE"),
+    # (المرحلة ٣) المتبقّي والمطابقة. `amount_residual` بيفضل NULL على السطر اللي مش
+    # على حساب بيتقفل — وده غير الصفر اللي معناه «اتقفل».
+    ("ledger_line", "amount_residual", "DECIMAL(18,2)"),
+    ("ledger_line", "full_reconcile_id", "BIGINT"),
+    ("account", "reconcilable", "BOOLEAN DEFAULT FALSE"),
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
     ("sales_invoice", "client_uuid", "VARCHAR(64)"),
     ("voucher", "client_uuid", "VARCHAR(64)"),
@@ -927,6 +980,47 @@ def _ensure_columns(engine) -> None:
             logging.getLogger("uvicorn.error").info(
                 "ensure column %s.%s skipped: %s", table, column, exc
             )
+
+
+def _mark_reconcilable_accounts(engine) -> None:
+    """يعلّم حسابات العملاء والموردين إنها «قابلة للتسوية». Idempotent.
+
+    المنطق نفسه في `reconcile_service.is_reconcilable` بيعتمد على نوع الحساب، فده
+    مش شرط للشغل — بس العمود هو اللي الشاشة بتعرضه وبتفلتر بيه، وحساب ذمم بيقول
+    «مش قابل للتسوية» في شاشة الحسابات بيبقى غلط ظاهر.
+    """
+    import logging
+
+    from sqlalchemy import text
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE account SET reconcilable = TRUE "
+                "WHERE account_type IN ('customer_receivable', 'supplier_payable') "
+                "AND (reconcilable IS NULL OR reconcilable = FALSE)"))
+    except Exception as exc:  # pragma: no cover — best-effort
+        logging.getLogger("uvicorn.error").info("reconcilable sync skipped: %s", exc)
+
+
+def _seed_journals(engine) -> None:
+    """يزرع دفاتر اليومية القياسية (المرحلة ١) لو لسه مش موجودة. Idempotent.
+
+    عند الإقلاع مش عند أول ترحيل: أول شاشة بتفتح على «الدفاتر» بتلاقيها موجودة، وقايمة
+    فاضية في شاشة إعدادات بتبان زي عطل مش زي «لسه ماحصلش ترحيل».
+    """
+    import logging
+
+    from sqlalchemy.orm import Session
+
+    from src.services import journal_registry
+
+    try:
+        with Session(engine) as db:
+            journal_registry.ensure_seeded(db)
+            db.commit()
+    except Exception as exc:  # pragma: no cover — best-effort
+        logging.getLogger("uvicorn.error").info("seed journals skipped: %s", exc)
 
 
 def _ensure_indexes(engine) -> None:

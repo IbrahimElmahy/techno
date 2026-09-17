@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
 from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
-from src.services import chart_service
+from src.services import chart_service, ledger_service
 
 
 @dataclass
@@ -85,11 +85,25 @@ def trial_balance(
     cost_center_id: int | None = None,
 ) -> TrialBalanceResult:
     # Pull lines joined to their entry once; bucket in Python (DB-agnostic date handling).
-    stmt = select(LedgerLine, LedgerEntry).join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
+    stmt = (
+        select(LedgerLine, LedgerEntry)
+        .join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
+        .where(ledger_service.is_posted_sql())  # المسودة والملغي مش في الميزان
+    )
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     if cost_center_id is not None:  # optional analytical scope (006)
-        stmt = stmt.where(LedgerLine.cost_center_id == cost_center_id)
+        # السطر المتقسّم مالوش `cost_center_id`، وحصته في جدول التوزيع — فالتصفية
+        # لازم تشوف الاتنين، وإلا الميزان المفلتر بمركز بيرمي كل السطور المقسّمة.
+        from src.models.analytic import LedgerLineDistribution
+
+        stmt = stmt.where(
+            (LedgerLine.cost_center_id == cost_center_id)
+            | LedgerLine.id.in_(
+                select(LedgerLineDistribution.line_id).where(
+                    LedgerLineDistribution.cost_center_id == cost_center_id)
+            )
+        )
 
     buckets: dict[int, _Bucket] = {}
     for line, entry in db.execute(stmt).all():

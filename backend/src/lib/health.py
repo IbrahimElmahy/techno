@@ -27,7 +27,7 @@ already taught us what an N+1 does to a serverless request — 233 round trips, 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import case, func, select
@@ -35,9 +35,10 @@ from sqlalchemy.orm import Session
 
 from src.core.money import to_money, to_qty
 from src.models.catalog import Item, ItemKind, ItemPrice
-from src.models.ledger import Account, LedgerLine
+from src.models.ledger import Account, AccountType, LedgerEntry, LedgerLine
+from src.services import ledger_service
 from src.models.sales import SalesInvoice, SalesInvoiceLine
-from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.stock import LocationKind, StockDirection, StockDoc, StockMovement
 from src.models.treasury import Treasury
 from src.models.employee import Employee
 from src.models.role import Role, RoleName
@@ -169,6 +170,37 @@ def check_reorder(db: Session, on_hand, labels) -> list[Issue]:
     return out
 
 
+def _last_sold(db: Session) -> dict[tuple[int, int], date]:
+    """آخر يوم اتباع فيه كل (صنف × مخزن) — **بتاريخ الفاتورة، مش بوقت الاستيراد**.
+
+    ده كان بيتقرا من `StockMovement.created_at`، وده وقت كتابة السطر في قاعدتنا مش وقت
+    الحركة. ونقل a5 كتب أربعة وأربعين ألف حركة في تسع أيام، والفواتير اللي وراها ممتدة
+    من يناير. فكل حركة منقولة كانت مكتوب عليها إنها حصلت الأسبوع اللي فات.
+
+    والنتيجة إن التقرير كان بيكدب في الاتجاهين: الصنف اللي آخر بيعة له في يناير كان
+    بيبان متحرّك، و«راكد أكتر من ٩٠ يوم» كانت مقولة على نظام عمره تسع أيام.
+
+    فبيتقاس بتاريخ الفاتورة اللي الحركة طالعة منها، والحركة اللي مالهاش فاتورة بتقع
+    على `created_at` — تحويل أو تسوية، ووقت كتابته هو وقته فعلاً.
+
+    واستعلام واحد مجمّع زي باقي الفحوصات: الصفحة دي بتتحمّل مع كل فتحة للرئيسية،
+    فالقراءة اللي بتكبر مع عدد الحركات هي اللي بتخلّيها تقع بعد سنة.
+    """
+    when = func.coalesce(SalesInvoice.invoice_date, func.date(StockMovement.created_at))
+    rows = db.execute(
+        select(StockMovement.item_id, StockMovement.location_id, func.max(when))
+        .select_from(StockMovement)
+        .join(SalesInvoice,
+              (SalesInvoice.id == StockMovement.source_doc_id)
+              & (StockMovement.source_doc_type == StockDoc.SALE),
+              isouter=True)
+        .where(StockMovement.location_kind == LocationKind.warehouse,
+               StockMovement.direction == StockDirection.out)
+        .group_by(StockMovement.item_id, StockMovement.location_id)
+    ).all()
+    return {(iid, lid): day for iid, lid, day in rows if day is not None}
+
+
 def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
                    now: datetime | None = None) -> Issue | None:
     """بضاعة راكدة — رصيد موجود ومحصلش عليه بيع من كذا شهر.
@@ -178,24 +210,13 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
     """
     now = now or datetime.utcnow()
     cutoff = (now.date() if isinstance(now, datetime) else now) - timedelta(days=days)
-
-    last_out = {
-        (iid, lid): when
-        for iid, lid, when in db.execute(
-            select(StockMovement.item_id, StockMovement.location_id,
-                   func.max(StockMovement.created_at))
-            .where(StockMovement.location_kind == LocationKind.warehouse,
-                   StockMovement.direction == StockDirection.out)
-            .group_by(StockMovement.item_id, StockMovement.location_id)
-        ).all()
-    }
+    last_out = _last_sold(db)
 
     rows = []
     for iid, kind, lid, qty in on_hand:
         if kind != LocationKind.warehouse.value or qty <= ZERO:
             continue
-        when = last_out.get((iid, lid))
-        day = when.date() if isinstance(when, datetime) else when
+        day = last_out.get((iid, lid))
         if day is not None and day >= cutoff:
             continue
         rows.append({"label": labels.get(iid, f"#{iid}"),
@@ -340,6 +361,9 @@ def check_unbalanced_entries(db: Session) -> Issue | None:
     credit = func.sum(case((LedgerLine.direction == "credit", LedgerLine.amount), else_=0))
     rows = db.execute(
         select(LedgerLine.entry_id, debit, credit)
+        # المسودة ناقصة عن قصد — الفحص ده للمرحّل بس، وإلا كل مسودة بتطلع «قيد غير متوازن».
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())
         .group_by(LedgerLine.entry_id)
         .having(debit != credit)
     ).all()
@@ -356,6 +380,47 @@ def check_unbalanced_entries(db: Session) -> Issue | None:
     )
 
 
+def check_accounts_without_nature(db: Session) -> Issue | None:
+    """حساب عليه رصيد ومالوش طبيعة — بيسقط من الميزانية في صمت.
+
+    الميزانية بتصنّف كل حساب من `nature`، ولو فاضية بتقع على خريطة النوع. والنوع
+    `user_defined` مش في الخريطة — بالتعريف، لأنه الحساب اللي العميل عمله بنفسه.
+    فالحساب اللي جامع الاتنين (نوع `user_defined` وطبيعة فاضية) بيتسقّط من الأصول
+    والالتزامات وحقوق الملكية كلهم، ورصيده بيختفي من الوجهين.
+
+    وساعتها الميزانية مابتوزنش والدفتر موزون — يعني الرقم مش ضايع، هو بس مش متصنّف.
+    حصل فعلاً: أربع حسابات بـ٩٧٬٦٠٠٫٩٦ ج.م خلّوا الميزانية مقفولة بفرق بالمليم.
+
+    والفحص ده هو اللي بيخلّي الحالة دي مسموعة: `balanced=False` جوّه التقرير بيبان
+    لواحد فتح الميزانية، وده بيبان لأي حد بيفتح الرئيسية.
+    """
+    signed = func.sum(case(
+        (LedgerLine.direction == "debit", LedgerLine.amount), else_=-LedgerLine.amount))
+    rows = db.execute(
+        select(Account.id, Account.code, Account.name, signed)
+        .join(LedgerLine, LedgerLine.account_id == Account.id)
+        .where(Account.nature.is_(None),
+               Account.account_type == AccountType.user_defined)
+        .group_by(Account.id, Account.code, Account.name)
+    ).all()
+    bad = [(i, c, n, b) for i, c, n, b in rows if abs(to_money(b or 0)) > Decimal("0.005")]
+    if not bad:
+        return None
+    total = sum((to_money(b) for _i, _c, _n, b in bad), ZERO)
+    return Issue(
+        key="account_no_nature",
+        title="حسابات مالهاش تصنيف بتسقط من الميزانية",
+        group="الحسابات",
+        severity="high",
+        count=len(bad),
+        hint=f"رصيدهم {_money(total)} ج.م مش ظاهر لا في الأصول ولا الالتزامات — "
+             "الميزانية بتقفل بفرق بسببهم.",
+        link="/chart-of-accounts",
+        samples=[{"label": f"{c or ''} {n or f'#{i}'}".strip(), "detail": _money(b)}
+                 for i, c, n, b in sorted(bad, key=lambda r: -abs(r[3]))[:SAMPLE]],
+    )
+
+
 def check_negative_treasuries(db: Session) -> Issue | None:
     """خزنة برصيد سالب — مفيش خزنة بتطلع أكتر من اللي فيها."""
     signed = case(
@@ -368,6 +433,8 @@ def check_negative_treasuries(db: Session) -> Issue | None:
             select(LedgerLine.account_id, func.coalesce(func.sum(signed), 0))
             .select_from(LedgerLine)
             .join(Account, Account.id == LedgerLine.account_id)
+            .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+            .where(ledger_service.is_posted_sql())
             .group_by(LedgerLine.account_id)
         ).all()
     }
@@ -574,6 +641,7 @@ def run_all(db: Session, *, now: datetime | None = None) -> dict:
         check_empty_invoices(db),
         check_unbalanced_entries(db),
         check_negative_treasuries(db),
+        check_accounts_without_nature(db),
         check_duplicate_customers(db),
         check_overdue_cheques(db, now=now),
         check_expired_reservations(db, now=now),

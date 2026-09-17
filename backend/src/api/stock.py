@@ -400,11 +400,17 @@ def list_permits(
     date_to: str | None = Query(None),
     limit: int | None = Query(None),
     offset: int = Query(0),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
     rows = stock_permit_service.list_permits(
         db, kind=kind, warehouse_id=warehouse_id, date_from=date_from, date_to=date_to)
+    # الإذن بيتحرك على مخزن، والمخازن مفلترة — فاللي مخزنه مش بتاعي مش بيبان.
+    if branch_scope.visible_branch_id(current) is not None:
+        mine = {w.id for w in db.scalars(
+            branch_scope.scope(select(Warehouse), Warehouse, current)).all()}
+        rows = [p for p in rows
+                if getattr(p, 'warehouse_id', None) is None or p.warehouse_id in mine]
     total = len(rows)
     response.headers["X-Total-Count"] = str(total)
     if limit is not None:

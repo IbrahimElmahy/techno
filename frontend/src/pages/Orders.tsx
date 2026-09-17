@@ -12,7 +12,7 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
-import { netOf, MAX_DISCOUNT_PCT } from '../utils/discount';
+import { netOf, MAX_DISCOUNT_PCT } from '../utils/discounts';
 import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';

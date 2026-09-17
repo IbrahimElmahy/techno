@@ -18,11 +18,12 @@ from src.services import numbering
 from src.core import hooks
 from src.lib import discounts
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import discounts
 from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
 from src.services import customer_service
 from src.services.customer_merge_service import MergeError
-from src.models.ledger import Account, Direction
+from src.models.ledger import Account, Direction, PartnerKind
 from src.models.role import RoleName
 from src.models.sales import (
     SalesInvoice,
@@ -32,7 +33,7 @@ from src.models.sales import (
     SalesSetting,
 )
 from src.models.sales_expense import ExpenseKind, SalesInvoiceExpense
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.services import (
     reservation_service,
     account_resolver,
@@ -201,7 +202,11 @@ def fixed_discount_pct(db: Session) -> Decimal:
 
 
 def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
-    """المبلغ بعد نسبة خصم محسوبة خلاص. المحرك في `src.lib.discounts`."""
+    """الصافي من **نسبة واحدة**. الخصمين ورا بعض بيعدّوا على `discounts.apply`.
+
+    الحساب في المحرك مش هنا: `× (1 - pct/100)` مكتوبة في مكان واحد بس في البايثون،
+    وإلا القاعدة بتتعدّل في المحرك وتفضل قديمة هنا.
+    """
     return discounts.net_of(gross, combined_pct)
 
 
@@ -224,6 +229,10 @@ def create_sale(
     # الخزنة اللي اتختارت من البوباب. فاضية ⇒ تتستنتج من الخط.
     cash_account_id: int | None = None,
     can_sell_below: bool = False,
+    # (التعديل) تكلفة الوحدة الأساسية اللي كانت مجمّدة على الفاتورة قبل ما تتفضّى.
+    # الصنف اللي فيها بياخد رقمه القديم؛ اللي مش فيها (سطر اتزوّد دلوقتي) بياخد
+    # متوسط النهارده. شوف `document_edit_service.frozen_costs`.
+    keep_costs: dict[int, Decimal] | None = None,
     # (030) document fields — all optional so every pre-030 caller keeps working unchanged.
     rep_id: int | None = None,
     revenue_account_id: int | None = None,
@@ -249,6 +258,14 @@ def create_sale(
     # الـid. أثر القديمة بيتشال قبل البناء (شوف `document_edit_service`)، فاللي بيطلع في
     # الآخر مستند واحد، مش مستند وتصحيحه.
     replace_invoice_id: int | None = None,
+    # مركز التكلفة على المستند كله — بيتورّث لسطور القيد. من غيره الإيراد وتكلفة
+    # المبيعات كانوا بينزلوا «غير موزّع»، وتقرير أرباح المراكز كان بيبقى فاضي من
+    # الحاجة الوحيدة اللي بتولّد ربح أصلاً.
+    cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> SalesInvoice:
     # فاتورة كوبونات بس — من غير أي صنف.
     #
@@ -268,9 +285,12 @@ def create_sale(
         raise SalesError("الفاتورة لازم يكون فيها صنف أو دفتر كوبونات على الأقل.")
     fixed = fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
+    # خصم بعد خصم: المتغيّر بيتحسب على الباقي بعد الثابت، مش على السعر الأصلي.
+    # `combined` هي الحصيلة الفعلية — بتتكتب على المستند للعرض، والصافي بيتحسب
+    # بالنِسَب الأصلية عشان تقريبها لمنزلتين مايدخلش في الفلوس.
     combined = discounts.combine(fixed, variable)
-    if combined >= Decimal("100") or variable < ZERO:
-        raise SalesError("الخصم المجمّع لازم يكون أقل من ١٠٠٪ والخصم المتغيّر مايكونش بالسالب.")
+    if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
+        raise SalesError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
 
     customer = db.get(Customer, customer_id)
 
@@ -349,7 +369,7 @@ def create_sale(
         gross += line_total
         built.append((ln, unit_price, line_total, tier, factor, line_disc))
     gross = to_money(gross)
-    net = compute_net(gross, combined)
+    net = discounts.apply(gross, fixed, variable)
     # VAT (021): zero rate ⇒ tax 0 and `payable == net`, i.e. the original contract exactly.
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     billed_expenses, operating_expenses = _split_expenses(db, expenses)
@@ -439,6 +459,7 @@ def create_sale(
         coupon_count=_coupon_count(coupon_serial_from, coupon_serial_to, coupon_count),
         invoice_date=invoice_date,
         client_uuid=client_uuid,
+        cost_center_id=cost_center_id,
     )
     if existing is not None:
         # نفس الحقول اللي البناء بيملاها، بس على صف موجود. `client_uuid` مابيتلمسش —
@@ -468,6 +489,7 @@ def create_sale(
         existing.coupon_serial_from = (coupon_serial_from or None)
         existing.coupon_serial_to = (coupon_serial_to or None)
         existing.coupon_count = _coupon_count(coupon_serial_from, coupon_serial_to, coupon_count)
+        existing.cost_center_id = cost_center_id
         if invoice_date is not None:
             existing.invoice_date = invoice_date
         invoice.lines.clear()
@@ -488,11 +510,19 @@ def create_sale(
             db, item_id=ln.item_id, location_kind=line_kind,
             location_id=line_loc, movement_type="sale_out",
             direction=StockDirection.out, quantity=base_qty, actor_user_id=actor_user_id,
-            source_doc_type="sale", source_doc_id=invoice.id,
+            source_doc_type=StockDoc.SALE, source_doc_id=invoice.id,
         )
-        # (030) Freeze the cost of goods as it stands NOW. Later purchases move the average for
-        # future sales; this invoice's margin must stay exactly what it was on the day.
-        unit_cost = to_money(costing_service.average_cost(db, ln.item_id) * factor)
+        # (030) التكلفة بتتجمّد على الفاتورة عشان هامشها مايتحركش بعد كده: المشتريات
+        # الجاية بتحرّك المتوسط للمبيعات الجاية، مش للفاتورة دي.
+        #
+        # **والتعديل مش بيعيد تجميدها.** كان بيعيده — التفضية بتمسح السطور والبناء
+        # بيحسب من متوسط النهارده — فتصليح أي حاجة في فاتورة قديمة كان بيكتب تكلفة
+        # النهارده مكان تكلفة يومها، والهامش يتحرك من غير ما حد يطلب ده. السطر اللي
+        # كان موجود بياخد رقمه القديم، واللي اتزوّد في التعديل بياخد متوسط النهارده
+        # لأنه فعلاً بيع جديد.
+        kept = (keep_costs or {}).get(ln.item_id)
+        base_cost = kept if kept is not None else costing_service.average_cost(db, ln.item_id)
+        unit_cost = to_money(Decimal(str(base_cost)) * factor)
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                              unit_price=unit_price, discount_pct=line_disc,
@@ -522,7 +552,7 @@ def create_sale(
                 batch_service.consume_fefo(
                     db, item_id=ln.item_id, location_kind=line_kind,
                     location_id=line_loc, quantity=base_qty,
-                    document_type="sales_invoice", document_id=invoice.id,
+                    document_type=StockDoc.SALE, document_id=invoice.id,
                     actor_user_id=actor_user_id,
                 )
             except batch_service.BatchError as exc:
@@ -571,6 +601,11 @@ def create_sale(
             description=f"Sale {invoice.document_number}",
             # Same date as the document: the books and the paper have to agree.
             entry_date=invoice_date,
+            # (المرحلة ٢) الفاتورة قيد على عميل. من غير السطرين دول الدفعة مابتعرفش
+            # تتقفل على الفاتورة دي بالذات، وأعمار الديون بتتحسب من جدول المستندات.
+            partner_kind=PartnerKind.customer, partner_id=invoice.customer_id,
+            cost_center_id=invoice.cost_center_id,
+            cost_center_distribution=cost_center_distribution,
         )
         invoice.ledger_entry_id = entry.id
     else:
@@ -797,10 +832,21 @@ def return_sale(
     if inv is None:
         raise SalesError("فاتورة البيع مش موجودة.")
     # (008) carry the line's unit_factor so the return reverses stock in base units.
+    # **السعر اللي الفاتورة حسبته فعلاً، مش سعر القايمة.**
+    #
+    # المرتجع كان بيرجّع `unit_price` زي ما هو — من غير خصم السطر ولا خصم الفاتورة.
+    # صنف اتباع بـ٢٠ وعليه خصم سطر ٢٠٪ وخصم فاتورة ١٠٪ العميل دفع فيه ١٤٫٤٠، ولما
+    # يرجّعه كان بياخد ٢٠. يعني كل مرتجع بخصم بيدّي العميل فلوس زيادة، وكل «تعديل»
+    # لفاتورة (بيترحّل كمرتجع كامل) كان بيسيب فرق في مديونيته.
+    #
+    # الخصمين بيتحسبوا بنفس ترتيب الفاتورة: خصم السطر على السطر، وخصم المستند على
+    # المجموع مرة واحدة — عشان المرتجع الكامل يطلع `inv.net` بالظبط، مش تقريبه.
     sold = {
-        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor))
+        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor),
+                     Decimal(ln.discount_pct or 0))
         for ln in inv.lines
     }
+    doc_pct = Decimal(getattr(inv, "combined_pct", 0) or 0)
     # (030) Each sold line remembers the warehouse it left from, so the return puts the goods back
     # exactly there. Lines written before 030 fall back to the invoice's own location.
     sold_from = {
@@ -824,8 +870,8 @@ def return_sale(
             raise SalesError(
                 f"مرتجعات الفاتورة دي وصلت للكمية المباعة خلاص — "
                 f"اتباع {sold[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
-        value += to_money(qty * sold[item_id][1])
-    value = to_money(value)
+        value += discounts.apply(qty * sold[item_id][1], sold[item_id][3])
+    value = discounts.apply(value, doc_pct)
 
     # VAT (021): a partial return gives back the same share of the tax that was charged, so a
     # full return leaves neither revenue nor tax behind.
@@ -847,6 +893,8 @@ def return_sale(
         credit_reduction=credit_reduction, ledger_entry_id=None, actor_user_id=actor_user_id,
         # المرتجع بياخد فرع فاتورته: البضاعة رجعت للمكان اللي خرجت منه.
         branch_id=getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id),
+        # ومركزها كمان — الرد لازم يرجع على نفس النشاط اللي البيع اتحسب عليه.
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     db.add(ret)
     db.flush()
@@ -857,7 +905,7 @@ def return_sale(
             db, item_id=item_id, location_kind=back_kind,
             location_id=back_loc, movement_type="sale_return_in",
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
-            source_doc_type="sale_return", source_doc_id=ret.id,
+            source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id,
         )
         ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty),
                                          location_kind=back_kind, location_id=back_loc,
@@ -905,6 +953,11 @@ def return_sale(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id,
         description=f"Sales return {ret.document_number}",
+        entry_date=ret.return_date,
+        partner_kind=PartnerKind.customer, partner_id=inv.customer_id,
+        # المردود بيرجع على نفس مركز الفاتورة — غير كده الربح بينزل من مركز والرد
+        # بيطلع من «غير موزّع»، والمركز بيفضل مكتوب عليه ربح مارجعش.
+        cost_center_id=getattr(inv, "cost_center_id", None),
     )
     ret.ledger_entry_id = entry.id
     db.flush()
@@ -957,6 +1010,11 @@ def create_standalone_return(
     return_date=None,
     # التعديل الحر — نفس فكرة الفاتورة: المرتجع يتبني مكان واحد موجود بنفس رقمه.
     replace_return_id: int | None = None,
+    cost_center_id: int | None = None,
+    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
+    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
+    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
+    cost_center_distribution: dict | None = None,
 ) -> SalesReturn:
     """A sales return built like a sale but reversed (028): pick a customer + items directly (no
     originating invoice), goods go back INTO stock, and the customer is credited (cash refund from a
@@ -1009,7 +1067,13 @@ def create_standalone_return(
         gross += line_total
         built.append((ln, unit_price, line_total, factor))
     gross = to_money(gross)
-    net = compute_net(gross, variable)
+    # **الخصم الثابت بينزل هنا كمان — زي الفاتورة بالظبط.**
+    #
+    # المرتجع الحر كان بياخد الخصم المتغيّر بس. يعني محل خصمه الثابت ١٠٪ بيبيع
+    # بـ٩٠ ويرجّع ١٠٠ على نفس البضاعة — عشرة بتطلع من الخزنة على كل مية من غير ما
+    # حد يقصدها. الرد لازم يتحسب بنفس القاعدة اللي البيع اتحسب بيها.
+    fixed = fixed_discount_pct(db)
+    net = discounts.apply(gross, fixed, variable)
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     refund_total = to_money(net + tax)
     if to_money(cash_refund) + to_money(credit_reduction) != refund_total:
@@ -1036,7 +1100,8 @@ def create_standalone_return(
         branch_id=branch_for(db, actor_user_id=actor_user_id,
                              location_kind=origin_location_kind,
                              location_id=origin_location_id),
-        gross=gross, combined_pct=variable, value=net, tax_amount=tax,
+        # النسبة المجمّعة للعرض — الخصمين ورا بعض، نفس اللي الصافي اتحسب بيه.
+        gross=gross, combined_pct=discounts.combine(fixed, variable), value=net, tax_amount=tax,
         cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),
         cash_account_id=cash_acc.id if cash_acc else None,
         rep_id=rep_id, revenue_account_id=revenue_account_id,
@@ -1046,15 +1111,17 @@ def create_standalone_return(
         # Defaulted here rather than in the column so a return always carries a real day — a NULL
         # would push every report that groups by day into guessing.
         return_date=return_date or date.today(),
+        cost_center_id=cost_center_id,
         ledger_entry_id=None, actor_user_id=actor_user_id,
     )
     if existing is not None:
+        existing.cost_center_id = cost_center_id
         existing.customer_id = customer_id
         existing.family = family
         existing.origin_location_kind = origin_location_kind
         existing.origin_location_id = origin_location_id
         existing.gross = gross
-        existing.combined_pct = variable
+        existing.combined_pct = discounts.combine(fixed, variable)
         existing.value = net
         existing.tax_amount = tax
         existing.cash_refund = to_money(cash_refund)
@@ -1084,7 +1151,7 @@ def create_standalone_return(
             db, item_id=ln.item_id, location_kind=back_kind,
             location_id=back_loc, movement_type="sale_return_in",
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
-            source_doc_type="sale_return", source_doc_id=ret.id,
+            source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id,
         )
         if item is not None and item.is_serialized:
             ser = [s.strip() for s in (ln.serials or []) if s.strip()]
@@ -1119,6 +1186,10 @@ def create_standalone_return(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id,
         description=f"Sales return {ret.document_number}",
+        entry_date=ret.return_date,
+        partner_kind=PartnerKind.customer, partner_id=ret.customer_id,
+        cost_center_id=getattr(ret, "cost_center_id", None),
+        cost_center_distribution=cost_center_distribution,
     )
     ret.ledger_entry_id = entry.id
     db.flush()

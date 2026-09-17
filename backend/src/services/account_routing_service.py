@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from src.models.account_routing import AccountRouting
 from src.models.ledger import Account, AccountNature, AccountType
 from src.services import account_resolver, org_service
+from src.services.financial_reports_service import effective_nature
 
 
 class RoutingError(Exception):
@@ -142,6 +143,10 @@ def current_routing(db: Session, *, branch_id: int | None = None) -> list[dict]:
             acc = account_resolver.get_or_create_singleton(db, fallback, branch_id=bid)
             source = "default"
         expected = EXPECTED_NATURE.get(role)
+        # الطبيعة الفعلية مش العمود: حساب النظام `nature` بتاعه بيفضل NULL لحد ما
+        # الشجرة القياسية تتزرع، والسطر اللي تحت كان بيعمل `.value` على `None` —
+        # فالشاشة كلها كانت بترمي ٥٠٠ على أي قاعدة الشجرة ماتزرعتش فيها.
+        nature = effective_nature(acc)
         out.append({
             "role": role,
             "label": ROLE_LABEL.get(role, role),
@@ -151,8 +156,8 @@ def current_routing(db: Session, *, branch_id: int | None = None) -> list[dict]:
             "source": source,
             # A mismatch is worth saying out loud without blocking: the accountant may mean it.
             "nature_warning": (
-                None if expected is None or acc.nature == expected
-                else f"طبيعة الحساب «{acc.nature.value}» مختلفة عن المتوقّع «{expected.value}»."
+                None if expected is None or nature is None or nature == expected
+                else f"طبيعة الحساب «{nature.value}» مختلفة عن المتوقّع «{expected.value}»."
             ),
         })
     return out

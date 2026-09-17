@@ -261,6 +261,11 @@ def _lines_of(c: Ctx, rows: list[list[str]], store_col: int, label: str):
     return out
 
 
+# `_line_pct` اتشالت من هنا: كانت بتحسب نفس اللي `discounts.implied_pct` بيحسبه
+# بالحرف. نسختين من نفس القاعدة معناها إن واحدة تتعدّل والتانية تفضل، والرقم اللي على
+# السطر يختلف عن الرقم اللي في الشاشة — والمحرك موجود عشان ده مايحصلش.
+
+
 def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
     num = c.number("S", h[H_ID])
     if num in c.taken:

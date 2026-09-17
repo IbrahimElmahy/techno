@@ -16,8 +16,20 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
+from src.lib import discounts
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine, PurchaseReturn, PurchaseReturnLine
 from src.models.stock import CostingMethod, StockSetting
+
+
+def _after_doc_discount(column):
+    """العمود بعد خصم المستند — `عمود × (١ − النسبة/١٠٠)`.
+
+    التكلفة كانت بتتقرا من `line_total`، وده بعد خصم السطر بس. فاتورة شرا عليها
+    خصم مستند ٥٪ كانت بتسجّل تكلفة أعلى من اللي اتدفع فعلاً — وده بيقلّل الربح
+    المعلن على كل بيعة من الصنف ده. الخصم على المستند فلوس ماطلعتش من الخزنة،
+    فمالهاش حق تبقى في تكلفة البضاعة.
+    """
+    return column * (1 - func.coalesce(PurchaseInvoice.combined_pct, 0) / 100)
 
 
 def average_cost(db: Session, item_id: int) -> Decimal:
@@ -26,20 +38,31 @@ def average_cost(db: Session, item_id: int) -> Decimal:
     Returns ZERO — never None — for an item with no purchases (produced in-house, or opening
     stock). A caller storing this on a document needs a number it can do arithmetic with; a NULL
     would quietly turn every downstream profit into "unknown".
+
+    **الخصمين الاتنين محسوبين**: خصم السطر جوّه `line_total` خلاص، وخصم المستند
+    بيتضرب هنا. التكلفة هي اللي اتدفع، مش اللي اتكتب في القايمة.
     """
     bought_qty, bought_value = db.execute(
         select(
             func.coalesce(func.sum(PurchaseInvoiceLine.quantity * PurchaseInvoiceLine.unit_factor), 0),
-            func.coalesce(func.sum(PurchaseInvoiceLine.line_total), 0),
-        ).where(PurchaseInvoiceLine.item_id == item_id)
+            func.coalesce(func.sum(_after_doc_discount(PurchaseInvoiceLine.line_total)), 0),
+        )
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
+        .where(PurchaseInvoiceLine.item_id == item_id)
     ).one()
 
     # Returned purchases were never really ours — take them back out of both sides so the average
     # reflects what we actually kept and paid for.
+    #
+    # **بنفس السعر اللي دخلت بيه بالظبط.** كان بيطرح `unit_price` — سعر القايمة من
+    # غير أي خصم — بينما الدخول اتحسب بالخصمين. يعني المرتجع كان بيشيل فلوس أكتر
+    # من اللي ضافها، ومتوسط تكلفة الباقي في المخزن يتشوّه مع كل مردود.
     returned_qty, returned_value = db.execute(
         select(
             func.coalesce(func.sum(PurchaseReturnLine.quantity), 0),
-            func.coalesce(func.sum(PurchaseReturnLine.quantity * PurchaseInvoiceLine.unit_price), 0),
+            func.coalesce(func.sum(_after_doc_discount(
+                PurchaseReturnLine.quantity * PurchaseInvoiceLine.unit_price
+                * (1 - func.coalesce(PurchaseInvoiceLine.discount_pct, 0) / 100))), 0),
         )
         .select_from(PurchaseReturnLine)
         .join(PurchaseReturn, PurchaseReturn.id == PurchaseReturnLine.return_id)
@@ -65,7 +88,8 @@ def last_purchase_cost(db: Session, item_id: int) -> Decimal:
     Per BASE unit, like `average_cost`, so the two are interchangeable wherever a cost is needed.
     """
     row = db.execute(
-        select(PurchaseInvoiceLine.unit_price, PurchaseInvoiceLine.unit_factor)
+        select(PurchaseInvoiceLine.unit_price, PurchaseInvoiceLine.unit_factor,
+               PurchaseInvoiceLine.discount_pct, PurchaseInvoice.combined_pct)
         .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
         .where(PurchaseInvoiceLine.item_id == item_id)
         .order_by(PurchaseInvoice.id.desc(), PurchaseInvoiceLine.id.desc())
@@ -73,7 +97,9 @@ def last_purchase_cost(db: Session, item_id: int) -> Decimal:
     ).first()
     if row is None or row[0] is None:
         return ZERO
-    unit_price = Decimal(str(row[0]))
+    # السعر اللي اتدفع فعلاً — بخصم السطر وخصم المستند. «آخر سعر شراء» من غيرهم
+    # بيقول رقم محدش دفعه، وبيتسعّر بيه.
+    unit_price = discounts.apply(Decimal(str(row[0])), row[2], row[3])
     factor = Decimal(str(row[1] or 1))
     return to_money(unit_price / factor) if factor else to_money(unit_price)
 

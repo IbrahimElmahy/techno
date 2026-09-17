@@ -9,7 +9,7 @@ from datetime import date
 from typing import Literal
 
 from sqlalchemy import case, delete as sa_delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
@@ -25,6 +25,7 @@ from src.core import clock
 from src.core.db import get_db
 from src.models.catalog import Item, ItemPrice, PriceTier
 from src.models.customer import Customer, CustomerAccount
+from src.models.ledger import LedgerEntry
 from src.models.lookup import LookupOption
 from src.models.loyalty import CouponType
 from src.models.sales import (
@@ -38,7 +39,9 @@ from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse, WarehouseType
 from src.lib import arabic
-from src.services import coupon_receipt_service, sales_service
+from src.services import (
+    analytic_read, coupon_receipt_service, reconcile_service, sales_service,
+)
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
@@ -127,6 +130,10 @@ class SaleCreate(BaseModel):
     revenue_account_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
@@ -199,6 +206,10 @@ class StandaloneReturnCreate(BaseModel):
     revenue_account_id: int | None = None
     external_document_number: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=500)
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
     statement1: str | None = Field(default=None, max_length=200)
     statement2: str | None = Field(default=None, max_length=200)
     statement3: str | None = Field(default=None, max_length=200)
@@ -230,11 +241,21 @@ class SalesInvoiceOut(BaseModel):
     credit_amount: Decimal
     cash_account_id: int
     ledger_entry_id: int | None = None
+    # (المرحلة ٣) حالة دفع الفاتورة ومتبقّيها — من مطابقة سطور الدفتر، مش من
+    # `credit_amount`. الفرق: `credit_amount` بيقول «اتباعت بكام أجل»، ودول بيقولوا
+    # «وصل منها كام لحد دلوقتي».
+    payment_state: str | None = None
+    payment_state_label: str | None = None
+    residual: Decimal | None = None
     created_at: str | None = None
     # (030)
     rep_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
+    cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
     # «الحساب الفرعي» on their invoice list — the account this sale is posted to. Set on every
     # invoice since 030 and never returned, so the column that names where the money landed could
     # not be shown beside the money.
@@ -260,6 +281,13 @@ class SalesInvoiceOut(BaseModel):
     # عائلة الفاتورة — أبيض ولا تكنو. مش «النوع»: دي بتقول الفاتورة على أنهي حساب، والنوع
     # بيقول العميل ده إيه. الفلتر في الشريط بيشتغل عليها.
     family: str | None = None
+    # حساب العميل قبل الفاتورة دي، زي ما اتقفل وقت الترحيل.
+    #
+    # كان بيتحسب ويتخزّن في العمود، وبعدين مايخرجش من هنا خالص: الباني بيبعته
+    # والموديل مافيهوش الحقل، فـPydantic بيرميه في صمت. النتيجة إن الورقة اللي
+    # بتتطبع من الويب مالهاش طريقة تعرف الرقم أصلاً، والتليفون اللي بيقرا فاتورة
+    # مش هو اللي كتبها بيطبع من غير سطر «الحساب السابق».
+    prior_balance: Decimal | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
 
@@ -293,6 +321,16 @@ class SalesInvoiceDetail(BaseModel):
     credit_amount: Decimal
     cash_account_id: int
     ledger_entry_id: int | None = None
+    cost_center_id: int | None = None
+    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
+    cost_center_distribution: dict[str, Decimal] | None = None
+    # حساب العميل قبل الفاتورة دي، زي ما اتقفل وقت الترحيل.
+    #
+    # كان بيتحسب ويتخزّن في العمود، وبعدين مايخرجش من هنا خالص: الباني بيبعته
+    # والموديل مافيهوش الحقل، فـPydantic بيرميه في صمت. النتيجة إن الورقة اللي
+    # بتتطبع من الويب مالهاش طريقة تعرف الرقم أصلاً، والتليفون اللي بيقرا فاتورة
+    # مش هو اللي كتبها بيطبع من غير سطر «الحساب السابق».
+    prior_balance: Decimal | None = None
     lines: list[InvoiceLineOut]
     # The coupon books handed over, one row per kind — read back so the printed invoice can name
     # them instead of showing a bare range.
@@ -478,24 +516,37 @@ def rep_bundle(
 
     live = [r for r in held if on_hand[r[0]] > 0]
 
-    # كتالوج الفرع كامل — **لإذن التحويل، مش للبيع**.
+    # **أصناف كل مخزن** — اللي إذن التحويل بيطلب منها.
     #
-    # `live` هو اللي في عربية المندوب، وهو الصح للبيع: مايبيعش حاجة مش معاه. بس إذن
-    # التحويل هو بالظبط طلب حاجة **مش معاه** — فلو القايمة اتقصرت على عربيته، الصنف
-    # اللي خلص منه خالص مايظهرش، وهو أكتر صنف محتاج يطلبه. الشاشة كانت بتوريه اللي معاه
-    # وتسأله يطلب إيه.
+    # المنتقي في شاشة الإذن كان بيعرض عهدة المندوب هو: كل اللي في العربية، ومافيش
+    # غيره. والإذن أصلاً بيتكتب عشان يطلب حاجة **مش** معاه — فالمندوب كان بيختار
+    # المخزن، وتفتح له قايمة عربيته، ويدوّر على صنف موجود في المخزن ومش لاقيه.
     #
-    # **والفرع بيتحدد بالحركة مش بكود الصنف.** `Item` مالوش عمود فرع؛ النقل بيفرّق
-    # بالبادئة (`AL-`) وهي قاعدة عايشة في سكربتات الاستيراد مش في الموديل. الحركة
-    # بتحمل `branch_id` من مكانها، فـ«الصنف اللي اتحرّك في مخازن الفرع ده» حقيقة
-    # مكتوبة في الداتا — مش قاعدة تانية نخترعها هنا وتفضل تفرق عن اللي قبلها.
-    catalog_stmt = select(Item.id, Item.name, Item.unit_of_measure, Item.category)
-    if current.branch_id is not None:
-        catalog_stmt = catalog_stmt.where(Item.id.in_(
-            select(StockMovement.item_id)
-            .where(StockMovement.branch_id == current.branch_id).distinct()))
-    catalog = db.execute(
-        catalog_stmt.order_by(arabic.sort_key(Item.name), Item.name)).all()
+    # القايمة بتنزل مع الحزمة زي كل حاجة تانية، عشان الإذن يتكتب في الشارع من غير
+    # شبكة. والكميات **مش** نازلة معاها عن قصد: الطلب بيتكتب بالاحتياج، والمندوب
+    # اللي شايف «عندك ٦٠» بيكتب ٦٠ مكان المية اللي محتاجها — فالمكتب يستلم رصيد
+    # مش طلب. الاسم والفئة بس، والباقي عند اللي بيراجع.
+    scoped = db.scalars(_scoped_warehouses(current)).all()
+    warehouse_items: dict[str, list[dict]] = {}
+    if scoped:
+        wh_rows = db.execute(
+            select(StockMovement.location_id, Item.id, Item.name,
+                   Item.unit_of_measure, Item.category,
+                   func.coalesce(func.sum(signed), 0).label("qty"))
+            .join(Item, Item.id == StockMovement.item_id)
+            .where(StockMovement.location_kind == LocationKind.warehouse,
+                   StockMovement.location_id.in_([w.id for w in scoped]))
+            .group_by(StockMovement.location_id, Item.id, Item.name,
+                      Item.unit_of_measure, Item.category)
+            .order_by(arabic.sort_key(Item.name), Item.name)
+        ).all()
+        for wid, item_id, name, unit, category, qty in wh_rows:
+            if Decimal(str(qty or 0)) <= 0:
+                continue
+            warehouse_items.setdefault(str(wid), []).append({
+                "item_id": item_id, "name": name, "unit": unit,
+                "category": cat_label.get(category, category),
+            })
 
     # أسعار الفئات للأصناف اللي معاه بس — استعلام واحد، مش واحد لكل صنف.
     tiers: dict[int, dict[str, str]] = {}
@@ -526,8 +577,10 @@ def rep_bundle(
         # واللي مالوش فرع (admin) بيشوف الكل زي ما هو في الويب.
         "warehouses": [
             {"id": w.id, "name": w.name, "kind": w.warehouse_type.value}
-            for w in db.scalars(_scoped_warehouses(current)).all()
+            for w in scoped
         ],
+        # أصناف كل مخزن — المفتاح رقم المخزن كنص، والقيمة أصنافه اللي فيها رصيد.
+        "warehouse_items": warehouse_items,
         # صناديق المندوب هو بس — واحد لكل خط، باسمه اللي على الصندوق في المكتب.
         #
         # a5 بيدّي كل مندوب صندوقين، «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)»،
@@ -592,6 +645,7 @@ def rep_bundle(
 def _build_sale(
     db: Session, body: "SaleCreate", current: CurrentUser, *,
     replace_invoice_id: int | None = None,
+    keep_costs: dict[int, Decimal] | None = None,
 ) -> SalesInvoice:
     """بيبني الفاتورة من الجسم — سواء جديدة أو مكان واحدة موجودة.
 
@@ -620,6 +674,8 @@ def _build_sale(
             can_sell_below=can_sell_below,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
+            cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution,
             coupon_serial_from=body.coupon_serial_from,
             coupon_serial_to=body.coupon_serial_to, coupon_count=body.coupon_count,
             invoice_date=body.invoice_date,
@@ -627,6 +683,7 @@ def _build_sale(
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             client_uuid=body.client_uuid,
             replace_invoice_id=replace_invoice_id,
+            keep_costs=keep_costs,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -680,13 +737,17 @@ def update_sale(
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     try:
         document_edit_service.assert_sale_editable(db, inv)
+        # التكلفة المجمّدة بتتقرا **قبل** التفضية، لأن التفضية بتمسح السطور اللي شايلاها.
+        # من غيرها البناء بيجمّد تكلفة النهارده على فاتورة قديمة — شوف `frozen_costs`.
+        kept_costs = document_edit_service.frozen_costs(db, inv)
         document_edit_service.purge_sale(db, inv)
     except DocumentEditError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "edit_blocked", "message": str(exc)})
-    inv = _build_sale(db, body, current, replace_invoice_id=sale_id)
+    inv = _build_sale(db, body, current, replace_invoice_id=sale_id,
+                      keep_costs=kept_costs)
     db.commit()
-    return _inv_out(inv, db)
+    return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 
 
 @router.delete("/{sale_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -724,7 +785,7 @@ def create_sale(
 
     inv = _build_sale(db, body, current)
     db.commit()
-    return _inv_out(inv, db)
+    return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 
 
 def _type_labels(db: Session) -> dict[str, str]:
@@ -809,10 +870,33 @@ def _page_coupons(db: Session, rows: list[SalesInvoice]) -> dict[int, list[Invoi
     return out
 
 
+def _payment_states(db: Session, rows) -> dict[int, tuple[str | None, Decimal]]:
+    """حالة الدفع والمتبقّي لكل فاتورة — استعلام واحد للصفحة كلها.
+
+    المفتاح هو قيد الفاتورة: هو المستند في موديل أودو، وهو اللي المطابقة بتشتغل
+    على سطوره.
+    """
+    entry_ids = [r.ledger_entry_id for r in rows if r.ledger_entry_id]
+    if not entry_ids:
+        return {}
+    entries = db.scalars(
+        select(LedgerEntry).options(selectinload(LedgerEntry.lines))
+        .where(LedgerEntry.id.in_(entry_ids))
+    ).all()
+    out: dict[int, tuple[str | None, Decimal]] = {}
+    for entry in entries:
+        residual = sum(
+            (abs(Decimal(str(ln.amount_residual))) for ln in entry.lines
+             if ln.amount_residual is not None), Decimal("0.00"))
+        out[entry.id] = (entry.payment_state, residual)
+    return out
+
+
 def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
              names: tuple[dict[int, str], dict[int, str], dict[int, str]] | None = None,
              line_disc: tuple[Decimal, Decimal] | None = None,
-             coupons_in: list[InvoiceCouponOut] | None = None
+             coupons_in: list[InvoiceCouponOut] | None = None,
+             payment_states: dict[int, tuple[str | None, Decimal]] | None = None,
              ) -> SalesInvoiceOut:
     coupons: list[InvoiceCouponOut] = coupons_in or []
     if db is not None:
@@ -850,6 +934,10 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         gross=inv.gross, combined_pct=inv.combined_pct, net=inv.net, cash_amount=inv.cash_amount,
         credit_amount=inv.credit_amount, cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
+        payment_state=(payment_states or {}).get(inv.ledger_entry_id or 0, (None, None))[0],
+        payment_state_label=reconcile_service.PAYMENT_STATE_LABEL.get(
+            ((payment_states or {}).get(inv.ledger_entry_id or 0, (None, None))[0]) or ""),
+        residual=(payment_states or {}).get(inv.ledger_entry_id or 0, (None, None))[1],
         created_at=str(inv.created_at) if inv.created_at else None,
         rep_id=inv.rep_id, external_document_number=inv.external_document_number,
         coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
@@ -858,6 +946,7 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         expenses_billed=getattr(inv, "expenses_billed", None),
         expenses_operating=getattr(inv, "expenses_operating", None),
         notes=inv.notes,
+        cost_center_id=getattr(inv, "cost_center_id", None),
         revenue_account_id=inv.revenue_account_id,
     )
 
@@ -918,8 +1007,10 @@ def list_sales(
     names = _row_names(db, rows)
     discs = _line_discounts(db, rows)
     coups = _page_coupons(db, rows)
+    states = _payment_states(db, rows)
     return [_inv_out(i, names=names, line_disc=discs.get(i.id),
-                     coupons_in=coups.get(i.id)) for i in rows]
+                     coupons_in=coups.get(i.id), payment_states=states)
+            for i in rows]
 
 
 @router.get("/summary", response_model=dict)
@@ -1108,6 +1199,8 @@ def create_standalone_return(
             actor_role=current.role, actor_user_id=current.id, family=body.family,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
+            cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution,
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             return_date=body.return_date,
         )
@@ -1182,6 +1275,8 @@ def update_standalone_return(
             external_document_number=body.external_document_number, notes=body.notes,
             statement1=body.statement1, statement2=body.statement2,
             statement3=body.statement3, return_date=body.return_date,
+            cost_center_id=body.cost_center_id,
+            cost_center_distribution=body.cost_center_distribution,
             replace_return_id=return_id,
         )
     except SalesError as exc:
@@ -1262,6 +1357,11 @@ def get_sale(
         coupons=_inv_out(inv, db).coupons,
         id=inv.id,
         document_number=inv.document_number,
+        cost_center_id=getattr(inv, "cost_center_id", None),
+        # التوزيع بيترجع من سطور القيد مش من عمود على المستند — مافيش نسختين من
+        # نفس الحقيقة يختلفوا أول ما حد يعدّل القيد من الأستاذ العام.
+        cost_center_distribution=analytic_read.distribution_of_entry(
+            db, inv.ledger_entry_id),
         customer_id=inv.customer_id,
         gross=inv.gross,
         combined_pct=inv.combined_pct,
@@ -1270,6 +1370,7 @@ def get_sale(
         credit_amount=inv.credit_amount,
         cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
+        prior_balance=getattr(inv, "prior_balance", None),
         lines=[
             InvoiceLineOut(
                 item_id=line.item_id,

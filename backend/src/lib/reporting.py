@@ -50,6 +50,20 @@ def _in_range(when, date_from, date_to) -> bool:
     return True
 
 
+def branch_warehouse_ids(db: Session, branch_id: int | None) -> set[int] | None:
+    """مخازن الفرع — أو `None` لما مافيش حصر.
+
+    تقارير المخزون بتتجمّع على (صنف × مخزن)، فالفرع بيتحدّد من مخازنه مش من عمود
+    على الحركة: المخزن هو اللي بيخصّ فرع، والحركة بتحصل جوّاه.
+    """
+    if branch_id is None:
+        return None
+    from src.models.warehouse import Warehouse
+
+    return {w.id for w in db.scalars(
+        select(Warehouse).where(Warehouse.branch_id == branch_id)).all()}
+
+
 def _item_names(db: Session) -> dict[int, str]:
     return {i.id: i.name for i in db.scalars(select(Item)).all()}
 
@@ -91,7 +105,8 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
     }
 
 
-def inventory(db: Session, *, warehouse_id: int | None = None, item_id: int | None = None) -> dict:
+def inventory(db: Session, *, warehouse_id: int | None = None, item_id: int | None = None,
+              branch_id: int | None = None) -> dict:
     """Current on-hand balance and value per (item × warehouse)."""
     names = _item_names(db)
     prices = {i.id: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
@@ -103,6 +118,9 @@ def inventory(db: Session, *, warehouse_id: int | None = None, item_id: int | No
     stmt = (select(StockMovement.item_id, StockMovement.location_id, signed)
             .where(StockMovement.location_kind == LocationKind.warehouse)
             .group_by(StockMovement.item_id, StockMovement.location_id))
+    mine = branch_warehouse_ids(db, branch_id)
+    if mine is not None:
+        stmt = stmt.where(StockMovement.location_id.in_(mine or {-1}))
     if warehouse_id is not None:
         stmt = stmt.where(StockMovement.location_id == warehouse_id)
     if item_id is not None:
@@ -176,7 +194,7 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
 
 
 def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = None,
-                   now: datetime | None = None) -> dict:
+                   now: datetime | None = None, branch_id: int | None = None) -> dict:
     """Items with positive stock and no OUT movement within `days` (or never) — slow/dead stock."""
     now = now or datetime.utcnow()
     cutoff = _as_date(now) - timedelta(days=days)
@@ -192,6 +210,9 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
     on_hand_stmt = (select(StockMovement.item_id, StockMovement.location_id, signed)
                     .where(StockMovement.location_kind == LocationKind.warehouse)
                     .group_by(StockMovement.item_id, StockMovement.location_id))
+    mine = branch_warehouse_ids(db, branch_id)
+    if mine is not None:
+        on_hand_stmt = on_hand_stmt.where(StockMovement.location_id.in_(mine or {-1}))
     if warehouse_id is not None:
         on_hand_stmt = on_hand_stmt.where(StockMovement.location_id == warehouse_id)
 

@@ -36,6 +36,7 @@ import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
+import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 /**
@@ -132,7 +133,7 @@ export default function PurchaseReturns() {
     // نفس ما على سطر الفاتورة.
     /** الخصم المتغيّر — بتاع المستند ده. */
     discount_pct: number | null;
-    /** والثابت — الاتفاق الدايم. الاتنين بيتجمعوا وقت الإرسال، زي البيع والشرا. */
+    /** والثابت — الاتفاق الدايم. الاتنين بيتحسبوا ورا بعض وقت الإرسال، زي البيع والشرا. */
     fixed_discount_pct: number | null;
     unit: string | null;
     warehouse_id: number | null;
@@ -496,11 +497,9 @@ export default function PurchaseReturns() {
    * صافي السطر — نفس ترتيب الفاتورة: خصم السطر بينزل على سطره، والسطور بتتجمع، وخصم
    * المستند بينزل على المجموع مرة واحدة.
    */
-  const lineNet = (l: ReturnLineDraft) => {
-    const before = Number(l.quantity || 0) * (l.unit_price || 0);
-    const disc = Math.min(99.99, (l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0));
-    return before * (1 - disc / 100);
-  };
+  const lineNet = (l: ReturnLineDraft) =>
+    applyPct(Number(l.quantity || 0) * (l.unit_price || 0),
+             l.fixed_discount_pct, l.discount_pct);
   const grossTotal = returnLines.reduce((n, l) => n + lineNet(l), 0);
 
   /** قيمة المردود — من السطور اللي اتكتبت، مش من فاتورة. */
@@ -746,8 +745,8 @@ export default function PurchaseReturns() {
         item_id: l.item_id,
         quantity: String(l.quantity),
         unit_price: String(l.unit_price || 0),
-        // الاتنين بيتجمعوا — سطر المردود في السيرفر بيشيل خصم واحد.
-        discount_pct: ((l.discount_pct ?? 0) + (l.fixed_discount_pct ?? 0)) || null,
+        // الاتنين ورا بعض — سطر المردود في السيرفر بيشيل خصم واحد.
+        discount_pct: combinePct(l.fixed_discount_pct, l.discount_pct) || null,
         unit: l.unit,
         warehouse_id: l.warehouse_id ?? warehouseId,
       }));

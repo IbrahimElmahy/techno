@@ -22,7 +22,7 @@ from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
 from src.services import customer_merge_service
 from src.services.customer_merge_service import MergeError
-from src.models.ledger import Account, AccountNature, Direction
+from src.models.ledger import Account, AccountNature, Direction, PartnerKind
 from src.models.role import RoleName
 from src.models.supplier import Supplier, SupplierAccount
 from src.models.user import User
@@ -145,12 +145,19 @@ def _create(
     credit_split: list[tuple[int, Decimal]] | None = None,
     # (033) رقم الجهاز — بيتخزّن زي ما هو، والـUNIQUE عليه هي اللي بتمنع التكرار.
     client_uuid: str | None = None,
+    # مركز التكلفة — بيتحط على **كل** سطور القيد مش على سطر المصروف بس. تقرير الربحية
+    # بيقرا سطور الإيراد والمصروف وبس، فتعليم سطر الخزينة مابيغيّرش رقم فيه؛ بس كشف
+    # الحساب بيعرض العمود على أي سطر، فتعليم الطرفين بيخلّي الكشف متسق مع نفسه.
+    cost_center_id: int | None = None,
+    # وتوزيع تحليلي بدل المركز الواحد — إيجار بيتقسّم على فرعين مثلاً.
+    cost_center_distribution: dict | None = None,
 ) -> Voucher:
     voucher = Voucher(
         document_number=_doc_number(db, kind), kind=kind, amount=amount,
         customer_id=customer_id, supplier_id=supplier_id, rep_user_id=rep_user_id,
         cash_account_id=cash_account_id, party_account_id=party_account_id,
         treasury_id=treasury_id, to_treasury_id=to_treasury_id,
+        cost_center_id=cost_center_id,
         voucher_date=voucher_date or date.today(), payment_method=payment_method,
         reference=reference, description=description, ledger_entry_id=None,
         reverses_id=reverses_id, actor_user_id=actor_user_id, family=family,
@@ -160,10 +167,22 @@ def _create(
     )
     db.add(voucher)
     db.flush()
+    # (المرحلة ٢) السند على مين. ده اللي بيخلّي التسوية في المرحلة ٣ تعرف تقفل
+    # التحصيل ده على فواتير العميل ده بالذات بدل ما تشوف حركة على حساب.
+    if customer_id is not None:
+        v_partner_kind, v_partner_id = PartnerKind.customer, customer_id
+    elif supplier_id is not None:
+        v_partner_kind, v_partner_id = PartnerKind.supplier, supplier_id
+    else:
+        # تحويل بين خزنتين أو مصروف — مالوش شريك، وده صح مش نقص.
+        v_partner_kind, v_partner_id = None, None
     entry = ledger_service.post_entry(
         db, entry_type=entry_type, actor_user_id=actor_user_id,
         description=description or statement,
         entry_date=voucher.voucher_date,
+        partner_kind=v_partner_kind, partner_id=v_partner_id,
+        cost_center_id=cost_center_id,
+        cost_center_distribution=cost_center_distribution,
         lines=[
             LineInput(debit_account_id, Direction.debit, amount, statement=statement),
             *(
@@ -209,6 +228,7 @@ def create_receipt(
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None, family: str | None = None,
     on_total: bool = False, client_uuid: str | None = None,
+    cost_center_id: int | None = None,
 ) -> Voucher:
     """سند قبض — تحصيل من عميل. النقدية تدخل الخزينة المختارة أو عهدة المندوب المحصِّل.
 
@@ -254,6 +274,7 @@ def create_receipt(
         statement="تحصيل من عميل" + (f" — {family}" if family else ""),
         customer_id=customer_id, treasury_id=safe_id, family=family,
         client_uuid=client_uuid,
+        cost_center_id=cost_center_id,
     )
 
 
@@ -270,6 +291,7 @@ def create_payment(
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None,
+    cost_center_id: int | None = None,
 ) -> Voucher:
     """سند صرف — دفع لمورد من الخزينة."""
     value = _positive(amount)
@@ -284,6 +306,7 @@ def create_payment(
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=payment_method, entry_type="payment", statement="دفع لمورد",
         supplier_id=supplier_id, treasury_id=safe_id,
+        cost_center_id=cost_center_id,
     )
 
 
@@ -292,13 +315,20 @@ def create_expense(
     actor_role: RoleName, voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None,
+    cost_center_id: int | None = None,
+    cost_center_distribution: dict | None = None,
 ) -> Voucher:
     """سند مصروف — إيجار/مرتبات/بنزين… مدين حساب المصروف ودائن الخزينة."""
     value = _positive(amount)
     account = db.get(Account, expense_account_id)
     if account is None or not account.active:
         raise VoucherError("حساب المصروف غير موجود.")
-    if account.nature != AccountNature.expense:
+    # الطبيعة الفعلية مش العمود: حسابات النظام (المشتريات، الإيراد…) `nature` بتاعها
+    # بيفضل NULL لحد ما الشجرة القياسية تتزرع، فالمقارنة على العمود كانت بترفض سند
+    # المصروف على حساب المصروفات نفسه في أي قاعدة الشجرة ماتزرعتش فيها.
+    from src.services.financial_reports_service import effective_nature
+
+    if effective_nature(account) != AccountNature.expense:
         raise VoucherError("لازم تختار حسابًا من طبيعة «مصروفات».")
     if not account.is_postable:
         raise VoucherError("لا يمكن الترحيل على حساب تجميعي — اختر حسابًا فرعيًا.")
@@ -313,6 +343,8 @@ def create_expense(
         payment_method=payment_method, entry_type="expense",
         statement=f"مصروف — {account.name or account.code or ''}".strip(),
         treasury_id=safe_id,
+        cost_center_id=cost_center_id,
+        cost_center_distribution=cost_center_distribution,
     )
 
 
@@ -320,6 +352,7 @@ def create_cash_transfer(
     db: Session, *, from_treasury_id: int, to_treasury_id: int, amount, actor_user_id: int,
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None,
+    cost_center_id: int | None = None,
 ) -> Voucher:
     """تحويل بين الخزائن — مدين الخزينة المستقبِلة ودائن المرسِلة."""
     value = _positive(amount)
@@ -336,6 +369,7 @@ def create_cash_transfer(
         payment_method=None, entry_type="cash_transfer",
         statement=f"تحويل من {source.name} إلى {dest.name}",
         treasury_id=source.id, to_treasury_id=dest.id,
+        cost_center_id=cost_center_id,
     )
 
 
@@ -343,6 +377,7 @@ def create_handover(
     db: Session, *, rep_user_id: int, amount, actor_user_id: int,
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, family: str | None = None,
+    cost_center_id: int | None = None,
 ) -> Voucher:
     """توريد المندوب — نقل النقدية من عهدة المندوب لخزينة الشركة.
 
@@ -371,6 +406,7 @@ def create_handover(
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=None, entry_type="rep_handover", statement="توريد مندوب للخزينة",
         rep_user_id=rep_user_id,
+        cost_center_id=cost_center_id,
     )
 
 

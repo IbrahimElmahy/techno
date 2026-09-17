@@ -24,7 +24,7 @@ from src.services import numbering
 from src.core import clock
 from src.core.money import ZERO, to_money, to_qty
 from src.models.catalog import Item
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.models.stock_permit import PermitKind, StockPermit, StockPermitLine
 from src.models.warehouse import Warehouse
 from src.services import batch_service
@@ -114,7 +114,7 @@ def create_permit(
         mv = stock_service.post_movement(
             db, item_id=item.id, location_kind=LocationKind.warehouse, location_id=warehouse_id,
             movement_type=movement_type, direction=direction, quantity=quantity,
-            actor_user_id=actor_user_id, source_doc_type="stock_permit", source_doc_id=permit.id,
+            actor_user_id=actor_user_id, source_doc_type=StockDoc.PERMIT, source_doc_id=permit.id,
         )
         line.stock_movement_id = mv.id
 
@@ -125,14 +125,14 @@ def create_permit(
                     batch_service.add_to_lot(
                         db, item_id=item.id, location_kind=LocationKind.warehouse,
                         location_id=warehouse_id, expiry_date=expiry, quantity=quantity,
-                        document_type="stock_permit", document_id=permit.id,
+                        document_type=StockDoc.PERMIT, document_id=permit.id,
                         actor_user_id=actor_user_id)
                 else:
                     # FEFO, and it records every lot it drew from — which is what the reversal reads.
                     taken = batch_service.consume_fefo(
                         db, item_id=item.id, location_kind=LocationKind.warehouse,
                         location_id=warehouse_id, quantity=quantity,
-                        document_type="stock_permit", document_id=permit.id,
+                        document_type=StockDoc.PERMIT, document_id=permit.id,
                         actor_user_id=actor_user_id)
                     # One line reverses into one lot, so remember the earliest it emptied.
                     if taken:
@@ -197,7 +197,7 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
                     batch_service.consume_fefo(
                         db, item_id=item.id, location_kind=LocationKind.warehouse,
                         location_id=original.warehouse_id, quantity=line.quantity,
-                        document_type="stock_permit", document_id=reversal.id,
+                        document_type=StockDoc.PERMIT, document_id=reversal.id,
                         actor_user_id=actor_user_id)
                 else:
                     batch_service.restore_for_return(

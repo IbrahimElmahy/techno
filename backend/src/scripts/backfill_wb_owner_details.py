@@ -1,7 +1,10 @@
 """يكمّل بيانات الملّاك من ملف العميل: الرقم التاني والدور.
 
-    python -m src.scripts.backfill_wb_owner_details --dir C:/pgtmp/wb2          # يعرض بس
-    python -m src.scripts.backfill_wb_owner_details --dir C:/pgtmp/wb2 --yes    # ينفّذ
+    python -m src.scripts.backfill_wb_owner_details --xlsx "C:/wb/عملاء.xlsx"        # يعرض بس
+    python -m src.scripts.backfill_wb_owner_details --xlsx "C:/wb/عملاء.xlsx" --yes  # ينفّذ
+
+`--dir` لسه شغّال للتصدير القديم (`owners.tsv`)، بس `--xlsx` بيقرا ملف العميل
+زي ما هو من غير خطوة تصدير.
 
 بيتعاد تشغيله بأمان: المطابقة بالكود، والخانة الملّانة مايتلمسش فيها.
 
@@ -35,6 +38,7 @@ from sqlalchemy import func, select
 
 from src.core.db import SessionLocal
 from src.models.owner import Owner
+from src.scripts import _workbook
 
 CODE_PREFIX = "WB-C-"
 
@@ -58,8 +62,10 @@ def _cut(v: str | None, n: int) -> str | None:
     return v[:n] if v else None
 
 
-def run(folder: str, *, execute: bool) -> None:
-    rows = _read(os.path.join(folder, "owners.tsv"))
+def run(folder: str, *, execute: bool, xlsx: str | None = None) -> None:
+    # الملف نفسه لو اتقال، وإلا التصدير القديم. الخطوة اليدوية دي هي اللي كانت
+    # بتتنسى — فالأرقام تفضل في الإكسل والكروت فاضية.
+    rows = _workbook.owners(xlsx) if xlsx else _read(os.path.join(folder, "owners.tsv"))
 
     db = SessionLocal()
     try:
@@ -123,7 +129,8 @@ def run(folder: str, *, execute: bool) -> None:
 def main() -> None:
     args = sys.argv[1:]
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args)
+    xlsx = args[args.index("--xlsx") + 1] if "--xlsx" in args else None
+    run(folder, execute="--yes" in args, xlsx=xlsx)
 
 
 if __name__ == "__main__":

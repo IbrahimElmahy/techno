@@ -52,6 +52,9 @@ from src.services import stock_service
 from src.scripts.fix_account_natures import target_for_group as _target_nature
 
 
+# نوع مستند الرصيد الافتتاحي — واحد لكل الشركات. شوف الحارس تحت.
+OPENING_DOC = "a5_opening"
+
 def run(folder: str, *, execute: bool, branch_name: str = "",
         prefix: str = "") -> None:
     accs = _read(os.path.join(folder, "a5_acc.tsv"))
@@ -183,10 +186,18 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
         # كان بيتخطى كل حاجة لو لقى أي حركة افتتاحية، ومعنى كده إن أي سطر ماكانش دخل
         # في المرة الأولى مايدخلش أبداً — والسطور السالبة كانت بره فعلاً، فالرصيد كان
         # ناقص ٣٦ وحدة في أكتوبر. الحارس المفصّل بيمنع التكرار وبيسمح باللي فات.
+        # **`OPENING_DOC` ثابت، مش `f"a5_opening{prefix}"`.**
+        #
+        # كان بيحمل بادئة الشركة، فالافتتاحي بقى في دلوين: `a5_opening` لأكتوبر
+        # و`a5_openingAL-` للعلياء. وده كان بيخلي الحارس بيدوّر في نص التاريخ بس.
+        # والبادئة مالهاش لازمة أصلاً: المفتاح (صنف × مخزن)، والأصناف متقسّمة
+        # بالبادئة في الكود، فأصناف الشركتين مابتتلاقاش.
+        #
+        # والحارس من غير بادئة أقوى مش أضعف: بيقرا كل الافتتاحي أياً كان مين كتبه،
+        # فتشغيلة تانية لأي شركة مش هتزوّد رصيد موجود.
         done = {(m.item_id, m.location_id) for m in db.scalars(
             select(stock_service.StockMovement).where(
-                stock_service.StockMovement.source_doc_type
-                == f"a5_opening{prefix}")).all()}
+                stock_service.StockMovement.source_doc_type == OPENING_DOC)).all()}
         if done:
             print(f"أرصدة افتتاحية موجودة: {len(done)} صنف×مخزن — هتتخطى.")
         for r in opens:
@@ -215,7 +226,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
                 location_id=wh.id, movement_type="opening",
                 direction=StockDirection.out if out else StockDirection.in_,
                 quantity=abs(qty), allow_negative=True,
-                source_doc_type=f"a5_opening{prefix}", source_doc_id=0,
+                source_doc_type=OPENING_DOC, source_doc_id=0,
                 actor_user_id=admin.id if admin else 1)
             done.add((it.id, wh.id))
             made["أرصدة"] += 1

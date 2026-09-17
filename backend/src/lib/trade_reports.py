@@ -75,7 +75,8 @@ def _names(db: Session) -> tuple[dict, dict, dict, dict]:
     return items, customers, suppliers, warehouses
 
 
-def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, warehouse_id):
+def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, warehouse_id,
+             branch_id=None):
     """Flatten one document kind into a common row shape the rest of the engine works on.
 
     Every document kind ends up as: (document, party_id, line-ish facts). Doing the flattening
@@ -99,6 +100,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         for ln, doc in pairs:
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.invoice_date or doc.created_at),
                 "party_id": doc.customer_id,
                 "item_id": ln.item_id, "warehouse_id": ln.location_id or doc.origin_location_id,
@@ -122,6 +124,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
             amount = to_money(ln.line_total) if ln.line_total is not None else ZERO
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.return_date or doc.created_at),
                 "party_id": doc.customer_id,
                 "item_id": ln.item_id,
@@ -142,6 +145,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         for ln, doc in pairs:
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.purchase_date or doc.created_at),
                 "party_id": doc.supplier_id,
                 "item_id": ln.item_id,
@@ -166,6 +170,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
             )
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.return_date or doc.created_at),
                 "party_id": inv.supplier_id,
                 "item_id": ln.item_id, "warehouse_id": inv.location_id,
@@ -182,6 +187,9 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         and (party_id is None or r["party_id"] == party_id)
         and (item_id is None or r["item_id"] == item_id)
         and (warehouse_id is None or r["warehouse_id"] == warehouse_id)
+        # فرع المستند. الصف اللي مستنده مالوش فرع بيعدّي مع الكل — دي مستندات
+        # اتكتبت قبل العزل، وإخفاؤها بيخلّي التقرير ينقص من غير سبب ظاهر.
+        and (branch_id is None or r["branch_id"] in (branch_id, None))
     ]
     # الترتيب بتاريخ المستند. الاستعلام بيرتّب بالـid، وده كان بيوافق التاريخ صدفةً
     # لما التاريخ كان `created_at` (بيزيد مع الـid). بعد ما بقى تاريخ المستند الحقيقي،
@@ -202,6 +210,7 @@ def trade(
     party_id: int | None = None,
     item_id: int | None = None,
     warehouse_id: int | None = None,
+    branch_id: int | None = None,
 ) -> dict:
     """Sales/purchase figures at the requested level and grouping, with totals.
 
@@ -221,7 +230,8 @@ def trade(
     party_names = customers if doc_type.startswith("sale") else suppliers
     wants_profit = doc_type in _PROFIT_DOCS
 
-    flat = _collect(db, doc_type, date_from, date_to, party_id, item_id, warehouse_id)
+    flat = _collect(db, doc_type, date_from, date_to, party_id, item_id, warehouse_id,
+                    branch_id=branch_id)
 
     def party_label(pid):
         return party_names.get(pid, f"#{pid}")

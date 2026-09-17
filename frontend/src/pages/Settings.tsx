@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Card, Collapse, Table, Button, Input, Switch, Space, Tag, message, Form, Tooltip, Select,
+  DatePicker,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import { PlusOutlined, DeleteOutlined, LockOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
+import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useSectionParam } from '../components/useQueryTab';
@@ -126,6 +128,8 @@ export default function Settings() {
       <DocumentPolicyCard />
 
       <AccountRoutingCard />
+
+      <LockDatesCard />
 
       <Card title="بيانات تجريبية للاختبار" size="small">
         <Space wrap>
@@ -495,6 +499,75 @@ function DocumentPolicyCard() {
         <span>نسبة الضريبة: <b>{vatPct}%</b></span>
         <span style={{ color: '#888' }}>
           الاتنين بيتظبطوا من شاشة الخصومات والضرائب.
+        </span>
+      </Space>
+    </Card>
+  );
+}
+
+
+/**
+ * أقفال التواريخ (المرحلة ٤ — موديل أودو).
+ *
+ * الخانتين بيبدأوا فاضيين وبيفضلوا كده لحد ما الأدمن يحطهم. الإقفال كان اتشال
+ * بطلب العميل عشان الفاتورة اللي اتأخرت تتكتب بتاريخها الحقيقي — فرجوعه لازم
+ * يبقى قرار مكتوب بإيد، مش سلوك بيشتغل لوحده.
+ */
+function LockDatesCard() {
+  const [fiscal, setFiscal] = useState<Dayjs | null>(null);
+  const [period, setPeriod] = useState<Dayjs | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/v1/accounting/lock-dates')
+      .then((r) => {
+        setFiscal(r.data?.fiscalyear_lock_date ? dayjs(r.data.fiscalyear_lock_date) : null);
+        setPeriod(r.data?.period_lock_date ? dayjs(r.data.period_lock_date) : null);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put('/api/v1/accounting/lock-dates', {
+        fiscalyear_lock_date: fiscal ? fiscal.format('YYYY-MM-DD') : null,
+        period_lock_date: period ? period.format('YYYY-MM-DD') : null,
+      });
+      message.success('اتحفظ');
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر الحفظ');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card title="أقفال التواريخ" size="small" loading={loading}
+          extra={<Button type="primary" icon={<SaveOutlined />} loading={saving}
+                         onClick={save}>حفظ</Button>}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space wrap align="center">
+          <span style={{ minWidth: 150 }}>قفل السنة (على الكل):</span>
+          <DatePicker value={fiscal} onChange={setFiscal} allowClear
+                      placeholder="مفيش قفل" style={{ minWidth: 180 }} />
+          <span style={{ color: '#888' }}>
+            مافيش أي حركة في الدفتر بتاريخ أقدم من ده أو مساوي له — حتى الأدمن.
+          </span>
+        </Space>
+        <Space wrap align="center">
+          <span style={{ minWidth: 150 }}>قفل الفترة (على غير المحاسبين):</span>
+          <DatePicker value={period} onChange={setPeriod} allowClear
+                      placeholder="مفيش قفل" style={{ minWidth: 180 }} />
+          <span style={{ color: '#888' }}>
+            المبيعات والمخازن مايكتبوش في الفترة دي. المحاسب والأدمن لسه بيقدروا يظبطوا.
+          </span>
+        </Space>
+        <span style={{ color: '#888' }}>
+          سيب الخانة فاضية = مفيش قفل. والقفل بيمنع الترحيل والرجوع لمسودة والإلغاء —
+          الخروج من الحسابات بيغيّر الميزانية زي الدخول بالظبط.
         </span>
       </Space>
     </Card>

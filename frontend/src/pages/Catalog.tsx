@@ -10,7 +10,7 @@ import {
   UnorderedListOutlined, DownloadOutlined, UploadOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
-import { netOf } from '../utils/discount';
+import { netOf } from '../utils/discounts';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';

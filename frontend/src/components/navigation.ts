@@ -216,9 +216,25 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     key: 'grp-accounts',
     label: 'اداره الحسابات',
     children: [
+      /**
+       * لوحة المحاسبة — أول حاجة في القايمة عشان هي أول حاجة تتفتح.
+       *
+       * مالهاش مقابل في a5 (نظامهم بيبدأ من سجل)، فمافيش مكان محفوظ بتتزحزح منه.
+       * الكارت بيقول «فيه مسودتين هنا وألف مفتوحة هناك» قبل ما حد يفتح شاشة.
+       */
+      { key: '/accounting', label: 'لوحة المحاسبة', roles: R(BOOKS) },
       { key: '/account-statement', label: 'كشف حساب', roles: R(BOOKS), a5: '/entriesreport' },
       { key: '/general-ledger?tab=journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
       { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
+      // تسوية الحسابات — «الفاتورة دي اتدفعت بإيه». مالهاش شاشة عندهم لأن نظامهم
+      // مابيقفلش دفعة على فاتورة أصلاً؛ دي الحاجة اللي أودو بيعملها وهما لأ.
+      //
+      // **التبويبين الاتنين في القايمة، مش واحد.** الشاشة بتفتح على «المفتوح»
+      // و«المطابَق» جوّاها تبويب. اللي بيدوّر على «إيه اللي اتطابق الشهر ده» مالوش
+      // طريق يوصله من القايمة — لازم يفتح شاشة تانية ويدوس تبويب. المدخل اللي في
+      // القايمة لازم يوصّل للشاشة اللي المستخدم عايزها، مش للشاشة اللي جنبها.
+      { key: '/reconciliation?tab=open', label: 'تسوية — المفتوح', roles: BOOKS },
+      { key: '/reconciliation?tab=matched', label: 'تسوية — المطابَق', roles: BOOKS },
       {
         key: 'grp-balances',
         label: 'الأرصدة',
@@ -245,6 +261,10 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
+          // تبويبين مبنيين ومفيش حاجة في القايمة بتوصّلهم — اللي عايزهم كان لازم
+          // يفتح السندات ويدوّر عليهم بين ستة تبويبات.
+          { key: '/vouchers?tab=treasury-movement', label: 'حركة الخزينة', roles: R(BOOKS) },
+          { key: '/vouchers?tab=statement', label: 'كشف حساب السندات', roles: R(BOOKS) },
         ],
       },
       {
@@ -259,18 +279,41 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/ops-reports?view=cheques-by-status', label: 'الشيكات بالحالة', roles: R(BOOKS) },
         ],
       },
+      /**
+       * دفاتر اليومية وسلامتها — الاتنين مالهمش مقابل في a5، فمكانهم قرارنا إحنا.
+       *
+       * تحت «اداره الحسابات» جنب القيد الحر: الدفتر هو بيت القيد ومصدر رقمه، واللي
+       * بيكتب قيد هو اللي بيسأل «القيد ده نزل في أنهي دفتر».
+       */
+      {
+        key: 'grp-journals',
+        label: 'دفاتر اليومية',
+        children: [
+          { key: '/general-ledger?tab=journals', label: 'الدفاتر', roles: R(BOOKS) },
+          { key: '/general-ledger?tab=integrity', label: 'سلامة الدفاتر', roles: R(BOOKS) },
+        ],
+      },
       {
         key: 'grp-acct-reports',
         label: 'تقارير المحاسبية',
         children: [
           { key: '/general-ledger?tab=trial', label: 'دفتر الإستاذ', roles: R(BOOKS), a5: '/ledger' },
+          // دفتر الشريك جنب دفتر الأستاذ عن قصد: الأول بيمشي على حساب والتاني على
+          // طرف، واللي بيدوّر على واحد فيهم بيبقى بيسأل نفس السؤال من ناحية تانية.
+          { key: '/finance-reports?tab=partner', label: 'دفتر الشريك', roles: R(BOOKS) },
           { key: '/finance-reports?tab=sheet', label: 'ميزانية ختامية', roles: R(BOOKS), a5: '/finalbalancesheet' },
           { key: '/finance-reports?tab=sheet&period=1', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
           { key: '/finance-reports?tab=income', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
           { key: '/finance-reports?tab=income&period=1', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
           // نفس أرقام قائمة الدخل، مقسومة — فمكانها جنبها.
+          // التدفق النقدي جنب قائمة الدخل: الأولى بتقول كسبنا كام والتانية بتقول
+          // الفلوس اتحركت إزاي، والفرق بينهم هو السؤال اللي بيتسأل.
+          { key: '/finance-reports?tab=cashflow', label: 'التدفق النقدي', roles: R(BOOKS) },
           { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: R(BOOKS) },
           { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
+          // الإقرار الضريبي — تبويب مبني من زمان ومفيش حاجة في القايمة بتوصّله.
+          // اللي محتاجه كان لازم يعرف إنه جوّه «التقارير المالية» ويدوس تبويب.
+          { key: '/finance-reports?tab=vat', label: 'الإقرار الضريبي', roles: R(BOOKS) },
         ],
       },
     ],

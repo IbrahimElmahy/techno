@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
@@ -162,24 +161,30 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
   String _resolve(String v) =>
       v == '__me__' ? '$_myKind:$_myId' : v;
 
-  /// أصناف المصدر اللي اتختار — بتتجاب أول ما الصنف يتطلب.
+  /// المصدر عربية المندوب نفسه ولا مخزن؟ — ده اللي بيقرّر القايمة اللي بتتعرض.
+  bool get _sourceIsMine =>
+      _source == '__me__' ||
+      (_myKind != null && _myId != null && _source == '$_myKind:$_myId');
+
+  /// أصناف المصدر — **مش** أصناف العربية دايماً.
   ///
-  /// `null` = مافيش شبكة ساعتها، والشاشة بترجع لكتالوج الفرع. لسه أوسع من اللازم، بس
-  /// أحسن من قايمة فاضية والمندوب واقف في المخزن.
+  /// الطلب من المخزن معناه أصناف المخزن ده: الإذن أصلاً بيتكتب عشان يجيب حاجة مش
+  /// معاه، فقايمة عربيته كانت بتوريه اللي معه ويدوّر على اللي ناقصه ومش لاقيه.
+  /// والأصناف نازلة مع الحزمة، فالسؤال بيتجاوب والجهاز من غير شبكة.
   Future<List<SaleItem>?> _sourceItems() async {
-    final src = _source;
-    if (src == null) return null;
-    final parts = _resolve(src).split(':');
-    if (parts.length != 2) return null;
-    try {
-      return await ApiClient.instance
-          .stockAtLocation(parts[0], int.parse(parts[1]));
-    } catch (_) {
-      return null;
-    }
+    if (_sourceIsMine) return null; // `null` = المنتقي يقرا عهدته زي البيع
+    final id = int.tryParse((_source ?? '').split(':').last);
+    if (id == null) return const <SaleItem>[];
+    return LocalDb.instance.warehouseItems(id);
   }
 
   Future<void> _addItem() async {
+    // المصدر الأول — من غيره مافيش قايمة أصناف أصلاً. كان بيفتح على عهدة المندوب
+    // مهما كان المختار، فالسؤال «البضاعة جاية منين» كان مالوش أثر على اللي بيتعرض.
+    if (_source == null) {
+      _say('اختر المخزن اللي البضاعة جاية منه الأول');
+      return;
+    }
     // بوبابات متتالية زي أصناف المعاينة: فئة ← صنف ← كمية، و«التالي» بيكمّل من
     // غير خروج. كانت شاشة كاملة بترجع صنف من غير كمية، والكمية تتكتب بعدين في
     // خانة صغيرة على السطر.
@@ -187,33 +192,14 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
     // المتاح حد **بس لما المصدر عربيته**: مايبعتش اللي مش معاه. الطلب من المخزن
     // مالوش الحد ده — هو أصلاً بيطلب حاجة ناقصاه، والمسؤول بيراجع قبل الاعتماد.
     // والسعر مش بيتعرض: إذن تحويل مافيهوش فلوس.
-    // أصناف المخزن اللي اختاره — الطلب من مخزن مش من كتالوج.
-    final atSource = await _sourceItems();
+    final source = await _sourceItems();
     if (!mounted) return;
-    // **اللي في المصدر وبس — ومافيش رجوع للكتالوج.**
-    //
-    // كان لما قراءة رصيد المصدر تفشل (مافيش شبكة) بيفتح كتالوج الفرع كله. فالمندوب
-    // بيلاقي أصناف المخزن ده مافيهوش منها ولا واحدة، ويطلبها، والطلب بيترفض عند
-    // الاعتماد بعد يوم — أو أوحش، يتعدّل ويوصله غير اللي طلبه.
-    //
-    // الكتالوج مش «أوسع شوية» — هو إجابة على سؤال تاني خالص: «الشركة بتبيع إيه»
-    // مش «المخزن ده فيه إيه». والقايمة الفاضية اللي بتقول السبب أصدق من قايمة مليانة
-    // بتوعد بحاجة مش موجودة.
-    if (atSource == null) {
-      _say('مش قادر أقرا رصيد المخزن ده — اتأكد من النت وجرّب تاني');
-      return;
-    }
-    if (atSource.isEmpty) {
-      _say('المخزن ده مافيهوش رصيد لأي صنف دلوقتي');
-      return;
-    }
     await SaleAddItemFlow.show(
       context,
+      source: source,
       alreadyOnInvoice: {
         for (final l in _lines) l.item.itemId: l.quantity ?? 0
       },
-      // اللي في المصدر وبس — القايمة دي هي المصدر الوحيد للأصناف هنا.
-      items0: atSource,
       priceTier: null,
       // **الطلب مايتحدش بالمتاح، ولا بيعرضه أصلاً.**
       //
@@ -227,8 +213,6 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
       capToAvailable: false,
       showAvailable: false,
       showPrice: false,
-      // مالهاش أثر هنا: `items0` اتبعتت، فالمنتقي مابيروحش للكتالوج أصلاً.
-      fromFullCatalog: false,
       onAdd: (picked, qty) {
         setState(() {
           final i = _lines.indexWhere((l) => l.item.itemId == picked.itemId);
@@ -395,7 +379,16 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
             // مكان المندوب نفسه مش في القايمة: طلب من مخزنه لمخزنه مالوش معنى،
             // والسيرفر بيرفضه — فمافيش داعي يبقى قدامه أصلاً.
             items: _otherPlaces,
-            onChanged: (v) => setState(() => _source = v),
+            // تغيير المصدر بيمسح السطور: الأصناف اللي اتضافت بتاعة المكان اللي
+            // كان مختار، ومخزن تاني ممكن مايكونش فيه ولا واحد منها — فالطلب يروح
+            // بأصناف مش موجودة في المصدر اللي مكتوب عليه.
+            onChanged: (v) => setState(() {
+              if (v != _source && _lines.isNotEmpty) {
+                _lines.clear();
+                _say('الأصناف اتشالت — المصدر اتغيّر');
+              }
+              _source = v;
+            }),
           ),
           const SizedBox(height: 12),
           InputDecorator(
@@ -434,7 +427,12 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
               Card(
                 child: ListTile(
                   title: Text(l.item.name),
-                  subtitle: Text('المتاح عندك: ${l.item.onHand}'),
+                  // «المتاح عندك» بيتكتب لما المصدر عربيته هو. الصنف الجاي من
+                  // مخزن رصيده مش نازل على الجهاز — وصفر مكتوب تحت اسمه بيقرا
+                  // «مش موجود» وهو موجود.
+                  subtitle: Text(_sourceIsMine
+                      ? 'المتاح عندك: ${l.item.onHand}'
+                      : (l.item.category ?? '')),
                   trailing: SizedBox(
                     width: 96,
                     child: TextField(

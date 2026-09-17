@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Statistic, Switch, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Segmented, Statistic, Switch, Table, Tabs, Tag, message,
 } from 'antd';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
@@ -50,7 +51,13 @@ export default function Profitability() {
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const navigate = useNavigate();
   const [openRow, setOpenRow] = useState<Row | null>(null);
+  // البنود التحليلية — «من أنهي مستندات». التفصيل بالحساب بيقول «من أنهي حسابات»،
+  // والتاني هو اللي بيتراجع عليه لأن المستند ممكن يتفتح ويتصلّح.
+  const [items, setItems] = useState<any>(null);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [drillTab, setDrillTab] = useState<'accounts' | 'items'>('accounts');
   const [breakdown, setBreakdown] = useState<any | null>(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
 
@@ -81,8 +88,26 @@ export default function Profitability() {
 
   useEffect(() => { load(); }, [params]);
 
+  const loadItems = async (row: Row) => {
+    setItemsLoading(true);
+    try {
+      const res = await api.get('/api/v1/reports/analytic-items', {
+        params: {
+          ...params,
+          cost_center_id: row.key ?? undefined,
+          include_unassigned: row.key === null,
+        },
+      });
+      setItems(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally { setItemsLoading(false); }
+  };
+
   const openBreakdown = async (row: Row) => {
-    setOpenRow(row); setBreakdown(null); setBreakdownLoading(true);
+    setOpenRow(row); setBreakdown(null); setItems(null); setDrillTab('accounts');
+    setBreakdownLoading(true);
+    if (dimension === 'cost_center') void loadItems(row);
     try {
       const res = await api.get('/api/v1/reports/profitability/breakdown', {
         params: { ...params, key: row.key ?? undefined },
@@ -235,6 +260,15 @@ export default function Profitability() {
         open={!!openRow} onCancel={() => setOpenRow(null)} footer={null} width={720}
         title={`تفصيل ${openRow?.label ?? ''}`}
       >
+        {/* تبويبين على نفس الرقم: «من أنهي حسابات» و«من أنهي مستندات». */}
+        <Tabs
+          activeKey={drillTab}
+          onChange={(k) => setDrillTab(k as 'accounts' | 'items')}
+          items={[
+            {
+              key: 'accounts',
+              label: 'بالحساب',
+              children: (
         <Table
           rowKey={(r: any) => r.account_id}
           size="small" loading={breakdownLoading}
@@ -265,6 +299,72 @@ export default function Profitability() {
               </Table.Summary.Cell>
             </Table.Summary.Row>
           ) : null)}
+        />
+              ),
+            },
+            ...(dimension === 'cost_center' ? [{
+              key: 'items',
+              label: `البنود (${items?.totals?.items ?? 0})`,
+              children: (
+                <Table
+                  rowKey={(r: any) => `${r.line_id}-${r.cost_center_id ?? 'x'}`}
+                  size="small" loading={itemsLoading}
+                  dataSource={items?.items ?? []}
+                  pagination={{ defaultPageSize: 15, showTotal: (t: number) => `${t} بند` }}
+                  locale={{ emptyText: 'لا توجد بنود' }}
+                  columns={[
+                    { title: 'التاريخ', dataIndex: 'entry_date', width: 105 },
+                    {
+                      title: 'المستند',
+                      key: 'doc',
+                      width: 170,
+                      render: (_: unknown, r: any) => (
+                        <Button type="link" size="small"
+                          onClick={() => navigate(`/general-ledger?tab=journal&doc=${r.entry_id}`)}>
+                          {r.entry_number || `#${r.entry_id}`}
+                        </Button>
+                      ),
+                    },
+                    { title: 'النوع', dataIndex: 'move_type_label', width: 110 },
+                    {
+                      title: 'الحساب',
+                      key: 'acc',
+                      render: (_: unknown, r: any) => r.account_name || r.account_code || '-',
+                    },
+                    {
+                      title: 'البيان',
+                      key: 'text',
+                      ellipsis: true,
+                      render: (_: unknown, r: any) => r.statement || r.description || '',
+                    },
+                    {
+                      title: 'النصيب',
+                      dataIndex: 'share_pct',
+                      width: 90,
+                      align: 'left' as const,
+                      // النصيب بيبان عشان اللي شايف ٧٥ جنيه من فاتورة بـ١٠٠ يعرف ليه.
+                      render: (v: string | null) => (v === null ? '-' : `${money(v)}%`),
+                    },
+                    {
+                      title: 'المبلغ',
+                      dataIndex: 'amount',
+                      width: 120,
+                      align: 'left' as const,
+                      render: (v: string) => <b>{money(v)}</b>,
+                    },
+                  ]}
+                  summary={() => (items ? (
+                    <Table.Summary.Row>
+                      <Table.Summary.Cell index={0} colSpan={6}><b>الإجمالي</b></Table.Summary.Cell>
+                      <Table.Summary.Cell index={6}>
+                        <b>{money(items.totals.amount)}</b>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  ) : null)}
+                />
+              ),
+            }] : []),
+          ]}
         />
       </TabModal>
     </Card>

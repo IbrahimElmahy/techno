@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import (
     CAP_CUSTODY_READ,
@@ -218,15 +219,34 @@ def deactivate_warehouse(
 
 @router.get("/custodies", response_model=list[CustodyOut])
 def list_custodies(
-    _: CurrentUser = Depends(require_capability(CAP_CUSTODY_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_CUSTODY_READ)),
     db: Session = Depends(get_db),
 ) -> list[CustodyOut]:
+    # العهدة بتقعد في مخزن، والمخازن مفلترة بالفرع — فالعهدة لازم تتفلتر معاها.
+    # من غير كده مدير الفرع بيشوف عهد مناديب فرع تاني في كل قايمة اختيار.
+    # العهدة بتبقى على مندوب (٢٥ من ٢٥) أو على مخزن. فالفلترة على الاتنين:
+    # مخزن الفرع، أو مندوب من الفرع. العهدة اللي مالهاش الاتنين بتفضل ظاهرة —
+    # إخفاء اللي مش متأكدين منه بيخفي شغل شغّال.
+    from src.models.user import User
+
+    branch_id = branch_scope.visible_branch_id(current)
+    rows = db.scalars(select(Custody)).all()
+    if branch_id is not None:
+        whs = {w.id for w in db.scalars(
+            branch_scope.scope(select(Warehouse), Warehouse, current)).all()}
+        # `custody.rep_id` بيشاور على `user.id` بتاع المندوب (شوف `CurrentUser.rep_id`)،
+        # مش على جدول مناديب لوحده — فالمقارنة بالمستخدمين بتوع الفرع.
+        reps = {u.id for u in db.scalars(
+            select(User).where(User.branch_id == branch_id)).all()}
+        rows = [c for c in rows
+                if (c.warehouse_id in whs if c.warehouse_id is not None
+                    else (c.rep_id in reps if c.rep_id is not None else True))]
     return [
         CustodyOut(
             id=c.id, holder_type=c.holder_type, rep_id=c.rep_id, family=c.family,
             warehouse_id=c.warehouse_id, active=c.active,
         )
-        for c in db.scalars(select(Custody)).all()
+        for c in rows
     ]
 
 

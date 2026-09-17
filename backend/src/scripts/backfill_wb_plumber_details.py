@@ -1,7 +1,10 @@
 """يكمّل بيانات السباكين من ملف العميل: تليفون ومحافظة ومركز ومنطقة.
 
-    python -m src.scripts.backfill_wb_plumber_details --dir C:/pgtmp/wb2          # يعرض بس
-    python -m src.scripts.backfill_wb_plumber_details --dir C:/pgtmp/wb2 --yes    # ينفّذ
+    python -m src.scripts.backfill_wb_plumber_details --xlsx "C:/wb/سباك.xlsx"        # يعرض بس
+    python -m src.scripts.backfill_wb_plumber_details --xlsx "C:/wb/سباك.xlsx" --yes  # ينفّذ
+
+`--dir` لسه شغّال للتصدير القديم (`plumbers.tsv`)، بس `--xlsx` بيقرا ملف العميل
+زي ما هو من غير خطوة تصدير.
 
 بيتعاد تشغيله بأمان: المطابقة بالكود، والحقل اللي متملّي صح مايتلمسش.
 
@@ -38,6 +41,7 @@ from sqlalchemy import func, select
 from src.core.db import SessionLocal
 from src.models.customer import Customer
 from src.models.org import Governorate
+from src.scripts import _workbook
 
 CODE_PREFIX = "WB-P-"
 
@@ -55,8 +59,9 @@ def _cut(v: str | None, n: int) -> str | None:
     return v[:n] if v else None
 
 
-def run(folder: str, *, execute: bool) -> None:
-    rows = _read(os.path.join(folder, "plumbers.tsv"))
+def run(folder: str, *, execute: bool, xlsx: str | None = None) -> None:
+    # الملف نفسه لو اتقال، وإلا التصدير القديم — زي سكربت الملّاك بالظبط.
+    rows = _workbook.plumbers(xlsx) if xlsx else _read(os.path.join(folder, "plumbers.tsv"))
 
     db = SessionLocal()
     try:
@@ -132,7 +137,8 @@ def run(folder: str, *, execute: bool) -> None:
 def main() -> None:
     args = sys.argv[1:]
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args)
+    xlsx = args[args.index("--xlsx") + 1] if "--xlsx" in args else None
+    run(folder, execute="--yes" in args, xlsx=xlsx)
 
 
 if __name__ == "__main__":

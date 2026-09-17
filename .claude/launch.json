@@ -2,6 +2,19 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "dev",
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "D:/techno-dev-code/deploy/dev/dev.ps1"
+      ],
+      "cwd": "D:/techno-dev-code",
+      "port": 5173
+    },
+    {
       "name": "backend",
       "runtimeExecutable": "D:/techno/backend/.venv/Scripts/python.exe",
       "runtimeArgs": [

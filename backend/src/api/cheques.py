@@ -8,12 +8,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
 from src.models.cheque import ChequeDirection, ChequeStatus
 from src.models.role import RoleName
-from src.services import cheque_service, financial_reports_service
+from src.services.report_options import ReportOptions
+from src.services import (
+    cash_flow_service,
+    cheque_service,
+    financial_reports_service,
+    partner_ledger_service,
+)
 from src.services.cheque_service import ChequeError
 from src.services.ledger_service import LedgerError
 from src.services.treasury_service import TreasuryError
@@ -72,6 +79,10 @@ class IncomeStatementOut(BaseModel):
     total_income: Decimal
     total_expenses: Decimal
     net_profit: Decimal
+    # الخيارات المشتركة — نفس الشكل في كل تقرير.
+    posted_only: bool = True
+    comparison_label: str | None = None
+    comparison: "IncomeStatementOut | None" = None
 
 
 class BalanceSheetOut(BaseModel):
@@ -84,6 +95,9 @@ class BalanceSheetOut(BaseModel):
     total_equity: Decimal
     net_profit: Decimal
     balanced: bool
+    posted_only: bool = True
+    comparison_label: str | None = None
+    comparison: "BalanceSheetOut | None" = None
 
 
 class AgingRowOut(BaseModel):
@@ -227,44 +241,190 @@ def list_cheques(
 def income_statement(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    # سلوك تقارير أودو المشترك — نفس الخيارين في كل تقرير بنفس المعنى.
+    posted_only: bool = Query(default=True),
+    comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> IncomeStatementOut:
-    """قائمة الدخل."""
-    s = financial_reports_service.income_statement(db, date_from=date_from, date_to=date_to)
+    """قائمة الدخل — مع عمود مقارنة اختياري."""
+    options = ReportOptions(date_from=date_from, date_to=date_to,
+                            posted_only=posted_only, comparison=comparison)
+    # مدير الفرع بيشوف قائمة دخل فرعه. المستندات مفلترة من زمان، والتقرير كان
+    # لسه بيجمّع على الشركة كلها — يعني رقم مش بتاعه على شاشته.
+    both = financial_reports_service.income_statement_compared(
+        db, options, branch_id=branch_scope.visible_branch_id(current))
+    s = both["current"]
+    prev = both["comparison"]
     return IncomeStatementOut(
         date_from=s.date_from, date_to=s.date_to, income=_lines(s.income),
         expenses=_lines(s.expenses), total_income=s.total_income,
         total_expenses=s.total_expenses, net_profit=s.net_profit,
+        posted_only=posted_only,
+        comparison_label=both["comparison_label"],
+        comparison=(IncomeStatementOut(
+            date_from=prev.date_from, date_to=prev.date_to, income=_lines(prev.income),
+            expenses=_lines(prev.expenses), total_income=prev.total_income,
+            total_expenses=prev.total_expenses, net_profit=prev.net_profit,
+        ) if prev else None),
     )
 
 
 @router.get("/reports/balance-sheet", response_model=BalanceSheetOut)
 def balance_sheet(
     as_of: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    posted_only: bool = Query(default=True),
+    comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> BalanceSheetOut:
-    """الميزانية / المركز المالي."""
-    s = financial_reports_service.balance_sheet(db, as_of=as_of)
-    return BalanceSheetOut(
-        as_of=s.as_of, assets=_lines(s.assets), liabilities=_lines(s.liabilities),
-        equity=_lines(s.equity), total_assets=s.total_assets,
-        total_liabilities=s.total_liabilities, total_equity=s.total_equity,
-        net_profit=s.net_profit, balanced=s.balanced,
-    )
+    """الميزانية / المركز المالي — مع عمود مقارنة اختياري."""
+    options = ReportOptions(date_to=as_of, posted_only=posted_only, comparison=comparison)
+    both = financial_reports_service.balance_sheet_compared(
+        db, options, branch_id=branch_scope.visible_branch_id(current))
+    s = both["current"]
+    prev = both["comparison"]
+
+    def out(x: object) -> BalanceSheetOut:
+        return BalanceSheetOut(
+            as_of=x.as_of, assets=_lines(x.assets), liabilities=_lines(x.liabilities),
+            equity=_lines(x.equity), total_assets=x.total_assets,
+            total_liabilities=x.total_liabilities, total_equity=x.total_equity,
+            net_profit=x.net_profit, balanced=x.balanced,
+        )
+
+    result = out(s)
+    result.posted_only = posted_only
+    result.comparison_label = both["comparison_label"]
+    result.comparison = out(prev) if prev else None
+    return result
 
 
 @router.get("/reports/aging", response_model=list[AgingRowOut])
 def aging(
     party: str = Query(default="customers", pattern="^(customers|suppliers)$"),
     as_of: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[AgingRowOut]:
     """أعمار الديون — عملاء أو موردين."""
-    rows = (financial_reports_service.receivables_aging(db, as_of=as_of)
+    branch_id = branch_scope.visible_branch_id(current)
+    rows = (financial_reports_service.receivables_aging(db, as_of=as_of, branch_id=branch_id)
             if party == "customers"
-            else financial_reports_service.payables_aging(db, as_of=as_of))
+            else financial_reports_service.payables_aging(db, as_of=as_of, branch_id=branch_id))
     return [AgingRowOut(party_id=r.party_id, party_name=r.party_name, total=r.total,
                         buckets=r.buckets) for r in rows]
+
+
+# ------------------------------------------------- دفتر الشريك (المرحلة ٤ — موديل أودو)
+
+
+class PartnerLedgerLineOut(BaseModel):
+    line_id: int
+    entry_id: int
+    entry_number: str | None = None
+    entry_date: date
+    date_maturity: date | None = None
+    journal_code: str | None = None
+    move_type: str | None = None
+    move_type_label: str | None = None
+    account_id: int
+    account_code: str | None = None
+    account_name: str | None = None
+    description: str = ""
+    statement: str | None = None
+    debit: Decimal
+    credit: Decimal
+    balance: Decimal
+    residual: Decimal | None = None
+    reconcile_number: str | None = None
+
+
+class PartnerLedgerRowOut(BaseModel):
+    partner_kind: str
+    partner_id: int
+    partner_name: str
+    opening: Decimal
+    debit: Decimal
+    credit: Decimal
+    closing: Decimal
+    open_residual: Decimal
+    lines: list[PartnerLedgerLineOut]
+
+
+@router.get("/reports/partner-ledger", response_model=list[PartnerLedgerRowOut])
+def partner_ledger(
+    partner_kind: str | None = Query(default=None, pattern="^(customer|supplier|employee)$"),
+    partner_id: int | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    only_open: bool = Query(default=False),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> list[PartnerLedgerRowOut]:
+    """دفتر الشريك — حركة كل طرف في الفترة برصيد جاري ومتبقّي كل سطر."""
+    rows = partner_ledger_service.partner_ledger(
+        db, partner_kind=partner_kind, partner_id=partner_id,
+        date_from=date_from, date_to=date_to, only_open=only_open,
+        branch_id=branch_scope.visible_branch_id(current))
+    return [
+        PartnerLedgerRowOut(
+            partner_kind=r.partner_kind, partner_id=r.partner_id,
+            partner_name=r.partner_name, opening=r.opening, debit=r.debit,
+            credit=r.credit, closing=r.closing, open_residual=r.open_residual,
+            lines=[PartnerLedgerLineOut(**vars(ln)) for ln in r.lines],
+        )
+        for r in rows
+    ]
+
+
+# --------------------------------------------- التدفق النقدي (المرحلة ٤ — موديل أودو)
+
+
+class CashFlowLineOut(BaseModel):
+    account_id: int | None = None
+    code: str | None = None
+    name: str | None = None
+    inflow: Decimal
+    outflow: Decimal
+    net: Decimal
+
+
+class CashFlowSectionOut(BaseModel):
+    key: str
+    label: str
+    net: Decimal
+    lines: list[CashFlowLineOut]
+
+
+class CashFlowOut(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    opening: Decimal
+    closing: Decimal
+    net_change: Decimal
+    consistent: bool
+    sections: list[CashFlowSectionOut]
+
+
+@router.get("/reports/cash-flow", response_model=CashFlowOut)
+def cash_flow(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> CashFlowOut:
+    """التدفق النقدي — حركة الخزن والبنوك منسوبة لحسابها المقابل."""
+    s = cash_flow_service.cash_flow(db, date_from=date_from, date_to=date_to,
+                                    branch_id=branch_scope.visible_branch_id(current))
+    return CashFlowOut(
+        date_from=s.date_from, date_to=s.date_to, opening=s.opening, closing=s.closing,
+        net_change=s.net_change, consistent=s.consistent,
+        sections=[
+            CashFlowSectionOut(
+                key=sec.key, label=sec.label, net=sec.net,
+                lines=[CashFlowLineOut(**vars(ln)) for ln in sec.lines],
+            )
+            for sec in s.sections
+        ],
+    )

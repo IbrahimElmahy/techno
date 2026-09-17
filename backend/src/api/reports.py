@@ -36,10 +36,12 @@ def production_report(
 @router.get("/inventory")
 def inventory_report(
     warehouse_id: int | None = Query(None), item_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.inventory(db, warehouse_id=warehouse_id, item_id=item_id)
+    # مخازن الفرع بس — المخازن نفسها مفلترة، والجرد كان بيجمّع عليها كلها.
+    return reporting.inventory(db, warehouse_id=warehouse_id, item_id=item_id,
+                               branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/wastage")
@@ -56,10 +58,11 @@ def wastage_report(
 @router.get("/stagnant")
 def stagnant_report(
     days: int = Query(90, ge=0), warehouse_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id)
+    return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id,
+                                    branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/trade")
@@ -72,7 +75,7 @@ def trade_report(
     party_id: int | None = Query(None),
     item_id: int | None = Query(None),
     warehouse_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
     """Sales/purchase figures at any level and grouping, with profit where cost was captured.
@@ -85,6 +88,9 @@ def trade_report(
             db, doc_type=doc_type, level=level, group_by=group_by,
             date_from=date_from, date_to=date_to, party_id=party_id,
             item_id=item_id, warehouse_id=warehouse_id,
+            # مستندات الفرع بس — المستندات نفسها مفلترة من زمان في سجلاتها،
+            # والتقرير كان لسه بيجمّع عليها كلها.
+            branch_id=branch_scope.visible_branch_id(current),
         )
     except trade_reports.TradeReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
@@ -103,12 +109,13 @@ def stock_as_of_report(
     date_to: str | None = Query(None, description="Alias for as_of — the day the balance is read"),
     warehouse_id: int | None = Query(None),
     item_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
     """جرد حق تاريخ — every movement up to that day, nothing after it, valued at cost."""
     return stocktake.stock_as_of(db, as_of=date_to or as_of,
-                                 warehouse_id=warehouse_id, item_id=item_id)
+                                 warehouse_id=warehouse_id, item_id=item_id,
+                                 branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/reorder")

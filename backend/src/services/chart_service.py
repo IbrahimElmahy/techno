@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
-from src.models.ledger import Account, AccountNature, AccountType, LedgerLine
+from src.models.ledger import Account, AccountNature, AccountType, LedgerEntry, LedgerLine
 from src.services import ledger_service
 from src.services.account_resolver import (
     NATURE_NORMAL_SIDE,
@@ -208,6 +208,7 @@ _APPEARS_IN = {"trading", "profit_loss", "balance_sheet", "none"}
 def update_account(
     db: Session, *, account_id: int, name: str | None = None, active: bool | None = None,
     appears_in: str | None = None, main_level: str | None = None,
+    reconcilable: bool | None = None,
 ) -> Account:
     """Rename, (de)activate, and/or set «يظهر في». System accounts may be renamed but not
     deactivated if they still have active children (FR-005)."""
@@ -229,6 +230,11 @@ def update_account(
         # («أصول متداولة»، «مصروفات غير مباشرة»)، and an enum we invented would be wrong for the
         # first client whose chart is arranged differently.
         acc.main_level = main_level or None
+    if reconcilable is not None:
+        # (المرحلة ٣) «قابل للتسوية» — سطوره بتتقفل على بعضها في شاشة التسوية. ذمم
+        # العملاء والموردين بتاخده من نوعها؛ ده للحسابات التانية اللي بتتقفل كمان
+        # (شيكات تحت التحصيل، سلف العاملين).
+        acc.reconcilable = reconcilable
     if active is not None:
         if active is False:
             _assert_deactivatable(db, acc)
@@ -282,6 +288,9 @@ def bulk_balances(db: Session) -> dict[int, Decimal]:
     """
     rows = db.execute(
         select(LedgerLine.account_id, LedgerLine.direction, func.sum(LedgerLine.amount))
+        # المسودة والملغي بره الأرصدة — الشرط من `ledger_service` عشان يفضل واحد.
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())
         .group_by(LedgerLine.account_id, LedgerLine.direction)).all()
     accounts = db.execute(
         select(Account.id, Account.parent_id, Account.is_postable, Account.normal_side)).all()

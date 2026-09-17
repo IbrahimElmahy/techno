@@ -13,7 +13,11 @@ import { FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons';
  * الزرار ده يعرف، فالأيقونة بتتسمّع لـ`fullscreenchange` بدل ما تفتكر آخر ضغطة — من غير
  * كده الزرار بيبقى بيقول «ادخل» والشاشة كاملة أصلاً.
  */
-export default function FullscreenToggle() {
+/**
+ * الحالة والتبديل لوحدهم — عشان اللي عايز يحط ملء الشاشة في قايمة بدل زرار
+ * مايعيدش كتابة نفس الاستماع للحدث ويفضل الاتنين يختلفوا.
+ */
+export function useFullscreen(): [boolean, () => void] {
   const [on, setOn] = useState(() => !!document.fullscreenElement);
 
   useEffect(() => {
@@ -28,6 +32,12 @@ export default function FullscreenToggle() {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     else void document.documentElement.requestFullscreen().catch(() => {});
   };
+
+  return [on, toggle];
+}
+
+export default function FullscreenToggle() {
+  const [on, toggle] = useFullscreen();
 
   return (
     <Tooltip title={on ? 'خروج من ملء الشاشة (F11)' : 'ملء الشاشة (F11)'}>

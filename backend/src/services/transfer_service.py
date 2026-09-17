@@ -8,8 +8,6 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from src.core import clock
-
 from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.orm import Session
 
@@ -17,7 +15,7 @@ from src.services import numbering
 
 from src.core.money import to_qty
 from src.models.role import RoleName
-from src.models.stock import LocationKind, StockDirection
+from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.models.transfer import (
     StockTransfer, StockTransferLine, TransferRoute, TransferStatus)
 from src.models.user import User
@@ -27,6 +25,13 @@ from src.auth.branch_scope import branch_for
 from src.services import (
     audit_service, batch_service, serial_service, stock_service,
 )
+
+# نوع مستند حركة المخزون بتاعة إذن التحويل — من `StockDoc` عشان يفضل واحد.
+#
+# كان مكتوب هنا `"transfer"` بينما نقل a5 كتب `"stock_transfer"`، فالإلغاء والحذف
+# كانوا بيدوّروا على اسم عليه ٤٦ حركة بس ويسيبوا الـ٦٤ ألف التانيين. الشرح الكامل
+# لكل الأنواع في `StockDoc`.
+MOVEMENT_DOC = StockDoc.TRANSFER
 
 _ROUTE_KINDS = {
     TransferRoute.central_to_branch: (LocationKind.warehouse, LocationKind.warehouse),
@@ -94,16 +99,7 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         source_location_kind=source_kind, source_location_id=source_id,
         dest_location_kind=dest_kind, dest_location_id=dest_id,
         status=TransferStatus.pending, initiated_by=initiated_by,
-        # **تاريخ فاضي بيبقى «النهارده»، مابيتسابش `NULL`.**
-        #
-        # العميل هو اللي بيبعت التاريخ، وتطبيق المندوب مابيبعتوش أصلاً — فالإذن كان
-        # بينزل من غير تاريخ خالص: ٥ من ٩ أذون مكتوبة عندنا `transfer_date = NULL`.
-        # والشاشة والورقة بيسيبوا الخانة فاضية، والفرز بالتاريخ بيرميهم برّه أي مدى،
-        # فالإذن بيختفي من كشف اليوم اللي اتعمل فيه.
-        #
-        # و«النهارده» بتيجي من `clock.today()` مش `date.today()` — الساعة بتتحسب بفرق
-        # التوقيت بتاع الشغل، والمستند اللي بيتكتب الساعة ١ بالليل بيتقيّد على يومه.
-        transfer_date=transfer_date or clock.today(),
+        transfer_date=transfer_date,
         branch_id=branch_for(db, actor_user_id=initiated_by,
                              location_kind=source_kind, location_id=source_id),
     )
@@ -145,13 +141,13 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
             db, item_id=item_id, location_kind=transfer.source_location_kind,
             location_id=transfer.source_location_id, movement_type="transfer_out",
             direction=StockDirection.out, quantity=quantity, actor_user_id=approver_user_id,
-            source_doc_type="transfer", source_doc_id=transfer.id,
+            source_doc_type=MOVEMENT_DOC, source_doc_id=transfer.id,
         )
         in_mv = stock_service.post_movement(
             db, item_id=item_id, location_kind=transfer.dest_location_kind,
             location_id=transfer.dest_location_id, movement_type="transfer_in",
             direction=StockDirection.in_, quantity=quantity, actor_user_id=approver_user_id,
-            source_doc_type="transfer", source_doc_id=transfer.id,
+            source_doc_type=MOVEMENT_DOC, source_doc_id=transfer.id,
         )
         if line is not None:
             line.out_movement_id = out_mv.id
@@ -183,7 +179,10 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
 
     transfer.status = TransferStatus.approved
     transfer.approved_by = approver_user_id
-    transfer.approved_at = datetime(2026, 1, 1)  # set by caller-side clock in prod; fixed for tests
+    # ساعة حقيقية. كان `datetime(2026, 1, 1)` والتعليق بيقول إن اللي بينادي بيظبطه في
+    # الإنتاج — ومحدّش بيظبطه: `api/transfers.py` مابيلمسش الحقل. فكل إذن اتعتمد من
+    # الشاشة مكتوب عليه إنه اتعتمد أول يناير. `reject` جنبه بيستخدم `utcnow` من الأول.
+    transfer.approved_at = datetime.utcnow()
     transfer.out_movement_id = out_mv.id
     transfer.in_movement_id = in_mv.id
     db.flush()
@@ -192,22 +191,19 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
     return transfer
 
 
-# نوعَي المستند على حركة المخزون — **الاتنين، مش واحد**.
-#
-# الخدمة الحيّة بتكتب `transfer` والنقل من a5 بيكتب `stock_transfer`. لغتين لنفس
-# الحاجة في مكانين، والحذف كان بيدوّر على واحدة بس — فالإذن المنقول بيتمسح وحركته
-# بتفضل، والبضاعة مابترجعش لمصدرها وماحدش بيعرف.
-_TRANSFER_DOC_TYPES = ("transfer", "stock_transfer")
-
-
 def _drop_movements(db, transfer, lines) -> None:
-    """بيشيل حركات الإذن — **بعد ما يفك اللي بيشاور عليها**.
+    """حركات الإذن بتتشال — بعد ما اللي بيشاور عليها يسيبها.
 
-    `stock_transfer.out_movement_id` / `in_movement_id` مفاتيح خارجية حقيقية على
-    `stock_movement`. مسح الحركة والرأس لسه بيشاور عليها = خرق مفتاح خارجي، والـAPI
-    بيرمي 500 والشاشة بتقول «تعذر الاتصال بالسيرفر».
+    الرصيد مشتق من الحركات، فشيل الحركة بيرجّع الرصيد لوحده. بس الإذن نفسه وسطوره
+    بيمسكوا `out_movement_id`/`in_movement_id`، والمفتاح الأجنبي في بوستجرس بيتفحص
+    **على طول** مش آخر المعاملة. فالحذف الأول كان بيقع:
 
-    فالإشارات بتتفك الأول وبيتعمل `flush` — الترتيب هنا هو الإصلاح نفسه، مش تنظيم.
+        ForeignKeyViolation: update or delete on table "stock_movement" violates
+        foreign key constraint "stock_transfer_out_movement_id_fkey"
+
+    يعني «إلغاء الإذن» كان بيرجّع 500 لكل إذن معتمد، والبضاعة بتفضل في المخزن الغلط.
+    الترتيب هنا مقصود: تفضية المشاورات، `flush` عشان الـUPDATE يوصل للقاعدة قبل الحذف،
+    وبعدين الحذف.
     """
     from src.models.stock import StockMovement
 
@@ -219,7 +215,7 @@ def _drop_movements(db, transfer, lines) -> None:
     db.flush()
 
     db.execute(sa_delete(StockMovement).where(
-        StockMovement.source_doc_type.in_(_TRANSFER_DOC_TYPES),
+        StockMovement.source_doc_type == MOVEMENT_DOC,
         StockMovement.source_doc_id == transfer.id))
 
 
@@ -272,6 +268,38 @@ def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
                          before={"doc": doc})
 
 
+def _refuse_if_dest_goes_negative(db, transfer, lines) -> None:
+    """الإلغاء اللي هيخلّي الوجهة تحت الصفر بيتمنع — واللي بيتمنع بيتسمّى بالاسم.
+
+    الإلغاء بيقول «البضاعة دي ماوصلتش». لكن لو الوجهة باعت منها خلاص، فهي وصلت وراحت،
+    والإلغاء ساعتها بيكتب رصيد سالب — يعني كمية مش موجودة فيزيائياً بتدخل في التكلفة
+    والجرد والمتاح، وده بالظبط الخلل اللي «فحص النظام» بيصرّخ منه.
+
+    حصل فعلاً: إذن TRF-000004 اتلغى فبقى صنفين في «مخزن السياره ( د )» بـ`-1` و`-2`.
+
+    والرسالة بتقول الأصناف بأسمائها وبكام هتنزل، عشان اللي قدامه يعرف إنه محتاج جردة
+    أو إذن رجوع بالفرق، مش «مايتلغاش» وخلاص.
+    """
+    from src.models.stock import LocationKind as _LK
+
+    if transfer.dest_location_kind != _LK.warehouse:
+        return
+    short = []
+    for ln in lines:
+        on_hand = Decimal(str(stock_service.on_hand(
+            db, ln.item_id, transfer.dest_location_kind, transfer.dest_location_id)))
+        after = on_hand - Decimal(str(ln.quantity))
+        if after < 0:
+            item = db.get(Item, ln.item_id)
+            short.append(f"«{item.name if item else ln.item_id}» هينزل لـ{after}")
+    if short:
+        raise TransferError(
+            "الإلغاء هيخلّي الوجهة برصيد سالب — يعني البضاعة وصلت واتباعت، فمش ممكن "
+            "نقول إنها ماوصلتش: " + "، ".join(short[:5])
+            + (f" وكمان {len(short) - 5}" if len(short) > 5 else "")
+            + ". اعمل إذن رجوع بالكمية اللي لسه موجودة، أو اظبط الجردة الأول.")
+
+
 def cancel(db, *, transfer_id: int, actor_user_id: int,
            reason: str | None = None) -> StockTransfer:
     """إلغاء إذن معتمد — البضاعة ترجع لمصدرها والإذن يفضل في السجل «ملغي».
@@ -287,6 +315,7 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
 
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()
+    _refuse_if_dest_goes_negative(db, transfer, lines)
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None:
@@ -306,7 +335,15 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
 
     _drop_movements(db, transfer, lines)
 
-    transfer.status = TransferStatus.rejected
+    # **«ملغي» مش «مرفوض».**
+    #
+    # الاتنين كانوا بيتكتبوا `rejected`، والسجل بقى بيقول عن إذن راحت بضاعته ورجعت إنه
+    # «مرفوض» — والشاشة مكتوب فيها تحت المرفوض «الإذن المرفوض لم تتحرك فيه أي بضاعة».
+    # يعني المستند بيكدب على اللي بيقراه بعد شهر.
+    #
+    # والفرق حقيقي: المرفوض حد بصّ على طلب ومشّاهوش، والملغي راح ورجع. `reversed`
+    # موجودة في الموديل من الأول والشاشة بتسمّيها «ملغي» — بس محدّش كان بيكتبها.
+    transfer.status = TransferStatus.reversed
     transfer.reject_reason = (reason or "اتلغى بعد الاعتماد")[:240]
     db.flush()
     audit_service.record(db, action="transfer.cancel", actor_user_id=actor_user_id,
