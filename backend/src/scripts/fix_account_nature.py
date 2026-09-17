@@ -39,6 +39,9 @@ from src.services.financial_reports_service import effective_nature
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--set", action="append", default=[], metavar="ID=NATURE",
+                    help="تصنيف صريح لحساب مش مربوط بعميل ولا مورد، "
+                         "مثلاً --set 3802=expense")
     args = ap.parse_args()
 
     db: Session = SessionLocal()
@@ -55,12 +58,22 @@ def main() -> None:
         cust_names = {n for (n,) in db.execute(select(Customer.name)).all() if n}
         sup_names = {n for (n,) in db.execute(select(Supplier.name)).all() if n}
 
+        # التصنيف الصريح — للحساب اللي مش مربوط بحاجة وتصنيفه قرار.
+        # اتقرا من a5 نفسه: حساب «كارته السياره الجديده» أبوه «مصروفات عمومية»
+        # وشجرته «مصروفات غير مباشرة»، فهو مصروف. مش تخمين — ده كلامهم.
+        forced: dict[int, AccountNature] = {}
+        for pair in args.set:
+            aid, _, nat = pair.partition("=")
+            forced[int(aid)] = AccountNature(nat.strip())
+
         rows, unknown = [], []
         for acc in db.scalars(select(Account)).all():
             if effective_nature(acc) is not None:
                 continue
             bal = Decimal(str(balances.get(acc.id, 0) or 0))
-            if acc.id in cust:
+            if acc.id in forced:
+                rows.append((acc, forced[acc.id], "اتقال صراحةً", bal))
+            elif acc.id in cust:
                 rows.append((acc, AccountNature.asset, "مربوط بعميل", bal))
             elif acc.id in sup:
                 rows.append((acc, AccountNature.liability, "مربوط بمورد", bal))
