@@ -78,6 +78,11 @@ class Issue:
     # What it costs to leave alone — the sentence that turns a count into a reason to click.
     hint: str
     # The screen that fixes it. A finding with nowhere to go is a complaint.
+    #
+    # **لازم يطابق مفتاح موجود في `frontend/src/components/navigation.ts` بالحرف** —
+    # بالتبويب لو الشاشة جوّاها تبويبات. الواجهة بتفتح المسار زي ما هو، والمسار اللي
+    # مالوش مدخل بيوصّل لـ«شاشة غير معروفة» — يعني الفحص بيقول فيه مشكلة وبيوديك
+    # على باب مقفول. حصل مع `/chart-of-accounts` (الصح `/general-ledger?tab=chart`).
     link: str
     samples: list[dict] = field(default_factory=list)
 
@@ -227,7 +232,7 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
         key="stagnant", title=f"بضاعة راكدة أكتر من {days} يوم", group="رصيد المنتجات",
         severity="low", count=len(rows),
         hint="فلوس نايمة في المخزن — يا تتحرّك بعرض يا تتصفّى.",
-        link="/reports", samples=rows[:SAMPLE],
+        link="/reports?view=stagnant", samples=rows[:SAMPLE],
     )
 
 
@@ -373,7 +378,7 @@ def check_unbalanced_entries(db: Session) -> Issue | None:
         key="unbalanced_entry", title="قيود غير متوازنة", group="الحسابات",
         severity="high", count=len(rows),
         hint="الميزانية مش هتقفل، وكل تقرير مالي بيقرا القيود دي رقمه غلط.",
-        link="/general-ledger",
+        link="/general-ledger?tab=integrity",
         samples=[{"label": f"قيد #{eid}",
                   "detail": f"مدين {_money(d)} — دائن {_money(c)}"}
                  for eid, d, c in rows[:SAMPLE]],
@@ -415,7 +420,7 @@ def check_accounts_without_nature(db: Session) -> Issue | None:
         count=len(bad),
         hint=f"رصيدهم {_money(total)} ج.م مش ظاهر لا في الأصول ولا الالتزامات — "
              "الميزانية بتقفل بفرق بسببهم.",
-        link="/chart-of-accounts",
+        link="/general-ledger?tab=chart",
         samples=[{"label": f"{c or ''} {n or f'#{i}'}".strip(), "detail": _money(b)}
                  for i, c, n, b in sorted(bad, key=lambda r: -abs(r[3]))[:SAMPLE]],
     )
