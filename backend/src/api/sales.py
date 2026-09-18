@@ -25,7 +25,7 @@ from src.core import clock
 from src.core.db import get_db
 from src.models.catalog import Item, ItemPrice, PriceTier
 from src.models.customer import Customer, CustomerAccount
-from src.models.ledger import LedgerEntry
+from src.models.ledger import LedgerEntry, LedgerLine
 from src.models.lookup import LookupOption
 from src.models.loyalty import CouponType
 from src.models.sales import (
@@ -1116,11 +1116,34 @@ def sales_summary(
 
     inv_count, inv_net, inv_credit = totals(inv, "net", "credit_amount")
     ret_count, ret_net, ret_credit = totals(ret, "value", "credit_reduction")
+
+    # **المتبقي بيتحسب من المطابقة، مش من `credit_amount`.**
+    #
+    # `credit_amount` هو الآجل **يوم البيع** ومابيتحركش بعدها أبداً. جمعه كان بيدّي
+    # «المتبقي آجل على العملاء ٢١٬٣٤٧٬٦٣٦» والمستحق الحقيقي ٣٬٥٤٧٬٢٠٢ — الفرق كله
+    # تحصيلات اتعملت بسندات بعد الفواتير، والكارت مكانش بيشوفها. والرقم ده بيتقري
+    # على إنه المديونية.
+    #
+    # المصدر الصح هو متبقّي سطور القيد (`amount_residual`) — نفس اللي أعمار الديون
+    # وكشف الحساب وحالة الدفع بيشتغلوا عليه. والموجب بس: السالب رصيد **للعميل**،
+    # وجمعه مع المديونية بيقلّلها بحاجة هي مش منها.
+    entry_ids = inv.with_only_columns(SalesInvoice.ledger_entry_id).where(
+        SalesInvoice.ledger_entry_id.isnot(None)).subquery()
+    outstanding = db.scalar(
+        select(func.coalesce(func.sum(LedgerLine.amount_residual), 0))
+        .where(LedgerLine.entry_id.in_(select(entry_ids.c[0])),
+               LedgerLine.amount_residual.isnot(None),
+               LedgerLine.amount_residual > 0)
+    ) or Decimal("0.00")
+
     return {
         "sales_count": inv_count, "sales_net": inv_net,
         "returns_count": ret_count, "returns_net": ret_net,
         "net_sales": inv_net - ret_net,
-        "credit_outstanding": inv_credit - ret_credit,
+        "credit_outstanding": outstanding,
+        # الآجل يوم البيع — رقم الفترة، مش المديونية. بيترجع باسمه الصريح عشان
+        # اللي عايزه يلاقيه، ومحدش يقراه بالغلط على إنه المستحق.
+        "credit_sold": inv_credit - ret_credit,
     }
 
 
