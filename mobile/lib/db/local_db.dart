@@ -19,7 +19,13 @@ class LocalDb {
     // و`main` خد ٢٢ و٢٥ و٢٦ — فالأجهزة اللي في الشارع دلوقتي كل واحد ناقصه ترقيات
     // التاني. الرقم ده أعلى من الاتنين وبيعمل **كل** اللي فاتهم، وكل واحدة محميّة
     // بـ`try`: اللي اتعمل قبل كده بيرمي وبيتتجاهل.
-    _db = await openDatabase(path, version: 29, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 30, onUpgrade: (d, from, to) async {
+      if (from < 30) {
+        // شيتات التسعير بتتخزّن على الجهاز. الجهاز القديم بياخد الجدولين فاضيين،
+        // والشيتات اللي كانت مفتوحة قبل الترقية ماكانتش بتتحفظ أصلاً فمافيش داتا تضيع.
+        try { await d.execute(_priceSheetTable); } catch (_) {}
+        try { await d.execute(_priceSheetLineTable); } catch (_) {}
+      }
       if (from < 29) {
         // أسعار الكتالوج — كشف التسعير بيقراها. الجهاز القديم بيزوّد الأعمدة وبتتملى
         // من أول مزامنة؛ لحد ساعتها الكشف بيعرض الأصناف من غير سعر بدل ما يقع.
@@ -257,6 +263,8 @@ class LocalDb {
       await d.execute(_saleInvoiceTable);
       await d.execute(_saleLineTable);
       await d.execute(_receiptTable);
+      await d.execute(_priceSheetTable);
+      await d.execute(_priceSheetLineTable);
     });
     return _db!;
   }
@@ -688,6 +696,7 @@ class LocalDb {
     'inspection_line', 'inspection', 'attachment',
     'sale_invoice_line', 'sale_invoice', 'sale_receipt',
     'coupon_receipt', 'stock_transfer_line', 'stock_transfer',
+    'price_sheet_line', 'price_sheet',
     'sale_item', 'customer', 'rep_treasury',
   ];
 
@@ -949,6 +958,123 @@ class LocalDb {
     final rows = await d.query('sale_invoice_line',
         where: 'invoice_local_id = ?', whereArgs: [invoiceLocalId], orderBy: 'id');
     return [for (final r in rows) SaleDraftLine.fromRow(r)];
+  }
+
+  // ------------------------------------------------------------- شيتات التسعير
+
+  /// بيحفظ شيت جديد وبيرجّع رقمه المحلي.
+  ///
+  /// السطور بتتكتب مع الترويسة في نفس المعاملة: شيت ترويسته اتكتبت وسطوره لأ بيبان في
+  /// القايمة بإجمالي مالهوش سطور تحته، واللي بيفتحه بيلاقيه فاضي ومش فاهم.
+  Future<int> savePriceSheet({
+    required String title,
+    required String sheetDate,
+    required double total,
+    String? notes,
+    required List<SaleDraftLine> lines,
+  }) async {
+    final d = await db;
+    final now = DateTime.now().toIso8601String();
+    return d.transaction<int>((tx) async {
+      final id = await tx.insert('price_sheet', {
+        'title': title,
+        'sheet_date': sheetDate,
+        'total': total,
+        'line_count': lines.length,
+        'notes': notes,
+        'created_at': now,
+        'updated_at': now,
+      });
+      final batch = tx.batch();
+      for (final l in lines) {
+        batch.insert('price_sheet_line', _priceSheetLineRow(id, l));
+      }
+      await batch.commit(noResult: true);
+      return id;
+    });
+  }
+
+  /// بتعدّل شيت متحفوظ — الترويسة والسطور مع بعض.
+  ///
+  /// **السطور بتتمسح وتتكتب من أول**، مش بتتقارن سطر سطر. الشيت بيتعدّل بالجملة (صنف
+  /// يتشال، خصم يتغيّر، كمية تزيد) والمقارنة هنا شغل زيادة بيغلط: سطر اتشال وسطر
+  /// اتزوّد بنفس الصنف بيبقوا تعديل واحد، والمزامنة مالهاش دعوة بالشيت أصلاً.
+  ///
+  /// `created_at` مابيتغيّرش — تاريخ إنشاء الورقة حاجة، وآخر تعديل حاجة تانية.
+  Future<void> updatePriceSheet({
+    required int localId,
+    required String title,
+    required String sheetDate,
+    required double total,
+    String? notes,
+    required List<SaleDraftLine> lines,
+  }) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.update(
+        'price_sheet',
+        {
+          'title': title,
+          'sheet_date': sheetDate,
+          'total': total,
+          'line_count': lines.length,
+          'notes': notes,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'local_id = ?',
+        whereArgs: [localId],
+      );
+      await tx.delete('price_sheet_line',
+          where: 'sheet_local_id = ?', whereArgs: [localId]);
+      final batch = tx.batch();
+      for (final l in lines) {
+        batch.insert('price_sheet_line', _priceSheetLineRow(localId, l));
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  /// الشيتات المتحفوظة — الأحدث تعديلاً الأول.
+  ///
+  /// الترتيب بآخر تعديل مش بالإنشاء: اللي بيفتح القايمة بيدوّر على الورقة اللي كان
+  /// شغّال عليها، مش على أقدم ورقة كتبها.
+  Future<List<Map<String, Object?>>> priceSheets() async {
+    final d = await db;
+    return d.query('price_sheet', orderBy: 'updated_at DESC, local_id DESC');
+  }
+
+  Future<Map<String, Object?>?> priceSheet(int localId) async {
+    final d = await db;
+    final rows = await d.query('price_sheet',
+        where: 'local_id = ?', whereArgs: [localId], limit: 1);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<List<SaleDraftLine>> priceSheetLines(int localId) async {
+    final d = await db;
+    final rows = await d.query('price_sheet_line',
+        where: 'sheet_local_id = ?', whereArgs: [localId], orderBy: 'id');
+    return [for (final r in rows) SaleDraftLine.fromRow(r)];
+  }
+
+  Future<void> deletePriceSheet(int localId) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.delete('price_sheet_line',
+          where: 'sheet_local_id = ?', whereArgs: [localId]);
+      await tx.delete('price_sheet', where: 'local_id = ?', whereArgs: [localId]);
+    });
+  }
+
+  /// نفس أعمدة سطر الفاتورة بالظبط، بس المفتاح `sheet_local_id`.
+  ///
+  /// `SaleDraftLine.toRow` بتكتب `invoice_local_id` لأنها اتعملت للفاتورة، و
+  /// `fromRow` مابتقراش المفتاح أصلاً — فالقراءة مشتركة والكتابة هي اللي بتتبدّل.
+  Map<String, Object?> _priceSheetLineRow(int sheetId, SaleDraftLine l) {
+    final row = Map<String, Object?>.from(l.toRow(sheetId));
+    row.remove('invoice_local_id');
+    row['sheet_local_id'] = sheetId;
+    return row;
   }
 
   Future<int> pendingSalesCount() async {
@@ -1452,4 +1578,39 @@ CREATE TABLE stock_transfer_line(
   item_id INTEGER NOT NULL,
   item_name TEXT NOT NULL,
   quantity REAL NOT NULL
+)''';
+
+/// شيت تسعير متحفوظ على الجهاز.
+///
+/// **عرض سعر، مش مستند** — مافيش `client_uuid` ولا `synced`: الشيت مابيترفعش للسيرفر
+/// ومابيقيّدش حاجة. هو ورقة المندوب: بيبنيها عند التاجر، بيبعتها، وبيرجع يعدّلها لما
+/// الكلام يتغيّر. فالحفظ محلي خالص، والتعديل بيدوس على نفس الصف.
+///
+/// `title` هو اللي بيميّزه في القايمة — «مخزن العبور»، «عرض رمضان». مافيش عميل على
+/// الشيت عن قصد (الشاشة كلها اتعملت من غير عميل ولا مديونية)، فالاسم هو كل الهوية.
+const _priceSheetTable = '''
+CREATE TABLE price_sheet(
+  local_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  sheet_date TEXT NOT NULL,
+  -- صافي العرض ساعة الحفظ. متخزّن عشان القايمة ماتحتاجش تقرا السطور كلها.
+  total REAL NOT NULL DEFAULT 0,
+  line_count INTEGER NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)''';
+
+const _priceSheetLineTable = '''
+CREATE TABLE price_sheet_line(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sheet_local_id INTEGER NOT NULL,
+  item_id INTEGER NOT NULL,
+  item_name TEXT NOT NULL,
+  quantity REAL NOT NULL,
+  unit_price REAL NOT NULL DEFAULT 0,
+  discount_pct REAL NOT NULL DEFAULT 0,
+  fixed_discount_pct REAL NOT NULL DEFAULT 0,
+  variable_discount_pct REAL NOT NULL DEFAULT 0,
+  line_total REAL NOT NULL DEFAULT 0
 )''';

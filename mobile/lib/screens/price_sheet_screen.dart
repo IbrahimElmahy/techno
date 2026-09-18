@@ -46,10 +46,17 @@ String _blank(double v) => v == 0 ? '' : _trim(v);
 ///   التاجر بيسأل «٥٠٠ قطعة بكام» وهو عارف إنها مش معاك دلوقتي.
 ///
 /// **وأثره صفر:** مافيش حركة مخزن ولا قيد ولا نقط ولا مديونية، ومافيش حاجة بتترفع
-/// للسيرفر. العرض عايش في الشاشة وبيروح مع قفلها — تخزينه كان هيخلّيه يتلخبط مع
-/// الفواتير في «فواتيري».
+/// للسيرفر.
+///
+/// **بس بيتحفظ على الجهاز.** كان بيروح مع قفل الشاشة، والمندوب بيبني عرض لتاجر على
+/// عشرين صنف ويرجع تاني يوم يبنيه من أول. الحفظ محلي خالص وفي جدول لوحده
+/// (`price_sheet`) مش مع الفواتير: العرض مش مستند، ومخلوط مع «فواتيري» كان هيخلّي
+/// اللي بيراجع يشوف ورقة شكلها فاتورة ومالهاش قيد.
 class PriceSheetScreen extends StatefulWidget {
-  const PriceSheetScreen({super.key});
+  const PriceSheetScreen({super.key, this.existingLocalId});
+
+  /// شيت متحفوظ بيتفتح للتعديل. `null` = شيت جديد.
+  final int? existingLocalId;
 
   @override
   State<PriceSheetScreen> createState() => _PriceSheetScreenState();
@@ -60,6 +67,14 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   final Map<int, TextEditingController> _qtyCtl = {};
   final Map<int, TextEditingController> _priceCtl = {};
   final Map<int, TextEditingController> _discCtl = {};
+  final _titleCtl = TextEditingController();
+
+  /// رقم الشيت على الجهاز بعد أول حفظ. الحفظ التاني بيدوس عليه مش بيعمل نسخة.
+  int? _localId;
+  bool _saving = false;
+
+  /// اتغيّر حاجة من آخر حفظ؟ — ده اللي بيقرر السؤال وقت الخروج.
+  bool _dirty = false;
 
   /// كتالوج النظام كله — مش عهدة المندوب. ده الفرق اللي بيخلّي الشاشة تنفع:
   /// بيسعّر صنف مش معاه في العربية.
@@ -69,6 +84,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   @override
   void initState() {
     super.initState();
+    _localId = widget.existingLocalId;
     _load();
   }
 
@@ -77,7 +93,8 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     for (final c in [
       ..._qtyCtl.values,
       ..._priceCtl.values,
-      ..._discCtl.values
+      ..._discCtl.values,
+      _titleCtl,
     ]) {
       c.dispose();
     }
@@ -86,11 +103,96 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
 
   Future<void> _load() async {
     final items = await LocalDb.instance.catalogItems();
+    // الشيت المتحفوظ بيتقرا **بعد** الكتالوج: السطور فيها اسم الصنف وسعره زي ما
+    // اتحفظوا، فالشيت بيفتح بأرقامه هو حتى لو سعر القايمة اتغيّر بعد كده. عرض
+    // اتبعت للتاجر بأرقام، ولما يرجع يتفتح لازم يقول نفس الأرقام.
+    final head = _localId == null
+        ? null
+        : await LocalDb.instance.priceSheet(_localId!);
+    final saved = _localId == null
+        ? const <SaleDraftLine>[]
+        : await LocalDb.instance.priceSheetLines(_localId!);
     if (!mounted) return;
     setState(() {
       _catalog = items;
+      if (head != null) {
+        _titleCtl.text = (head['title'] as String?) ?? '';
+        _lines
+          ..clear()
+          ..addAll(saved);
+      }
       _loading = false;
     });
+  }
+
+  /// اسم الشيت — اللي المندوب كتبه، وإلا وصف بيميّزه في القايمة.
+  String get _title {
+    final typed = _titleCtl.text.trim();
+    if (typed.isNotEmpty) return typed;
+    if (_lines.isEmpty) return 'عرض سعر';
+    final first = _lines.first.itemName;
+    return _lines.length == 1
+        ? first
+        : '$first و${_lines.length - 1} غيره';
+  }
+
+  Future<void> _save() async {
+    if (_lines.isEmpty) {
+      _say('مافيش أصناف تتحفظ.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final date = DateTime.now().toIso8601String().substring(0, 10);
+      if (_localId == null) {
+        _localId = await LocalDb.instance.savePriceSheet(
+          title: _title, sheetDate: date, total: _total, lines: _lines);
+      } else {
+        await LocalDb.instance.updatePriceSheet(
+          localId: _localId!, title: _title, sheetDate: date,
+          total: _total, lines: _lines);
+      }
+      if (!mounted) return;
+      setState(() => _dirty = false);
+      _say('اتحفظ «$_title»');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// سؤال الخروج — **بيتسأل بس لو فيه تغيير مش متحفوظ**.
+  ///
+  /// السؤال على شيت متحفوظ ومافيهوش جديد بيخلّي المندوب يتعلّم يدوس «اخرج» من غير ما
+  /// يقرا، وأول مرة يكون فيه شغل فعلاً بيضيع.
+  Future<bool> _confirmLeave() async {
+    if (!_dirty || _lines.isEmpty) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تسيب الشيت؟'),
+        content: Text(_localId == null
+            ? 'فيه ${_lines.length} صنف مااتحفظوش — هيروحوا.'
+            : 'فيه تعديل مااتحفظش على «$_title» — هيروح.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('أكمّل')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx, true);
+              await _save();
+            },
+            child: const Text('احفظ واخرج'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            child: const Text('اخرج من غير حفظ'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
   }
 
   /// الإجمالي قبل أي خصم — مجموع (كمية × سعر).
@@ -124,7 +226,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       showNetPrice: false,
       onAdd: (picked, qty) {
         final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
-        setState(() {
+        _edit(() {
           if (existing >= 0) {
             _lines[existing].quantity += qty;
             _qtyCtl[picked.itemId]?.text = _blank(_lines[existing].quantity);
@@ -148,7 +250,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   }
 
   void _removeLine(SaleDraftLine l) {
-    setState(() {
+    _edit(() {
       _lines.remove(l);
       _qtyCtl.remove(l.itemId)?.dispose();
       _priceCtl.remove(l.itemId)?.dispose();
@@ -207,12 +309,46 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     _say('اتنسخ عرض بـ${_lines.length} صنف');
   }
 
+  /// أي تعديل على العرض بيعلّم إن فيه شغل مش متحفوظ.
+  ///
+  /// ملفوفة حوالين `setState` عشان الحتة اللي بترسم والحتة اللي بتفتكر يفضلوا مع بعض:
+  /// تعديل بيرسم من غير ما يعلّم بيخلّي الخروج يعدّي من غير سؤال وشغل ساعة يروح.
+  void _edit(VoidCallback change) {
+    setState(() {
+      change();
+      _dirty = true;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_dirty || _lines.isEmpty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        // الـNavigator بيتاخد **قبل** الانتظار: بعده الـcontext ممكن يكون اتشال،
+        // وقراءته ساعتها بترمي بدل ما الشاشة تتقفل.
+        final nav = Navigator.of(context);
+        if (await _confirmLeave()) nav.pop(true);
+      },
+      child: _scaffold(),
+    );
+  }
+
+  Widget _scaffold() {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('كشف تسعير'),
+        title: Text(_localId == null ? 'كشف تسعير' : 'تعديل شيت'),
         actions: [
+          IconButton(
+            tooltip: _localId == null ? 'احفظ الشيت' : 'احفظ التعديل',
+            icon: _saving
+                ? const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Icon(_dirty ? Icons.save : Icons.save_outlined),
+            onPressed: _lines.isEmpty || _saving ? null : _save,
+          ),
           IconButton(
             tooltip: 'انسخ العرض',
             icon: const Icon(Icons.copy_all_outlined),
@@ -222,7 +358,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
             IconButton(
               tooltip: 'فضّي العرض',
               icon: const Icon(Icons.delete_sweep_outlined),
-              onPressed: () => setState(() {
+              onPressed: () => _edit(() {
                 _lines.clear();
                 _qtyCtl.clear();
                 _priceCtl.clear();
@@ -241,6 +377,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
           : Column(
               children: [
                 _hint(),
+                _titleField(),
                 Expanded(
                   child: _lines.isEmpty
                       ? const Center(
@@ -276,6 +413,27 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
           'عرض سعر — مش فاتورة. مافيش عميل ولا مديونية ولا خصم من المخزن، '
           'ومافيش حد للكمية. ${_catalog.length} صنف متاح للتسعير.',
           style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+        ),
+      );
+
+  /// اسم الشيت — **اختياري**، وده مقصود.
+  ///
+  /// خانة إجبارية فوق الشاشة معناها إن المندوب يقف يفكّر في اسم قبل ما يبدأ يسعّر،
+  /// وهو واقف قدام التاجر. فلو سابها فاضية القايمة بتسمّي الشيت بأول صنف وعدد الباقي
+  /// («بلاعة ٢ ×١٫٥ و٤ غيره») — يعرفه منه، ويقدر يسمّيه بعدين لما يفضى.
+  Widget _titleField() => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+        child: TextField(
+          controller: _titleCtl,
+          textInputAction: TextInputAction.done,
+          onChanged: (_) => setState(() => _dirty = true),
+          decoration: InputDecoration(
+            labelText: 'اسم الشيت (اختياري)',
+            hintText: _lines.isEmpty ? 'مثلاً: مخزن العبور' : _title,
+            prefixIcon: const Icon(Icons.label_outline),
+            isDense: true,
+            border: const OutlineInputBorder(),
+          ),
         ),
       );
 
@@ -432,7 +590,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                   child: _field(
                     label: 'كمية',
                     controller: ctl,
-                    onChanged: (v) => setState(() => l.quantity = v),
+                    onChanged: (v) => _edit(() => l.quantity = v),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -441,7 +599,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                     label: 'السعر',
                     controller: _priceCtl.putIfAbsent(l.itemId,
                         () => TextEditingController(text: _blank(l.unitPrice))),
-                    onChanged: (v) => setState(() => l.unitPrice = v),
+                    onChanged: (v) => _edit(() => l.unitPrice = v),
                     // نفس قاعدة الفاتورة: الصنف اللي عليه خصم ثابت سعره سعر
                     // القايمة ومايتكتبش فوقه — وإلا بيبقى خصمين على بعض. والتفاوض
                     // بيفضل في مكان واحد: الخصم المتغيّر.
@@ -459,7 +617,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                         l.itemId,
                         () => TextEditingController(
                             text: _blank(l.variableDiscountPct))),
-                    onChanged: (v) => setState(() => l.variableDiscountPct = v),
+                    onChanged: (v) => _edit(() => l.variableDiscountPct = v),
                   ),
                 ),
                 IconButton(

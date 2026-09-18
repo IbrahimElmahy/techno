@@ -12,7 +12,7 @@ import 'customer_profile_screen.dart';
 import 'debts_screen.dart';
 import 'day_summary_screen.dart';
 import 'my_stock_screen.dart';
-import 'price_sheet_screen.dart';
+import 'price_sheets_screen.dart';
 import 'transfers_review_screen.dart';
 import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
@@ -243,9 +243,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.request_quote_outlined,
                     color: AppColors.primary,
                     title: 'كشف تسعير',
-                    subtitle: 'سعر أي صنف للتاجر ده — حتى لو مش معاك',
-                    onTap: () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const PriceSheetScreen())),
+                    subtitle: 'سعّر أي صنف — والشيت بيفضل محفوظ ترجعله',
+                    // **بتفتح على قايمة الشيتات مش على شيت فاضي** — زي طلبات التحويل.
+                    // العرض بقى بيتحفظ، وشاشة بتفتح فاضية كل مرة معناها إن اللي اتحفظ
+                    // مالوش طريق يتفتح منه. وزرار «شيت جديد» في القايمة نفسها.
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const PriceSheetsScreen()));
+                      _refresh();
+                    },
                   ),
                   const SizedBox(height: 14),
                   _BigAction(
