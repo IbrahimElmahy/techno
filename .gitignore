@@ -68,3 +68,5 @@ frontend/dist-package/
 
 # صور المرفقات المرفوعة — بيانات مش كود.
 backend/uploads/
+# بناء البيئة التجريبية — artefact زي `dist`، بيتبني بأمر مش بيتخزّن.
+frontend/dist-staging/
