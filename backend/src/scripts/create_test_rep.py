@@ -50,6 +50,8 @@ FULL_NAME = "مندوب اختبار"
 WAREHOUSE = "مخزن اختبار"
 CUSTOMER = "عميل اختبار"
 EMP_CODE = "TEST-REP"
+# خطوط المنتجات اللي الفاتورة بتتقسّم عليها — كل واحد له عهدته.
+FAMILIES = ("أبيض", "بولي")
 CUST_CODE = "TEST-CUST"
 QTY = Decimal("50")
 
@@ -165,14 +167,23 @@ def run(*, execute: bool, item_count: int) -> None:
             emp.warehouse_id = wh.id
         db.flush()
 
-        # العهدة بتمسك فلوسه. `uq_custody_warehouse` بيمنع اتنين على نفس المخزن.
-        custody = db.scalar(select(Custody).where(Custody.rep_id == user.id,
-                                                  Custody.family.is_(None)))
-        if custody is None:
-            custody = Custody(holder_type=HolderType.rep, rep_id=user.id,
-                              warehouse_id=None, family=None, active=True)
-            db.add(custody)
-            db.flush()
+        # العهدة بتمسك فلوسه — **وواحدة مش كفاية.**
+        #
+        # `resolve_cash_account` بيدوّر على عهدة **بنفس خط الفاتورة**، ومابيقعش على غيرها
+        # عن قصد: فلوس نزلت في صندوق غلط مافيش حاجة بتقولها بعدين. وشاشة الفاتورة في
+        # التطبيق **بتفرض** الخط قبل الحفظ. فالمندوب اللي معاه عهدة `family = NULL` بس
+        # بيكتب فواتير على الجهاز، وتقف كلها عند المزامنة برسالة «مالوش صندوق لخط
+        # أبيض» — مندوب اختبار مابيقدرش يرحّل ولا فاتورة واحدة.
+        #
+        # فبتتعمل واحدة لكل خط، والمحايدة معاهم للشراء والسندات واللي مالوش خط.
+        for family in (None, *FAMILIES):
+            existing = db.scalar(select(Custody).where(
+                Custody.rep_id == user.id,
+                Custody.family.is_(None) if family is None else Custody.family == family))
+            if existing is None:
+                db.add(Custody(holder_type=HolderType.rep, rep_id=user.id,
+                               warehouse_id=None, family=family, active=True))
+        db.flush()
 
         if cust is None:
             # «تاجر» عشان يكسب نقط زي أي تاجر حقيقي — التجربة على نوع العميل اللي
@@ -225,6 +236,7 @@ def run(*, execute: bool, item_count: int) -> None:
             print("   الباسورد     : زي ما هي — اليوزر كان موجود")
         print(f"   المخزن       : {wh.name} (#{wh.id})")
         print(f"   العميل       : {cust.name} (#{cust.id})")
+        print(f"   العُهد        : محايدة + {' + '.join(FAMILIES)}")
         print(f"   أصناف اتنقلت : {moved} × {QTY}"
           + (f"  (إذن {transfer.document_number})" if moved else ""))
     finally:

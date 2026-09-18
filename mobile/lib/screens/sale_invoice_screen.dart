@@ -664,8 +664,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     try {
       // رقم الجهاز بيتولد **هنا مرة واحدة** ومابيتغيّرش مهما اتعادت المزامنة — هو اللي
       // بيخلّي السيرفر يعرف الفاتورة دي لو الرفع اتعاد بعد انقطاع.
+      // **الحد مكتوب رقم صريح، مش `1 << 32`.** الإزاحة بـ٣٢ على الويب بترجع صفر —
+      // أعداد dart2js في عمليات البت ٣٢-بت — و`nextInt(0)` بترمي `RangeError`،
+      // فالحفظ كان بيقع كله برسالة مالهاش علاقة بالفاتورة. على الموبايل الأعداد
+      // ٦٤-بت فالسطر كان شغّال، والعطل مابيظهرش غير في نسخة الويب.
       final uuid = 'inv-${DateTime.now().microsecondsSinceEpoch}-'
-          '${Random().nextInt(1 << 32).toRadixString(16)}';
+          '${Random().nextInt(4294967296).toRadixString(16)}';
       if (_isEditing) {
         final ok = await LocalDb.instance.updateQueuedSaleInvoice(
           localId: _editingId!,

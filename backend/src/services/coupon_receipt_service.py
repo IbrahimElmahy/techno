@@ -537,7 +537,6 @@ def _build_receipts_stmt(
     if q:
         q_str = q.strip()
         from src.models.customer import Customer
-        from src.models.loyalty import CouponReceiptLine
         from sqlalchemy import or_, exists
         line_match = select(1).where(
             CouponReceiptLine.receipt_id == CouponReceipt.id,

@@ -718,9 +718,18 @@ class ApiClient {
 
   /// Check one coupon before it is accepted, so the rep learns it is bad while the customer is
   /// still standing there rather than after the handover is posted.
-  Future<Map<String, dynamic>> checkCoupon(String serial) async {
+  ///
+  /// **والفئة بتتبعت مع الرقم.** الرقم لوحده مش هوية كوبون: كل دفتر مرقّم ١..٥٠، فـ«٥
+  /// ذهبي» و«٥ فضي» ورقتين. من غير الفئة السيرفر بيدوّر على أول فاتورة فيها الرقم ده
+  /// مهما كانت فئتها، فبيقول «سليم» على ورقة اتصرفت في دفتر تاني.
+  Future<Map<String, dynamic>> checkCoupon(String serial, {String? couponKind}) async {
     final r = await http
-        .get(await _uri('/coupon-receipts/check', {'serial': serial}),
+        .get(
+            await _uri('/coupon-receipts/check', {
+              'serial': serial,
+              if (couponKind != null && couponKind.isNotEmpty)
+                'coupon_kind': couponKind,
+            }),
             headers: await _headers())
         .timeout(const Duration(seconds: 20));
     if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
@@ -748,6 +757,18 @@ class ApiClient {
                 'client_uuid': row['client_uuid'],
                 // اللي المندوب قاله على الجهاز — بيوصل زي ما هو، والسيرفر بيفضل يتحقق من السريالات.
                 'received_date': row['received_date'],
+                // **`coupon_kind` غير `declared_kind`.**
+                //
+                // `declared_kind` توثيق: اللي المندوب قاله، بيتخزّن على المستند عشان لو
+                // المراجعة خالفته يبقى فيه حاجة تتقارن بيها. و`coupon_kind` هو **هوية
+                // الورقة** اللي السيرفر بيدوّر ويرفض بيها.
+                //
+                // كان بيتبعت الأول بس، والنتيجة إن كل استلام من التطبيق بيتكتب بفئة
+                // فاضية: «رجع قبل كده» بقى بيتسأل بالرقم لوحده، فأول «٥» يرجع بيقفل
+                // «٥» في كل دفتر تاني للأبد — وهي بالظبط الحالة اللي القيد
+                // `(coupon_kind, serial)` اتعمل عشانها. وفحص الفئة الغلط مكانش بيشتغل
+                // من التطبيق أصلاً.
+                'coupon_kind': row['coupon_kind'],
                 'declared_kind': row['coupon_kind'],
                 'declared_value': row['coupon_value'],
                 'customer_type': row['customer_type'],

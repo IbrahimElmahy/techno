@@ -22,6 +22,7 @@ class _SyncScreenState extends State<SyncScreen> {
   bool _showServer = false;
 
   int _pending = 0;
+
   String? _lastSync;
   String? _lastPull;
   bool _busy = false;
@@ -52,6 +53,19 @@ class _SyncScreenState extends State<SyncScreen> {
       });
     }
   }
+
+  /// نص العدّاد — **«مستند» مش «معاينة».**
+  ///
+  /// العدّاد بيجمع المعاينات والفواتير وسندات القبض واستلامات الكوبونات مع بعض، وكان
+  /// بيسمّيهم كلهم «معاينة». المندوب اللي عنده فاتورة واقفة كان بيقرا «في ١ معاينة
+  /// مستنية الرفع» فيدوّر على معاينة مالهاش وجود ويسيب الفاتورة.
+  static String _pendingLabel(int n) => switch (n) {
+        1 => 'في مستند واحد مستني الرفع',
+        2 => 'في مستندين مستنيين الرفع',
+        _ when n <= 10 => 'في $n مستندات مستنية الرفع',
+        _ => 'في $n مستند مستني الرفع',
+      };
+
 
   /// **نفس الكود بتاع المزامنة اللي بتحصل لوحدها**، مش نسخة تانية منه.
   ///
@@ -118,9 +132,7 @@ class _SyncScreenState extends State<SyncScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    _pending > 0
-                        ? 'في $_pending معاينة مستنية الرفع'
-                        : 'كل المعاينات متزامنة ✔',
+                    _pending > 0 ? _pendingLabel(_pending) : 'كل حاجة متزامنة ✔',
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 6),

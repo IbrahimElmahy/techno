@@ -35,11 +35,17 @@ class _CouponEntry {
   _CouponEntry(this.serial);
   final String serial;
 
-  /// valid | unknown | received | pending (couldn't reach the server yet)
+  /// valid | unknown | received | wrong_kind | pending (couldn't reach the server yet)
   String status = 'pending';
   String? customerName;
   int? customerId;
   String? documentNumber;
+
+  /// الفئات اللي الرقم ده متصرّف تحتها فعلاً — بتتعرض لما الفئة المختارة تبقى غلط.
+  ///
+  /// السيرفر مابيصحّحش لوحده عن قصد: التصحيح الأوتوماتيكي معناه إن الورقة تتحسب على
+  /// دفتر مش بتاعها ومحدش ياخد باله. فبيقول الرقم موجود فين، واللي ماسك الورقة يقرر.
+  List<String> kinds = const [];
 
   bool get isGood => status == 'valid';
 }
@@ -166,13 +172,17 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
 
   Future<void> _verify(_CouponEntry entry) async {
     try {
-      final res = await ApiClient.instance.checkCoupon(entry.serial);
+      final res =
+          await ApiClient.instance.checkCoupon(entry.serial, couponKind: _kind);
       if (!mounted) return;
       setState(() {
         entry.status = res['status'] as String? ?? 'unknown';
         entry.customerName = res['customer_name'] as String?;
         entry.customerId = res['customer_id'] as int?;
         entry.documentNumber = res['document_number'] as String?;
+        entry.kinds = [
+          for (final k in (res['kinds'] as List? ?? const [])) k.toString(),
+        ];
         // The first verified coupon settles whose handover this is; the rest must agree,
         // because a receipt credited to the wrong customer is worse than no receipt.
         if (entry.isGood && _customerId == null) {
@@ -184,6 +194,9 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         _toast('الكوبون ${entry.serial} مش متصرّف من النظام');
       } else if (entry.status == 'received') {
         _toast('الكوبون ${entry.serial} اتستلم قبل كده');
+      } else if (entry.status == 'wrong_kind') {
+        final where = entry.kinds.isEmpty ? '' : ' — موجود تحت: ${entry.kinds.join('، ')}';
+        _toast('الكوبون ${entry.serial} مش متصرّف تحت «$_kind»$where');
       } else if (_customerId != null && entry.customerId != _customerId) {
         _toast('الكوبون ${entry.serial} متصرّف لعميل تاني');
       }
@@ -242,8 +255,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     return each * counted;
   }
 
-  bool get _hasRejects =>
-      _entries.any((e) => e.status == 'unknown' || e.status == 'received');
+  bool get _hasRejects => _entries.any((e) =>
+      e.status == 'unknown' || e.status == 'received' || e.status == 'wrong_kind');
 
   Future<void> _save() async {
     if (_entries.isEmpty) {
@@ -639,6 +652,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         return const Icon(Icons.cancel, color: AppColors.danger);
       case 'received':
         return const Icon(Icons.history, color: AppColors.accent);
+      case 'wrong_kind':
+        return const Icon(Icons.rule_folder_outlined, color: AppColors.danger);
       default:
         return const Icon(Icons.cloud_off_outlined, color: Colors.grey);
     }
@@ -652,6 +667,11 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       'valid' => ((e.customerName ?? 'سليم'), AppColors.success),
       'unknown' => ('مش متصرّف من النظام', AppColors.danger),
       'received' => ('اتستلم قبل كده', AppColors.accent),
+      // مش «مزوّر»: الرقم موجود عندنا بس تحت دفتر تاني، واللي بيستلم يبص على الورقة تاني.
+      'wrong_kind' => (
+          e.kinds.isEmpty ? 'فئة تانية' : 'فئته: ${e.kinds.join('، ')}',
+          AppColors.danger,
+        ),
       _ => ('هيتراجع مع المزامنة', Colors.blueGrey),
     };
     return Container(

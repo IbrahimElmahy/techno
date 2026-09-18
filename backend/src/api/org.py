@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, ensure_branch_access, require_capability
 from src.auth.rbac import (
     CAP_BRANCH_READ,
@@ -141,8 +142,10 @@ def list_branches(
     db: Session = Depends(get_db),
 ) -> list[BranchOut]:
     stmt = select(Branch)
-    if not current.is_admin:
-        stmt = stmt.where(Branch.id == current.branch_id)
+    # مافيش فرع ⇒ بيشوف الفروع كلها؛ `Branch.id == NULL` كان بيرجّع قايمة فاضية.
+    scoped_branch = branch_scope.visible_branch_id(current)
+    if scoped_branch is not None:
+        stmt = stmt.where(Branch.id == scoped_branch)
     return [_branch_out(b) for b in db.scalars(stmt).all()]
 
 
@@ -217,8 +220,9 @@ def list_territories(
     db: Session = Depends(get_db),
 ) -> list[TerritoryOut]:
     stmt = select(Territory)
-    if not current.is_admin:
-        stmt = stmt.where(Territory.branch_id == current.branch_id)
+    scoped_branch = branch_scope.visible_branch_id(current)
+    if scoped_branch is not None:
+        stmt = stmt.where(Territory.branch_id == scoped_branch)
     elif branch_id is not None:
         stmt = stmt.where(Territory.branch_id == branch_id)
     rows = db.scalars(stmt).all()

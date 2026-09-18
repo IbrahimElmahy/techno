@@ -180,8 +180,12 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
 
     setState(() => _saving = true);
     try {
+      // **الحد مكتوب رقم صريح، مش `1 << 32`.** الإزاحة بـ٣٢ على الويب بترجع صفر —
+      // أعداد dart2js في عمليات البت ٣٢-بت — و`nextInt(0)` بترمي `RangeError`،
+      // فالحفظ كان بيقع كله برسالة مالهاش علاقة بالفاتورة. على الموبايل الأعداد
+      // ٦٤-بت فالسطر كان شغّال، والعطل مابيظهرش غير في نسخة الويب.
       final uuid = 'rcp-${DateTime.now().microsecondsSinceEpoch}-'
-          '${Random().nextInt(1 << 32).toRadixString(16)}';
+          '${Random().nextInt(4294967296).toRadixString(16)}';
       await LocalDb.instance.saveReceipt(
         clientUuid: uuid,
         customerId: _customer!.id,

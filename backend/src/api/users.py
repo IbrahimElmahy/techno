@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.auth import UserOut
+from src.auth import branch_scope
 from src.auth.dependencies import (
     CurrentUser,
     ensure_branch_access,
@@ -65,8 +66,10 @@ def list_users(
     db: Session = Depends(get_db),
 ) -> list[UserOut]:
     stmt = select(User)
-    if not current.is_admin:  # branch-scoped roles see only their branch (FR-007)
-        stmt = stmt.where(User.branch_id == current.branch_id)
+    # branch-scoped roles see only their branch (FR-007) — واللي مالوش فرع بيشوف الكل.
+    scoped_branch = branch_scope.visible_branch_id(current)
+    if scoped_branch is not None:
+        stmt = stmt.where(User.branch_id == scoped_branch)
     return [_to_out(db, u) for u in db.scalars(stmt).all()]
 
 

@@ -89,10 +89,14 @@ def list_warehouses(
     db: Session = Depends(get_db),
 ) -> list[WarehouseOut]:
     stmt = select(Warehouse)
-    if not current.is_admin:
+    # **اللي مالوش فرع بيشوف كل المخازن** — هي نفس قاعدة `branch_scope`، والسطر ده كان
+    # كاتبها بإيده وناسي الحالة دي: `branch_id == NULL` مابيساويش أي صف في SQL، فحساب
+    # مركزي (المالك مثلاً) كان بياخد قايمة فاضية — ومن غير مخزن مافيش فاتورة بيع أصلاً.
+    scoped_branch = branch_scope.visible_branch_id(current)
+    if scoped_branch is not None:
         # Branch warehouses of own branch + the shared central warehouse.
         stmt = stmt.where(
-            (Warehouse.branch_id == current.branch_id)
+            (Warehouse.branch_id == scoped_branch)
             | (Warehouse.warehouse_type == WarehouseType.central)
         )
     return [
