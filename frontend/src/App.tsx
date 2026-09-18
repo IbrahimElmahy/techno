@@ -57,6 +57,14 @@ import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
  * والصفحة بتعرف هي شغالة فين من `location.protocol`.
  */
 const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter;
+
+/**
+ * البادئة اللي الموقع متقدّم منها — `/` للإنتاج و`/staging/` للبيئة التجريبية.
+ *
+ * `BASE_URL` بيجي من `base` بتاع Vite وقت البناء، فالبناء الواحد مايحتاجش يعرف هو
+ * رايح فين: نفس الكود بيشتغل على الاتنين وكل بيلد عارف بادئته.
+ */
+const BASENAME = import.meta.env.BASE_URL.replace(/\/$/, '');
 import { AuthProvider } from './components/AuthProvider';
 import RouteGuard from './components/RouteGuard';
 import AppLayout from './components/AppLayout';
@@ -101,9 +109,12 @@ export default function App() {
       const host = window.location.hostname;
       const isLocal = host === 'localhost' || host === '127.0.0.1';
       const baked = (import.meta as any).env?.VITE_API_URL as string | undefined;
+      // **والبادئة جزء من العنوان.** البيئة التجريبية متقدّمة من `/staging/` وليها
+      // خدمة وقاعدة لوحدها؛ من غير البادئة كانت هتنادي API الإنتاج — نفس الشاشة
+      // وقاعدة تانية، وهي بالظبط الغلطة اللي التعليق فوق بيحذّر منها.
       const apiBase = baked && baked.trim()
         ? baked.trim().replace(/\/$/, '')
-        : (isLocal ? 'http://127.0.0.1:8000' : window.location.origin);
+        : (isLocal ? 'http://127.0.0.1:8000' : window.location.origin + BASENAME);
       setApiUrl(apiBase);
       setApiBaseURL(apiBase);
       setConfigLoaded(true);
@@ -153,7 +164,7 @@ export default function App() {
       <DensityProvider>
       <ColumnResizeProvider>
       <AuthProvider apiUrl={apiUrl}>
-        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Router basename={BASENAME} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={<Login />} />
             {/* Everything else is the authenticated shell, which hosts the work tabs. Each tab

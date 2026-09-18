@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "build:web": "tsc && vite build --config vite.config.web.ts"
+    "build:web": "tsc && vite build --config vite.config.web.ts",
+    "build:staging": "tsc && vite build --config vite.config.staging.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^5.3.7",
