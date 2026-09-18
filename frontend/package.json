@@ -10,7 +10,8 @@
     "generate-types": "openapi-typescript http://127.0.0.1:8000/openapi.json --output src/api/types.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:web": "tsc && vite build --config vite.config.web.ts"
   },
   "dependencies": {
     "@ant-design/icons": "^5.3.7",

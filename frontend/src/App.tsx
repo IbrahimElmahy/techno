@@ -40,7 +40,23 @@ const AR_LOCALE: typeof arEG = {
     },
   },
 };
-import { HashRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Routes, Route } from 'react-router-dom';
+
+/**
+ * **الراوتر بيتقرر من البروتوكول، مش من إعداد بيلد.**
+ *
+ * الويب بياخد `BrowserRouter` عشان الرابط يبقى `/dashboard` مش `/#/dashboard` — رابط
+ * فيه `#` مايتبعتش لزميل ولا يتحط في إشارة مرجعية من غير ما يبان غلط، ونجينكس عنده
+ * `try_files $uri $uri/ /index.html` فأي مسار بيرجّع الصفحة والراوتر بيكمّل.
+ *
+ * ونسخة سطح المكتب (Electron) بتحمّل الصفحة من `file://` — ومافيش سيرفر يرجّع
+ * `index.html` لمسار مش موجود، فـ`BrowserRouter` هناك بيدّي شاشة فاضية أول ما المستخدم
+ * يعمل تحديث. الهاش هو اللي بيشتغل على `file:`، فبيفضل هناك.
+ *
+ * والاختيار وقت التشغيل مش وقت البناء عشان نفس الـ`dist` يخدم الاتنين: البيلد واحد،
+ * والصفحة بتعرف هي شغالة فين من `location.protocol`.
+ */
+const Router = window.location.protocol === 'file:' ? HashRouter : BrowserRouter;
 import { AuthProvider } from './components/AuthProvider';
 import RouteGuard from './components/RouteGuard';
 import AppLayout from './components/AppLayout';

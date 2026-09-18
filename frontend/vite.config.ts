@@ -4,6 +4,9 @@ import electron from 'vite-plugin-electron';
 import * as path from 'path';
 
 export default defineConfig({
+  // نسبي عشان نسخة سطح المكتب بتحمّل من `file://` — مسار مطلق هناك بيدوّر على
+  // `/assets` في جذر القرص. والويب شغّال بيه كمان: نجينكس بيرجّع `index.html` لأي
+  // مسار، والأصول بتتحل نسبةً للصفحة. شوف `Router` في `src/App.tsx`.
   base: './',
   plugins: [
     react(),
