@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableColumns } from '../components/ColumnSettings';
 
+import StatsRow from '../components/StatsRow';
 /**
  * نظرة مدير الشركة على الفروع.
  *
@@ -138,7 +139,7 @@ export default function BranchOverview() {
         </Space>
       }
     >
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+      <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card size="small" style={{ background: '#f6ffed', borderColor: '#d9f7be' }}>
             <Statistic title="مبيعات الشركة" value={money(total.sales)} suffix="ج.م"
@@ -163,7 +164,7 @@ export default function BranchOverview() {
               valueStyle={{ fontSize: 20 }} />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <Table
         rowKey={(r: Row) => String(r.branch_id ?? 'none')}

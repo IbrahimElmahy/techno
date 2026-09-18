@@ -14,6 +14,7 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
+import StatsRow from '../components/StatsRow';
 interface SupplierRecord {
   id: number;
   code: string;
@@ -379,7 +380,7 @@ export default function Suppliers() {
           </Col>
         </Row>
 
-        <Row gutter={12} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
             <Card size="small"><Statistic title="عدد الموردين الظاهرين" value={summary.count} /></Card>
           </Col>
@@ -392,7 +393,7 @@ export default function Suppliers() {
           <Col xs={24} md={8}>
             <Card size="small"><Statistic title="موردين لهم مستحقات" value={summary.due} /></Card>
           </Col>
-        </Row>
+        </StatsRow>
 
         <Table
           dataSource={suppliers}

@@ -1,18 +1,6 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import {
-  Card,
-  Tabs,
-  Table,
-  DatePicker,
-  Select,
-  Space,
-  Button,
-  Statistic,
-  Row,
-  Col,
-  Tag,
-  Descriptions,
-  Alert,
+  Card, Tabs, Table, DatePicker, Select, Space, Button, Statistic, Col, Tag, Descriptions, Alert,
 } from 'antd';
 import { ReloadOutlined, PrinterOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -27,6 +15,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import PartnerLedgerTab from './financeReports/PartnerLedgerTab';
 import CashFlowTab from './financeReports/CashFlowTab';
+import StatsRow from '../components/StatsRow';
 import ReportOptionsBar, {
   DEFAULT_REPORT_OPTIONS, DeltaCell, ReportOptions as RptOptions, reportParams,
 } from '../components/ReportOptionsBar';
@@ -267,7 +256,7 @@ const FinanceReports: React.FC = () => {
               >
                 {income && (
                   <>
-                    <Row gutter={16} style={{ marginBottom: 16 }}>
+                    <StatsRow gutter={16} style={{ marginBottom: 16 }}>
                       <Col span={8}>
                         <Card size="small">
                           <Statistic title="الإيرادات" value={Number(income.total_income)} precision={2} valueStyle={{ color: '#2e9e6b' }} />
@@ -288,7 +277,7 @@ const FinanceReports: React.FC = () => {
                           />
                         </Card>
                       </Col>
-                    </Row>
+                    </StatsRow>
                     <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol, ...compareCols(income.comparison?.income, true)]} />
                     <Table
                       {...acctKb.tableProps}
@@ -412,7 +401,7 @@ const FinanceReports: React.FC = () => {
                   />
                 )}
                 {vat && (
-                  <Row gutter={16}>
+                  <StatsRow gutter={16}>
                     <Col span={6}>
                       <Card size="small">
                         <Statistic title="النسبة" value={Number(vat.rate_pct)} suffix="%" />
@@ -438,7 +427,7 @@ const FinanceReports: React.FC = () => {
                         />
                       </Card>
                     </Col>
-                  </Row>
+                  </StatsRow>
                 )}
               </Card>
             ),

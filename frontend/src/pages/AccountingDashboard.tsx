@@ -7,6 +7,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 
+import StatsRow from '../components/StatsRow';
 /**
  * لوحة المحاسبة — كارت لكل دفتر، زي أول شاشة في محاسبة أودو.
  *
@@ -104,7 +105,7 @@ export default function AccountingDashboard() {
       <div>
         <h3 style={{ margin: '0 0 10px' }}>دفاتر اليومية</h3>
         {journals.length === 0 ? <Empty description="مافيش دفاتر" /> : (
-          <Row gutter={[16, 16]}>
+          <StatsRow gutter={[16, 16]}>
             {journals.map((j) => {
               const action = primaryAction(j);
               return (
@@ -177,14 +178,14 @@ export default function AccountingDashboard() {
                 </Col>
               );
             })}
-          </Row>
+          </StatsRow>
         )}
       </div>
 
       <div>
         <h3 style={{ margin: '0 0 10px' }}>الخزن والبنوك</h3>
         {treasuries.length === 0 ? <Empty description="مافيش خزن" /> : (
-          <Row gutter={[16, 16]}>
+          <StatsRow gutter={[16, 16]}>
             {treasuries.map((t) => (
               <Col key={t.id} xs={24} sm={12} lg={8} xxl={6}>
                 <Card
@@ -210,7 +211,7 @@ export default function AccountingDashboard() {
                 </Card>
               </Col>
             ))}
-          </Row>
+          </StatsRow>
         )}
       </div>
     </Space>

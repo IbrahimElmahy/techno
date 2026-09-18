@@ -50,6 +50,7 @@ import {
 } from './invoices/types';
 import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
+import StatsRow from '../components/StatsRow';
 export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
   // فئات الورق اللي بيتسلّم للعميل. مصدر واحد: قائمة «فئات الكوبونات» في الإعدادات.
@@ -2590,7 +2591,7 @@ function couponsTotal(inv: any): number {
         )}
       >
         {/* --- Summary Statistics --- */}
-        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
           <Col xs={12} md={6}>
             <Card size="small" style={{ borderRadius: 8, borderColor: '#d9f7be', backgroundColor: '#f6ffed' }}>
               <Statistic
@@ -2633,7 +2634,7 @@ function couponsTotal(inv: any): number {
               />
             </Card>
           </Col>
-        </Row>
+        </StatsRow>
 
         {/* --- Filter Segmented Tabs --- */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>

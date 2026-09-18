@@ -31,6 +31,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import { useTableColumns } from '../components/ColumnSettings';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
+import StatsRow from '../components/StatsRow';
 // حجم الصفحة. الكشف كله بقى 1437 تحويل بـ17 ألف سطر بعد نقل داتا a5، وتحميلهم
 // كلهم كان بياخد 7.6 ثانية على السيرفر نفسه قبل ما الشبكة تشوف حاجة.
 const PAGE_SIZE = 300;
@@ -1550,7 +1551,7 @@ export default function Transfers() {
           ]}
         />
 
-        <Row gutter={12} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
             <Card size="small"><Statistic title="إجمالي المستندات" value={summary.total} /></Card>
           </Col>
@@ -1565,7 +1566,7 @@ export default function Transfers() {
               <Statistic title="معتمدة" value={summary.approved} valueStyle={{ color: '#6AB42D' }} />
             </Card>
           </Col>
-        </Row>
+        </StatsRow>
 
         <Table
           {...listKb.tableProps}

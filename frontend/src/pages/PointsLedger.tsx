@@ -12,6 +12,7 @@ import { DocRef, type DocKind } from '../components/DocumentLink';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 
+import StatsRow from '../components/StatsRow';
 const { Text, Title } = Typography;
 
 /**
@@ -169,7 +170,7 @@ export default function PointsLedger() {
       </Space>
 
       {/* الإجماليات محسوبة في القاعدة على الحركة المفلترة كلها — مش على الصفحة المعروضة. */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+      <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card size="small">
             <Statistic title="وارد (نقط مكتسبة)" value={num(data?.earned)}
@@ -193,7 +194,7 @@ export default function PointsLedger() {
             <Statistic title="عدد الحركات" value={total} />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <Card size="small" style={{ marginBottom: 12 }}>
         <Row gutter={[8, 8]} align="middle">

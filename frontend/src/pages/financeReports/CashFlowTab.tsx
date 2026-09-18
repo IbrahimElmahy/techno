@@ -6,13 +6,16 @@
  * بيديله الفترة وبس.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Card, Col, Row, Select, Space, Statistic, Table, Tag } from 'antd';
+import {
+  Alert, Button, Card, Col, Select, Space, Statistic, Table, Tag,
+} from 'antd';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useQueryTab } from '../../components/useQueryTab';
 import { money, CashFlow, CashFlowLine, CashFlowSection } from './types';
 
+import StatsRow from '../../components/StatsRow';
 export default function CashFlowTab({ params }: { params: () => Record<string, string> }) {
   const [cash, setCash] = useState<CashFlow | null>(null);
   const [cashLoading, setCashLoading] = useState(false);
@@ -46,7 +49,7 @@ export default function CashFlowTab({ params }: { params: () => Record<string, s
               message="فيه قيد فيه حركة خزينة ومش متوازن — الفرق طالع في «غير موزّع»."
             />
           )}
-          <Row gutter={16} style={{ marginBottom: 16 }}>
+          <StatsRow gutter={16} style={{ marginBottom: 16 }}>
             <Col span={8}>
               <Card size="small">
                 <Statistic title="نقدية أول المدة" value={Number(cash.opening)} precision={2} />
@@ -66,7 +69,7 @@ export default function CashFlowTab({ params }: { params: () => Record<string, s
                            valueStyle={{ color: '#0e4c6d' }} />
               </Card>
             </Col>
-          </Row>
+          </StatsRow>
           {cash.sections.map((sec) => (
             <Table<CashFlowLine>
               key={sec.key}

@@ -11,6 +11,7 @@ import ExportExcelButton from '../components/ExportExcelButton';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
 
+import { useCanSeeStats } from '../components/StatsRow';
 /**
  * تقارير ما بعد البيع — خمسة من قايمة «تقارير متابعة» في نظامهم القديم.
  *
@@ -190,7 +191,9 @@ export default function AfterSalesReports() {
     points: reps.reduce((s, r) => s + Number(r.points || 0), 0),
   }), [plumbers, distributors, reps]);
 
-  const stats = (
+  // الإجماليات دي أرقام الشركة — للمالك وحده.
+  const canSeeStats = useCanSeeStats();
+  const stats = !canSeeStats ? null : (
     <Space size={24} wrap style={{ marginBottom: 12 }}>
       <Statistic title="اتصرف للموزعين" value={num(totals.issued)} />
       <Statistic title="رجع من السباكين" value={num(totals.returnedByPlumbers)} />

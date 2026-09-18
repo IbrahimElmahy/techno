@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Input, Modal, Radio, Row, Select, Space, Statistic, Table, Tag, message,
+  Button, Card, Col, DatePicker, Descriptions, Input, Modal, Radio, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -23,6 +23,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import DateRangeFilter from '../components/DateRangeFilter';
 
+import StatsRow from '../components/StatsRow';
 interface InspectionLine {
   id: number;
   item_id: number | null;
@@ -386,7 +387,7 @@ const Inspections: React.FC = () => {
     <div>
       {!detail && (
       <>
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
         <Col span={6}>
           <Card>
             <Statistic title="عدد المعاينات" value={summary.total_count} prefix={<MobileOutlined />} />
@@ -415,7 +416,7 @@ const Inspections: React.FC = () => {
             <Statistic title="نقاط المقبولة" value={summary.accepted_points} precision={3} />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <Card title="مراجعة زيارات المناديب (المعاينات)">
         <Space wrap style={{ marginBottom: 16 }}>

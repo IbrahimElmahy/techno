@@ -14,6 +14,7 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 // Only the kinds that have a screen able to show them; a purchase return has no screen of its
 // own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
 const DOC_SCREEN: Partial<Record<DocType, DocKind>> = {
@@ -396,7 +397,7 @@ export default function TradeReports() {
       </Row>
 
       {totals && (
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
           <Col xs={12} md={wantsProfit ? 5 : 8}>
             <Card size="small"><Statistic title="عدد المستندات" value={totals.document_count} /></Card>
           </Col>
@@ -423,7 +424,7 @@ export default function TradeReports() {
               </Col>
             </>
           )}
-        </Row>
+        </StatsRow>
       )}
 
       {wantsProfit && !!totals?.lines_without_cost && (

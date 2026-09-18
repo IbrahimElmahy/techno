@@ -15,6 +15,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
  *
@@ -329,7 +330,7 @@ export default function ItemCard() {
 
       {card && (
         <>
-          <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
             <Col xs={12} md={6}>
               <Card size="small">
                 <Statistic title="رصيد أول المدة" value={qty(card.opening_balance)} />
@@ -353,7 +354,7 @@ export default function ItemCard() {
                   value={qty(card.closing_balance)} valueStyle={{ color: '#0B5CA8' }} />
               </Card>
             </Col>
-          </Row>
+          </StatsRow>
 
           {(movementType || range) && (
             <Alert

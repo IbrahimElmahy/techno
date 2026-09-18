@@ -9,6 +9,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 /**
  * ذمم الموظفين — «سلفت مين وكام، ولسه عليه كام».
  *
@@ -218,7 +219,7 @@ export default function EmployeeReceivables() {
         </Col>
       </Row>
 
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={12} md={6}>
           <Card size="small"><Statistic title="عدد الذمم" value={rows.length} /></Card>
         </Col>
@@ -238,7 +239,7 @@ export default function EmployeeReceivables() {
               valueStyle={{ color: Number(data?.total_balance ?? 0) < 0 ? '#cf1322' : '#3f8600' }} />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       {data && data.unlinked_employees > 0 ? (
         <Alert

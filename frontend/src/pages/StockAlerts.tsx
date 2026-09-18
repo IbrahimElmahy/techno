@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Row, Space, Statistic, Table, Tag,
+  Alert, Button, Card, Col, Space, Statistic, Table, Tag,
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
@@ -10,6 +10,7 @@ import { textColumn, numberColumn, choiceColumn } from '../components/gridColumn
 import { useTableColumns } from '../components/ColumnSettings';
 import { useNavigate } from 'react-router-dom';
 
+import StatsRow from '../components/StatsRow';
 /**
  * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
  * what do I need to buy (below the reorder level), and what is about to go bad.
@@ -124,7 +125,7 @@ export default function StockAlerts() {
                 message="الحدود إرشادية للتخطيط فقط — لا تمنع أي عملية بيع."
                 description="الصنف يظهر هنا لو رصيده الكلي نزل تحت الحد الأدنى أو تعدّى الحد الأقصى." />
 
-              <Row gutter={12} style={{ marginBottom: 12 }}>
+              <StatsRow gutter={12} style={{ marginBottom: 12 }}>
                 <Col xs={24} md={12}>
                   <Card size="small">
                     <Statistic title="تحت الحد الأدنى (تحتاج شراء)" value={summary.below_min}
@@ -137,7 +138,7 @@ export default function StockAlerts() {
                       valueStyle={{ color: summary.above_max ? '#F5A11D' : undefined }} />
                   </Card>
                 </Col>
-              </Row>
+              </StatsRow>
 
               <ListToolbar
                 searchPlaceholder="بحث بالصنف أو الكود"

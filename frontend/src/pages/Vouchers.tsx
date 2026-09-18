@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Statistic, Row, Col, message, Descriptions, Alert,
+  Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Statistic, Col, message, Descriptions, Alert,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -41,6 +41,7 @@ import ExpenseModal from './vouchers/ExpenseModal';
 import TransferModal from './vouchers/TransferModal';
 import ChequeModal from './vouchers/ChequeModal';
 
+import StatsRow from '../components/StatsRow';
 // الأنواع والتسميات راحت `vouchers/types.ts` — الشاشة وبوباباتها بيقروا من نسخة واحدة،
 // عشان نوع يتغيّر في مكان ويفضل قديم في التاني يبقى مستحيل.
 import {
@@ -483,7 +484,7 @@ const Vouchers: React.FC = () => {
     <div>
       <VoucherKeyStrip world={keyWorld}
         onPosted={() => { loadVouchers(); loadTreasuries(); }} />
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
           <Card>
             <Statistic
@@ -517,7 +518,7 @@ const Vouchers: React.FC = () => {
             />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       {/* لافتة «الفترة مقفلة حتى كذا — أي سند بتاريخ أقدم هيترفض» اتشالت مع القفل نفسه.
           الترحيل بقى مسموح بأي تاريخ، ولافتة بتحذّر من رفض مش بيحصل بتخلّي اللي بيقراها

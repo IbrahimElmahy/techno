@@ -12,6 +12,7 @@ import { TabModal } from '../components/TabModal';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 
+import StatsRow from '../components/StatsRow';
 /**
  * الأصول الثابتة والإهلاك — an asset is paid for once and consumed over years, so its cost
  * belongs to the months that used it rather than the month it was bought.
@@ -260,7 +261,7 @@ export default function FixedAssets() {
         </Space>
       </Card>
 
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={8}>
           <Card size="small"><Statistic title="أصول قائمة" value={active.length} /></Card>
         </Col>
@@ -275,7 +276,7 @@ export default function FixedAssets() {
               valueStyle={{ color: '#0B5CA8' }} />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <ListToolbar
         searchPlaceholder="بحث بالكود أو الاسم أو الفئة"

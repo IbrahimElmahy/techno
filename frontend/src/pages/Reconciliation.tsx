@@ -13,6 +13,7 @@ import { egp } from '../utils/accounts';
 import { normalizeAr } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
 
+import { useCanSeeStats } from '../components/StatsRow';
 /**
  * تسوية الحسابات — «الفاتورة دي اتدفعت بإيه، وفاضل عليه إيه».
  *
@@ -72,6 +73,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export default function Reconciliation() {
+  const canSeeStats = useCanSeeStats();
   const [tab, setTab] = useQueryTab('open');
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -314,6 +316,7 @@ export default function Reconciliation() {
                   ) : (
                     <>
                       <Row gutter={12} style={{ marginBottom: 12 }}>
+{canSeeStats && (<>
                         <Col span={6}>
                           <Card size="small">
                             <Statistic title="مستحق عليه" value={egp(data?.total_debit ?? 0)} />
@@ -331,6 +334,7 @@ export default function Reconciliation() {
                               value={egp(data?.balance ?? 0)} />
                           </Card>
                         </Col>
+                        </>)}
                         <Col span={6}>
                           <Space direction="vertical" style={{ width: '100%' }}>
                             <Tooltip title={blockReason}>

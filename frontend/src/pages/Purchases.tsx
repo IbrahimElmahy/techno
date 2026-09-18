@@ -38,6 +38,7 @@ import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
+import StatsRow from '../components/StatsRow';
 /** الاسم القديم في الشاشة دي — نفس الدالة. */
 const fmtMoney = money;
 
@@ -1836,7 +1837,7 @@ export default function Purchases() {
       )}
     >
       {/* --- Summary Statistics --- */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+      <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card size="small" style={{ borderRadius: 8, borderColor: '#91caff', backgroundColor: '#e6f4ff' }}>
             <Statistic
@@ -1879,7 +1880,7 @@ export default function Purchases() {
             />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       {/* --- Quick Tabs / Segmented --- */}
       <div style={{ marginBottom: 12 }}>

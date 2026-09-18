@@ -97,6 +97,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("الولاء والكوبونات", ["loyalty", "points.", "product_points.", "coupon."]),
     ("ما بعد البيع والتصنيع", ["inspection.", "manufacture."]),
     ("الموارد البشرية", ["hr.", "payroll.", "salary."]),
+    ("الإحصائيات", ["stats."]),
 ]
 
 ROLE_LABELS: dict[str, str] = {
@@ -108,6 +109,7 @@ ROLE_LABELS: dict[str, str] = {
     "sales_rep": "مندوب مبيعات",
     "accountant": "محاسب",
     "viewer": "قارئ",
+    "owner": "المالك",
 }
 
 

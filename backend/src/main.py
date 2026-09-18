@@ -679,6 +679,12 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     ("point_record", "kind",
      "ENUM('earn','reverse','converted','void_reclaim','adjustment','inspection',"
      "'inspection_reverse')"),
+    # دور «المالك». نفس المصيدة بالظبط: `role.name` ENUM أصلي في بوستجرس، فالقيمة
+    # الجديدة بتترفض عند القاعدة قبل ما توصل — عمل اليوزر كان هيقع على السيرفر وهو
+    # ماشي محلياً على SQLite.
+    ("role", "name",
+     "ENUM('system_admin','branch_manager','purchasing_manager','sales_manager',"
+     "'after_sales_staff','sales_rep','accountant','viewer','owner')"),
 ]
 
 

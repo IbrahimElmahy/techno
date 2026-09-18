@@ -13,6 +13,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn } from '../components/gridColumns';
 
+import { useCanSeeStats } from '../components/StatsRow';
 /**
  * تقارير مندوبين — three of their four report screens; the fourth (عمولة تحصيلات مندوبين) already
  * lives on the finance screen and its menu entry points there.
@@ -197,13 +198,17 @@ export default function RepReports() {
     export: { name: 'تحصيلات المندوبين', rows: collectionFilter.filtered },
   });
 
+  const canSeeStats = useCanSeeStats();
+
   return (
     <Card title={<span><TeamOutlined /> تقارير المندوبين</span>} extra={header}>
+      {canSeeStats && (
       <Space size="large" style={{ marginBottom: 12 }}>
         <Statistic title="إجمالي المُحصّل" value={totalCollected} precision={2} suffix="ج.م"
           valueStyle={{ color: '#6AB42D' }} />
         <Statistic title="إجمالي المبيعات (صافي)" value={totalSold} precision={2} suffix="ج.م" />
       </Space>
+      )}
 
       <Tabs
         activeKey={tab} onChange={setTab}

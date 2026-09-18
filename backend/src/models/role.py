@@ -24,6 +24,14 @@ class RoleName(str, enum.Enum):
     # those people get handed a manager's account «for now», and «for now» is how a system ends up
     # with five people able to reverse an invoice.
     viewer = "viewer"
+    # «المالك» — صاحب الشركة. بيشوف كل حاجة زي مدير النظام، **وزيادة**: كروت
+    # الإحصائيات اللي فوق الشاشات (إجماليات المبيعات والأرباح والمديونيات) مقصورة
+    # عليه هو ومدير النظام وحدهم.
+    #
+    # دور لوحده مش مجرد يوزر: «اخفي الأرقام عن الكل إلا واحد» لو اتعملت بفحص اسم
+    # المستخدم بتقع أول ما حد يغيّر الاسم أو يتعمل مالك تاني، والشاشة اللي بتقرر
+    # بالاسم مافيش شاشة صلاحيات تقدر تعدّلها.
+    owner = "owner"
 
 
 class Role(Base):

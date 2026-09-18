@@ -28,6 +28,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 /**
  * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
  * purchase invoices, returns, payment vouchers and cheques, each row opening in a popup.
@@ -605,7 +606,7 @@ export default function SupplierProfile() {
           <Empty description="لا توجد بيانات" />
         ) : (
           <>
-            <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+            <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
               <Col xs={12} md={6}>
                 <Card size="small">
                   <Statistic
@@ -633,7 +634,7 @@ export default function SupplierProfile() {
                   <Statistic title="إجمالي المرتجعات" value={money(data.total_returns)} suffix="ج.م" />
                 </Card>
               </Col>
-            </Row>
+            </StatsRow>
 
             <Tabs
               items={[
@@ -756,7 +757,7 @@ export default function SupplierProfile() {
                         <Empty description="لا يوجد حساب دفتري لهذا المورد" />
                       ) : (
                         <>
-                          <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+                          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
                             <Col xs={12} md={5}>
                               <Card size="small">
                                 <Statistic title="رصيد أول المدة"
@@ -792,12 +793,12 @@ export default function SupplierProfile() {
                                   valueStyle={{ color: '#0B5CA8' }} />
                               </Card>
                             </Col>
-                          </Row>
+                          </StatsRow>
 
                           {statement?.reconcilable && (
                             <Card size="small" style={{ marginBottom: 12 }}
                               styles={{ body: { padding: '10px 12px' } }}>
-                              <Row gutter={[8, 8]} align="middle">
+                              <StatsRow gutter={[8, 8]} align="middle">
                                 <Col xs={12} md={5}>
                                   <Statistic title="إجمالي المستحق للمورد"
                                     value={money(statement.total_due || 0)} suffix="ج.م"
@@ -828,7 +829,7 @@ export default function SupplierProfile() {
                                     ))}
                                   </Space>
                                 </Col>
-                              </Row>
+                              </StatsRow>
                   {Number(statement.aging?.credit_open || 0) > 0 && (
                     <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
                       مستحق للمورد <b>{money(statement.aging?.debit_open || 0)}</b> ·

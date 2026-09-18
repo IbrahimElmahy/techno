@@ -43,6 +43,7 @@ import { money } from '../utils/money';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
+import StatsRow from '../components/StatsRow';
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
  * they're bringing back; the items go back INTO stock and the money is credited to the customer.
@@ -1762,11 +1763,11 @@ export default function Returns() {
           </Col>
         </Row>
 
-        <Row gutter={12} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}><Card size="small"><Statistic title="عدد المرتجعات الظاهرة" value={summary.count} /></Card></Col>
           <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي صافي المرتجعات" value={money(summary.net)} suffix="ج.م" /></Card></Col>
           <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي الخصم من الحسابات" value={money(summary.credit)} suffix="ج.م" /></Card></Col>
-        </Row>
+        </StatsRow>
 
         <Table
           // المسودّات فوق، وبرّه `returns` عن قصد: الإجماليات بتتبني منه والمسودّة مش مرتجع.

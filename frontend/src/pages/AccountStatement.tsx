@@ -22,6 +22,7 @@ import { normalizeAr } from '../components/ListToolbar';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 type Subject = 'account' | 'item';
 
 interface StatementLine {
@@ -965,7 +966,7 @@ export default function AccountStatement() {
 
       {statement && (
         <>
-          <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
             <Col xs={12} md={6}>
               <Card size="small">
                 <Statistic title={isItem ? 'رصيد أول المدة' : 'رصيد أول المدة (الحساب كله)'}
@@ -1001,12 +1002,12 @@ export default function AccountStatement() {
                   valueStyle={{ color: '#0B5CA8' }} />
               </Card>
             </Col>
-          </Row>
+          </StatsRow>
 
           {reconcilable && (
             <Card size="small" style={{ marginBottom: 12 }}
               styles={{ body: { padding: '10px 12px' } }}>
-              <Row gutter={[8, 8]} align="middle">
+              <StatsRow gutter={[8, 8]} align="middle">
                 <Col xs={12} md={5}>
                   <Statistic title="إجمالي المستحق" value={num(totalDue)}
                     valueStyle={{ color: totalDue ? '#0B5CA8' : undefined, fontSize: 20 }} />
@@ -1037,7 +1038,7 @@ export default function AccountStatement() {
                     ))}
                   </Space>
                 </Col>
-              </Row>
+              </StatsRow>
               {Number(aging?.credit_open || 0) > 0 && (
                 <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
                   مطلوب <b>{num(aging?.debit_open || 0)}</b> ·

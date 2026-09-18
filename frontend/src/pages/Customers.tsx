@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
+import StatsRow from '../components/StatsRow';
 interface CustomerRecord {
   id: number;
   code: string;
@@ -567,7 +568,7 @@ export default function Customers() {
           </Col>
         </Row>
 
-        <Row gutter={12} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
             <Card size="small"><Statistic title="عدد العملاء" value={summaryData.total_count} /></Card>
           </Col>
@@ -580,7 +581,7 @@ export default function Customers() {
           <Col xs={24} md={8}>
             <Card size="small"><Statistic title="عملاء عليهم مديونية" value={summaryData.debtors_count} /></Card>
           </Col>
-        </Row>
+        </StatsRow>
 
         <Table
           dataSource={customers}

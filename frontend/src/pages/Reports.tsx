@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Row, Col, Divider, Empty,
+  Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Col, Divider, Empty,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
@@ -16,6 +16,7 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
 
+import StatsRow from '../components/StatsRow';
 // --- Shared helpers -----------------------------------------------------------------------
 type Period = 'week' | 'month' | 'year';
 type Range = [Dayjs | null, Dayjs | null] | null;
@@ -355,14 +356,14 @@ function WastageTab({ range, warehouses, items }: TabProps) {
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
       </Space>
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Card><Statistic title="إجمالي كمية الهالك" value={Number(totalQty)} precision={3} valueStyle={{ color: '#cf1322' }} /></Card>
         </Col>
         <Col span={12}>
           <Card><Statistic title="إجمالي تكلفة الهالك" value={Number(totalCost)} precision={2} valueStyle={{ color: '#cf1322' }} suffix="ج.م" /></Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{wastageTabCols.control}</div>
       <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
@@ -515,14 +516,14 @@ function SalesTab({ period, range }: TabProps) {
         <ExportButton type="sales" label="تصدير CSV" />
       </Space>
 
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Card><Statistic title="إجمالي المبيعات" value={Number(grossTotal)} precision={2} valueStyle={{ color: '#888' }} suffix="ج.م" /></Card>
         </Col>
         <Col span={12}>
           <Card><Statistic title="صافي المبيعات" value={Number(netTotal)} precision={2} valueStyle={{ color: '#3f8600' }} suffix="ج.م" /></Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <Divider orientation="right">ملخص حسب الفترة ({PERIOD_LABEL[period]})</Divider>
       <Table rowKey={(r) => r.period} size="small" loading={loading} pagination={false}

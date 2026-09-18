@@ -30,6 +30,7 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 
+import StatsRow from '../components/StatsRow';
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
  * customer, with a back arrow. Shows everything tied to him: balance, account statement,
@@ -791,7 +792,7 @@ export default function CustomerProfile() {
               </Card>
             )}
 
-            <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+            <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
               <Col xs={12} md={6}>
                 <Card size="small">
                   <Statistic
@@ -825,7 +826,7 @@ export default function CustomerProfile() {
                   />
                 </Card>
               </Col>
-            </Row>
+            </StatsRow>
 
             <Tabs
               items={[
@@ -974,7 +975,7 @@ export default function CustomerProfile() {
                         <Empty description="لا يوجد حساب دفتري لهذا العميل" />
                       ) : (
                         <>
-                          <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+                          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
                             <Col xs={12} md={5}>
                               <Card size="small">
                                 <Statistic title="رصيد أول المدة"
@@ -1010,12 +1011,12 @@ export default function CustomerProfile() {
                                   valueStyle={{ color: '#0B5CA8' }} />
                               </Card>
                             </Col>
-                          </Row>
+                          </StatsRow>
 
                           {statement?.reconcilable && (
                             <Card size="small" style={{ marginBottom: 12 }}
                               styles={{ body: { padding: '10px 12px' } }}>
-                              <Row gutter={[8, 8]} align="middle">
+                              <StatsRow gutter={[8, 8]} align="middle">
                                 <Col xs={12} md={5}>
                                   <Statistic title="إجمالي المستحق"
                                     value={money(statement.total_due || 0)} suffix="ج.م"
@@ -1046,7 +1047,7 @@ export default function CustomerProfile() {
                                     ))}
                                   </Space>
                                 </Col>
-                              </Row>
+                              </StatsRow>
                   {Number(statement.aging?.credit_open || 0) > 0 && (
                     <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
                       مطلوب <b>{money(statement.aging?.debit_open || 0)}</b> ·
@@ -1285,7 +1286,7 @@ export default function CustomerProfile() {
                     <>
                       {/* الإجماليات جاية من السيرفر على الحركة كلها، مش مجموعة من الصفوف
                           المعروضة — كشف مفلتر بيفضل يقول رصيد العميل الحقيقي. */}
-                      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                      <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
                         <Col xs={12} md={6}>
                           <Card size="small">
                             <Statistic title="وارد (مكتسب)" value={pointsNum(points?.earned)}
@@ -1310,7 +1311,7 @@ export default function CustomerProfile() {
                               valueStyle={{ color: pointsBalance < 0 ? '#cf1322' : '#1677ff' }} />
                           </Card>
                         </Col>
-                      </Row>
+                      </StatsRow>
                       <ListToolbar
                         searchPlaceholder="بحث برقم المستند أو نوع الحركة"
                         searchSpan={8}

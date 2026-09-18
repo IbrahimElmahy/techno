@@ -36,6 +36,7 @@ import DateRangeFilter from '../../components/DateRangeFilter';
 import { printReport } from '../../print/reportSheet';
 import { Account, Journal, JournalEntry, JournalLine, LineDraft, flatten } from './types';
 
+import StatsRow from '../../components/StatsRow';
 /** لون تاج الشريك — العميل والمورد والموظف بيتفرقوا بالعين قبل القراية. */
 const PARTNER_COLOR: Record<string, string> = {
   customer: 'green', supplier: 'orange', employee: 'blue',
@@ -653,12 +654,12 @@ export default function JournalTab() {
             إضافة حركة
           </Button>
 
-          <Row gutter={16}>
+          <StatsRow gutter={16}>
             <Col span={8}><Statistic title="إجمالي مدين" value={totalDebit} precision={2} valueStyle={{ color: '#6AB42D' }} /></Col>
             <Col span={8}><Statistic title="إجمالي دائن" value={totalCredit} precision={2} valueStyle={{ color: '#F5A11D' }} /></Col>
             <Col span={8}><Statistic title="الفرق" value={Math.abs(totalDebit - totalCredit)} precision={2}
               valueStyle={{ color: balanced ? '#6AB42D' : '#cf1322' }} /></Col>
-          </Row>
+          </StatsRow>
           <Divider />
           <Row gutter={8}>
             <Col span={12}>

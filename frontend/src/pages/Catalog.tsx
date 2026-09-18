@@ -18,6 +18,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { money } from '../utils/money';
 
+import StatsRow from '../components/StatsRow';
 // The five negotiated tiers plus the published list price, in the order and wording their form
 // uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
 // order means checking every line instead of typing six numbers. The labels are theirs too — «نص
@@ -908,7 +909,7 @@ export default function Catalog() {
           </Col>
         </Row>
 
-        <Row gutter={12} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}>
             <Card size="small"><Statistic title="عدد الأصناف الظاهرة" value={summary.count} /></Card>
           </Col>
@@ -918,7 +919,7 @@ export default function Catalog() {
           <Col xs={24} md={8}>
             <Card size="small"><Statistic title="أصناف برصيد صفر" value={summary.out} /></Card>
           </Col>
-        </Row>
+        </StatsRow>
 
         <Segmented
           style={{ marginBottom: 12 }}

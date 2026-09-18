@@ -13,6 +13,7 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 /**
  * تقارير التشغيل — النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات.
  *
@@ -479,7 +480,7 @@ export default function OpsReports() {
       )}
 
       {totals && (
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
           <Col xs={8}>
             <Card size="small">
               <Statistic title="عدد السطور" value={totals.rows}
@@ -502,7 +503,7 @@ export default function OpsReports() {
                 valueStyle={{ color: '#0B5CA8' }} />
             </Card>
           </Col>
-        </Row>
+        </StatsRow>
       )}
 
       {/* الملغي بيتعرض ومابيتحسبش — والسطر ده بيقول الاتنين، عشان مايبقاش فيه نص ساكت. */}

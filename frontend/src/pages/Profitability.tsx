@@ -15,6 +15,7 @@ import { textColumn, numberColumn } from '../components/gridColumns';
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 type Dimension = 'cost_center' | 'branch';
 
 interface Row {
@@ -214,7 +215,7 @@ export default function Profitability() {
       </Row>
 
       {totals && (
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+        <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
           <Col xs={8}>
             <Card size="small"><Statistic title="الإيرادات" value={money(totals.income)} /></Card>
           </Col>
@@ -230,7 +231,7 @@ export default function Profitability() {
               />
             </Card>
           </Col>
-        </Row>
+        </StatsRow>
       )}
 
       {!!totals?.unassigned_lines && includeUnassigned && (

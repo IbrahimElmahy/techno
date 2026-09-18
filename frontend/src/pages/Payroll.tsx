@@ -19,6 +19,7 @@ import { TabModal } from '../components/TabModal';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, printPayslip } from '../print/reportSheet';
 
+import StatsRow from '../components/StatsRow';
 /**
  * مسير الرواتب.
  *
@@ -357,7 +358,7 @@ export default function Payroll() {
             />
           ) : null}
 
-          <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
             <Col><Card size="small"><Statistic title="عدد الموظفين" value={detail.employees} /></Card></Col>
             <Col><Card size="small"><Statistic title="الإجمالي" value={money(detail.gross)} /></Card></Col>
             <Col><Card size="small"><Statistic title="تأمينات (الموظف)" value={money(detail.insurance_employee)} /></Card></Col>
@@ -367,7 +368,7 @@ export default function Payroll() {
             <Col><Card size="small">
               <Statistic title="الصافي" value={money(detail.net)} valueStyle={{ color: '#0B5CA8' }} />
             </Card></Col>
-          </Row>
+          </StatsRow>
 
           <Table
             {...lineKb.tableProps}

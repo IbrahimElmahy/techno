@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
@@ -15,6 +15,7 @@ import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import StatsRow from '../components/StatsRow';
 import {
   LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
 } from '../print/itemLogSheet';
@@ -467,7 +468,7 @@ export default function StockSheet() {
           كان بيقول إن الورقة للعدّ والمراجعة وإن التسوية بتتعمل من «دورة الجرد» —
           تلات سطور فوق ورقة بتتقرا كل يوم، بتتقال مرة وتتقرا مية. */}
       {/* نفس الكروت اللي فوق «جرد حتى تاريخ»، عشان التلات شاشات تتقرا بنفس العين. */}
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={8}>
           <Card size="small"><Statistic title="عدد السطور" value={shown.length} /></Card>
         </Col>
@@ -480,7 +481,7 @@ export default function StockSheet() {
               valueStyle={{ color: '#0B5CA8' }} />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <ListToolbar
         searchPlaceholder="بحث بالكود أو الاسم أو الفئة أو الموقع"

@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Tabs, Table, Descriptions, Statistic, Row, Col, Card, Tag, Spin,
-  Space, Button, Empty, Typography,
+  Tabs, Table, Descriptions, Statistic, Col, Card, Tag, Spin, Space, Button, Empty, Typography,
 } from 'antd';
 import {
   ReloadOutlined, ArrowRightOutlined, RiseOutlined, FallOutlined, EditOutlined, FileTextOutlined,
@@ -18,6 +17,7 @@ import MovementHistoryLog, { MovementHistoryTarget } from '../components/Movemen
 import { textColumn, numberColumn, choiceColumn, dateColumn } from '../components/gridColumns';
 import { useTableColumns } from '../components/ColumnSettings';
 
+import StatsRow from '../components/StatsRow';
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
  * movement it ever made, and every time its price changed.
@@ -208,7 +208,7 @@ export default function ItemProfile() {
           <Empty description="لا توجد بيانات" />
         ) : (
           <>
-            <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+            <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
               <Col xs={12} md={6}>
                 <Card size="small">
                   <Statistic title="الرصيد الحالي" value={qty(data.on_hand)}
@@ -232,7 +232,7 @@ export default function ItemProfile() {
                   <Statistic title="قيمة المشتريات" value={money(data.purchased_value)} suffix="ج.م" />
                 </Card>
               </Col>
-            </Row>
+            </StatsRow>
 
             <Tabs
               items={[

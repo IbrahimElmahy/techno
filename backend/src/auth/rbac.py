@@ -293,6 +293,27 @@ ROLE_CAPABILITIES.setdefault(RoleName.accountant, set()).add(CAP_HR_READ)
 ALL_CAPABILITIES |= _HR_ALL | _PAYROLL_ALL
 
 # ---------------------------------------------------------------------------
+# كروت الإحصائيات — «المالك» وحده (ومدير النظام).
+# ---------------------------------------------------------------------------
+# ⚠️ الاسم ده مكسور عن قصد — متصلّحوش. نفس سبب `salary.view` بالظبط.
+#
+# `stats.view` مابتنتهيش بـ`.read`، وده كل الحكاية: القاعدتين اللي تحت — دور «قارئ»
+# المشتق، وتوزيع القراءة على أدوار المكتب — بياخدوا كل حاجة آخرها `.read`. لو سمّيناها
+# `stats.read` كانت هتتوزّع على تسعة أدوار في نفس الملف من غير ما حد يقصد، والرقم اللي
+# المالك عايز يقفله كان هيبقى مفتوح للكل — وهو نفس الرقم اللي اتقفل عشانه.
+#
+# اللي بيتقفل هنا الإجماليات: مبيعات الفترة، الأرباح، المديونيات، أرصدة الخزينة.
+# السطور نفسها مش مقفولة — اللي بيكتب فاتورة بيشوف فاتورته؛ اللي بيتقفل هو الرقم
+# اللي بيتقرا من فوق الشاشة ويقول الشركة عاملة إيه.
+CAP_STATS_VIEW = "stats.view"
+ALL_CAPABILITIES |= {CAP_STATS_VIEW}
+
+# «المالك» — كل حاجة، وهو الوحيد اللي بياخد `stats.view` صراحةً.
+ROLE_CAPABILITIES[RoleName.owner] = set(ALL_CAPABILITIES)
+ROLE_CAPABILITIES.setdefault(RoleName.system_admin, set()).add(CAP_STATS_VIEW)
+
+
+# ---------------------------------------------------------------------------
 # «قارئ» — the read-only role.
 # ---------------------------------------------------------------------------
 # Derived by rule instead of listed: every capability whose name ends in `.read`, and nothing else.
@@ -323,7 +344,9 @@ ROLE_CAPABILITIES[RoleName.viewer] = {
 # الفروع (هو أصلاً محبوس في فرع واحد)، وسياسة الولاء اللي بتتقرر على مستوى الشركة.
 #
 # واللي عايز يضيّق أكتر بقى يقدر: شاشة الصلاحيات بتكتب فوق الافتراضي ده.
-_NOT_FOR_BRANCH_MANAGER = {CAP_BRANCH_WRITE, CAP_LOYALTY_SETTINGS_WRITE}
+# و`stats.view` معاهم: مدير الفرع بياخد «كل حاجة ما عدا» من `ALL_CAPABILITIES`، فأي
+# صلاحية جديدة بتوصله لوحدها — وكروت الإحصائيات دي بالظبط اللي المالك قفلها.
+_NOT_FOR_BRANCH_MANAGER = {CAP_BRANCH_WRITE, CAP_LOYALTY_SETTINGS_WRITE, CAP_STATS_VIEW}
 ROLE_CAPABILITIES[RoleName.branch_manager] = ALL_CAPABILITIES - _NOT_FOR_BRANCH_MANAGER
 
 
@@ -360,6 +383,11 @@ ROLE_CAPABILITIES[RoleName.viewer] = set(_READ_CAPS)
 # وكان واخد واحد بس، فنص شاشات القيود كانت بترفضه.
 ROLE_CAPABILITIES[RoleName.accountant].update(
     {CAP_LEDGER_POST, CAP_LEDGER_REVERSE, CAP_SALARY_VIEW})
+
+# «المالك» بياخد المجموعة كاملة **في آخر الملف**، بعد ما كل الوحدات سجّلت صلاحياتها.
+# لو اتاخدت عند تعريف الدور كانت هتبقى صورة من نص القايمة — وأي صلاحية بتتضاف تحت
+# مكانتش هتوصله، وهو الدور الوحيد اللي مالوش شاشة تكمّله.
+ROLE_CAPABILITIES[RoleName.owner] = set(ALL_CAPABILITIES)
 
 
 # ما ضبطه المستخدم من شاشة الصلاحيات — بيتقرا من قاعدة البيانات مرة عند الإقلاع وبعد كل حفظ.

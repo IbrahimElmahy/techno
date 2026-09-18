@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -17,6 +17,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
+import StatsRow from '../components/StatsRow';
 interface Warehouse { id: number; name: string; }
 interface Item {
   id: number; code: string; name: string;
@@ -314,11 +315,11 @@ function OrdersTab({
         <Card size="small" title={`تكلفة أمر التصنيع ${lastResult.document_number}`}
           style={{ marginBottom: 16, background: '#f6ffed', borderColor: '#b7eb8f' }}
           extra={<Button type="text" onClick={() => setLastResult(null)}>إخفاء</Button>}>
-          <Row gutter={16}>
+          <StatsRow gutter={16}>
             <Col span={8}><Statistic title="تكلفة الخامات" value={fmtMoney(lastResult.material_cost ?? 0)} suffix="ج.م" /></Col>
             <Col span={8}><Statistic title="تكلفة الموارد" value={fmtMoney(lastResult.resource_cost ?? 0)} suffix="ج.م" /></Col>
             <Col span={8}><Statistic title="إجمالي التكلفة" value={fmtMoney(lastResult.total_cost)} suffix="ج.م" /></Col>
-          </Row>
+          </StatsRow>
         </Card>
       )}
 
@@ -348,11 +349,11 @@ function OrdersTab({
           onExpandedRowsChange: (keys) => setExpanded(keys as number[]),
           expandedRowRender: (r: Order) => (
             <div>
-              <Row gutter={16} style={{ marginBottom: 12 }}>
+              <StatsRow gutter={16} style={{ marginBottom: 12 }}>
                 <Col span={8}><Statistic title="تكلفة الخامات" value={fmtMoney(r.material_cost ?? 0)} suffix="ج.م" /></Col>
                 <Col span={8}><Statistic title="تكلفة الموارد" value={fmtMoney(r.resource_cost ?? 0)} suffix="ج.م" /></Col>
                 <Col span={8}><Statistic title="إجمالي التكلفة" value={fmtMoney(r.total_cost)} suffix="ج.م" /></Col>
-              </Row>
+              </StatsRow>
               <Divider orientation="right" style={{ margin: '8px 0' }}>الخامات المستهلكة</Divider>
               <Table
                 size="small" pagination={false} rowKey="item_id" dataSource={r.consumptions}
@@ -454,10 +455,10 @@ function OrdersTab({
                   ]}
                 />
                 <Divider style={{ margin: '12px 0' }} />
-                <Row gutter={16}>
+                <StatsRow gutter={16}>
                   <Col span={12}><Statistic title="إجمالي التكلفة" value={fmtMoney(preview.total)} suffix="ج.م" /></Col>
                   <Col span={12}><Statistic title="تكلفة الوحدة" value={fmtMoney(preview.unit)} suffix="ج.م" /></Col>
-                </Row>
+                </StatsRow>
               </Card>
             )}
           </Form>

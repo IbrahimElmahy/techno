@@ -15,6 +15,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import StatsRow from '../components/StatsRow';
 import {
   LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
 } from '../print/itemLogSheet';
@@ -309,7 +310,7 @@ export default function Stocktake() {
           : undefined}
       />
 
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={8}>
           <Card size="small"><Statistic title="عدد السطور" value={totals?.lines ?? 0} /></Card>
         </Col>
@@ -324,7 +325,7 @@ export default function Stocktake() {
               valueStyle={{ color: '#0B5CA8' }} />
           </Card>
         </Col>
-      </Row>
+      </StatsRow>
 
       <ListToolbar
         searchPlaceholder="بحث بالصنف أو الكود أو الموقع"

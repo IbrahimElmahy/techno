@@ -14,6 +14,7 @@ import MovementHistoryLog from '../components/MovementHistoryLog';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
+import { useCanSeeStats } from '../components/StatsRow';
 /**
  * جرد المخازن و جرد عام — the counting cycle.
  *
@@ -51,6 +52,7 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG',
   { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function StockCounts() {
+  const canSeeStats = useCanSeeStats();
   const navigate = useNavigate();
   // Their «جرد المخازن» and «جرد عام» turned out to be filtered stock listings, not counting
   // sheets, so those two entries open رصيد صنف instead. This screen is the counting cycle itself,
@@ -454,6 +456,7 @@ export default function StockCounts() {
         ) : null}
       >
           <>
+{canSeeStats && (
             <Space size="large" style={{ marginBottom: 12 }}>
               <Statistic title="متعدود" value={`${countedNow} / ${allLines.length}`} />
               <Statistic title="سطور بفرق" value={differing}
@@ -464,6 +467,7 @@ export default function StockCounts() {
               <Statistic title="قيمة الزيادة" value={`${money(totalOver)} ج.م`}
                 valueStyle={{ color: totalOver > 0.005 ? '#6AB42D' : undefined }} />
             </Space>
+            )}
 
             {/* فلاتر جوه الورقة. A full count is hundreds of lines, and «وريني اللي فيه فرق بس»
                 is asked every few minutes while counting. The counts above stay on ALL lines —
