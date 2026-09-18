@@ -1124,17 +1124,25 @@ def sales_summary(
     # تحصيلات اتعملت بسندات بعد الفواتير، والكارت مكانش بيشوفها. والرقم ده بيتقري
     # على إنه المديونية.
     #
-    # المصدر الصح هو متبقّي سطور القيد (`amount_residual`) — نفس اللي أعمار الديون
-    # وكشف الحساب وحالة الدفع بيشتغلوا عليه. والموجب بس: السالب رصيد **للعميل**،
-    # وجمعه مع المديونية بيقلّلها بحاجة هي مش منها.
-    entry_ids = inv.with_only_columns(SalesInvoice.ledger_entry_id).where(
-        SalesInvoice.ledger_entry_id.isnot(None)).subquery()
-    outstanding = db.scalar(
-        select(func.coalesce(func.sum(LedgerLine.amount_residual), 0))
-        .where(LedgerLine.entry_id.in_(select(entry_ids.c[0])),
-               LedgerLine.amount_residual.isnot(None),
-               LedgerLine.amount_residual > 0)
-    ) or Decimal("0.00")
+    # **الرقم ده بيتجاب من نفس دالة «أعمار الديون» — مش بحساب تاني جنبه.**
+    #
+    # كان بيجمع `credit_amount`: الآجل **يوم البيع**، رقم مابيتحركش بعدها أبداً، فأي
+    # تحصيل بسند مكانش بيقلّله. الشاشة كانت بتقول «المتبقي آجل ٢١٬٣٤٧٬٦٣٦» والمستحق
+    # الحقيقي جزء صغير منه.
+    #
+    # وجرّبت أحسبه من `amount_residual` هنا — وطلع رقم تالت مختلف عن الكشف، لأن أعمار
+    # الديون بتقاصّ أرصدة العميل على مديونياته وقت التقرير، والمتبقّي المخزّن بيعكس
+    # المطابقات اللي اتعملت فعلاً. رقمين لنفس السؤال على شاشتين، وده أسوأ من رقم غلط
+    # واحد: اللي بيقارن مش هيعرف مين الصح.
+    #
+    # فالكارت بينادي الكشف نفسه. والموجب بس: العميل اللي صافيه دائن رصيد **له**،
+    # ومكانه كشف حسابه مش كارت المديونية.
+    from src.services import financial_reports_service as fin
+    outstanding = sum(
+        (row.total for row in fin.receivables_aging(
+            db, branch_id=branch_scope.visible_branch_id(current))
+         if row.total > 0),
+        Decimal("0.00"))
 
     return {
         "sales_count": inv_count, "sales_net": inv_net,
