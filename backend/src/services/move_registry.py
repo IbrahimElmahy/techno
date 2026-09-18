@@ -12,10 +12,17 @@ from src.models.ledger import MoveType, PartnerKind
 
 # نوع القيد → نوع المستند. اللي مش هنا `entry` — والأغلبية كده فعلاً: السند والشيك
 # والراتب والإهلاك في أودو كلهم `entry`، مش أنواع لوحدهم.
+#: **بالاسمين.** الخدمة الحيّة بتكتب `sale`/`sale_return`، والنقل من a5 كتب
+#: `sales_invoice`/`sales_return`/`purchase_invoice` — ٨٬٠٣٦ قيد من دول. الجدول كان
+#: عارف الأولانيين بس، فكل فاتورة منقولة نوعها كان بيطلع `entry` (قيد عادي مالوش
+#: نوع)، وأي حاجة بتقرا النوع — التقارير وحالة الدفع — كانت بتتعامل معاها كأنها سند.
 _MOVE_TYPES: dict[str, MoveType] = {
     "sale": MoveType.out_invoice,
+    "sales_invoice": MoveType.out_invoice,
     "sale_return": MoveType.out_refund,
+    "sales_return": MoveType.out_refund,
     "purchase": MoveType.in_invoice,
+    "purchase_invoice": MoveType.in_invoice,
     "purchase_return": MoveType.in_refund,
 }
 

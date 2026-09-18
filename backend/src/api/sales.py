@@ -910,8 +910,11 @@ def _payment_states(db: Session, rows) -> dict[int, tuple[str | None, Decimal]]:
     ).all()
     out: dict[int, tuple[str | None, Decimal]] = {}
     for entry in entries:
+        # **بإشارته، مش `abs`.** الزيادة اللي دفعها العميل بتتقيّد سطر دائن متبقّيه
+        # سالب — رصيد **له** مش عليه. جمعها بالمطلق كان بيخلّي فاتورة مدفوعة وزيادة
+        # تبان وعليها باقي بقيمة الزيادة.
         residual = sum(
-            (abs(Decimal(str(ln.amount_residual))) for ln in entry.lines
+            (Decimal(str(ln.amount_residual)) for ln in entry.lines
              if ln.amount_residual is not None), Decimal("0.00"))
         out[entry.id] = (entry.payment_state, residual)
     return out

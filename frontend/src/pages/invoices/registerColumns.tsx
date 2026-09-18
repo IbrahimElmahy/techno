@@ -244,24 +244,37 @@ export function buildRegisterColumns({
       ),
     },
     {
+      // **اللي اتحصّل فعلاً، مش نقدي يوم البيع.**
+      //
+      // كان بيعرض `cash_amount` — الفلوس اللي اتاخدت مع الفاتورة نفسها — فالفاتورة
+      // اللي اتباعت آجل واتحصّلت بعدها بسند كانت تفضل مكتوب جنبها «تم السداد ٠٫٠٠»
+      // وحالتها «مدفوعة». الرقم الحي هو الصافي ناقص المتبقّي.
       title: 'تم السداد',
-      dataIndex: 'cash_amount',
+      dataIndex: 'residual',
       key: 'cash_amount',
       width: 100,
       align: 'left' as const,
-      sorter: (a: any, b: any) => a.cash_amount - b.cash_amount,
-      render: (val: number) => `${money(val)} ج.م`,
+      sorter: (a: any, b: any) =>
+        (a.net - (a.residual ?? a.credit_amount)) - (b.net - (b.residual ?? b.credit_amount)),
+      render: (_v: any, row: any) => {
+        const res = Number(row.residual ?? row.credit_amount ?? 0);
+        return `${money(Number(row.net || 0) - res)} ج.م`;
+      },
     },
     {
+      // المتبقّي الحي كمان — وبيبقى **سالب** لو العميل دفع أكتر من الفاتورة، وده
+      // رصيد له مش عليه، فبيتلوّن أخضر مش أحمر.
       title: 'الباقى',
-      dataIndex: 'credit_amount',
+      dataIndex: 'residual',
       key: 'credit_amount',
       width: 100,
       align: 'left' as const,
-      sorter: (a: any, b: any) => a.credit_amount - b.credit_amount,
-      render: (val: number) => {
-        const n = Number(val || 0);
-        return <span style={{ color: n > 0 ? '#cf1322' : undefined, fontWeight: n > 0 ? 600 : undefined }}>{money(n)} ج.م</span>;
+      sorter: (a: any, b: any) =>
+        (a.residual ?? a.credit_amount) - (b.residual ?? b.credit_amount),
+      render: (_v: any, row: any) => {
+        const n = Number(row.residual ?? row.credit_amount ?? 0);
+        const color = n > 0.005 ? '#cf1322' : n < -0.005 ? '#6AB42D' : undefined;
+        return <span style={{ color, fontWeight: Math.abs(n) > 0.005 ? 600 : undefined }}>{money(n)} ج.م</span>;
       },
     },
     {

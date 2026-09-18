@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
+from src.services import move_registry
 from src.models.ledger import Account, AccountType, Direction, LedgerEntry, LedgerLine
 from src.models.reconcile import FullReconcile, PartialReconcile, format_number
 from src.services import ledger_service, move_registry
@@ -427,16 +428,55 @@ def unreconcile(
 
 # --- حالة الدفع ---------------------------------------------------------------------------
 
+#: الجانب اللي كل نوع مستند مدين بيه — وهو الجانب اللي حالة الدفع بتتقاس عليه.
+#:
+#: فاتورة البيع بتخلّي العميل مدين (مدين)، ومردود البيع بيخلّيه دائن. `entry` (سند،
+#: شيك، راتب، قيد بإيد) مالوش جانب واحد، فبيتقاس بالجانب الأكبر في القيد نفسه.
+_DEBIT_SIDE_MOVES = {"out_invoice", "in_refund"}
+_CREDIT_SIDE_MOVES = {"out_refund", "in_invoice"}
+
+
 def payment_state_of(entry: LedgerEntry) -> str | None:
-    """حالة دفع المستند من متبقّي سطوره. `None` للقيد اللي مش فاتورة."""
+    """حالة دفع المستند من متبقّي سطوره. `None` للقيد اللي مش فاتورة.
+
+    **الجانب اللي المستند مدين بيه هو اللي بيتقاس — والنوع هو اللي بيحدده.**
+
+    العميل اللي دفع أكتر من الفاتورة، الزيادة بتتقيّد سطر **دائن** على حسابه: ده رصيد
+    **له**، سُلفة عنده، مش مديونية على الفاتورة دي. فاتورة بـ١٬١٧٠ اتدفع فيها ٥٬٠٠٠
+    قيدها: نقدية ٥٬٠٠٠ مدين، إيراد ١٬١٧٠ دائن، ورصيد العميل ٣٬٨٣٠ دائن — والسطر
+    الوحيد اللي شايل متبقّي هو الرصيد ده، ومافيش سطر مديونية أصلاً لأن النقدي غطّاها.
+
+    أي قاعدة بتجمع كل المتبقّيات — بالمطلق أو بالإشارة أو حتى «الجانب الأكبر» — بتقرا
+    الفاتورة دي «غير مدفوعة» وهي مدفوعة وزيادة. فالجانب بيتاخد من `move_type`:
+    فاتورة البيع مدين، ومردود البيع دائن. ومافيش متبقّي على الجانب ده ⇒ مدفوعة،
+    والرصيد اللي فاضل بيظهر في كشف حساب العميل زي ما هو المفروض.
+    """
     lines = [ln for ln in entry.lines if ln.amount_residual is not None]
     if not lines:
         return None
-    total = sum((abs(signed_amount(ln)) for ln in lines), ZERO)
-    residual = sum((abs(residual_of(ln)) for ln in lines), ZERO)
-    if residual == ZERO:
+
+    debit_total = sum((signed_amount(ln) for ln in lines if signed_amount(ln) > ZERO), ZERO)
+    credit_total = -sum((signed_amount(ln) for ln in lines if signed_amount(ln) < ZERO), ZERO)
+    debit_open = sum((residual_of(ln) for ln in lines if residual_of(ln) > ZERO), ZERO)
+    credit_open = -sum((residual_of(ln) for ln in lines if residual_of(ln) < ZERO), ZERO)
+
+    # `move_type` بيتكتب على القيد الجديد بس؛ ٢٠٬٩٢٩ قيد منقول عمودهم فاضي —
+    # فبيتستنتج من `entry_type` زي ما `ledger_service` بيعمل عند الترحيل.
+    move = (entry.move_type or "").strip()
+    if not move:
+        move = move_registry.move_type_for(entry.entry_type or "").value
+    if move in _DEBIT_SIDE_MOVES:
+        total, open_now = debit_total, debit_open
+    elif move in _CREDIT_SIDE_MOVES:
+        total, open_now = credit_total, credit_open
+    elif debit_total >= credit_total:
+        total, open_now = debit_total, debit_open
+    else:
+        total, open_now = credit_total, credit_open
+
+    if open_now <= ZERO:
         return PaymentState.paid
-    if residual >= total:
+    if total == ZERO or open_now >= total:
         return PaymentState.not_paid
     return PaymentState.partial
 
