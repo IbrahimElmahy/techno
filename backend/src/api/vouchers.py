@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import dataclasses
+
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
@@ -195,6 +197,27 @@ class StatementLineOut(BaseModel):
     # (a5) في الكشف المجمّع كل سطر بيقول هو بتاع أنهي حساب فرعي.
     account_id: int | None = None
     account_name: str | None = None
+    # ── المطابقة ─────────────────────────────────────────────────────────────
+    line_id: int | None = None
+    # المتبقّي المفتوح على السطر. `None` = حساب مابيتقفلش، وده غير صفر (اتقفل خلاص).
+    residual: Decimal | None = None
+    due_date: date | None = None
+    days_overdue: int | None = None
+    payment_state: str | None = None
+    payment_state_label: str | None = None
+    # المستندات اللي قفلت جزء منه — الدفعة بتقول سدّدت إيه، والفاتورة اتسدّدت بإيه.
+    matches: list[dict] = []
+
+
+class AgingOut(BaseModel):
+    """أعمار المستحق على تاريخ الكشف."""
+
+    current: Decimal = Decimal("0")
+    d30: Decimal = Decimal("0")
+    d60: Decimal = Decimal("0")
+    d90: Decimal = Decimal("0")
+    older: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
 
 
 class FamilyBalanceOut(BaseModel):
@@ -223,6 +246,11 @@ class StatementOut(BaseModel):
     # statement that is not a customer's.
     family: str | None = None
     families: list[FamilyBalanceOut] = []
+    # المستحق على كل السطور المفتوحة لحد تاريخ القفل — مش مجموع الفترة المعروضة.
+    total_due: Decimal = Decimal("0")
+    total_overdue: Decimal = Decimal("0")
+    aging: AgingOut = AgingOut()
+    reconcilable: bool = False
 
 
 def _out(v) -> VoucherOut:
@@ -275,8 +303,20 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None) -> Sta
             # posted, whatever the document was.
             rep_user_id=((docs.get(ln.entry_id) or {}).get("rep_user_id") or ln.rep_id),
             rep_name=(reps.get((docs.get(ln.entry_id) or {}).get("rep_user_id"))
-                      or ln.rep_name))
+                      or ln.rep_name),
+            line_id=getattr(ln, "line_id", None),
+            residual=getattr(ln, "residual", None),
+            due_date=getattr(ln, "due_date", None),
+            days_overdue=getattr(ln, "days_overdue", None),
+            payment_state=getattr(ln, "payment_state", None),
+            payment_state_label=getattr(ln, "payment_state_label", None),
+            matches=list(getattr(ln, "matches", ()) or ()))
             for ln in s.lines],
+        total_due=getattr(s, "total_due", Decimal("0")),
+        total_overdue=getattr(s, "total_overdue", Decimal("0")),
+        aging=(AgingOut(**dataclasses.asdict(s.aging))
+               if getattr(s, "aging", None) is not None else AgingOut()),
+        reconcilable=bool(getattr(s, "reconcilable", False)),
     )
 
 

@@ -42,6 +42,29 @@ interface StatementLine {
   account_name?: string | null;
   raw?: any;
   _serial?: number;
+  // ── المطابقة ──────────────────────────────────────────────────────────────
+  line_id?: number | null;
+  /** المتبقّي المفتوح. `null` = حساب لا تُقفل سطوره، وهو غير الصفر (أُقفل بالكامل). */
+  residual?: string | null;
+  due_date?: string | null;
+  days_overdue?: number | null;
+  payment_state?: string | null;
+  payment_state_label?: string | null;
+  matches?: StatementMatch[];
+}
+
+interface StatementMatch {
+  line_id: number;
+  entry_id: number | null;
+  entry_number: string | null;
+  entry_type: string | null;
+  entry_date: string | null;
+  amount: string;
+  full: boolean;
+}
+
+interface Aging {
+  current: string; d30: string; d60: string; d90: string; older: string; total: string;
 }
 
 interface StatementOut {
@@ -52,6 +75,11 @@ interface StatementOut {
   total_debit: string;
   total_credit: string;
   lines: StatementLine[];
+  /** المستحق على كل السطور المفتوحة حتى تاريخ القفل — لا مجموع الفترة المعروضة. */
+  total_due?: string;
+  total_overdue?: string;
+  aging?: Aging;
+  reconcilable?: boolean;
 }
 
 const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
@@ -100,6 +128,9 @@ export default function AccountStatement() {
   );
   const [expandedKeys, setExpandedKeys] = useState<readonly React.Key[]>([]);
   const [showStock, setShowStock] = useState(false);
+  // التجميع بالشهر أو بنوع الحركة — كما يفعل أودو. الفكرة أن السطور تُطوى إلى
+  // مجاميع تُقرأ أولاً، ثم تُفتح المجموعة التي تهمّ.
+  const [groupBy, setGroupBy] = useState<'none' | 'month' | 'type'>('none');
   const [entryCache, setEntryCache] = useState<Record<number, any>>({});
   const [entryBusy, setEntryBusy] = useState<Record<number, boolean>>({});
   const [costCenters, setCostCenters] = useState<any[]>([]);
@@ -349,6 +380,12 @@ export default function AccountStatement() {
 
   const filtering = !!(repFilter || ccFilter.length || typeFilter.length
     || query.trim() || docNo.trim() || hideZero);
+  // حساب ذمم؟ أعمدة المطابقة لا معنى لها على حساب إيراد أو خزينة، وعرضها فارغة
+  // يجعل الشاشة تبدو ناقصة بدل أن تبدو غير منطبقة.
+  const reconcilable = !!statement?.reconcilable;
+  const aging = statement?.aging;
+  const totalDue = Number(statement?.total_due || 0);
+  const totalOverdue = Number(statement?.total_overdue || 0);
   const runningOf = useMemo(() => {
     const m = new Map<string, number>();
     let acc = 0;
@@ -451,6 +488,36 @@ export default function AccountStatement() {
       ...numberColumn<StatementLine>((l) => l.balance),
       sorter: (a: StatementLine, b: StatementLine) => Number(a.balance) - Number(b.balance),
       render: (v: string) => <b>{num(v)}</b> },
+    ...(reconcilable ? [{
+      title: 'المتبقّي',
+      dataIndex: 'residual',
+      align: 'left' as const,
+      ...numberColumn<StatementLine>((l) => Math.abs(Number(l.residual || 0))),
+      sorter: (a: StatementLine, b: StatementLine) =>
+        Math.abs(Number(a.residual || 0)) - Math.abs(Number(b.residual || 0)),
+      // الصفر هنا معلومة: السطر أُقفل بالكامل. لذلك «مسدَّد» بدل شَرطة — الشَرطة
+      // تُقرأ «لا ينطبق»، وهي تنطبق تماماً وجوابها صفر.
+      render: (_: unknown, l: StatementLine) => {
+        const open = Math.abs(Number(l.residual || 0));
+        if (l.residual === null || l.residual === undefined) return <span style={{ color: '#8c8c8c' }}>-</span>;
+        if (!open) return <Tag color="green">مسدَّد</Tag>;
+        return <b style={{ color: l.days_overdue ? '#cf1322' : '#b26a00' }}>{num(open)}</b>;
+      },
+    }, {
+      title: 'الاستحقاق',
+      key: 'due',
+      align: 'center' as const,
+      render: (_: unknown, l: StatementLine) => {
+        if (!Number(l.residual || 0)) return <span style={{ color: '#8c8c8c' }}>-</span>;
+        const due = l.due_date ? String(l.due_date).slice(0, 10) : String(l.entry_date || '').slice(0, 10);
+        return (
+          <Space direction="vertical" size={0}>
+            <span>{due}</span>
+            {!!l.days_overdue && <Tag color="red">متأخر {l.days_overdue} يوم</Tag>}
+          </Space>
+        );
+      },
+    }] : []),
     { title: 'المستند', key: 'doc', align: 'center',
       ...textColumn(lines, (l: StatementLine) => l.doc_number),
       render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
@@ -484,6 +551,21 @@ export default function AccountStatement() {
         };
       case 'balance': return { title: LABELS.after, value: 'balance', numeric: true };
       case 'doc': return { title: 'المستند', value: (l) => l.doc_number ?? '' };
+      case 'residual':
+        return {
+          title: 'المتبقّي',
+          value: (l) => (l.residual === null || l.residual === undefined
+            ? '' : num(Math.abs(Number(l.residual || 0)))),
+          numeric: true,
+        };
+      case 'due':
+        return {
+          title: 'الاستحقاق',
+          value: (l) => (Number(l.residual || 0)
+            ? `${String(l.due_date || l.entry_date || '').slice(0, 10)}`
+              + (l.days_overdue ? ` (متأخر ${l.days_overdue} يوم)` : '')
+            : ''),
+        };
       default: return null;
     }
   };
@@ -537,6 +619,18 @@ export default function AccountStatement() {
         { label: `إجمالي ${LABELS.credit} (المعروض)`,
           value: money(shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)) },
         { label: 'الرصيد الختامي', value: money(statement.closing_balance) },
+        // الورقة المرسَلة للعميل لازم تقول «عليك كام» و«منها متأخر كام» — الرصيد
+        // الختامي وحده بيسيبه يجمع بنفسه، والمتأخر مابيبانش فيه خالص.
+        ...(reconcilable ? [
+          { label: 'إجمالي المستحق', value: money(totalDue) },
+          { label: 'منه متأخر', value: money(totalOverdue) },
+          ...(aging ? [{
+            label: 'أعمار المستحق',
+            value: `الحالي ${money(aging.current)} · ٣٠ ${money(aging.d30)}`
+              + ` · ٦٠ ${money(aging.d60)} · ٩٠ ${money(aging.d90)}`
+              + ` · أقدم ${money(aging.older)}`,
+          }] : []),
+        ] : []),
       ],
     );
   };
@@ -550,6 +644,31 @@ export default function AccountStatement() {
     const w = warehouses.find((x: any) => x.id === id);
     return w ? w.name : `مخزن #${id}`;
   };
+
+  /** السطور مقسومة إلى مجموعات بمجاميعها. المفتاح يُشتَق من السطر نفسه لا من
+   *  ترتيبه، فالفرز داخل الجدول لا يفكّ المجموعات. */
+  const groups = useMemo(() => {
+    if (groupBy === 'none') return [];
+    const map = new Map<string, { key: string; label: string; rows: StatementLine[] }>();
+    for (const l of shownLines) {
+      const key = groupBy === 'month'
+        ? String(l.entry_date || '').slice(0, 7)
+        : String(l.entry_type || '');
+      const label = groupBy === 'month'
+        ? (key ? dayjs(`${key}-01`).format('MMMM YYYY') : 'بدون تاريخ')
+        : entryTypeLabel(key);
+      if (!map.has(key)) map.set(key, { key, label, rows: [] });
+      map.get(key)!.rows.push(l);
+    }
+    return [...map.values()]
+      .map((g) => ({
+        ...g,
+        debit: g.rows.reduce((t, l) => t + Number(l.debit || 0), 0),
+        credit: g.rows.reduce((t, l) => t + Number(l.credit || 0), 0),
+        overdue: g.rows.reduce((t, l) => t + (l.days_overdue ? Math.abs(Number(l.residual || 0)) : 0), 0),
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  }, [shownLines, groupBy]);
 
   const acctName = (id: number) => {
     const a = accounts.find((x: any) => x.id === id);
@@ -566,6 +685,51 @@ export default function AccountStatement() {
     setSubject('account');
     setMainKey(undefined);
     setAccountId(id);
+  };
+
+  /** «هذا السطر أُقفل على ماذا» — الدفعة تقول أي فواتير سدّدت، والفاتورة تقول بأي
+   *  دفعات سُدِّدت. الجدول واحد مقروء من الوجهين، وهذا ما يجعل الرقم قابلاً للمراجعة
+   *  بدل أن يكون حصيلة جمع في رأس القارئ. */
+  const matchBlock = (l: StatementLine) => {
+    const rows = l.matches ?? [];
+    if (!rows.length && !Number(l.residual || 0)) return null;
+    const open = Math.abs(Number(l.residual || 0));
+    return (
+      <div style={{ marginTop: 10 }}>
+        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+          المطابقة
+          {l.payment_state_label && <Tag style={{ marginInlineStart: 6 }}
+            color={l.payment_state === 'paid' ? 'green'
+              : l.payment_state === 'partial' ? 'orange' : 'red'}>
+            {l.payment_state_label}
+          </Tag>}
+        </div>
+        {rows.length ? (
+          <Space direction="vertical" size={2} style={{ width: '100%' }}>
+            {rows.map((m) => (
+              <div key={m.line_id} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <Tag color={m.full ? 'green' : 'orange'} style={{ margin: 0 }}>
+                  {m.full ? 'مقفول' : 'جزئي'}
+                </Tag>
+                <span style={{ color: '#8c8c8c' }}>{String(m.entry_date || '').slice(0, 10)}</span>
+                <span>{m.entry_number || (m.entry_type ? entryTypeLabel(m.entry_type) : '—')}</span>
+                <b style={{ marginInlineStart: 'auto' }}>{num(m.amount)}</b>
+              </div>
+            ))}
+          </Space>
+        ) : (
+          <span style={{ color: '#8c8c8c' }}>لم يُقفل على شيء بعد</span>
+        )}
+        {!!open && (
+          <div style={{ marginTop: 6 }}>
+            ما زال مفتوحاً: <b style={{ color: l.days_overdue ? '#cf1322' : '#b26a00' }}>{num(open)}</b>
+            {!!l.days_overdue && <Tag color="red" style={{ marginInlineStart: 6 }}>
+              متأخر {l.days_overdue} يوم
+            </Tag>}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const rowDetail = (l: StatementLine) => {
@@ -593,6 +757,7 @@ export default function AccountStatement() {
           {head}
           <DocumentItemLines kind={l.doc_kind} id={l.doc_id}
             itemName={itemNameOf} warehouseName={whName} money={money} />
+          {matchBlock(l)}
         </div>
       );
     }
@@ -624,6 +789,7 @@ export default function AccountStatement() {
           ) : (
             <span style={{ color: '#8c8c8c' }}>لا توجد لهذه الحركة تفاصيل زائدة عمّا في السطر</span>
           )}
+          {matchBlock(l)}
         </div>
       );
     }
@@ -652,6 +818,7 @@ export default function AccountStatement() {
           onOpenAccount={openAccount}
           money={money}
         />
+        {matchBlock(l)}
       </div>
     );
   };
@@ -834,6 +1001,49 @@ export default function AccountStatement() {
             </Col>
           </Row>
 
+          {reconcilable && (
+            <Card size="small" style={{ marginBottom: 12 }}
+              styles={{ body: { padding: '10px 12px' } }}>
+              <Row gutter={[8, 8]} align="middle">
+                <Col xs={12} md={5}>
+                  <Statistic title="إجمالي المستحق" value={num(totalDue)}
+                    valueStyle={{ color: totalDue ? '#0B5CA8' : undefined, fontSize: 20 }} />
+                </Col>
+                <Col xs={12} md={5}>
+                  <Statistic title="منه متأخر" value={num(totalOverdue)}
+                    valueStyle={{ color: totalOverdue ? '#cf1322' : '#52c41a', fontSize: 20 }} />
+                </Col>
+                <Col xs={24} md={14}>
+                  {/* أعمار الدين — الشرائح نفسها التي يقرؤها تقرير الأعمار، من نفس
+                      الحساب في السيرفر. رقمان لنفس السؤال في شاشتين يتفقان بالصدفة
+                      لا بالبناء، وأول يوم يختلفان لا أحد يعرف أيهما الصحيح. */}
+                  <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+                    أعمار المستحق
+                  </div>
+                  <Space size={4} wrap>
+                    {([
+                      ['الحالي', aging?.current, '#52c41a'],
+                      ['١–٣٠ يوم', aging?.d30, '#faad14'],
+                      ['٣١–٦٠', aging?.d60, '#fa8c16'],
+                      ['٦١–٩٠', aging?.d90, '#f5222d'],
+                      ['أقدم من ٩٠', aging?.older, '#a8071a'],
+                    ] as [string, string | undefined, string][]).map(([label, value, color]) => (
+                      <Tag key={label} color={Number(value || 0) ? color : undefined}
+                        style={{ margin: 0 }}>
+                        {label}: <b>{num(value || 0)}</b>
+                      </Tag>
+                    ))}
+                  </Space>
+                </Col>
+              </Row>
+              {!totalDue && (
+                <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
+                  لا يوجد مستحق مفتوح على هذا الحساب.
+                </div>
+              )}
+            </Card>
+          )}
+
           {filtering && (
             <Alert
               type="info" showIcon style={{ marginBottom: 12 }}
@@ -851,6 +1061,17 @@ export default function AccountStatement() {
             />
           )}
 
+          <Space style={{ marginBottom: 8 }} wrap>
+            <span style={{ color: '#8c8c8c' }}>تجميع:</span>
+            <Select size="small" style={{ width: 150 }} value={groupBy}
+              onChange={(v) => setGroupBy(v)}
+              options={[
+                { value: 'none', label: 'بدون تجميع' },
+                { value: 'month', label: 'بالشهر' },
+                { value: 'type', label: 'بنوع الحركة' },
+              ]} />
+          </Space>
+
           <div style={{ marginBottom: 8 }}>
             <Checkbox checked={showStock} onChange={(e) => {
               const on = e.target.checked;
@@ -861,6 +1082,65 @@ export default function AccountStatement() {
             </Checkbox>
           </div>
 
+          {groupBy !== 'none' ? (
+            /* المجموعة أولاً ومجاميعها، وتُفتح فتُعرض سطورها بنفس أعمدة الجدول
+               وبنفس تفاصيل السطر — لا نسخة ثانية من الشاشة تتأخّر عن الأصل. */
+            <Table
+              size="small" loading={loading} rowKey="key" dataSource={groups}
+              pagination={false}
+              locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
+              columns={[
+                { title: groupBy === 'month' ? 'الشهر' : 'نوع الحركة', dataIndex: 'label',
+                  render: (v: string) => <b>{v}</b> },
+                { title: 'عدد الحركات', dataIndex: 'rows', align: 'center',
+                  render: (r: StatementLine[]) => r.length },
+                { title: LABELS.debit, dataIndex: 'debit', align: 'left',
+                  render: (v: number) => num(v) },
+                { title: LABELS.credit, dataIndex: 'credit', align: 'left',
+                  render: (v: number) => num(v) },
+                { title: 'الصافي', key: 'net', align: 'left',
+                  render: (_: unknown, g: any) => <b>{num(g.debit - g.credit)}</b> },
+                ...(reconcilable ? [{
+                  title: 'متأخر', dataIndex: 'overdue', align: 'left' as const,
+                  render: (v: number) => (v
+                    ? <b style={{ color: '#cf1322' }}>{num(v)}</b>
+                    : <span style={{ color: '#8c8c8c' }}>-</span>),
+                }] : []),
+              ]}
+              expandable={{
+                expandedRowRender: (g: any) => (
+                  <Table<StatementLine>
+                    rowKey={rowKeyOf} size="small" dataSource={g.rows}
+                    pagination={false} scroll={{ x: 'max-content' }}
+                    columns={tableCols.columns}
+                    rowClassName={(l) => (l.days_overdue ? 'statement-overdue' : '')}
+                    expandable={{
+                      expandedRowKeys: expandedKeys,
+                      onExpand: (_open, l) => toggleRow(l),
+                      expandedRowRender: rowDetail,
+                    }}
+                  />
+                ),
+              }}
+              summary={() => {
+                const td = groups.reduce((t, g) => t + g.debit, 0);
+                const tc = groups.reduce((t, g) => t + g.credit, 0);
+                return (
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={2}><b>الإجمالي</b></Table.Summary.Cell>
+                    <Table.Summary.Cell index={1}><b>{num(td)}</b></Table.Summary.Cell>
+                    <Table.Summary.Cell index={2}><b>{num(tc)}</b></Table.Summary.Cell>
+                    <Table.Summary.Cell index={3}><b>{num(td - tc)}</b></Table.Summary.Cell>
+                    {reconcilable && <Table.Summary.Cell index={4}>
+                      <b style={{ color: '#cf1322' }}>
+                        {num(groups.reduce((t, g) => t + g.overdue, 0))}
+                      </b>
+                    </Table.Summary.Cell>}
+                  </Table.Summary.Row>
+                );
+              }}
+            />
+          ) : (
           <Table<StatementLine>
             {...kb.tableProps}
             rowKey={rowKeyOf}
@@ -869,6 +1149,7 @@ export default function AccountStatement() {
             pagination={{ defaultPageSize: 25, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
             columns={tableCols.columns}
+            rowClassName={(l) => (l.days_overdue ? 'statement-overdue' : '')}
             expandable={{
               expandedRowKeys: expandedKeys,
               onExpand: (_open, l) => toggleRow(l),
@@ -892,6 +1173,7 @@ export default function AccountStatement() {
               );
             }}
           />
+          )}
         </>
       )}
     </Card>

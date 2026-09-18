@@ -18,7 +18,8 @@ from src.core.money import ZERO, to_money
 from src.models.cost_center import CostCenter
 from src.models.user import User
 from src.models.ledger import Account, LedgerEntry, LedgerLine
-from src.services import ledger_service
+from src.models.reconcile import PartialReconcile
+from src.services import ledger_service, reconcile_service
 
 
 class StatementError(Exception):
@@ -52,6 +53,31 @@ class StatementLine:
     # المكرر، فالشاشة بتخفيهم؛ هنا هما المعلومة.
     account_id: int | None = None
     account_name: str | None = None
+    # ── المطابقة (زي أودو) ────────────────────────────────────────────────────
+    # السطر بيقول قيمته **واللي لسه مفتوح منها**. الكشف اللي بيعرض القيمة بس بيخلّي
+    # اللي بيقراه يجمع الدفعات بنفسه عشان يعرف الفاتورة دي عليها كام لسه — وده
+    # بالظبط السؤال اللي بيتفتح الكشف عشانه.
+    line_id: int | None = None
+    residual: Decimal | None = None        # None = حساب مابيتقفلش (مش ذمم)
+    due_date: date | None = None
+    days_overdue: int | None = None        # موجب = فات ميعاده، None = مش مستحق بعد
+    payment_state: str | None = None
+    payment_state_label: str | None = None
+    # المستندات اللي قفلت جزء من السطر ده: الدفعة بتقول سدّدت أنهي فواتير، والفاتورة
+    # بتقول اتسدّدت بأنهي دفعات — نفس الجدول مقروء من الوشين.
+    matches: tuple = ()
+
+
+@dataclass(frozen=True)
+class AgingBuckets:
+    """أعمار المستحق على تاريخ الكشف. الشرائح زي أودو: الحالي ثم ٣٠/٦٠/٩٠ ثم أقدم."""
+
+    current: Decimal = ZERO
+    d30: Decimal = ZERO
+    d60: Decimal = ZERO
+    d90: Decimal = ZERO
+    older: Decimal = ZERO
+    total: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -68,10 +94,139 @@ class Statement:
     # self-locating, and two charts can hold a name that reads the same at different levels.
     main_account_id: int | None = None
     main_account_name: str | None = None
+    # ── المستحق (زي أودو) ─────────────────────────────────────────────────────
+    # **بيتحسب على كل السطور المفتوحة لحد تاريخ القفل، مش على الفترة المعروضة.**
+    # «هو عليه كام» سؤال عن الحساب، مش عن الشباك اللي فتحته: عميل عليه فاتورة من
+    # يناير وأنا فاتح كشف سبتمبر لازم أشوفها في المستحق، وإلا الرقم بيطمّن غلط.
+    total_due: Decimal = ZERO
+    total_overdue: Decimal = ZERO
+    aging: AgingBuckets = AgingBuckets()
+    reconcilable: bool = False   # حساب ذمم؟ لو لأ، أعمدة المطابقة مالهاش معنى
 
 
 def _effective_date(entry: LedgerEntry) -> date:
     return entry.entry_date or entry.created_at.date()
+
+
+def _matches_by_line(db: Session, line_ids: list[int]) -> dict[int, list[dict]]:
+    """المستندات اللي قفلت جزء من كل سطر — استعلامين مهما كان عدد السطور.
+
+    استعلام لكل سطر على كشف فيه ٤٠٠ حركة = ٤٠٠ رحلة للقاعدة، والكشف بيبقى بيفتح
+    في تانية بدل ما يفتح.
+    """
+    if not line_ids:
+        return {}
+    wanted = set(line_ids)
+    pairs = db.scalars(
+        select(PartialReconcile).where(
+            (PartialReconcile.debit_line_id.in_(wanted))
+            | (PartialReconcile.credit_line_id.in_(wanted))
+        )
+    ).all()
+    if not pairs:
+        return {}
+
+    # الطرف التاني لكل ربط — سطر واحد ممكن يكون مقفول على كذا مستند.
+    other_ids = set()
+    for pair in pairs:
+        other_ids.add(pair.debit_line_id)
+        other_ids.add(pair.credit_line_id)
+    others = {
+        line.id: line
+        for line in db.scalars(
+            select(LedgerLine).options(selectinload(LedgerLine.entry))
+            .where(LedgerLine.id.in_(other_ids))
+        ).all()
+    }
+
+    out: dict[int, list[dict]] = {}
+    for pair in pairs:
+        for mine, theirs in ((pair.debit_line_id, pair.credit_line_id),
+                             (pair.credit_line_id, pair.debit_line_id)):
+            if mine not in wanted:
+                continue
+            other = others.get(theirs)
+            entry = other.entry if other is not None else None
+            out.setdefault(mine, []).append({
+                "line_id": theirs,
+                "entry_id": entry.id if entry else None,
+                "entry_number": entry.number if entry else None,
+                "entry_type": entry.entry_type if entry else None,
+                "entry_date": (_effective_date(entry).isoformat() if entry else None),
+                "amount": str(to_money(pair.amount)),
+                "full": pair.full_reconcile_id is not None,
+            })
+    return out
+
+
+def _days_overdue(line: LedgerLine, when: date, as_of: date) -> int | None:
+    """كام يوم فات على استحقاق السطر ده. `None` لو مافيش متبقّي — يعني اتقفل خلاص."""
+    if line.amount_residual is None or to_money(line.amount_residual) == ZERO:
+        return None
+    due = line.date_maturity or when
+    days = (as_of - due).days
+    return days if days > 0 else None
+
+
+def _age_bucket(days: int) -> str:
+    """الشريحة اللي المبلغ ده وقع فيها. السالب = لسه مااستحقّش."""
+    if days <= 0:
+        return "current"
+    if days <= 30:
+        return "d30"
+    if days <= 60:
+        return "d60"
+    if days <= 90:
+        return "d90"
+    return "older"
+
+
+def due_summary(
+    db: Session, *, account_ids: Sequence[int], as_of: date | None = None,
+) -> tuple[Decimal, Decimal, AgingBuckets]:
+    """المستحق والمتأخر وأعمار الديون على حساب (أو مجموعة حسابات) في تاريخ.
+
+    بيقرا **السطور المفتوحة** — اللي `amount_residual` بتاعها مش صفر — لحد التاريخ
+    ده، مش حركة فترة. ده اللي بيخلّي رقم «عليه كام» هو نفسه في الكشف وفي كارت العميل
+    وفي تقرير الأعمار: مصدر واحد، مش تلات حسابات بتتفق بالصدفة.
+    """
+    today = as_of or date.today()
+    rows = db.scalars(
+        select(LedgerLine)
+        .options(selectinload(LedgerLine.entry))
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(LedgerLine.account_id.in_(list(account_ids)),
+               LedgerLine.amount_residual.isnot(None),
+               ledger_service.is_posted_sql())
+    ).all()
+
+    buckets = {"current": ZERO, "d30": ZERO, "d60": ZERO, "d90": ZERO, "older": ZERO}
+    total = overdue = ZERO
+    for line in rows:
+        residual = to_money(line.amount_residual)
+        if residual == ZERO:
+            continue
+        when = _effective_date(line.entry)
+        if when > today:
+            continue
+        total += residual
+        # الاستحقاق من السطر لو مكتوب، وإلا من تاريخ القيد — الفاتورة النقدية
+        # مستحقة يوم ما اتكتبت، ومعاملتها كأنها مالهاش ميعاد بتخفيها عن المتأخر.
+        due = line.date_maturity or when
+        days = (today - due).days
+        buckets[_age_bucket(days)] += residual
+        if days > 0:
+            overdue += residual
+
+    return (
+        to_money(total),
+        to_money(overdue),
+        AgingBuckets(
+            current=to_money(buckets["current"]), d30=to_money(buckets["d30"]),
+            d60=to_money(buckets["d60"]), d90=to_money(buckets["d90"]),
+            older=to_money(buckets["older"]), total=to_money(total),
+        ),
+    )
 
 
 def account_statement(
@@ -141,6 +296,10 @@ def account_statement(
     balance = to_money(opening)
     total_debit = total_credit = ZERO
     lines: list[StatementLine] = []
+    # المطابقة بتتجاب مرة واحدة لكل سطور الشباك — الاستعلام جوّه الحلقة كان هيخلّي
+    # الكشف بيفتح في تانية.
+    matches = _matches_by_line(db, [line.id for _when, line in window])
+    as_of = date_to or date.today()
     for when, line in window:
         amount = to_money(line.amount)
         is_debit = line.direction.value == "debit"
@@ -163,7 +322,25 @@ def account_statement(
             rep_name=reps.get(line.entry.rep_id),
             account_id=line.account_id,
             account_name=name_of(line.account_id),
+            line_id=line.id,
+            residual=(to_money(line.amount_residual)
+                      if line.amount_residual is not None else None),
+            due_date=line.date_maturity,
+            # المتأخر بيتقاس على **تاريخ قفل الكشف** مش على النهاردة: كشف مقفول على
+            # آخر يونيو لازم يقول التأخير اللي كان وقتها، وإلا الورقة المطبوعة
+            # بتتغيّر كل يوم وهي مفترض تكون صورة لحظة.
+            days_overdue=_days_overdue(line, when, as_of),
+            payment_state=line.entry.payment_state,
+            payment_state_label=reconcile_service.PAYMENT_STATE_LABEL.get(
+                line.entry.payment_state or ""),
+            matches=tuple(matches.get(line.id, ())),
         ))
+
+    reconcilable = reconcile_service.is_reconcilable(account)
+    total_due = total_overdue = ZERO
+    aging = AgingBuckets()
+    if reconcilable:
+        total_due, total_overdue, aging = due_summary(db, account_ids=ids, as_of=date_to)
 
     parent = db.get(Account, account.parent_id) if account.parent_id else None
     # A customer's or supplier's account carries no `name` — the party's name lives on the party,
@@ -177,4 +354,6 @@ def account_statement(
         main_account_name=(parent.name or f"#{parent.id}") if parent else None,
         opening_balance=to_money(opening), closing_balance=balance,
         total_debit=to_money(total_debit), total_credit=to_money(total_credit), lines=lines,
+        total_due=total_due, total_overdue=total_overdue, aging=aging,
+        reconcilable=reconcilable,
     )

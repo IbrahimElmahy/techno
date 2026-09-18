@@ -63,6 +63,12 @@ interface StatementLine {
   raw?: any;
   _serial?: number;
   _key?: string;
+  // ── المطابقة (نفس حقول كشف الحساب — المصدر واحد) ──────────────────────────
+  residual?: string | null;
+  due_date?: string | null;
+  days_overdue?: number | null;
+  payment_state?: string | null;
+  payment_state_label?: string | null;
 }
 
 interface ProfileData {
@@ -529,6 +535,24 @@ export default function SupplierProfile() {
       ...numberColumn<StatementLine>((l) => l.balance),
       sorter: (a: StatementLine, b: StatementLine) => Number(a.balance) - Number(b.balance),
       render: (v: string) => <b>{money(v)}</b> },
+    ...(statement?.reconcilable ? [{
+      title: 'المتبقّي',
+      dataIndex: 'residual',
+      align: 'left' as const,
+      render: (_: unknown, l: StatementLine) => {
+        if (l.residual === null || l.residual === undefined) {
+          return <span style={{ color: '#8c8c8c' }}>-</span>;
+        }
+        const open = Math.abs(Number(l.residual || 0));
+        if (!open) return <Tag color="green">مسدَّد</Tag>;
+        return (
+          <Space direction="vertical" size={0}>
+            <b style={{ color: l.days_overdue ? '#cf1322' : '#b26a00' }}>{money(open)}</b>
+            {!!l.days_overdue && <Tag color="red">متأخر {l.days_overdue} يوم</Tag>}
+          </Space>
+        );
+      },
+    }] : []),
     { title: 'المستند', key: 'doc', align: 'center',
       ...textColumn(statementLines, (l: StatementLine) => l.doc_number),
       render: (_: unknown, l: StatementLine) => (l.doc_kind && l.doc_id ? (
@@ -769,6 +793,44 @@ export default function SupplierProfile() {
                               </Card>
                             </Col>
                           </Row>
+
+                          {statement?.reconcilable && (
+                            <Card size="small" style={{ marginBottom: 12 }}
+                              styles={{ body: { padding: '10px 12px' } }}>
+                              <Row gutter={[8, 8]} align="middle">
+                                <Col xs={12} md={5}>
+                                  <Statistic title="إجمالي المستحق للمورد"
+                                    value={money(statement.total_due || 0)} suffix="ج.م"
+                                    valueStyle={{ fontSize: 20, color: '#0B5CA8' }} />
+                                </Col>
+                                <Col xs={12} md={5}>
+                                  <Statistic title="منه متأخر"
+                                    value={money(statement.total_overdue || 0)} suffix="ج.م"
+                                    valueStyle={{ fontSize: 20,
+                                      color: Number(statement.total_overdue || 0) ? '#cf1322' : '#52c41a' }} />
+                                </Col>
+                                <Col xs={24} md={14}>
+                                  <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+                                    أعمار المستحق
+                                  </div>
+                                  <Space size={4} wrap>
+                                    {([
+                                      ['الحالي', statement.aging?.current, '#52c41a'],
+                                      ['١–٣٠ يوم', statement.aging?.d30, '#faad14'],
+                                      ['٣١–٦٠', statement.aging?.d60, '#fa8c16'],
+                                      ['٦١–٩٠', statement.aging?.d90, '#f5222d'],
+                                      ['أقدم من ٩٠', statement.aging?.older, '#a8071a'],
+                                    ] as [string, any, string][]).map(([label, value, color]) => (
+                                      <Tag key={label} style={{ margin: 0 }}
+                                        color={Number(value || 0) ? color : undefined}>
+                                        {label}: <b>{money(value || 0)}</b>
+                                      </Tag>
+                                    ))}
+                                  </Space>
+                                </Col>
+                              </Row>
+                            </Card>
+                          )}
 
                           {filtering && (
                             <Alert

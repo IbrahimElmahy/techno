@@ -740,6 +740,18 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-inline-start: 3px solid #faad14;
 }
 
+/* السطر المتأخر في كشف الحساب — نفس فكرة المسودة: خلفية **وشريط جانبي**، لأن اللي
+   عنده صعوبة في تمييز الألوان بيشوف الخط مش الأحمر الفاتح. */
+.ant-table-row.statement-overdue > td {
+  background: #fff1f0 !important;
+}
+.ant-table-row.statement-overdue:hover > td {
+  background: #ffccc7 !important;
+}
+.ant-table-row.statement-overdue > td:first-child {
+  border-inline-start: 3px solid #cf1322;
+}
+
 /*
  * شريط الأقسام العلوي — كل الأقسام بتتعرض، وبتلفّ لما المكان يضيق.
  *
