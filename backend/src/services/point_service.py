@@ -11,6 +11,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.models.loyalty import (
+    PURSE_BY_KIND,
+    PointPurse,
     Coupon,
     CouponStatus,
     CouponType,
@@ -30,14 +32,15 @@ def _points(value) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.001"))
 
 
-def balance(db: Session, customer_id: int) -> Decimal:
-    """Derived point balance = Σ delta over the customer's records (may be negative)."""
-    total = db.scalar(
-        select(func.coalesce(func.sum(PointRecord.delta), 0)).where(
-            PointRecord.customer_id == customer_id
-        )
-    )
-    return _points(total)
+def balance(db: Session, customer_id: int, purse: PointPurse | None = None) -> Decimal:
+    """رصيد جيب. `purse=None` مجموع الدفتر كله — مش رصيد أي جيب لوحده.
+
+    مندوبة لـ`points_service` عشان شرط الجيب يفضل مكتوب مرة واحدة: نسختين من نفس
+    الشرط هي بالظبط الطريقة اللي الشاشة بتقول بيها رقم والكشف يقول غيره.
+    """
+    from src.services import points_service
+
+    return points_service.balance(db, customer_id, purse)
 
 
 def _post_record(
@@ -56,6 +59,10 @@ def _post_record(
     rec = PointRecord(
         customer_id=customer_id,
         kind=kind,
+        # الكسب بيغذّي الجيبين (`both`)، والصرف بيتخصّص — والاشتقاق من النوع عشان
+        # مايبقاش فيه نداء ينسى يحطّ الجيب فيقع السطر في جيب غلط من غير ما حد يشوف.
+        purse=PURSE_BY_KIND.get(
+            kind.value if hasattr(kind, "value") else str(kind), PointPurse.both),
         delta=_points(delta),
         sales_invoice_id=sales_invoice_id,
         sales_return_id=sales_return_id,
@@ -165,7 +172,9 @@ def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_
     point cost exceeds the remaining available balance (FR-007/008)."""
     if not coupon_type_ids:
         raise PointError("اختار نوع كوبون واحد على الأقل.")
-    available = balance(db, customer_id)
+    # **من جيب الكوبونات وحده.** رصيد المعاينات بتاع نفس التاجر مش مصروف هنا،
+    # ولو حسبناه معاه يبقى التاجر بياخد كوبونات بنقط اتخصمت أصلاً في معاينة.
+    available = balance(db, customer_id, PointPurse.coupon)
     conversion = PointConversion(customer_id=customer_id, actor_user_id=actor_user_id)
     db.add(conversion)
     db.flush()

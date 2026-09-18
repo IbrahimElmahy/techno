@@ -20,7 +20,15 @@ from decimal import Decimal
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from src.models.loyalty import Coupon, PointKind, PointRecord
+from sqlalchemy import and_, or_
+
+from src.models.loyalty import (
+    PURSE_BY_KIND,
+    Coupon,
+    PointKind,
+    PointPurse,
+    PointRecord,
+)
 
 log = logging.getLogger("uvicorn.error")
 
@@ -39,6 +47,14 @@ KIND_LABELS: dict[str, str] = {
 }
 
 
+# أسماء الجيوب بالعربي — نفس سبب `KIND_LABELS`: الاسم في مكان واحد.
+PURSE_LABELS: dict[str, str] = {
+    "both": "الجيبين",
+    "inspection": "معاينات",
+    "coupon": "كوبونات",
+}
+
+
 def _points(value) -> Decimal:
     """النقط كسور (١/٦ نقطة مثلاً) — التقريب على ٣ خانات زي عمود القاعدة."""
     return Decimal(str(value if value is not None else 0)).quantize(Decimal("0.001"))
@@ -46,16 +62,45 @@ def _points(value) -> Decimal:
 
 # --- القراءة ---
 
-def balance(db: Session, customer_id: int) -> Decimal:
-    """رصيد العميل = مجموع دفتره. ممكن يطلع سالب (نقط مستهلكة أكتر من المكسوبة)."""
-    total = db.scalar(
-        select(func.coalesce(func.sum(PointRecord.delta), 0))
-        .where(PointRecord.customer_id == customer_id)
+def purse_filter(purse: PointPurse):
+    """شرط السطور اللي بتخصّ جيب معيّن: سطوره هو + سطور `both` المشتركة.
+
+    السطر القديم `purse` بتاعه NULL، فبيتحدد من `kind` — ودي مش حالة مؤقتة تستنى
+    سكربت: نوع الحركة هو اللي بيقرر الجيب أصلاً، والعمود موجود عشان **التسوية اليدوية**
+    اللي ممكن تتصوّب على جيب واحد. فالقراءة شغالة صح قبل الترحيل وبعده.
+    """
+    wanted = (PointPurse.both, purse)
+    legacy_kinds = [k for k, p in PURSE_BY_KIND.items() if p in wanted]
+    return or_(
+        PointRecord.purse.in_([p.value for p in wanted]),
+        and_(PointRecord.purse.is_(None), PointRecord.kind.in_(legacy_kinds)),
     )
-    return _points(total)
 
 
-def balances(db: Session, customer_ids: list[int] | None = None) -> dict[int, Decimal]:
+def balance(db: Session, customer_id: int, purse: PointPurse | None = None) -> Decimal:
+    """رصيد العميل في جيب. `purse=None` بترجع مجموع الدفتر كله.
+
+    **والمجموع ده مش رصيد أي جيب.** هو الكسب ناقص صرف الجيبين مع بعض، ومالوش معنى
+    قدام التاجر — موجود للتوافق مع نداء قديم واحد ولتشخيص الدفتر. اللي بيعرض رقم
+    للتاجر بيطلب جيب صراحةً.
+    """
+    stmt = select(func.coalesce(func.sum(PointRecord.delta), 0)).where(
+        PointRecord.customer_id == customer_id)
+    if purse is not None:
+        stmt = stmt.where(purse_filter(purse))
+    return _points(db.scalar(stmt))
+
+
+def purse_balances(db: Session, customer_id: int) -> dict[str, Decimal]:
+    """الجيبين مع بعض — ده اللي الشاشة بتعرضه للتاجر."""
+    return {
+        "inspection": balance(db, customer_id, PointPurse.inspection),
+        "coupon": balance(db, customer_id, PointPurse.coupon),
+    }
+
+
+def balances(db: Session, customer_ids: list[int] | None = None,
+             purse: PointPurse | None = None) -> dict[int, Decimal]:
     """أرصدة مجموعة عملاء في استعلام واحد.
 
     موجودة عشان الكشوف: `balance()` جوّه حلقة على ٢٨١ عميل = ٢٨١ رحلة للقاعدة. العميل
@@ -64,6 +109,8 @@ def balances(db: Session, customer_ids: list[int] | None = None) -> dict[int, De
     stmt = select(PointRecord.customer_id, func.coalesce(func.sum(PointRecord.delta), 0))
     if customer_ids:
         stmt = stmt.where(PointRecord.customer_id.in_(customer_ids))
+    if purse is not None:
+        stmt = stmt.where(purse_filter(purse))
     stmt = stmt.group_by(PointRecord.customer_id)
     return {cid: _points(total) for cid, total in db.execute(stmt).all()}
 
@@ -213,6 +260,13 @@ def ledger(
             "date": r.created_at.date().isoformat() if r.created_at else None,
             "kind": kind,
             "kind_label": KIND_LABELS.get(kind, kind),
+            # الجيب اللي السطر مسّه — مشتقّ من النوع للسطور القديمة اللي العمود
+            # فيها لسه فاضي، فالكشف بيقول نفس الكلام قبل الترحيل وبعده.
+            "purse": (r.purse.value if hasattr(r.purse, "value")
+                      else r.purse) or PURSE_BY_KIND.get(kind, PointPurse.both).value,
+            "purse_label": PURSE_LABELS.get(
+                (r.purse.value if hasattr(r.purse, "value") else r.purse)
+                or PURSE_BY_KIND.get(kind, PointPurse.both).value, ""),
             "delta": str(delta),
             "earned": str(delta if delta > 0 else ZERO),
             "spent": str(-delta if delta < 0 else ZERO),
@@ -253,6 +307,7 @@ def post(
     origin_earn_id: int | None = None,
     actor_user_id: int | None = None,
     created_at: datetime | None = None,
+    purse: PointPurse | None = None,
     flush: bool = True,
 ) -> PointRecord:
     """السطر الوحيد اللي بيكتب في الدفتر.
@@ -267,6 +322,10 @@ def post(
     record = PointRecord(
         customer_id=customer_id,
         kind=kind,
+        # الجيب مشتق من نوع الحركة إلا لو اللي بينده حدّده — والاستثناء الوحيد المقصود
+        # هو التسوية اليدوية على جيب واحد.
+        purse=purse or PURSE_BY_KIND.get(
+            kind.value if hasattr(kind, "value") else str(kind), PointPurse.both),
         delta=_points(delta),
         sales_invoice_id=sales_invoice_id,
         sales_return_id=sales_return_id,

@@ -63,12 +63,47 @@ class PointKind(str, enum.Enum):
     inspection_reverse = "inspection_reverse"
 
 
+class PointPurse(str, enum.Enum):
+    """الجيب اللي السطر بيتحرّك فيه.
+
+    النقطة الواحدة بتتكسب مرتين: مرة كرصيد معاينات ومرة كرصيد كوبونات. التاجر اللي
+    اشترى ٥٠ قطعة بقى عنده ٥٠ نقطة معاينة **و**٥٠ نقطة كوبونات — مش ٥٠ يتقسموا.
+
+    فالكسب بيتسجّل سطر واحد بـ`both`، والصرف بس هو اللي بيتخصّص: المعاينة بتاكل من
+    جيب المعاينات، وصرف الكوبونات من جيب الكوبونات. ورصيد أي جيب = مجموع سطور `both`
+    ناقص مجموع سطور الجيب ده.
+
+    الشكل ده مقصود بدل سطرين كسب: المرتجع بيرجّع من الجيبين بسطر واحد، والتاريخ
+    (٣٠٬٥٢٠ سطر) بيتحوّل بعمود واحد من غير ما نضاعف ولا سطر.
+    """
+
+    both = "both"              # كسب / مرتجع / تسوية — بيمس الجيبين مع بعض
+    inspection = "inspection"  # خصم معاينة
+    coupon = "coupon"          # صرف كوبونات
+
+
+# الجيب المشتق من نوع الحركة — ده اللي بيتكتب في العمود، وبيملا التاريخ كمان.
+PURSE_BY_KIND: dict[str, PointPurse] = {
+    "earn": PointPurse.both,
+    "reverse": PointPurse.both,
+    "adjustment": PointPurse.both,
+    "inspection": PointPurse.inspection,
+    "inspection_reverse": PointPurse.inspection,
+    "converted": PointPurse.coupon,
+    "void_reclaim": PointPurse.coupon,
+}
+
+
 class PointRecord(Base):
     __tablename__ = "point_record"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=False, index=True)
     kind: Mapped[PointKind] = mapped_column(Enum(PointKind), nullable=False)
+    # NULL = سطر اتكتب قبل الفصل؛ القراءة بتعامله بجيبه المشتق من `kind`، فالأرصدة
+    # القديمة مابتتغيّرش وهي مستنية السكربت.
+    purse: Mapped[PointPurse | None] = mapped_column(
+        Enum(PointPurse, native_enum=False, length=16), nullable=True, index=True)
     delta: Mapped[object] = mapped_column(POINTS, nullable=False)  # signed; fractional (v4)
     sales_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoice.id"), nullable=True)
     sales_return_id: Mapped[int | None] = mapped_column(ForeignKey("sales_return.id"), nullable=True)

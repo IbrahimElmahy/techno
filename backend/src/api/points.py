@@ -27,7 +27,13 @@ ledger_router = APIRouter(tags=["points"], prefix="/points")
 
 class PointBalanceOut(BaseModel):
     customer_id: int
+    # مجموع الدفتر كله — **مش رصيد أي جيب**. سايبينه عشان اللي بيقراه دلوقتي مايقعش،
+    # والشاشة بتعرض الجيبين تحت.
     balance: Decimal
+    # رصيد المعاينات ورصيد الكوبونات. النقطة المكسوبة بتدخل الاتنين، والصرف بيخصم من
+    # جيبه وحده — فالتاجر اللي خصمت منه معاينة لسه كوبوناته كاملة.
+    inspection_balance: Decimal
+    coupon_balance: Decimal
     derived: bool = True
 
 
@@ -51,7 +57,13 @@ def get_balance(
     _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> PointBalanceOut:
-    return PointBalanceOut(customer_id=customer_id, balance=point_service.balance(db, customer_id))
+    purses = points_service.purse_balances(db, customer_id)
+    return PointBalanceOut(
+        customer_id=customer_id,
+        balance=point_service.balance(db, customer_id),
+        inspection_balance=purses["inspection"],
+        coupon_balance=purses["coupon"],
+    )
 
 
 @router.post("/{customer_id}/points/convert", response_model=list[CouponOut],
@@ -86,6 +98,9 @@ class PointLedgerRow(BaseModel):
     date: str | None = None
     kind: str
     kind_label: str
+    # الجيب اللي السطر خصم منه أو غذّاه: معاينات · كوبونات · الجيبين.
+    purse: str | None = None
+    purse_label: str | None = None
     delta: str
     earned: str
     spent: str
@@ -104,6 +119,7 @@ class PointLedgerOut(BaseModel):
     net: str = "0.000"
     balance: str | None = None
     kinds: dict[str, str] = {}      # القيمة → الاسم العربي، عشان الفلتر يتبني من السيرفر
+    purses: dict[str, str] = {}     # نفس الفكرة لأسماء الجيوب
 
 
 @router.get("/{customer_id}/points/ledger", response_model=PointLedgerOut)
@@ -121,7 +137,8 @@ def customer_ledger(
     data = points_service.ledger(
         db, customer_id=customer_id, kinds=kind, date_from=date_from, date_to=date_to,
         limit=limit, offset=offset)
-    return PointLedgerOut(**data, kinds=points_service.KIND_LABELS)
+    return PointLedgerOut(**data, kinds=points_service.KIND_LABELS,
+                          purses=points_service.PURSE_LABELS)
 
 
 @ledger_router.get("/ledger", response_model=PointLedgerOut)
@@ -144,4 +161,5 @@ def points_ledger(
     data = points_service.ledger(
         db, customer_id=customer_id, kinds=kind, date_from=date_from, date_to=date_to,
         limit=limit, offset=offset)
-    return PointLedgerOut(**data, kinds=points_service.KIND_LABELS)
+    return PointLedgerOut(**data, kinds=points_service.KIND_LABELS,
+                          purses=points_service.PURSE_LABELS)

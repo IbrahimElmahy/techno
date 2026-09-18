@@ -329,6 +329,7 @@ def _load_permission_overrides() -> None:
 _ADDED_INDEXES: list[tuple[str, str, str]] = [
     # (اسم الفهرس، الجدول، الأعمدة)
     ("ix_point_record_inspection_id", "point_record", "inspection_id"),
+    ("ix_point_record_purse", "point_record", "purse"),
     # (المرحلة ٢) «وريني كل حركة العميل ده» بتلف على كل سطور الدفتر من غير الفهرس ده.
     ("ix_ledger_line_partner", "ledger_line", "partner_kind, partner_id"),
     ("ix_ledger_entry_partner", "ledger_entry", "partner_kind, partner_id"),
@@ -376,6 +377,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer", "service_rep_id", "BIGINT"),
     # المعاينة اللي خصمت النقط من رصيد التاجر — الرفض بيدوّر عليه عشان يرجّع الخصم مرة واحدة.
     ("point_record", "inspection_id", "BIGINT"),
+    # الجيب: معاينات ولا كوبونات. NULL = سطر قبل الفصل، والقراءة بتشتقّه من `kind`،
+    # فالعمود يقدر يتضاف على قاعدة شغّالة من غير ما رصيد يتغيّر ثانية واحدة.
+    ("point_record", "purse", "VARCHAR(16)"),
     ("inspection", "merchant_customer_id", "BIGINT"),
     ("inspection", "owner_id", "BIGINT"),
     ("owner", "governorate_id", "BIGINT"),
