@@ -356,10 +356,21 @@ def check_invoice_lines_without_cost(db: Session) -> Issue | None:
 
 
 def check_empty_invoices(db: Session) -> Issue | None:
-    """فاتورة من غير بنود — مستند بيقول باع ومش قايل باع إيه."""
+    """فاتورة من غير بنود — مستند بيقول باع ومش قايل باع إيه.
+
+    **وفاتورة الكوبونات مش منها.** تسليم دفاتر الكوبونات للتاجر بيتكتب فاتورة بضاعتها
+    صفر وكوبوناتها مكتوبة في `sales_invoice_coupon` — ودي مستند سليم، والخدمة نفسها
+    بتقبله صراحةً («لازم يكون فيها صنف **أو** دفتر كوبونات»). الفحص كان بيبلّغ عنه
+    كخطأ عالي الخطورة، والتقرير اللي بيقول «غلط» على حاجة صح بيخلّي اللي بيقراه يبطّل
+    يصدّقه — وساعتها الغلط الحقيقي بيعدّي معاه.
+    """
+    from src.models.sales import SalesInvoiceCoupon
+
+    with_coupons = select(SalesInvoiceCoupon.invoice_id).distinct().scalar_subquery()
     rows = db.execute(
         select(SalesInvoice.id, SalesInvoice.document_number, SalesInvoice.net)
         .outerjoin(SalesInvoiceLine, SalesInvoiceLine.invoice_id == SalesInvoice.id)
+        .where(SalesInvoice.id.not_in(with_coupons))
         .group_by(SalesInvoice.id, SalesInvoice.document_number, SalesInvoice.net)
         .having(func.count(SalesInvoiceLine.id) == 0)
     ).all()
