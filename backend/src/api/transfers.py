@@ -168,10 +168,13 @@ def _may_approve_now(db: Session, current: CurrentUser, t) -> bool:
         return False
     src_branch = transfer_service._location_branch(
         db, t.source_location_kind, t.source_location_id)
+    # نفس قاعدة `approve_transfer`: اللي بيشوف الفروع كلها بيعتمد لأي فرع. `is_admin`
+    # لوحدها معناها `system_admin` وبس، والمالك مالوش فرع فكان بيقع بين الاتنين.
+    sees_all = branch_scope.visible_branch_id(current) is None
     if src_branch is None:
-        return current.is_admin
-    return current.is_admin or (current.role == RoleName.branch_manager
-                                and current.branch_id == src_branch)
+        return sees_all
+    return sees_all or (current.role == RoleName.branch_manager
+                        and current.branch_id == src_branch)
 
 
 @router.post("/{transfer_id}/self-approve", response_model=TransferOut)
@@ -190,11 +193,18 @@ def self_approve(
         raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود"})
     if t.status != TransferStatus.pending or not _may_approve_now(db, current, t):
         return _out(t)
+        # **«بيشوف الفروع كلها» = بيعتمد لأي فرع.**
+        #
+        # `is_admin` معناها `system_admin` وبس، فالمالك — اللي عنده كل الصلاحيات ومالوش
+        # فرع — كان بيترفض بـ«الاعتماد لمدير فرع المصدر بس» وهو مش مدير أي فرع ولا
+        # المفروض يكون. `visible_branch_id` هي نفس القاعدة اللي القوايم بتتفلتر بيها:
+        # `None` يعني بيشوف كل الفروع، وساعتها الاعتماد لأي فرع بتاعه.
+        sees_all = branch_scope.visible_branch_id(current) is None
     try:
         t = transfer_service.approve(
             db, transfer_id=transfer_id, approver_role=current.role,
             approver_branch_id=current.branch_id, approver_user_id=current.id,
-            is_admin=current.is_admin)
+            is_admin=sees_all)
     except (TransferDenied, TransferError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "transfer_conflict", "message": str(exc)})
@@ -212,7 +222,7 @@ def approve_transfer(
         t = transfer_service.approve(
             db, transfer_id=transfer_id, approver_role=current.role,
             approver_branch_id=current.branch_id, approver_user_id=current.id,
-            is_admin=current.is_admin)
+            is_admin=branch_scope.visible_branch_id(current) is None)
     except TransferDenied as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "forbidden", "message": str(exc)})
     except (TransferError, StockError) as exc:

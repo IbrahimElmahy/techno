@@ -104,10 +104,18 @@ def require_capability(capability: str):
 # --- Scope predicates (branch isolation + rep isolation) ---
 
 def ensure_branch_access(current: CurrentUser, target_branch_id: int | None) -> None:
-    """Branch-scoped roles may only touch their own branch (FR-007). Admin bypasses."""
-    if current.is_admin:
+    """Branch-scoped roles may only touch their own branch (FR-007).
+
+    **واللي مالوش فرع بيعدّي** — هو حساب مركزي فوق الفروع، مش حساب فرع تايه. الشرط
+    القديم (`current.branch_id is None or ...`) كان بيرفضه: `None` بتتحسب «برّه الفرع»
+    فالمالك كان بياخد «Out-of-branch access denied» على كل حاجة بتعدّي من هنا.
+
+    دي نفس قاعدة `branch_scope.visible_branch_id` (مدير النظام أو اللي مالوش فرع =
+    بيشوف الكل)، متكتوبة هنا بإيدها لأن `branch_scope` بيستورد من الملف ده.
+    """
+    if current.is_admin or current.branch_id is None:
         return
-    if current.branch_id is None or current.branch_id != target_branch_id:
+    if current.branch_id != target_branch_id:
         raise _deny("Out-of-branch access denied.")
 
 
