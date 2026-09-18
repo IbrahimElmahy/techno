@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_INSPECTION_READ, CAP_INSPECTION_WRITE
 from src.core.db import get_db
+from src.lib import phones
 from src.models.inspection import Inspection
 from src.models.owner import Owner
 
@@ -24,6 +25,9 @@ router = APIRouter(tags=["owners"], prefix="/owners")
 class OwnerIn(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     phone: str | None = Field(default=None, max_length=32)
+    # الرقم التاني — **بيترجع زي الأول.** كان متخزّن ومش بيترجع خالص، فالخانة اللي
+    # اتعملت عشان «خدمة العملاء ماتفضلش ترنّ على رقم واحد لو مردّش» ماكانش حد شايفها.
+    phone2: str | None = Field(default=None, max_length=32)
     national_id: str | None = Field(default=None, max_length=32)
     address: str | None = Field(default=None, max_length=255)
     floor_number: str | None = Field(default=None, max_length=16)
@@ -37,6 +41,7 @@ class OwnerIn(BaseModel):
 class OwnerPatch(BaseModel):
     name: str | None = Field(default=None, max_length=160)
     phone: str | None = Field(default=None, max_length=32)
+    phone2: str | None = Field(default=None, max_length=32)
     national_id: str | None = Field(default=None, max_length=32)
     address: str | None = Field(default=None, max_length=255)
     floor_number: str | None = Field(default=None, max_length=16)
@@ -52,6 +57,7 @@ class OwnerListItem(BaseModel):
     code: str | None
     name: str
     phone: str | None
+    phone2: str | None
     national_id: str | None
     address: str | None
     floor_number: str | None
@@ -150,7 +156,8 @@ def list_owners(
             id=o.id,
             code=o.code,
             name=o.name,
-            phone=o.phone,
+            phone=phones.display(o.phone),
+            phone2=phones.display(o.phone2) or None,
             national_id=o.national_id,
             address=o.address,
             floor_number=o.floor_number,
@@ -189,7 +196,8 @@ def get_owner(
         id=owner.id,
         code=owner.code,
         name=owner.name,
-        phone=owner.phone,
+        phone=phones.display(owner.phone),
+        phone2=phones.display(owner.phone2) or None,
         national_id=owner.national_id,
         address=owner.address,
         floor_number=owner.floor_number,
@@ -211,7 +219,7 @@ def get_owner(
                 status=i.status.value if hasattr(i.status, "value") else str(i.status),
                 printed=i.printed,
                 technician_name=i.technician_name,
-                technician_phone=i.technician_phone,
+                technician_phone=phones.display(i.technician_phone) or None,
                 purchase_shop=i.purchase_shop,
                 total_points=i.total_points,
             )
@@ -228,7 +236,8 @@ def create_owner(
 ) -> OwnerListItem:
     owner = Owner(
         name=body.name.strip(),
-        phone=body.phone.strip() if body.phone else None,
+        phone=phones.normalize(body.phone),
+        phone2=phones.normalize(body.phone2),
         national_id=body.national_id.strip() if body.national_id else None,
         address=body.address.strip() if body.address else None,
         floor_number=body.floor_number.strip() if body.floor_number else None,
@@ -245,7 +254,8 @@ def create_owner(
         id=owner.id,
         code=owner.code,
         name=owner.name,
-        phone=owner.phone,
+        phone=phones.display(owner.phone),
+        phone2=phones.display(owner.phone2) or None,
         national_id=owner.national_id,
         address=owner.address,
         floor_number=owner.floor_number,
@@ -274,7 +284,9 @@ def update_owner(
     if body.name is not None:
         owner.name = body.name.strip()
     if body.phone is not None:
-        owner.phone = body.phone.strip() or None
+        owner.phone = phones.normalize(body.phone)
+    if body.phone2 is not None:
+        owner.phone2 = phones.normalize(body.phone2)
     if body.national_id is not None:
         owner.national_id = body.national_id.strip() or None
     if body.address is not None:
@@ -302,7 +314,8 @@ def update_owner(
         id=owner.id,
         code=owner.code,
         name=owner.name,
-        phone=owner.phone,
+        phone=phones.display(owner.phone),
+        phone2=phones.display(owner.phone2) or None,
         national_id=owner.national_id,
         address=owner.address,
         floor_number=owner.floor_number,

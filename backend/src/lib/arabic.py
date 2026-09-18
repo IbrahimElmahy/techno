@@ -38,6 +38,46 @@ _TO___ = "ااااوييه"
 # بيتشال خالص: التشكيل والتطويل. الحرف الفاضي في `translate` معناه «احذف».
 _STRIP = "ـًٌٍَُِّْٰ"
 
+# ---------------------------------------------------------------- الأرقام
+#
+# **الأرقام بتتعرض عربية، وبتتخزّن وبتتقارن إنجليزية.**
+#
+# اسم الصنف جاي من النقل بأرقام إنجليزية («بلاعة 2 ×1.5 تكنوو 7 سم») وسط كلام عربي،
+# والفلوس والكميات على نفس الشاشة بتتعرض بأرقام عربية (`toLocaleString('ar-EG')`).
+# فالسطر الواحد فيه الشكلين، والعين بتتلخبط.
+#
+# والتخزين بيفضل إنجليزي: الاسم المخزّن هو اللي بيتقارن بـa5، وأي سكربت بيطابق
+# بالاسم كان هيقع لو الحروف اتغيّرت تحته. فالتحويل عند القراءة بس.
+_EASTERN = "٠١٢٣٤٥٦٧٨٩"
+_WESTERN = "0123456789"
+# الأرقام الفارسية بتيجي من نسخ ولصق — بتتحسب نفس العربية.
+_PERSIAN = "۰۱۲۳۴۵۶۷۸۹"
+
+_TO_EASTERN = str.maketrans(_WESTERN, _EASTERN)
+_TO_WESTERN = str.maketrans(_EASTERN + _PERSIAN, _WESTERN + _WESTERN)
+
+
+def eastern_digits(text: str | None) -> str | None:
+    """الأرقام الإنجليزية في النص تبقى عربية — **للعرض بس**.
+
+        «بلاعة 2 ×1.5 تكنوو 7 سم»  →  «بلاعة ٢ ×١.٥ تكنوو ٧ سم»
+
+    الحروف والرموز مابتتلمسش، والعلامة العشرية بتفضل نقطة زي ما هي.
+    """
+    if text is None:
+        return None
+    return text.translate(_TO_EASTERN)
+
+
+def western_digits(text: str | None) -> str | None:
+    """العكس — بيتعمل على اللي بيتكتب في خانة بحث قبل ما يتقارن بالمخزّن.
+
+    من غيره اللي بيكتب «٢» بلوحة عربية مابيلاقيش «2» المخزّنة.
+    """
+    if text is None:
+        return None
+    return text.translate(_TO_WESTERN)
+
 
 def sort_key(column):
     """تعبير SQL بيرجّع الاسم موحَّد — للاستعمال في `order_by`.
@@ -48,7 +88,10 @@ def sort_key(column):
     بترتيب ثابت بدل ما يتبادلوا مع كل استعلام.
     """
     return func.translate(
-        func.translate(func.lower(column), _STRIP, ""), _FROM, _TO___)
+        func.translate(
+            func.translate(func.lower(column), _EASTERN + _PERSIAN, _WESTERN + _WESTERN),
+            _STRIP, ""),
+        _FROM, _TO___)
 
 
 def bare(text: str | None) -> str:
@@ -56,7 +99,7 @@ def bare(text: str | None) -> str:
 
         rows.sort(key=lambda r: arabic.bare(r.name))
     """
-    s = (text or "").strip().lower()
+    s = (text or "").strip().lower().translate(_TO_WESTERN)
     for ch in _STRIP:
         s = s.replace(ch, "")
     return s.translate(str.maketrans(_FROM, _TO___))

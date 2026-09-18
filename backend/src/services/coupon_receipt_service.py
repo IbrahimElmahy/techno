@@ -661,3 +661,35 @@ def issued_to_customer(db: Session, customer_id: int) -> list[dict]:
         book["remaining"] = max((book["count"] or len(serials) or 0) - taken, 0)
     books.sort(key=lambda b: (b["invoice_date"] or "", b["invoice_id"]), reverse=True)
     return books
+
+
+def delete_receipt(db: Session, *, receipt_id: int, actor_user_id: int) -> str:
+    """يلغي استلام كوبونات ويرجّع أوراقه للتداول — **والسريالات بترجع تتستلم تاني**.
+
+    الاستلام مكانش له طريق للحذف خالص. والورقة اللي اتستلمت غلط — عميل غلط، رقم
+    اتكتب بالخطأ، نطاق اتوسّع أكتر من اللي في الإيد — كانت بتقفل السريال للأبد:
+    `already_received` بتلاقيه، والاستلام الصح بعدها بيترفض «اتستلم قبل كده» وهو
+    في إيد الراجل فعلاً. مافيش مخرج غير تعديل القاعدة بالإيد.
+
+    السطور بتتشال مع المستند (`cascade="all, delete-orphan"`)، وده كل اللي محتاجينه:
+    القيد اللي بيمنع الاستلام المكرر هو صف السطر نفسه، فشيله بيفتح الرقم من تاني.
+
+    بيتسجّل في اليومية بأرقامه — مين مسح إيه وكام ورقة رجعت للتداول.
+    """
+    receipt = db.scalar(
+        select(CouponReceipt).options(selectinload(CouponReceipt.lines))
+        .where(CouponReceipt.id == receipt_id))
+    if receipt is None:
+        raise CouponReceiptError("الاستلام ده مش موجود.")
+
+    serials = sorted(line.serial for line in receipt.lines)
+    doc = receipt.document_number
+    audit_service.record(
+        db, action="coupon_receipt.delete", actor_user_id=actor_user_id,
+        entity_type="coupon_receipt", entity_id=receipt.id,
+        before={"doc": doc, "count": len(serials), "serials": serials,
+                "customer_id": receipt.customer_id},
+    )
+    db.delete(receipt)
+    db.flush()
+    return doc

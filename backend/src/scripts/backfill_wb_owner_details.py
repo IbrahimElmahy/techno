@@ -37,6 +37,7 @@ from collections import Counter
 from sqlalchemy import func, select
 
 from src.core.db import SessionLocal
+from src.lib import phones
 from src.models.owner import Owner
 from src.scripts import _workbook
 
@@ -81,18 +82,28 @@ def run(folder: str, *, execute: bool, xlsx: str | None = None) -> None:
                 notes["مالك مش عندنا — اتخطّى"] += 1
                 continue
 
-            # كل الأرقام في الصف، بترتيبها، من غير تكرار.
+            # كل الأرقام في الصف، بترتيبها، من غير تكرار — **بعد التطبيع**.
+            # الشيت بيكتب الموبايل من غير الصفر الأول، ومقارنة `1008796013` بـ
+            # `01008796013` بتقول إنهم رقمين مختلفين وهما واحد.
             nums: list[str] = []
             for k in ("phone1", "mobile", "phone2"):
-                x = (r.get(k) or "").strip()
-                if x and x not in nums:
-                    nums.append(x)
-            # الرقم اللي عندنا خلاص هو الأول؛ التاني هو أول رقم مختلف عنه.
-            second = next((x for x in nums if x != (o.phone or "")), None)
-            if o.phone is None and nums:
+                for x in phones.split_numbers(r.get(k)):
+                    if x not in nums:
+                        nums.append(x)
+
+            # **الشرط على «فيه رقم؟» مش على «القيمة `None`؟».**
+            #
+            # الملاك كلهم عندهم `phone = '1'` من النقل الأصلي — قيمة نائبة مش رقم،
+            # وهي مش `None`. فالشرط القديم (`o.phone is None`) مكانش بيتحقق أبداً،
+            # والرقم الحقيقي كان بيروح لـ`phone2` على إنه «الرقم التاني» والخانة
+            # الأولى تفضل `'1'`. ٧٬٨١٥ مالك من ٧٬٨٦٠ طلعوا كده.
+            current = phones.normalize(o.phone)
+            if current is None and nums:
                 plan.append((o, "phone", nums[0][:32]))
                 second = next((x for x in nums[1:] if x != nums[0]), None)
-            if second and not o.phone2:
+            else:
+                second = next((x for x in nums if x != current), None)
+            if second and not phones.normalize(o.phone2):
                 plan.append((o, "phone2", second[:32]))
 
             floor = _cut(r.get("floor"), 16)

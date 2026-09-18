@@ -14,6 +14,7 @@ from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
+from src.core.display_name import DisplayName
 from src.core.money import QTY
 from src.models.loyalty import POINTS
 
@@ -118,7 +119,8 @@ class InspectionItem(Base):
     # Nullable + a name snapshot: the device may hold an item that was renamed/removed since its
     # last catalog pull — the inspection must still sync exactly as recorded.
     item_id: Mapped[int | None] = mapped_column(ForeignKey("item.id"), nullable=True)
-    item_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    # لقطة اسم الصنف وقت المعاينة — بتتعرض بأرقام عربية زي الكتالوج.
+    item_name: Mapped[str] = mapped_column(DisplayName(160), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     points: Mapped[object] = mapped_column(POINTS, nullable=False, default=0)  # نقاط الوحدة
     total: Mapped[object] = mapped_column(POINTS, nullable=False, default=0)   # points × quantity

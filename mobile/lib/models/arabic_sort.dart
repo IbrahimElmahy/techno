@@ -28,13 +28,26 @@ const _to = 'ااااوييه';
 /// التشكيل والتطويل — بيتشالوا خالص.
 final _strip = RegExp('[ـً-ْٰ]');
 
+/// أرقام عربية وفارسية ← إنجليزية، **للمقارنة بس**.
+///
+/// اسم الصنف بيوصل من السيرفر بأرقام عربية («بلاعة ٢ ×١٫٥»)، والمندوب بيكتب في خانة
+/// البحث باللوحة اللي تحت إيده — إنجليزية غالباً. من غير التوحيد ده «1.5» مابتلاقيش
+/// «١٫٥» والصنف بيبقى كأنه مش موجود.
+const _digitsFrom = '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹';
+const _digitsTo = '01234567890123456789';
+
 /// الاسم موحَّد للمقارنة. مش للعرض.
 String bare(String? text) {
   final s = (text ?? '').trim().toLowerCase().replaceAll(_strip, '');
   final b = StringBuffer();
   for (final ch in s.split('')) {
     final i = _from.indexOf(ch);
-    b.write(i >= 0 ? _to[i] : ch);
+    if (i >= 0) {
+      b.write(_to[i]);
+      continue;
+    }
+    final d = _digitsFrom.indexOf(ch);
+    b.write(d >= 0 ? _digitsTo[d] : ch);
   }
   return b.toString();
 }

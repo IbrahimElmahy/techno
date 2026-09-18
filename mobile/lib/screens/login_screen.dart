@@ -177,7 +177,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               autocorrect: false,
                               decoration: const InputDecoration(
                                 labelText: 'عنوان السيرفر',
-                                helperText: 'https://local.technothermeg.com',
+                                // السحابة — هي التشغيلي. كان مكتوب هنا العنوان المحلي
+                                // القديم، فاللي بيفتح الخانة بيلاقي اقتراح بسيرفر واقف.
+                                helperText: ApiClient.defaultBase,
                                 prefixIcon: Icon(Icons.link),
                               ),
                               onChanged: (v) {

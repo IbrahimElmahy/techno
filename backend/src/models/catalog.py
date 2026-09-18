@@ -25,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
+from src.core.display_name import DisplayName
 from src.core.money import MONEY, PCT, QTY
 from src.models.stock import LocationKind
 
@@ -55,7 +56,10 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    # `DisplayName` = `String` بيرجّع أرقامه عربية. الاسم بيتخزّن زي ما اتكتب
+    # (أرقام إنجليزية، زي a5) وبيتعرض «بلاعة ٢ ×١٫٥ تكنوو ٧ سم» — والسبب مشروح
+    # كامل في `src/core/display_name.py`.
+    name: Mapped[str] = mapped_column(DisplayName(160), nullable=False)
     kind: Mapped[ItemKind] = mapped_column(Enum(ItemKind), nullable=False)
     unit_of_measure: Mapped[str] = mapped_column(String(16), nullable=False)
     # Kind-specific reference prices (editable; never rewrite posted-document prices).

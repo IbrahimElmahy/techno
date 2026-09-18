@@ -14,6 +14,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
+from src.lib import arabic
 from src.models.catalog import Item, ItemKind, ItemPrice, ItemPriceHistory, PriceTier
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
 from src.models.sales import SalesInvoice, SalesInvoiceLine
@@ -102,7 +103,9 @@ def apply_filters(
 ) -> Select:
     """`q` matches code, name or category (partial). `warehouse_id` = the item's default store."""
     if q:
-        needle = f"%{q.strip()}%"
+        # **اللي بيكتب «٢» لازم يلاقي «2».** الاسم بيتعرض بأرقام عربية وبيتخزّن
+        # إنجليزية، فالمكتوب بلوحة عربية مابيطابقش المخزّن من غير التحويل ده.
+        needle = f"%{arabic.western_digits(q.strip())}%"
         stmt = stmt.where(
             or_(Item.name.like(needle), Item.code.like(needle), Item.category.like(needle))
         )

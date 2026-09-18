@@ -213,3 +213,23 @@ def get_receipt(
         return _out(coupon_receipt_service.get_receipt(db, receipt_id))
     except CouponReceiptError as exc:
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+
+
+@router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_receipt(
+    receipt_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+) -> Response:
+    """يلغي الاستلام ويرجّع أوراقه للتداول.
+
+    من غيره الورقة اللي اتستلمت غلط بتقفل رقمها للأبد — والاستلام الصح بعدها بيترفض
+    «اتستلم قبل كده» وهي في إيد الراجل. الإلغاء بيتسجّل في اليومية بالأرقام.
+    """
+    try:
+        coupon_receipt_service.delete_receipt(
+            db, receipt_id=receipt_id, actor_user_id=current.id)
+    except CouponReceiptError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

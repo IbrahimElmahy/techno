@@ -21,6 +21,7 @@ from src.auth.rbac import (
     CAP_SETTINGS_WRITE,
 )
 from src.core.db import get_db
+from src.lib import phones
 from src.models.customer import Customer
 from src.models.inspection import InspectionStatus, VisitKind
 from src.models.role import RoleName
@@ -156,7 +157,8 @@ def _out(i, merchant_name: str | None = None) -> InspectionOut:
         owner_phone=i.owner_phone, national_id=i.national_id, owner_address=i.owner_address,
         floor_number=i.floor_number, description=i.description,
         inspection_type=i.inspection_type, technician_name=i.technician_name,
-        technician_phone=i.technician_phone,
+        # تليفون الفني بيتعرض بالشكل اللي بيترنّ — الشيت بيشيل الصفر الأول.
+        technician_phone=phones.display(i.technician_phone) or None,
         merchant_customer_id=i.merchant_customer_id,
         merchant_name=merchant_name or i.purchase_shop,
         purchase_shop=i.purchase_shop,
@@ -186,7 +188,8 @@ def _create(db: Session, body: InspectionIn, current: CurrentUser):
         owner_address=body.owner_address, floor_number=body.floor_number,
         description=body.description, inspection_type=body.inspection_type,
         visit_type=body.visit_type,
-        technician_name=body.technician_name, technician_phone=body.technician_phone,
+        technician_name=body.technician_name,
+        technician_phone=phones.normalize(body.technician_phone),
         purchase_shop=body.purchase_shop, purchase_shop_phone=body.purchase_shop_phone,
         merchant_customer_id=body.merchant_customer_id,
         visit_details=body.visit_details,
