@@ -37,6 +37,7 @@ from src.models.ledger import (
     LedgerLine,
     PartnerKind,
 )
+from src.models.role import RoleName
 from src.models.supplier import Supplier
 from src.services import (
     account_routing_service,
@@ -956,11 +957,16 @@ def set_lock_dates(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
     db: Session = Depends(get_db),
 ) -> LockDatesOut:
-    """يحط تاريخي القفل. للأدمن بس — دي حاجة بتقفل على الكل حتى المحاسب."""
-    if not current.is_admin:
+    """يحط تاريخي القفل. للأدمن والمالك بس — دي حاجة بتقفل على الكل حتى المحاسب.
+
+    المالك داخل معاهم لأنه صاحب الشركة وهو اللي بيقرر الشهر يتقفل إمتى. من غيره كان
+    الإقفال محبوس في حساب `admin` وحده، والمالك بيدخل بحسابه هو — فالقرار بتاعه كان
+    محتاج حساب تاني عشان يتنفّذ.
+    """
+    if not (current.is_admin or current.role == RoleName.owner):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            {"code": "forbidden", "message": "أقفال التواريخ للأدمن بس."})
+            {"code": "forbidden", "message": "أقفال التواريخ للأدمن والمالك بس."})
     row = lock_date_service.set_lock_dates(
         db, actor_user_id=current.id,
         fiscalyear_lock_date=body.fiscalyear_lock_date,
