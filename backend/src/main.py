@@ -18,6 +18,7 @@ from src.api import (  # Sales & Inventory (002
     audit,
     auth,
     branch_overview,
+    owner_stats,
     catalog,
     cheques,  # Cheques + financial statements + aging (020)
     cost_centers,  # Cost Centers (006)
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(audit.router, prefix=prefix)
     app.include_router(permissions.router, prefix=prefix)
     app.include_router(branch_overview.router, prefix=prefix)
+    app.include_router(owner_stats.router, prefix=prefix)
     app.include_router(reps.router, prefix=prefix)
     # Sales & Inventory (002)
     app.include_router(catalog.router, prefix=prefix)
