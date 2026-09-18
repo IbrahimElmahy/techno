@@ -548,11 +548,28 @@ def rep_bundle(
                 "category": cat_label.get(category, category),
             })
 
-    # أسعار الفئات للأصناف اللي معاه بس — استعلام واحد، مش واحد لكل صنف.
+    # **كتالوج الفرع — بأسعاره.**
+    #
+    # الاستعلام ده ضاع في دمج ١٧ سبتمبر والمفتاح فضل مكانه، فـ`rep-bundle` بقى
+    # بيرمي `NameError` على كل نداء: **ولا مندوب كان يقدر يسحب بضاعته ولا عملاءه**،
+    # والتطبيق بيقول «مافيش بضاعة على الجهاز» من غير ما يقول ليه.
+    #
+    # وبينزل بالسعر والخصم مش بالاسم بس. المندوب في الشارع بيتسأل عن أصناف **مش
+    # معاه في العربية**، وكشف التسعير على الجهاز محتاج يجاوب من غير شبكة. الرصيد
+    # بيفضل برّه: الصنف ده مش معاه، وعرض رصيد مخزن عليه بيغرّي ببيع مالوش غطاء.
+    catalog = db.execute(
+        select(Item.id, Item.name, Item.unit_of_measure, Item.category,
+               Item.sale_price, Item.default_discount_pct)
+        .where(Item.active.is_(True))
+        .order_by(arabic.sort_key(Item.name), Item.name)
+    ).all()
+
+    # أسعار الفئات — للأصناف اللي معاه **وللكتالوج كله**، استعلام واحد.
     tiers: dict[int, dict[str, str]] = {}
-    if live:
+    _priced = {r[0] for r in live} | {c[0] for c in catalog}
+    if _priced:
         for row in db.scalars(
-            select(ItemPrice).where(ItemPrice.item_id.in_([r[0] for r in live]))
+            select(ItemPrice).where(ItemPrice.item_id.in_(_priced))
         ).all():
             tiers.setdefault(row.item_id, {})[row.tier.value] = str(row.price)
 
@@ -633,10 +650,18 @@ def rep_bundle(
             }
             for r in live
         ],
-        # الكتالوج: أصناف الفرع كلها بالاسم بس. من غير سعر ولا رصيد — إذن التحويل
-        # مالوش فلوس، والرصيد عند المندوب معلومة مضلّلة هنا (بيطلب احتياجه مش رصيده).
+        # الكتالوج: كل الأصناف بأسعارها وخصوماتها — لإذن التحويل **ولكشف التسعير**.
+        #
+        # من غير رصيد عن قصد: الصنف ده مش في عربية المندوب، وعرض رصيد مخزن جنبه
+        # بيغرّي ببيع مالوش غطاء عنده.
         "catalog": [
-            {"item_id": c[0], "name": c[1], "unit": c[2], "category": c[3]}
+            {
+                "item_id": c[0], "name": c[1], "unit": c[2],
+                "category": cat_label.get(c[3], c[3]),
+                "base_price": str(c[4]) if c[4] is not None else None,
+                "default_discount_pct": str(c[5]) if c[5] is not None else None,
+                "tier_prices": tiers.get(c[0], {}),
+            }
             for c in catalog
         ],
     }
