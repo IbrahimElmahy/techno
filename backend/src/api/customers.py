@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
 from src.core.db import get_db
-from src.lib import phones
+# **باسم تاني عن قصد.** الاسم `phones` محجوز في الملف ده لقايمة أرقام العميل
+# الإضافية (`_out(..., phones=...)` و`bulk_phone_values`)، فاستيراد الموديول
+# بنفس الاسم بيتحجب جوّه الدالة و`phones.display` بتتنادى على `dict` وترمي.
+from src.lib import phones as phone_fmt
 from src.models.catalog import PriceTier
 from src.models.contact import PhoneOwner
 from src.models.customer import Customer, CustomerAccount
@@ -150,7 +153,7 @@ def _out(c: Customer, db: Session | None = None,
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type,
         # السباك بيتخزّن رقمه من غير الصفر الأول (`1008796013`) — ١٬٣٠٤ من ١٬٦٨٦.
         # التطبيع عند العرض بيخلّي الرقم يبان صح من غير ما نستنى إصلاح الداتا.
-        phone=phones.display(c.phone) or None,
+        phone=phone_fmt.display(c.phone) or None,
         rep_id=c.rep_id, service_rep_id=c.service_rep_id,
         territory_id=c.territory_id,
         default_price_tier=c.default_price_tier, active=c.active,
@@ -319,7 +322,7 @@ def customer_options(
     return [
         CustomerOptionOut(
             id=r.id, code=r.code, name=r.name,
-            phone=phones.display(r.phone) or None,
+            phone=phone_fmt.display(r.phone) or None,
             customer_type=getattr(r.customer_type, "value", r.customer_type),
             rep_id=r.rep_id,
             default_price_tier=getattr(r.default_price_tier, "value", r.default_price_tier),
@@ -404,7 +407,7 @@ def create_customer(
             customer_type=body.customer_type,
             rep_id=body.rep_id,
             territory_id=body.territory_id,
-            phone=phones.normalize(body.phone),
+            phone=phone_fmt.normalize(body.phone),
             actor_user_id=current.id,
         )
     except CustomerError as exc:
