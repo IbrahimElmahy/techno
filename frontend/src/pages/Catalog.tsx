@@ -95,6 +95,8 @@ interface ItemRecord {
   default_warehouse_id: number | null;
   category: string | null;
   consumer_price: string | null;
+  /** كل شرائح البيع. الشريحة الغائبة معناها «لا يُباع بها» — لا صفر. */
+  tier_prices?: Record<string, string>;
   piece_name: string | null;
   pieces_per_unit: string | null;
   // On the API since 011/027 and never read by this screen, which is why they could be typed on
@@ -661,18 +663,30 @@ export default function Catalog() {
       width: 80,
       render: (v: string | null) => v || '-',
     },
-    {
-      title: 'مستهلك',
-      key: 'consumer_price',
-      width: 105,
-      // The tier row is what gets charged; where an item has none, 007's own rule falls the sale
-      // back to `sale_price`, so that is the number shown — a blank here would claim the item
-      // cannot be sold to a walk-in when it can.
+    // **شرائح البيع الستة جنب بعض** — كانت صفحة «كشف تسعير» منفصلة، واتضمّت هنا.
+    //
+    // فصلها كان بيخلّي اللي بيسعّر يفتح شاشتين ويقارن بينهم بعينه: الأصناف فيها
+    // الصنف وفئته ورصيده، والتسعير فيه أسعاره — ونفس الصنف في الاتنين. الجدول
+    // الواحد بيجاوب السؤالين مرة واحدة.
+    //
+    // «مستهلك» أول واحد لأنه الأكتر استعمالاً، وبيرجع لـ`sale_price` لو الصنف
+    // مالوش صف شريحة — قاعدة ٠٠٧ نفسها، والخانة الفاضية هنا كانت هتدّعي إن الصنف
+    // مايتباعش لزبون عادي وهو بيتباع.
+    ...PRICE_TIERS.map((t) => ({
+      title: t.label,
+      key: `tier_${t.key}`,
+      width: 100,
+      align: 'left' as const,
       render: (_: any, r: ItemRecord) => {
-        const price = r.consumer_price ?? r.sale_price;
-        return price ? `${money(price)} ج.م` : '-';
+        const price = (r.tier_prices ?? {})[t.key]
+          ?? (t.key === 'consumer' ? (r.consumer_price ?? r.sale_price) : undefined);
+        // الخانة الفاضية معناها «مش بيتباع بالشريحة دي»، والصفر معناه «ببلاش» —
+        // والفرق بيتقرا على ورقة التسعير، فالفاضي بيفضل فاضي.
+        return price === undefined || price === null
+          ? <span style={{ color: '#d9d9d9' }}>—</span>
+          : <b>{money(price)}</b>;
       },
-    },
+    })),
     {
       // **الخصم الثابت على الصنف** — جنب السعر مش في شاشة تانية.
       //

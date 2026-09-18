@@ -100,9 +100,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     label: 'اداره المبيعات',
     children: [
       { key: '/invoices', label: 'فاتوره بيع', roles: R(SALES), a5: '/sales/create' },
-      // كشف التسعير جنب الفاتورة مش جنب الكتالوج: هو نسخة منها للتسعير —
-      // نفس الأصناف ونفس الأسعار والخصومات، من غير كميات ومن غير ما يبقى مستند.
-      { key: '/price-sheet', label: 'كشف تسعير', roles: R(SALES) },
       { key: '/returns', label: 'مردود مبيعات', roles: R(SALES), a5: '/salesreturns/create' },
       // كاشير مباشر is deliberately absent — excluded at the client's request.
       {

@@ -65,6 +65,22 @@
       ],
       "cwd": "D:/techno/mobile",
       "port": 5199
+    },
+    {
+      "name": "mobile-dev",
+      "runtimeExecutable": "C:/src/flutter/bin/flutter.bat",
+      "runtimeArgs": [
+        "run",
+        "-d",
+        "web-server",
+        "--web-hostname",
+        "127.0.0.1",
+        "--web-port",
+        "5200",
+        "--release"
+      ],
+      "cwd": "D:/techno-dev-code/mobile",
+      "port": 5200
     }
   ]
 }

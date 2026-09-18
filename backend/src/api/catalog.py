@@ -113,6 +113,10 @@ class ItemOut(BaseModel):
     # Their list carries the مستهلك price as a column; it lives in its own table, so the list
     # endpoint fills it in bulk rather than making the screen ask per row.
     consumer_price: Decimal | None = None
+    # كل شرايح البيع — الشاشة بقت بتعرضهم جنب بعض بدل صفحة تسعير منفصلة. الشريحة
+    # اللي مالهاش صف بتغيب: الخانة الفاضية معناها «مش بيتباع بالشريحة دي»، والصفر
+    # معناه «ببلاش».
+    tier_prices: dict[str, Decimal] = {}
 
 
 def _out(it: Item) -> ItemOut:
@@ -198,11 +202,21 @@ def list_items(
     # Looked up after the stock filter, so the extra two queries only cover rows that survive it.
     ids = [i.id for i in rows]
     consumer = item_profile_service.bulk_tier_price(db, ids, PriceTier.consumer)
+    # كل الشرايح في استعلام واحد — بدل واحد لكل شريحة، وبدل صفحة تانية بتجيبهم.
+    tiers: dict[int, dict[str, Decimal]] = {}
+    if ids:
+        for item_id, tier, price in db.execute(
+            select(ItemPrice.item_id, ItemPrice.tier, ItemPrice.price)
+            .where(ItemPrice.item_id.in_(ids))
+        ).all():
+            key = tier.value if hasattr(tier, "value") else str(tier)
+            tiers.setdefault(item_id, {})[key] = Decimal(str(price))
     out = []
     for i in rows:
         o = _out(i)
         o.on_hand = on_hand.get(i.id, Decimal("0.000"))
         o.consumer_price = consumer.get(i.id)
+        o.tier_prices = tiers.get(i.id, {})
         out.append(o)
     return out
 
