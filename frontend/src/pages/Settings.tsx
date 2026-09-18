@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Card, Collapse, Table, Button, Input, Switch, Space, Tag, message, Form, Tooltip, Select,
-  DatePicker,
+  DatePicker, Divider,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -516,6 +516,7 @@ function DocumentPolicyCard() {
 function LockDatesCard() {
   const [fiscal, setFiscal] = useState<Dayjs | null>(null);
   const [period, setPeriod] = useState<Dayjs | null>(null);
+  const [terms, setTerms] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -524,6 +525,7 @@ function LockDatesCard() {
       .then((r) => {
         setFiscal(r.data?.fiscalyear_lock_date ? dayjs(r.data.fiscalyear_lock_date) : null);
         setPeriod(r.data?.period_lock_date ? dayjs(r.data.period_lock_date) : null);
+        setTerms(Number(r.data?.payment_terms_days || 0));
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -535,6 +537,7 @@ function LockDatesCard() {
       await api.put('/api/v1/accounting/lock-dates', {
         fiscalyear_lock_date: fiscal ? fiscal.format('YYYY-MM-DD') : null,
         period_lock_date: period ? period.format('YYYY-MM-DD') : null,
+        payment_terms_days: terms,
       });
       message.success('اتحفظ');
     } catch (err: any) {
@@ -545,7 +548,7 @@ function LockDatesCard() {
   };
 
   return (
-    <Card title="أقفال التواريخ" size="small" loading={loading}
+    <Card title="أقفال التواريخ ومهلة السداد" size="small" loading={loading}
           extra={<Button type="primary" icon={<SaveOutlined />} loading={saving}
                          onClick={save}>حفظ</Button>}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -569,6 +572,17 @@ function LockDatesCard() {
           سيب الخانة فاضية = مفيش قفل. والقفل بيمنع الترحيل والرجوع لمسودة والإلغاء —
           الخروج من الحسابات بيغيّر الميزانية زي الدخول بالظبط.
         </span>
+        <Divider style={{ margin: '4px 0' }} />
+        <Space wrap align="center">
+          <span style={{ minWidth: 150 }}>مهلة السداد (أيام):</span>
+          <InputNumber min={0} max={365} value={terms} style={{ width: 120 }}
+                       onChange={(v) => setTerms(Number(v || 0))} />
+          <span style={{ color: '#888' }}>
+            الفاتورة اللي مالهاش تاريخ استحقاق مكتوب بتستحق بعد المدة دي من تاريخها.
+            صفر = مستحقة يوم ما اتكتبت، وده اللي بيخلّي كل فاتورة قديمة مفتوحة تظهر
+            «متأخرة» في كشف الحساب.
+          </span>
+        </Space>
       </Space>
     </Card>
   );

@@ -380,6 +380,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # الجيب: معاينات ولا كوبونات. NULL = سطر قبل الفصل، والقراءة بتشتقّه من `kind`،
     # فالعمود يقدر يتضاف على قاعدة شغّالة من غير ما رصيد يتغيّر ثانية واحدة.
     ("point_record", "purse", "VARCHAR(16)"),
+    # مهلة السداد — الفاتورة اللي مالهاش استحقاق مكتوب بتستحق بعد المدة دي.
+    ("accounting_setting", "payment_terms_days", "INTEGER NOT NULL DEFAULT 0"),
     ("inspection", "merchant_customer_id", "BIGINT"),
     ("inspection", "owner_id", "BIGINT"),
     ("owner", "governorate_id", "BIGINT"),

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -70,7 +70,12 @@ class StatementLine:
 
 @dataclass(frozen=True)
 class AgingBuckets:
-    """أعمار المستحق على تاريخ الكشف. الشرائح زي أودو: الحالي ثم ٣٠/٦٠/٩٠ ثم أقدم."""
+    """أعمار المستحق على تاريخ الكشف. الشرائح زي أودو: الحالي ثم ٣٠/٦٠/٩٠ ثم أقدم.
+
+    الشرائح **بإشارتها**، فمجموعها = المستحق بالظبط — وده اللي بيخلّي الجدول قابل
+    للمراجعة. ومعنى إن شريحة تطلع بالسالب إن فيه دفعات غير مخصومة أحدث من فواتيرها،
+    وده وضع حقيقي مش غلط حساب؛ `credit_open` بيقوله بصوت عالي بدل ما يتقرا من إشارة.
+    """
 
     current: Decimal = ZERO
     d30: Decimal = ZERO
@@ -78,6 +83,9 @@ class AgingBuckets:
     d90: Decimal = ZERO
     older: Decimal = ZERO
     total: Decimal = ZERO
+    # المفتوح مفصول: المطلوب من الطرف، والدفعات اللي لسه ماتخصمتش من فاتورة.
+    debit_open: Decimal = ZERO
+    credit_open: Decimal = ZERO
 
 
 @dataclass(frozen=True)
@@ -159,12 +167,30 @@ def _matches_by_line(db: Session, line_ids: list[int]) -> dict[int, list[dict]]:
     return out
 
 
-def _days_overdue(line: LedgerLine, when: date, as_of: date) -> int | None:
+def payment_terms_days(db: Session) -> int:
+    """مهلة السداد المتفق عليها. صفر = الفاتورة مستحقة يوم ما اتكتبت.
+
+    بتتقرا مرة واحدة لكل كشف مش لكل سطر: استعلام جوّه حلقة على ٤٠٠ حركة هو نفس
+    السؤال متسأل ٤٠٠ مرة.
+    """
+    from src.models.accounting_setting import AccountingSetting
+
+    row = db.scalar(select(AccountingSetting).limit(1))
+    return int(getattr(row, "payment_terms_days", 0) or 0)
+
+
+def due_date_of(line: LedgerLine, when: date, terms: int) -> date:
+    """تاريخ استحقاق السطر: المكتوب عليه، وإلا تاريخه + المهلة."""
+    if line.date_maturity:
+        return line.date_maturity
+    return when + timedelta(days=terms) if terms else when
+
+
+def _days_overdue(line: LedgerLine, when: date, as_of: date, terms: int = 0) -> int | None:
     """كام يوم فات على استحقاق السطر ده. `None` لو مافيش متبقّي — يعني اتقفل خلاص."""
     if line.amount_residual is None or to_money(line.amount_residual) == ZERO:
         return None
-    due = line.date_maturity or when
-    days = (as_of - due).days
+    days = (as_of - due_date_of(line, when, terms)).days
     return days if days > 0 else None
 
 
@@ -191,6 +217,7 @@ def due_summary(
     وفي تقرير الأعمار: مصدر واحد، مش تلات حسابات بتتفق بالصدفة.
     """
     today = as_of or date.today()
+    terms = payment_terms_days(db)
     rows = db.scalars(
         select(LedgerLine)
         .options(selectinload(LedgerLine.entry))
@@ -201,7 +228,7 @@ def due_summary(
     ).all()
 
     buckets = {"current": ZERO, "d30": ZERO, "d60": ZERO, "d90": ZERO, "older": ZERO}
-    total = overdue = ZERO
+    total = overdue = debit_open = credit_open = ZERO
     for line in rows:
         residual = to_money(line.amount_residual)
         if residual == ZERO:
@@ -210,12 +237,19 @@ def due_summary(
         if when > today:
             continue
         total += residual
-        # الاستحقاق من السطر لو مكتوب، وإلا من تاريخ القيد — الفاتورة النقدية
-        # مستحقة يوم ما اتكتبت، ومعاملتها كأنها مالهاش ميعاد بتخفيها عن المتأخر.
-        due = line.date_maturity or when
-        days = (today - due).days
+        if residual > ZERO:
+            debit_open += residual
+        else:
+            credit_open += -residual
+        # الاستحقاق من السطر لو مكتوب، وإلا تاريخ القيد + مهلة السداد. الفاتورة
+        # النقدية (مهلة صفر) مستحقة يوم ما اتكتبت، ومعاملتها كأنها مالهاش ميعاد
+        # بتخفيها عن المتأخر خالص.
+        days = (today - due_date_of(line, when, terms)).days
         buckets[_age_bucket(days)] += residual
-        if days > 0:
+        # **المتأخر من المدين وحده.** الدفعة اللي لسه ماتخصمتش مش «متأخرة» — مفيش
+        # حد متأخر في دفعها. لو جمعناها بإشارتها كان المتأخر بيقلّ وبيزيد مع مهلة
+        # السداد من غير منطق: مهلة ٦٠ يوم كانت بتطلّع متأخر أكبر من مهلة ٤٥.
+        if days > 0 and residual > ZERO:
             overdue += residual
 
     return (
@@ -225,6 +259,7 @@ def due_summary(
             current=to_money(buckets["current"]), d30=to_money(buckets["d30"]),
             d60=to_money(buckets["d60"]), d90=to_money(buckets["d90"]),
             older=to_money(buckets["older"]), total=to_money(total),
+            debit_open=to_money(debit_open), credit_open=to_money(credit_open),
         ),
     )
 
@@ -300,6 +335,7 @@ def account_statement(
     # الكشف بيفتح في تانية.
     matches = _matches_by_line(db, [line.id for _when, line in window])
     as_of = date_to or date.today()
+    terms = payment_terms_days(db)
     for when, line in window:
         amount = to_money(line.amount)
         is_debit = line.direction.value == "debit"
@@ -325,11 +361,11 @@ def account_statement(
             line_id=line.id,
             residual=(to_money(line.amount_residual)
                       if line.amount_residual is not None else None),
-            due_date=line.date_maturity,
+            due_date=due_date_of(line, when, terms),
             # المتأخر بيتقاس على **تاريخ قفل الكشف** مش على النهاردة: كشف مقفول على
             # آخر يونيو لازم يقول التأخير اللي كان وقتها، وإلا الورقة المطبوعة
             # بتتغيّر كل يوم وهي مفترض تكون صورة لحظة.
-            days_overdue=_days_overdue(line, when, as_of),
+            days_overdue=_days_overdue(line, when, as_of, terms),
             payment_state=line.entry.payment_state,
             payment_state_label=reconcile_service.PAYMENT_STATE_LABEL.get(
                 line.entry.payment_state or ""),

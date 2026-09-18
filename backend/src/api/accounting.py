@@ -924,12 +924,17 @@ def set_account_routing(
 class LockDatesOut(BaseModel):
     fiscalyear_lock_date: DateType | None = None
     period_lock_date: DateType | None = None
+    # مهلة السداد بالأيام — الفاتورة اللي مالهاش استحقاق مكتوب بتستحق بعدها.
+    payment_terms_days: int = 0
 
 
 class LockDatesIn(BaseModel):
     # `None` في الاتنين معناه «ارفع القفل» — نفس الشاشة بتحط وبترفع.
     fiscalyear_lock_date: DateType | None = None
     period_lock_date: DateType | None = None
+    # `None` هنا معناه «سيبها زي ما هي» مش «صفّرها»: الشاشة اللي بتحط قفل تاريخ
+    # مالهاش دعوة بالمهلة، ولو اعتبرنا غيابها صفر كانت هتصفّرها من غير ما حد يقصد.
+    payment_terms_days: int | None = None
     note: str | None = None
 
 
@@ -941,7 +946,8 @@ def get_lock_dates(
     row = lock_date_service.get_settings(db)
     db.commit()  # الصف بيتعمل أول مرة يتقرا
     return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,
-                        period_lock_date=row.period_lock_date)
+                        period_lock_date=row.period_lock_date,
+                        payment_terms_days=int(row.payment_terms_days or 0))
 
 
 @router.put("/accounting/lock-dates", response_model=LockDatesOut)
@@ -961,9 +967,16 @@ def set_lock_dates(
         period_lock_date=body.period_lock_date,
         note=body.note,
     )
+    if body.payment_terms_days is not None:
+        if body.payment_terms_days < 0:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                {"code": "invalid", "message": "مهلة السداد ماتكونش بالسالب."})
+        row.payment_terms_days = body.payment_terms_days
     db.commit()
     return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,
-                        period_lock_date=row.period_lock_date)
+                        period_lock_date=row.period_lock_date,
+                        payment_terms_days=int(row.payment_terms_days or 0))
 
 
 # ------------------------------------------- سلامة الدفاتر (المرحلة ٤ — سلسلة التجزئة)

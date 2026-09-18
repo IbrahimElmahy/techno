@@ -65,6 +65,8 @@ interface StatementMatch {
 
 interface Aging {
   current: string; d30: string; d60: string; d90: string; older: string; total: string;
+  /** المفتوح مفصول: المطلوب من الطرف، والدفعات اللي لسه ماتخصمتش من فاتورة. */
+  debit_open?: string; credit_open?: string;
 }
 
 interface StatementOut {
@@ -1036,6 +1038,13 @@ export default function AccountStatement() {
                   </Space>
                 </Col>
               </Row>
+              {Number(aging?.credit_open || 0) > 0 && (
+                <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
+                  مطلوب <b>{num(aging?.debit_open || 0)}</b> ·
+                  دفعات لسه ماتخصمتش من فاتورة <b>{num(aging?.credit_open || 0)}</b> ·
+                  الصافي هو المستحق فوق
+                </div>
+              )}
               {!totalDue && (
                 <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
                   لا يوجد مستحق مفتوح على هذا الحساب.

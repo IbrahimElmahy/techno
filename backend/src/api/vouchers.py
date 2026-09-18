@@ -218,6 +218,9 @@ class AgingOut(BaseModel):
     d90: Decimal = Decimal("0")
     older: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
+    # المفتوح مفصول: المطلوب من الطرف، والدفعات اللي لسه ماتخصمتش من فاتورة.
+    debit_open: Decimal = Decimal("0")
+    credit_open: Decimal = Decimal("0")
 
 
 class FamilyBalanceOut(BaseModel):

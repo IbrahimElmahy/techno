@@ -1047,6 +1047,13 @@ export default function CustomerProfile() {
                                   </Space>
                                 </Col>
                               </Row>
+                  {Number(statement.aging?.credit_open || 0) > 0 && (
+                    <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
+                      مطلوب <b>{money(statement.aging?.debit_open || 0)}</b> ·
+                      دفعات لسه ماتخصمتش من فاتورة <b>{money(statement.aging?.credit_open || 0)}</b> ·
+                      الصافي هو المستحق فوق
+                    </div>
+                  )}
                             </Card>
                           )}
 
