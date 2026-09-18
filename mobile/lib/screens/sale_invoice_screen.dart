@@ -21,7 +21,7 @@ import 'sale_coupons_section.dart';
 /// يعرف وهو في الشارع، مش بديل عنها: الجهاز ممكن يكون بياناته قديمة، والسيرفر هو اللي
 /// عنده الحقيقة ساعة الترحيل.
 class SaleInvoiceScreen extends StatefulWidget {
-  const SaleInvoiceScreen({super.key, this.existing});
+  const SaleInvoiceScreen({super.key, this.existing, this.initialLines});
 
   /// صف فاتورة **لسه في الطابور** بيتعدّل، أو `null` لفاتورة جديدة.
   ///
@@ -29,6 +29,17 @@ class SaleInvoiceScreen extends StatefulWidget {
   /// على الجهاز بيخلّي الورقة اللي في إيد العميل تقول حاجة والدفتر يقول غيرها. التصحيح
   /// بعد الرفع بيتعمل بمرتجع من المكتب — الاتنين بيبانوا.
   final Map<String, Object?>? existing;
+
+  /// سطور جاهزة تتفتح بيها الفاتورة — **جاية من كشف التسعير**.
+  ///
+  /// المندوب بيسعّر للتاجر وهو واقف قدامه، والتاجر بيقول «تمام هاتهم». من غير
+  /// المدخل ده كان لازم يعيد إدخال كل صنف من أول — نفس الشغل مرتين، والمرة التانية
+  /// هي اللي بيغلط فيها.
+  ///
+  /// **والفاتورة بتفضل هي صاحبة الكلمة.** اختيار التاجر بيعيد تسعير السطور على
+  /// فئته (`_repriceAll`)، والمتاح في العربية بيتفحص زي أي فاتورة. العرض بيوفّر
+  /// الكتابة، مش بيتخطّى قاعدة.
+  final List<SaleDraftLine>? initialLines;
 
   @override
   State<SaleInvoiceScreen> createState() => _SaleInvoiceScreenState();
@@ -124,7 +135,19 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     super.initState();
     _loadRepInfo();
     _loadFree();
-    if (_isEditing) _loadExisting();
+    if (_isEditing) {
+      _loadExisting();
+    } else if (widget.initialLines != null) {
+      // نسخة من السطور مش نفس الكائنات: التعديل هنا مايرجعش على الكشف اللي جيه منه.
+      _lines.addAll(widget.initialLines!.map((l) => SaleDraftLine(
+            itemId: l.itemId,
+            itemName: l.itemName,
+            quantity: l.quantity,
+            unitPrice: l.unitPrice,
+            fixedDiscountPct: l.fixedDiscountPct,
+            variableDiscountPct: l.variableDiscountPct,
+          )));
+    }
   }
 
   Future<void> _loadFree() async {

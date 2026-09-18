@@ -2,47 +2,44 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../db/local_db.dart';
-import '../models/arabic_sort.dart';
 import '../models/models.dart';
 import '../theme.dart';
+import 'sale_add_item_flow.dart';
+import 'sale_invoice_screen.dart';
 
-const _noCategory = 'بدون فئة';
+double _netOf(double gross, double pct) =>
+    gross * (1 - pct.clamp(0, 99.99) / 100);
 
-String _categoryOf(SaleItem it) {
-  final c = it.category?.trim() ?? '';
-  return c.isEmpty ? _noCategory : c;
+String _money(double v) => v.toStringAsFixed(2);
+
+String _trim(double v) {
+  if (v == v.roundToDouble()) return v.toInt().toString();
+  return v
+      .toStringAsFixed(2)
+      .replaceFirst(RegExp(r'0+$'), '')
+      .replaceFirst(RegExp(r'\.$'), '');
 }
 
-/// كشف التسعير — **السعر اللي التاجر ده هيدفعه**، لكل أصناف النظام.
+String _blank(double v) => v == 0 ? '' : _trim(v);
+
+/// كشف التسعير — **نفس شاشة فاتورة البيع، من غير عميل ومن غير مديونية**.
 ///
-/// مش قايمة أسعار عامة. المندوب واقف قدام تاجر بيسأله «الصنف ده بكام؟»، والرقم
-/// الصح يعتمد على فئة التاجر وخصم الصنف. الكشف اللي بيعرض سعر واحد للكل بيخلّي
-/// المندوب يقول رقم والفاتورة تطلع برقم تاني — فيرجع يشرح، أو أوحش: يوعد بسعر
-/// الشركة مابتبيعش بيه.
+/// المندوب بيسعّر بنفس الحركات اللي بيبيع بيها: يزوّد صنف من نفس المنتقي (فئة ⇐
+/// صنف ⇐ كمية)، ويعدّل السعر والخصم في نفس الخانات، ويشوف الإجمالي في نفس المكان.
+/// شاشة بشكل تاني كانت هتخلّيه يتعلّم واجهة تانية عشان يجاوب سؤال هو بيجاوبه كل يوم.
 ///
-/// **والتنقّل زي منتقي البيع: فئات وبعدين أصنافها.** الكتالوج ٢٬٦٣٠ صنف، وقايمة
-/// واحدة بالطول معناها إن المندوب يفضل يمرّر وهو واقف قدام التاجر. اللي اتعوّد على
-/// خطوتين في الفاتورة بيلاقي نفس الخطوتين هنا — مش شاشة بتتعلّم من أول.
+/// **واللي اتشال مقصود:**
 ///
-/// **وبيشتغل من غير شبكة.** الكتالوج بأسعاره بينزل مع المزامنة، فالمندوب في السوق
-/// بيسعّر صنف مش معاه في العربية أصلاً.
+/// * **العميل.** التسعير مش لطرف بعينه؛ ربطه بعميل بيخلّيه محتاج اختيار قبل ما
+///   يبدأ، والمندوب بيتسأل عن السعر قبل ما يعرف مين اللي بيسأل أصلاً.
+/// * **المديونية والحساب السابق.** دول أرقام مستند على طرف، ومافيش طرف هنا.
+/// * **النقدي والآجل والكوبونات.** دي طرق سداد لفاتورة، والعرض مابيتسددش.
+/// * **حد الكمية والرصيد.** الفاتورة بتمنع أكتر من اللي في العربية؛ العرض لأ —
+///   التاجر بيسأل «٥٠٠ قطعة بكام» وهو عارف إنها مش معاك دلوقتي.
 ///
-/// **والرصيد مش معروض عن قصد.** دي أصناف النظام كله مش اللي في العربية؛ عرض رصيد
-/// مخزن جنب السعر بيغرّي ببيع مالوش غطاء عنده. اللي عايز اللي معاه بيفتح «بضاعتي».
-///
-/// ## عرض السعر — اختيار زي الفاتورة، وأثر صفر
-///
-/// المندوب بيختار أصناف بكمياتها ويشوف الإجمالي، **زي ما بيعمل فاتورة بالظبط** —
-/// بس ده مش مستند:
-///
-/// * **مابيأثّرش:** مافيش حركة مخزن، ولا قيد، ولا نقط، ولا مديونية على التاجر.
-///   مافيش حاجة بتترفع للسيرفر أصلاً؛ العرض عايش في الشاشة وبيروح لما تقفلها.
-/// * **ومابيتأثّرش:** مافيش سقف كمية. المندوب بيسعّر ٥٠٠ قطعة من صنف مش معاه ولا
-///   قطعة — ده سؤال عن السعر مش عن المتاح. والرصيد والمديونية وحد الائتمان كلهم
-///   خارج الحساب: **السعر والخصم بس.**
-///
-/// الفرق ده هو اللي بيخلّي الشاشة تنفع: اللي بيخاف يجرّب على الفاتورة عشان
-/// «مايبوّظش حاجة» بيقدر يجرّب هنا براحته.
+/// **وأثره صفر:** مافيش حركة مخزن ولا قيد ولا نقط ولا مديونية، ومافيش حاجة بتترفع
+/// للسيرفر. العرض عايش في الشاشة وبيروح مع قفلها — تخزينه كان هيخلّيه يتلخبط مع
+/// الفواتير في «فواتيري».
 class PriceSheetScreen extends StatefulWidget {
   const PriceSheetScreen({super.key});
 
@@ -51,16 +48,15 @@ class PriceSheetScreen extends StatefulWidget {
 }
 
 class _PriceSheetScreenState extends State<PriceSheetScreen> {
-  final _search = TextEditingController();
-  List<SaleItem> _all = const [];
-  List<CustomerRef> _customers = const [];
-  CustomerRef? _customer;
-  String? _category;
-  bool _loading = true;
+  final List<SaleDraftLine> _lines = [];
+  final Map<int, TextEditingController> _qtyCtl = {};
+  final Map<int, TextEditingController> _priceCtl = {};
+  final Map<int, TextEditingController> _discCtl = {};
 
-  /// عرض السعر: صنف ⇐ كمية. **في الذاكرة بس** — مابيتخزّنش ولا بيترفع، فقفل
-  /// الشاشة بيمسحه. ده مقصود: العرض مش مستند، وتخزينه بيخلّيه يتلخبط مع الفواتير.
-  final Map<int, double> _quote = {};
+  /// كتالوج النظام كله — مش عهدة المندوب. ده الفرق اللي بيخلّي الشاشة تنفع:
+  /// بيسعّر صنف مش معاه في العربية.
+  List<SaleItem> _catalog = const [];
+  bool _loading = true;
 
   @override
   void initState() {
@@ -70,396 +66,434 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
 
   @override
   void dispose() {
-    _search.dispose();
+    for (final c in [
+      ..._qtyCtl.values,
+      ..._priceCtl.values,
+      ..._discCtl.values
+    ]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
   Future<void> _load() async {
     final items = await LocalDb.instance.catalogItems();
-    final custs = await LocalDb.instance.customers(limit: 500);
     if (!mounted) return;
     setState(() {
-      _all = items;
-      _customers = custs;
+      _catalog = items;
       _loading = false;
     });
   }
 
-  String? get _tier => _customer?.priceTier;
-  String get _query => _search.text.trim();
+  /// الإجمالي قبل أي خصم — مجموع (كمية × سعر).
+  double get _gross => _lines.fold(0.0, (t, l) => t + l.gross);
 
-  /// الفئات بعددها — نفس ترتيب منتقي البيع، و«بدون فئة» في الآخر.
-  List<MapEntry<String, int>> get _categories {
-    final counts = <String, int>{};
-    for (final it in _all) {
-      counts.update(_categoryOf(it), (n) => n + 1, ifAbsent: () => 1);
+  /// الخصم بالجنيه — **محسوب من الفرق مش من نسبة واحدة**. كل سطر ليه خصمه
+  /// (ثابت الصنف + اللي المندوب زوّده)، فمافيش نسبة واحدة تعبّر عن العرض كله،
+  /// والرقم اللي بيهمّ اللي بيقرا هو «وفّرت كام».
+  double get _discount => _gross - _total;
+
+  double get _total => _lines.fold(0.0, (t, l) => t + l.net);
+
+  Future<void> _addItem() async {
+    if (_catalog.isEmpty) {
+      _say('مافيش أصناف على الجهاز — افتح «مزامنة البيانات» واعمل مزامنة.');
+      return;
     }
-    return counts.entries.toList()
-      ..sort((a, b) {
-        if ((a.key == _noCategory) != (b.key == _noCategory)) {
-          return a.key == _noCategory ? 1 : -1;
-        }
-        return compareArabic(a.key, b.key);
-      });
-  }
-
-  /// أصناف الفئة المفتوحة. **والبحث بيوسّع على الكل** — اللي بيكتب اسم صنف عايزه
-  /// هو، مش عايز يفتكر تحت أنهي فئة اتسجّل.
-  List<SaleItem> get _shown {
-    final q = _query;
-    if (q.isNotEmpty) {
-      return _all.where((i) => i.name.contains(q)).toList();
-    }
-    if (_category == null) return const [];
-    return _all.where((i) => _categoryOf(i) == _category).toList();
-  }
-
-  double _lineTotal(SaleItem i) => i.netPriceFor(_tier) * (_quote[i.itemId] ?? 0);
-
-  double get _quoteTotal => _all.fold(0, (t, i) => t + _lineTotal(i));
-
-  int get _quoteCount => _quote.length;
-
-  /// بيسأل عن الكمية — **من غير سقف**. الفاتورة بتمنع أكتر من اللي في العربية،
-  /// والعرض لأ: التاجر بيسأل «٥٠٠ قطعة بكام» وهو عارف إنها مش معاك دلوقتي.
-  Future<void> _askQty(SaleItem item) async {
-    final ctrl = TextEditingController(
-        text: (_quote[item.itemId] ?? 1).toStringAsFixed(0));
-    final qty = await showDialog<double>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(item.name, style: const TextStyle(fontSize: 16)),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
-            labelText: 'الكمية',
-            suffixText: item.unit,
-            helperText: '${item.netPriceFor(_tier).toStringAsFixed(2)} ج للوحدة',
-            border: const OutlineInputBorder(),
-          ),
-          onSubmitted: (v) =>
-              Navigator.pop(ctx, double.tryParse(v.trim()) ?? 0),
-        ),
-        actions: [
-          if (_quote.containsKey(item.itemId))
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, 0),
-              child: const Text('شيله'),
-            ),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, double.tryParse(ctrl.text.trim()) ?? 0),
-            child: const Text('تمام'),
-          ),
-        ],
-      ),
+    await SaleAddItemFlow.show(
+      context,
+      alreadyOnInvoice: {for (final l in _lines) l.itemId: l.quantity},
+      // مافيش عميل ⇒ مافيش فئة ⇒ السعر الأساسي. المندوب بيعدّله بإيده لو حب.
+      priceTier: null,
+      source: _catalog,
+      // **مافيش حد ومافيش عرض للرصيد.** الحد كان هيمنع تسعير صنف مش معاه، والرصيد
+      // معلومة مضلّلة هنا: دي أصناف النظام مش عربيته، والرقم اللي هيشوفه مش بتاعه.
+      capToAvailable: false,
+      showAvailable: false,
+      onAdd: (picked, qty) {
+        final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
+        setState(() {
+          if (existing >= 0) {
+            _lines[existing].quantity += qty;
+            _qtyCtl[picked.itemId]?.text = _blank(_lines[existing].quantity);
+          } else {
+            _lines.add(SaleDraftLine(
+              itemId: picked.itemId,
+              itemName: picked.name,
+              quantity: qty,
+              unitPrice: picked.priceFor(null),
+              fixedDiscountPct: picked.defaultDiscountPct,
+              variableDiscountPct: 0,
+            ));
+          }
+        });
+      },
     );
-    if (qty == null) return;
+  }
+
+  void _removeLine(SaleDraftLine l) {
     setState(() {
-      if (qty > 0) {
-        _quote[item.itemId] = qty;
-      } else {
-        _quote.remove(item.itemId);
-      }
+      _lines.remove(l);
+      _qtyCtl.remove(l.itemId)?.dispose();
+      _priceCtl.remove(l.itemId)?.dispose();
+      _discCtl.remove(l.itemId)?.dispose();
     });
   }
 
-  /// نسخة نصية تتبعت للتاجر على واتساب — ده اللي المندوب بيعمله فعلاً بالورقة.
-  void _copy() {
-    final rows = _shown;
-    if (rows.isEmpty) return;
-    final head = _customer == null ? 'كشف أسعار' : 'كشف أسعار — ${_customer!.name}';
-    final body = rows.map((i) {
-      final net = i.netPriceFor(_tier);
-      final price = i.priceFor(_tier) > 0 ? '${net.toStringAsFixed(2)} ج' : 'اسأل المكتب';
-      return '${i.name}  $price${(i.unit ?? '').isEmpty ? '' : ' / ${i.unit}'}';
-    }).join('\n');
-    Clipboard.setData(ClipboardData(text: '$head\n\n$body'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('اتنسخ ${rows.length} صنف — الزقه في أي مكان')),
+  void _say(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+  /// يحوّل العرض لفاتورة بسطوره — التاجر قال «تمام هاتهم».
+  ///
+  /// **والفاتورة هي صاحبة الكلمة بعدها.** اختيار التاجر بيعيد تسعير السطور على
+  /// فئته، والمتاح في العربية بيتفحص زي أي فاتورة، والحفظ بيمرّ على نفس الفحوص.
+  /// الكشف بيوفّر إعادة الكتابة — مش بيتخطّى قاعدة.
+  Future<void> _toInvoice() async {
+    if (_lines.isEmpty) return;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تحويل لفاتورة'),
+        content: Text('هتفتح فاتورة بيع بـ${_lines.length} صنف من العرض ده. '
+            'هتختار التاجر هناك، والأسعار هتترجع لفئته، والمتاح في عربيتك هيتفحص.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('كمّل')),
+        ],
+      ),
     );
+    if (go != true || !mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (_) => SaleInvoiceScreen(initialLines: _lines)),
+    );
+  }
+
+  /// نص جاهز يتبعت على واتساب — ده اللي المندوب بيعمله بالورقة.
+  void _copy() {
+    if (_lines.isEmpty) return;
+    final body = _lines
+        .map((l) =>
+            '${l.itemName}  ${_trim(l.quantity)} × '
+            '${_money(_netOf(l.unitPrice, l.discountPct))} = ${_money(l.net)} ج')
+        .join('\n');
+    Clipboard.setData(ClipboardData(
+      // **بيقول إنه عرض سعر صراحةً.** ورقة فيها أصناف وكميات وإجمالي بتتقرا
+      // فاتورة، والتاجر اللي فهمها كده بيطالب بيها.
+      text: 'عرض سعر\n\n$body\n\nالإجمالي: ${_money(_total)} ج\n'
+          '(عرض سعر — مش فاتورة، والأسعار قابلة للتغيير)',
+    ));
+    _say('اتنسخ عرض بـ${_lines.length} صنف');
   }
 
   @override
   Widget build(BuildContext context) {
-    final rows = _shown;
-    final inCategory = _query.isEmpty && _category != null;
     return Scaffold(
       appBar: AppBar(
-        title: Text(inCategory ? _category! : 'كشف تسعير'),
-        leading: inCategory
-            // الرجوع من الأصناف للفئات — مش خروج من الشاشة. اللي فتح فئة عايز يغيّرها،
-            // ولو الزرار خرّجه بره بيرجع يدخل من أول.
-            ? IconButton(
-                icon: const Icon(Icons.arrow_forward),
-                tooltip: 'الفئات',
-                onPressed: () => setState(() => _category = null),
-              )
-            : null,
+        title: const Text('كشف تسعير'),
         actions: [
           IconButton(
-            tooltip: 'انسخ الكشف',
+            tooltip: 'انسخ العرض',
             icon: const Icon(Icons.copy_all_outlined),
-            onPressed: rows.isEmpty ? null : _copy,
+            onPressed: _lines.isEmpty ? null : _copy,
           ),
+          if (_lines.isNotEmpty)
+            IconButton(
+              tooltip: 'فضّي العرض',
+              icon: const Icon(Icons.delete_sweep_outlined),
+              onPressed: () => setState(() {
+                _lines.clear();
+                _qtyCtl.clear();
+                _priceCtl.clear();
+                _discCtl.clear();
+              }),
+            ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _loading ? null : _addItem,
+        icon: const Icon(Icons.add),
+        label: const Text('زوّد صنف'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                _header(),
-                const Divider(height: 1),
-                Expanded(child: _body(rows)),
-              ],
-            ),
-      // شريط العرض — بيبان لما يبقى فيه أصناف متختارة بس، وبيقول **صراحةً** إنه
-      // عرض سعر مش فاتورة. اللي بيقرا إجمالي في شاشة زي الفاتورة بيفتكره فاتورة،
-      // والسطر ده هو اللي بيمنع اللبس ده.
-      bottomNavigationBar: _quoteCount == 0
-          ? null
-          : SafeArea(
-              child: Material(
-                color: AppColors.primary,
-                child: InkWell(
-                  onTap: _copy,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline,
-                              color: Colors.white70),
-                          tooltip: 'فضّي العرض',
-                          onPressed: () => setState(_quote.clear),
-                        ),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('عرض سعر · $_quoteCount صنف',
-                                  style: const TextStyle(
-                                      color: Colors.white70, fontSize: 12)),
-                              Text(
-                                '${_quoteTotal.toStringAsFixed(2)} ج',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18),
-                              ),
-                            ],
+                _hint(),
+                Expanded(
+                  child: _lines.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(28),
+                            child: Text(
+                              'دوس «زوّد صنف» وابدأ تسعّر.\n'
+                              'تقدر تسعّر أي صنف في النظام — حتى لو مش معاك في العربية.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Colors.black54),
+                            ),
                           ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 92),
+                          // سطر زيادة في الآخر: كارت الإجماليات.
+                          itemCount: _lines.length + 1,
+                          itemBuilder: (_, i) =>
+                              i < _lines.length ? _lineTile(i) : _totalsCard(),
                         ),
-                        const Icon(Icons.copy_all_outlined,
-                            color: Colors.white, size: 20),
-                        const SizedBox(width: 6),
-                        const Text('انسخ',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
                 ),
-              ),
-            ),
-    );
-  }
-
-  Widget _header() => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-        child: Column(
-          children: [
-            // التاجر الأول: كل الأرقام تحت بتتحسب على فئته.
-            DropdownButtonFormField<CustomerRef?>(
-              initialValue: _customer,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'التاجر (عشان السعر يطلع بفئته)',
-                prefixIcon: Icon(Icons.person_outline),
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
-              items: [
-                const DropdownMenuItem<CustomerRef?>(
-                  value: null,
-                  child: Text('من غير تاجر — السعر الأساسي'),
-                ),
-                for (final c in _customers)
-                  DropdownMenuItem<CustomerRef?>(
-                    value: c,
-                    child: Text(c.name, overflow: TextOverflow.ellipsis),
-                  ),
               ],
-              onChanged: (v) => setState(() => _customer = v),
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: 'دوّر على صنف في كل الفئات',
-                prefixIcon: const Icon(Icons.search),
-                border: const OutlineInputBorder(),
-                isDense: true,
-                suffixIcon: _search.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _search.clear()),
-                      ),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _body(List<SaleItem> rows) {
-    // مافيش فئة مفتوحة ومافيش بحث ⇒ شاشة الفئات.
-    if (_query.isEmpty && _category == null) {
-      final cats = _categories;
-      if (cats.isEmpty) {
-        return const _Empty(
-          title: 'مافيش أصناف على الجهاز',
-          hint: 'افتح «مزامنة البيانات» واعمل مزامنة.',
-        );
-      }
-      return Column(
-        children: [
-          _note('${_all.length} صنف في ${cats.length} فئة · اختار فئة أو دوّر بالاسم'),
-          Expanded(
-            child: ListView.separated(
-              itemCount: cats.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (_, i) {
-                final e = cats[i];
-                return ListTile(
-                  title: Text(e.key,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text('${e.value}',
-                            style: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w700)),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.chevron_left, size: 18),
-                    ],
-                  ),
-                  onTap: () => setState(() => _category = e.key),
-                );
-              },
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (rows.isEmpty) {
-      return const _Empty(title: 'مافيش صنف بالاسم ده', hint: '');
-    }
-    return Column(
-      children: [
-        _note(_customer == null
-            ? '${rows.length} صنف · السعر الأساسي — اختار تاجر عشان تشوف سعره هو'
-            : '${rows.length} صنف · بفئة ${_customer!.name}'
-                '${_tier == null ? ' (مالوش فئة — السعر الأساسي)' : ''}'),
-        Expanded(
-          child: ListView.separated(
-            itemCount: rows.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (_, i) => _row(rows[i]),
-          ),
-        ),
-      ],
+      bottomNavigationBar: _lines.isEmpty ? null : _totalBar(),
     );
   }
 
-  Widget _note(String text) => Container(
+  Widget _hint() => Container(
         width: double.infinity,
         color: AppColors.primary.withValues(alpha: 0.06),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(text,
-            style: const TextStyle(fontSize: 12.5, color: Colors.black54)),
+        child: Text(
+          'عرض سعر — مش فاتورة. مافيش عميل ولا مديونية ولا خصم من المخزن، '
+          'ومافيش حد للكمية. ${_catalog.length} صنف متاح للتسعير.',
+          style: const TextStyle(fontSize: 12.5, color: Colors.black54),
+        ),
       );
 
-  Widget _row(SaleItem item) {
-    final gross = item.priceFor(_tier);
-    final net = item.netPriceFor(_tier);
-    final hasDiscount = item.defaultDiscountPct > 0;
-    final qty = _quote[item.itemId];
-    return ListTile(
-      dense: true,
-      selected: qty != null,
-      selectedTileColor: AppColors.primary.withValues(alpha: 0.06),
-      // **مافيش سقف كمية ومافيش فحص رصيد** — ده سؤال عن السعر مش عن المتاح.
-      onTap: gross <= 0 ? null : () => _askQty(item),
-      title:
-          Text(item.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text([
-        if ((item.unit ?? '').isNotEmpty) item.unit!,
-        // الفئة بتتعرض في البحث بس — جوّه الفئة هي مكتوبة فوق في العنوان.
-        if (_query.isNotEmpty) _categoryOf(item),
-        if (qty != null)
-          '${qty.toStringAsFixed(0)} × ${net.toStringAsFixed(2)}'
-              ' = ${_lineTotal(item).toStringAsFixed(2)} ج',
-      ].join(' · ')),
-      trailing: gross <= 0
-          // السعر الفاضي مش صفر: «الصنف ده مالوش سعر مسجّل» غير «ببلاش». عرض
-          // ٠٫٠٠ هنا بيخلّي المندوب يقوله رقم مالوش أصل.
-          ? const Text('— مافيش سعر', style: TextStyle(color: Colors.black38))
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('${net.toStringAsFixed(2)} ج',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
-                if (hasDiscount)
-                  Text(
-                    '${gross.toStringAsFixed(2)} − ${item.defaultDiscountPct.toStringAsFixed(0)}%',
-                    style: const TextStyle(fontSize: 11, color: Colors.black45),
-                  ),
-              ],
-            ),
-    );
-  }
-}
-
-class _Empty extends StatelessWidget {
-  const _Empty({required this.title, required this.hint});
-  final String title;
-  final String hint;
-
-  @override
-  Widget build(BuildContext context) => Center(
+  /// كارت الإجماليات في آخر الشيت — زي الفاتورة بالظبط.
+  ///
+  /// **والشريط اللاصق تحت مش بديل عنه.** الشريط بيوري رقم واحد وانت بتزوّد، وده
+  /// اللي بيلزمك وانت بتشتغل. أما اللي بيراجع العرض قبل ما يبعته فبيقرا من تحت
+  /// لفوق: إجمالي، خصم، صافي — والتفصيلة دي هي اللي بتخلّيه يقدر يقول للتاجر
+  /// «وفّرتلك كذا» بدل رقم واحد مالوش سياق.
+  Widget _totalsCard() => Card(
+        margin: const EdgeInsets.fromLTRB(8, 10, 8, 8),
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(title, textAlign: TextAlign.center),
-              if (hint.isNotEmpty) ...[
+              _totalRow('إجمالي الأصناف', _money(_gross)),
+              if (_discount > 0.004) ...[
                 const SizedBox(height: 6),
-                Text(hint,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black45)),
+                _totalRow('الخصم', '- ${_money(_discount)}',
+                    color: AppColors.danger),
               ],
+              const Divider(height: 18),
+              _totalRow('صافي العرض', _money(_total),
+                  big: true, color: AppColors.primary),
+              const SizedBox(height: 8),
+              const Text(
+                'عرض سعر — مش فاتورة. مافيش خصم من المخزن ولا مديونية على حد.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11.5, color: Colors.black45),
+              ),
             ],
           ),
         ),
       );
+
+  Widget _totalRow(String label, String value, {bool big = false, Color? color}) =>
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: TextStyle(
+                  fontSize: big ? 15 : 14,
+                  fontWeight: big ? FontWeight.w700 : FontWeight.w400,
+                  color: big ? Colors.black87 : Colors.black54)),
+          Text('$value ج.م',
+              style: TextStyle(
+                  fontSize: big ? 22 : 16,
+                  fontWeight: FontWeight.w800,
+                  color: color ?? Colors.black87)),
+        ],
+      );
+
+  Widget _totalBar() => SafeArea(
+        child: Material(
+          color: AppColors.primary,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${_lines.length} صنف',
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 12)),
+                      Text('${_money(_total)} ج',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 19)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'انسخ العرض',
+                  icon: const Icon(Icons.copy_all_outlined,
+                      color: Colors.white, size: 22),
+                  onPressed: _copy,
+                ),
+                const SizedBox(width: 4),
+                // **التحويل لفاتورة هو الزرار الأساسي.** المندوب بيسعّر عشان يبيع،
+                // والنسخ للواتساب هو الحالة التانية — فالأوضح بياخد المساحة.
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.primary),
+                  onPressed: _toInvoice,
+                  icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                  label: const Text('حوّله لفاتورة'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  /// نفس كارت سطر الفاتورة — رقم السطر، الاسم، شارة الخصم الثابت، الصافي، وتحتهم
+  /// الكمية والسعر والخصم. **من غير تحذير المتاح**: مافيش حد هنا.
+  Widget _lineTile(int i) {
+    final l = _lines[i];
+    final ctl = _qtyCtl.putIfAbsent(
+        l.itemId, () => TextEditingController(text: _blank(l.quantity)));
+    return Card(
+      key: ValueKey(l.itemId),
+      margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  child: Text('${i + 1}',
+                      style:
+                          const TextStyle(fontSize: 11, color: Colors.black38)),
+                ),
+                Expanded(
+                  child: Text(l.itemName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                ),
+                if (l.fixedDiscountPct > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('ثابت ${_trim(l.fixedDiscountPct)}%',
+                        style: const TextStyle(
+                            fontSize: 10, color: Colors.black87)),
+                  ),
+                ],
+                const SizedBox(width: 6),
+                Text('${_money(l.net)} ج.م',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: AppColors.primary)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                SizedBox(
+                  width: 92,
+                  child: _field(
+                    label: 'كمية',
+                    controller: ctl,
+                    onChanged: (v) => setState(() => l.quantity = v),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _field(
+                    label: 'السعر',
+                    controller: _priceCtl.putIfAbsent(l.itemId,
+                        () => TextEditingController(text: _blank(l.unitPrice))),
+                    onChanged: (v) => setState(() => l.unitPrice = v),
+                    // نفس قاعدة الفاتورة: الصنف اللي عليه خصم ثابت سعره سعر
+                    // القايمة ومايتكتبش فوقه — وإلا بيبقى خصمين على بعض. والتفاوض
+                    // بيفضل في مكان واحد: الخصم المتغيّر.
+                    readOnly: l.fixedDiscountPct > 0,
+                    netPrice: l.fixedDiscountPct > 0
+                        ? _netOf(l.unitPrice, l.discountPct)
+                        : null,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _field(
+                    label: 'خصم %',
+                    controller: _discCtl.putIfAbsent(
+                        l.itemId,
+                        () => TextEditingController(
+                            text: _blank(l.variableDiscountPct))),
+                    onChanged: (v) => setState(() => l.variableDiscountPct = v),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline,
+                      size: 20, color: AppColors.danger),
+                  tooltip: 'حذف السطر',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints.tightFor(width: 32, height: 36),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _removeLine(l),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _field({
+    required String label,
+    required TextEditingController controller,
+    required void Function(double) onChanged,
+    bool readOnly = false,
+    double? netPrice,
+  }) {
+    // الخانة اللي بتوري الصافي مش خانة كتابة — بتترسم عرض من غير كنترولر، زي
+    // الفاتورة بالظبط.
+    if (netPrice != null) {
+      return InputDecorator(
+        decoration: InputDecoration(
+          labelText: '$label (بعد الخصم)',
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
+        child: Text(_money(netPrice),
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+      );
+    }
+    return TextField(
+      controller: controller,
+      readOnly: readOnly,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(
+        labelText: label,
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      onChanged: (v) => onChanged(double.tryParse(v.trim()) ?? 0),
+    );
+  }
 }
