@@ -26,6 +26,7 @@ const BASE_TITLES: Record<string, string> = {
   '/customers': 'العملاء والذمم',
   '/suppliers': 'الموردين والمدفوعات',
   '/catalog': 'كتالوج المنتجات',
+  '/price-sheet': 'كشف تسعير',
   '/purchases': 'إدخال المشتريات',
   '/manufacturing': 'عمليات التصنيع',
   '/invoices': 'الفواتير والمرتجعات',

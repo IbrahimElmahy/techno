@@ -27,6 +27,7 @@ const CustomerProfile = lazy(() => import('../pages/CustomerProfile'));
 const SupplierProfile = lazy(() => import('../pages/SupplierProfile'));
 const Suppliers = lazy(() => import('../pages/Suppliers'));
 const Catalog = lazy(() => import('../pages/Catalog'));
+const PriceSheet = lazy(() => import('../pages/PriceSheet'));
 const ItemProfile = lazy(() => import('../pages/ItemProfile'));
 const Purchases = lazy(() => import('../pages/Purchases'));
 const Manufacturing = lazy(() => import('../pages/Manufacturing'));
@@ -114,6 +115,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/suppliers/:supplierId" element={<SupplierProfile />} />
       <Route path="/categories" element={<Categories />} />
       <Route path="/catalog" element={<Catalog />} />
+      <Route path="/price-sheet" element={<PriceSheet />} />
       <Route path="/catalog/:itemId" element={<ItemProfile />} />
       <Route path="/purchases" element={<Purchases />} />
       <Route path="/manufacturing" element={<Manufacturing />} />
