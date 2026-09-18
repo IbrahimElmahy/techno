@@ -12,6 +12,7 @@ import 'customer_profile_screen.dart';
 import 'debts_screen.dart';
 import 'day_summary_screen.dart';
 import 'my_stock_screen.dart';
+import 'price_sheet_screen.dart';
 import 'transfers_review_screen.dart';
 import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
@@ -234,6 +235,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     subtitle: 'اللي في العربية دلوقتي بكمياته',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const MyStockScreen())),
+                  ),
+                  const SizedBox(height: 14),
+                  // جنب «بضاعتي» مش جنب الفاتورة: الاتنين بيجاوبوا «إيه المتاح وبكام»،
+                  // والفرق إن ده بيغطي أصناف النظام كلها مش اللي في العربية.
+                  _BigAction(
+                    icon: Icons.request_quote_outlined,
+                    color: AppColors.primary,
+                    title: 'كشف تسعير',
+                    subtitle: 'سعر أي صنف للتاجر ده — حتى لو مش معاك',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const PriceSheetScreen())),
                   ),
                   const SizedBox(height: 14),
                   _BigAction(

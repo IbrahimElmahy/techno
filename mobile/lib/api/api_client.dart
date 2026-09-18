@@ -391,6 +391,15 @@ class ApiClient {
             name: i['name'] as String,
             unit: i['unit'] as String?,
             category: _text(i['category']),
+            // السعر والخصم والشرايح — كشف التسعير بيقراهم من غير شبكة. سيرفر قديم
+            // مابيرجّعهمش ⇒ بيفضلوا فاضيين والكشف بيقول «مافيش سعر» بدل ما يقع.
+            basePrice: double.tryParse('${i['base_price']}'),
+            defaultDiscountPct:
+                double.tryParse('${i['default_discount_pct']}') ?? 0,
+            tierPrices: {
+              for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
+                e.key.toString(): double.tryParse('${e.value}') ?? 0
+            },
           )
       ]);
     }

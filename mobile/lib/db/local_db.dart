@@ -19,7 +19,20 @@ class LocalDb {
     // و`main` خد ٢٢ و٢٥ و٢٦ — فالأجهزة اللي في الشارع دلوقتي كل واحد ناقصه ترقيات
     // التاني. الرقم ده أعلى من الاتنين وبيعمل **كل** اللي فاتهم، وكل واحدة محميّة
     // بـ`try`: اللي اتعمل قبل كده بيرمي وبيتتجاهل.
-    _db = await openDatabase(path, version: 28, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 29, onUpgrade: (d, from, to) async {
+      if (from < 29) {
+        // أسعار الكتالوج — كشف التسعير بيقراها. الجهاز القديم بيزوّد الأعمدة وبتتملى
+        // من أول مزامنة؛ لحد ساعتها الكشف بيعرض الأصناف من غير سعر بدل ما يقع.
+        for (final col in [
+          'base_price REAL',
+          'default_discount_pct REAL NOT NULL DEFAULT 0',
+          'tier_prices TEXT',
+        ]) {
+          try {
+            await d.execute('ALTER TABLE branch_catalog_item ADD COLUMN $col');
+          } catch (_) {}
+        }
+      }
       if (from < 28) {
         // **الجهاز اللي محفوظ عليه السيرفر المحلي بيتنقل للسحابة مرة واحدة.**
         //
@@ -732,6 +745,10 @@ class LocalDb {
           'name': it.name,
           'unit': it.unit,
           'category': it.category,
+          'base_price': it.basePrice,
+          'default_discount_pct': it.defaultDiscountPct,
+          'tier_prices':
+              it.tierPrices.entries.map((e) => '${e.key}=${e.value}').join(','),
         });
       }
       await batch.commit(noResult: true);
@@ -744,15 +761,7 @@ class LocalDb {
     final d = await db;
     final rows = await d.query('branch_catalog_item', orderBy: 'name');
     if (rows.isEmpty) return saleItems();
-    return [
-      for (final r in rows)
-        SaleItem(
-          itemId: r['item_id'] as int,
-          name: r['name'] as String,
-          unit: r['unit'] as String?,
-          category: r['category'] as String?,
-        )
-    ];
+    return [for (final r in rows) SaleItem.fromRow(r)];
   }
 
   Future<List<SaleItem>> saleItems({String query = ''}) async {
@@ -1300,16 +1309,20 @@ CREATE TABLE sale_item(
   tier_prices TEXT
 )''';
 
-/// كتالوج أصناف الفرع — **لإذن التحويل**، مش للبيع.
+/// كتالوج أصناف الفرع — لإذن التحويل **ولكشف التسعير**.
 ///
-/// من غير سعر ولا رصيد عن قصد: الإذن مالوش فلوس، والرصيد عند المندوب معلومة مضلّلة
-/// هنا لأنه بيطلب احتياجه مش رصيده. الاسم والوحدة والفئة بس.
+/// **بالسعر من غير رصيد.** الفرق مقصود: المندوب بيتسأل في الشارع عن أصناف مش معاه
+/// في العربية، فالسعر لازم يكون على الجهاز عشان يجاوب من غير شبكة. أما الرصيد
+/// فبيفضل برّه — الصنف ده مش معاه، وعرض رصيد مخزن جنبه بيغرّي ببيع مالوش غطاء.
 const _branchCatalogTable = '''
 CREATE TABLE branch_catalog_item(
   item_id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   unit TEXT,
-  category TEXT
+  category TEXT,
+  base_price REAL,
+  default_discount_pct REAL NOT NULL DEFAULT 0,
+  tier_prices TEXT
 )''';
 
 /// فاتورة اتكتبت على الجهاز.
