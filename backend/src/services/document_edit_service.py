@@ -179,6 +179,31 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
     reversals = db.scalars(select(LedgerEntry.id).where(
         LedgerEntry.reverses_entry_id == entry_id)).all()
     ids = [entry_id, *reversals]
+
+    # **المطابقة تتفك قبل الحذف.** من ساعة ما طبقة المطابقة اشتغلت، سطر الدفتر على حساب
+    # الذمم ممكن يكون مقفول على سطر تاني في `partial_reconcile` — والمفتاح الأجنبي
+    # بيرفض حذفه، فتعديل أو حذف أي فاتورة مسدّدة كان بيقع بـ500.
+    #
+    # والفك مش مجرد مسح للربط: `unreconcile` بيرجّع المتبقّي للسطر **التاني** كمان.
+    # لو مسحنا صفوف `partial_reconcile` على طول، الدفعة اللي كانت مقفولة على الفاتورة
+    # دي تفضل متقفلة وهي مش مقفولة على حاجة — ورصيد العميل يقول إنه دفع وحسابه مقفول
+    # بينما الفاتورة راحت.
+    from src.services import reconcile_service
+
+    # و`unreconcile` بيرمي لو مالقاش مطابقة، فالسؤال بيتسأل الأول: أغلب الفواتير
+    # مش مقفولة على حاجة، وفاتورة عادية مالهاش تقع في استثناء اتكتب لحالة تانية.
+    from src.models.reconcile import PartialReconcile
+
+    line_ids = [i for (i,) in db.execute(
+        select(LedgerLine.id).where(LedgerLine.entry_id.in_(ids))).all()]
+    if line_ids and db.scalar(
+        select(PartialReconcile.id).where(
+            PartialReconcile.debit_line_id.in_(line_ids)
+            | PartialReconcile.credit_line_id.in_(line_ids)
+        ).limit(1)
+    ):
+        reconcile_service.unreconcile(db, line_ids=line_ids)
+
     db.execute(delete(LedgerLine).where(LedgerLine.entry_id.in_(ids)))
     db.execute(delete(LedgerEntry).where(LedgerEntry.id.in_(ids)))
 
