@@ -118,6 +118,10 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       // معلومة مضلّلة هنا: دي أصناف النظام مش عربيته، والرقم اللي هيشوفه مش بتاعه.
       capToAvailable: false,
       showAvailable: false,
+      // **سعر القايمة، مش السعر بعد الخصم.** الخصم هنا بيتكتب بالإيد، فلازم الرقم
+      // اللي قدام المندوب يبقى اللي بيحسب منه. لو اتعرض مخصوم خلاص، الخصم اللي
+      // هيكتبه بيتحط فوق خصم تاني ومحدش شايف إن الاتنين اتجمعوا.
+      showNetPrice: false,
       onAdd: (picked, qty) {
         final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
         setState(() {
@@ -130,7 +134,11 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
               itemName: picked.name,
               quantity: qty,
               unitPrice: picked.priceFor(null),
-              fixedDiscountPct: picked.defaultDiscountPct,
+              // **الخصم الثابت مابيتنقلش للشيت.** ده عرض سعر، والتفاوض كله بيتكتب
+              // بالإيد: السطر بيبدأ بسعر القايمة وخصم صفر، واللي بيسعّر بيحطّ نسبته
+              // هو. ونقل الخصم الافتراضي كان بيقفل خانة السعر كمان (قاعدة الفاتورة)
+              // فالمندوب مايقدرش يعدّل الرقمين اللي الشاشة دي موجودة عشانهم.
+              fixedDiscountPct: 0,
               variableDiscountPct: 0,
             ));
           }

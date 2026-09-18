@@ -37,6 +37,13 @@ class SaleAddItemFlow {
     bool showAvailable = true,
     // السعر على إذن تحويل زحمة — مافيش فلوس في المستند ده.
     bool showPrice = true,
+    // **السعر المعروض: بعد الخصم ولا قبله.**
+    //
+    // في الفاتورة بيتعرض بعد الخصم، لأن ده الرقم اللي هيتحسب وهيتكتب على الورقة.
+    // في كشف التسعير لأ: هناك الخصم بيتكتب بالإيد، والمندوب محتاج يشوف سعر القايمة
+    // عشان يحسب منه. لو اتعرض بعد خصم افتراضي، الخصم اللي هيكتبه بيتحط على سعر
+    // مخصوم خلاص — خصمين على بعض ومحدش شايف.
+    bool showNetPrice = true,
     // **الأصناف اللي بتتعرض.** الافتراضي عهدة المندوب — ودي اللي البيع بيتم منها.
     // إذن التحويل بيبعت أصناف المخزن اللي هو مختاره: الإذن أصلاً بيتكتب عشان يطلب
     // حاجة مش معاه، فقايمة عربيته مالهاش معنى هناك.
@@ -110,7 +117,7 @@ class SaleAddItemFlow {
       final picked = await _pickItem(
         context, items, free, onInvoice, category, priceTier,
         capToAvailable: capToAvailable, showAvailable: showAvailable,
-        showPrice: showPrice);
+        showPrice: showPrice, showNetPrice: showNetPrice);
       if (picked == null) {
         // رجوع من الأصناف بيرجّع للفئات — لو فيه فئات يترجع لها أصلاً.
         if (!hasCategoryLevel) return;
@@ -122,7 +129,7 @@ class SaleAddItemFlow {
       final avail = (free[picked.itemId] ?? 0) - (onInvoice[picked.itemId] ?? 0);
       final answer = await _askQuantity(context, picked, avail, priceTier,
           capToAvailable: capToAvailable, showAvailable: showAvailable,
-          showPrice: showPrice);
+          showPrice: showPrice, showNetPrice: showNetPrice);
       if (!context.mounted) return;
       if (answer == null) continue; // رجع يختار صنف تاني من نفس الفئة
 
@@ -196,6 +203,7 @@ Future<SaleItem?> _pickItem(
   required bool capToAvailable,
   required bool showAvailable,
   required bool showPrice,
+  required bool showNetPrice,
 }) =>
     showDialog<SaleItem>(
       context: context,
@@ -210,6 +218,7 @@ Future<SaleItem?> _pickItem(
           capToAvailable: capToAvailable,
           showAvailable: showAvailable,
           showPrice: showPrice,
+          showNetPrice: showNetPrice,
         ),
       ),
     );
@@ -218,7 +227,8 @@ Future<_QtyAnswer?> _askQuantity(
         BuildContext context, SaleItem item, double available, String? priceTier,
         {required bool capToAvailable,
         required bool showAvailable,
-        required bool showPrice}) =>
+        required bool showPrice,
+        required bool showNetPrice}) =>
     showDialog<_QtyAnswer>(
       context: context,
       builder: (_) => Directionality(
@@ -229,7 +239,7 @@ Future<_QtyAnswer?> _askQuantity(
             priceTier: priceTier,
             capToAvailable: capToAvailable,
             showAvailable: showAvailable,
-            showPrice: showPrice),
+            showPrice: showPrice, showNetPrice: showNetPrice),
       ),
     );
 
@@ -303,6 +313,7 @@ class _SaleItemDialog extends StatefulWidget {
     required this.capToAvailable,
     required this.showAvailable,
     required this.showPrice,
+    required this.showNetPrice,
   });
 
   final List<SaleItem> items;
@@ -313,6 +324,7 @@ class _SaleItemDialog extends StatefulWidget {
   final bool capToAvailable;
   final bool showAvailable;
   final bool showPrice;
+  final bool showNetPrice;
 
   @override
   State<_SaleItemDialog> createState() => _SaleItemDialogState();
@@ -452,10 +464,12 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                           if (it.unit != null && !widget.showAvailable)
                             '${it.unit}',
                           if (widget.showPrice)
-                            '${_money(it.netPriceFor(widget.priceTier))} ج.م'
-                                '${it.defaultDiscountPct > 0
-                                    ? ' (بعد خصم ${_fmt(it.defaultDiscountPct)}%)'
-                                    : ''}',
+                            widget.showNetPrice
+                                ? '${_money(it.netPriceFor(widget.priceTier))} ج.م'
+                                    '${it.defaultDiscountPct > 0
+                                        ? ' (بعد خصم ${_fmt(it.defaultDiscountPct)}%)'
+                                        : ''}'
+                                : '${_money(it.priceFor(widget.priceTier))} ج.م',
                         ];
                         return ListTile(
                           enabled: !out,
@@ -507,6 +521,7 @@ class _SaleQuantityDialog extends StatefulWidget {
     required this.capToAvailable,
     required this.showAvailable,
     required this.showPrice,
+    required this.showNetPrice,
   });
 
   final SaleItem item;
@@ -515,6 +530,7 @@ class _SaleQuantityDialog extends StatefulWidget {
   final bool capToAvailable;
   final bool showAvailable;
   final bool showPrice;
+  final bool showNetPrice;
 
   @override
   State<_SaleQuantityDialog> createState() => _SaleQuantityDialogState();
@@ -566,8 +582,10 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
               widget.item.unit != null)
             Text(
                 widget.showPrice
-                    ? 'السعر: ${_money(price)} ج.م'
-                        '${widget.item.defaultDiscountPct > 0
+                    ? 'السعر: ${_money(widget.showNetPrice
+                            ? price
+                            : widget.item.priceFor(widget.priceTier))} ج.م'
+                        '${widget.showNetPrice && widget.item.defaultDiscountPct > 0
                             ? ' (بعد خصم ${_fmt(widget.item.defaultDiscountPct)}%)'
                             : ''}'
                         '${widget.showAvailable ? ' · المتاح: ${_fmt(widget.available)}' : ''}'
