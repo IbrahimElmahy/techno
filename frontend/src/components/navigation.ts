@@ -429,6 +429,9 @@ export const EXTRA_SECTIONS: NavGroup[] = [
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
+      // الزيارة العادية مستند تاني: مافيهاش فني ولا أصناف ولا نقاط. كانت بتتخلط مع
+      // المعاينات في كشف واحد، فاللي بيراجع النقاط بيعدّ صفوف مالهاش نقاط.
+      { key: '/visits', label: 'الزيارات العادية', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/owners', label: 'الملّاك', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/inspection-items', label: 'أصناف المعاينة', roles: OFFICE },
       { key: '/points-ledger', label: 'سجل النقاط', roles: LOYALTY },

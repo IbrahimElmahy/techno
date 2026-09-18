@@ -15,6 +15,7 @@ import {
   ArrowLeftOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { printDocument } from '../print/brand';
 import { useLookup } from '../hooks/useLookup';
@@ -56,6 +57,7 @@ interface InspectionRecord {
   merchant_customer_id: number | null;
   merchant_name: string | null;
   purchase_shop: string | null;
+  purchase_shop_phone: string | null;
   visit_details: string | null;
   total_points: string;
   rep_user_id: number;
@@ -85,7 +87,18 @@ interface InspectionSummary {
   accepted_points: number;
 }
 
-const Inspections: React.FC = () => {
+/**
+ * **صفحة واحدة، ونوعين زيارة — كل واحد على مساره.**
+ *
+ * الزيارة العادية والمعاينة الفنية مستندين مختلفين: الفنية فيها فني وأصناف ونقاط،
+ * والعادية متابعة أو زيارة عميل من غير فني. وخلطهم في كشف واحد كان بيخلّي اللي بيراجع
+ * النقاط يعدّ صفوف مالهاش نقاط، واللي بيتابع الزيارات يدوّر فيها بين المعاينات.
+ *
+ * والفصل بالمسار مش بنسخة تانية من الملف: الكشف والفلاتر والتفاصيل والتصدير كلهم نفس
+ * الشغل، ونسخة تانية معناها إن أي تصليح يتعمل مرة ويتنسى مرة.
+ */
+const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixedKind }) => {
+  const navigate = useNavigate();
   const [rows, setRows] = useState<InspectionRecord[]>([]);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -104,7 +117,9 @@ const Inspections: React.FC = () => {
     dayjs().subtract(30, 'day'),
     dayjs(),
   ]);
-  const [kind, setKind] = useState<string | undefined>(undefined);
+  const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
+  // المسار بيحدد النوع؛ والفلتر بيشتغل بس على الصفحة اللي مالهاش نوع ثابت.
+  const kind = fixedKind ?? kindFilter;
   const [repId, setRepId] = useState<number | undefined>(undefined);
   const [statusF, setStatusF] = useState<string | undefined>(undefined);
   const [printedF, setPrintedF] = useState<string | undefined>(undefined);
@@ -166,7 +181,7 @@ const Inspections: React.FC = () => {
         setTotalCount(Number(res.data.total || 0));
       }
     } catch (e: any) {
-      message.error(e?.message || 'تعذر تحميل المعاينات');
+      message.error(e?.message || (fixedKind === 'regular' ? 'تعذر تحميل الزيارات' : 'تعذر تحميل المعاينات'));
     } finally {
       setLoading(false);
     }
@@ -314,20 +329,29 @@ const Inspections: React.FC = () => {
       render: (name: string, record: InspectionRecord) => {
         if (record.owner_id) {
           return (
-            <a href={`#/owners`}>
+            <a onClick={() => navigate('/owners')}>
               {name}
             </a>
           );
         }
         if (record.customer_id) {
           return (
-            <a href={`#/customers/${record.customer_id}`}>
+            <a onClick={() => navigate(`/customers/${record.customer_id}`)}>
               {name}
             </a>
           );
         }
         return name;
       },
+    },
+    {
+      // **رقم المالك — الأول والتاني.** خدمة العملاء بتفتح الكشف ده عشان ترنّ،
+      // وكان لازم تفتح كل معاينة لوحدها عشان تشوف الرقم. والرقم بيتعرض بالشكل اللي
+      // بيترنّ (`phones` في السيرفر) — الشيت كان شايل الصفر الأول.
+      title: 'تليفون المالك',
+      dataIndex: 'owner_phone',
+      width: 135,
+      render: (v: string | null) => (v ? <a href={`tel:${v}`} dir="ltr">{v}</a> : '—'),
     },
     { title: 'تاريخ المعاينة', dataIndex: 'inspection_date', width: 115 },
     { title: 'اسم الفني', dataIndex: 'technician_name', width: 140 },
@@ -355,13 +379,20 @@ const Inspections: React.FC = () => {
         if (!name) return '—';
         if (record.merchant_customer_id) {
           return (
-            <a href={`#/customers/${record.merchant_customer_id}`}>
+            <a onClick={() => navigate(`/customers/${record.merchant_customer_id}`)}>
               {name}
             </a>
           );
         }
         return name;
       },
+    },
+    {
+      // رقم التاجر جنب اسمه — نفس السبب: المتابعة بتحصل من الكشف مش من جوّه المستند.
+      title: 'تليفون التاجر',
+      dataIndex: 'purchase_shop_phone',
+      width: 135,
+      render: (v: string | null) => (v ? <a href={`tel:${v}`} dir="ltr">{v}</a> : '—'),
     },
     {
       title: 'عدد النقاط',
@@ -390,7 +421,8 @@ const Inspections: React.FC = () => {
       <StatsRow gutter={16} style={{ marginBottom: 16 }}>
         <Col span={6}>
           <Card>
-            <Statistic title="عدد المعاينات" value={summary.total_count} prefix={<MobileOutlined />} />
+            <Statistic title={fixedKind === 'regular' ? 'عدد الزيارات' : 'عدد المعاينات'}
+                       value={summary.total_count} prefix={<MobileOutlined />} />
           </Card>
         </Col>
         <Col span={6}>
@@ -418,7 +450,9 @@ const Inspections: React.FC = () => {
         </Col>
       </StatsRow>
 
-      <Card title="مراجعة زيارات المناديب (المعاينات)">
+      <Card title={fixedKind === 'regular'
+          ? 'الزيارات العادية (متابعات وزيارات العملاء)'
+          : 'مراجعة زيارات المناديب (المعاينات)'}>
         <Space wrap style={{ marginBottom: 16 }}>
           <div style={{ width: 280 }}>
             <DateRangeFilter
@@ -497,23 +531,25 @@ const Inspections: React.FC = () => {
             onChange={setVisitTypeF}
             options={visitTypeOptions.map((o) => ({ value: o.value, label: o.label }))}
           />
-          <Select
-            placeholder="نوع التسجيل"
-            style={{ width: 135 }}
-            allowClear
-            value={kind}
-            onChange={setKind}
-            options={[
-              { value: 'technician', label: 'معاينة فنيين' },
-              { value: 'regular', label: 'زيارة عادية' },
-            ]}
-          />
+          {!fixedKind && (
+            <Select
+              placeholder="نوع التسجيل"
+              style={{ width: 135 }}
+              allowClear
+              value={kindFilter}
+              onChange={setKindFilter}
+              options={[
+                { value: 'technician', label: 'معاينة فنيين' },
+                { value: 'regular', label: 'زيارة عادية' },
+              ]}
+            />
+          )}
           <Button icon={<ReloadOutlined />} onClick={() => { setPage(1); load(1, pageSize); loadSummary(); }}>
             تحديث
           </Button>
           {/* الزرار هنا مش جنب «الأعمدة» — دي بتتعرض في كارت التفاصيل بس، فالقايمة كانت هتفضل من غير تصدير. */}
           <ExportExcelButton
-            name="المعاينات"
+            name={fixedKind === 'regular' ? 'الزيارات العادية' : 'المعاينات'}
             rows={rows}
             tableColumns={tableCols.columns}
             style={{ marginInlineStart: 0 }}
@@ -650,11 +686,11 @@ const Inspections: React.FC = () => {
               <Descriptions.Item label="المندوب">{repName(detail.rep_user_id)}</Descriptions.Item>
               <Descriptions.Item label="اسم المالك">
                 {detail.owner_id ? (
-                  <a href={`#/owners`}>
+                  <a onClick={() => navigate('/owners')}>
                     {detail.owner_name}
                   </a>
                 ) : detail.customer_id ? (
-                  <a href={`#/customers/${detail.customer_id}`}>
+                  <a onClick={() => navigate(`/customers/${detail.customer_id}`)}>
                     {detail.owner_name}
                   </a>
                 ) : (
@@ -681,7 +717,7 @@ const Inspections: React.FC = () => {
               </Descriptions.Item>
               <Descriptions.Item label="التاجر / محل الشراء">
                 {detail.merchant_customer_id ? (
-                  <a href={`#/customers/${detail.merchant_customer_id}`}>
+                  <a onClick={() => navigate(`/customers/${detail.merchant_customer_id}`)}>
                     {detail.merchant_name || detail.purchase_shop}
                   </a>
                 ) : (

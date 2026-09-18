@@ -147,14 +147,22 @@ def _type_out(t) -> ItemTypeOut:
                        active=t.active)
 
 
-def _out(i, merchant_name: str | None = None) -> InspectionOut:
+def _out(i, merchant_name: str | None = None,
+         merchant_phone: str | None = None,
+         owner_phone: str | None = None) -> InspectionOut:
     return InspectionOut(
         id=i.id, document_number=i.document_number, certificate_number=i.certificate_number,
         status=i.status, visit_type=i.visit_type, printed=i.printed, client_uuid=i.client_uuid,
         visit_kind=i.visit_kind, inspection_date=i.inspection_date, customer_id=i.customer_id,
         owner_id=i.owner_id,
         owner_name=i.owner_name,
-        owner_phone=i.owner_phone, national_id=i.national_id, owner_address=i.owner_address,
+        # التليفونات كلها بتتعرض بالشكل اللي بيترنّ — الشيت بيشيل الصفر الأول،
+        # وقيم نائبة زي `1` كانت بتتخزّن كأنها رقم.
+        # **ورقم المالك بيرجع لكارته زي رقم التاجر.** المعاينة بتشيل لقطة الرقم وقت
+        # الزيارة، والمندوب بيسيبها فاضية في أغلب الأحوال — والرقم موجود على الكارت.
+        owner_phone=(phones.display(i.owner_phone)
+                     or phones.display(owner_phone) or None),
+        national_id=i.national_id, owner_address=i.owner_address,
         floor_number=i.floor_number, description=i.description,
         inspection_type=i.inspection_type, technician_name=i.technician_name,
         # تليفون الفني بيتعرض بالشكل اللي بيترنّ — الشيت بيشيل الصفر الأول.
@@ -162,7 +170,11 @@ def _out(i, merchant_name: str | None = None) -> InspectionOut:
         merchant_customer_id=i.merchant_customer_id,
         merchant_name=merchant_name or i.purchase_shop,
         purchase_shop=i.purchase_shop,
-        purchase_shop_phone=i.purchase_shop_phone,
+        # **رقم التاجر بيرجع لكارت العميل لو المعاينة مكتوبة من غيره.** المندوب
+        # بيكتب اسم المحل وبيسيب الرقم كتير، والرقم موجود أصلاً على كارت التاجر —
+        # وخدمة العملاء محتاجة ترنّ من الكشف مش تروح تدوّر عليه في شاشة تانية.
+        purchase_shop_phone=(phones.display(i.purchase_shop_phone)
+                             or phones.display(merchant_phone) or None),
         visit_details=i.visit_details, total_points=i.total_points, rep_user_id=i.rep_user_id,
         items=[InspectionLineOut(id=ln.id, item_id=ln.item_id, item_name=ln.item_name,
                                  quantity=ln.quantity, points=ln.points, total=ln.total)
@@ -171,12 +183,18 @@ def _out(i, merchant_name: str | None = None) -> InspectionOut:
 
 
 def _out_single(db: Session, insp) -> InspectionOut:
-    m_name = None
+    m_name = m_phone = o_phone = None
     if insp.merchant_customer_id is not None:
         c = db.get(Customer, insp.merchant_customer_id)
         if c:
-            m_name = c.name
-    return _out(insp, merchant_name=m_name or insp.purchase_shop)
+            m_name, m_phone = c.name, c.phone
+    if insp.owner_id is not None:
+        from src.models.owner import Owner
+        o = db.get(Owner, insp.owner_id)
+        if o:
+            o_phone = o.phone or o.phone2
+    return _out(insp, merchant_name=m_name or insp.purchase_shop,
+                merchant_phone=m_phone, owner_phone=o_phone)
 
 
 def _create(db: Session, body: InspectionIn, current: CurrentUser):
@@ -390,10 +408,19 @@ def list_inspections(
         q=q, limit=limit, offset=offset)
 
     m_ids = {i.merchant_customer_id for i in rows if i.merchant_customer_id is not None}
-    m_map = {c.id: c.name for c in db.scalars(
-        select(Customer).where(Customer.id.in_(m_ids))).all()} if m_ids else {}
+    m_rows = db.scalars(select(Customer).where(Customer.id.in_(m_ids))).all() if m_ids else []
+    m_map = {c.id: c.name for c in m_rows}
+    m_phone = {c.id: c.phone for c in m_rows}
 
-    items_out = [_out(i, merchant_name=m_map.get(i.merchant_customer_id) or i.purchase_shop) for i in rows]
+    # أرقام الملاك للصفحة كلها في استعلام واحد — مش استعلام لكل صف.
+    from src.models.owner import Owner
+    o_ids = {i.owner_id for i in rows if i.owner_id is not None}
+    o_phone = {o.id: (o.phone or o.phone2) for o in db.scalars(
+        select(Owner).where(Owner.id.in_(o_ids))).all()} if o_ids else {}
+
+    items_out = [_out(i, merchant_name=m_map.get(i.merchant_customer_id) or i.purchase_shop,
+                      merchant_phone=m_phone.get(i.merchant_customer_id),
+                      owner_phone=o_phone.get(i.owner_id)) for i in rows]
     response.headers["X-Total-Count"] = str(total)
 
     if limit is not None:

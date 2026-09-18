@@ -152,7 +152,9 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/accounting" element={<AccountingDashboard />} />
       <Route path="/loyalty" element={<Loyalty />} />
       <Route path="/audit" element={<Audit />} />
-      <Route path="/inspections" element={<Inspections />} />
+      {/* النوعين على مسارين — نفس الشاشة، والنوع بيتقفل من المسار. شوف `Inspections`. */}
+      <Route path="/inspections" element={<Inspections fixedKind="technician" />} />
+      <Route path="/visits" element={<Inspections fixedKind="regular" />} />
       <Route path="/owners" element={<Owners />} />
       <Route path="/inspection-items" element={<InspectionItems />} />
       <Route path="/reports" element={<Reports />} />
