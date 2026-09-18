@@ -12,6 +12,14 @@ double _netOf(double gross, double pct) =>
 
 String _money(double v) => v.toStringAsFixed(2);
 
+/// سعر الوحدة بيتعرض **بتلات خانات زي الفاتورة**، مش خانتين.
+///
+/// التدوير لخانتين كان بيخلّي السطر مايضربش في بعضه: ١٠٦٫٤٢٥ بتتعرض ١٠٦٫٤٢،
+/// والإجمالي محسوب على القيمة الكاملة — فالتاجر اللي بيضرب ٢٠ × ١٠٦٫٤٢ بإيده
+/// بيطلع ٢١٢٨٫٤٠ ويلاقي مكتوب ٢١٢٨٫٥٠. والورقة دي بالذات اللي بيراجع عليها.
+String _unitPrice(double v) =>
+    v.toStringAsFixed(3).replaceFirst(RegExp(r'\.?0+$'), '');
+
 String _trim(double v) {
   if (v == v.roundToDouble()) return v.toInt().toString();
   return v
@@ -480,7 +488,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
           isDense: true,
           border: const OutlineInputBorder(),
         ),
-        child: Text(_money(netPrice),
+        child: Text(_unitPrice(netPrice),
             style: const TextStyle(fontWeight: FontWeight.w600)),
       );
     }
