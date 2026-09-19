@@ -97,12 +97,31 @@ def create_app() -> FastAPI:
             "https://technothermeg.com",
             *_settings.cors_origins,
         ],
-        # *.vercel.app (previews) OR the technothermeg.com production domain (app/api/apex).
-        allow_origin_regex=r"https://(.*\.vercel\.app|(.*\.)?technothermeg\.com)",
+        # **نطاق العميل وحده.** كان الشرط بيقبل كمان `*.vercel.app` — أي حد يقدر ينشر
+        # صفحة على vercel، وده معناه إن عنوان يتحكم فيه غيرنا كان أصل مسموح له بطلبات
+        # باعتماد. النشر بقى على سيرفرنا من شهور، فالسطر ده ماكانش بيخدم حاجة وبيوسّع
+        # السطح. اللي محتاج أصل تاني بيضيفه في `CORS_ORIGINS`.
+        allow_origin_regex=r"https://(.*\.)?technothermeg\.com",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ------------------------------------------------------------ هيدرات الأمان
+    #
+    # الردود كانت بتطلع من غير أي هيدر حماية. دول أربعة مالهمش تكلفة وبيقفلوا أبواب
+    # معروفة: الصفحة ماتتحطّش في إطار في موقع تاني (تصيّد بالنقر)، والمتصفح مايخمّنش
+    # نوع الملف (تحميل يتنفّذ كـHTML)، والعنوان مايتسرّبش لمواقع برّه، والاتصال يفضل
+    # على HTTPS. مكتوبين هنا مش في nginx عشان يمشوا مع الخدمة في أي بيئة تتنشر فيها.
+    @app.middleware("http")
+    async def _security_headers(request, call_next):  # pragma: no cover — غلاف
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
 
     prefix = "/api/v1"
     app.include_router(auth.router, prefix=prefix)

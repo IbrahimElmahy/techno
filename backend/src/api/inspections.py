@@ -394,8 +394,11 @@ def list_inspections(
     technician: str | None = Query(default=None),
     trader: str | None = Query(default=None),
     q: str | None = Query(default=None),
-    limit: int | None = Query(default=None),
-    offset: int = Query(default=0),
+    # **سقف افتراضي.** النداء من غير `limit` كان بيرجّع ١٠٬٨٠١ معاينة بكل قطعها —
+    # ١٧ ميجا في رد واحد. الشاشة بتطلب صفحة صفحة، فالسقف مايأثرش عليها؛ اللي بيأثر
+    # عليه هو النداء المباشر، وهو نفسه اللي ينفع يستهلك السيرفر بالتكرار.
+    limit: int | None = Query(default=200, le=500),
+    offset: int = Query(default=0, ge=0),
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ):

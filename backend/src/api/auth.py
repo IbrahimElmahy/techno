@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, get_current_user
 from src.auth.rbac import ROLE_CAPABILITIES
 from src.core.db import get_db
+from src.core import login_guard
 from src.core.security import create_access_token, verify_password
 from src.models.role import Role
 from src.models.user import User
@@ -56,11 +57,30 @@ class UserOut(BaseModel):
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def login(body: LoginRequest, request: Request,
+          db: Session = Depends(get_db)) -> TokenResponse:
     from src.core.config import settings
+
+    # **التخمين بيتبطّأ.** خمس محاولات فاشلة على نفس (المستخدم، العنوان) بتقفل خمس
+    # دقايق. من غير ده، `admin` — واسمه معروف — كان قابل لتخمين بلا عدد من جهاز واحد،
+    # والسجل بيكتب `login.fail` ويتفرّج. الشرح كامل في `core/login_guard`.
+    ip = login_guard.client_ip(request)
+    wait = login_guard.seconds_locked(body.username, ip)
+    if wait:
+        audit_service.record(
+            db, action="login.locked", actor_user_id=None, entity_type="user",
+            entity_id=None, after={"username": body.username, "ip": ip},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"code": "too_many_attempts",
+                    "message": f"محاولات دخول كتير. استنى {wait} ثانية وجرّب تاني."},
+        )
 
     user = db.scalar(select(User).where(User.username == body.username))
     if user is None or not user.active or not verify_password(body.password, user.password_hash):
+        login_guard.record_failure(body.username, ip)
         audit_service.record(
             db,
             action="login.fail",
@@ -74,6 +94,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "unauthorized", "message": "Invalid username or password"},
         )
+    login_guard.record_success(body.username, ip)
     role = db.get(Role, user.role_id)
     ttl = settings.mobile_token_ttl if body.client == "mobile" else settings.access_token_ttl
     # جهاز واحد بس: الدخول الجديد بيسحب الجلسة من اللي كان فاتح.
