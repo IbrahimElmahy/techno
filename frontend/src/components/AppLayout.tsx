@@ -43,6 +43,7 @@ const { Header, Sider, Content } = Layout;
  */
 // Role translations in Arabic
 const ROLE_LABELS: Record<RoleName, string> = {
+  owner: 'المالك',
   system_admin: 'مدير النظام الرئيسي',
   branch_manager: 'مدير الفرع',
   purchasing_manager: 'مدير المشتريات',

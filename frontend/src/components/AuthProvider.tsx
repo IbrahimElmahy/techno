@@ -7,7 +7,9 @@ import { api, clearApiCache, getApiBaseURL } from '../api/client';
 // who keeps using the system stays signed in indefinitely.
 const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
-export type RoleName = 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant' | 'viewer';
+// `owner` — صاحب الشركة، أعلى من `system_admin`. كان ناقص من النوع فالشاشات اللي
+// بتقارن بالاسم ما كانتش بتعرفه، ولا TypeScript كان بينبّه عليها.
+export type RoleName = 'owner' | 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant' | 'viewer';
 
 export interface User {
   username: string;

@@ -135,8 +135,8 @@ export default function Transfers() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
-  const { user } = useAuth();
-  const canApprove = ['system_admin', 'branch_manager'].includes(user?.role || '');
+  const { user, can } = useAuth();
+  const canApprove = can('transfer.approve');
 
   const [transfers, setTransfers] = useState<TransferRecord[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);

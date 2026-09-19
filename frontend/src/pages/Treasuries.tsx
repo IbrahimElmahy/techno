@@ -53,7 +53,7 @@ interface RepSafe {
 const FAMILY_FILTER = ['الكل', 'أبيض', 'بولي', 'بدون خط'] as const;
 
 export default function Treasuries() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [rows, setRows] = useState<TreasuryRecord[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -67,7 +67,7 @@ export default function Treasuries() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  const canWrite = ['system_admin', 'accountant', 'branch_manager'].includes(user?.role || '');
+  const canWrite = can('treasury.read') && can('ledger.post');
 
   const load = async () => {
     setLoading(true);

@@ -34,7 +34,7 @@ interface BranchRecord {
 }
 
 export default function Branches() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [rows, setRows] = useState<BranchRecord[]>([]);
   const [governorates, setGovernorates] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -45,7 +45,7 @@ export default function Branches() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  const canWrite = ['system_admin'].includes(user?.role || '');
+  const canWrite = can('branch.write');
 
   const fetchAll = async () => {
     setLoading(true);

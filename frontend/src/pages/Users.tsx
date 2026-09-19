@@ -25,6 +25,8 @@ interface UserRecord {
 }
 
 const ROLE_LABELS: Record<RoleName, string> = {
+  // المالك فوق مدير النظام — بيعدّي من كل باب بيسأل عن الأدمن.
+  owner: 'المالك',
   system_admin: 'مدير النظام الرئيسي',
   branch_manager: 'مدير الفرع',
   purchasing_manager: 'مدير المشتريات',

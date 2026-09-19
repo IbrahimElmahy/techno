@@ -69,10 +69,10 @@ export default function ItemProfile() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   // Same gate as the catalog list: only the roles allowed to create items may edit one.
-  const canEdit = ['system_admin', 'purchasing_manager'].includes(user?.role || '');
-  const canEditPoints = ['system_admin', 'after_sales_staff'].includes(user?.role || '');
+  const canEdit = can('catalog.write');
+  const canEditPoints = can('product_points.write');
   const canEditPrices = ['system_admin', 'branch_manager', 'purchasing_manager']
     .includes(user?.role || '');
 

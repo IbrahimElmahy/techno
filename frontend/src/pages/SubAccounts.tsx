@@ -42,7 +42,7 @@ function AccountGroup({ rows, columns, onOpen }: {
 }
 
 export default function SubAccounts() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [rows, setRows] = useState<ChartAccount[]>([]);
   const [groups, setGroups] = useState<ChartAccount[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,7 +53,7 @@ export default function SubAccounts() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  const canWrite = ['system_admin', 'accountant'].includes(user?.role || '');
+  const canWrite = can('accounting.chart.write');
 
   const load = async () => {
     setLoading(true);

@@ -14,7 +14,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
 export default function CostCenters() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [rows, setRows] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -22,7 +22,7 @@ export default function CostCenters() {
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm();
 
-  const canWrite = ['system_admin', 'accountant'].includes(user?.role || '');
+  const canWrite = can('accounting.chart.write');
 
   const load = async () => {
     setLoading(true);

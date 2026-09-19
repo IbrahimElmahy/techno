@@ -57,7 +57,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function Warehouses() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [rows, setRows] = useState<WarehouseRecord[]>([]);
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -80,7 +80,7 @@ export default function Warehouses() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  const canWrite = ['system_admin', 'branch_manager'].includes(user?.role || '');
+  const canWrite = can('warehouse.write');
 
   const fetchAll = async () => {
     setLoading(true);

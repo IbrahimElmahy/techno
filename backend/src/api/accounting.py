@@ -987,7 +987,7 @@ def set_lock_dates(
     الإقفال محبوس في حساب `admin` وحده، والمالك بيدخل بحسابه هو — فالقرار بتاعه كان
     محتاج حساب تاني عشان يتنفّذ.
     """
-    if not (current.is_admin or current.role == RoleName.owner):
+    if not current.is_admin:  # `is_admin` بقت «الأدمن أو فوقه» — المالك جوّاها
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             {"code": "forbidden", "message": "أقفال التواريخ للأدمن والمالك بس."})

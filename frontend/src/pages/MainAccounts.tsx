@@ -18,7 +18,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { normalizeAr } from '../components/ListToolbar';
 
 export default function MainAccounts() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const [rows, setRows] = useState<ChartAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -28,7 +28,7 @@ export default function MainAccounts() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  const canWrite = ['system_admin', 'accountant'].includes(user?.role || '');
+  const canWrite = can('accounting.chart.write');
 
   const load = async () => {
     setLoading(true);

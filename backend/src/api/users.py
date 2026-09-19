@@ -73,6 +73,22 @@ def list_users(
     return [_to_out(db, u) for u in db.scalars(stmt).all()]
 
 
+
+def _guard_elevated(current: CurrentUser, target_role) -> None:
+    """**حساب الأدمن (والمالك) مايتلمسش إلا من المالك.**
+
+    ده الفرق الوحيد اللي بيخلّي المالك فوق الأدمن فعلاً: الأدمن بيدير النظام،
+    والمالك بيدير الأدمن. من غير الشرط ده أي مدير نظام يقدر يعطّل حساب صاحب
+    الشركة أو يغيّر دوره — وده مش تسلسل، ده باب.
+    """
+    name = getattr(target_role, "value", target_role)
+    if name in (RoleName.system_admin.value, RoleName.owner.value) and not current.is_owner:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {"code": "forbidden",
+             "message": "حساب مدير النظام أو المالك مايتعدّلش إلا من المالك."})
+
+
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: UserCreate,
@@ -143,6 +159,9 @@ def update_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, {"code": "not_found", "message": "User not found"})
+    _guard_elevated(current, db.get(Role, user.role_id).name)
+    if body.role is not None:
+        _guard_elevated(current, body.role)   # ولا يترقّى حد لأدمن إلا من المالك
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
         ensure_branch_access(current, body.branch_id if body.branch_id is not None else user.branch_id)
@@ -204,6 +223,7 @@ def deactivate_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, {"code": "not_found", "message": "User not found"})
+    _guard_elevated(current, db.get(Role, user.role_id).name)
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
     before = {"active": user.active}
@@ -246,6 +266,7 @@ def delete_user(
     if user.id == current.id:
         raise HTTPException(
             409, {"code": "self", "message": "مش هتمسح حسابك وانت داخل بيه"})
+    _guard_elevated(current, db.get(Role, user.role_id).name)
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
 

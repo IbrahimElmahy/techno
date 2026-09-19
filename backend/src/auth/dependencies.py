@@ -30,8 +30,25 @@ class CurrentUser:
     territory_id: int | None
 
     @property
+    def is_owner(self) -> bool:
+        """صاحب الشركة — أعلى دور في النظام."""
+        return self.role == RoleName.owner
+
+    @property
     def is_admin(self) -> bool:
-        return self.role == RoleName.system_admin
+        """مدير النظام **أو فوقه**.
+
+        **المالك أعلى من الأدمن، فبيعدّي من كل باب بيسأل عن الأدمن.** الاتنين عندهم
+        نفس الـ٥٩ صلاحية بالظبط، لكن عشرين موضع في الكود كانوا بيسألوا عن الدور
+        بالاسم (`role == system_admin`) مش عن الصلاحية — فالمالك كان **أقل** من
+        الأدمن فعلياً: بيترفض على أقفال التواريخ، وإدارة المستخدمين، والفروع،
+        واعتماد تحويل فرع تاني، وهو صاحب المحل.
+
+        التصليح هنا مكان واحد بدل عشرين: أي باب بيسأل `is_admin` بقى بيفتح للاتنين.
+        واللي عايز يفرّق بينهم بيسأل `is_owner` — والفرق الوحيد اللي بنفرضه إن
+        **حساب الأدمن نفسه مايتعدلش إلا من المالك**.
+        """
+        return self.role in (RoleName.system_admin, RoleName.owner)
 
     @property
     def rep_id(self) -> int | None:
