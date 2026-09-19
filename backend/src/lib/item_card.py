@@ -21,6 +21,7 @@ from decimal import Decimal
 from sqlalchemy import Date, func, or_, select
 from sqlalchemy.orm import Session
 
+from src.lib import stock_docs
 from src.models.catalog import Item, StockBatchMovement
 from src.models.customer import Customer
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
@@ -175,7 +176,7 @@ def card(
             "is_reversal": mv.reverses_movement_id is not None,
         })
 
-    _document_detail(db, item_id, rows)
+    _document_detail(db, item_id, rows, names)
 
     return {
         "item_id": item_id,
@@ -195,7 +196,8 @@ def card(
     }
 
 
-def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
+def _document_detail(db: Session, item_id: int, rows: list[dict],
+                     names: dict[tuple[str, int], str]) -> None:
     """Fill each row with the party, the document number and the money off its source document.
 
     Their كارت الصنف carries twenty-six columns; ours carried eight. The missing ones were never
@@ -205,6 +207,12 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
 
     Done in bulk per document type: a card can run to hundreds of rows and a query per row turns a
     report into a wait.
+
+    **والنوع بيتسوّى قبل ما يتدوّر عليه.** الحركة المكتوبة من الخدمة الحيّة بتقول `sale`، واللي
+    اتنقلت من a5 بتقول `sales_invoice` — نفس الجدول ونفس الـid، اسمين. الكود ده كان بيدوّر على
+    الاسم الأول وحده، فالكارت المنقول كله — البيع والشراء والمردود — كان بيطلع بأعمدة فاضية:
+    ٦٤٦ سطر في كارت «كوع ٢ باب» مافيهاش ولا اسم عميل ولا سعر واحد. و`stock_docs.names` هو
+    المكان الوحيد اللي بيعرف الاسمين، فالتسوية بتنده عليه بدل ما تكتب القايمة تاني هنا.
 
     Four more of theirs, added after a second reading:
 
@@ -219,21 +227,30 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
     line's share of the tax is its share of the gross. That is not an estimate — it is the same
     proportional rule `create_return` already uses to decide how much tax to refund, which is a
     money decision the system has been making for some time.
+
+    **والتحويل والإذن ليهم جهة كمان.** التحويل مالوش عميل، بس ليه طرف تاني: السطر الوارد جاي
+    **من** مخزن، والمنصرف رايح **إلى** مخزن — والاتنين على نفس الورقة، فالجهة بتتحدد من اتجاه
+    الحركة نفسها مش من الورقة. والإذن جهته سببه، وسعره التكلفة المكتوبة على سطره.
     """
     by_type: dict[str, set[int]] = {}
     for r in rows:
-        if r["source_doc_type"] and r["source_doc_id"]:
-            by_type.setdefault(r["source_doc_type"], set()).add(r["source_doc_id"])
+        # `sale` و`sales_invoice` نفس المستند — التسوية قبل التجميع عشان الاتنين يتقروا مرة.
+        kind = stock_docs.names(r["source_doc_type"])[0] if r["source_doc_type"] else None
+        r["_kind"] = kind
+        if kind and r["source_doc_id"]:
+            by_type.setdefault(kind, set()).add(r["source_doc_id"])
     if not by_type:
+        for r in rows:
+            r.pop("_kind", None)
         return
 
     customers = {c.id: c.name for c in db.scalars(select(Customer)).all()}
     suppliers = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
 
-    # (doc_type, doc_id) -> {party, document_number, unit_price, line_total}
+    # (doc_kind, doc_id) -> {party, document_number, unit_price, line_total}
     detail: dict[tuple[str, int], dict] = {}
 
-    sale_ids = by_type.get("sale", set()) | by_type.get("sale_return", set())
+    sale_ids = by_type.get("sale", set())
     if sale_ids:
         invoices = {i.id: i for i in db.scalars(
             select(SalesInvoice).where(SalesInvoice.id.in_(sale_ids))).all()}
@@ -259,15 +276,36 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
                 "tax_amount": str(_share(doc_tax, line_total, gross)) if ln else None,
             }
 
-    # A return points at the invoice it came off, so its party and number are the sale's.
+    # A return carries its own customer; the invoice it came off is the fallback for the rows
+    # written before that column existed.
     ret_ids = by_type.get("sale_return", set())
     if ret_ids:
+        from src.models.sales import SalesReturnLine
+
+        ret_lines = db.scalars(select(SalesReturnLine).where(
+            SalesReturnLine.item_id == item_id,
+            SalesReturnLine.return_id.in_(ret_ids))).all()
+        line_of = {ln.return_id: ln for ln in ret_lines}
         for ret in db.scalars(select(SalesReturn).where(SalesReturn.id.in_(ret_ids))).all():
-            inv = db.get(SalesInvoice, ret.sales_invoice_id) if ret.sales_invoice_id else None
+            ln = line_of.get(ret.id)
+            customer_id = ret.customer_id
+            if customer_id is None and ret.sales_invoice_id:
+                inv = db.get(SalesInvoice, ret.sales_invoice_id)
+                customer_id = inv.customer_id if inv else None
+            gross = Decimal(str(ret.gross or 0))
+            doc_tax = Decimal(str(ret.tax_amount or 0))
+            line_total = Decimal(str(ln.line_total or 0)) if ln else ZERO_D
             detail[("sale_return", ret.id)] = {
-                "party": customers.get(inv.customer_id) if inv else None,
+                "party": customers.get(customer_id),
                 "document_number": ret.document_number,
-                "unit_price": None, "line_total": str(ret.value),
+                "unit_price": str(ln.unit_price) if ln and ln.unit_price is not None else None,
+                # A return with no line for this item still has a value — the document's own.
+                "line_total": (str(ln.line_total) if ln and ln.line_total is not None
+                               else str(ret.value)),
+                "unit": ln.unit if ln else None,
+                "unit_factor": str(ln.unit_factor) if ln else None,
+                "discount_pct": str(ln.discount_pct) if ln else None,
+                "tax_amount": str(_share(doc_tax, line_total, gross)) if ln else None,
             }
 
     buy_ids = by_type.get("purchase", set())
@@ -292,22 +330,88 @@ def _document_detail(db: Session, item_id: int, rows: list[dict]) -> None:
                 "discount_pct": None, "tax_amount": None,
             }
 
+    buy_ret_ids = by_type.get("purchase_return", set())
+    if buy_ret_ids:
+        from src.models.purchasing import PurchaseReturn, PurchaseReturnLine
+
+        lines = db.scalars(select(PurchaseReturnLine).where(
+            PurchaseReturnLine.item_id == item_id,
+            PurchaseReturnLine.return_id.in_(buy_ret_ids))).all()
+        line_of = {ln.return_id: ln for ln in lines}
+        for ret in db.scalars(select(PurchaseReturn).where(
+                PurchaseReturn.id.in_(buy_ret_ids))).all():
+            ln = line_of.get(ret.id)
+            detail[("purchase_return", ret.id)] = {
+                "party": suppliers.get(ret.supplier_id),
+                "document_number": ret.document_number,
+                "unit_price": str(ln.unit_price) if ln else None,
+                "line_total": str(ln.line_total) if ln else None,
+                "unit": ln.unit if ln else None,
+                "unit_factor": str(ln.unit_factor) if ln else None,
+                "discount_pct": (str(ln.discount_pct) if ln and ln.discount_pct is not None
+                                 else None),
+                "tax_amount": None,
+            }
+
+    # **التحويل: الطرف التاني بيتقرا من اتجاه السطر.** الورقة الواحدة بتكتب حركتين — واحدة
+    # منصرفة من المصدر وواحدة واردة للوجهة — فمافيش جهة واحدة تنفع للورقة كلها.
+    trf_ids = by_type.get("transfer", set())
+    if trf_ids:
+        from src.models.transfer import StockTransfer
+
+        for t in db.scalars(select(StockTransfer).where(StockTransfer.id.in_(trf_ids))).all():
+            src_kind = (t.source_location_kind if isinstance(t.source_location_kind, str)
+                        else t.source_location_kind.value)
+            dst_kind = (t.dest_location_kind if isinstance(t.dest_location_kind, str)
+                        else t.dest_location_kind.value)
+            src = names.get((src_kind, t.source_location_id), f"#{t.source_location_id}")
+            dst = names.get((dst_kind, t.dest_location_id), f"#{t.dest_location_id}")
+            detail[("transfer", t.id)] = {
+                "document_number": t.document_number,
+                "party_in": f"من {src}", "party_out": f"إلى {dst}",
+            }
+
+    permit_ids = by_type.get("stock_permit", set()) | by_type.get("permit", set())
+    if permit_ids:
+        from src.models.stock_permit import StockPermit, StockPermitLine
+
+        lines = db.scalars(select(StockPermitLine).where(
+            StockPermitLine.item_id == item_id,
+            StockPermitLine.permit_id.in_(permit_ids))).all()
+        line_of = {ln.permit_id: ln for ln in lines}
+        for pm in db.scalars(select(StockPermit).where(StockPermit.id.in_(permit_ids))).all():
+            ln = line_of.get(pm.id)
+            entry = {
+                # الإذن مالوش طرف تجاري — سببه هو اللي بيفسّره، وده اللي بيتعرض مكانه.
+                "party": pm.reason or None,
+                "document_number": pm.document_number,
+                "unit_price": str(ln.unit_cost) if ln else None,
+                "line_total": str(ln.line_cost) if ln else None,
+                "unit": None, "unit_factor": None,
+                "discount_pct": None, "tax_amount": None,
+            }
+            detail[("stock_permit", pm.id)] = entry
+            detail[("permit", pm.id)] = entry
+
     # Expiry: the lot a sale drew from is on the batch trail, keyed by the document that moved it.
     expiry_of: dict[tuple[str, int], str] = {}
     for m in db.scalars(select(StockBatchMovement).where(
             StockBatchMovement.item_id == item_id)).all():
         if m.document_type and m.document_id:
-            key = ("sale" if m.document_type == "sales_invoice" else m.document_type,
-                   m.document_id)
+            key = (stock_docs.names(m.document_type)[0], m.document_id)
             # Several lots on one document: the soonest is the one worth showing.
             prev = expiry_of.get(key)
             if prev is None or str(m.expiry_date) < prev:
                 expiry_of[key] = str(m.expiry_date)
 
     for r in rows:
-        key = (r["source_doc_type"], r["source_doc_id"])
+        key = (r.pop("_kind", None), r["source_doc_id"])
         d = detail.get(key, {})
-        r["party"] = d.get("party")
+        # التحويل بيدّي جهتين، والسطر بياخد اللي على ناحيته.
+        if "party_in" in d:
+            r["party"] = d["party_in"] if r["direction"] == "in" else d["party_out"]
+        else:
+            r["party"] = d.get("party")
         r["document_number"] = d.get("document_number")
         r["unit_price"] = d.get("unit_price")
         r["line_total"] = d.get("line_total")
