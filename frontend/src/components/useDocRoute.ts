@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 /** ورقة للقراءة، ولا نموذج للتعديل. */
 export type DocMode = 'view' | 'edit';
@@ -31,6 +31,27 @@ export type DocMode = 'view' | 'edit';
  * **والوضع جزء من العنوان كمان.** شاشة الفواتير بتفتح المستند بشكلين — ورقة للقراءة أو
  * نموذج للتعديل — والاتنين مش نفس الحاجة للي بيرجع. فالعرض بيكتب `?doc=` والتعديل
  * بيكتب `?edit=`، والرجوع بيرجّع للي كان مفتوح فعلاً.
+ *
+ * ---------------------------------------------------------------------------
+ * **و«رجوع» بيرجّع للمكان اللي جيت منه، مش لكشف الشاشة.**
+ *
+ * الفاتورة بتتفتح من سبع حتت غير كشف الفواتير: كارت الصنف، كشف حساب العميل، كارت
+ * العميل والمورد، والتقارير. الرابط بينقلك لشاشة الفواتير، وكان «رجوع» بيشيل المستند
+ * من العنوان بس — فتلاقي نفسك في **كشف الفواتير**، وشاشة مالكش دعوة بيها، ولازم ترجع
+ * تدوّر على الصنف اللي كنت فيه من الأول.
+ *
+ * `useOpenDocument` بيحط `back=1` على العنوان، وساعتها «رجوع» بيعمل خطوة
+ * رجوع حقيقية في تاريخ المتصفح — والخطوة دي هي الشاشة اللي جيت منها بالظبط، لأن الفتح
+ * بيدفع خطوة واحدة.
+ *
+ * وفيه شرطين بيمنعوا خطوة زيادة:
+ *
+ * * **القفل على عنوان منضّف مابيعملش حاجة.** لما تدوس «رجوع» بتاع المتصفح، العنوان
+ *   بيفقد `?doc` والمزامنة بتنده `close()` — واللي بينده `markClosed` بعدها. من غير
+ *   الشرط ده كانت الضغطة الواحدة بترجع خطوتين.
+ * * **الفتح على مستند مفتوح خلاص مابيدفعش.** الشاشة بتنده `markOpen` جوّه دالة الفتح،
+ *   واللي بتتنده كمان لما المزامنة تفتح المستند اللي في العنوان — فكانت بتتسجّل خطوة
+ *   مكرّرة، و«رجوع» يرجّع لنفس المستند.
  */
 export function useDocRoute<T extends { id: number }>(opts: {
   /** الصفحة المحمّلة من الكشف — بيتدوّر فيها الأول قبل ما يتجاب بالرقم. */
@@ -49,6 +70,9 @@ export function useDocRoute<T extends { id: number }>(opts: {
 }) {
   const { rows, openId, open, close, fetchOne, loading } = opts;
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  // جاي من شاشة تانية (كارت صنف، كشف حساب، تقرير) — مش من كشف الشاشة دي.
+  const fromScreen = params.get('back') === '1';
   const editRaw = params.get('edit');
   const raw = params.get('doc') || editRaw;
   const wanted = raw ? Number(raw) : null;
@@ -82,6 +106,10 @@ export function useDocRoute<T extends { id: number }>(opts: {
   /** بيتنده جوّه دالة الفتح بتاعة الشاشة — بيدفع المستند على العنوان. */
   const markOpen = useCallback((id: number, m: DocMode = 'view') => {
     handled.current = id;
+    // العنوان بيقول كده خلاص ⇒ مافيش خطوة جديدة. الشرح فوق.
+    const key = m === 'edit' ? 'edit' : 'doc';
+    const other = key === 'doc' ? 'edit' : 'doc';
+    if (params.get(key) === String(id) && !params.get(other)) return;
     setParams((p) => {
       const next = new URLSearchParams(p);
       next.delete('doc');
@@ -89,18 +117,21 @@ export function useDocRoute<T extends { id: number }>(opts: {
       next.set(m === 'edit' ? 'edit' : 'doc', String(id));
       return next;
     });
-  }, [setParams]);
+  }, [params, setParams]);
 
   /** بيتنده جوّه دالة القفل — بيشيل المستند من العنوان من غير ما يزوّد خطوة. */
   const markClosed = useCallback(() => {
     handled.current = null;
+    // العنوان اتنضّف خلاص (رجوع المتصفح) ⇒ مافيش خطوة تانية تتعمل.
+    if (!params.get('doc') && !params.get('edit')) return;
+    if (fromScreen) { navigate(-1); return; }
     setParams((p) => {
       const next = new URLSearchParams(p);
       next.delete('doc');
       next.delete('edit');
       return next;
     }, { replace: true });
-  }, [setParams]);
+  }, [params, fromScreen, navigate, setParams]);
 
   return { markOpen, markClosed };
 }

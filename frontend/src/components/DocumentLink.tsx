@@ -101,7 +101,15 @@ export function useOpenDocument() {
   return (kind: DocKind, id: number | null | undefined, _opts?: { readOnly?: boolean }) => {
     if (!id) return;
     // Always open in view mode ('doc'). The user clicks 'تعديل' on the toolbar if they want to edit.
-    navigate(`${SCREEN[kind]}?doc=${id}`);
+    //
+    // **`back=1` هي اللي بتخلّي «رجوع» يرجّع لهنا.** من غيرها «رجوع» بتاع شاشة
+    // المستند بيشيل المستند من العنوان بس، فاللي فتح فاتورة من كارت الصنف بيلاقي
+    // نفسه في كشف الفواتير — شاشة مالوش دعوة بيها.
+    //
+    // والعلامة في العنوان مش في `state` بتاع الراوتر عن قصد: شاشة الفواتير بتمسح
+    // بارامتراتها بـ`replace` أول ما تفتح المستند، والاستبدال بيرمي الـ`state` معاه.
+    // العنوان بيتقرا قبل المسح، فالعلامة بتوصل.
+    navigate(`${SCREEN[kind]}?doc=${id}&back=1`);
   };
 }
 

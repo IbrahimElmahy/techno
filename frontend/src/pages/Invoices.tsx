@@ -699,7 +699,12 @@ export default function Invoices() {
    * والسؤال ساعتها عقبة مالهاش سبب.
    */
   const closeCreate = () => {
-    const leave = () => { resetDocument(); setCreateVisible(false); };
+    const leave = () => {
+      resetDocument();
+      setCreateVisible(false);
+      // المستند اتفتح من شاشة تانية ⇒ «رجوع» يرجّع لهناك، مش لكشف الفواتير.
+      if (cameFromScreen.current) { cameFromScreen.current = false; navigate(-1); }
+    };
     const verdict = verdictOnLeave({
       readOnly: viewOnly,
       savedDocument: editingInvoice != null,
@@ -1396,6 +1401,14 @@ export default function Invoices() {
    * هنا لحد ما يبان الخطأ الحقيقي في الكونسول — شاشة مابتفتحش مش مقايضة مع أي تحسين.
    */
   const pendingIntent = useRef<{ id: number; mode: 'view' | 'edit' } | null>(null);
+  /**
+   * **جاي من شاشة تانية** — كارت صنف، كشف حساب، كارت عميل، تقرير.
+   *
+   * لازم تتلتقط هنا بالذات: السطر اللي تحت بيمسح البارامترات، فالعلامة بتروح معاها.
+   * ولو راحت، «رجوع» بيرجّع لكشف الفواتير — شاشة اللي ضغط مالوش دعوة بيها، ولازم
+   * يروح يدوّر على الصنف اللي كان فيه من الأول.
+   */
+  const cameFromScreen = useRef(false);
 
   useEffect(() => {
     const doc = searchParams.get('doc');
@@ -1403,6 +1416,7 @@ export default function Invoices() {
     const id = searchParams.get('id');
     if (doc || edit || id) {
       pendingIntent.current = { id: Number(doc || edit || id), mode: edit ? 'edit' : 'view' };
+      cameFromScreen.current = searchParams.get('back') === '1';
       // Cleared immediately so a refresh, or returning to this tab later, cannot replay it.
       setSearchParams({}, { replace: true });
     }
