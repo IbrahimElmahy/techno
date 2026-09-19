@@ -306,6 +306,24 @@ export default function JournalTab() {
     dateOf: (e) => e.date,
   });
 
+  /**
+   * **`?doc=` و`?entry=` كانوا بيوصلوا هنا ومحدش بيقراهم.**
+   *
+   * خمس شاشات بتبعت القيد لهنا — «سلامة الدفاتر»، وحركة الحساب، ودفتر الشريك،
+   * والربحية، والمطابقة — كلهم بيكتبوا `/general-ledger?doc=<id>` والتاب ده كان
+   * بيقرا `journal` و`state` وبس. فالرابط بينقلك للسجل كله، وتدوّر بنفسك على قيد
+   * انت كنت واقف عليه قبل الضغطة بثانية.
+   *
+   * والرقم بيدخل في خانة البحث لأن `id` جزء من اللي البحث بيدوّر فيه — فالكشف بيتفلتر
+   * على القيد ده وحده، واللي عايز يشوف غيره بيمسح الخانة.
+   */
+  const wantedEntry = searchParams.get('doc') || searchParams.get('entry');
+  const { setQuery } = filter;
+  React.useEffect(() => {
+    if (wantedEntry) setQuery(String(wantedEntry));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantedEntry]);
+
   const columns = [
     { title: 'رقم القيد', dataIndex: 'number', key: 'number', width: 140,
       ...textColumn(entries, (e: JournalEntry) => e.number ?? ''),

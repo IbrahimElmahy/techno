@@ -1623,7 +1623,8 @@ export default function Purchases() {
    */
   const openRow = async (row: PurchaseRecord) => {
     if (row.kind === 'return') {
-      navigate(`/purchase-returns?doc=${row.id}`);
+      // `back=1` عشان «رجوع» يرجّع لكشف المشتريات، مش لكشف المردودات.
+      navigate(`/purchase-returns?doc=${row.id}&back=1`);
       return;
     }
     openDetail(row);
