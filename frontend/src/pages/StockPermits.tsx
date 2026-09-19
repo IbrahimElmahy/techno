@@ -148,7 +148,10 @@ export default function StockPermits() {
     initialValues: kind === 'opening' ? { kind: 'opening' } : {},
     search: (p) => [p.document_number, p.reason, p.warehouse_name],
     filters: { kind: (p, v) => p.kind === v },
-    dateOf: (p) => p.created_at,
+    // الفلتر على تاريخ الإذن نفسه — هو اللي في عمود «التاريخ». `created_at` وقت
+    // كتابة الصف، والمنقول من a5 كله اتكتب في يوم واحد: الفلترة عليه بتخفي إذن
+    // ظاهر تاريخه يوليو لأنه اتسجّل عندنا في سبتمبر.
+    dateOf: (p) => p.permit_date || p.created_at,
   });
 
   /** المسودّة — الإذن اللي اتكتب ولسه ما اترحّلش. الشرح في `useDraft`. */

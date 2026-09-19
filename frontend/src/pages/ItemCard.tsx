@@ -28,11 +28,25 @@ import StatsRow from '../components/StatsRow';
  * from nothing.
  */
 
+/**
+ * **الاسمين الاتنين مقصودين.** الحركة اتكتبت بتسميتين على مدى المشروع: `sale_out`
+ * و`sale`، `purchase_in` و`purchase`، `opening_in` و`opening`. الخريطة كانت شايلة
+ * الأولانية بس، فالكارت كان بيطبع «sale» و«opening» بالإنجليزي جنب «تحويل وارد»
+ * بالعربي — والاسم الخام ده هو أكتر نوع حركة في الداتا أصلاً.
+ *
+ * الحل هنا مش إعادة تسمية الحركات في القاعدة: ده عمود مكتوب على ملايين الصفوف
+ * ومقروء من تقارير تانية. الخريطة بتعرف الاتنين.
+ */
 const MOVEMENT_LABELS: Record<string, string> = {
   purchase_in: 'شراء',
+  purchase: 'شراء',
   purchase_return_out: 'مرتجع شراء',
+  purchase_return: 'مرتجع شراء',
   sale_out: 'بيع',
+  sale: 'بيع',
   sale_return_in: 'مرتجع بيع',
+  sales_return: 'مرتجع بيع',
+  opening: 'بضاعة أول المدة',
   transfer_in: 'تحويل وارد',
   transfer_out: 'تحويل صادر',
   production_in: 'إنتاج',
@@ -191,7 +205,19 @@ export default function ItemCard() {
   });
 
   const columns: ColumnsType<CardRow> = [
+    /**
+     * **الأحدث فوق.** السيرفر بيرجّع الحركات بترتيب زمني صاعد عشان الرصيد الجاري
+     * يتحسب صح، واللي بيفتح الكارت بيدوّر على آخر حاجة حصلت — فكان لازم ينزل ٤٩٥
+     * سطر عشان يشوفها. كل سطر شايل رصيده قبل وبعد، فقلب العرض مابيكسرش قراءته.
+     *
+     * والترتيب بيفصل التعادل برقم الحركة: مية سطر في نفس اليوم مالهومش ترتيب من
+     * التاريخ وحده، والرقم بيمشي مع زمن الكتابة.
+     */
     { title: 'التاريخ', dataIndex: 'date', ...dateColumn<CardRow>((r) => r.date),
+      defaultSortOrder: 'descend' as const,
+      sorter: (a: CardRow, b: CardRow) =>
+        String(a.date ?? '').slice(0, 10).localeCompare(String(b.date ?? '').slice(0, 10))
+        || (a.movement_id - b.movement_id),
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'نوع الحركة', dataIndex: 'movement_type',
       ...textColumn(cardRows, (r: CardRow) => MOVEMENT_LABELS[r.movement_type] || r.movement_type),

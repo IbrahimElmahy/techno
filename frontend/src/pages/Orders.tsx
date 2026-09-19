@@ -157,7 +157,8 @@ export default function Orders() {
       kind: (o, v) => o.kind === v,
       status: (o, v) => o.status === v,
     },
-    dateOf: (o) => o.created_at,
+    // تاريخ الطلب هو اللي في العمود، مش وقت كتابة الصف.
+    dateOf: (o) => o.order_date || o.created_at,
   });
 
   const partyName = (o: Order) => (o.kind === 'sale'
