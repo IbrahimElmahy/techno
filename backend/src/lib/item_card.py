@@ -26,7 +26,7 @@ from src.models.catalog import Item, StockBatchMovement
 from src.models.customer import Customer
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
 from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn
-from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.stock import LocationKind, StockDirection, StockDoc, StockMovement
 from src.models.supplier import Supplier
 
 ZERO_QTY = Decimal("0.000")
@@ -147,7 +147,10 @@ def card(
             continue
         if day_to is not None and when is not None and when > day_to:
             continue
-        if movement_type and mv.movement_type != movement_type:
+        # الفلتر بيقارن بالاسم الموحّد مش بالنص: «بيع» متخزّنة `sale` في ٤٥٬٥٥٥ صف
+        # و`sale_out` في ١١٥، والمقارنة الحرفية كانت بتخفي واحدة من التنين.
+        if movement_type and (stock_docs.canonical(mv.movement_type, kind="movement")
+                              != stock_docs.canonical(movement_type, kind="movement")):
             continue
         if direction and mv.direction.value != direction:
             continue
@@ -162,7 +165,11 @@ def card(
         rows.append({
             "movement_id": mv.id,
             "date": str(when) if when else None,
-            "movement_type": mv.movement_type,
+            "movement_type": stock_docs.canonical(mv.movement_type, kind="movement")
+                             or mv.movement_type,
+            # الاسم العربي بييجي من السجل مش من الشاشة — كانت تلات نسخ منه في
+            # ملفات `.tsx` وكل واحدة ناسية نوع.
+            "movement_label": stock_docs.label(mv.movement_type, kind="movement"),
             "direction": mv.direction.value,
             "quantity_in": str(quantity if is_in else ZERO_QTY),
             "quantity_out": str(ZERO_QTY if is_in else quantity),
@@ -235,7 +242,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
     by_type: dict[str, set[int]] = {}
     for r in rows:
         # `sale` و`sales_invoice` نفس المستند — التسوية قبل التجميع عشان الاتنين يتقروا مرة.
-        kind = stock_docs.names(r["source_doc_type"])[0] if r["source_doc_type"] else None
+        kind = stock_docs.canonical(r["source_doc_type"])
         r["_kind"] = kind
         if kind and r["source_doc_id"]:
             by_type.setdefault(kind, set()).add(r["source_doc_id"])
@@ -250,7 +257,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
     # (doc_kind, doc_id) -> {party, document_number, unit_price, line_total}
     detail: dict[tuple[str, int], dict] = {}
 
-    sale_ids = by_type.get("sale", set())
+    sale_ids = by_type.get(StockDoc.SALE, set())
     if sale_ids:
         invoices = {i.id: i for i in db.scalars(
             select(SalesInvoice).where(SalesInvoice.id.in_(sale_ids))).all()}
@@ -263,7 +270,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
             gross = Decimal(str(inv.gross or 0))
             doc_tax = Decimal(str(getattr(inv, "tax_amount", 0) or 0))
             line_total = Decimal(str(ln.line_total)) if ln else ZERO_D
-            detail[("sale", doc_id)] = {
+            detail[(StockDoc.SALE, doc_id)] = {
                 "party": customers.get(inv.customer_id),
                 "document_number": inv.document_number,
                 "unit_price": str(ln.unit_price) if ln else None,
@@ -278,7 +285,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
 
     # A return carries its own customer; the invoice it came off is the fallback for the rows
     # written before that column existed.
-    ret_ids = by_type.get("sale_return", set())
+    ret_ids = by_type.get(StockDoc.SALE_RETURN, set())
     if ret_ids:
         from src.models.sales import SalesReturnLine
 
@@ -295,7 +302,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
             gross = Decimal(str(ret.gross or 0))
             doc_tax = Decimal(str(ret.tax_amount or 0))
             line_total = Decimal(str(ln.line_total or 0)) if ln else ZERO_D
-            detail[("sale_return", ret.id)] = {
+            detail[(StockDoc.SALE_RETURN, ret.id)] = {
                 "party": customers.get(customer_id),
                 "document_number": ret.document_number,
                 "unit_price": str(ln.unit_price) if ln and ln.unit_price is not None else None,
@@ -308,7 +315,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                 "tax_amount": str(_share(doc_tax, line_total, gross)) if ln else None,
             }
 
-    buy_ids = by_type.get("purchase", set())
+    buy_ids = by_type.get(StockDoc.PURCHASE, set())
     if buy_ids:
         purchases = {p.id: p for p in db.scalars(
             select(PurchaseInvoice).where(PurchaseInvoice.id.in_(buy_ids))).all()}
@@ -318,7 +325,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
         line_of = {ln.invoice_id: ln for ln in lines}
         for doc_id, p in purchases.items():
             ln = line_of.get(doc_id)
-            detail[("purchase", doc_id)] = {
+            detail[(StockDoc.PURCHASE, doc_id)] = {
                 "party": suppliers.get(p.supplier_id),
                 "document_number": p.document_number,
                 "unit_price": str(ln.unit_price) if ln else None,
@@ -330,7 +337,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                 "discount_pct": None, "tax_amount": None,
             }
 
-    buy_ret_ids = by_type.get("purchase_return", set())
+    buy_ret_ids = by_type.get(StockDoc.PURCHASE_RETURN, set())
     if buy_ret_ids:
         from src.models.purchasing import PurchaseReturn, PurchaseReturnLine
 
@@ -341,7 +348,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
         for ret in db.scalars(select(PurchaseReturn).where(
                 PurchaseReturn.id.in_(buy_ret_ids))).all():
             ln = line_of.get(ret.id)
-            detail[("purchase_return", ret.id)] = {
+            detail[(StockDoc.PURCHASE_RETURN, ret.id)] = {
                 "party": suppliers.get(ret.supplier_id),
                 "document_number": ret.document_number,
                 "unit_price": str(ln.unit_price) if ln else None,
@@ -355,7 +362,7 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
 
     # **التحويل: الطرف التاني بيتقرا من اتجاه السطر.** الورقة الواحدة بتكتب حركتين — واحدة
     # منصرفة من المصدر وواحدة واردة للوجهة — فمافيش جهة واحدة تنفع للورقة كلها.
-    trf_ids = by_type.get("transfer", set())
+    trf_ids = by_type.get(StockDoc.TRANSFER, set())
     if trf_ids:
         from src.models.transfer import StockTransfer
 
@@ -366,12 +373,12 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                         else t.dest_location_kind.value)
             src = names.get((src_kind, t.source_location_id), f"#{t.source_location_id}")
             dst = names.get((dst_kind, t.dest_location_id), f"#{t.dest_location_id}")
-            detail[("transfer", t.id)] = {
+            detail[(StockDoc.TRANSFER, t.id)] = {
                 "document_number": t.document_number,
                 "party_in": f"من {src}", "party_out": f"إلى {dst}",
             }
 
-    permit_ids = by_type.get("stock_permit", set()) | by_type.get("permit", set())
+    permit_ids = by_type.get(StockDoc.PERMIT, set())
     if permit_ids:
         from src.models.stock_permit import StockPermit, StockPermitLine
 
@@ -390,15 +397,14 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                 "unit": None, "unit_factor": None,
                 "discount_pct": None, "tax_amount": None,
             }
-            detail[("stock_permit", pm.id)] = entry
-            detail[("permit", pm.id)] = entry
+            detail[(StockDoc.PERMIT, pm.id)] = entry
 
     # Expiry: the lot a sale drew from is on the batch trail, keyed by the document that moved it.
     expiry_of: dict[tuple[str, int], str] = {}
     for m in db.scalars(select(StockBatchMovement).where(
             StockBatchMovement.item_id == item_id)).all():
         if m.document_type and m.document_id:
-            key = (stock_docs.names(m.document_type)[0], m.document_id)
+            key = (stock_docs.canonical(m.document_type), m.document_id)
             # Several lots on one document: the soonest is the one worth showing.
             prev = expiry_of.get(key)
             if prev is None or str(m.expiry_date) < prev:

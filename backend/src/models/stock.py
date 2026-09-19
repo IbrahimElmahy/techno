@@ -37,38 +37,12 @@ class StockDirection(str, enum.Enum):
     out = "out"
 
 
-class StockDoc:
-    """أنواع المستندات اللي بتحرّك مخزون — الاسم الواحد اللي الكل بيكتب ويقرا بيه.
-
-    **كانوا اسمين لكل نوع.** الخدمات كانت بتكتب `"sale"` و`"purchase"` و`"sale_return"`،
-    ونقل a5 كتب `"sales_invoice"` و`"purchase_invoice"` و`"sales_return"`. النتيجة في
-    قاعدة العميل:
-
-        sales_invoice    44,798 حركة  ·  sale           32
-        purchase_invoice  3,824 حركة  ·  purchase        0
-        sales_return      1,901 حركة  ·  sale_return     2
-
-    والكود اللي بيشيل حركات المستند وقت التعديل أو الحذف (`document_edit_service`) كان
-    بيدوّر على الاسم القصير بس. يعني **تعديل أي فاتورة منقولة من a5** — وهي كل الفواتير
-    تقريباً — كان بيسيب حركتها القديمة مكانها ويكتب واحدة جديدة فوقها، فالصنف بينخصم
-    مرتين والرصيد بيقلّ من غير سبب ظاهر.
-
-    اتقاس على نسخة من الإنتاج بفاتورة AL-S67575: بعد `purge_sale` الحركة فضلت مكانها
-    والرصيد فضل ٣٥ بدل ما يرجع ٣٦.
-
-    الأسماء المختارة هي أسماء الجداول، لأنها اللي الداتا كلها عليها ولأن المستند
-    والحركة بيبقوا مسمّيين نفس الاسم.
-    """
-
-    SALE = "sales_invoice"
-    SALE_RETURN = "sales_return"
-    PURCHASE = "purchase_invoice"
-    PURCHASE_RETURN = "purchase_return"
-    TRANSFER = "stock_transfer"
-    PERMIT = "stock_permit"
-    # الرصيد الافتتاحي المنقول من a5، والتصحيح اللي اتكتب بعده لسد العجز.
-    OPENING = "a5_opening"
-    OPENING_FIX = "a5_opening_fix"
+#: أنواع المستندات — **السجل نفسه**، مش نسخة تانية منه.
+#:
+#: كانت القايمة متكتوبة هنا وتاني في `src/lib/stock_docs.py`، والاتنين بيتوسّعوا
+#: كل واحدة لوحدها: `stock_count` و`inspection` كانوا في واحدة وناقصين من التانية.
+#: قايمتين لنفس الحاجة هي بالظبط المرض اللي الملف ده اتعمل عشانه، فبقت واحدة.
+from src.lib.stock_docs import StockDoc  # noqa: E402,F401  (إعادة تصدير عن قصد)
 
 
 class StockMovement(Base):

@@ -16,6 +16,7 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { useMovementLabels, useMovementTypes } from '../lib/movementTypes';
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
  *
@@ -37,39 +38,12 @@ import StatsRow from '../components/StatsRow';
  * الحل هنا مش إعادة تسمية الحركات في القاعدة: ده عمود مكتوب على ملايين الصفوف
  * ومقروء من تقارير تانية. الخريطة بتعرف الاتنين.
  */
-const MOVEMENT_LABELS: Record<string, string> = {
-  purchase_in: 'شراء',
-  purchase: 'شراء',
-  purchase_return_out: 'مرتجع شراء',
-  purchase_return: 'مرتجع شراء',
-  sale_out: 'بيع',
-  sale: 'بيع',
-  sale_return_in: 'مرتجع بيع',
-  sales_return: 'مرتجع بيع',
-  opening: 'بضاعة أول المدة',
-  transfer_in: 'تحويل وارد',
-  transfer_out: 'تحويل صادر',
-  production_in: 'إنتاج',
-  reverse_production_in: 'عكس إنتاج',
-  consumption_out: 'استهلاك',
-  reverse_consumption_out: 'عكس استهلاك',
-  waste_out: 'هالك',
-  reverse_waste_out: 'عكس هالك',
-  inspection_out: 'معاينة',
-  reverse_inspection_out: 'عكس معاينة',
-  loyalty_gift_out: 'هدية نقاط',
-  serial_receive_in: 'استلام أرقام تسلسلية',
-  permit_in: 'إذن إضافة',
-  permit_out: 'إذن صرف',
-  // Its own line on the card: opening stock is what the company already had, not a movement that
-  // happened, and reading it as a receipt would invent a day it arrived.
-  opening_in: 'بضاعة أول المدة',
-};
 
 interface CardRow {
   movement_id: number;
   date: string | null;
   movement_type: string;
+  movement_label?: string | null;
   direction: 'in' | 'out';
   quantity_in: string;
   quantity_out: string;
@@ -107,6 +81,9 @@ const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
 });
 
 export default function ItemCard() {
+  // الأسماء العربية والقايمة من الخادم — نسخة واحدة لكل الشاشات.
+  const moveLabels = useMovementLabels();
+  const moveTypes = useMovementTypes();
   const [items, setItems] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [itemId, setItemId] = useState<number | undefined>();
@@ -161,7 +138,7 @@ export default function ItemCard() {
     if (!card?.rows.length) { message.info('لا توجد حركات للتصدير'); return; }
     const cols: CsvColumn<any>[] = [
       { title: 'التاريخ', value: 'date' },
-      { title: 'النوع', value: (r) => MOVEMENT_LABELS[r.movement_type] || r.movement_type },
+      { title: 'النوع', value: (r) => r.movement_label || moveLabels[r.movement_type] || r.movement_type },
       { title: 'وارد', value: 'quantity_in' },
       { title: 'منصرف', value: 'quantity_out' },
       { title: 'الرصيد قبل', value: 'balance_before' },
@@ -177,7 +154,7 @@ export default function ItemCard() {
     if (!card) return;
     const cols: PrintColumn<any>[] = [
       { title: 'التاريخ', value: 'date' },
-      { title: 'النوع', value: (r) => MOVEMENT_LABELS[r.movement_type] || r.movement_type },
+      { title: 'النوع', value: (r) => r.movement_label || moveLabels[r.movement_type] || r.movement_type },
       { title: 'وارد', value: 'quantity_in', numeric: true },
       { title: 'منصرف', value: 'quantity_out', numeric: true },
       { title: 'الرصيد بعد', value: 'balance_after', numeric: true },
@@ -220,11 +197,11 @@ export default function ItemCard() {
         || (a.movement_id - b.movement_id),
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'نوع الحركة', dataIndex: 'movement_type',
-      ...textColumn(cardRows, (r: CardRow) => MOVEMENT_LABELS[r.movement_type] || r.movement_type),
+      ...textColumn(cardRows, (r: CardRow) => r.movement_label || moveLabels[r.movement_type] || r.movement_type),
       render: (t: string, r) => (
         <>
           <Tag color={r.direction === 'in' ? 'green' : 'red'}>
-            {MOVEMENT_LABELS[t] || t}
+            {r.movement_label || moveLabels[t] || t}
           </Tag>
           {r.is_reversal && <Tag color="orange">عكسي</Tag>}
         </>
@@ -346,8 +323,7 @@ export default function ItemCard() {
           <Select
             allowClear style={{ width: '100%' }} placeholder="كل أنواع الحركة"
             value={movementType} onChange={setMovementType}
-            options={Object.entries(MOVEMENT_LABELS)
-              .map(([value, label]) => ({ value, label }))}
+            options={moveTypes}
           />
         </Col>
       </Row>

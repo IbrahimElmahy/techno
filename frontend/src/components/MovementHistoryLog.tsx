@@ -9,6 +9,7 @@ import dayjs, { Dayjs } from 'dayjs';
 type Preset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
 const PRESET_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
 import { api } from '../api/client';
+import { useMovementLabels } from '../lib/movementTypes';
 
 /**
  * سجل عمليات الصنف — قايمة منسدلة، وتفاصيل اللي تختاره تحته.
@@ -46,21 +47,6 @@ export interface MovementHistoryTarget {
   dateTo?: string | null;
 }
 
-const MOVEMENT_LABELS: Record<string, string> = {
-  sale_out: 'بيع',
-  sale_return_in: 'مرتجع بيع',
-  purchase_in: 'شراء',
-  purchase_return_out: 'مرتجع شراء',
-  transfer_in: 'تحويل وارد',
-  transfer_out: 'تحويل صادر',
-  permit_in: 'إذن إضافة',
-  permit_out: 'إذن صرف',
-  opening: 'أول المدة',
-  manufacture_in: 'إنتاج',
-  manufacture_out: 'استهلاك تصنيع',
-  count_adjust: 'تسوية جرد',
-  wastage_out: 'هالك',
-};
 
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
@@ -79,6 +65,7 @@ export default function MovementHistoryLog({
    */
   periodFilter?: boolean;
 }) {
+  const moveLabels = useMovementLabels();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   /**
@@ -139,7 +126,7 @@ export default function MovementHistoryLog({
             {r.date ? String(r.date).slice(0, 10) : '-'}
           </span>
           <Tag color={r.direction === 'in' ? 'green' : 'red'}>
-            {MOVEMENT_LABELS[r.movement_type] || r.movement_type}
+            {moveLabels[r.movement_type] || r.movement_type}
           </Tag>
           {inQ
             ? <b style={{ color: '#6AB42D' }}>+{qty(inQ)}</b>

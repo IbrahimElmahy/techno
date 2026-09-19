@@ -132,6 +132,33 @@ def not_enough_message(db, item_id: int, location_kind: LocationKind, location_i
     )
 
 
+def _normalize_names(movement_type: str, source_doc_type: str | None) -> tuple[str, str | None]:
+    """**الباب**: أي حركة بتتكتب بتعدّي من هنا، فالاسم بيتوحّد قبل ما يلمس القاعدة.
+
+    الأسماء كانت نصوص حرّة بتتكتب من ٢٥ موضع، فالنوع الواحد بقى ليه اسمين: الخدمة
+    الحيّة بتكتب `sale_out` ونقل a5 كتب `sale`، والقاري بيدوّر على واحد فيهم بس فبيرجع
+    نُص الحقيقة. الشرح الكامل — وتلات مرات الغلط ده طلع فيهم — في `src/lib/stock_docs`.
+
+    والمجهول **بيترفض مش بيعدّي**. الاسم اللي مش في السجل بيبقى صف مالوش اسم عربي،
+    مايظهرش في فلتر، ومحدش يعرف يدوّر عليه — أرخص إن السطر اللي كاتبه يقع دلوقت من إن
+    البضاعة تتحرك ومحدش يلاقيها بعد سنة.
+    """
+    move = stock_docs.canonical(movement_type, kind="movement")
+    if move is None:
+        raise StockError(
+            f"نوع حركة مش متسجّل: «{movement_type}» — ضيفه في `src/lib/stock_docs.py`."
+        )
+    doc = source_doc_type
+    if doc is not None:
+        doc = stock_docs.canonical(doc)
+        if doc is None:
+            raise StockError(
+                f"نوع مستند مش متسجّل: «{source_doc_type}» — "
+                "ضيفه في `src/lib/stock_docs.py`."
+            )
+    return move, doc
+
+
 def post_movement(
     db: Session,
     *,
@@ -156,6 +183,7 @@ def post_movement(
     q = to_qty(quantity)
     if q <= ZERO_QTY:
         raise StockError("كمية الحركة لازم تكون أكبر من صفر.")
+    movement_type, source_doc_type = _normalize_names(movement_type, source_doc_type)
     _lock_locator(db, item_id, location_kind, location_id)
     if direction == StockDirection.out and not allow_negative:
         current = on_hand(db, item_id, location_kind, location_id)

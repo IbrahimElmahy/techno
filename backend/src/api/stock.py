@@ -114,6 +114,20 @@ def receive_batch(
             "expiry_date": str(batch.expiry_date), "quantity": str(batch.quantity)}
 
 
+@router.get("/movement-types", response_model=list[dict])
+def movement_types(
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+) -> list[dict]:
+    """أنواع الحركة بأسمائها العربية — للفلتر ولعمود «نوع الحركة».
+
+    القايمة كانت متكتوبة بالإيد في `ItemCard.tsx` و`ItemProfile.tsx`
+    و`MovementHistoryLog.tsx`، وكل نسخة ناقصة نوع أو اتنين: `permit` (٣٦٣ حركة)
+    ما كانش ليه اسم عربي في ولا واحدة، فكان بيتعرض خام. بقت نسخة واحدة من
+    `stock_docs.MOVES`.
+    """
+    return stock_docs.movement_types()
+
+
 @router.get("/batches/expiring", response_model=list[dict])
 def expiring_batches(
     before: date,

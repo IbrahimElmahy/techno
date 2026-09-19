@@ -91,7 +91,10 @@ def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
     # Mirror the underlying movement (consume↔return-to-stock, produce↔remove); no-negative applies.
     mirror = stock_service.reverse_movement(
         db, original_id=original.stock_movement_id, actor_user_id=actor_user_id,
-        movement_type=f"reverse_{original.op_type.value}",
+        # الاسم بيتشتق من الحركة الأصلية نفسها (`reverse_consumption_out`) مش من نوع
+        # العملية (`reverse_consume`) — الاتنين نفس الحاجة باسمين، وده بالظبط اللي
+        # `stock_docs` اتعمل عشان يمنعه. `reverse_movement` بيعمل الاشتقاق لوحده.
+        movement_type=None,
     )
     rev = ManufacturingOp(
         document_number=_doc_number(db), op_type=original.op_type, item_id=original.item_id,

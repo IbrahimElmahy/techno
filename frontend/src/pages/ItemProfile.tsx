@@ -18,6 +18,7 @@ import { textColumn, numberColumn, choiceColumn, dateColumn } from '../component
 import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
+import { useMovementLabels } from '../lib/movementTypes';
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
  * movement it ever made, and every time its price changed.
@@ -39,24 +40,6 @@ const PRICE_FIELD_LABELS: Record<string, string> = {
   default_discount_pct: 'نسبة الخصم الافتراضية', ...TIER_LABELS,
 };
 // Every movement_type the services actually post — keep in sync with stock/manufacturing.
-const MOVEMENT_LABELS: Record<string, string> = {
-  purchase_in: 'شراء',
-  purchase_return_out: 'مرتجع مشتريات',
-  sale_out: 'بيع',
-  sale_return_in: 'مرتجع مبيعات',
-  transfer_in: 'تحويل وارد',
-  transfer_out: 'تحويل صادر',
-  production_in: 'إنتاج',
-  reverse_production_in: 'عكس إنتاج',
-  consumption_out: 'استهلاك تصنيع',
-  reverse_consumption_out: 'عكس استهلاك',
-  waste_out: 'هالك',
-  reverse_waste_out: 'عكس هالك',
-  inspection_out: 'صرف معاينة',
-  reverse_inspection_out: 'عكس صرف معاينة',
-  loyalty_gift_out: 'هدية ولاء',
-  serial_receive_in: 'استلام بسريال',
-};
 
 /** Offer only the values the loaded rows actually contain, labelled in Arabic. */
 const optionsOf = (rows: any[], field: string, labels: Record<string, string> = {}) =>
@@ -64,6 +47,7 @@ const optionsOf = (rows: any[], field: string, labels: Record<string, string> = 
     .map((v: any) => ({ value: v, label: labels[v] || String(v) }));
 
 export default function ItemProfile() {
+  const moveLabels = useMovementLabels();
   const { itemId } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
@@ -78,7 +62,7 @@ export default function ItemProfile() {
 
   // Each record tab keeps its own search.
   const movementsFilter = useListFilter<any>(data?.movements || [], {
-    search: (m) => [m.source, m.location, m.quantity, MOVEMENT_LABELS[m.movement_type] || m.movement_type],
+    search: (m) => [m.source, m.location, m.quantity, moveLabels[m.movement_type] || m.movement_type],
     filters: {
       movement_type: (m, v) => m.movement_type === v,
       direction: (m, v) => m.direction === v,
@@ -328,7 +312,7 @@ export default function ItemProfile() {
                         total={data.movements.length} shown={movementsFilter.filtered.length}
                         filters={[
                           { key: 'movement_type', placeholder: 'نوع الحركة',
-                            options: optionsOf(data.movements, 'movement_type', MOVEMENT_LABELS) },
+                            options: optionsOf(data.movements, 'movement_type', moveLabels) },
                           { key: 'direction', placeholder: 'الاتجاه', span: 3,
                             options: [
                               { value: 'in', label: 'وارد' }, { value: 'out', label: 'صادر' },
@@ -342,8 +326,8 @@ export default function ItemProfile() {
                           pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                         columns={[
                         { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
-                        { title: 'النوع', dataIndex: 'movement_type', key: 't', ...textColumn(data?.movements ?? [], (r: any) => MOVEMENT_LABELS[r.movement_type] || r.movement_type),
-                          render: (v: string) => MOVEMENT_LABELS[v] || v },
+                        { title: 'النوع', dataIndex: 'movement_type', key: 't', ...textColumn(data?.movements ?? [], (r: any) => moveLabels[r.movement_type] || r.movement_type),
+                          render: (v: string) => moveLabels[v] || v },
                         { title: 'الاتجاه', dataIndex: 'direction', key: 'dir', ...choiceColumn<any>([{ text: 'وارد', value: 'in' }, { text: 'صادر', value: 'out' }], (r, v) => r.direction === v),
                           render: (v: string) => (v === 'in'
                             ? <Tag color="green" icon={<RiseOutlined />}>وارد</Tag>
