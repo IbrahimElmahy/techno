@@ -145,6 +145,14 @@ def list_items(
     q: str | None = None,
     active: bool | None = None,
     warehouse_id: int | None = None,
+    # **فرع مطلوب صراحةً — للّي بيشوف الفروع كلها.**
+    #
+    # العزل تحت بيشتغل على اللي محبوس في فرع وبس؛ الأدمن والمالك بيشوفوا الكتالوجين
+    # مع بعض، والفرعين فيهم ١٢٧ اسم مكرر حرفياً (كارت العلياء وكارت أكتوبر لنفس
+    # الحاجة). فاللي بيكتب إذن في العلياء بيلاقي الاسم مرتين، وياخد كارت أكتوبر،
+    # ويقرا رصيده صفر في مخزن العلياء ويقول «الكمية غلط». الخانة دي بتخلّي الشاشة
+    # تقول «أنا شغّال في الفرع ده» فيرجع كتالوج الفرع ده وحده.
+    branch_id: int | None = None,
     stock_filter: str | None = None,  # all | in_stock | out_of_stock | negative | moved
     limit: int | None = None,
     offset: int = 0,
@@ -175,10 +183,13 @@ def list_items(
     # ولا حركة. الفلترة بالحركة لوحدها كانت هتخفيهم من الفرعين — والصنف الجديد اللي
     # لسه متسجّل ومااتباعش يختفي من الكشف معناه إن محدش يقدر يبيعه أصلاً. الفرع بيخفي
     # شغل الفرع التاني، مش الكتالوج الساكن.
-    branch_id = branch_scope.visible_branch_id(current)
-    if branch_id is not None:
+    # الفرع المطلوب من الشاشة بياخد الأولوية، والعزل بيفضل فوقه: اللي محبوس في فرع
+    # مايقدرش يطلب فرع تاني — بيفضل شايف فرعه هو.
+    scoped = branch_scope.visible_branch_id(current)
+    wanted = scoped if scoped is not None else branch_id
+    if wanted is not None:
         moved_here = (select(StockMovement.item_id)
-                      .where(or_(StockMovement.branch_id == branch_id,
+                      .where(or_(StockMovement.branch_id == wanted,
                                  StockMovement.branch_id.is_(None)))
                       .distinct())
         moved_anywhere = select(StockMovement.item_id).distinct()
