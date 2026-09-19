@@ -712,9 +712,20 @@ export default function Transfers() {
       setReviewStock({});
       return;
     }
+    // **الإذن مايتحاسبش على نفسه، والصفر مايتشالش من القايمة.**
+    //
+    // `only_available` بيشيل الصنف اللي «المتاح» بتاعه صفر، و«المتاح» بيخصم الأذونات
+    // المعلّقة — **والإذن ده واحد منها**. فالصنف اللي في المخزن منه ٦٨ وهذا الإذن طالب
+    // ٨٠ كان بيتشال من الرد، والشاشة بتقرا الغياب صفر: «المتاح ٠» عن بضاعة موجودة
+    // بالفعل، والمراجع يرفض إذن كان ينفع يعدّل كميته ويعتمده.
+    //
+    // الخانة دي بتقول «في المخزن كام» — فالرصيد بيتطلب كامل (`only_available: false`)
+    // ومعاه `exclude_transfer_id` عشان تعهّد الإذن ده على نفسه مايتحسبش مرتين.
     api.get('/api/v1/stock/by-location', { params: {
       location_kind: doc.source_location_kind,
-      location_id: doc.source_location_id, only_available: true } })
+      location_id: doc.source_location_id,
+      only_available: false,
+      exclude_transfer_id: doc.id } })
       .then((r) => setReviewStock(Object.fromEntries(
         (r.data || []).map((x: any) => [x.item_id, Number(x.on_hand)]))))
       .catch(() => setReviewStock({}));
