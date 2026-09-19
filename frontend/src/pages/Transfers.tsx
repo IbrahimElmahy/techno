@@ -706,7 +706,9 @@ export default function Transfers() {
     // النداء كان بيروح بـ`location_kind` و`location_id` فاضيين، وaxios بيشيل الفاضي من
     // العنوان — فالطلب بيوصل `?only_available=true` وبس والسيرفر بيرد 422. الشرط على
     // وجود المستند وحده ماكانش كفاية: صف مالوش مصدر أصلاً (زي صف مسودّة) بيعدّي منه.
-    if (!doc || !doc.source_location_kind || doc.source_location_id == null) {
+    // ولا الإذن اللي خلص كمان — الرصيد ده بيتعرض وقت المراجعة بس.
+    if (!doc || doc.status !== 'pending'
+        || !doc.source_location_kind || doc.source_location_id == null) {
       setReviewStock({});
       return;
     }
@@ -1188,7 +1190,16 @@ export default function Transfers() {
   const docLineColumns = [
     { key: 'name', title: 'الصنف', dataIndex: 'item_id',
       render: (id: number) => <b>{nameOfItem(id)}</b> },
-    { key: 'available', title: 'المتاح في المصدر', dataIndex: 'available',
+    /**
+     * «المتاح في المصدر» **للإذن اللي لسه بيتراجع وبس**.
+     *
+     * الرقم ده رصيد المخزن **دلوقتي**، مش وقت الإذن — وده بالظبط اللي المراجع محتاجه
+     * وهو بيقرر. لكن بعد الاعتماد البضاعة تكون خرجت خلاص، فالخانة بتقول صفر بالأحمر
+     * على إذن تمّ ونجح، وإدارة بتقرا الشاشة بتفهم منها «اتعمل تحويل والكمية أصلاً صفر».
+     * رصيد النهارده مالوش محل على مستند اتقفل، والرصيد وقتها مش متخزّن — فالخانة بتتشال.
+     */
+    ...(editing?.status === 'pending' ? [{
+      key: 'available', title: 'المتاح في المصدر', dataIndex: 'available',
       render: (_: any, r: any) => {
         const have = reviewStock[r.item_id] ?? 0;
         const short = Number(r.quantity || 0) > have;
@@ -1197,7 +1208,7 @@ export default function Transfers() {
             {qty(have)}
           </span>
         );
-      } },
+      } }] : []),
     { key: 'quantity', title: 'الكمية المحوّلة', dataIndex: 'quantity',
       render: (v: any, r: any) => (editing?.status === 'pending' && !r._header && !viewOnly ? (
         <InputNumber size="small" min={0} step={1}
