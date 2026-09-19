@@ -173,7 +173,14 @@ api.interceptors.response.use(
       const errorMessage =
         (typeof detail === 'string' && detail) ||
         detail?.message ||
-        (Array.isArray(detail) && detail.map((d: any) => d?.msg).filter(Boolean).join('، ')) ||
+        // **ومعاه اسم الخانة.** بيدوين «Field required» من غير اسم كان بيسيب اللي قدامه
+        // رسالة مالهاش معنى — لا بيعرف أنهي خانة ولا بيقدر يقول لحد. `loc` من فاست-إيه-بي-آي
+        // فيها المسار (`body.branch_id`)، وآخر جزء فيه هو اسم الخانة.
+        (Array.isArray(detail) && detail.map((d: any) => {
+          const field = Array.isArray(d?.loc)
+            ? d.loc.filter((x: any) => x !== 'body').join('.') : '';
+          return field ? `${field}: ${d?.msg}` : d?.msg;
+        }).filter(Boolean).join('، ')) ||
         (typeof data?.message === 'string' && data.message) ||
         'حدث خطأ في النظام';
       

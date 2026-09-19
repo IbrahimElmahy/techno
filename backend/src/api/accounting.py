@@ -139,7 +139,15 @@ class JournalLineIn(BaseModel):
 class JournalEntryCreate(BaseModel):
     date: date
     description: str = ""
-    branch_id: int
+    # **الفرع اختياري — بيتاخد من اللي بيكتب لو ما اتبعتش.**
+    #
+    # كان مطلوباً، و«قيد حر» من مفاتيح السندات مابيبعتوش: المفتاح مالوش خانة فرع،
+    # والشاشة كانت بترد «خطأ في عملية التحقق — Field required» من غير ما تقول على
+    # أنهي خانة. يعني كل مفتاح نوعه «قيد حر» كان ميّت من يوم ما اتعمل.
+    #
+    # والفراغ مش نقص: القيد اللي بيكتبه حساب مركزي (أدمن أو مالك) مالوش فرع بطبعه،
+    # والدفتر شايل قيود كتير كده من النقل — و`branch_scope` بيعتبرها مرئية للكل.
+    branch_id: int | None = None
     # الدفتر. مالوش قيمة ⇒ بيتحدد من نوع القيد («قيود متنوعة» للقيد اليدوي).
     journal_id: int | None = None
     # "posted" يرحّل على طول (السلوك القديم)، "draft" بيسيبه مسودة ناقصة.
@@ -582,13 +590,16 @@ def post_journal_entry(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> JournalEntryOut:
-    _ensure_accounting_branch(current, body.branch_id)  # branch-scoped users post only their branch
+    # الفرع: اللي اتبعت، وإلا فرع اللي بيكتب. والفحص بيتعمل على الناتج مش على المدخل —
+    # لو اتعمل على `None` كان محاسب الفرع هيترفض على قيد فرعه هو.
+    branch_id = body.branch_id if body.branch_id is not None else current.branch_id
+    _ensure_accounting_branch(current, branch_id)  # branch-scoped users post only their branch
     try:
         entry = journal_service.post_entry(
             db,
             entry_date=body.date,
             description=body.description,
-            branch_id=body.branch_id,
+            branch_id=branch_id,
             lines=[
                 JournalLineInput(l.account_id, l.direction, l.amount, l.statement,
                                  l.cost_center_id, l.partner_kind, l.partner_id,
