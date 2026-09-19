@@ -846,12 +846,17 @@ export default function Transfers() {
     // Read the source's stock BEFORE building the lines: the quantity box is capped at what is
     // available, so a line built against a zero would refuse the very quantity being corrected —
     // and the reversal has just put the goods back, so the number is right there to be read.
+    //
+    // **والرد بيتطلب كامل** (`only_available: false`): الفلتر بيشيل الصنف اللي «المتاح»
+    // بتاعه صفر — والمتاح بيخصم الأذونات المعلّقة. فالصنف المتعهّد على إذن تاني كان
+    // بيختفي من الرد، والسطر بيتبني على صفر ويرفض الكمية اللي جاي يصحّحها أصلاً.
     let stock: StockRow[] = [];
     if (src) {
       const { kind, id } = parseLoc(src);
       try {
         stock = (await api.get('/api/v1/stock/by-location', { params: {
-          location_kind: kind, location_id: id, only_available: true } })).data || [];
+          location_kind: kind, location_id: id, only_available: false,
+          exclude_transfer_id: t.id } })).data || [];
       } catch { stock = []; }
       setSourceStock(stock);
     }
