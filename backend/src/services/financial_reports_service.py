@@ -278,30 +278,71 @@ def _aging_for_accounts(
     return result
 
 
+# --------------------------------------------------------- كاش قصير لأعمار الديون
+#
+# **الحساب ده تقيل، وبيتنده من شاشتين مع بعض.**
+#
+# `_aging_for_accounts` بتحمّل كل سطور الدفتر على حسابات العملاء وبتقاصّها واحد واحد.
+# قِيس: أربع ثواني ونص. وكارت «المتبقي آجل على العملاء» في سجل الفواتير بينده عليها
+# كمان — يعني كل دخلة على أكتر شاشة بتتفتح في النظام بتدفع التمن ده.
+#
+# الكاش زمنه **دقيقة واحدة**: طويل كفاية إن الشاشتين اللي بيفتحوا ورا بعض يدفعوا الحساب
+# مرة، وقصير كفاية إن التحصيل اللي اتسجّل دلوقتي يبان في الكارت وانت لسه واقف.
+#
+# ومتقفل على المفتاح كامل (النوع والتاريخ والفرع): مدير فرع ومدير تاني بيشوفوا أرقام
+# مختلفة، ولو المفتاح ماخدش الفرع كان واحد فيهم هيقرا رقم التاني.
+_AGING_TTL_SECONDS = 60.0
+_aging_cache: dict[tuple, tuple[float, list]] = {}
+
+
+def _cached_aging(key: tuple, build):
+    import time
+
+    now = time.monotonic()
+    hit = _aging_cache.get(key)
+    if hit is not None and now - hit[0] < _AGING_TTL_SECONDS:
+        return hit[1]
+    value = build()
+    _aging_cache[key] = (now, value)
+    # الكاش مايكبرش: مفاتيح قديمة بتتشال مع كل بناء جديد.
+    for k, (stamp, _v) in list(_aging_cache.items()):
+        if now - stamp >= _AGING_TTL_SECONDS:
+            _aging_cache.pop(k, None)
+    return value
+
+
 def receivables_aging(db: Session, *, as_of: date | None = None,
                       branch_id: int | None = None) -> list[AgingRow]:
     """أعمار ديون العملاء."""
     when = as_of or date.today()
-    account_by_party = {
-        acc.customer_id: acc.account_id
-        for acc in db.scalars(select(CustomerAccount)).all()
-    }
-    names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
-    return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
-                               as_of=when, branch_id=branch_id)
+
+    def build() -> list[AgingRow]:
+        account_by_party = {
+            acc.customer_id: acc.account_id
+            for acc in db.scalars(select(CustomerAccount)).all()
+        }
+        names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
+        return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
+                                   as_of=when, branch_id=branch_id)
+
+    return _cached_aging(("receivables", when, branch_id), build)
 
 
 def payables_aging(db: Session, *, as_of: date | None = None,
                    branch_id: int | None = None) -> list[AgingRow]:
     """أعمار مستحقات الموردين."""
     when = as_of or date.today()
-    account_by_party = {
-        acc.supplier_id: acc.account_id
-        for acc in db.scalars(select(SupplierAccount)).all()
-    }
-    names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
-    return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
-                               as_of=when, branch_id=branch_id)
+
+    def build() -> list[AgingRow]:
+        account_by_party = {
+            acc.supplier_id: acc.account_id
+            for acc in db.scalars(select(SupplierAccount)).all()
+        }
+        names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
+        return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
+                                   as_of=when, branch_id=branch_id)
+
+    return _cached_aging(("payables", when, branch_id), build)
 
 
 # --------------------------------------------------- المقارنة (سلوك تقارير أودو المشترك)

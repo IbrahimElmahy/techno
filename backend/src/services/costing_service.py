@@ -119,3 +119,99 @@ def unit_cost(db: Session, item_id: int) -> Decimal:
     if costing_method(db) == CostingMethod.last_purchase:
         return last_purchase_cost(db, item_id)
     return average_cost(db, item_id)
+
+
+# ---------------------------------------------------------------- التكلفة بالجملة
+#
+# **نفس الحساب بالظبط، لكن لكل الأصناف مرة واحدة.**
+#
+# `average_cost` بتعمل استعلامين لكل صنف. الجرد بينده عليها لكل صنف في المخزن —
+# ٢٬٦٠٠ صنف يعني أكتر من ٥٬٢٠٠ استعلام في الطلب الواحد، وقِيس: أربع ثواني ونص لتقرير
+# حجمه ٤٣ كيلوبايت. الحجم ماكانش المشكلة، العدد هو.
+#
+# الدالتين تحت بيعملوا نفس الاستعلامين مجمّعين بـ`GROUP BY item_id`. الحساب متكرر
+# مقصود: لو اتغيّر هنا لازم يتغيّر فوق كمان — والبديل (إعادة كتابة `average_cost`
+# فوق البالك) بتخلّي حساب تكلفة سطر واحد يجيب جدول كامل.
+
+
+def average_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
+    """متوسط تكلفة الوحدة لكل صنف في القايمة — في استعلامين مش استعلامين لكل صنف."""
+    ids = list({int(i) for i in item_ids})
+    if not ids:
+        return {}
+
+    bought: dict[int, tuple[Decimal, Decimal]] = {}
+    for item_id, qty, value in db.execute(
+        select(
+            PurchaseInvoiceLine.item_id,
+            func.coalesce(func.sum(
+                PurchaseInvoiceLine.quantity * PurchaseInvoiceLine.unit_factor), 0),
+            func.coalesce(func.sum(_after_doc_discount(PurchaseInvoiceLine.line_total)), 0),
+        )
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
+        .where(PurchaseInvoiceLine.item_id.in_(ids))
+        .group_by(PurchaseInvoiceLine.item_id)
+    ).all():
+        bought[item_id] = (Decimal(str(qty or 0)), Decimal(str(value or 0)))
+
+    returned: dict[int, tuple[Decimal, Decimal]] = {}
+    for item_id, qty, value in db.execute(
+        select(
+            PurchaseReturnLine.item_id,
+            func.coalesce(func.sum(PurchaseReturnLine.quantity), 0),
+            func.coalesce(func.sum(_after_doc_discount(
+                PurchaseReturnLine.quantity * PurchaseInvoiceLine.unit_price
+                * (1 - func.coalesce(PurchaseInvoiceLine.discount_pct, 0) / 100))), 0),
+        )
+        .select_from(PurchaseReturnLine)
+        .join(PurchaseReturn, PurchaseReturn.id == PurchaseReturnLine.return_id)
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseReturn.purchase_invoice_id)
+        .join(
+            PurchaseInvoiceLine,
+            (PurchaseInvoiceLine.invoice_id == PurchaseInvoice.id)
+            & (PurchaseInvoiceLine.item_id == PurchaseReturnLine.item_id),
+        )
+        .where(PurchaseReturnLine.item_id.in_(ids))
+        .group_by(PurchaseReturnLine.item_id)
+    ).all():
+        returned[item_id] = (Decimal(str(qty or 0)), Decimal(str(value or 0)))
+
+    out: dict[int, Decimal] = {}
+    for item_id in ids:
+        b_qty, b_val = bought.get(item_id, (ZERO, ZERO))
+        r_qty, r_val = returned.get(item_id, (ZERO, ZERO))
+        net_qty = b_qty - r_qty
+        net_val = b_val - r_val
+        out[item_id] = to_money(net_val / net_qty) if net_qty > 0 else ZERO
+    return out
+
+
+def last_purchase_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
+    """آخر سعر شرا لكل صنف — سطر واحد لكل صنف، مختار بأحدث فاتورة."""
+    ids = list({int(i) for i in item_ids})
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(PurchaseInvoiceLine.item_id, PurchaseInvoiceLine.unit_price,
+               PurchaseInvoiceLine.unit_factor, PurchaseInvoiceLine.discount_pct,
+               PurchaseInvoice.combined_pct, PurchaseInvoice.id, PurchaseInvoiceLine.id)
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
+        .where(PurchaseInvoiceLine.item_id.in_(ids))
+        .order_by(PurchaseInvoice.id.asc(), PurchaseInvoiceLine.id.asc())
+    ).all()
+    out: dict[int, Decimal] = {i: ZERO for i in ids}
+    # مرتّب تصاعدي، فآخر سطر لكل صنف هو الأحدث — بيكتب فوق اللي قبله.
+    for item_id, price, factor, line_pct, doc_pct, _inv, _line in rows:
+        if price is None:
+            continue
+        unit_price = discounts.apply(Decimal(str(price)), line_pct, doc_pct)
+        f = Decimal(str(factor or 1))
+        out[item_id] = to_money(unit_price / f) if f else to_money(unit_price)
+    return out
+
+
+def unit_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
+    """`unit_cost` لقايمة أصناف — بيحترم نفس الإعداد."""
+    if costing_method(db) == CostingMethod.last_purchase:
+        return last_purchase_cost_bulk(db, item_ids)
+    return average_cost_bulk(db, item_ids)

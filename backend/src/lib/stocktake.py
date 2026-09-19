@@ -92,7 +92,12 @@ def stock_as_of(
             select(Item).where(Item.id.in_({r[0] for r in raw}))).all()
     }
     names = _location_names(db)
-    costs: dict[int, Decimal] = {}
+    # **تكلفة كل الأصناف في استعلامين، مش استعلامين لكل صنف.**
+    #
+    # كانت `costing_service.unit_cost` بتتنده جوّه اللفّة — ٢٬٦٠٠ صنف يعني أكتر من
+    # ٥٬٢٠٠ استعلام، وقِيس: أربع ثواني ونص لتقرير حجمه ٤٣ كيلوبايت. الحجم ماكانش
+    # المشكلة، عدد النداءات هو.
+    costs: dict[int, Decimal] = costing_service.unit_cost_bulk(db, {r[0] for r in raw})
 
     rows: list[dict] = []
     total_qty = ZERO_QTY
@@ -104,9 +109,7 @@ def stock_as_of(
         if held <= ZERO_QTY:
             continue
         item = items.get(item_ref)
-        if item_ref not in costs:
-            costs[item_ref] = costing_service.unit_cost(db, item_ref)
-        cost = costs[item_ref]
+        cost = costs.get(item_ref, ZERO)
         value = to_money(held * cost)
         loc_kind = kind if isinstance(kind, str) else kind.value
         rows.append({
