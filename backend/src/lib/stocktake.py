@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Date, case, func, select
 from sqlalchemy.orm import Session
 
 from src.core import clock
@@ -63,7 +63,12 @@ def stock_as_of(
     if day is not None:
         # Compared against the UTC instant the business day ends, not against `date()` of a
         # UTC timestamp — those differ by the office's offset every night after midnight.
-        stmt = stmt.where(StockMovement.created_at < clock.day_end_utc(day))
+        # **الجرد بتاريخ بيقيس على تاريخ الورقة.** كان على `created_at`، فالجرد بأي
+        # يوم قبل النقل كان بيرجع مخزن فاضي — كل حركات a5 مكتوبة بيوم النقل.
+        # و`COALESCE` عشان الحركة اللي لسه ما اتعبّاش تاريخها ماتختفيش من الجرد.
+        stmt = stmt.where(
+            func.coalesce(StockMovement.movement_date,
+                          func.cast(StockMovement.created_at, Date)) <= day)
     if branch_id is not None:
         # مخازن الفرع بس. الجرد بيتجمّع على (صنف × مكان)، والمكان هو اللي بيخصّ فرع.
         from src.models.warehouse import Warehouse

@@ -7,12 +7,14 @@ under concurrency without a stored balance (Principle XI / research R3). Reversa
 """
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO_QTY, to_qty
+from src.lib import stock_docs
 from src.models.stock import (
     LocationKind,
     StockDirection,
@@ -170,6 +172,13 @@ def post_movement(
         source_doc_id=source_doc_id,
         reverses_movement_id=reverses_movement_id,
         actor_user_id=actor_user_id,
+        # **تاريخ الحركة = تاريخ ورقتها.**
+        #
+        # بيتقرا من المستند نفسه بدل ما يتمرّر من كل واحد من الـ٢٥ موضع اللي بيكتبوا
+        # حركة: اللي بينسى يمرّره كان هيسيب صفوف بتاريخ تاني من غير ما حد يعرف.
+        # ومافيش مستند ⇒ تاريخ النهارده، وهو الصح لحركة اتكتبت النهارده بإيد.
+        movement_date=(stock_docs.date_of(db, source_doc_type, source_doc_id)
+                       or date.today()),
         # (037) فرع الحركة بيتاخد من مكانها، مش من اللي سجّلها.
         #
         # البضاعة بتتحرك في مكان، والمكان بيتبع فرع. كل مستند بيحرّك مخزون بيعدّي من هنا،

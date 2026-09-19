@@ -7,11 +7,12 @@ Movements are quantity-only (no monetary value — Q4 boundary, FR-008a) and rev
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -99,6 +100,16 @@ class StockMovement(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
+    # **تاريخ الحركة — تاريخ ورقتها، مش وقت كتابة الصف.**
+    #
+    # `created_at` كان هو الاتنين، والفرق بينهم مش نظري: النقل من a5 كتب كل حركة
+    # الشركة في يوم واحد، فالجرد بأي تاريخ قبل يوم النقل كان بيرجع مخزن فاضي، وكارت
+    # الصنف بيقول إن بيع يناير حصل في سبتمبر.
+    #
+    # بيتملي في `post_movement` من `stock_docs.date_of` — مكان واحد بيعرف تاريخ كل
+    # نوع مستند. و`NULL` بتفضل للقديم لغاية ما `backfill_movement_dates` تعدّي،
+    # والقراءة بتعمل `COALESCE(movement_date, created_at)` فمافيش لحظة بيغيب فيها رقم.
+    movement_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
 
 
 class StockLocator(Base):

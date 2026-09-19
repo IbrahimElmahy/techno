@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import Date, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.models.catalog import Item, StockBatchMovement
@@ -114,7 +114,16 @@ def card(
             StockMovement.location_id == location_id,
         )
     # Oldest first: a card is read downwards, and the running balance only makes sense that way.
-    movements = db.scalars(stmt.order_by(StockMovement.id)).all()
+    # **الترتيب بتاريخ الورقة، والرقم بيفصل التعادل.**
+    #
+    # كان بالرقم وحده — وهو ترتيب الكتابة عندنا. بعد ما بقى لكل حركة تاريخ ورقتها،
+    # الرقم وحده بيدّي رصيد جاري بيمشي عكس التواريخ: سطر يناير بيطلع برصيد اتحسب بعد
+    # سطر سبتمبر. والتعادل بيتفصل بالرقم عشان حركات اليوم الواحد تفضل بترتيب كتابتها.
+    movements = db.scalars(stmt.order_by(
+        func.coalesce(StockMovement.movement_date,
+                      func.cast(StockMovement.created_at, Date)),
+        StockMovement.id,
+    )).all()
 
     names = _location_names(db)
 
@@ -128,7 +137,8 @@ def card(
         before = balance
         balance = _qty(balance + signed)
 
-        when = _day(mv.created_at)
+        # تاريخ الورقة أولاً، و`created_at` بديل للقديم اللي لسه ما اتعبّاش.
+        when = mv.movement_date or _day(mv.created_at)
         # Everything before the window is carried in rather than shown — the balance the period
         # opens with. It is the same number the previous period closed on.
         if day_from is not None and when is not None and when < day_from:

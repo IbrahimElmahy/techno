@@ -363,7 +363,7 @@ def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
     movements = [
         {
             "id": m.id,
-            "date": _as_date(m.created_at),
+            "date": str(m.movement_date) if m.movement_date else _as_date(m.created_at),
             "movement_type": m.movement_type,
             "direction": getattr(m.direction, "value", str(m.direction)),
             "quantity": str(_qty(m.quantity)),

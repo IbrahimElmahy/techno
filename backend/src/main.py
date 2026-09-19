@@ -358,6 +358,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("owner", "phone2", "VARCHAR(32)"),
     # حساب العميل قبل الفاتورة — بيتقفل وقت الترحيل عشان الورقة تقول نفس الرقم لو اتطبعت تاني.
     ("sales_invoice", "prior_balance", "DECIMAL(18,2)"),
+    # تاريخ الحركة — تاريخ ورقتها. الشرح في `models/stock.py` و`lib/stock_docs.date_of`.
+    ("stock_movement", "movement_date", "DATE"),
     # جهاز واحد بس لكل حساب — الجلسة المقبولة حالياً، مصدرها، ووقت فتحها.
     ("user", "session_id", "VARCHAR(64)"),
     ("user", "session_client", "VARCHAR(16)"),
