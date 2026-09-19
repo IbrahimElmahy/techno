@@ -502,6 +502,14 @@ def list_journal_entries(
     state: str | None = None,
     partner_kind: str | None = None,
     partner_id: int | None = None,
+    # **آخر كام قيد** — `None` يعني الكل.
+    #
+    # الكشف كان بيتحمّل كامل: ١١٬٨٢٢ قيد بسطورهم في نداء واحد، حوالي نص دقيقة والشاشة
+    # مكتوب عليها «لا توجد بيانات» طول المدة دي. والرقم بيكبر كل شهر.
+    #
+    # والقص بياخد **الأحدث**، مش الأقدم: اللي بيفتح دفتر اليومية بيدوّر على شغل
+    # الأيام اللي فاتت، والقص من الأول كان هيوريه يناير ويخفي النهارده.
+    limit: int | None = None,
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[JournalEntryOut]:
@@ -546,7 +554,12 @@ def list_journal_entries(
         stmt = stmt.where(LedgerEntry.partner_kind == partner_kind)
     if partner_id is not None:
         stmt = stmt.where(LedgerEntry.partner_id == partner_id)
-    entries = db.scalars(stmt.order_by(LedgerEntry.id)).all()
+    if limit is not None and limit > 0:
+        # الأحدث أولاً في الاستعلام، وبعدين بنرجّع الترتيب زي ما الشاشة مستنياه.
+        entries = list(reversed(
+            db.scalars(stmt.order_by(LedgerEntry.id.desc()).limit(limit)).all()))
+    else:
+        entries = list(db.scalars(stmt.order_by(LedgerEntry.id)).all())
     names = _partner_names(db, entries)
     return [_entry_out(e, names) for e in entries]
 

@@ -3,7 +3,7 @@
  * وخمس تبويبات. الشاشة والمسار زي ما هما بالظبط؛ اللي اتغيّر هو إن كل تبويب بقى
  * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
@@ -76,11 +76,26 @@ export default function JournalTab() {
     { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
   ]);
 
-  const load = async () => {
+  /**
+   * **الكشف بيتحمّل بآخر ٥٠٠ قيد، مش بالكشف كله.**
+   *
+   * كان بيجيب ١١٬٨٢٢ قيد بسطورهم في نداء واحد — قِيس: حوالي نص دقيقة، والشاشة مكتوب
+   * عليها «لا توجد بيانات» طول المدة دي من غير ما تقول إنها بتحمّل. والرقم بيزيد كل شهر.
+   *
+   * والقص بياخد الأحدث لأن اللي بيفتح دفتر اليومية بيدوّر على شغل الأيام اللي فاتت.
+   * واللي عايز أقدم من كده بيدوس «حمّل الكل» — والزرار بيقول العدد، فمافيش كشف ناقص
+   * من غير ما حد يعرف.
+   */
+  const PAGE = 500;
+  const [full, setFull] = useState(false);
+  /** رقم القيد اللي الرابط طالبه — بيتقرا جوّه `load` من غير ما يبقى اعتماد عليه. */
+  const wantedRef = useRef<string | null>(null);
+
+  const load = async (all = false) => {
     setLoading(true);
     try {
       const [e, a, b, cc, j] = await Promise.all([
-        api.get('/api/v1/journal-entries'),
+        api.get(`/api/v1/journal-entries${all ? '' : `?limit=${PAGE}`}`),
         api.get('/api/v1/accounts?postable_only=true&active=true'),
         api.get('/api/v1/branches'),
         api.get('/api/v1/cost-centers?active=true'),
@@ -88,6 +103,18 @@ export default function JournalTab() {
       ]);
       setEntries(e.data); setLeaves(a.data); setBranches(b.data); setCostCenters(cc.data);
       setJournals(j.data);
+      setFull(all);
+      // **القيد اللي الرابط طالبه بيتجاب لوحده لو مش في الصفحة المحمّلة.**
+      //
+      // بيتعمل هنا مش في `useEffect` مستقل: الجلب المستقل بيخلص قبل الكشف (طلب صغير
+      // مقابل خمسمية قيد)، و`setEntries` بتاعة الكشف كانت بتمسحه بعد ما يتضاف.
+      const asked = Number(wantedRef.current);
+      if (asked && !(e.data as JournalEntry[]).some((x) => x.id === asked)) {
+        try {
+          const one = await api.get(`/api/v1/journal-entries/${asked}`);
+          setEntries((prev) => (prev.some((x) => x.id === asked) ? prev : [...prev, one.data]));
+        } catch { /* مش موجود أو مش من حقه — الكشف بيفضل زي ما هو */ }
+      }
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
@@ -302,6 +329,8 @@ export default function JournalTab() {
       branch_id: (e, v) => (v === 0 ? e.branch_id === null : e.branch_id === v),
       journal_id: (e, v) => e.journal_id === v,
       state: (e, v) => (e.state ?? 'posted') === v,
+      // القيد الجاي من رابط تقرير — مطابقة بالرقم بالظبط. الشرح تحت.
+      entry_id: (e, v) => e.id === Number(v),
     },
     dateOf: (e) => e.date,
   });
@@ -314,13 +343,15 @@ export default function JournalTab() {
    * بيقرا `journal` و`state` وبس. فالرابط بينقلك للسجل كله، وتدوّر بنفسك على قيد
    * انت كنت واقف عليه قبل الضغطة بثانية.
    *
-   * والرقم بيدخل في خانة البحث لأن `id` جزء من اللي البحث بيدوّر فيه — فالكشف بيتفلتر
-   * على القيد ده وحده، واللي عايز يشوف غيره بيمسح الخانة.
+   * والفلترة بالرقم بالظبط، مش بخانة البحث: البحث بيدوّر في الرقم والبيان والمبالغ،
+   * فـ«٤» كانت بتطابق ٢٤٢ قيد. «مسح» بيرجّع الكشف كله.
    */
   const wantedEntry = searchParams.get('doc') || searchParams.get('entry');
-  const { setQuery } = filter;
+  const { setValue } = filter;
+  wantedRef.current = wantedEntry;
   React.useEffect(() => {
-    if (wantedEntry) setQuery(String(wantedEntry));
+    if (!wantedEntry) return;
+    setValue('entry_id', Number(wantedEntry));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantedEntry]);
 
@@ -483,6 +514,12 @@ export default function JournalTab() {
       title="قيود اليومية (دفتر الأستاذ الموحد)"
       extra={
         <Space>
+          {/* الكشف مقصوص ⇒ الزرار بيقول كده وبيفتحه. مخفي بعد ما يتحمّل كامل. */}
+          {!full && (
+            <Button icon={<ReloadOutlined />} loading={loading} onClick={() => load(true)}>
+              حمّل كل القيود (المعروض آخر {PAGE})
+            </Button>
+          )}
           <Button icon={<DownloadOutlined />} onClick={exportJournal}>تصدير CSV</Button>
           <Button icon={<PrinterOutlined />} onClick={printJournal}>طباعة</Button>
           <Button icon={<BankOutlined />} onClick={() => setOpeningDrawer(true)}>أرصدة افتتاحية</Button>
