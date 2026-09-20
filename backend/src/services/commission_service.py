@@ -127,14 +127,20 @@ def compute(
             for inv in invoices:
                 if inv.actor_user_id != rep.id:
                     continue
-                if not _in_window(inv.created_at.date(), date_from, date_to):
+                # **تاريخ الفاتورة مش وقت كتابتها.** الفاتورة اللي بتتكتب النهارده
+                # بتاريخ الشهر اللي فات عمولتها للشهر اللي فات — واللي بيتحسب بوقت
+                # الكتابة بيحطها في شهر مش بتاعها. ومع النقل من a5 الفرق شهور: سنة
+                # مبيعات اتكتبت في يوم، فعمولة السنة كلها كانت هتقع على شهر النقل.
+                if not _in_window(inv.invoice_date or inv.created_at.date(),
+                                  date_from, date_to):
                     continue
                 base += to_money(inv.net)
             for ret in returns:  # returns claw the commission back
                 inv = invoice_by_id.get(ret.sales_invoice_id)
                 if inv is None or inv.actor_user_id != rep.id:
                     continue
-                if not _in_window(ret.created_at.date(), date_from, date_to):
+                if not _in_window(ret.return_date or ret.created_at.date(),
+                                  date_from, date_to):
                     continue
                 base -= to_money(ret.value)
         else:

@@ -221,7 +221,9 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
             continue
         if warehouse_id is not None and cons.warehouse_id != warehouse_id:
             continue
-        if not _in_range(order.created_at, date_from, date_to):
+        # تاريخ الإنتاج قبل وقت الكتابة — زي `production_consumption` بالظبط.
+        when = order.production_date or order.created_at
+        if not _in_range(when, date_from, date_to):
             continue
         cost = to_money(wq * prices.get(cons.item_id, ZERO))
         total_qty += wq
@@ -229,7 +231,7 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
         rows.append({"source": "manufacturing", "document_number": order.document_number,
                      "item_id": cons.item_id, "item_name": names.get(cons.item_id, ""),
                      "warehouse_id": cons.warehouse_id, "quantity": str(wq),
-                     "cost": str(cost), "created_at": str(order.created_at)})
+                     "cost": str(cost), "created_at": str(when)})
 
     # Standalone wastage documents (exclude reversals; reversals net out).
     for d in db.scalars(select(WastageDocument).where(WastageDocument.reverses_id.is_(None))).all():

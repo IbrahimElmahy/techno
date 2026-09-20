@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import Date, func, select
 from sqlalchemy.orm import Session
 
 from sqlalchemy.orm import selectinload
@@ -225,10 +225,15 @@ def list_permits(
         stmt = stmt.where(StockPermit.kind == PermitKind(kind))
     if warehouse_id:
         stmt = stmt.where(StockPermit.warehouse_id == warehouse_id)
+    # **تاريخ الإذن مش وقت كتابته.** الإذن بياخد `permit_date` من اللي بيكتبه —
+    # ممكن يكون إمبارح أو الشهر اللي فات — والفلترة بوقت الكتابة بتخفيه من الفترة
+    # اللي هو فيها فعلاً وتوريه في فترة مالوش فيها. و`COALESCE` عشان الإذن القديم
+    # اللي اتكتب قبل ما العمود يبقى موجود يفضل يتفلتر بوقت كتابته بدل ما يختفي.
+    day = func.coalesce(StockPermit.permit_date, func.cast(StockPermit.created_at, Date))
     if date_from:
-        stmt = stmt.where(StockPermit.created_at >= clock.day_start_utc(date_from))
+        stmt = stmt.where(day >= date_from)
     if date_to:
-        stmt = stmt.where(StockPermit.created_at < clock.day_end_utc(date_to))
+        stmt = stmt.where(day <= date_to)
     return list(db.scalars(stmt.order_by(StockPermit.id.desc())).all())
 
 
