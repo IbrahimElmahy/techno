@@ -1155,10 +1155,16 @@ export default function Returns() {
     </>
   );
 
-  if (createVisible) {
-    return (
+  /**
+   * **البوابات بتتركّب مرة واحدة، بره التفرّع.**
+   *
+   * لمّا `{doors}` بتتكتب في فرعين و`return` منفصلين، React بيشوفهم شجرتين مختلفتين:
+   * أول ما الفرع يتبدّل البوابة بتتفكّ من مكان وتتركّب في التاني، واللي اتفكّت بتسيب
+   * `portal` بتاع antd واقف في نص أنيميشن القفل ومابيتشالش — قناع ميّت فوق الشاشة،
+   * كل حاجة مغمّقة ومافيش حاجة بتترد. المخرج الواحد بيمنع الفكّ من أصله.
+   */
+  const screen = createVisible ? (
       <div>
-        {doors}
         <Card title={(
           <Space>
             <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
@@ -1541,8 +1547,7 @@ export default function Returns() {
             ]} />
         </TabModal>
       </div>
-    );
-  }
+  ) : null;
 
   // --- The list --------------------------------------------------------------------------------
   // Their مردود مبيعات list, in their order:
@@ -1702,8 +1707,7 @@ export default function Returns() {
 
   const visibleColumns = returnCols.apply(columns);
 
-  return (
-    <div>
+  const list = (
       <Card
         title="مرتجعات المبيعات"
         extra={
@@ -1803,8 +1807,12 @@ export default function Returns() {
           })}
         />
       </Card>
+  );
 
+  return (
+    <div>
       {doors}
+      {screen ?? list}
     </div>
   );
 }

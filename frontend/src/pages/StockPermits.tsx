@@ -630,10 +630,25 @@ export default function StockPermits() {
   // The document page — the SAME page whether it is being written or being read. This is the
   // whole point: «افتح الإذن» lands where «اعمل إذن» lands, so nothing has to be relearned to
   // look at what you typed yesterday.
-  if (creating || detail) {
-    return (
+  /**
+   * **البوابات بتتركّب مرة واحدة، بره التفرّع.**
+   *
+   * كانت `{doors}` مكتوبة في الفرعين — فرع الكشف وفرع الفورم. والاتنين `return`
+   * منفصلين، فReact بيشوفهم شجرتين مختلفتين: أول ما `creating` تتقلب، البوابة
+   * بتتفكّ من مكان وتتركّب في التاني. والبوابة اللي اتفكّت بتسيب `portal` بتاع antd
+   * واقف في نص أنيميشن القفل (`ant-zoom-leave`) ومابيتشالش — فبيفضل **قناع ميّت
+   * فوق الشاشة**: كل حاجة مغمّقة ومافيش حاجة بتترد.
+   *
+   * ده اللي كان بيحصل لمدير الفرع بالظبط: يدوس «إذن إضافة» ⇒ تظهر بوابة المخزن ⇒
+   * يختار مخزن ⇒ `creating` تبقى true ⇒ الفرع يتبدّل ⇒ الفورم بيترسم تحت قناعين
+   * والشاشة بتبان فاضية. واللي عنده مخزن واحد مابيشوفش المشكلة أصلاً لأن البوابة
+   * بتعدّي من غير ما تتركّب (`autoAdvanceIfSingle`).
+   *
+   * المخرج الواحد بيخلّي البوابات في نفس المكان من الشجرة في الحالتين، فمافيش فكّ
+   * ولا تركيب ولا قناع فاضل.
+   */
+  const screen = (creating || detail) ? (
       <div>
-        {doors}
         <Card title={(
           <Space>
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={closeDoc}>رجوع</Button>
@@ -647,11 +662,7 @@ export default function StockPermits() {
           {detail ? postedDoc : createForm}
         </Card>
       </div>
-    );
-  }
-
-
-  return (
+  ) : (
     <Card
       title="أذونات المخزن"
       extra={(
@@ -667,7 +678,6 @@ export default function StockPermits() {
         </Space>
       )}
     >
-      {doors}
 
       <ListToolbar
         searchPlaceholder="بحث برقم الإذن أو السبب"
@@ -709,5 +719,12 @@ export default function StockPermits() {
       />
 
     </Card>
+  );
+
+  return (
+    <>
+      {doors}
+      {screen}
+    </>
   );
 }

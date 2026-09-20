@@ -2104,9 +2104,13 @@ export default function Purchases() {
     </>
   );
 
-  if (createVisible) {
-    return <div>{doors}{createContent}</div>;
-  }
-
-  return <div>{doors}{listContent}</div>;
+  /**
+   * **البوابات بتتركّب مرة واحدة، بره التفرّع.**
+   *
+   * لمّا `{doors}` بتتكتب في فرعين و`return` منفصلين، React بيشوفهم شجرتين مختلفتين:
+   * أول ما الفرع يتبدّل البوابة بتتفكّ من مكان وتتركّب في التاني، واللي اتفكّت بتسيب
+   * `portal` بتاع antd واقف في نص أنيميشن القفل ومابيتشالش — قناع ميّت فوق الشاشة،
+   * كل حاجة مغمّقة ومافيش حاجة بتترد. المخرج الواحد بيمنع الفكّ من أصله.
+   */
+  return <div>{doors}{createVisible ? createContent : listContent}</div>;
 }

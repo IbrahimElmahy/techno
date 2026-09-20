@@ -1305,13 +1305,10 @@ export default function Transfers() {
     export: { name: 'التحويلات', rows: filter.filtered },
   });
 
-  if (createVisible) {
-    const stockOfCategory = sourceStock.filter((s) => (
-      activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
-    return (
+  const stockOfCategory = sourceStock.filter((s) => (
+    activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
+  const screen = createVisible ? (
       <div>
-        {doors}
-        {dialogs}
         <DocumentToolbar actions={transferToolbar()} />
         <Card title={(
           <Space>
@@ -1532,8 +1529,7 @@ export default function Transfers() {
           </div>
         </Card>
       </div>
-    );
-  }
+  ) : null;
 
   // ---------------------------------------------------------------------- list
   const summary = {
@@ -1544,13 +1540,18 @@ export default function Transfers() {
 
 
 
-  return (
-    <div>
-      {dialogs}
-      {/* The doors belong to BOTH branches. The create page is an early return, so a door declared
-          only there unmounts at the instant it opens the page behind it — which is how the return
-          ended up with a dialog on screen that no state could close. */}
-      {doors}
+  /**
+   * **البوابات بتتركّب مرة واحدة، بره التفرّع.**
+   *
+   * كانت مكتوبة في الفرعين، والفرعين `return` منفصلين — فReact بيشوفهم شجرتين: أول
+   * ما الفرع يتبدّل البوابة بتتفكّ وتتركّب من جديد، واللي اتفكّت بتسيب `portal` بتاع
+   * antd واقف في نص أنيميشن القفل ومابيتشالش. قناع ميّت فوق الشاشة: كل حاجة مغمّقة
+   * ومافيش حاجة بتترد — ودي بالظبط اللي ظهرت لمدير الفرع في «إذن الإضافة».
+   *
+   * التعليق القديم كان واصف نُص المشكلة («الباب بيتفكّ ساعة ما يفتح الصفحة اللي
+   * وراه») وحطّ الباب في الفرعين — وده اللي بيسبّبها. الحل إن يكون مخرج واحد.
+   */
+  const list = (
       <Card
         title="إدارة تحويلات ومناقلات المخزون"
         extra={
@@ -1637,6 +1638,13 @@ export default function Transfers() {
             showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         />
       </Card>
+  );
+
+  return (
+    <div>
+      {dialogs}
+      {doors}
+      {screen ?? list}
     </div>
   );
 }
