@@ -131,11 +131,30 @@ def _item_labels(db: Session) -> dict[int, str]:
     }
 
 
+def _location_labels(db: Session) -> dict[tuple[str, int], str]:
+    """«مخزن الجودة» بدل `warehouse #74`.
+
+    نفس سبب `_item_labels`: الفحص اللي بيسمّي رقم مابيسمّيش حاجة. اللي بيقرا
+    «رصيد سالب في warehouse #74» لازم يفتح شاشة تانية عشان يعرف أنهي مخزن، وبيكون
+    الفحص قال له اللي يعرفه بره الفحص.
+    """
+    from src.models.user import User
+    from src.models.warehouse import Custody, Warehouse
+
+    out: dict[tuple[str, int], str] = {}
+    for w in db.scalars(select(Warehouse)).all():
+        out[("warehouse", w.id)] = w.name
+    users = {u.id: (u.full_name or u.username) for u in db.scalars(select(User)).all()}
+    for c in db.scalars(select(Custody)).all():
+        out[("custody", c.id)] = f"عهدة {users.get(c.rep_id or 0, f'#{c.rep_id}')}"
+    return out
+
+
 # ---------------------------------------------------------------------------
 # المخزون — الأرقام اللي بتبقى غلط فعلاً
 # ---------------------------------------------------------------------------
 
-def check_negative_stock(db: Session, on_hand, labels) -> Issue | None:
+def check_negative_stock(db: Session, on_hand, labels, places=None) -> Issue | None:
     """رصيد سالب.
 
     The invariant the whole system is built on (Principle XI): no item is negative anywhere, ever.
@@ -156,7 +175,8 @@ def check_negative_stock(db: Session, on_hand, labels) -> Issue | None:
              "بيتحسبوا على كمية مش موجودة.",
         link=_with_ids("/stock-balance", sorted({iid for iid, _k, _l, _q in bad})),
         ids=sorted({iid for iid, _k, _l, _q in bad}),
-        samples=[{"label": labels.get(iid, f"#{iid}"), "detail": f"{qty} في {kind} #{lid}"}
+        samples=[{"label": labels.get(iid, f"#{iid}"),
+                  "detail": f"{qty} في {(places or {}).get((kind, lid)) or f'{kind} #{lid}'}"}
                  for iid, kind, lid, qty in bad[:SAMPLE]],
     )
 
@@ -667,9 +687,10 @@ def run_all(db: Session, *, now: datetime | None = None) -> dict:
     """كل الفحوصات — والصفحة الفاضية إجابة برضه."""
     on_hand = _on_hand_by_location(db)
     labels = _item_labels(db)
+    places = _location_labels(db)
 
     found: list[Issue | None] = [
-        check_negative_stock(db, on_hand, labels),
+        check_negative_stock(db, on_hand, labels, places),
         *check_reorder(db, on_hand, labels),
         check_stagnant(db, on_hand, labels, now=now),
         check_items_without_price(db),
