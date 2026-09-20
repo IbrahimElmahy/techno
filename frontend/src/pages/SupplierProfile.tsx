@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useBackTo } from '../components/useBackTo';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -120,6 +121,8 @@ const LINKABLE: Record<string, 'invoice' | 'return' | 'purchase' | 'purchase_ret
 export default function SupplierProfile() {
   const { supplierId } = useParams();
   const navigate = useNavigate();
+  /** «رجوع» للمكان اللي جيت منه؛ الكشف خطة بديلة. */
+  const goBack = useBackTo('/suppliers');
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(false);
   const [statement, setStatement] = useState<any>(null);
@@ -574,7 +577,7 @@ export default function SupplierProfile() {
       <Card
         title={
           <Space>
-            <Button type="text" icon={<ArrowRightOutlined />} onClick={() => navigate('/suppliers')}>
+            <Button type="text" icon={<ArrowRightOutlined />} onClick={goBack}>
               رجوع
             </Button>
             <Typography.Text strong style={{ fontSize: 16 }}>

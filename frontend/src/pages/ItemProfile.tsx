@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBackTo } from '../components/useBackTo';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -51,6 +52,8 @@ export default function ItemProfile() {
   const moveLabels = useMovementLabels();
   const { itemId } = useParams();
   const navigate = useNavigate();
+  /** «رجوع» للمكان اللي جيت منه؛ الكشف خطة بديلة. */
+  const goBack = useBackTo('/catalog');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -163,7 +166,7 @@ export default function ItemProfile() {
       <Card
         title={
           <Space>
-            <Button type="text" icon={<ArrowRightOutlined />} onClick={() => navigate('/catalog')}>
+            <Button type="text" icon={<ArrowRightOutlined />} onClick={goBack}>
               رجوع
             </Button>
             <Typography.Text strong style={{ fontSize: 16 }}>
