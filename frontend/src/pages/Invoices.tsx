@@ -17,7 +17,7 @@ import {
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
 import CostCenterSplit from '../components/CostCenterSplit';
 import DocumentBar from '../components/DocumentBar';
@@ -97,6 +97,20 @@ export default function Invoices() {
    *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: العميل يتغيّر والمسودّة تفضل
    *  على اللي قبله. */
   const [formTick, setFormTick] = useState(0);
+  /**
+   * **بوباب «تحميل»: فترة، والأسهم بتمشي جوّاها.**
+   *
+   * الزرار كان بيعمل حاجة واحدة — يعيد تحميل المستند المفتوح. واللي بيراجع شهر
+   * كامل مالوش طريقة يقول «وَرّيني فواتير سبتمبر وأنا أعدّي عليها»: لازم يرجع
+   * للكشف، يظبّط الفلتر، يفتح أول واحدة، وكل مرة يرجع تاني.
+   *
+   * دلوقت بيسأل عن فترة، بيحمّلها في نفس القايمة اللي «السابق» و«التالى»
+   * بيمشوا عليها (`invoices`)، وبيفتح أول فاتورة فيها — فالتنقل بيبقى جوّه
+   * الفترة اللي اتطلبت.
+   */
+  const [loadRangeOpen, setLoadRangeOpen] = useState(false);
+  const [loadRange, setLoadRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [loadingRange, setLoadingRange] = useState(false);
 
   // Standalone invoice detail/view (separate from the return wizard)
   // Each user hides the columns they never read; the choice is theirs alone and per screen.
@@ -1500,6 +1514,35 @@ export default function Invoices() {
   }, [searchParams, invoices]);
 
   /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
+  /** بيحمّل فواتير الفترة في نفس قايمة التنقل، وبيفتح أولها. */
+  const loadPeriod = async () => {
+    const from = loadRange?.[0];
+    const to = loadRange?.[1];
+    if (!from || !to) { message.warning('اختار الفترة الأول'); return; }
+    setLoadingRange(true);
+    try {
+      const next = {
+        ...filters,
+        date_from: from.format('YYYY-MM-DD'),
+        date_to: to.format('YYYY-MM-DD'),
+      } as InvoiceFilters;
+      setFilters(next);
+      const res = await api.get('/api/v1/sales', {
+        params: { ...next, limit: PAGE_SIZE },
+      });
+      const rows = res.data || [];
+      setInvoices(rows);
+      setLoadRangeOpen(false);
+      if (!rows.length) { message.info('مافيش فواتير في الفترة دي'); return; }
+      message.success(`اتحمّل ${rows.length} فاتورة — اتنقل بينهم بـ«السابق» و«التالى»`);
+      await openDetail(rows[0]);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفترة');
+    } finally {
+      setLoadingRange(false);
+    }
+  };
+
   const neighbour = (step: number) => {
     if (!viewInvoice) return null;
     // The list itself is the order — the server already returns it filtered and sorted, and the
@@ -2040,10 +2083,7 @@ function couponsTotal(inv: any): number {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => {
-          if (isSaved && viewInvoice) openDetail(viewInvoice);
-          else loadLookups();
-        },
+        onClick: () => { setLoadRange(null); setLoadRangeOpen(true); },
       },
     ];
   };
@@ -2556,6 +2596,28 @@ function couponsTotal(inv: any): number {
           onDateChange={setInvoiceDate} />
 
         <TreasuryGate {...treasuryGate} />
+
+        {/* «تحميل» — فترة، والأسهم بتمشي جوّاها. */}
+        <TabModal
+          open={loadRangeOpen}
+          title="تحميل فواتير فترة"
+          okText="تحميل"
+          cancelText="إلغاء"
+          confirmLoading={loadingRange}
+          okButtonProps={{ disabled: !(loadRange?.[0] && loadRange?.[1]) }}
+          onOk={loadPeriod}
+          onCancel={() => setLoadRangeOpen(false)}
+          destroyOnHidden
+        >
+          <DateRangeFilter
+            value={loadRange as any}
+            onChange={(v) => setLoadRange(v as any)}
+          />
+          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+            هيتحمّل فواتير الفترة دي، وتفتح أولها — و«السابق» و«التالى» بيمشوا
+            بينهم من غير ما ترجع للكشف.
+          </div>
+        </TabModal>
 
         {/*
           * الباب التالت: **المخزن**.
