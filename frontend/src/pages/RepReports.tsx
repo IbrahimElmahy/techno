@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, DatePicker, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
@@ -110,8 +111,7 @@ export default function RepReports() {
       </div>
       <Select
         allowClear showSearch optionFilterProp="label" style={{ minWidth: 200 }}
-        placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions}
-      />
+        placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
       <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
     </Space>
   );

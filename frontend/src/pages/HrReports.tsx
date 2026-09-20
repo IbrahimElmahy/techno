@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -523,16 +524,14 @@ export default function HrReports() {
           <Select
             allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
-            options={employees.map((e) => ({ value: e.id, label: e.name }))}
-          />
+            options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={5}>
           <Select
             allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder="كل الأقسام" value={departmentId} onChange={setDepartmentId}
             disabled={isBalances}
-            options={departments.map((d) => ({ value: d.id, label: d.name }))}
-          />
+            options={departments.map((d) => ({ value: d.id, label: d.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
           <Select

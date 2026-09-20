@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Statistic,
   Table, Tag, Tooltip, message,
@@ -429,7 +430,7 @@ export default function Suppliers() {
               <Form.Item name="branch_id" label="الفرع">
                 <Select allowClear showSearch placeholder="اختر الفرع"
                   options={branches.map((b) => ({ value: b.id, label: b.name }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -480,7 +481,7 @@ export default function Suppliers() {
               <Form.Item name="governorate_id" label="محافظات">
                 <Select allowClear showSearch placeholder="اختر المحافظة"
                   options={governorates.map((g) => ({ value: g.id, label: g.name }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
           </Row>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
@@ -878,7 +879,7 @@ function WastageTab({
         <Form form={form} layout="vertical" onFinish={submit}>
           <Form.Item name="item_id" label="الصنف" rules={[{ required: true, message: 'اختر الصنف' }]}>
             <Select showSearch placeholder="اختر الصنف" options={itemOptions}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
           <Form.Item name="warehouse_id" label="المخزن" rules={[{ required: true, message: 'اختر المخزن' }]}>
             <Select placeholder="اختر المخزن"

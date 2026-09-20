@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, Upload,
   message,
@@ -268,8 +269,7 @@ export default function Attendance() {
           <Select
             allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
-            options={employees.map((e) => ({ value: e.id, label: e.name }))}
-          />
+            options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={8}>
           <Space wrap>
@@ -300,8 +300,7 @@ export default function Attendance() {
           showSearch optionFilterProp="label" style={{ width: '100%' }}
           value={entry.employee_id}
           onChange={(v) => setEntry({ ...entry, employee_id: v })}
-          options={employees.map((e) => ({ value: e.id, label: e.name }))}
-        />
+          options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
       </Col>
       <Col span={12}>
         <div style={{ marginBottom: 4 }}>التاريخ</div>

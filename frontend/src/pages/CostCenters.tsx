@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
@@ -236,7 +237,7 @@ export default function CostCenters() {
                   optionFilterProp="label"
                   options={rows.filter((c) => c.active).map((c) => ({
                     value: c.id, label: `${c.name} · مستوى ${c.level ?? 1}`,
-                  }))} />
+                  }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col span={8}>

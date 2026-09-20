@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
@@ -228,7 +229,7 @@ export default function Branches() {
             rules={[{ required: true, message: 'اختر المحافظة' }]}>
             <Select showSearch placeholder="اختر المحافظة"
               options={governorates.map((g) => ({ value: g.id, label: g.name }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
         </Col>
         {isCreate && (

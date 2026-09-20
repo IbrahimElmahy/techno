@@ -4,6 +4,7 @@
  * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
@@ -667,7 +668,7 @@ export default function JournalTab() {
               <Col span={9}>
                 <Select placeholder="الحساب" style={{ width: '100%' }} showSearch optionFilterProp="label"
                   value={l.account_id} onChange={(v) => setLine(l.key, 'account_id', v)}
-                  options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} />
+                  options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={5}>
                 <Select value={l.direction} style={{ width: '100%' }}
@@ -691,7 +692,7 @@ export default function JournalTab() {
                   disabled={!!l.cost_center_distribution}
                   value={l.cost_center_id ?? undefined}
                   onChange={(v) => setLine(l.key, 'cost_center_id', v ?? null)}
-                  options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
+                  options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={3} style={{ marginTop: 4 }}>
                 {/* السطر المتقسّم مالوش مركز واحد — فالقايمة بتتقفل والتوزيع هو اللي بيتكتب. */}
@@ -755,7 +756,7 @@ export default function JournalTab() {
                 <Select placeholder="الحساب" style={{ width: '100%' }} showSearch optionFilterProp="label"
                   value={l.account_id}
                   onChange={(v) => setOpenLines(openLines.map((x) => x.key === l.key ? { ...x, account_id: v } : x))}
-                  options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} />
+                  options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={8}>
                 <InputNumber min={0.01} style={{ width: '100%' }} placeholder="المبلغ" value={l.amount}

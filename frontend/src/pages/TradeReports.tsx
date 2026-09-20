@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -377,15 +378,13 @@ export default function TradeReports() {
             allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder={isSale ? 'كل العملاء' : 'كل الموردين'}
             value={partyId} onChange={setPartyId}
-            options={parties.map((p) => ({ value: p.id, label: p.name }))}
-          />
+            options={parties.map((p) => ({ value: p.id, label: p.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={5}>
           <Select
             allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder="كل الأصناف" value={itemId} onChange={setItemId}
-            options={items.map((i) => ({ value: i.id, label: i.name }))}
-          />
+            options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={5}>
           <Select

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Form, Input, Select, Tag, message,
 } from 'antd';
@@ -98,8 +99,7 @@ export function TreasuryField({
               </span>
             </div>
           );
-        }}
-      />
+        }} filterOption={searchFilter} filterSort={searchRank}/>
     </Form.Item>
   );
 }
@@ -189,8 +189,7 @@ export function ExpenseAccountField({
                 </Button>
               </div>
             </>
-          )}
-        />
+          )} filterOption={searchFilter} filterSort={searchRank}/>
       </Form.Item>
 
       <TabModal
@@ -204,7 +203,7 @@ export function ExpenseAccountField({
             <Select showSearch optionFilterProp="label" placeholder="مصروفات ..."
               options={groups.map((g) => ({
                 value: g.id, label: `${g.code ? `${g.code} — ` : ''}${g.name ?? ''}`.trim(),
-              }))} />
+              }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item name="code" label="الكود"
             rules={[{ required: true, message: 'اكتب كود الحساب' }]}>

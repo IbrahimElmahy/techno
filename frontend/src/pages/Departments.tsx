@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
@@ -310,8 +311,7 @@ export default function Departments() {
                 // A department cannot be its own parent — the server refuses it, but offering it
                 // in the list is an invitation to hit an error for no reason.
                 .filter((r) => r.id !== editing?.id && r.active)
-                .map((r) => ({ value: r.id, label: r.name }))}
-            />
+                .map((r) => ({ value: r.id, label: r.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>مدير القسم</div>
@@ -319,8 +319,7 @@ export default function Departments() {
               allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
               value={form.manager_employee_id}
               onChange={(v) => setForm({ ...form, manager_employee_id: v })}
-              options={employees.map((e) => ({ value: e.id, label: e.name }))}
-            />
+              options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>مركز التكلفة</div>
@@ -328,8 +327,7 @@ export default function Departments() {
               allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
               value={form.cost_center_id}
               onChange={(v) => setForm({ ...form, cost_center_id: v })}
-              options={costCenters.map((c) => ({ value: c.id, label: c.name }))}
-            />
+              options={costCenters.map((c) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>الفرع</div>
@@ -337,8 +335,7 @@ export default function Departments() {
               allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
               value={form.branch_id}
               onChange={(v) => setForm({ ...form, branch_id: v })}
-              options={branches.map((b) => ({ value: b.id, label: b.name }))}
-            />
+              options={branches.map((b) => ({ value: b.id, label: b.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col span={24}>
             <div style={{ marginBottom: 4 }}>ملاحظات</div>

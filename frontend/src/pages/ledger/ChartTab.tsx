@@ -4,6 +4,7 @@
  * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
  */
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
@@ -199,7 +200,7 @@ export default function ChartTab() {
           <Form.Item name="parent_id" label="الحساب الأب (المجموعة)"
             extra="اترك فارغاً لإنشاء حساب جذر">
             <Select allowClear placeholder="اختر المجموعة الأب" showSearch optionFilterProp="label"
-              options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))} />
+              options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item name="code" label="كود الحساب (مقطعي)"
             rules={[{ required: true, message: 'أدخل الكود' }]}
@@ -223,7 +224,7 @@ export default function ChartTab() {
             <Select allowClear showSearch placeholder="مثال: مصروفات غير مباشرة"
               options={MAIN_LEVELS.map((l) => ({ value: l, label: l }))}
               onSearch={() => {}}
-              filterOption={(i, o) => normalizeAr(String(o?.label ?? '')).includes(normalizeAr(i))}
+              filterOption={searchFilter} filterSort={searchRank}
               mode="tags" maxCount={1} />
           </Form.Item>
           <Form.Item name="appears_in" label="يظهر في"

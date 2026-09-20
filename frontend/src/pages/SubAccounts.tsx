@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
@@ -235,7 +236,7 @@ export default function SubAccounts() {
             options={groups.map((g) => ({
               value: g.id,
               label: `${g.name || g.id}${g.nature ? ` · ${NATURE_LABEL[g.nature]}` : ''}`,
-            }))} />
+            }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Form.Item>
       </Col>
       <Col span={8}>

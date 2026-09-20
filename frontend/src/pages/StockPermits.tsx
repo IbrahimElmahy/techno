@@ -616,7 +616,10 @@ export default function StockPermits() {
       render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
     { title: 'المخزن', dataIndex: 'warehouse_name' },
     { title: 'عدد الأصناف', dataIndex: 'lines',
-      render: (l: PermitLine[]) => l.length },
+      // **صفر مش انهيار.** صف المسودّة مالوش `lines` — وde `l.length` على `undefined`
+      // كانت بترمي جوّه `render`، وReact بيفضّي الشجرة كلها: **الشاشة بتطلع بيضا**
+      // لأي حد عنده مسودّة إذن محفوظة. وده اللي كان بيحصل لمدير الفرع بالظبط.
+      render: (l?: PermitLine[]) => (l ? l.length : 0) },
     { title: 'السبب', dataIndex: 'reason', render: (v: string) => v || '-' },
     { title: 'التكلفة', dataIndex: 'total_cost', align: 'left',
       render: (v: string) => <b>{money(v)}</b> },
@@ -704,6 +707,12 @@ export default function StockPermits() {
               kind: x.kind || 'receipt',
               created_at: d.updated_at,
               warehouse_name: null,
+              // صف المسودّة لازم يشيل نفس المفاتيح اللي الأعمدة بتقراها — الناقص
+              // بيوصل لـ`render` على إنه `undefined`.
+              lines: (x.lines || []).filter((l: any) => l.item_id != null),
+              permit_date: String(x.permit_date || d.updated_at || '').slice(0, 10),
+              reason: x.reason || null,
+              total_cost: 0,
             } as any;
           }),
           ...filter.filtered,

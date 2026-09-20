@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Card, Collapse, Table, Button, Input, Switch, Space, Tag, message, Form, Tooltip, Select,
   DatePicker, Divider,
@@ -452,8 +453,7 @@ function AccountRoutingCard() {
                 onClear={() => save(r.role, null)}
                 options={accounts.map((a) => ({
                   value: a.id, label: `${a.code} — ${a.name}`,
-                }))}
-              />
+                }))} filterOption={searchFilter} filterSort={searchRank}/>
             ) },
           { title: '', key: 'warn',
             render: (_: unknown, r) => (r.nature_warning

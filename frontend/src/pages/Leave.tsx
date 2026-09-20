@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -386,7 +387,7 @@ export default function Leave() {
             <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
               value={form.employee_id}
               onChange={(v) => setForm({ ...form, employee_id: v })}
-              options={employees.map((e) => ({ value: e.id, label: e.name }))} />
+              options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>النوع *</div>

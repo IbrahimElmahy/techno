@@ -4,6 +4,7 @@
  * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
  */
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
@@ -160,7 +161,7 @@ export default function TrialBalanceTab() {
           options={branches.map((b) => ({ value: b.id, label: b.name }))} />
         <Select allowClear placeholder="كل مراكز التكلفة" style={{ width: 220 }} value={costCenterId}
           onChange={setCostCenterId} showSearch optionFilterProp="label"
-          options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
+          options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} filterOption={searchFilter} filterSort={searchRank}/>
         <Radio.Group size="small" value={grouped} onChange={(e: any) => setGrouped(e.target.value)}>
           <Radio.Button value>مقسّم بالطبيعة</Radio.Button>
           <Radio.Button value={false}>ميزان مسطّح</Radio.Button>

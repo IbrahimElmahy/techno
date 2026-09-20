@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { Select } from 'antd';
 import { api } from '../api/client';
 
@@ -65,7 +66,6 @@ export default function CostCenterField({
       style={{ width: '100%', ...style }}
       value={value ?? undefined}
       onChange={(v) => onChange?.(v ?? null)}
-      options={rows.map((c) => ({ value: c.id, label: costCenterLabel(c) }))}
-    />
+      options={rows.map((c) => ({ value: c.id, label: costCenterLabel(c) }))} filterOption={searchFilter} filterSort={searchRank}/>
   );
 }

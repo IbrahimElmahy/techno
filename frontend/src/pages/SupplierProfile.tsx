@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Tabs, Table, Descriptions,
@@ -694,8 +695,7 @@ export default function SupplierProfile() {
                             value={typeFilter}
                             onChange={setTypeFilter}
                             options={typeOptions}
-                            disabled={!typeOptions.length}
-                          />
+                            disabled={!typeOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
                           <Select
                             showSearch
                             optionFilterProp="label"
@@ -705,8 +705,7 @@ export default function SupplierProfile() {
                             value={repFilter}
                             onChange={setRepFilter}
                             options={repOptions}
-                            disabled={!repOptions.length}
-                          />
+                            disabled={!repOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
                         </Space>
                       )}
                       extra={(
@@ -728,8 +727,7 @@ export default function SupplierProfile() {
                             mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
                             allowClear maxTagCount="responsive"
                             placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
-                            options={ccOptions} disabled={!ccOptions.length}
-                          />
+                            options={ccOptions} disabled={!ccOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
                         </Col>
                         <Col xs={24} md={5}>
                           <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"

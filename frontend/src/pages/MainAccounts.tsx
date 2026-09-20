@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
@@ -208,7 +209,7 @@ export default function MainAccounts() {
             <Select allowClear showSearch placeholder="اختر أو اكتب"
               options={MAIN_LEVELS.map((l) => ({ value: l, label: l }))}
               mode="tags" maxCount={1}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)} />
+              filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
         </Col>
       </Row>

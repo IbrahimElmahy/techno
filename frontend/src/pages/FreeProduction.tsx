@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Divider, Form, Input, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -276,8 +277,7 @@ export default function FreeProduction() {
               <Select
                 showSearch optionFilterProp="label" placeholder="اختر المنتج"
                 value={productId} onChange={setProductId}
-                options={products.map((p) => ({ value: p.id, label: p.name }))}
-              />
+                options={products.map((p) => ({ value: p.id, label: p.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           </Col>
           <Col xs={12} md={4}>
@@ -300,8 +300,7 @@ export default function FreeProduction() {
               <Select
                 showSearch optionFilterProp="label" placeholder="اختر المخزن"
                 value={warehouseId} onChange={setWarehouseId}
-                options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-              />
+                options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           </Col>
           <Col xs={12} md={4}>

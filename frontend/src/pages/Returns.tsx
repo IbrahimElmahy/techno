@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select,
   Space, Statistic, Table, Tag, Tooltip, Typography, message,
@@ -1197,7 +1198,7 @@ export default function Returns() {
                     placeholder="اضغط لاختيار العميل"
                     value={customerId ?? undefined}
                     onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
-                    options={customers.map((c: any) => ({ value: c.id, label: c.name }))} />
+                    options={customers.map((c: any) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>
@@ -1209,8 +1210,7 @@ export default function Returns() {
                     optionFilterProp="label"
                     value={docWarehouseId ?? undefined}
                     onChange={(v) => setDocWarehouseId(v as number)}
-                    options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))}
-                  />
+                    options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
             </Row>
@@ -1221,7 +1221,7 @@ export default function Returns() {
                   <Select allowClear showSearch optionFilterProp="label" placeholder="بدون مندوب"
                     disabled={viewOnly}
                     value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
-                    options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} />
+                    options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={12} md={6}>
@@ -1313,7 +1313,7 @@ export default function Returns() {
                               + ` — باقي ${b.remaining} من ${b.count}`
                               + (b.serial_from ? ` (${b.serial_from}–${b.serial_to})` : ''),
                             disabled: !b.remaining,
-                          }))} />
+                          }))} filterOption={searchFilter} filterSort={searchRank}/>
                       </Col>
                       <Col xs={12} md={5}>
                         <InputNumber style={{ width: '100%' }} min={1}
@@ -1745,7 +1745,7 @@ export default function Returns() {
           <Col xs={24} md={6}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="العميل"
               value={filters.customer_id} onChange={(v) => setFilter('customer_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={customers.map((c) => ({ value: c.id, label: c.name }))} />
           </Col>
           <Col xs={24} md={8}>

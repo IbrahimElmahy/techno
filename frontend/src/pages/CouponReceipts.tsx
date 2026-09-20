@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
   Space, Statistic, Table, Tabs, Tag, Typography, message,
@@ -417,8 +418,7 @@ export default function CouponReceipts() {
             status={!kind ? 'warning' : undefined}
             disabled={entries.length > 0}
             value={kind || undefined} onChange={handleKindChange}
-            options={kindOptions.map((k) => ({ value: k.value, label: k.label }))}
-          />
+            options={kindOptions.map((k) => ({ value: k.value, label: k.label }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={12} md={4}>
           <InputNumber
@@ -460,8 +460,7 @@ export default function CouponReceipts() {
             status={!customerId ? 'warning' : undefined}
             value={customerId} onChange={setCustomerId}
             options={receiverOptions}
-            notFoundContent="مافيش عميل بالاسم ده"
-          />
+            notFoundContent="مافيش عميل بالاسم ده" filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
       </Row>
 

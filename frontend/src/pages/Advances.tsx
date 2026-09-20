@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -315,8 +316,7 @@ export default function Advances() {
         <Select
           allowClear showSearch optionFilterProp="label" style={{ width: 260 }}
           placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
-          options={employees.map((e) => ({ value: e.id, label: e.name }))}
-        />
+          options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
       </Space>
 
       <Tabs
@@ -388,7 +388,7 @@ export default function Advances() {
             <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
               value={advForm.employee_id}
               onChange={(v) => setAdvForm({ ...advForm, employee_id: v })}
-              options={employees.map((e) => ({ value: e.id, label: e.name }))} />
+              options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col span={10}>
             <div style={{ marginBottom: 4 }}>التاريخ</div>
@@ -431,7 +431,7 @@ export default function Advances() {
             <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
               value={adjForm.employee_id}
               onChange={(v) => setAdjForm({ ...adjForm, employee_id: v })}
-              options={employees.map((e) => ({ value: e.id, label: e.name }))} />
+              options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col span={10}>
             <div style={{ marginBottom: 4 }}>شهر المسير</div>

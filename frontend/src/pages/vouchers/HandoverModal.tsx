@@ -9,6 +9,7 @@
  * مالوش حالة خاصة بيه غير اللي يخصّه هو.
  */
 import React from 'react';
+import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, message,
 } from 'antd';
@@ -56,8 +57,7 @@ export default function HandoverModal({
                       optionFilterProp="label"
                       style={{ width: 240 }}
                       placeholder="اختر المندوب"
-                      options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))}
-                    />
+                      options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
                   </Form.Item>
                   {/* (009) المندوب بقى له صندوق لكل خط، والتوريد بيسحب من واحد محدد.
                       فاضي = العهدة القديمة اللي من غير خط — اللي شايلة حركة ما قبل التقسيم. */}

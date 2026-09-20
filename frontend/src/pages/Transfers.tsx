@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
   Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
@@ -1371,7 +1372,7 @@ export default function Transfers() {
                 optionFilterProp="label"
                 disabled={!!editing || viewOnly}
                 value={source ?? undefined} onChange={onSourceChange}
-                options={locationOptions} />
+                options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
             <Col xs={24} md={8}>
               <div style={{ marginBottom: 6, fontWeight: 600 }}>إلى (الوجهة)</div>
@@ -1380,7 +1381,7 @@ export default function Transfers() {
                 optionFilterProp="label"
                 disabled={!!editing || viewOnly}
                 value={dest ?? undefined} onChange={(v) => setDest(v)}
-                options={locationOptions} />
+                options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
           </Row>
 
@@ -1416,7 +1417,7 @@ export default function Transfers() {
                   optionFilterProp="label"
                   disabled={viewOnly}
                   onChange={(v) => setActiveCategory(v ?? null)}
-                  options={categories} />
+                  options={categories} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col xs={24} md={17}>
                 <Select showSearch size="large" style={{ width: '100%' }} value={null}
@@ -1427,7 +1428,7 @@ export default function Transfers() {
                   options={stockOfCategory.map((s) => ({
                     value: s.item_id,
                     label: `${s.name} — المتاح: ${qty(s.on_hand)}`,
-                  }))} />
+                  }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
             </Row>
           )}

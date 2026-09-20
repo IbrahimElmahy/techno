@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Form, Input, Select, Switch, Divider, Row, Col, Spin, message,
 } from 'antd';
@@ -178,13 +179,13 @@ export default function ItemEditModal({
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="unit_of_measure" label="وحدة القياس">
-                <Select showSearch options={uomOptions.map((o) => ({ value: o.value, label: o.label }))} />
+                <Select showSearch options={uomOptions.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="category" label="الفئة">
                 <Select allowClear showSearch
-                  options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))} />
+                  options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
@@ -207,7 +208,7 @@ export default function ItemEditModal({
               <Form.Item name="default_warehouse_id" label="المخزن الافتراضي"
                 extra="التصنيع يسحب/يودع هذا الصنف هنا تلقائياً">
                 <Select allowClear showSearch
-                  filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+                  filterOption={searchFilter} filterSort={searchRank}
                   options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
               </Form.Item>
             </Col>

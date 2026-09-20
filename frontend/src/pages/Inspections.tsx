@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Descriptions, Input, Modal, Radio, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -499,8 +500,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             optionFilterProp="label"
             value={repId}
             onChange={setRepId}
-            options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))}
-          />
+            options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
           <Select
             placeholder="حالة الشهادة"
             style={{ width: 130 }}

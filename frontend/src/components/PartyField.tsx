@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { Select } from 'antd';
 import PartyPickerModal, { Party, PartyKind } from './PartyPickerModal';
 
@@ -47,8 +48,7 @@ export default function PartyField({
         // a second answer to the same question that cannot create a party.
         open={false}
         onClick={() => { if (!disabled) setOpen(true); }}
-        options={options}
-      />
+        options={options} filterOption={searchFilter} filterSort={searchRank}/>
       <PartyPickerModal
         open={open}
         kind={kind}

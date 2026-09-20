@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Col, DatePicker, Empty, Form, Input, Row, Select, Space, Spin, Tag, message,
 } from 'antd';
@@ -389,7 +390,7 @@ export default function PartyPickerModal({
                   style={{ marginBottom: 10 }}>
                   <Select showSearch optionFilterProp="label" placeholder="اختر المندوب"
                     options={reps.map((r: any) => ({
-                      value: r.id, label: r.full_name || r.username }))} />
+                      value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>
@@ -464,7 +465,7 @@ export default function PartyPickerModal({
                   rules={[{ required: true, message: 'المنطقة مطلوبة' }]}
                   style={{ marginBottom: 10 }}>
                   <Select showSearch optionFilterProp="label" placeholder="اختر المنطقة"
-                    options={territories.map((t: any) => ({ value: t.id, label: t.name }))} />
+                    options={territories.map((t: any) => ({ value: t.id, label: t.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>

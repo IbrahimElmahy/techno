@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
   Select, Space, Table, Tag, Tooltip, Typography, message,
@@ -1116,8 +1117,7 @@ export default function PurchaseReturns() {
           placeholder="اختر المخزن"
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
-          options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))}
-        />
+          options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           هيثبت لكل أصناف المردود. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
         </div>
@@ -1176,7 +1176,7 @@ export default function PurchaseReturns() {
                   disabled={viewOnly}
                   placeholder="اضغط لاختيار المورد" value={supplierFilter ?? undefined}
                   onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
-                  options={suppliers} />
+                  options={suppliers} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={5}>

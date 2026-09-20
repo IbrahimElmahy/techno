@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Empty, Input, Row, Select,
   Space, Spin, Statistic, Table, Tag, message,
@@ -869,15 +870,13 @@ export default function AccountStatement() {
                 options={items.map((i: any) => ({
                   value: i.id,
                   label: i.code ? `${i.code} — ${i.name}` : i.name,
-                }))}
-              />
+                }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
             <Col xs={24} md={4}>
               <Select
                 showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
                 placeholder="كل المخازن" value={warehouseId} onChange={setWarehouseId}
-                options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))}
-              />
+                options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
           </>
         ) : (
@@ -887,16 +886,14 @@ export default function AccountStatement() {
                 showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
                 placeholder="الحساب الرئيسي" value={mainKey}
                 onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
-                options={mainOptions}
-              />
+                options={mainOptions} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
             <Col xs={24} md={8}>
               <Select
                 showSearch optionFilterProp="label" style={{ width: '100%' }}
                 placeholder={mainKey ? 'الكل (كشف مجمّع) — أو اختر حساباً' : 'اختر الحساب'}
                 value={accountId} onChange={setAccountId} allowClear
-                options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))}
-              />
+                options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
           </>
         )}
@@ -915,16 +912,14 @@ export default function AccountStatement() {
             mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
             allowClear maxTagCount="responsive"
             placeholder="نوع الحركة" value={typeFilter} onChange={setTypeFilter}
-            options={typeOptions} disabled={!typeOptions.length}
-          />
+            options={typeOptions} disabled={!typeOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
           <Select
             showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
             placeholder="المندوب" value={repFilter} onChange={setRepFilter}
             options={repOptions}
-            disabled={!repOptions.length}
-          />
+            disabled={!repOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
       </Row>
 
@@ -934,8 +929,7 @@ export default function AccountStatement() {
             mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
             allowClear maxTagCount="responsive"
             placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
-            options={ccOptions} disabled={!ccOptions.length}
-          />
+            options={ccOptions} disabled={!ccOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={5}>
           <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"

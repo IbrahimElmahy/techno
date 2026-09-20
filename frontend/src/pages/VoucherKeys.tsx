@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Empty, Form, Input, Row, Select, Space, Switch, Tag, Tooltip, message,
 } from 'antd';
@@ -81,13 +82,13 @@ function SideFields({
                 onChange={() => {
                   form.setFieldValue(`${side}_sub`, undefined);
                   onChange();
-                }} />
+                }} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
             <Form.Item name={`${side}_sub`} style={{ marginBottom: 14 }}>
               <Select showSearch allowClear optionFilterProp="label" options={subs}
                 disabled={!!why}
                 placeholder={why || 'حساب فرعي (اختياري) — سيبه فاضي للربط على الرئيسي'}
-                onChange={onChange} />
+                onChange={onChange} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           </>
         );

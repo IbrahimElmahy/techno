@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag,
   Tooltip, message
@@ -383,7 +384,7 @@ export default function Treasuries() {
           <Form.Item name="branch_id" label="الفرع">
             <Select allowClear showSearch placeholder="اختر الفرع"
               options={branches.map((b) => ({ value: b.id, label: b.name }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
         </Col>
         <Col span={8}>

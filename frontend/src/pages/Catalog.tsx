@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
   Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, message,
@@ -896,7 +897,7 @@ export default function Catalog() {
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المخزن الافتراضي"
               value={filters.warehouse_id}
               onChange={(v) => setFilter('warehouse_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
           </Col>
           <Col xs={12} md={5}>
@@ -1029,7 +1030,7 @@ export default function Catalog() {
               <Form.Item name="category" label="الفئه">
                 <Select allowClear showSearch placeholder="اختر الفئة"
                   options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={16}>
@@ -1052,7 +1053,7 @@ export default function Catalog() {
                 rules={[{ required: true, message: 'اختر الوحدة' }]}>
                 <Select showSearch placeholder="وحده" disabled={!!editingItem}
                   options={uomOptions.map((o) => ({ value: o.value, label: o.label }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={8}>

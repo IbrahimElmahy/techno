@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result,
   Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message, DatePicker,
@@ -1525,7 +1526,7 @@ export default function Purchases() {
                   placeholder="اضغط لاختيار المورد"
                   onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
                   options={suppliers.map((sp) => ({
-                    value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} />
+                    value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>

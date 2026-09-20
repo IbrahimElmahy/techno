@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
@@ -517,28 +518,28 @@ export default function Customers() {
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="مندوب البيع"
               value={filters.rep_id}
               onChange={(v) => setFilter('rep_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
           </Col>
           <Col xs={12} md={4}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="مندوب الخدمة"
               value={filters.service_rep_id}
               onChange={(v) => setFilter('service_rep_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={serviceReps.map((r) => ({ value: r.id, label: r.full_name }))} />
           </Col>
           <Col xs={12} md={4}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المحافظة"
               value={filters.governorate_id}
               onChange={(v) => setFilter('governorate_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={governorates.map((g) => ({ value: g.id, label: g.name }))} />
           </Col>
           <Col xs={12} md={5}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المنطقة"
               value={filters.territory_id}
               onChange={(v) => setFilter('territory_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={territories.map((t) => ({ value: t.id, label: t.name }))} />
           </Col>
           <Col xs={12} md={5}>
@@ -624,7 +625,7 @@ export default function Customers() {
               <Form.Item name="branch_id" label="الفرع">
                 <Select allowClear showSearch placeholder="اختر الفرع"
                   options={branches.map((b) => ({ value: b.id, label: b.name }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -632,7 +633,7 @@ export default function Customers() {
                 rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
                 <Select showSearch placeholder="اختر المندوب"
                   options={reps.map((r) => ({ value: r.id, label: r.full_name }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -694,7 +695,7 @@ export default function Customers() {
               <Form.Item name="governorate_id" label="محافظات">
                 <Select allowClear showSearch placeholder="اختر المحافظة"
                   options={governorates.map((g) => ({ value: g.id, label: g.name }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={8}>
@@ -744,7 +745,7 @@ export default function Customers() {
                 rules={[{ required: true, message: 'يرجى تحديد المنطقة!' }]}>
                 <Select showSearch placeholder="اختر المنطقة"
                   options={territories.map((t) => ({ value: t.id, label: t.name }))}
-                  filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+                  filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={16}>

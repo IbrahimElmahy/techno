@@ -20,7 +20,7 @@ import DateRangeFilter from './DateRangeFilter';
 // إن البحث يلاقي صنف والترتيب يحطّه في مكان تاني. بتتصدّر من هنا كمان فاللي بيستوردها
 // من هنا مابيتلمسش.
 export { normalizeAr } from '../utils/arabicSort';
-import { normalizeAr } from '../utils/arabicSort';
+import { normalizeAr, searchFilter, searchRank } from '../utils/arabicSort';
 
 export interface FilterDef {
   key: string;
@@ -196,8 +196,9 @@ export default function ListToolbar({
       value={values[f.key] ?? undefined}
       optionFilterProp="label"
       onChange={(v) => onValueChange?.(f.key, v)}
-      options={f.options}
-    />
+      // `undefined` مش قايمة فاضية: فلتر من غير خيارات كان بيوصل rc-select خام،
+      // وأول ما الترشيح يشتغل عليه بيقع على `.length` — والشاشة بتفضل فاضية.
+      options={f.options || []} filterOption={searchFilter} filterSort={searchRank}/>
   ));
 
   const facets: { key: string; label: string; clear: () => void }[] = [];

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -280,7 +281,7 @@ export default function Employees() {
               placeholder="مربوط بمستخدم (اختياري)" value={form.user_id}
               onChange={(v) => setForm({ ...form, user_id: v })}
               options={users.map((u) => ({
-                value: u.id, label: u.full_name || u.username }))} />
+                value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
         </Row>
       </TabModal>

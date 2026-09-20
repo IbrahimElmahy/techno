@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Form, Input, Select, Switch, Space, Button, Spin, Row, Col, message
 } from 'antd';
@@ -184,7 +185,7 @@ export default function CustomerEditModal({
             <Col xs={24} md={12}>
               <Form.Item name="governorate_id" label="المحافظة">
                 <Select allowClear showSearch
-                  filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+                  filterOption={searchFilter} filterSort={searchRank}
                   options={governorates.map((g: any) => ({ value: g.id, label: g.name }))} />
               </Form.Item>
             </Col>
@@ -207,14 +208,14 @@ export default function CustomerEditModal({
             <Col xs={24} md={12}>
               <Form.Item name="rep_id" label="المندوب المسؤول"
                 rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
-                <Select showSearch filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+                <Select showSearch filterOption={searchFilter} filterSort={searchRank}
                   options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="territory_id" label="المنطقة الجغرافية"
                 rules={[{ required: true, message: 'يرجى تحديد المنطقة!' }]}>
-                <Select showSearch filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+                <Select showSearch filterOption={searchFilter} filterSort={searchRank}
                   options={territories.map((t) => ({ value: t.id, label: t.name }))} />
               </Form.Item>
             </Col>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -449,15 +450,13 @@ export default function OpsReports() {
           <Select
             allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder="كل العملاء" value={customerId} onChange={setCustomerId}
-            options={customers.map((c) => ({ value: c.id, label: c.name }))}
-          />
+            options={customers.map((c) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
           <Select
             allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
             placeholder="كل المندوبين" value={repId} onChange={setRepId}
-            options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))}
-          />
+            options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={isCheque ? 2 : 7}>
           <Select

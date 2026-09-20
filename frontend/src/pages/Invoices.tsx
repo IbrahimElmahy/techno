@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag,
   Tooltip, Typography, message,
@@ -2120,7 +2121,7 @@ function couponsTotal(inv: any): number {
                   options={customers.map((c) => ({
                     value: c.id,
                     label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
-                  }))} />
+                  }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
@@ -2136,8 +2137,7 @@ function couponsTotal(inv: any): number {
                   // فاضي، فكل صنف بيقرا صفر — والشباك بيقفل الأصناف كلها ويقول «غير متوفر»
                   // عن مخزن مليان.
                   onChange={(v) => onWarehouseChange(v as number)}
-                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-                />
+                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
           </Row>
@@ -2153,7 +2153,7 @@ function couponsTotal(inv: any): number {
                     const store = storeOfRep(v as number);
                     if (store) setDocWarehouseId(store);
                   }}
-                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
@@ -2212,7 +2212,7 @@ function couponsTotal(inv: any): number {
                     value={row.coupon_kind}
                     onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
                       ? { ...x, coupon_kind: v as string } : x)))}
-                    options={couponKindOptions.map((k) => ({ value: k.value, label: k.label }))} />
+                    options={couponKindOptions.map((k) => ({ value: k.value, label: k.label }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Col>
                 <Col xs={8} md={4}>
                   <InputNumber style={{ width: '100%' }} disabled
@@ -2324,8 +2324,7 @@ function couponsTotal(inv: any): number {
               placeholder="اختر المخزن"
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-            />
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
               هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
             </div>
@@ -2751,14 +2750,14 @@ function couponsTotal(inv: any): number {
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="العميل"
               value={filters.customer_id}
               onChange={(v) => setFilter('customer_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={customers.map((c) => ({ value: c.id, label: c.name }))} />
           </Col>
           <Col xs={12} sm={12} md={3}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
               value={filters.rep_id}
               onChange={(v) => setFilter('rep_id', v)}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
           </Col>
           <Col xs={12} sm={12} md={3}>

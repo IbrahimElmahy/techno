@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { Select, message } from 'antd';
 import { TabModal } from './TabModal';
 import { api } from '../api/client';
@@ -176,8 +177,7 @@ export default function TreasuryGate({
           placeholder="اختر الخزنة"
           value={value ?? undefined}
           onChange={(v) => { chosenRef.current = v as number; onChange(v as number); }}
-          options={options.map((o) => ({ value: o.value, label: o.label }))}
-        />
+          options={options.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
         <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           المقترح صندوق خط المستند — غيّره لو الفلوس اتحطّت في خزنة تانية.
         </div>

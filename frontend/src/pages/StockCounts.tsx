@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -404,7 +405,7 @@ export default function StockCounts() {
               <Select mode="multiple" allowClear showSearch optionFilterProp="label"
                 style={{ width: '100%' }} placeholder="اختر الأصناف"
                 value={spotItems} onChange={setSpotItems}
-                options={items.map((i: any) => ({ value: i.id, label: i.name }))} />
+                options={items.map((i: any) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           )}
 
@@ -413,7 +414,7 @@ export default function StockCounts() {
             <Select allowClear showSearch optionFilterProp="label"
               placeholder="كل المخازن النشطة"
               value={warehouseId} onChange={setWarehouseId}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item label="تاريخ الجرد">
             <DatePicker style={{ width: '100%' }} value={countDate} allowClear={false}
@@ -487,7 +488,7 @@ export default function StockCounts() {
                 <Select allowClear showSearch style={{ minWidth: 180 }}
                   placeholder="الفئة" value={lineCategory ?? undefined}
                   onChange={(v) => setLineCategory(v ?? null)}
-                  options={categories.map((c) => ({ value: c, label: c }))} />
+                  options={categories.map((c) => ({ value: c, label: c }))} filterOption={searchFilter} filterSort={searchRank}/>
               )}
               {draftLines.length !== allLines.length && (
                 <span style={{ color: '#6b6b6b', fontSize: 12 }}>

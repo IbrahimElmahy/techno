@@ -18,7 +18,7 @@ import { printReport, type PrintColumn } from '../print/reportSheet';
 import StatsRow from '../components/StatsRow';
 import { useMovementLabels, useMovementTypes } from '../lib/movementTypes';
 import { useLookup, labelMap } from '../hooks/useLookup';
-import { compareArabic } from '../utils/arabicSort';
+import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
  *
@@ -337,8 +337,7 @@ export default function ItemCard() {
                 setItemId(undefined);
               }
             }}
-            options={categories.map((c: string) => ({ value: c, label: categoryLabels[c] || c }))}
-          />
+            options={categories.map((c: string) => ({ value: c, label: categoryLabels[c] || c }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={7}>
           <Select
@@ -347,8 +346,7 @@ export default function ItemCard() {
             value={itemId} onChange={setItemId}
             options={pickableItems.map((i: any) => ({
               value: i.id, label: i.code ? `${i.code} — ${i.name}` : i.name }))}
-            notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined}
-          />
+            notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
           <Select

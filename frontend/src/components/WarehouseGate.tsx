@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { Select } from 'antd';
 import { TabModal } from './TabModal';
 
@@ -124,8 +125,7 @@ export default function WarehouseGate({
             selectedRef.current = v;
             onChange(v);
           }}
-          options={normalizedOptions}
-        />
+          options={normalizedOptions} filterOption={searchFilter} filterSort={searchRank}/>
         {subtitle && (
           <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
             {subtitle}

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
@@ -423,7 +424,7 @@ export default function Warehouses() {
           <Form.Item name="branch_id" label="الفرع">
             <Select allowClear showSearch placeholder="اختر الفرع"
               options={branches.map((b) => ({ value: b.id, label: b.name }))}
-              filterOption={(input, option) => String(option?.label ?? '').includes(input)} />
+              filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
         </Col>
         <Col span={12}>

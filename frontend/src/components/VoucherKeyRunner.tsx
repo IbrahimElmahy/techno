@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, DatePicker, Descriptions, Form, Input, Select, Space, Spin, Steps, Tag, Tooltip, message,
 } from 'antd';
@@ -410,7 +411,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
               rules={[{ required: true, message: 'اختر المندوب' }]}>
               <Select showSearch optionFilterProp="label" placeholder="اختر المندوب"
                 options={world.reps.map((r) => ({
-                  value: r.id, label: r.full_name || r.username || `#${r.id}` }))} />
+                  value: r.id, label: r.full_name || r.username || `#${r.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           )}
           {(['debit', 'credit'] as const).map((side) => doors.includes(`${side}_account`) && (
@@ -419,7 +420,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
                 (side === 'debit' ? keyDef.debit_account_name : keyDef.credit_account_name) || '—'}»`}
               rules={[{ required: true, message: 'اختر الحساب' }]}>
               <Select showSearch optionFilterProp="label" placeholder="اختر الحساب"
-                options={groupSide(side).map((a) => ({ value: a.id, label: label(a) }))} />
+                options={groupSide(side).map((a) => ({ value: a.id, label: label(a) }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           ))}
           {(['from_treasury', 'to_treasury'] as const).map((door) => doors.includes(door) && (

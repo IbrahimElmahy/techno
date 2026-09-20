@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Table, Row, Col, Statistic, Select, Button, Space, Tag, Typography, message, Alert,
@@ -205,8 +206,7 @@ export default function PointsLedger() {
               placeholder="كل العملاء"
               value={customerId}
               onChange={setCustomerId}
-              options={customerOptions}
-            />
+              options={customerOptions} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
           <Col xs={24} md={8}>
             <Select

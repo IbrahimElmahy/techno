@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Statistic, Col, message, Descriptions, Alert,
 } from 'antd';
@@ -907,8 +908,7 @@ const Vouchers: React.FC = () => {
                     placeholder="اختر الطرف"
                     value={stParty}
                     onChange={setStParty}
-                    options={stPartyOptions}
-                  />
+                    options={stPartyOptions} filterOption={searchFilter} filterSort={searchRank}/>
                   <div style={{ width: 280 }}>
                     <DateRangeFilter value={stRange as any} onChange={(v) => setStRange(v as any)} />
                   </div>

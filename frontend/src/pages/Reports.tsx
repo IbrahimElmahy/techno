@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Col, Divider, Empty,
 } from 'antd';
@@ -192,8 +193,7 @@ function ProductionTab({ period, range, items }: TabProps) {
         <Select
           allowClear showSearch optionFilterProp="label" placeholder="كل المنتجات"
           style={{ width: 240 }} value={productId} onChange={setProductId}
-          options={items.map((i) => ({ value: i.id, label: i.name }))}
-        />
+          options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
       </Space>
 
@@ -264,8 +264,7 @@ function InventoryTab({ warehouses, items }: TabProps) {
         <Select
           allowClear showSearch optionFilterProp="label" placeholder="كل الأصناف"
           style={{ width: 240 }} value={itemId} onChange={setItemId}
-          options={items.map((i) => ({ value: i.id, label: i.name }))}
-        />
+          options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
       </Space>
 
@@ -347,8 +346,7 @@ function WastageTab({ range, warehouses, items }: TabProps) {
         <Select
           allowClear showSearch optionFilterProp="label" placeholder="كل الأصناف"
           style={{ width: 240 }} value={itemId} onChange={setItemId}
-          options={items.map((i) => ({ value: i.id, label: i.name }))}
-        />
+          options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <Select
           allowClear placeholder="كل المخازن" style={{ width: 200 }} value={warehouseId} onChange={setWarehouseId}
           options={warehouses.map((w) => ({ value: w.id, label: w.name }))}

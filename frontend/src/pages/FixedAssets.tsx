@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Input, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -353,7 +354,7 @@ export default function FixedAssets() {
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="الفرع"
               value={form.branch_id}
               onChange={(v) => setForm({ ...form, branch_id: v })}
-              filterOption={(i, o) => String(o?.label ?? '').includes(i)}
+              filterOption={searchFilter} filterSort={searchRank}
               options={branches.map((b) => ({ value: b.id, label: b.name }))} />
           </Col>
           <Col xs={24}>
