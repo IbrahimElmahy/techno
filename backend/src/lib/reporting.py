@@ -69,6 +69,44 @@ def _item_names(db: Session) -> dict[int, str]:
 
 
 # --- reports ---------------------------------------------------------------
+def _op_batches(db: Session, product_id: int | None):
+    """الإنتاج اللي اتسجّل **عمليات** مش أوامر — مجمّع في دفعات زي ما حصل.
+
+    **مش كل إنتاج بيجي من أمر تصنيع.** النقل من a5 بيسجّل `ManufacturingOp` لكل سطر
+    لأن أمر a5 الواحد بيطلّع كذا منتج وأمرنا منتج واحد؛ تفصيله كان هيتطلّب توزيع
+    الخامات على المنتجات بالتخمين. فالمخزون بيطلع مظبوط، وده التقرير اللي كان
+    بيشوف الأوامر وحدها فبيطلع **فاضي** رغم إن ٣٬٨٠٤ عملية إنتاج واستهلاك متسجّلة.
+
+    **والدفعة بتتلمّ من رقم المستند.** `import_a5_manufacturing` بيكتب
+    `<بادئة>MFG-<رقم أمر a5>-<تسلسل>`، فالجزء اللي قبل آخر شرطة هو أمر التشغيل
+    الأصلي. ده اتفاق مكتوب في المستورد ومقروء هنا — ولو اتغيّر هناك لازم يتغيّر هنا.
+
+    والتاريخ بييجي من حركة المخزون (`movement_date`) مش من وقت كتابة الصف: النقل
+    كتب شغل سنة في يوم واحد، والترتيب بوقت الكتابة بيحطهم كلهم في بُكيت واحد.
+    """
+    from src.models.manufacturing import ManufactureOpType, ManufacturingOp
+
+    stmt = (select(ManufacturingOp, StockMovement.movement_date, StockMovement.created_at)
+            .join(StockMovement, StockMovement.id == ManufacturingOp.stock_movement_id)
+            .where(ManufacturingOp.reverses_op_id.is_(None)))
+    batches: dict[str, dict] = {}
+    for op, mv_date, mv_created in db.execute(stmt).all():
+        num = op.document_number or ""
+        ref = num.rsplit("-", 1)[0] if "-" in num else num
+        b = batches.setdefault(ref, {
+            "document_number": ref, "when": mv_date or (mv_created.date() if mv_created else None),
+            "produced": ZERO, "consumed": ZERO, "product_id": None})
+        if op.op_type == ManufactureOpType.produce:
+            b["produced"] += to_qty(op.quantity)
+            if b["product_id"] is None:
+                b["product_id"] = op.item_id
+        else:
+            b["consumed"] += to_qty(op.quantity)
+    if product_id is not None:
+        batches = {k: v for k, v in batches.items() if v["product_id"] == product_id}
+    return list(batches.values())
+
+
 def production_consumption(db: Session, *, date_from=None, date_to=None, period="month",
                            product_id: int | None = None) -> dict:
     """Actual production vs materials pulled, plus cost breakdown, bucketed by period."""
@@ -78,7 +116,10 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         stmt = stmt.where(ManufacturingOrder.product_id == product_id)
     rows, buckets = [], {}
     for o in db.scalars(stmt.order_by(ManufacturingOrder.id)).all():
-        if not _in_range(o.created_at, date_from, date_to):
+        # **تاريخ الإنتاج قبل وقت الكتابة.** الأمر المستورد اتكتب النهارده وإنتاجه
+        # حصل من شهور؛ الترتيب بـ`created_at` بيحط سنة شغل في بُكيت واحد.
+        when = o.production_date or o.created_at
+        if not _in_range(when, date_from, date_to):
             continue
         consumed = to_qty(sum((to_qty(c.quantity) for c in o.consumptions), ZERO))
         rows.append({
@@ -89,13 +130,34 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
             "material_cost": str(to_money(o.material_cost)),
             "resource_cost": str(to_money(o.resource_cost)),
             "total_cost": str(to_money(o.total_cost)),
-            "created_at": str(o.created_at),
+            "created_at": str(when),
         })
-        b = buckets.setdefault(bucket_key(o.created_at, period),
+        b = buckets.setdefault(bucket_key(when, period),
                                {"produced": ZERO, "consumed": ZERO, "total_cost": ZERO})
         b["produced"] += to_qty(o.quantity)
         b["consumed"] += consumed
         b["total_cost"] += to_money(o.total_cost)
+
+    # الإنتاج المسجّل عمليات — نفس الصفوف بنفس الشكل، بلا تكلفة لأن العملية
+    # مابتحملش تكلفة (الأمر هو اللي بيحسبها).
+    for batch in _op_batches(db, product_id):
+        when = batch["when"]
+        if when is None or not _in_range(when, date_from, date_to):
+            continue
+        rows.append({
+            "id": None, "document_number": batch["document_number"],
+            "product_id": batch["product_id"],
+            "product_name": names.get(batch["product_id"], ""),
+            "produced_quantity": str(to_qty(batch["produced"])),
+            "consumed_quantity": str(to_qty(batch["consumed"])),
+            "material_cost": "0.00", "resource_cost": "0.00", "total_cost": "0.00",
+            "created_at": str(when),
+        })
+        b = buckets.setdefault(bucket_key(when, period),
+                               {"produced": ZERO, "consumed": ZERO, "total_cost": ZERO})
+        b["produced"] += to_qty(batch["produced"])
+        b["consumed"] += to_qty(batch["consumed"])
+    rows.sort(key=lambda r: r["created_at"])
     return {
         "rows": rows,
         "by_period": [{"period": k, "produced_quantity": str(to_qty(v["produced"])),
