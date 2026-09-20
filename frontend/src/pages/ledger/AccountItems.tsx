@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../../utils/pagination';
 import { Button, Empty, Skeleton, Table, Tag } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
@@ -63,7 +64,7 @@ export default function AccountItems({
       rowKey={(r, i) => `${r.entry_id}-${i}`}
       size="small"
       dataSource={lines}
-      pagination={lines.length > 20 ? { defaultPageSize: 20 } : false}
+      pagination={lines.length > 20 ? { defaultPageSize: PAGE_SIZE } : false}
       title={() => <span style={{ color: '#888' }}>رصيد أول المدة: {money(opening)}</span>}
       columns={[
         { title: 'التاريخ', dataIndex: 'entry_date', width: 105 },

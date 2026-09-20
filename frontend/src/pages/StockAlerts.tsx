@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, Space, Statistic, Table, Tag,
 } from 'antd';
@@ -157,7 +158,7 @@ export default function StockAlerts() {
                 rowKey="item_id" size="small" loading={loading}
                 dataSource={reorderFilter.filtered}
                 locale={{ emptyText: 'كل الأصناف داخل حدودها' }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+                pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
                 columns={tableCols.columns}
               />
             </Card>

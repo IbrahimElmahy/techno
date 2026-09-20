@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Button, Card, Col, Divider, Form, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
@@ -383,7 +384,7 @@ export default function Treasury() {
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         />
       </Card>
 

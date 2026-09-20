@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Tabs, Table, Descriptions, Statistic, Col, Card, Tag, Spin, Space, Button, Empty, Typography,
@@ -322,8 +323,8 @@ export default function ItemProfile() {
                       <Table
                         {...movesKb.tableProps}
                         size="small" rowKey="id" dataSource={movementsFilter.filtered} scroll={{ x: true }}
-                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         columns={[
                         { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
                         { title: 'النوع', dataIndex: 'movement_type', key: 't', ...textColumn(data?.movements ?? [], (r: any) => moveLabels[r.movement_type] || r.movement_type),
@@ -369,8 +370,8 @@ export default function ItemProfile() {
                         size="small" dataSource={salesFilter.filtered}
                         rowKey={(r: any) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`}
                         scroll={{ x: true }}
-                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         columns={tableCols.columns}
                       />
                     </>
@@ -394,8 +395,8 @@ export default function ItemProfile() {
                         size="small" dataSource={purchasesFilter.filtered}
                         rowKey={(r: any) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`}
                         scroll={{ x: true }}
-                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         columns={[
                           { title: 'الفاتورة', dataIndex: 'document_number', key: 'n', ...textColumn(data?.purchases ?? [], (r: any) => r.document_number) },
                           { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
@@ -448,8 +449,8 @@ export default function ItemProfile() {
                       <Table
                         size="small" rowKey="id" dataSource={pricesFilter.filtered} scroll={{ x: true }}
                         locale={{ emptyText: 'لم يتم تغيير أي سعر لهذا الصنف بعد' }}
-                        pagination={{ defaultPageSize: 20, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         columns={[
                         { title: 'التاريخ', dataIndex: 'changed_at', key: 'd', ...dateColumn<any>((r) => r.changed_at) },
                         { title: 'السعر', dataIndex: 'field', key: 'f', ...textColumn(data?.price_history ?? [], (r: any) => r.field),

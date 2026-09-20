@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Button, Card, Descriptions, Dropdown, Form, Input, Space, Table, Tooltip, message,
 } from 'antd';
@@ -240,7 +241,7 @@ export default function Categories() {
           {...kb.tableProps}
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد فئات' }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         // Their column order exactly: رقم · الاسم · مخفي · وصف, then the row's three icons.
         columns={tableCols.columns}
       />

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Col, Divider, Empty,
@@ -203,7 +204,7 @@ function ProductionTab({ period, range, items }: TabProps) {
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
-      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
@@ -269,7 +270,7 @@ function InventoryTab({ warehouses, items }: TabProps) {
       </Space>
 
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{inventoryTabCols.control}</div>
-      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         dataSource={rows} columns={inventoryTabCols.columns}
         summary={(data) => {
           const total = data.reduce((s, r) => s + Number(r.value ?? 0), 0);
@@ -364,7 +365,7 @@ function WastageTab({ range, warehouses, items }: TabProps) {
       </StatsRow>
 
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{wastageTabCols.control}</div>
-      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         dataSource={rows} columns={wastageTabCols.columns}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
@@ -439,7 +440,7 @@ function StagnantTab({ warehouses }: TabProps) {
       <FocusedRowsBanner focus={focus} total={rows.length} noun="صنف"
                          shown={shownRows.length} />
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{stagnantTabCols.control}</div>
-      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: 12, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         dataSource={shownRows} columns={stagnantTabCols.columns}
         rowClassName={(r) => (r.last_out_date === null ? 'stagnant-never-moved' : '')}
         onRow={(r) => (r.last_out_date === null ? { style: { background: '#fff1f0' } } : {})}
@@ -529,7 +530,7 @@ function SalesTab({ period, range }: TabProps) {
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
-      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>

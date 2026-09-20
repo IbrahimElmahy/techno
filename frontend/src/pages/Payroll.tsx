@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -292,7 +293,7 @@ export default function Payroll() {
             {...runKb.tableProps}
             rowKey="id" size="small" loading={loading}
             columns={runTable.columns} dataSource={runs}
-            pagination={{ defaultPageSize: 25 }}
+            pagination={{ defaultPageSize: PAGE_SIZE }}
             locale={{ emptyText: 'لا توجد مسيّرات' }}
           />
         </>
@@ -374,7 +375,7 @@ export default function Payroll() {
             {...lineKb.tableProps}
             rowKey="id" size="small"
             columns={lineTable.columns} dataSource={detail.lines}
-            pagination={{ defaultPageSize: 50, showSizeChanger: true }}
+            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
             locale={{ emptyText: 'لا توجد سطور' }}
           />

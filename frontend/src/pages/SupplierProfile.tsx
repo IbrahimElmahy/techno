@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -871,7 +872,7 @@ export default function SupplierProfile() {
                             dataSource={shownLines}
                             loading={loading}
                             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
-                            pagination={{ defaultPageSize: 25, showSizeChanger: true, pageSizeOptions: ['10', '25', '50', '100', '200'] }}
+                            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                             scroll={{ x: 'max-content' }}
                             columns={tableCols.columns}
                             expandable={{
@@ -918,8 +919,8 @@ export default function SupplierProfile() {
                       <Table size="small" rowKey="id" dataSource={purchasesFilter.filtered}
                         columns={docColumns('الإجمالي')} onRow={rowProps('purchase')}
                         scroll={{ x: true }}
-                        pagination={{ defaultPageSize: 10, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }} />
                     </>
                   ),
                 },
@@ -939,8 +940,8 @@ export default function SupplierProfile() {
                       <Table size="small" rowKey="id" dataSource={returnsFilter.filtered}
                         columns={docColumns('قيمة المرتجع')} onRow={rowProps('return')}
                         scroll={{ x: true }}
-                        pagination={{ defaultPageSize: 10, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }} />
                     </>
                   ),
                 },
@@ -960,8 +961,8 @@ export default function SupplierProfile() {
                       <Table size="small" rowKey="id" dataSource={paymentsFilter.filtered}
                         columns={docColumns('المدفوع')} onRow={rowProps('payment')}
                         scroll={{ x: true }}
-                        pagination={{ defaultPageSize: 10, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }} />
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }} />
                     </>
                   ),
                 },
@@ -984,8 +985,8 @@ export default function SupplierProfile() {
                       />
                       <Table size="small" rowKey="id" dataSource={chequesFilter.filtered}
                         onRow={rowProps('cheque')} scroll={{ x: true }}
-                        pagination={{ defaultPageSize: 10, showSizeChanger: true,
-                          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                          pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         columns={[
                           { title: 'رقم الشيك', dataIndex: 'cheque_number', key: 'n' },
                           { title: 'البنك', dataIndex: 'bank_name', key: 'b',

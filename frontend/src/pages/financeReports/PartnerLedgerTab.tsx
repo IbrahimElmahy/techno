@@ -6,6 +6,7 @@
  * بيديله الفترة وبس.
  */
 import React, { useCallback, useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../../utils/pagination';
 import { Alert, Button, Card, Col, Row, Select, Space, Statistic, Table, Tag } from 'antd';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -70,7 +71,7 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
         size="small"
         loading={partnerLoading}
         dataSource={partnerRows}
-        pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
         expandable={{
           expandedRowRender: (row) => (
             <Table<PartnerLedgerLine>

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -385,7 +386,7 @@ export default function Stocktake() {
         }}
         dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد أرصدة في هذا التاريخ' }}
-        pagination={{ defaultPageSize: 25, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
         // Every column filters and sorts on its own, and the narrowings combine — «خامات مخزن
         // الفرع اللي قيمتها فوق الألف» is three columns at once, and a single search box above the

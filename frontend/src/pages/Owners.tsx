@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Table,
   Card,
@@ -312,7 +313,7 @@ export default function Owners() {
           dataSource={owners}
           loading={loading}
           size="small"
-          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t} مالك` }}
+          pagination={{ pageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t} مالك` }}
         />
       </Card>
 

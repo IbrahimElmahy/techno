@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Statistic, Table, Tag, message,
@@ -360,7 +361,7 @@ export default function StockCounts() {
           tableLayout="fixed"
           onRow={(r) => ({ onClick: () => openDetail(r), style: { cursor: 'pointer' } })}
           locale={{ emptyText: 'لا توجد كشوف جرد' }}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true,
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             showTotal: (t) => `الإجمالي: ${t}` }}
           columns={tableCols.columns}
         />
@@ -516,8 +517,8 @@ export default function StockCounts() {
               }}
               size="small" rowKey="id" dataSource={draftLines}
               tableLayout="fixed" scroll={{ x: 'max-content' }}
-              pagination={{ defaultPageSize: 50, showSizeChanger: true,
-                pageSizeOptions: ['25', '50', '100', '200', '500'],
+              pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                pageSizeOptions: PAGE_SIZE_OPTIONS,
                 showTotal: (t) => `الإجمالي: ${t} سطر` }}
               columns={[
                 // Each column narrows on its own and the narrowings combine — «فئة الخامات، مخزن

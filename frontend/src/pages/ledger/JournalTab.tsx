@@ -4,6 +4,7 @@
  * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../../utils/pagination';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Tooltip, message, Radio,
@@ -565,7 +566,7 @@ export default function JournalTab() {
         loading={loading}
         dataSource={filter.filtered}
         columns={journalTabCols.columns}
-        pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         groupBy={groupBy}
         groups={[
           { value: 'journal', label: 'الدفتر',

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -723,7 +724,7 @@ export default function StockPermits() {
           style: { cursor: 'pointer' },
         })}
         locale={{ emptyText: 'لا توجد أذونات' }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         columns={tableCols.columns}
       />
 

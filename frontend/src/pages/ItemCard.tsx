@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -412,7 +413,7 @@ export default function ItemCard() {
             {...kb.tableProps}
             rowKey="movement_id" size="small" loading={loading} dataSource={card.rows}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
-            pagination={{ defaultPageSize: 25, showSizeChanger: true }}
+            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
             columns={tableCols.columns}
           />

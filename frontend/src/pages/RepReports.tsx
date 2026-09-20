@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, DatePicker, Select, Space, Statistic, Table, Tabs, Tag, message,
@@ -257,7 +258,7 @@ export default function RepReports() {
                   rowKey={(r) => `${r.rep_user_id}-${r.customer_id ?? 0}`}
                   size="middle" loading={loading} dataSource={customerFilter.filtered}
                   locale={{ emptyText: 'لا توجد تحصيلات في هذه الفترة' }}
-                  pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
                     showTotal: (t) => `الإجمالي: ${t}` }}
                   columns={repCustomersCols.columns}
                 />
@@ -284,7 +285,7 @@ export default function RepReports() {
                   rowKey={(r) => `${r.rep_user_id}-${r.item_id}`}
                   size="middle" loading={loading} dataSource={itemFilter.filtered}
                   locale={{ emptyText: 'لا توجد مبيعات في هذه الفترة' }}
-                  pagination={{ defaultPageSize: 20, showSizeChanger: true,
+                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
                     showTotal: (t) => `الإجمالي: ${t}` }}
                   columns={repItemsCols.columns}
                 />

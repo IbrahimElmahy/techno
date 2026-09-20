@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { Table, Card, Tag, Button, Descriptions, Space } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
@@ -257,7 +258,7 @@ export default function Audit() {
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
           expandable={{
             expandedRowRender: (record: AuditLog) => (
               <div style={{ padding: 16, backgroundColor: '#fafafa', borderRadius: 6 }}>

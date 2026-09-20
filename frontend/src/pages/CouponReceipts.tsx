@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
@@ -681,7 +682,7 @@ export default function CouponReceipts() {
           pageSize,
           total: totalCount,
           showSizeChanger: true,
-          pageSizeOptions: ['10', '20', '50', '100'],
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);

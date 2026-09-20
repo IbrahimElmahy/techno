@@ -1,4 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+// **باسم مستعار عن قصد.** الملف ده عنده `PAGE_SIZE` بمعنى تاني خالص —
+// حد الجلب من الـAPI، مش عدد صفوف الجدول.
+import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
+  from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag,
@@ -2829,7 +2833,7 @@ function couponsTotal(inv: any): number {
           rowKey="rowKey"
           rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
           loading={loading}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+          pagination={{ defaultPageSize: TABLE_PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS }}
           onRow={(record: any) => ({
             onClick: () => {
               // المسودّة مالهاش مستند يتفتح — الضغط بيستكملها.

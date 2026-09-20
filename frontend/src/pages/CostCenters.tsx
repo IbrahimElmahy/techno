@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
@@ -221,7 +222,7 @@ export default function CostCenters() {
           size="middle"
           tableLayout="fixed"
           locale={{ emptyText: 'لا توجد مراكز تكلفة' }}
-          pagination={{ defaultPageSize: 20, showSizeChanger: true,
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             showTotal: (t) => `عدد: ${t}` }}
         />
       </Card>

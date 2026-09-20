@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Card, Table, Button, Space, Input, Form, Tag, Switch, message,
 } from 'antd';
@@ -227,7 +228,7 @@ const InspectionItems: React.FC = () => {
           rowKey="id"
           loading={loading}
           dataSource={filter.filtered}
-          pagination={{ defaultPageSize: 50, showTotal: (t) => `إجمالي ${t}` }}
+          pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
           columns={tableCols.columns}
         />
       </Card>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
@@ -1087,8 +1088,8 @@ export default function PurchaseReturns() {
             );
           }}
           pagination={{
-            defaultPageSize: 10, showSizeChanger: true,
-            showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100'],
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+            showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS,
           }}
         />
       </Card>

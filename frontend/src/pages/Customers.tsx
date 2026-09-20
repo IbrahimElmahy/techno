@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Statistic, Table, Tag, Tooltip, message,
@@ -597,7 +598,7 @@ export default function Customers() {
             pageSize,
             total: totalCount,
             showSizeChanger: true,
-            pageSizeOptions: ['10', '20', '50', '100'],
+            pageSizeOptions: PAGE_SIZE_OPTIONS,
             onChange: handlePageChange,
             showTotal: (t) => `الإجمالي: ${t}`,
           }}

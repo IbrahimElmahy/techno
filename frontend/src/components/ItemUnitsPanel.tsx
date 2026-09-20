@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Button, Col, Input, Row, Select, Space, Table, Typography, message,
 } from 'antd';
@@ -130,8 +131,8 @@ export function SerialsPanel({ itemId, canEdit }: { itemId: number; canEdit: boo
       )}
       <strong>المتوفر بالمخزون ({inStock.length})</strong>
       <Table size="small" rowKey="id" dataSource={inStock} style={{ marginTop: 8 }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true,
-          pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          pageSizeOptions: PAGE_SIZE_OPTIONS }}
         columns={[
           { title: 'الرقم التسلسلي', dataIndex: 'serial' },
           { title: 'الموقع', dataIndex: 'location_id',

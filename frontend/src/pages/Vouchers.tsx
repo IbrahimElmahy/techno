@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Statistic, Col, message, Descriptions, Alert,
@@ -99,7 +100,7 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
             rowKey={(l: any) => `${l.entry_id}-${l.balance}`} size="small" loading={loading}
             dataSource={statement.lines}
             locale={{ emptyText: 'لا توجد حركة في هذه الفترة' }}
-            pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
             columns={[
               { title: 'التاريخ', dataIndex: 'entry_date',
@@ -548,7 +549,7 @@ const Vouchers: React.FC = () => {
                   dataSource={byKind('receipt')}
                   columns={voucherCols.columns}
                   locale={{ emptyText: 'لا توجد سندات قبض' }}
-                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
                 />
               </Card>
             ),
@@ -570,7 +571,7 @@ const Vouchers: React.FC = () => {
                   dataSource={byKind('payment')}
                   columns={voucherCols.columns}
                   locale={{ emptyText: 'لا توجد سندات صرف' }}
-                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
                 />
               </Card>
             ),
@@ -592,7 +593,7 @@ const Vouchers: React.FC = () => {
                   dataSource={byKind('rep_handover')}
                   columns={voucherCols.columns}
                   locale={{ emptyText: 'لا توجد سندات توريد' }}
-                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
                 />
               </Card>
             ),
@@ -614,7 +615,7 @@ const Vouchers: React.FC = () => {
                   dataSource={byKind('expense')}
                   columns={voucherCols.columns}
                   locale={{ emptyText: 'لا توجد مصروفات' }}
-                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
                 />
                 {expenseAccounts.length === 0 && (
                   <Alert
@@ -645,7 +646,7 @@ const Vouchers: React.FC = () => {
                   dataSource={byKind('cash_transfer')}
                   columns={voucherCols.columns}
                   locale={{ emptyText: 'لا توجد تحويلات' }}
-                  pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
                 />
 
                 <Table
@@ -765,7 +766,7 @@ const Vouchers: React.FC = () => {
                   rowKey="id"
                   size="small"
                   dataSource={chequeFilter.filtered}
-                  pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                   columns={[
                     { title: 'المستند', dataIndex: 'document_number', width: 120 },
                     {
@@ -935,7 +936,7 @@ const Vouchers: React.FC = () => {
                       rowKey={(r) => `${r.entry_id}-${r.entry_date}-${r.debit}-${r.credit}`}
                       loading={stLoading}
                       dataSource={statement.lines}
-                      pagination={{ defaultPageSize: 25, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                      pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                       size="small"
                       columns={[
                         { title: 'التاريخ', dataIndex: 'entry_date', width: 110 },
@@ -1016,7 +1017,7 @@ const Vouchers: React.FC = () => {
           loading={loading}
           dataSource={shownVouchers}
           columns={voucherCols.columns}
-          pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
+          pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
           size="small"
         />
       </Card>

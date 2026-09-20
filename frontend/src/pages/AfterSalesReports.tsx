@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Card, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
@@ -227,7 +228,7 @@ export default function AfterSalesReports() {
           rowKey={(r: any) => String(r.customer_id ?? r.rep_user_id ?? r.name)}
           size="small" loading={loading} dataSource={filter.filtered}
           columns={cols.columns} tableLayout="fixed"
-          pagination={{ defaultPageSize: 25, showSizeChanger: true }}
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
           locale={{ emptyText: 'لا توجد بيانات في الفترة دي' }}
         />
       </div>

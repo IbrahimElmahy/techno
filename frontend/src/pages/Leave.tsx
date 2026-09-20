@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
@@ -318,7 +319,7 @@ export default function Leave() {
                   {...kb.tableProps}
                   rowKey="id" size="small" loading={loading}
                   columns={reqTable.columns} dataSource={requests}
-                  pagination={{ defaultPageSize: 25, showSizeChanger: true }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
                   scroll={{ x: 'max-content' }}
                   locale={{ emptyText: 'لا توجد طلبات' }}
                 />
@@ -341,7 +342,7 @@ export default function Leave() {
                   rowKey={(r) => `${r.employee_id}-${r.leave_type_id}`}
                   size="small" loading={loading}
                   columns={balTable.columns} dataSource={balances}
-                  pagination={{ defaultPageSize: 50, showSizeChanger: true }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
                   scroll={{ x: 'max-content' }}
                   locale={{ emptyText: 'لا توجد أرصدة' }}
                 />

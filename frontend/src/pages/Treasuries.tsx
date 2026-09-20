@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag,
@@ -463,7 +464,7 @@ export default function Treasuries() {
           size="middle"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
-          pagination={{ defaultPageSize: 20, showSizeChanger: true,
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             showTotal: (t) => `عدد: ${t}` }}
         />
       </Card>
@@ -497,7 +498,7 @@ export default function Treasuries() {
           size="middle"
           tableLayout="fixed"
           locale={{ emptyText: 'مافيش صناديق للمناديب' }}
-          pagination={{ defaultPageSize: 20, showSizeChanger: true,
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             showTotal: (t) => `عدد: ${t}` }}
         />
       </Card>

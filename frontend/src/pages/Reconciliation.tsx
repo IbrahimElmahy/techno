@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, Empty, Input, Row, Segmented, Space, Statistic, Table, Tabs, Tag,
   Tooltip, message,
@@ -378,7 +379,7 @@ export default function Reconciliation() {
             children: (
               <Table
                 rowKey="number" size="small" dataSource={matched}
-                pagination={{ defaultPageSize: 10 }}
+                pagination={{ defaultPageSize: PAGE_SIZE }}
                 expandable={{
                   expandedRowRender: (g: MatchedGroup) => (
                     <Table

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Empty, Spin, Table, Tag
 } from 'antd';
@@ -81,7 +82,7 @@ export default function DocumentAuditModal({
       ) : (
         <Table
           size="small" rowKey="id" dataSource={rows}
-          pagination={{ defaultPageSize: 10 }}
+          pagination={{ defaultPageSize: PAGE_SIZE }}
           scroll={{ x: 'max-content' }}
           columns={[
             // To the minute, as asked. A date alone cannot separate two edits made the same

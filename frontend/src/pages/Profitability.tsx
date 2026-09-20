@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Statistic, Switch, Table, Tabs, Tag, message,
 } from 'antd';
@@ -311,7 +312,7 @@ export default function Profitability() {
                   rowKey={(r: any) => `${r.line_id}-${r.cost_center_id ?? 'x'}`}
                   size="small" loading={itemsLoading}
                   dataSource={items?.items ?? []}
-                  pagination={{ defaultPageSize: 15, showTotal: (t: number) => `${t} بند` }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t: number) => `${t} بند` }}
                   locale={{ emptyText: 'لا توجد بنود' }}
                   columns={[
                     { title: 'التاريخ', dataIndex: 'entry_date', width: 105 },

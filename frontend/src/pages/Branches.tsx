@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
@@ -280,7 +281,7 @@ export default function Branches() {
           loading={loading}
           size="middle"
           tableLayout="fixed"
-          pagination={{ defaultPageSize: 10, showSizeChanger: true,
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             showTotal: (t) => `عدد: ${t}` }}
         />
       </Card>

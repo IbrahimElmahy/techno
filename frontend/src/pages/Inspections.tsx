@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Descriptions, Input, Modal, Radio, Select, Space, Statistic, Table, Tag, message,
@@ -566,7 +567,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             pageSize: pageSize,
             total: totalCount,
             showSizeChanger: true,
-            pageSizeOptions: ['20', '50', '100', '200'],
+            pageSizeOptions: PAGE_SIZE_OPTIONS,
             onChange: handlePageChange,
             showTotal: (t) => `إجمالي ${t} معاينة`,
           }}

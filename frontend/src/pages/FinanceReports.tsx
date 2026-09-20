@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Card, Tabs, Table, DatePicker, Select, Space, Button, Statistic, Col, Tag, Descriptions, Alert,
 } from 'antd';
@@ -357,7 +358,7 @@ const FinanceReports: React.FC = () => {
                   size="small"
                   loading={loading}
                   dataSource={agingFilter.filtered}
-                  pagination={{ defaultPageSize: 20, showTotal: (t) => `إجمالي ${t}` }}
+                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
                   columns={agingCols.columns}
                   summary={() => {
                     const sum = agingFilter.filtered.reduce((s, r) => s + Number(r.total), 0);

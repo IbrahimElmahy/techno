@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { Table } from 'antd';
 
 export interface JournalLine {
@@ -42,7 +43,7 @@ export default function JournalEntryLines({
   return (
     <Table
       size="small"
-      pagination={shown.length > 20 ? { defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] } : false}
+      pagination={shown.length > 20 ? { defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS } : false}
       rowKey="_k"
       dataSource={shown}
       onRow={(l: any) => ({

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -297,7 +298,7 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
           </div>
         )}
         <strong>المتوفر بالمخزون ({inStock.length})</strong>
-        <Table size="small" rowKey="id" dataSource={inStock} pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+        <Table size="small" rowKey="id" dataSource={inStock} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
           columns={[
             { title: 'الرقم التسلسلي', dataIndex: 'serial' },
             { title: 'الموقع', dataIndex: 'location_id', render: (v: number, r: any) => r.location_kind ? `${r.location_kind} #${v}` : '-' },
@@ -955,7 +956,7 @@ export default function Catalog() {
             size="middle"
             tableLayout="fixed"
             expandable={{ expandedRowRender: expandedRow }}
-            pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS }}
             // The whole row opens the product file.
             onRow={(record) => ({
               onClick: () => navigate(`/catalog/${record.id}`),
@@ -1000,7 +1001,7 @@ export default function Catalog() {
                   tableLayout="fixed"
                   expandable={{ expandedRowRender: expandedRow }}
                   pagination={g.rows.length > 10
-                    ? { defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }
+                    ? { defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }
                     : false}
                   onRow={(record) => ({
                     onClick: () => navigate(`/catalog/${record.id}`),

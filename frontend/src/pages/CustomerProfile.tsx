@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -1089,7 +1090,7 @@ export default function CustomerProfile() {
                             dataSource={shownLines}
                             loading={loading}
                             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
-                            pagination={{ defaultPageSize: 25, showSizeChanger: true, pageSizeOptions: ['10', '25', '50', '100', '200'] }}
+                            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                             scroll={{ x: 'max-content' }}
                             columns={tableCols.columns}
                             expandable={{
@@ -1134,7 +1135,7 @@ export default function CustomerProfile() {
                         total={data.invoices.length} shown={invoicesFilter.filtered.length}
                       />
                       <Table size="small" rowKey="id" dataSource={invoicesFilter.filtered} onRow={rowProps('invoice')}
-                        columns={docColumns('الإجمالي')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        columns={docColumns('الإجمالي')} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         scroll={{ x: true }} />
                     </>
                   ),
@@ -1153,7 +1154,7 @@ export default function CustomerProfile() {
                         total={data.returns.length} shown={returnsFilter.filtered.length}
                       />
                       <Table size="small" rowKey="id" dataSource={returnsFilter.filtered} onRow={rowProps('return')}
-                        columns={docColumns('قيمة المرتجع')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        columns={docColumns('قيمة المرتجع')} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         scroll={{ x: true }} />
                     </>
                   ),
@@ -1172,7 +1173,7 @@ export default function CustomerProfile() {
                         total={data.receipts.length} shown={receiptsFilter.filtered.length}
                       />
                       <Table size="small" rowKey="id" dataSource={receiptsFilter.filtered} onRow={rowProps('receipt')}
-                        columns={docColumns('المحصّل')} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                        columns={docColumns('المحصّل')} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         scroll={{ x: true }} />
                     </>
                   ),
@@ -1195,7 +1196,7 @@ export default function CustomerProfile() {
                         ]}
                       />
                       <Table size="small" rowKey="id" dataSource={chequesFilter.filtered} onRow={rowProps('cheque')}
-                        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} scroll={{ x: true }}
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }} scroll={{ x: true }}
                         columns={[
                         { title: 'رقم الشيك', dataIndex: 'cheque_number', key: 'n' },
                         { title: 'البنك', dataIndex: 'bank_name', key: 'b',
@@ -1265,7 +1266,7 @@ export default function CustomerProfile() {
                         ]}
                       />
                       <Table size="small" rowKey="id" dataSource={couponsFilter.filtered} onRow={rowProps('coupon')}
-                        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} scroll={{ x: true }}
+                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }} scroll={{ x: true }}
                         columns={[
                           { title: 'السريال', dataIndex: 'serial', key: 's' },
                           { title: 'القيمة', dataIndex: 'value', key: 'v',
@@ -1326,7 +1327,7 @@ export default function CustomerProfile() {
                         <Empty description="مافيش حركة نقاط للعميل ده" />
                       ) : (
                         <Table size="small" rowKey="id" dataSource={pointsFilter.filtered}
-                          pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
                           scroll={{ x: true }}
                           columns={[
                             { title: 'التاريخ', dataIndex: 'date', key: 'd', width: 110,

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Empty, Input, Row, Select,
@@ -1150,7 +1151,7 @@ export default function AccountStatement() {
             rowKey={rowKeyOf}
             size="small" loading={loading} dataSource={shownLines}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
-            pagination={{ defaultPageSize: 25, showSizeChanger: true }}
+            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
             columns={tableCols.columns}
             rowClassName={(l) => (l.days_overdue ? 'statement-overdue' : '')}

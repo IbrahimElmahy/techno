@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
@@ -330,7 +331,7 @@ export default function Advances() {
                 {...kb.tableProps}
                 rowKey="id" size="small" loading={loading}
                 columns={advCols.columns} dataSource={advances}
-                pagination={{ defaultPageSize: 25, showSizeChanger: true }}
+                pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
                 scroll={{ x: 'max-content' }}
                 locale={{ emptyText: 'لا توجد سلف' }}
                 // جدول الأقساط تحت السلفة — «هيتخصم مني كام الشهر الجاي» سؤال بيتسأل
@@ -364,7 +365,7 @@ export default function Advances() {
               <Table
                 rowKey="id" size="small" loading={loading}
                 columns={adjCols.columns} dataSource={adjustments}
-                pagination={{ defaultPageSize: 25, showSizeChanger: true }}
+                pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
                 scroll={{ x: 'max-content' }}
                 locale={{ emptyText: 'لا توجد جزاءات ولا مكافآت' }}
               />

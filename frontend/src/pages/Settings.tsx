@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Card, Collapse, Table, Button, Input, Switch, Space, Tag, message, Form, Tooltip, Select,
@@ -688,7 +689,7 @@ function CustomerMergeCard() {
           {pairs.length > 0 && (
             <Table
               size="small" rowKey={(r: any) => r.merge?.id} dataSource={pairs}
-              pagination={{ defaultPageSize: 10, showTotal: (t) => `إجمالي ${t}` }}
+              pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
               columns={[
                 { title: 'الاسم', dataIndex: 'base_name' },
                 // `keep` and `merge` come back NESTED — {id, name} — and these read them flat, so

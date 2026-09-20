@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select,
   Space, Table, Tag, message,
@@ -606,7 +607,7 @@ export default function Orders() {
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد طلبات' }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
         columns={tableCols.columns}
       />

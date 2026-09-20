@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message
@@ -485,7 +486,7 @@ export default function Warehouses() {
           size="middle"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true,
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             showTotal: (t) => `عدد: ${t}` }}
         />
       </Card>

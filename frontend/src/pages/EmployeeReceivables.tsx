@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { Alert, Button, Card, Col, Input, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from 'antd';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -260,7 +261,7 @@ export default function EmployeeReceivables() {
         loading={loading}
         size="small"
         scroll={{ x: 'max-content' }}
-        pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}` }}
+        pagination={{ pageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}` }}
         {...kb.tableProps}
         summary={() => (
           <Table.Summary fixed>

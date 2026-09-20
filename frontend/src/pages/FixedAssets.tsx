@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Input, Row, Select, Space, Statistic, Table, Tag, message,
@@ -297,7 +298,7 @@ export default function FixedAssets() {
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد أصول مسجّلة' }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         tableLayout="fixed"
         expandable={{ expandedRowRender: expandedRow }}
         columns={tableCols.columns}
@@ -454,7 +455,7 @@ export default function FixedAssets() {
             <Table<ScheduleRow>
               rowKey={(r) => `${r.year}-${r.month}`} size="small" dataSource={schedule}
               locale={{ emptyText: 'لا يوجد إهلاك مُرحَّل بعد' }}
-              pagination={{ defaultPageSize: 12 }}
+              pagination={{ defaultPageSize: PAGE_SIZE }}
               columns={[
                 { title: 'الشهر', render: (_: any, r) => `${r.year}-${String(r.month).padStart(2, '0')}` },
                 { title: 'قيمة الإهلاك', dataIndex: 'amount',

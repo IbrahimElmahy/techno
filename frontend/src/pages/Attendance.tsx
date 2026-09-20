@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, Upload,
@@ -285,7 +286,7 @@ export default function Attendance() {
         {...kb.tableProps}
         rowKey="id" size="small" loading={loading}
         columns={cols.columns} dataSource={rows}
-        pagination={{ defaultPageSize: 50, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
         locale={{ emptyText: 'لا توجد أيام في هذا المدى' }}
       />
@@ -405,7 +406,7 @@ export default function Attendance() {
             rowKey={(r: any) => `${r.employee_id}-${r.date}`}
             size="small"
             dataSource={preview.matched}
-            pagination={{ defaultPageSize: 20 }}
+            pagination={{ defaultPageSize: PAGE_SIZE }}
             columns={[
               { title: 'الموظف', dataIndex: 'employee_key' },
               { title: 'التاريخ', dataIndex: 'date' },

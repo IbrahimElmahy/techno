@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
@@ -207,7 +208,7 @@ export default function Employees() {
           {...kb.tableProps}
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         locale={{ emptyText: 'لا يوجد موظفون' }}
-        pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
         columns={employeeCols.columns}
       />
@@ -298,7 +299,7 @@ export default function Employees() {
       <Table<JobTitle>
         rowKey="id" size="small" dataSource={titles} loading={loading}
         locale={{ emptyText: 'لا توجد وظائف' }}
-        pagination={{ defaultPageSize: 20 }}
+        pagination={{ defaultPageSize: PAGE_SIZE }}
         columns={[
           { title: 'الوظيفة', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
           { title: 'عدد الموظفين',

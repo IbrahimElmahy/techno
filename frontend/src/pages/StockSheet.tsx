@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -557,8 +558,8 @@ export default function StockSheet() {
         scroll={{ x: 'max-content' }}
         locale={{ emptyText: 'لا توجد أرصدة' }}
         pagination={{
-          defaultPageSize: 50, showSizeChanger: true,
-          pageSizeOptions: ['20', '50', '100', '200', '500'],
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
           showTotal: (t) => `الإجمالي: ${t} سطر`,
         }}
         summary={(pageRows) => {

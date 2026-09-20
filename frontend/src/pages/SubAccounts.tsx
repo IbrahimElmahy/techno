@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Switch, Table, Tag, Tooltip, message,
@@ -35,7 +36,7 @@ function AccountGroup({ rows, columns, onOpen }: {
       size="small"
       tableLayout="fixed"
       pagination={rows.length > 25
-        ? { defaultPageSize: 25, showSizeChanger: true, size: 'small',
+        ? { defaultPageSize: PAGE_SIZE, showSizeChanger: true, size: 'small',
             showTotal: (t: number) => `عدد: ${t}` }
         : false}
     />
