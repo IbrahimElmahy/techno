@@ -33,7 +33,11 @@ export function loadMovementTypes(): Promise<MovementType[]> {
     inFlight = api
       .get<MovementType[]>('/stock/movement-types')
       .then((r) => {
-        cache = r.data || [];
+        // **لازم تبقى مصفوفة.** `r.data` مش دايماً اللي متوقّعينه: الطلب اللي بيرجع
+        // صفحة `index.html` (بروكسي بيردّ HTML على مسار مش موجود) أو جسم خطأ
+        // بيدّي كائن — و`|| []` بتعدّيه لأنه «مش فاضي»، فأول `.map` بترمي
+        // «a.map is not a function» **وتفضّي الشاشة كلها**. اتشافت على الإنتاج.
+        cache = Array.isArray(r.data) ? r.data : [];
         return cache;
       })
       .catch(() => {
@@ -52,7 +56,9 @@ export function useMovementLabels(): Record<string, string> {
     let alive = true;
     loadMovementTypes().then((list) => {
       if (!alive) return;
-      setLabels(Object.fromEntries(list.map((t) => [t.value, t.label])));
+      // حزام أمان تاني: اللي بينده مايقعش لو حاجة غريبة عدّت.
+      setLabels(Array.isArray(list)
+        ? Object.fromEntries(list.map((t) => [t.value, t.label])) : {});
     });
     return () => {
       alive = false;
@@ -63,11 +69,12 @@ export function useMovementLabels(): Record<string, string> {
 
 /** القايمة كاملة — لفلتر «كل أنواع الحركة». */
 export function useMovementTypes(): MovementType[] {
-  const [types, setTypes] = useState<MovementType[]>(cache || []);
+  const [types, setTypes] = useState<MovementType[]>(
+    Array.isArray(cache) ? cache : []);
   useEffect(() => {
     let alive = true;
     loadMovementTypes().then((list) => {
-      if (alive) setTypes(list);
+      if (alive) setTypes(Array.isArray(list) ? list : []);
     });
     return () => {
       alive = false;
