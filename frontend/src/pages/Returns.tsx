@@ -921,6 +921,11 @@ export default function Returns() {
    * جوّه الصف مش جنب الأعمدة.
    */
   const lineColumns: EntryColumn<ReturnLineItem>[] = [
+    // ترقيم السطور — اللي بيراجع ورقة فيها ٣٥ صنف محتاج يقول «السطر رقم ١٢»
+    // بدل ما يعدّ بصباعه، واللي بيقارنها بورقة مطبوعة محتاج نفس الأرقام.
+    { key: 'idx', title: '#', width: 28, locked: true,
+      cellStyle: { color: '#6b6b6b', textAlign: 'center' },
+      cell: (_l: any, i: number) => i + 1 },
     { key: 'item', title: 'الصنف', span: 4, xs: 24, locked: true,
       cell: (line) => <b>{productName(line.item_id as number)}</b> },
     { key: 'warehouse', title: 'المخزن', span: 3, xs: 12,

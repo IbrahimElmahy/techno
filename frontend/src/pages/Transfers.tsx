@@ -1211,6 +1211,11 @@ export default function Transfers() {
   ];
 
   const docLineColumns = [
+    // ترقيم السطور — نفس سبب الفاتورة: ورقة بـ٣٥ صنف مالهاش أرقام
+    // مابتتقالش في التليفون ولا بتتقارن بورقة مطبوعة.
+    { key: 'idx', title: '#', width: 40, align: 'center' as const,
+      render: (_v: any, _r: any, i: number) => (
+        <span style={{ color: '#6b6b6b' }}>{i + 1}</span>) },
     { key: 'name', title: 'الصنف', dataIndex: 'item_id',
       render: (id: number) => <b>{nameOfItem(id)}</b> },
     /**
@@ -1269,6 +1274,11 @@ export default function Transfers() {
   });
 
   const draftLineColumns = [
+    // ترقيم السطور — نفس سبب الفاتورة: ورقة بـ٣٥ صنف مالهاش أرقام
+    // مابتتقالش في التليفون ولا بتتقارن بورقة مطبوعة.
+    { key: 'idx', title: '#', width: 40, align: 'center' as const,
+      render: (_v: any, _r: any, i: number) => (
+        <span style={{ color: '#6b6b6b' }}>{i + 1}</span>) },
     { key: 'name', title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
     { key: 'category', title: 'الفئة', dataIndex: 'category',
       render: (c: string | null) => (c ? <Tag>{categoryLabels[c] || c}</Tag> : '-') },
