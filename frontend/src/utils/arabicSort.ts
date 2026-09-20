@@ -62,3 +62,51 @@ export function compareArabic(a?: string | null, b?: string | null): number {
 export function sortByName<T>(rows: T[], name: (r: T) => string | null | undefined): T[] {
   return [...rows].sort((x, y) => compareArabic(name(x), name(y)));
 }
+
+// ---------------------------------------------------------------- البحث في القوايم
+//
+// **البحث بيلاقي الحروف في أي مكان، والترتيب بعده أبجدي — والاتنين مش نفس السؤال.**
+//
+// القايمة المقفولة (`Select` بـ`showSearch`) بتتفلتر بـ`includes` وبتفضل بترتيبها
+// الأصلي، فالاسم اللي الحروف في **آخر كلمة** فيه بيطلع فوق الاسم اللي **بيبدأ** بيها.
+// اللي بيكتب «كوع» عايز «كوع ٢ باب» مش «جلبة وصل كوع».
+//
+// نفس القاعدة بالظبط اللي الخادم بيرتّب بيها (`arabic.match_order`)، عشان القايمة
+// اللي جاية مرتّبة من السيرفر مايتعادش ترتيبها في الشاشة بقاعدة تانية.
+
+/** نص الخيار اللي بيتبحث فيه — العنوان، وإلا القيمة. */
+function optionText(option: any): string {
+  const raw = option?.label ?? option?.title ?? option?.children ?? option?.value;
+  return normalizeAr(typeof raw === 'string' || typeof raw === 'number' ? raw : '');
+}
+
+/**
+ * فلتر `Select` بيوحّد العربي: «جلبه» بتلاقي «جلبة»، و«٢» بتلاقي «2».
+ *
+ *     <Select showSearch filterOption={searchFilter} filterSort={searchRank} … />
+ */
+export function searchFilter(input: string, option: any): boolean {
+  const n = normalizeAr(input);
+  return !n || optionText(option).includes(n);
+}
+
+/**
+ * ترتيب نتايج البحث بالقُرب — بتلات مراتب زي الخادم:
+ *
+ *     ٠  بيبدأ بالحروف          «كوع ٢ باب»
+ *     ١  كلمة جوّاه بتبدأ بيها   «جلبة كوع ٤"»
+ *     ٢  جوّه كلمة               «مكوعة»
+ *
+ * وجوّه المرتبة الواحدة الترتيب أبجدي، فالقايمة تفضل مقروءة.
+ */
+export function searchRank(a: any, b: any, info?: { searchValue?: string }): number {
+  const n = normalizeAr(info?.searchValue ?? '');
+  if (!n) return 0;
+  const rank = (o: any) => {
+    const t = optionText(o);
+    if (t.startsWith(n)) return 0;
+    if (t.includes(` ${n}`)) return 1;
+    return 2;
+  };
+  return (rank(a) - rank(b)) || compareArabic(optionText(a), optionText(b));
+}

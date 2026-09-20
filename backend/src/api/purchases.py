@@ -49,7 +49,10 @@ class PurchaseCreate(BaseModel):
     variable_discount_pct: Decimal = Decimal("0")
     location: LocationIn
     cash_amount: Decimal
-    credit_amount: Decimal
+    # **فاضي ⇒ الباقي كله على حساب المورد.** الشاشة بتبعت النقدي وبس في الحالة
+    # الطبيعية؛ الرقم ده بيتكتب صراحةً لما اللي قدامها يقسّم بإيده، والسيرفر ساعتها
+    # بيتأكد إن القسمة بتظبط مع الإجمالي.
+    credit_amount: Decimal | None = None
     lines: list[PurchaseLineIn]
     # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ السيرفر يستنتجها (تطبيق المندوب).
     cash_account_id: int | None = None

@@ -70,7 +70,7 @@ def create_purchase(
     location_kind: LocationKind,
     location_id: int,
     cash_amount: Decimal,
-    credit_amount: Decimal,
+    credit_amount: Decimal | None,
     lines: list[PurchaseLine],
     actor_role: RoleName,
     actor_user_id: int,
@@ -136,8 +136,24 @@ def create_purchase(
     net = discounts.apply(gross, fixed, variable)
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     total = to_money(net + tax)
-    if to_money(cash_amount) + to_money(credit_amount) != total:
-        raise PurchaseError("النقدي + الآجل لازم يساوي إجمالي فاتورة الشراء.")
+    # **الآجل بيتحسب، مايتكتبش** — نفس قاعدة البيع بالحرف (`sales_service`).
+    #
+    # الشرط كان «النقدي + الآجل = الإجمالي بالظبط»، وكان بيرفض فواتير سليمة:
+    #
+    # * الشاشة بتجمع صافي السطور والسيرفر بيحسب الإجمالي = الصافي + الضريبة، فأول
+    #   ما يبقى فيه ضريبة الرقمين بيختلفوا والفاتورة بتترفض من غير ما اللي قدامها يعرف ليه.
+    # * وفاتورة شراء بالكامل على حساب المورد — وهي الحالة الطبيعية — بتتبعت بنقدي صفر
+    #   وآجل صفر، فبتترفض على فاتورة بـ١٥٤ ألف من غير ما يتكتب فيها حرف غلط.
+    #
+    # فالنقدي هو اللي بيتقال، والآجل بيتحسب: `الإجمالي − النقدي`. والسالب مقصود —
+    # دفعنا للمورد زيادة، والقيد تحته بيقيّدها لصالحنا عنده.
+    cash_amount = to_money(cash_amount)
+    if credit_amount is None:
+        credit_amount = total - cash_amount
+    elif to_money(credit_amount) != total - cash_amount:
+        raise PurchaseError(
+            f"النقدي + الآجل لازم يساوي إجمالي فاتورة الشراء ({total})."
+        )
 
     # Stock in (raw materials) — one movement per line.
     existing = db.get(PurchaseInvoice, replace_invoice_id) if replace_invoice_id else None

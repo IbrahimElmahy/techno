@@ -1008,11 +1008,16 @@ export default function Purchases() {
   };
 
   const handleSubmit = async (values: any) => {
-    const totalSplit = cashAmount + creditAmount;
-    if (Math.abs(totalSplit - invoiceTotal) > 0.01) {
-      message.error('عذراً، يجب أن يتطابق مجموع المدفوع النقدي والآجل مع إجمالي الفاتورة!');
-      return;
-    }
+    // **مافيش فحص «النقدي + الآجل = الإجمالي» هنا.**
+    //
+    // الآجل مش بيتكتب أصلاً — «الباقي» رقم محسوب من النقدي، فالفحص كان بيقارن الرقم
+    // بنفسه. ولمّا يفشل بيبقى لأن **إجمالي الشاشة غير إجمالي السيرفر**: الشاشة
+    // بتجمع السطور ناقص خصم الفاتورة، والسيرفر بيحسب الصافي + الضريبة وخصم
+    // الإعدادات الثابت. فالفرق بينهم كان بيقفل الحفظ على فاتورة ١٥٤ ألف من غير ما
+    // يتكتب فيها حرف غلط — والرسالة بتقول لللي قدامها يظبط رقم هو مش بيكتبه.
+    //
+    // الإجمالي بيتحسب في مكان واحد: السيرفر. وهو بيستنتج الآجل = الإجمالي − النقدي
+    // (نفس قاعدة البيع)، فالشاشة بتبعت النقدي وبس.
 
     const validLines = purchaseItems.filter((i) => i.item_id !== null);
     if (validLines.length === 0) {
@@ -1065,7 +1070,9 @@ export default function Purchases() {
               location_id: validLines[0].warehouse_id,
             },
             cash_amount: cashAmount,
-            credit_amount: creditAmount,
+            // `null` = «الباقي على حساب المورد» — السيرفر بيحسبه من إجماليه هو،
+            // مش من إجمالي الشاشة اللي مابيعرفش الضريبة وخصم الإعدادات.
+            credit_amount: null,
             // (٠٠٩) الخزنة اللي البوباب سأل عنها — الشرا **بيخصم** منها. `undefined` =
             // مااتسألش (نقدي بصفر أو مافيش صناديق) والسيرفر بيقرر زي ما هو بيعمل دلوقتي.
             cash_account_id: cashAccountId ?? undefined,
