@@ -103,12 +103,18 @@ def apply_filters(
 ) -> Select:
     """`q` matches code, name or category (partial). `warehouse_id` = the item's default store."""
     if q:
-        # **اللي بيكتب «٢» لازم يلاقي «2».** الاسم بيتعرض بأرقام عربية وبيتخزّن
-        # إنجليزية، فالمكتوب بلوحة عربية مابيطابقش المخزّن من غير التحويل ده.
-        needle = f"%{arabic.western_digits(q.strip())}%"
-        stmt = stmt.where(
-            or_(Item.name.like(needle), Item.code.like(needle), Item.category.like(needle))
-        )
+        # **اللي بيكتب «٢» لازم يلاقي «2»، واللي بيكتب «جلبه» لازم يلاقي «جلبة».**
+        #
+        # الاسم بيتعرض بأرقام عربية وبيتخزّن إنجليزية، والهمزة والتاء المربوطة
+        # بيتكتبوا بشكلين لنفس الاسم. المقارنة بقت على الاسم **الموحَّد** من
+        # الطرفين (`arabic.sort_key` / `arabic.bare`) — نفس القاعدة اللي الترتيب
+        # بيستعملها، وكانت مطبَّقة على الترتيب وحده فالبحث بيفوّت اللي الترتيب بيجمعه.
+        needle = f"%{arabic.bare(q)}%"
+        stmt = stmt.where(or_(
+            arabic.sort_key(Item.name).like(needle),
+            arabic.sort_key(Item.code).like(needle),
+            arabic.sort_key(Item.category).like(needle),
+        ))
     if kind:
         stmt = stmt.where(Item.kind == ItemKind(kind))
     if category:

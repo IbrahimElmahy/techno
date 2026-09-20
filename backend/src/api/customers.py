@@ -14,6 +14,7 @@ from src.core.db import get_db
 # **باسم تاني عن قصد.** الاسم `phones` محجوز في الملف ده لقايمة أرقام العميل
 # الإضافية (`_out(..., phones=...)` و`bulk_phone_values`)، فاستيراد الموديول
 # بنفس الاسم بيتحجب جوّه الدالة و`phones.display` بتتنادى على `dict` وترمي.
+from src.lib import arabic
 from src.lib import phones as phone_fmt
 from src.models.catalog import PriceTier
 from src.models.contact import PhoneOwner
@@ -315,10 +316,17 @@ def customer_options(
     if customer_type:
         stmt = stmt.where(Customer.customer_type == customer_type)
     if q:
-        like = f"%{q.strip()}%"
-        stmt = stmt.where(or_(Customer.name.ilike(like), Customer.code.ilike(like),
-                              Customer.phone.ilike(like)))
-    rows = db.execute(stmt.order_by(Customer.name).limit(limit)).all()
+        # المقارنة على الاسم الموحَّد: «احمد» تلاقي «أحمد»، و«٢» تلاقي «2».
+        like = f"%{arabic.bare(q)}%"
+        stmt = stmt.where(or_(arabic.sort_key(Customer.name).like(like),
+                              arabic.sort_key(Customer.code).like(like),
+                              Customer.phone.ilike(f"%{q.strip()}%")))
+    # **القُرب قبل الأبجدي.** الأبجدي وحده بيطلّع العميل اللي الحروف في آخر اسمه فوق
+    # اللي بيبدأ بيها — واللي بيكتب «محمد» عايز «محمد حسن» قبل «حسن أبو محمد».
+    rows = db.execute(
+        stmt.order_by(*arabic.match_order(q, Customer.name, Customer.code),
+                      arabic.sort_key(Customer.name), Customer.name)
+        .limit(limit)).all()
     return [
         CustomerOptionOut(
             id=r.id, code=r.code, name=r.name,

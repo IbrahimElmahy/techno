@@ -70,3 +70,5 @@ frontend/dist-package/
 backend/uploads/
 # بناء البيئة التجريبية — artefact زي `dist`، بيتبني بأمر مش بيتخزّن.
 frontend/dist-staging/
+# صلاحيات Claude المحلية — بتخص الجهاز ده ومفاتيحه (`techno-prod`)، مش المشروع.
+.claude/settings.local.json
