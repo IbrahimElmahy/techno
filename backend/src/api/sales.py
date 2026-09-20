@@ -331,6 +331,34 @@ class SalesInvoiceDetail(BaseModel):
     # بتتطبع من الويب مالهاش طريقة تعرف الرقم أصلاً، والتليفون اللي بيقرا فاتورة
     # مش هو اللي كتبها بيطبع من غير سطر «الحساب السابق».
     prior_balance: Decimal | None = None
+    # ---------------------------------------------------------------- ترويسة المستند
+    #
+    # **الحقول دي كانت ناقصة، والشاشة بتقراها.**
+    #
+    # `Invoices.tsx` بيقرا `det.rep_id` و`det.family` و`det.invoice_date` و`det.notes`
+    # و`det.statement1..3` و`det.external_document_number` و`det.variable_discount_pct`
+    # — وولا واحد فيهم كان في الموديل ده. Pydantic بيرمي اللي مش معرّف **في صمت**،
+    # فالشاشة بتاخد `undefined` وتحط مكانه الافتراضي.
+    #
+    # فاللي بيفتح فاتورة مرحّلة كان بيلاقي: نوع الفاتورة (أبيض/بولي) مش متحدد،
+    # والمندوب فاضي، والتاريخ تاريخ النهارده، والملاحظات والبيانات ضايعة. ولو حفظ
+    # التعديل، بيكتب الفراغ ده **فوق** اللي كان مكتوب في المستند.
+    #
+    # واسم العميل معاه عشان الشاشة تعرض اسم مش رقم: قايمة العملاء في الواجهة
+    # محدودة بـ٢٠٠٠، والعميل اللي بره القايمة كانت خانته بتعرض `1706` — الرقم الخام
+    # اللي `Select` بتاعة antd بتعرضه لما مالاقيش الخيار.
+    customer_name: str | None = None
+    rep_id: int | None = None
+    rep_name: str | None = None
+    family: str | None = None
+    invoice_date: date | None = None
+    external_document_number: str | None = None
+    notes: str | None = None
+    statement1: str | None = None
+    statement2: str | None = None
+    statement3: str | None = None
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     lines: list[InvoiceLineOut]
     # The coupon books handed over, one row per kind — read back so the printed invoice can name
     # them instead of showing a bare range.
@@ -1441,6 +1469,21 @@ def get_sale(
         cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
         prior_balance=getattr(inv, "prior_balance", None),
+        # الأسماء بتتقرا من الصف نفسه — نداء واحد، والشاشة مابتدوّرش في قايمة مقصوصة.
+        customer_name=(db.get(Customer, inv.customer_id).name
+                       if inv.customer_id else None),
+        rep_id=inv.rep_id,
+        rep_name=((db.get(User, inv.rep_id).full_name
+                   or db.get(User, inv.rep_id).username) if inv.rep_id else None),
+        family=inv.family,
+        invoice_date=inv.invoice_date,
+        external_document_number=inv.external_document_number,
+        notes=inv.notes,
+        statement1=inv.statement1,
+        statement2=inv.statement2,
+        statement3=inv.statement3,
+        fixed_discount_pct=inv.fixed_discount_pct,
+        variable_discount_pct=inv.variable_discount_pct,
         lines=[
             InvoiceLineOut(
                 item_id=line.item_id,

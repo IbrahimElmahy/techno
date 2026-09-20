@@ -1696,6 +1696,23 @@ function couponsTotal(inv: any): number {
 
       setDocCashAccountId(det.cash_account_id ?? null);
       setSelectedCustomerId(det.customer_id);
+
+      // **العميل اللي بره القايمة بيتضاف للقايمة.**
+      //
+      // خانة العميل بتلاقي اسمها من `customers`، وهي محدودة بألفين. العميل اللي
+      // ترتيبه بعد كده كانت خانته بتعرض `1706` — الرقم الخام اللي `Select` بتعرضه
+      // لما مالاقيش الخيار. المستند بقى بيجيب اسمه معاه، فالاسم بيتحط في القايمة
+      // أول ما المستند يتفتح. ونفس الحكاية للمندوب.
+      const cName = (det as any).customer_name;
+      if (det.customer_id && cName) {
+        setCustomers((prev) => (prev.some((c) => c.id === det.customer_id)
+          ? prev : [...prev, { id: det.customer_id, name: cName } as any]));
+      }
+      const rName = (det as any).rep_name;
+      if (det.rep_id && rName) {
+        setReps((prev: any[]) => (prev.some((r) => r.id === det.rep_id)
+          ? prev : [...prev, { id: det.rep_id, full_name: rName, username: rName }]));
+      }
       if (first?.warehouse_id) setDocWarehouseId(first.warehouse_id);
 
       if (det.customer_id) {
