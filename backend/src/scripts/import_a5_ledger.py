@@ -71,12 +71,69 @@ def _date(v: str) -> date | None:
         return None
 
 
-def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") -> None:
+def _group_key(r: list[str], mode: str) -> str:
+    """مفتاح القيد اللي السطر تابع له.
+
+    **`MMStnd` مش مفتاح قيد.** هو رقم المستند في يومية a5، وبيتقسم على القيد الواحد
+    وبيتشارك بين قيود مختلفة. قيس على مصنع السادات: التجميع بيه أدّى لـ**٢٬٧٩٠ قيد
+    غير متوازن من ٢٬٨٠٨** — يعني كل الدفتر تقريباً، والميزانية مابتقفلش.
+
+    و`doc` بيجمّع بـ(نوع المستند، رقمه) وده اللي بيوازن فعلاً: نفس الداتا بقت
+    **٢٬٠١٣ قيد، ٨٢ بس غير متوازنين**. والـ٨٢ دول كلهم أرصدة أول المدة، وفرقهم
+    ٥٣٬٤٩٨٫٧٧ — وهو نفس الفرق الموجود في دفتر a5 نفسه لما بتجمع أول المدة عندهم.
+    يعني عيب في دفترهم بيتنقل زي ما هو بدل ما يتخبّى.
+
+    والافتراضي فضل `MMStnd` عن قصد: نقل العلياء اتعمل بيه وقيوده متوازنة، وتغيير
+    الافتراضي بيخلّي إعادة التشغيل عندهم تعمل قيود جديدة جنب القديمة.
+    """
+    if mode == "doc":
+        return f"{_clean(r[A_TYPE])}/{_clean(r[A_DOC])}"
+    return r[A_KEY]
+
+
+#: أقصى فرق بيتعامل معاه على إنه تقريب. أكبر من كده مش تقريب — ده نقص حقيقي في
+#: الداتا ولازم يفضل باين.
+ROUNDING_TOLERANCE = Decimal("1.00")
+
+
+def _absorb_rounding(lines: list[LedgerLine]) -> Decimal:
+    """يبلع فرق التقريب في أكبر سطر على الناحية الناقصة، ويرجّع الفرق اللي اتعدّل.
+
+    **a5 بيمسك أربع خانات عشرية وإحنا بنمسك اتنين.** تقريب كل سطر لوحده بيزحلق
+    المجموع: قيد متوازن عندهم بالدقة الكاملة بيطلع عندنا مدين ٦٬٩٩٣٫١٤ ودائن
+    ٦٬٩٩٣٫١٥. مقيس على مصنع السادات — **١٨٩ قيد من ٢٢٣** اتكسروا من التقريب وحده،
+    وكلهم فرقهم بين قرش وأربع قروش.
+
+    والفرق بيتحط على **أكبر سطر** مش بيتوزّع: توزيعه بيغيّر أرقام كتير بحاجة تافهة،
+    وحطّه على الأكبر بيخلّي الأثر النسبي أصغر ما يمكن. وسطر جديد «فروق تقريب» كان
+    هيخترع حساب مالوش أصل في دفترهم.
+
+    **واللي فرقه أكبر من قرش أو اتنين مابيتلمسش.** فرق ٥٣ ألف مش تقريب — ده أرصدة
+    أول مدة ناقصة عند a5 نفسه، وبلعه معناه إننا نخترع قيد تسوية من دماغنا ونخبّي
+    عيب في دفترهم. بيفضل باين، وفحص النظام بيشاور عليه.
+    """
+    debit = sum((ln.amount for ln in lines if ln.direction == Direction.debit), ZERO)
+    credit = sum((ln.amount for ln in lines if ln.direction == Direction.credit), ZERO)
+    diff = debit - credit
+    if diff == ZERO or abs(diff) > ROUNDING_TOLERANCE:
+        return ZERO
+    # الناقص هو الناحية الأقل — الفرق بيتزوّد عليها.
+    side = Direction.credit if diff > ZERO else Direction.debit
+    target = max((ln for ln in lines if ln.direction == side),
+                 key=lambda ln: ln.amount, default=None)
+    if target is None:
+        return ZERO
+    target.amount = to_money(target.amount + abs(diff))
+    return abs(diff)
+
+
+def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "",
+        key_mode: str = "mmstnd") -> None:
     rows = [r for r in _read(os.path.join(folder, "a5_acclines.tsv")) if len(r) >= 12]
 
     groups: dict[str, list[list[str]]] = defaultdict(list)
     for r in rows:
-        groups[r[A_KEY]].append(r)
+        groups[_group_key(r, key_mode)].append(r)
 
     kinds: dict[str, int] = defaultdict(int)
     for g in groups.values():
@@ -131,7 +188,9 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                 row.ledger_entry_id = entry.id
                 made["فواتير اتربطت بقيدها"] += 1
 
-        for key in sorted(groups, key=lambda k: (groups[k][0][A_DATE], int(k or 0))):
+        # الترتيب بالتاريخ، والمفتاح بيفصل التعادل. **المفتاح نصّي مش رقم**: مع
+        # `--key doc` بقى `نوع/رقم` (زي `0/0`)، و`int()` عليه كانت بترمي.
+        for key in sorted(groups, key=lambda k: (groups[k][0][A_DATE], str(k))):
             g = groups[key]
             ref = f"a5:{prefix}{key}"
             if ref in done:
@@ -161,6 +220,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                     statement=_clean(r[A_DESC])[:255] or None))
             if not lines:
                 continue
+            _absorb_rounding(lines)
 
             kind = (DOCS[a5_type][2] if a5_type in DOCS
                     else "opening_balance" if a5_type == "0" else "journal")
@@ -204,4 +264,6 @@ if __name__ == "__main__":
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
     target = args[args.index("--branch") + 1] if "--branch" in args else ""
     pref = args[args.index("--prefix") + 1] if "--prefix" in args else ""
-    run(folder, execute="--yes" in args, branch_name=target, prefix=pref)
+    # `--key doc` بيجمّع بنوع المستند ورقمه بدل `MMStnd`. الشرح في `_group_key`.
+    mode = args[args.index("--key") + 1] if "--key" in args else "mmstnd"
+    run(folder, execute="--yes" in args, branch_name=target, prefix=pref, key_mode=mode)
