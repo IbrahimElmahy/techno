@@ -17,6 +17,7 @@ import CostCenterField from '../components/CostCenterField';
 import CostCenterSplit from '../components/CostCenterSplit';
 import DocumentBar from '../components/DocumentBar';
 import { api } from '../api/client';
+import { useDraft } from '../components/useDraft';
 import { combineDiscounts, netOf } from '../utils/discounts';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
@@ -87,6 +88,10 @@ export default function Invoices() {
   // Drawers
   const [createVisible, setCreateVisible] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
+  /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
+   *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: العميل يتغيّر والمسودّة تفضل
+   *  على اللي قبله. */
+  const [formTick, setFormTick] = useState(0);
 
   // Standalone invoice detail/view (separate from the return wizard)
   // Each user hides the columns they never read; the choice is theirs alone and per screen.
@@ -692,6 +697,58 @@ export default function Invoices() {
     lines, discountPct, cashAmount, invoiceDate, family: invoiceFamily,
     couponRows, form: createForm.getFieldsValue(),
   });
+
+  /**
+   * **المسودّة — الفاتورة اللي اتكتبت ولسه ما اترحّلتش.**
+   *
+   * الحمولة هي **نفس بصمة الفاتورة** اللي الشاشة بتقيس بيها «فيه شغل مش محفوظ؟»
+   * (`fingerprintOf`) — نفس الحقول بالظبط، بما فيها الكوبونات وعيلة الفاتورة. لو
+   * اتفرّقوا، الشاشة هتسأل على تغيير المسودّة مش شايلاه، أو تحفظ حاجة مش محسوبة
+   * في السؤال.
+   */
+  const draftPayload = useMemo(() => ({
+    lines: lines.map((l) => ({
+      item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
+      fixed_discount: l.fixed_discount, variable_discount: l.variable_discount,
+      warehouse_id: l.warehouse_id, unit: l.unit, tier: l.tier, serials: l.serials,
+    })),
+    discountPct,
+    cashAmount,
+    invoice_date: invoiceDate ? dayjs(invoiceDate).format('YYYY-MM-DD') : null,
+    family: invoiceFamily,
+    couponRows,
+    form: createForm.getFieldsValue(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [lines, discountPct, cashAmount, invoiceDate, invoiceFamily, couponRows, formTick]);
+
+  const { drafts, discard: discardDraft, adopt: adoptDraft } = useDraft({
+    kind: 'sale',
+    payload: draftPayload,
+    // الفاتورة المفتوحة للعرض أو للتعديل مستند، مش مسودّة.
+    paused: Boolean(viewOnly || editingInvoice),
+    isEmpty: (x: any) => !x?.form?.customer_id
+      && !(x?.lines || []).some((l: any) => l.item_id != null),
+    title: (x: any) => {
+      const n = (x?.lines || []).filter((l: any) => l.item_id != null).length;
+      return `فاتورة بيع — ${n} صنف`;
+    },
+  });
+
+  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
+  const resumeDraft = (d: any) => {
+    const x = d.payload || {};
+    adoptDraft(d.id);
+    setEditingInvoice(null);
+    setViewOnly(false);
+    if (x.invoice_date) setInvoiceDate(dayjs(x.invoice_date));
+    setDiscountPct(Number(x.discountPct) || 0);
+    setCashAmount(Number(x.cashAmount) || 0);
+    setInvoiceFamily(x.family ?? null);
+    if (Array.isArray(x.couponRows) && x.couponRows.length) setCouponRows(x.couponRows);
+    createForm.setFieldsValue(x.form || {});
+    setLines((x.lines || []).map((l: any, i: number) => ({ ...l, key: String(i + 1) })));
+    setCreateVisible(true);
+  };
 
   // Close the create page and clear it, so reopening starts fresh.
   /**
@@ -1338,6 +1395,8 @@ export default function Invoices() {
           // تفضية كاملة بعد الحفظ. كانت تفضية بالإيد بتشيل السطور والخصم والنقدي وتسيب
           // **صفوف الكوبونات** والعميل والمخزن ونوع الفاتورة مكانهم — فأول فاتورة بعدها
           // بتفتح وفيها كوبونات فاتورة غيرها.
+          // بعد ما السيرفر يرد بنجاح وبس — الفاتورة اللي اترفضت بتفضل مسودّة.
+          discardDraft();
           closeCreate();
           fetchInvoices();
         } catch (err: any) {
@@ -2023,6 +2082,7 @@ function couponsTotal(inv: any): number {
         <DocumentToolbar actions={docToolbar()} />
         {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — نفس فاتورة الشرا. */}
         <Form form={createForm} layout="vertical" size="small" className="doc-form"
+          onValuesChange={() => setFormTick((n) => n + 1)}
           onFinish={handleCreateSubmit} requiredMark={false}>
           {/*
             * ترويسة المستند: **التاريخ ← العميل ← المندوب ← المستند** — بترتيب ما بيتسأل.
@@ -2740,7 +2800,25 @@ function couponsTotal(inv: any): number {
         <FocusedRowsBanner focus={focus} total={unifiedRecords.length} noun="فاتورة"
                            shown={focusedRecords.length} />
         <Table
-          dataSource={focusedRecords}
+          // المسودّات فوق، وبرّه `focusedRecords` عن قصد: ملخّص المبيعات فوق بيتبني
+          // من المستندات، والمسودّة مش مستند — مايصحّش تتحسب في «صافي المبيعات».
+          dataSource={[
+            ...(drafts || []).map((d: any) => {
+              const x = d.payload || {};
+              const ls = (x.lines || []).filter((l: any) => l.item_id != null);
+              return {
+                rowKey: `draft-${d.id}`, id: -d.id, __draft: d, __isDraft: true,
+                doc_type: 'sale',
+                document_number: 'مسودّة',
+                invoice_date: String(x.invoice_date || d.updated_at || '').slice(0, 10),
+                created_at: d.updated_at,
+                customer_id: x?.form?.customer_id ?? null,
+                rep_id: x?.form?.rep_id ?? null,
+                lines_count: ls.length,
+              } as any;
+            }),
+            ...focusedRecords,
+          ]}
           columns={visibleColumns}
           size="small"
           tableLayout="fixed"
@@ -2750,10 +2828,13 @@ function couponsTotal(inv: any): number {
           // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
           // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           rowKey="rowKey"
+          rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
           loading={loading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           onRow={(record: any) => ({
             onClick: () => {
+              // المسودّة مالهاش مستند يتفتح — الضغط بيستكملها.
+              if (record.__isDraft) { resumeDraft(record.__draft); return; }
               if (record.doc_type === 'sale') {
                 openDetail(record.raw);
               } else {

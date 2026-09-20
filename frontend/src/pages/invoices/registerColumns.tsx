@@ -78,7 +78,10 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) => (a.document_number || '').localeCompare(b.document_number || ''),
       render: (doc: string, r: any) => (
         <Space direction="vertical" size={0}>
-          <Tag color={r.doc_type === 'sale' ? 'blue' : 'volcano'}>{doc}</Tag>
+          {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
+          {r.__isDraft
+            ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+            : <Tag color={r.doc_type === 'sale' ? 'blue' : 'volcano'}>{doc}</Tag>}
           {r.original_invoice_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.original_invoice_number}</span>
           )}
@@ -111,6 +114,8 @@ export function buildRegisterColumns({
       render: (cId: number, row: any) => {
         // الاسم جاي مع الصف؛ الكشف المحلي فاضل كخطة بديلة للصفوف القديمة.
         const name = row.customer_name || customers.find((cust) => cust.id === cId)?.name;
+        // مسودّة لسه ما اتحطّ فيها عميل — «—» أصدق من «عميل #null» ورابط مايفتحش.
+        if (cId == null) return <span style={{ color: '#8c8c8c' }}>—</span>;
         return (
           <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
             {name || `عميل #${cId}`}
