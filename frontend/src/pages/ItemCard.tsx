@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -17,6 +17,8 @@ import { printReport, type PrintColumn } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
 import { useMovementLabels, useMovementTypes } from '../lib/movementTypes';
+import { useLookup, labelMap } from '../hooks/useLookup';
+import { compareArabic } from '../utils/arabicSort';
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
  *
@@ -85,6 +87,31 @@ export default function ItemCard() {
   const moveLabels = useMovementLabels();
   const moveTypes = useMovementTypes();
   const [items, setItems] = useState<any[]>([]);
+  /**
+   * **الفئة الأول، وبعدين الصنف.**
+   *
+   * القايمة فيها ٢٬٦٤٠ صنف، وأسماء زي «كوع ١ فاتح» و«كوع ١" ابيض عاده» بتفرق في كلمة
+   * — فاللي بيدوّر بيقرا عشرين سطر متشابه عشان يلاقي بتاعه. اختيار الفئة بيقلّل
+   * القايمة لأصناف الفئة وبس، وبعدها الاسم بيبان لوحده.
+   *
+   * وفاضية = كل الفئات، فاللي بيعرف اسم صنفه بالظبط مابيتفرضش عليه خطوة زيادة.
+   */
+  const [category, setCategory] = useState<string | undefined>();
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryLabels = labelMap(categoryOptions);
+
+  /** الفئات اللي فيها أصناف فعلاً — مش كل اللي في قايمة الإعدادات. */
+  const categories = useMemo(
+    () => ([...new Set(items.map((i: any) => i.category).filter(Boolean))] as string[])
+      .sort(compareArabic),
+    [items],
+  );
+
+  /** الأصناف المعروضة — بتاعة الفئة المختارة، أو الكل لو مافيش فئة. */
+  const pickableItems = useMemo(
+    () => (category ? items.filter((i: any) => i.category === category) : items),
+    [items, category],
+  );
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
@@ -298,15 +325,32 @@ export default function ItemCard() {
       )}
     >
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={4}>
+          <Select
+            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            placeholder="كل الفئات" value={category}
+            onChange={(c) => {
+              setCategory(c);
+              // الصنف المختار مش في الفئة الجديدة ⇒ يتفضّى. سيبانه بيدّي كارت صنف
+              // مالوش علاقة بالفئة اللي على الشاشة.
+              if (c && itemId && items.find((i) => i.id === itemId)?.category !== c) {
+                setItemId(undefined);
+              }
+            }}
+            options={categories.map((c: string) => ({ value: c, label: categoryLabels[c] || c }))}
+          />
+        </Col>
         <Col xs={24} md={7}>
           <Select
             showSearch optionFilterProp="label" style={{ width: '100%' }}
-            placeholder="اختر الصنف" value={itemId} onChange={setItemId}
-            options={items.map((i) => ({
+            placeholder={category ? `أصناف «${categoryLabels[category] || category}»` : 'اختر الصنف'}
+            value={itemId} onChange={setItemId}
+            options={pickableItems.map((i: any) => ({
               value: i.id, label: i.code ? `${i.code} — ${i.name}` : i.name }))}
+            notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined}
           />
         </Col>
-        <Col xs={24} md={5}>
+        <Col xs={24} md={4}>
           <Select
             allowClear style={{ width: '100%' }} placeholder="كل المواقع"
             value={warehouseId} onChange={setWarehouseId}
