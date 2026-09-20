@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
@@ -603,7 +604,7 @@ export default function StockPermits() {
     { title: 'رقم الإذن', dataIndex: 'document_number',
       // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
       render: (v: string, r: any) => (r.__isDraft
-        ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+        ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag>{v}</Tag>) },
     { title: 'النوع', dataIndex: 'kind',
       render: (k: Kind, r) => (

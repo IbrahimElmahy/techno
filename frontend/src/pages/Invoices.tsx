@@ -726,7 +726,9 @@ export default function Invoices() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [lines, discountPct, cashAmount, invoiceDate, invoiceFamily, couponRows, formTick]);
 
-  const { drafts, discard: discardDraft, adopt: adoptDraft } = useDraft({
+  const {
+    drafts, discard: discardDraft, adopt: adoptDraft, remove: removeDraft,
+  } = useDraft({
     kind: 'sale',
     payload: draftPayload,
     // الفاتورة المفتوحة للعرض أو للتعديل مستند، مش مسودّة.
@@ -1843,6 +1845,7 @@ function couponsTotal(inv: any): number {
     customers, reps, postingAccounts, filters, printOpts, navigate, openDetail,
     invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
     handleDeleteReturn,
+    onDeleteDraft: (id: number) => removeDraft(id),
   });
 
   // الأعمدة بعد الإخفاء والترتيب، محسوبة مرة واحدة: الجدول بيرسمها والتصدير بيكتبها، ولازم

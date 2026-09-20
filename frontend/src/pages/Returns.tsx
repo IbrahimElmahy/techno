@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
@@ -1583,7 +1584,7 @@ export default function Returns() {
       title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', ellipsis: true, width: 125,
       // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
       render: (doc: string, r: any) => (r.__isDraft
-        ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+        ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag color="volcano">{doc}</Tag>),
     },
     {

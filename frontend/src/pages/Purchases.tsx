@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
@@ -1282,6 +1283,7 @@ export default function Purchases() {
 
   const {
     drafts, savedAt: draftSavedAt, discard: discardDraft, adopt: adoptDraft,
+    remove: removeDraft,
   } = useDraft({
     kind: 'purchase',
     payload: draftPayload,
@@ -1761,7 +1763,7 @@ export default function Purchases() {
         <Space direction="vertical" size={0}>
           {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
           {r.__isDraft
-            ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+            ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
             : <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>}
           {r.parent_document_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.parent_document_number}</span>

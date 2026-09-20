@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
@@ -827,7 +828,7 @@ export default function PurchaseReturns() {
       ...textColumn(rows, (r: ReturnRow) => r.document_number),
       // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
       render: (d: string, r: any) => (r.__isDraft
-        ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+        ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag color="volcano">{d}</Tag>),
     },
     {

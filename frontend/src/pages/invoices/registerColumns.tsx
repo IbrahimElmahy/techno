@@ -5,6 +5,7 @@
  * بتاخد اللي محتاجاه وبترجّع الأعمدة.
  */
 import React from 'react';
+import DraftTag from '../../components/DraftTag';
 import { Button, Modal, Space, Tag, Tooltip } from 'antd';
 import { Popconfirm } from '../../components/noConfirm';
 import {
@@ -30,12 +31,14 @@ export interface RegisterColumnsCtx {
   handleEditInvoice: (r: InvoiceRecord) => void;
   handleDeleteInvoice: (r: InvoiceRecord) => void;
   handleDeleteReturn: (r: any) => void;
+  /** مسح مسودّة من الكشف. اختياري عشان اللي بينده من غيرها مايتكسرش. */
+  onDeleteDraft?: (id: number) => void;
 }
 
 export function buildRegisterColumns({
   customers, reps, postingAccounts, filters, printOpts, navigate, openDetail,
   invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
-  handleDeleteReturn,
+  handleDeleteReturn, onDeleteDraft,
 }: RegisterColumnsCtx): any[] {
   return [
     {
@@ -80,7 +83,7 @@ export function buildRegisterColumns({
         <Space direction="vertical" size={0}>
           {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
           {r.__isDraft
-            ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+            ? <DraftTag onDelete={() => onDeleteDraft?.(r.__draft.id)} />
             : <Tag color={r.doc_type === 'sale' ? 'blue' : 'volcano'}>{doc}</Tag>}
           {r.original_invoice_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.original_invoice_number}</span>

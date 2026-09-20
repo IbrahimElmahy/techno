@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import DraftTag from '../components/DraftTag';
 // **باسم مستعار عن قصد.** الملف ده عنده `PAGE_SIZE` بمعنى تاني خالص —
 // حد الجلب من الـAPI، مش عدد صفوف الجدول.
 import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
@@ -1155,7 +1156,8 @@ export default function Transfers() {
       sorter: (a: TransferRecord, b: TransferRecord) => (a.document_number || '').localeCompare(b.document_number || ''),
       // المسودّة مالهاش رقم — الرقم بيتحجز وقت الإرسال مش قبله.
       render: (doc: string, r: any) => (r.__isDraft
-        ? <Tag color="gold">مسودّة — لسه ما اتبعتتش</Tag>
+        ? <DraftTag label="مسودّة — لسه ما اتبعتتش"
+                    onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag color="blue">{doc}</Tag>) },
     { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
       render: (id: number | null) => nameOfItem(id) },
