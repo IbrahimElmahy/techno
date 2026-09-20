@@ -1,4 +1,5 @@
 import 'package:path/path.dart' as p;
+import '../models/arabic_sort.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/models.dart';
@@ -374,8 +375,36 @@ class LocalDb {
     final rows = await d.query('customer',
         where: where.isEmpty ? null : where.join(' AND '),
         whereArgs: where.isEmpty ? null : args,
-        orderBy: 'name', limit: limit);
-    return rows.map(_customerFromRow).toList();
+        // بنجيب أكتر من المطلوب لأن الترتيب والترشيح النهائي بيحصلوا تحت على
+        // الاسم الموحَّد — و`LIKE` بتاعة sqlite مابتعرفش الهمزة ولا التاء المربوطة.
+        orderBy: 'name', limit: query.isEmpty ? limit : limit * 5);
+    var out = rows.map(_customerFromRow).toList();
+    if (query.isNotEmpty) {
+      // **«احمد» لازم تلاقي «أحمد»، و«محمود» تلاقي «فنى محمود ناصر».**
+      //
+      // `LIKE '%q%'` بتقارن الحروف زي ما هي، فالاسم المكتوب بهمزة مابيظهرش لمن
+      // كتبه من غيرها — ونفس القاعدة موجودة في الخادم وفي الويب (`bare`).
+      final n = bare(query);
+      out = out.where((c) => bare(c.name).contains(n)).toList();
+    }
+    // القُرب قبل الأبجدي: اللي بيبدأ بالحروف فوق اللي فيها في آخره — نفس ترتيب
+    // `arabic.match_order` في الخادم.
+    if (query.isNotEmpty) {
+      final n = bare(query);
+      int rank(CustomerRef c) {
+        final t = bare(c.name);
+        if (t.startsWith(n)) return 0;
+        if (t.contains(' $n')) return 1;
+        return 2;
+      }
+      out.sort((a, b) {
+        final r = rank(a).compareTo(rank(b));
+        return r != 0 ? r : compareArabic(a.name, b.name);
+      });
+    } else {
+      out.sort((a, b) => compareArabic(a.name, b.name));
+    }
+    return out.length > limit ? out.sublist(0, limit) : out;
   }
 
   CustomerRef _customerFromRow(Map<String, Object?> r) => CustomerRef(

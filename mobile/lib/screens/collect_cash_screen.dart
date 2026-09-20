@@ -154,12 +154,16 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   String _d(DateTime? v) => v == null ? '' : v.toIso8601String().substring(0, 10);
 
   Future<void> _pickCustomer() async {
-    final rows = await LocalDb.instance.customers(limit: 200);
-    if (!mounted) return;
+    // **البحث بيسأل القاعدة، مش شريحة اتحمّلت قبله.**
+    //
+    // كانت بتجيب أول ٢٠٠ عميل بالاسم وتدوّر جوّاهم في الذاكرة. العميل رقم ٢٨١
+    // («فنى محمود ناصر عيسي») ما كانش بيظهر أبداً — لا في القايمة ولا في البحث —
+    // بينما شاشة الفاتورة بتلاقيه لأنها بتجيب الكشف كله. فالعميل الواحد بيبان
+    // في شاشة ومايبانش في التانية، واللي قدامها بيفتكر إن العميل نفسه ناقص.
     final picked = await showModalBottomSheet<CustomerRef>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _PickSheet(rows: rows),
+      builder: (_) => const _PickSheet(),
     );
     if (picked != null) setState(() => _customer = picked);
   }
@@ -554,21 +558,34 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
 }
 
 class _PickSheet extends StatefulWidget {
-  final List<CustomerRef> rows;
-  const _PickSheet({required this.rows});
+  const _PickSheet();
 
   @override
   State<_PickSheet> createState() => _PickSheetState();
 }
 
 class _PickSheetState extends State<_PickSheet> {
-  String _q = '';
+  List<CustomerRef> _rows = const [];
+  int _seq = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load('');
+  }
+
+  /// بيسأل القاعدة بنفسه. `_seq` بيمنع رد قديم إنه يكتب فوق رد أحدث لما
+  /// الكتابة تبقى أسرع من القراءة.
+  Future<void> _load(String q) async {
+    final mine = ++_seq;
+    final rows = await LocalDb.instance.customers(query: q, limit: 200);
+    if (!mounted || mine != _seq) return;
+    setState(() => _rows = rows);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final rows = widget.rows
-        .where((c) => _q.isEmpty || c.name.contains(_q))
-        .toList();
+    final rows = _rows;
     return SizedBox(
       height: MediaQuery.of(context).size.height * 0.75,
       child: Column(
@@ -579,7 +596,7 @@ class _PickSheetState extends State<_PickSheet> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
-              onChanged: (v) => setState(() => _q = v.trim()),
+              onChanged: (v) => _load(v.trim()),
               decoration: const InputDecoration(
                 hintText: 'دوّر بالاسم',
                 prefixIcon: Icon(Icons.search),

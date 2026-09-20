@@ -32,19 +32,13 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   DateTime? _from;
   DateTime? _to;
 
-  String _bare(String x) => x
-      .replaceAll(RegExp('[أإآ]'), 'ا')
-      .replaceAll('ة', 'ه')
-      .replaceAll('ى', 'ي');
+  // نسخة التوحيد المحلية اتشالت — `LocalDb.customers` بقت بتوحّد بنفسها
+  // بـ`bare` من `models/arabic_sort.dart`، وهي أكمل (بتشيل التشكيل والهمزة على
+  // السطر والأرقام العربية كمان). نسختين من نفس القاعدة معناها إن البحث يلاقي
+  // اسم والترتيب يحطّه في مكان تاني.
 
-  List<CustomerRef> get _visibleCustomers {
-    final q = _bare(_search.text.trim());
-    if (q.isEmpty) return _customers;
-    return [
-      for (final c in _customers)
-        if (_bare(c.name).contains(q)) c
-    ];
-  }
+  /// القاعدة رشّحت ورتّبت خلاص — الشاشة بتعرض اللي جه.
+  List<CustomerRef> get _visibleCustomers => _customers;
 
   bool _inRange(Object? d) {
     final raw = '${d ?? ''}'.split('T').first;
@@ -96,9 +90,18 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   @override
   void initState() {
     super.initState();
-    LocalDb.instance.customers(limit: 300).then((rows) {
-      if (mounted) setState(() => _customers = rows);
-    });
+    _reload('');
+  }
+
+  /// **البحث بيسأل القاعدة.** كانت بتجيب أول ٣٠٠ عميل وتدوّر جوّاهم في الذاكرة،
+  /// فاللي بعد ٣٠٠ ما كانش بيظهر لا في القايمة ولا في البحث. نفس العطل اللي كان
+  /// في شاشة الدفعات.
+  int _seq = 0;
+  Future<void> _reload(String q) async {
+    final mine = ++_seq;
+    final rows = await LocalDb.instance.customers(query: q, limit: 300);
+    if (!mounted || mine != _seq) return;
+    setState(() => _customers = rows);
   }
 
   Future<void> _open(CustomerRef c) async {
@@ -144,7 +147,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: TextField(
             controller: _search,
-            onChanged: (_) => setState(() {}),
+            onChanged: (v) => _reload(v.trim()),
             decoration: InputDecoration(
               hintText: 'دوّر باسم العميل',
               prefixIcon: const Icon(Icons.search),
