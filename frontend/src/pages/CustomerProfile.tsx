@@ -267,7 +267,8 @@ export default function CustomerProfile() {
   const loadStatement = async (reset = false, family?: string) => {
     if (!customerId) return;
     const params: any = {};
-    if (range && !reset) {
+    // حزام أمان: المكوّن بقى مايبعتش نُص فترة، والفحص هنا بيغطّي أي نداء قديم.
+    if (range && range[0] && range[1] && !reset) {
       params.date_from = range[0].format('YYYY-MM-DD');
       params.date_to = range[1].format('YYYY-MM-DD');
     }
@@ -398,7 +399,7 @@ export default function CustomerProfile() {
     { label: 'السنة دي', get: () => [dayjs().startOf('year'), dayjs()] },
   ];
   const presetActive = (p: { get: () => [Dayjs, Dayjs] }) => {
-    if (!range) return false;
+    if (!range || !range[0] || !range[1]) return false;
     const [s, e] = p.get();
     return range[0].isSame(s, 'day') && range[1].isSame(e, 'day');
   };
@@ -622,7 +623,7 @@ export default function CustomerProfile() {
         meta: [
           ['العميل', `${c?.name ?? ''}${c?.code ? ` (${c.code})` : ''}`],
           ...(statementFamily ? [['فرع الحساب', statementFamily] as [string, string]] : []),
-          ...(range ? [[
+          ...(range && range[0] && range[1] ? [[
             'الفترة',
             `${range[0].format('YYYY/MM/DD')} ← ${range[1].format('YYYY/MM/DD')}`,
           ] as [string, string]] : []),

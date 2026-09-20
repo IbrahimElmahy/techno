@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { DatePicker } from 'antd';
 import { CalendarOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -33,24 +33,41 @@ export default function DateRangeFilter({
   allowClear = true,
   size = 'middle',
 }: DateRangeFilterProps) {
-  const startVal = value && value[0] ? value[0] : null;
-  const endVal = value && value[1] ? value[1] : null;
+  /**
+   * **الفترة الناقصة مابتطلعش برّه المكوّن.**
+   *
+   * كان بيبعت `[null, Dayjs]` أو `[Dayjs, null]` والنوع بيقول `[Dayjs, Dayjs]` —
+   * `as Dayjs` بتكدب على المترجم. فكل شاشة بتستقبله اتكتبت وهي مصدّقة إن الطرفين
+   * موجودين: `if (range) { range[0].format(...) }` — وأول ما اللي قدام الشاشة يمسح
+   * طرف واحد ويسيب التاني، `.format` بترمي على `null` **وتفضّي الشاشة**.
+   *
+   * ده كان في **٥٢ موضع في ١٩ شاشة**. إصلاحهم واحد واحد معناه إن الشاشة الجاية
+   * هتتكتب بنفس الافتراض وتقع من تاني — فالمنع هنا: المكوّن بيبعت فترة كاملة أو
+   * `null`، ومابيبعتش نُص فترة أبداً.
+   *
+   * **والنص المكتوب بيفضل ظاهر.** اللي اختار «من» ولسه ما اختارش «إلى» بيشوف
+   * اختياره في الخانة؛ اللي بيتغيّر إن الشاشة ماتفلترش لحد ما الطرفين يكملوا —
+   * وده الصح: نُص فترة مش فترة.
+   */
+  const [half, setHalf] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
-  const handleStartChange = (date: Dayjs | null) => {
-    if (!date && !endVal) {
-      onChange?.(null);
-    } else {
-      onChange?.([date as Dayjs, endVal as Dayjs]);
+  const startVal = half ? half[0] : (value && value[0] ? value[0] : null);
+  const endVal = half ? half[1] : (value && value[1] ? value[1] : null);
+
+  /** بيبلّغ الأب بفترة كاملة أو `null`، وبيمسك الناقصة عنده لحد ما تكمل. */
+  const settle = (start: Dayjs | null, end: Dayjs | null) => {
+    if (start && end) {
+      setHalf(null);
+      onChange?.([start, end]);
+      return;
     }
+    setHalf(start || end ? [start, end] : null);
+    // كانت فترة كاملة وبقت ناقصة ⇒ الفلتر يرفع إيده.
+    if (value && value[0] && value[1]) onChange?.(null);
   };
 
-  const handleEndChange = (date: Dayjs | null) => {
-    if (!startVal && !date) {
-      onChange?.(null);
-    } else {
-      onChange?.([startVal as Dayjs, date as Dayjs]);
-    }
-  };
+  const handleStartChange = (date: Dayjs | null) => settle(date, endVal);
+  const handleEndChange = (date: Dayjs | null) => settle(startVal, date);
 
   return (
     <div
