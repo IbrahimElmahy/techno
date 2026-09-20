@@ -25,6 +25,7 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useDraft } from '../components/useDraft';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -238,6 +239,10 @@ export default function Purchases() {
    * person a pause every time they switch.
    */
   const [createVisible, setCreateVisible] = useState(false);
+  /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
+   *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: المورد يتغيّر والمسودّة تفضل
+   *  على اللي قبله. */
+  const [formTick, setFormTick] = useState(0);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
   /** The row whose item box should take the caret next — the purchase's version of the sale's
@@ -1116,6 +1121,8 @@ export default function Purchases() {
             discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
           setCashAmount(0);
           setCreditAmount(0);
+          // بعد ما السيرفر يرد بنجاح وبس — الفاتورة اللي اترفضت بتفضل مسودّة.
+          discardDraft();
           fetchPurchases();
         } catch (err: any) {
           console.error(err);
@@ -1243,6 +1250,73 @@ export default function Purchases() {
     items: purchaseItems, variableDiscount, cashAmount, creditAmount, purchaseDate,
     form: form.getFieldsValue(),
   });
+
+  /**
+   * **المسودّة — الفاتورة اللي اتكتبت ولسه ما اترحّلتش.**
+   *
+   * الشاشة دي كانت الوحيدة في مجموعة المستندات من غير مسودّات: المرتجعات والتحويلات
+   * وأذونات المخزن كلهم بيحفظوا لوحدهم، وفاتورة الشرا — أطول مستند في النظام، بتتكتب
+   * سطر سطر — يا بتترحّل يا بتضيع. فاتورة بأربعتاشر صنف بتضيع بضغطة رجوع أو بقطع كهربا،
+   * واللي كتبها بيبتدي من الأول.
+   *
+   * الحمولة هي **نفس بصمة الفاتورة** اللي الشاشة بتقيس بيها «فيه شغل مش محفوظ؟»
+   * (`fingerprintOf`) — نفس الحقول بالظبط. لو اتفرّقوا، الشاشة هتقول «اتغيّرت» على حاجة
+   * المسودّة مش شايلاها، أو تحفظ حاجة مش محسوبة في السؤال.
+   */
+  const draftPayload = useMemo(() => ({
+    lines: purchaseItems
+      .filter((l) => l.item_id !== null)
+      .map((l) => ({
+        item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
+        unit: l.unit, discount_pct: l.discount_pct,
+        fixed_discount_pct: l.fixed_discount_pct, warehouse_id: l.warehouse_id,
+      })),
+    variableDiscount,
+    cashAmount,
+    purchase_date: purchaseDate ? dayjs(purchaseDate).format('YYYY-MM-DD') : null,
+    form: form.getFieldsValue(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [purchaseItems, variableDiscount, cashAmount, purchaseDate, formTick]);
+
+  const {
+    drafts, savedAt: draftSavedAt, discard: discardDraft, adopt: adoptDraft,
+  } = useDraft({
+    kind: 'purchase',
+    payload: draftPayload,
+    // الفاتورة المفتوحة للتعديل مستند، مش مسودّة.
+    paused: Boolean(viewOnly || editingId),
+    isEmpty: (x: any) => !x?.form?.supplier_id
+      && !(x?.lines || []).some((l: any) => l.item_id != null),
+    title: (x: any) => `فاتورة شرا — ${(x?.lines || []).length} صنف`,
+  });
+
+  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
+  const resumeDraft = (d: any) => {
+    const x = d.payload || {};
+    adoptDraft(d.id);
+    setEditingId(null);
+    setViewOnly(false);
+    setDocResult(null);
+    setDetail(null);
+    if (x.purchase_date) setPurchaseDate(dayjs(x.purchase_date));
+    setVariableDiscount(x.variableDiscount ?? 0);
+    setCashAmount(Number(x.cashAmount) || 0);
+    form.setFieldsValue(x.form || {});
+    const lines = (x.lines || []).map((l: any, i: number) => ({
+      key: String(i + 1),
+      item_id: l.item_id ?? null,
+      quantity: l.quantity ?? null,
+      unit_price: l.unit_price ?? 0,
+      unit: l.unit ?? null,
+      discount_pct: l.discount_pct ?? null,
+      fixed_discount_pct: l.fixed_discount_pct ?? null,
+      warehouse_id: l.warehouse_id ?? null,
+    }));
+    setPurchaseItems(lines.length ? lines : [{
+      key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
+      discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
+    setCreateVisible(true);
+  };
 
   /**
    * رجوع للسجل — وبيسأل الأول لو الخروج هيضيّع شغل.
@@ -1431,6 +1505,7 @@ export default function Purchases() {
       extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
       <DocumentToolbar actions={purchaseToolbar()} />
       <Form form={form} layout="vertical" size="small" className="doc-form"
+        onValuesChange={() => setFormTick((n) => n + 1)}
         onFinish={handleSubmit} requiredMark={false}>
           <Row gutter={16}>
             <Col xs={12} md={5}>
@@ -1680,9 +1755,12 @@ export default function Purchases() {
       key: 'document_number',
       width: 140,
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
-      render: (doc: string, r: PurchaseRecord) => (
+      render: (doc: string, r: any) => (
         <Space direction="vertical" size={0}>
-          <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>
+          {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
+          {r.__isDraft
+            ? <Tag color="gold">مسودّة — لسه ما اترحّلتش</Tag>
+            : <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>}
           {r.parent_document_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.parent_document_number}</span>
           )}
@@ -1940,8 +2018,35 @@ export default function Purchases() {
         */}
       <Table
         {...listKb.tableProps}
+        // الضغط على مسودّة بيستكملها؛ الباقي بيفتح مستنده زي ما هو.
+        onRow={(r: any) => {
+          const base = (listKb.tableProps.onRow?.(r) ?? {}) as any;
+          if (!r.__isDraft) return base;
+          return {
+            ...base,
+            onClick: () => resumeDraft(r.__draft),
+            style: { ...(base.style || {}), cursor: 'pointer' },
+          };
+        }}
+        rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
         size="small"
-        dataSource={purchasesFilter.filtered}
+        // المسودّات فوق، وبرّه `purchasesFilter.filtered` عن قصد: الإجماليات في ذيل
+        // الجدول بتتبني منه، والمسودّة مش مستند — مايصحّش تتحسب في «إجمالي المشتريات».
+        dataSource={[
+          ...(drafts || []).map((d: any) => {
+            const x = d.payload || {};
+            const ls = (x.lines || []).filter((l: any) => l.item_id != null);
+            return {
+              kind: 'purchase', id: -d.id, __draft: d, __isDraft: true,
+              document_number: 'مسودّة',
+              purchase_date: String(x.purchase_date || d.updated_at || '').slice(0, 10),
+              created_at: d.updated_at,
+              supplier_id: x?.form?.supplier_id ?? null,
+              lines_count: ls.length,
+            } as any;
+          }),
+          ...purchasesFilter.filtered,
+        ]}
         columns={listCols.columns}
         // فاتورة ومرتجع ممكن يكون ليهم نفس الـid — المفتاح لازم يشيل النوع كمان.
         rowKey={(r: PurchaseRecord) => `${r.kind}-${r.id}`}
