@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_MANUFACTURE_READ, CAP_MANUFACTURE_WRITE
 from src.core.db import get_db
@@ -349,21 +350,24 @@ def _order_out(order, reversed_ids: set[int]) -> OrderOut:
 
 @router.get("/orders", response_model=list[OrderOut])
 def list_orders(
-    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ) -> list[OrderOut]:
     reversed_ids = _reversed_ids(db)
-    return [_order_out(o, reversed_ids) for o in manufacturing_service.list_orders(db)]
+    # نفس عزل أوامر التشغيل — `ManufacturingOrder` عنده `branch_id` هو كمان.
+    orders = branch_scope.visible(current, manufacturing_service.list_orders(db))
+    return [_order_out(o, reversed_ids) for o in orders]
 
 
 @router.get("/orders/{order_id}", response_model=OrderOut)
 def get_order(
     order_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ) -> OrderOut:
     order = manufacturing_service.get_order(db, order_id)
-    if order is None:
+    # ٤٠٤ مش ٤٠٣ للّي مش من فرعه — الشرح عند `_seen_po`.
+    if order is None or not branch_scope.may_see(current, order):
         raise HTTPException(404, {"code": "not_found", "message": "Manufacturing order not found"})
     return _order_out(order, _reversed_ids(db))
 
@@ -443,11 +447,16 @@ def list_work_orders(
     date_to: date | None = None,
     limit: int | None = None,
     offset: int = 0,
-    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ):
     rows = manufacturing_service.list_work_orders(
         db, search=search, date_from=date_from, date_to=date_to)
+    # **صفوف قواميس مش كائنات** — و`branch_scope.may_see` بيقرا بـ`getattr`، فبيرجّع
+    # `None` على كل قاموس ويعدّيه. نفس القاعدة متكتوبة هنا على المفتاح.
+    mine = branch_scope.visible_branch_id(current)
+    if mine is not None:
+        rows = [r for r in rows if r.get("branch_id") in (None, mine)]
     # نفس عقد الترقيم اللي باقي القوايم ماشية عليه: `limit` بيرجّع غلاف بالإجمالي،
     # ومن غيره بترجع القايمة زي ما هي عشان أي نداء قديم مايتكسرش.
     if limit is None:
@@ -456,6 +465,47 @@ def list_work_orders(
             "limit": limit, "offset": offset}
 
 
+
+
+# ---------------------------------------------------------------------------
+# عزل الفروع في أوامر التشغيل.
+#
+# **اللي كشفه.** كشف أوامر التشغيل كان بيكتب «الفرع #3» بدل «السادات»، ومدير فرع
+# العلياء هو اللي شايفه: `/branches` بيرجّعله فرعه وحده (صح)، فالاسم مالقاش نفسه في
+# الخريطة ووقع على الرقم. يعني الـ«#3» ماكانش عيب عرض — كان **أوامر تشغيل المصنع
+# ظاهرة لمدير فرع تاني**، والرقم هو اللي فضحها. إصلاح اللافتة وحدها كان هيخفيها.
+#
+# المسارات دي كانت بتاخد `CurrentUser` وبترميه (`_`)، فمافيش ولا شرط فرع على القايمة
+# ولا على فتح أمر بالرقم — والرابط المباشر بيبقى باب خلفي حوالين أي فلترة.
+#
+# ومدير النظام (`branch_id = None`) بيفضل شايف الكل زي ما هو، والأوامر القديمة اللي
+# `branch_id` بتاعها NULL بتفضل ظاهرة للكل — نفس قاعدة `branch_scope` في كل حتة تانية.
+def _own_branch(current: CurrentUser, branch_id: int | None) -> int | None:
+    """فرع الأمر الجديد. **اللي محبوس في فرع بيكتب في فرعه وبس.**
+
+    `branch_id` بييجي من الطلب، فمن غير الشرط ده مدير فرع يقدر يكتب أمر تشغيل على
+    المصنع ومايشوفوش بعدها — بيختفي من كشفه وبيظهر في كشف حد تاني.
+
+    ومدير النظام بيعدّي زي ما هو: هو اللي بيتنقّل بين الفروع أصلاً.
+    """
+    mine = branch_scope.visible_branch_id(current)
+    if mine is None:
+        return branch_id
+    if branch_id is not None and branch_id != mine:
+        raise HTTPException(403, {"code": "forbidden", "message": "مش فرعك."})
+    return mine
+
+
+def _seen_po(db: Session, order_id: int, current: CurrentUser):
+    """بيجيب أمر التشغيل لو الشخص ده يشوفه — و**٤٠٤ لو لأ، مش ٤٠٣**.
+
+    ٤٠٣ بيقول «موجود بس مش من حقك»، ودي في حد ذاتها معلومة عن فرع تاني: بتخلّي
+    الترقيم قابل للعدّ من بره. ٤٠٤ بيرد نفس رد الأمر اللي مش موجود أصلاً.
+    """
+    order = production_order_service.get_order(db, order_id)
+    if order is None or not branch_scope.may_see(current, order):
+        raise HTTPException(404, {"code": "not_found", "message": "أمر التشغيل مش موجود"})
+    return order
 
 
 # ---------------------------------------------------------------------------
@@ -595,12 +645,15 @@ def list_production_orders(
     imported: bool | None = None,
     limit: int | None = None,
     offset: int = 0,
-    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ):
     orders = production_order_service.list_orders(
         db, search=search, branch_id=branch_id, state=state, date_from=date_from,
         date_to=date_to, imported=imported)
+    # **الفلترة بعد الخدمة مش جوّاها.** `list_orders` بتاخد `branch_id` كفلتر بيبعته
+    # المستخدم، واللي بيختار الفرع بإيده يقدر يختار فرع غيره. العزل شرط تاني فوقه.
+    orders = branch_scope.visible(current, orders)
     rev_ids = production_order_service.reversed_ids(db)
     # نفس عقد الترقيم اللي باقي القوايم ماشية عليه: `limit` بيرجّع غلاف بالإجمالي،
     # ومن غيره بترجع القايمة زي ما هي.
@@ -613,12 +666,10 @@ def list_production_orders(
 @router.get("/production-orders/{order_id}", response_model=POOut)
 def get_production_order(
     order_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ) -> POOut:
-    order = production_order_service.get_order(db, order_id)
-    if order is None:
-        raise HTTPException(404, {"code": "not_found", "message": "أمر التشغيل مش موجود"})
+    order = _seen_po(db, order_id, current)
     return _po_out(order, production_order_service.reversed_ids(db))
 
 
@@ -631,7 +682,8 @@ def create_production_order(
     try:
         order = production_order_service.create_order(
             db, products=_po_products(body), actor_user_id=current.id,
-            production_date=body.production_date, branch_id=body.branch_id,
+            production_date=body.production_date,
+            branch_id=_own_branch(current, body.branch_id),
             external_document_number=body.external_document_number,
             statement1=body.statement1, notes=body.notes, reviewed=body.reviewed,
             execute=body.execute)
@@ -648,10 +700,12 @@ def update_production_order(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
+    _seen_po(db, order_id, current)
     try:
         order = production_order_service.update_order(
             db, order_id=order_id, products=_po_products(body), actor_user_id=current.id,
-            production_date=body.production_date, branch_id=body.branch_id,
+            production_date=body.production_date,
+            branch_id=_own_branch(current, body.branch_id),
             external_document_number=body.external_document_number,
             statement1=body.statement1, notes=body.notes, reviewed=body.reviewed)
     except (ProductionOrderError, ManufacturingError, StockError) as exc:
@@ -666,6 +720,7 @@ def confirm_production_order(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
+    _seen_po(db, order_id, current)
     try:
         order = production_order_service.confirm_order(
             db, order_id=order_id, actor_user_id=current.id)
@@ -681,6 +736,7 @@ def execute_production_order(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
+    _seen_po(db, order_id, current)
     try:
         order = production_order_service.execute_order(
             db, order_id=order_id, actor_user_id=current.id)
@@ -697,6 +753,7 @@ def reverse_production_order(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
+    _seen_po(db, order_id, current)
     try:
         order = production_order_service.reverse_order(
             db, order_id=order_id, actor_user_id=current.id)
@@ -712,6 +769,7 @@ def delete_production_order(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
+    _seen_po(db, order_id, current)
     try:
         production_order_service.delete_draft(
             db, order_id=order_id, actor_user_id=current.id)
