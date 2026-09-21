@@ -339,12 +339,18 @@ def start_order(db: Session, *, order_id: int, actor_user_id: int) -> Production
 
 
 def execute_order(db: Session, *, order_id: int, actor_user_id: int,
-                  outputs: dict[int, Decimal] | None = None) -> ProductionOrder:
+                  outputs: dict[int, Decimal] | None = None,
+                  waste: dict[int, Decimal] | None = None) -> ProductionOrder:
     """شغّال ← منفّذ: **بيسجّل اللي طلع فعلاً وبيدخّله المخزن**.
 
     `outputs` = {رقم سطر المنتج: الكمية اللي طلعت}. اللي مش في القايمة بيفضل على
     كميته المكتوبة. ودي اللحظة اللي الورقة موجودة عشانها: المخطّط اتحدّد وقت الفتح،
     والخامة اتصرفت وقت البدء، واللي طلع بيتكتب هنا — **والفرق هو رقم الإنتاج**.
+
+    `waste` = {رقم سطر الخامة: الهالك}. **والهالك بيتكتب هنا كمان، مش وقت الفتح** —
+    محدش يعرف هيبوظ كام وهو بيخطّط. وهو جزء من الخامة اللي اتصرفت خلاص (مش خصم
+    زيادة): بيقول قد إيه من اللي خرج راح في الزبالة بدل ما يدخل في المنتج، عشان
+    الفاقد يبقى رقم متقاس مش إحساس.
 
     **والخامات مابتتصرفش هنا لو اتصرفت خلاص** (الأمر عدّى بـ«شغّال»). واللي بيرحّل
     من «مسودة» أو «مؤكد» على طول — بيسجّل تشغيلة خلصت خلاص — الاتنين بيحصلوا مع بعض،
@@ -373,6 +379,19 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
             line.quantity = q
         order.product_quantity = to_qty(sum((to_qty(p.quantity) for p in order.products),
                                             to_qty(0)))
+        db.flush()
+
+    if waste:
+        by_mid = {m.id: m for m in order.materials}
+        for line_id, qty in waste.items():
+            line = by_mid.get(int(line_id))
+            if line is None:
+                raise ProductionOrderError("سطر خامة مش في الأمر ده.")
+            w = to_qty(Decimal(str(qty or 0)))
+            if w < to_qty(0) or w > to_qty(line.quantity):
+                raise ProductionOrderError(
+                    "الهالك لازم يكون بين صفر والكمية اللي اتصرفت.")
+            line.waste_quantity = w
         db.flush()
 
     by_line: dict[int, Decimal] = {}

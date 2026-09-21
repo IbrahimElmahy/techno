@@ -807,6 +807,7 @@ function ProductionOrdersTab({
   // الأمر اللي بيتقفل دلوقتي، ومعاه اللي طلع لكل سطر منتج.
   const [closing, setClosing] = useState<ProductionOrder | null>(null);
   const [outputs, setOutputs] = useState<Record<number, number | null>>({});
+  const [waste, setWaste] = useState<Record<number, number | null>>({});
 
   const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
   const itemOptions = (list: Item[]) =>
@@ -1055,6 +1056,8 @@ function ProductionOrdersTab({
   const openClose = (r: ProductionOrder) => {
     setOutputs(Object.fromEntries(r.products.map((p) => [p.id, Number(p.planned_quantity)
       || Number(p.quantity)])));
+    // الهالك بيفتح على اللي متسجّل (صفر في الغالب) — اللي مافيش عنده هالك بيسيبه.
+    setWaste(Object.fromEntries(r.materials.map((m) => [m.id, Number(m.waste_quantity) || null])));
     setClosing(r);
   };
 
@@ -1064,7 +1067,8 @@ function ProductionOrdersTab({
     if (bad) { message.error(`اكتب اللي طلع من «${itemName(bad.item_id)}»`); return; }
     try {
       await api.post(`/api/v1/manufacturing/production-orders/${closing.id}/execute`,
-        { outputs });
+        { outputs, waste: Object.fromEntries(
+          Object.entries(waste).filter(([, v]) => Number(v) > 0)) });
       message.success('اتقفل الأمر: الإنتاج اتضاف للمخزن والتكلفة اتحسبت');
       setClosing(null);
       load();
@@ -1441,20 +1445,10 @@ function ProductionOrdersTab({
                       quantity: m.quantity == null ? (v as any) : m.quantity,
                     })} />
                 </Col>
-                <Col span={3}>
-                  <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اتصرف"
-                    value={m.quantity as any}
-                    onChange={(v) => patchMaterial(ln.key, m.key, { quantity: v as any })} />
-                </Col>
-                <Col span={3}>
-                  <InputNumber style={{ width: '100%' }} min={0} placeholder="هالك"
-                    value={m.waste_quantity as any}
-                    onChange={(v) => patchMaterial(ln.key, m.key, { waste_quantity: v as any })} />
-                </Col>
-                <Col span={3}>
-                  {/* الفرق بيبان وانت بتكتب — الرقم ده هو اللي المصنع بيسأل عليه. */}
-                  <Variance planned={String(m.planned_quantity ?? 0)}
-                    actual={String(m.quantity ?? 0)} />
+                {/* «اتصرف» و«هالك» مش خانات هنا — الورقة بتتفتح على خطة. المصروف
+                    بيتحدّد وقت الصرف (من المخطّط)، والهالك بيتكتب عند الإقفال: محدش
+                    يعرف هيبوظ كام وهو بيخطّط. */}
+                <Col span={6}>
                   <Button type="text" danger size="small" icon={<DeleteOutlined />}
                     onClick={() => patchLine(ln.key, {
                       materialsTouched: true,
@@ -1518,6 +1512,31 @@ function ProductionOrdersTab({
             </Col>
           </Row>
         ))}
+        {/* **والهالك هنا كمان.** محدش يعرف هيبوظ كام وهو بيخطّط؛ الرقم ده بيتعرف
+            بعد ما الشغل يخلص. وهو جزء من الخامة اللي خرجت خلاص — مش خصم زيادة —
+            بيقول قد إيه منها راح في الزبالة بدل ما يدخل في المنتج. */}
+        {closing && closing.materials.length > 0 && (
+          <>
+            <Divider orientation="right" style={{ margin: '14px 0 10px' }}>
+              الهالك من الخامات
+            </Divider>
+            {closing.materials.map((m) => (
+              <Row key={m.id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                <Col span={11}>{itemName(m.item_id)}</Col>
+                <Col span={6} style={{ opacity: 0.65 }}>
+                  اتصرف <Qty value={m.quantity} unit={itemUnit(m.item_id)} />
+                </Col>
+                <Col span={7}>
+                  <InputNumber style={{ width: '100%' }} min={0} max={Number(m.quantity)}
+                    placeholder="هالك" addonAfter={itemUnit(m.item_id) || undefined}
+                    value={waste[m.id] as any}
+                    onChange={(v) => setWaste((w) => ({ ...w, [m.id]: v as any }))} />
+                </Col>
+              </Row>
+            ))}
+          </>
+        )}
+
         <p style={{ color: '#888', marginTop: 12 }}>
           {closing?.state === 'in_progress'
             ? 'الخامات اتصرفت خلاص وقت البدء — الإقفال بيضيف الإنتاج للمخزن ويحسب التكلفة.'

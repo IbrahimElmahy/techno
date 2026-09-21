@@ -752,9 +752,14 @@ def start_production_order(
 
 
 class POOutputIn(BaseModel):
-    """اللي طلع فعلاً لكل سطر منتج — بيتبعت وقت الإقفال."""
+    """اللي حصل فعلاً — بيتبعت وقت الإقفال.
+
+    `outputs` كمية كل منتج طلعت كام، و`waste` هالك كل خامة. الاتنين مابيتعرفوش وقت
+    الفتح، والورقة بتتقفل عليهم.
+    """
 
     outputs: dict[int, Decimal] = {}
+    waste: dict[int, Decimal] = {}
 
 
 @router.post("/production-orders/{order_id}/execute", response_model=POOut)
@@ -768,7 +773,8 @@ def execute_production_order(
     try:
         order = production_order_service.execute_order(
             db, order_id=order_id, actor_user_id=current.id,
-            outputs=(body.outputs if body else None))
+            outputs=(body.outputs if body else None),
+            waste=(body.waste if body else None))
     except (ProductionOrderError, StockError) as exc:
         raise _conflict(exc)
     db.commit()
