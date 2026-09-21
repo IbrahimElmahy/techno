@@ -123,11 +123,28 @@ export function useDraft<P>(opts: {
     refresh();
   }, [refresh]);
 
-  /** بتمسح مسودّة من الكشف بالرقم — «امسح» جنب السطر. */
+  /**
+   * بتمسح مسودّة من الكشف بالرقم — «امسح» جنب السطر.
+   *
+   * **والخطأ بيطلع لبرّه.** كان متبلوع (`catch {}`) وبعده إعادة قراءة الكشف — يعني
+   * لو الحذف وقع، المسودّة بترجع مكانها من غير ولا كلمة، واللي بيحاول يمسح يفضل
+   * يضغط ويشوف نفس السطر. اللي بينده هو اللي يقرر يقول إيه.
+   *
+   * و`baseRef` بترجع `null` مع المسودّة اللي الشاشة شغّالة عليها: الحفظ التلقائي
+   * بياخد لقطة جديدة لأول لفّة بعد المسح بدل ما يكتب نفس المحتوى تاني — من غير كده
+   * المسودّة اللي اتمسحت بتقدر ترجع بعد ثانية ونص برقم جديد.
+   */
   const remove = useCallback(async (id: number) => {
-    try { await api.delete(`/api/v1/drafts/${id}`); } catch { /* تجاهل */ }
-    if (idRef.current === id) { idRef.current = null; lastRef.current = ''; }
-    refresh();
+    try {
+      await api.delete(`/api/v1/drafts/${id}`);
+    } finally {
+      if (idRef.current === id) {
+        idRef.current = null;
+        lastRef.current = '';
+        baseRef.current = null;
+      }
+      refresh();
+    }
   }, [refresh]);
 
   /** بتقول للخُطّاف إن الشاشة دلوقتي شغّالة على المسودّة دي — فالحفظ الجاي يكتب فوقها. */
