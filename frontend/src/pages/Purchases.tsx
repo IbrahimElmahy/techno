@@ -14,7 +14,8 @@ import {
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useDocRoute, type DocMode } from '../components/useDocRoute';
 import dayjs, { Dayjs } from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
 import CostCenterSplit from '../components/CostCenterSplit';
@@ -200,8 +201,8 @@ export default function Purchases() {
   /** الصنف اللي بوباب الاختيار واقف عليه — بيغذّي لوحة الرصيد اللي جوّه البوباب نفسه.
    *  لوحة الرصيد اللي كانت تحت الفاتورة اتشالت: كانت فاضية وواخدة تلت العرض. */
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
-  // Same contract as the sales screen: a link elsewhere names a document, this screen opens it.
-  const [searchParams, setSearchParams] = useSearchParams();
+  // العقد نفسه بتاع شاشة البيع: رابط من مكان تاني بيسمّي مستند، والشاشة بتفتحه —
+  // وبقى في `useDocRoute` تحت بدل ما يتقرا هنا بالإيد.
   /**
    * خانة البحث في السجل — عشان زرار «بحث» يوصلها.
    *
@@ -210,7 +211,6 @@ export default function Purchases() {
    * في حتة.
    */
   const listSearchRef = useRef<any>(null);
-  const handledIntent = useRef<string | null>(null);
 
   // Form state
   const [form] = Form.useForm();
@@ -453,16 +453,32 @@ export default function Purchases() {
    * بيوصل لشاشة بتفرّجه عليها. الفرق بين الاتنين هو نية اللي ضغط، والرابط هو اللي
    * بيقولها.
    */
-  useEffect(() => {
-    const docId = searchParams.get('doc') || searchParams.get('edit');
-    const wantsEdit = !!searchParams.get('edit');
-    if (!docId || handledIntent.current === docId) return;
-    handledIntent.current = docId;
-    setSearchParams({}, { replace: true });
-    const target = purchases.find((p) => p.id === Number(docId)) || ({ id: Number(docId), kind: 'purchase' } as PurchaseRecord);
-    if (wantsEdit) openRow(target);
-    else openDetail(target);
-  }, [searchParams, purchases]);
+  /**
+   * والمستند المفتوح بيفضل في العنوان دلوقتي — مش بيتمسح بعد الفتح.
+   *
+   * قبل كده البارامتر كان بيتشال أول ما الفاتورة تتفتح، فالعنوان بيرجع «كشف المشتريات»
+   * والفاتورة مفتوحة قدامك — يعني «رجوع» بيطلّعك من الشاشة كلها، وتحديث الصفحة بيوديك
+   * للكشف. الشرح الكامل في `useDocRoute`.
+   *
+   * ⚠️ **الكشف فيه فواتير ومردودات بنفس الـid** (التعليق على `useTableKeyboard` تحت بيقول
+   * كده صراحةً)، والبحث بالرقم لوحده ممكن يطلّع المردود بدل الفاتورة — واللي كان هيودّي
+   * لشاشة تانية خالص. فالصفوف اللي الخُطّاف بيدوّر فيها **فواتير الشرا بس**، وده برضه
+   * معنى `?doc=` على الشاشة دي من الأول: المردود ليه شاشته ورابطه.
+   */
+  const routeRows = useMemo(
+    () => purchases.filter((p) => p.kind === 'purchase'), [purchases]);
+
+  const { markOpen, markClosed } = useDocRoute<PurchaseRecord>({
+    rows: routeRows,
+    // الفاتورة المحفوظة بس هي اللي ليها عنوان — المستند الجديد لسه مالوش رقم يتكتب.
+    openId: createVisible && editingId != null ? editingId : null,
+    open: (row, mode) => { void openDetail(row, mode); },
+    close: () => closeCreate(),
+    loading: listLoading,
+    // `openDetail` بيجيب الفاتورة كاملة بالرقم بنفسه، فالصف المبدئي كفاية — وبيتولد
+    // بـ`kind: 'purchase'` زي ما كان بالظبط.
+    fetchOne: async (id) => ({ id, kind: 'purchase' } as PurchaseRecord),
+  });
 
   /**
    * فتح فاتورة شراء — على نفس الصفحة اللي بتتكتب فيها.
@@ -482,7 +498,13 @@ export default function Purchases() {
     }
   };
 
-  const openDetail = async (record: PurchaseRecord) => {
+  /**
+   * `mode` بيتمرّر عشان العنوان يفضل زي ما اللي ضغط كتبه — `?doc=` أو `?edit=`.
+   * وبيتوقّف عند العنوان: الشاشة بتفتح الفاتورة **للقراية** في الحالتين زي ما كانت،
+   * وفتح حقول مستند مرحّل لسه محتاج ضغطة «تعديل» صريحة.
+   */
+  const openDetail = async (record: PurchaseRecord, mode: DocMode = 'view') => {
+    markOpen(record.id, mode);
     try {
       const res = await api.get(`/api/v1/purchases/${record.id}`);
       const det: PurchaseDetail = res.data;
@@ -777,7 +799,7 @@ export default function Purchases() {
         (r) => r.id === (editingId ?? (docResult?.id as number | undefined) ?? null));
       const target = at >= 0 ? invoicesInList[at + step]
         : (step > 0 ? invoicesInList[0] : invoicesInList[invoicesInList.length - 1]);
-      if (target) { closeCreate(); openDetail(target); }
+      if (target) { closeCreate({ keepUrl: true }); openDetail(target); }
     };
     return [
       {
@@ -1331,8 +1353,18 @@ export default function Purchases() {
    * التاني — بتسأل حتى على فاتورة محفوظة ماتغيّرش فيها حاجة. القاعدة واحدة دلوقتي
    * (`utils/unsavedWork`): السؤال بيظهر لما الخروج **يكلّف** حاجة، وبس.
    */
-  const closeCreate = () => {
+  /**
+   * `keepUrl` لـ«التالى»/«السابق» بس: الحركة دي بتقفل مستند وتفتح اللي بعده على طول،
+   * فتنضيف العنوان في النص بيعمل خطوة رجوع فعلية لو الفاتورة اتفتحت من شاشة تانية
+   * (`back=1`) — يعني تطلع من الشاشة بدل ما تتنقّل جوّاها.
+   *
+   * وبياخد **كائن** مش `boolean` عن قصد: `onClick={closeCreate}` بيمرّر حدث الماوس،
+   * واللي كان هيبقى `true` لو البارامتر منطقي.
+   */
+  const closeCreate = (opts?: { keepUrl?: boolean }) => {
+    const keepUrl = opts?.keepUrl === true;
     const leave = () => {
+      if (!keepUrl) markClosed();
       setCreateVisible(false);
       setDetail(null);
       setDocResult(null);
@@ -1365,6 +1397,9 @@ export default function Purchases() {
       okButtonProps: { danger: true },
       cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
       onOk: leave,
+      // اللي قال «أرجع أكمّل» بعد ما داس «رجوع» بتاع المتصفح لازم العنوان يرجع للمستند
+      // كمان — وإلا الشاشة فاتحة مستند والعنوان بيقول كشف، وتاني ضغطة رجوع بتطلّعه.
+      onCancel: () => { if (!keepUrl && editingId != null) markOpen(editingId); },
     });
   };
 
@@ -1496,7 +1531,8 @@ export default function Purchases() {
   ) : (
     <Card title={(
       <Space>
-        <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+        <Button type="text" icon={<ArrowRightOutlined />}
+          onClick={() => closeCreate()}>رجوع</Button>
         <Typography.Text strong style={{ fontSize: 16 }}>
           {viewPurchase ? `فاتورة شراء ${viewPurchase.document_number}` : (editingId !== null ? 'تعديل فاتورة شراء' : 'فاتورة شراء جديدة')}
         </Typography.Text>

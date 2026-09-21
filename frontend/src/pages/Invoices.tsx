@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIsFactoryBranch } from '../components/useFactoryBranch';
 // **باسم مستعار عن قصد.** الملف ده عنده `PAGE_SIZE` بمعنى تاني خالص —
 // حد الجلب من الـAPI، مش عدد صفوف الجدول.
@@ -657,6 +657,9 @@ export default function Invoices() {
   const resetDocument = () => {
     setViewOnly(false);
     setViewInvoice(null);
+    // العنوان بيرجع للكشف مع قفل المستند — `replace` مش `push` عشان «رجوع» مايعيدش
+    // فتح اللي انت قافله لسه.
+    clearDocParam();
     setViewReturns([]);
     setEditingInvoice(null);
     setOpenedFingerprint(null);
@@ -1497,6 +1500,44 @@ export default function Invoices() {
    * ويرجّع للكشف) ومعاه المسودّات، والشاشة طلعت **بيضا** عند العميل. الاتنين اتشالوا من
    * هنا لحد ما يبان الخطأ الحقيقي في الكونسول — شاشة مابتفتحش مش مقايضة مع أي تحسين.
    */
+  /**
+   * كتابة المستند في العنوان وشيله — الحتة الوحيدة اللي بتلمس `?doc=` بعد التحميل.
+   *
+   * `docInUrl` بيمسك آخر رقم كتبناه إحنا، وبيمنع اللفّة: الكتابة بتغيّر `searchParams`،
+   * والتأثير اللي تحت بيصحى عليها، ولولا الحارس ده كان هيعتبرها طلب فتح جديد ويفتح
+   * المستند تاني ويمسح البارامتر اللي لسه كاتبينه.
+   */
+  const docInUrl = useRef<number | null>(null);
+  /**
+   * قفل المستند لما «رجوع» بتاع المتصفح يشيله من العنوان.
+   *
+   * **مش `resetDocument` وحدها** — دي بتفضّي حالة المستند وبس، والشاشة بتفضل على صفحة
+   * المستند فاضية. `setCreateVisible(false)` هو اللي بيرجّع للكشف، وده اللي `closeCreate`
+   * بيعمله. غياب السطر ده خلّى الرجوع يشيل العنوان ويسيب الشاشة مكانها.
+   *
+   * ومافيش سؤال «تسيب المستند؟» هنا زي `closeCreate`: اللي داس رجوع خرج خلاص، والسؤال
+   * بعد الخروج بيبقى متأخر. واللي اتكتب مش بيضيع — `useDraft` بيحفظه لوحده.
+   *
+   * والمرجع بدل الدالة عشان التأثير مايعتمدش على حاجة بتتبني كل رندر.
+   */
+  const closeOnBackRef = useRef<(() => void) | null>(null);
+  const writeDocParam = useCallback((id: number) => {
+    docInUrl.current = id;
+    const next = new URLSearchParams(window.location.search);
+    next.set('doc', String(id));
+    next.delete('edit'); next.delete('id'); next.delete('back');
+    setSearchParams(next, { replace: false });
+  }, [setSearchParams]);
+  const clearDocParam = useCallback(() => {
+    docInUrl.current = null;
+    const next = new URLSearchParams(window.location.search);
+    if (!next.has('doc') && !next.has('edit') && !next.has('id')) return;
+    next.delete('doc'); next.delete('edit'); next.delete('id'); next.delete('back');
+    setSearchParams(next, { replace: true });
+  }, [setSearchParams]);
+
+  closeOnBackRef.current = () => { resetDocument(); setCreateVisible(false); };
+
   const pendingIntent = useRef<{ id: number; mode: 'view' | 'edit' } | null>(null);
   /**
    * **جاي من شاشة تانية** — كارت صنف، كشف حساب، كارت عميل، تقرير.
@@ -1511,11 +1552,26 @@ export default function Invoices() {
     const doc = searchParams.get('doc');
     const edit = searchParams.get('edit');
     const id = searchParams.get('id');
+    // البارامتر اللي إحنا كاتبينه لما فتحنا المستند مش طلب فتح — تخطّيه.
+    if (doc && Number(doc) === docInUrl.current) return;
+    // **«رجوع» بتاع المتصفح بيقفل المستند.**
+    //
+    // البارامتر راح وإحنا لسه فاتحين — يبقى اللي شاله هو زرار الرجوع مش إحنا
+    // (`clearDocParam` بيصفّر `docInUrl` قبل ما يلمس العنوان). من غير السطر ده العنوان
+    // بيرجع للكشف والشاشة تفضل على المستند: الاتنين بيفرقوا، واللي بعده بيبقى عشوائي.
+    if (!doc && !edit && !id && docInUrl.current !== null) {
+      docInUrl.current = null;
+      closeOnBackRef.current?.();
+      return;
+    }
     if (doc || edit || id) {
       pendingIntent.current = { id: Number(doc || edit || id), mode: edit ? 'edit' : 'view' };
       cameFromScreen.current = searchParams.get('back') === '1';
-      // Cleared immediately so a refresh, or returning to this tab later, cannot replay it.
-      setSearchParams({}, { replace: true });
+      // `edit`/`id`/`back` بيتمسحوا عشان مايتعادوش عند إعادة التحميل. و`doc` **بيفضل**:
+      // هو اللي بيخلّي تحديث الصفحة يرجّعك لنفس المستند بدل ما يرميك على الكشف.
+      const next = new URLSearchParams(window.location.search);
+      next.delete('edit'); next.delete('id'); next.delete('back');
+      setSearchParams(next, { replace: true });
     }
     const wanted = pendingIntent.current;
     if (!wanted) return;
@@ -1687,6 +1743,16 @@ function couponsTotal(inv: any): number {
 
       const loadedInvoice = { ...record, ...det };
       setViewInvoice(loadedInvoice);
+      // **المستند المفتوح بيبقى في العنوان.**
+      //
+      // كان بيتفتح كحالة جوّه الشاشة والعنوان يفضل `/invoices` — فتحديث الصفحة بيضيّع
+      // اللي انت فاتحه، والرابط مايتبعتش لحد، وتاريخ المتصفح فيه الأقسام بس.
+      //
+      // ⚠️ **والكتابة في اتجاه واحد عن قصد.** فيه محاولة قبل كده تربط الشاشة دي
+      // بـ`useDocRoute` (اللي بيخلّي العنوان **يقود** الشاشة) و**طلعت شاشة بيضا عند
+      // العميل** فاتشالت — الشرح تحت عند `pendingIntent`. فالشاشة هنا بتكتب العنوان
+      // وبس، والعنوان مابيقودش غير عند التحميل الأول. كده الفايدة اتاخدت والخطر لأ.
+      writeDocParam(record.id);
       setViewReturns(rets);
       setEditingInvoice({ id: record.id, voided: alreadyVoid });
       setViewOnly(true);

@@ -11,6 +11,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useDocRoute } from '../components/useDocRoute';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
 import { TabModal } from '../components/TabModal';
@@ -121,6 +122,7 @@ export default function StockCounts() {
       message.success(`اتفتح كشف الجرد ${res.data.document_number}`);
       setOpenVisible(false);
       setSheet(res.data); setEntered({}); setDetailVisible(true);
+      markOpen(res.data.id);
       load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر فتح الجرد');
@@ -128,6 +130,7 @@ export default function StockCounts() {
   };
 
   const openDetail = async (row: Sheet) => {
+    markOpen(row.id);
     try {
       const res = await api.get(`/api/v1/stock-counts/${row.id}`);
       setSheet(res.data);
@@ -141,6 +144,21 @@ export default function StockCounts() {
       message.error('تعذر فتح الكشف');
     }
   };
+
+  // الكشف المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشوف — الشرح في `useDocRoute`.
+  const { markOpen, markClosed } = useDocRoute<Sheet>({
+    rows: sheets,
+    // `sheet` بيفضل محطوط بعد القفل، فالمعوّل عليه إن الصفحة نفسها مفتوحة.
+    openId: detailVisible && sheet ? sheet.id : null,
+    open: (row) => { void openDetail(row); },
+    close: () => closeDoc(),
+    loading,
+    // `openDetail` بيجيب الكشف كامل بالرقم بنفسه، فالصف المبدئي كفاية.
+    fetchOne: async (id) => ({ id } as Sheet),
+  });
+
+  /** بيسيب الكشف المفتوح ويرجّع للقايمة — والعنوان بيتنضّف معاه. */
+  const closeDoc = () => { setDetailVisible(false); markClosed(); };
 
   const saveCounts = async () => {
     if (!sheet) return;
@@ -177,7 +195,7 @@ export default function StockCounts() {
     try {
       await api.post(`/api/v1/stock-counts/${id}/cancel`);
       message.success('تم إلغاء الكشف');
-      setDetailVisible(false);
+      closeDoc();
       load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الكشف');
@@ -429,7 +447,7 @@ export default function StockCounts() {
         title={(
           <Space>
             <Button type="text" icon={<ArrowRightOutlined />}
-              onClick={() => setDetailVisible(false)}>رجوع للكشوف</Button>
+              onClick={closeDoc}>رجوع للكشوف</Button>
             <span>كشف الجرد {sheet.document_number}</span>
             <Tag color={sheet.status === 'posted' ? 'green'
               : sheet.status === 'cancelled' ? 'default' : 'blue'}>

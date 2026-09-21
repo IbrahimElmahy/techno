@@ -14,6 +14,7 @@ import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
+import { useDocRoute } from '../components/useDocRoute';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
@@ -1201,7 +1202,40 @@ function ProductionOrdersTab({
 
   const openNew = () => { resetForm(); setLines([newPOProduct()]); setOpen(true); };
 
+  /**
+   * أمر التشغيل المفتوح جزء من العنوان — الشرح في `useDocRoute`.
+   *
+   * **والتبويب ده وحده هو اللي بيقرا `?doc=`.** الشاشة خمس تبويبات، وantd بتسيب أي
+   * تبويب اتفتح مرة شغّال ومخفي بعدها — يعني لو اتنين منهم بيسمعوا نفس البارامتر،
+   * الرقم الواحد هيتفسّر مرتين في مساحتين مختلفتين، وواحد فيهم هيفتح مستند مش بتاعه
+   * أو يوقع وهو بيقرا صف ناقص. فـ«أوامر التشغيل» — المستند الأساسي في الشاشة — بياخد
+   * البارامتر، والباقي زي ما هو.
+   *
+   * وبيتجاب بالرقم من السيرفر مش من الصفحة المحمّلة: `openEdit` بيقرا `r.products`
+   * و`r.materials` سطر سطر، وصف ناقص فيهم بيفضّي الشاشة.
+   */
+  const { markOpen, markClosed } = useDocRoute<ProductionOrder>({
+    rows,
+    openId: open && editingId != null ? editingId : null,
+    open: (r) => openEdit(r),
+    close: () => closeEditor(),
+    loading,
+    fetchOne: async (id) => {
+      try {
+        return (await api.get(
+          `/api/v1/manufacturing/production-orders/${id}`)).data as ProductionOrder;
+      } catch {
+        message.warning(`أمر التشغيل رقم ${id} مش موجود`);
+        return null;
+      }
+    },
+  });
+
+  /** بيقفل ورقة الأمر ويرجّع للكشف — والعنوان بيتنضّف معاها. */
+  const closeEditor = () => { setOpen(false); resetForm(); markClosed(); };
+
   const openEdit = (r: ProductionOrder) => {
+    markOpen(r.id, 'edit');
     setEditingId(r.id);
     setProductionDate(r.production_date ? dayjs(r.production_date) : null);
     setBranchId(r.branch_id ?? undefined);
@@ -1285,7 +1319,7 @@ function ProductionOrdersTab({
       if (editingId) await api.put(`/api/v1/manufacturing/production-orders/${editingId}`, payload());
       else await api.post('/api/v1/manufacturing/production-orders', payload());
       message.success(editingId ? 'اتحفظت المسودة' : 'اتفتح أمر تشغيل كمسودة — مافيش حركة مخزون لسه');
-      setOpen(false); resetForm(); setPage(1); load();
+      closeEditor(); setPage(1); load();
     } catch (err) { console.error(err); } finally { setSaving(false); }
   };
 
@@ -1495,7 +1529,7 @@ function ProductionOrdersTab({
       />
 
       <TabModal centered title={editingId ? 'تعديل مسودة أمر تشغيل' : 'أمر تشغيل جديد'}
-        width={1050} open={open} onCancel={() => setOpen(false)} destroyOnHidden
+        width={1050} open={open} onCancel={closeEditor} destroyOnHidden
         footer={
           <Space>
             <Button onClick={() => setLines((p) => [...p, newPOProduct()])}>+ منتج</Button>

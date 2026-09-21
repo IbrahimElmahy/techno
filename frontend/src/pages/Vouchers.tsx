@@ -25,6 +25,7 @@ import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { useQueryTab } from '../components/useQueryTab';
+import { useDocRoute } from '../components/useDocRoute';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { printDocument } from '../print/brand';
@@ -152,6 +153,42 @@ const Vouchers: React.FC = () => {
   const [expenseGroups, setExpenseGroups] = useState<any[]>([]);
   const [cheques, setCheques] = useState<any[]>([]);
   const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
+  /** الكشف اتحمّل مرة على الأقل — من غيرها أول رندر بيقول «السند مش موجود» والكشف
+   *  لسه ما اتطلبش أصلاً. */
+  const [listLoaded, setListLoaded] = useState(false);
+
+  /**
+   * السند المفتوح جزء من العنوان — الشرح في `useDocRoute`.
+   *
+   * **والنوع مش في العنوان، ولا لازم يكون.** البوبابات الخمسة (قبض · صرف · توريد ·
+   * مصروف · تحويل) دي **شبابيك كتابة**، مش مستند مفتوح؛ المستند المفتوح هنا واحد —
+   * ورقة العرض والطباعة. والسندات كلها في جدول واحد فالـ`id` مميّز بينهم، يعني
+   * `?doc=12` لوحده بيحدّد سند واحد بالظبط، والنوع مكتوب على السند نفسه. وزيادة على
+   * كده التبويب موجود في العنوان خلاص (`?tab=`) عن طريق `useQueryTab`، فنوع تاني في
+   * نفس العنوان كان هيبقى مصدرين لنفس الحقيقة — واللي بينهم بيفرقوا أول ما يفرقوا.
+   *
+   * ⚠️ الكشف بيتحمّل بفترة (آخر ٣٠ يوم افتراضياً) ومافيش نقطة نهاية تجيب سند واحد
+   * بالرقم، فاللي برّه الفترة المحمّلة مابيتفتحش — بيقول كده بدل ما يفتح ورقة نص
+   * فاضية. `VoucherDocument` بيقرا `kind` و`document_number` والمبلغ من الصف، وصف
+   * ناقص فيه كان هيفضي الشاشة.
+   */
+  const { markOpen, markClosed } = useDocRoute<VoucherRecord>({
+    rows: vouchers,
+    openId: voucherView?.id ?? null,
+    open: (v) => openView(v),
+    close: () => closeView(),
+    loading: loading || !listLoaded,
+    fetchOne: async (id) => {
+      message.warning(`السند رقم ${id} مش في الفترة المعروضة — وسّع المدى وافتحه من الكشف`);
+      return null;
+    },
+  });
+
+  /** بيفتح ورقة السند — ومعاها العنوان، عشان «رجوع» يقفلها بدل ما يطلّعك من الشاشة. */
+  const openView = (v: VoucherRecord) => { setVoucherView(v); markOpen(v.id); };
+
+  /** بيقفل الورقة ويرجّع للكشف — والعنوان بيتنضّف معاها. */
+  const closeView = () => { setVoucherView(null); markClosed(); };
 
   const keyWorld = useMemo<RunnerWorld>(() => ({
     treasuries: treasuries as any, customers, suppliers, reps: reps as any, accounts: [],
@@ -199,6 +236,7 @@ const Vouchers: React.FC = () => {
     } catch {
     } finally {
       setLoading(false);
+      setListLoaded(true);
     }
   }, [kindFilter, range]);
 
@@ -412,7 +450,7 @@ const Vouchers: React.FC = () => {
   };
 
   const byKind = (k: string) => shownVouchers.filter((v) => v.kind === k);
-  const kbArgs = { rowKey: (v: VoucherRecord) => v.id, onOpen: setVoucherView };
+  const kbArgs = { rowKey: (v: VoucherRecord) => v.id, onOpen: openView };
   const receiptKb = useTableKeyboard<VoucherRecord>({ rows: byKind('receipt'), ...kbArgs });
   const paymentKb = useTableKeyboard<VoucherRecord>({ rows: byKind('payment'), ...kbArgs });
   const handoverKb = useTableKeyboard<VoucherRecord>({ rows: byKind('rep_handover'), ...kbArgs });
@@ -444,7 +482,7 @@ const Vouchers: React.FC = () => {
       width: 190,
       render: (_: any, r: VoucherRecord) => (
         <Space size={4}>
-          <Button size="small" icon={<PrinterOutlined />} onClick={() => setVoucherView(r)}>
+          <Button size="small" icon={<PrinterOutlined />} onClick={() => openView(r)}>
             عرض / طباعة
           </Button>
           {r.is_reversal ? (
@@ -1026,8 +1064,8 @@ const Vouchers: React.FC = () => {
       <TabModal
         open={voucherView !== null}
         title={`${voucherView ? VOUCHER_TITLES[voucherView.kind as VoucherDoc['kind']] : 'سند'} ${voucherView?.document_number ?? ''}`}
-        onCancel={() => setVoucherView(null)}
-        footer={voucherFooter(voucherDoc(voucherView), () => setVoucherView(null))}
+        onCancel={closeView}
+        footer={voucherFooter(voucherDoc(voucherView), closeView)}
         width={760}
         centered
         destroyOnHidden

@@ -15,6 +15,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { netOf, MAX_DISCOUNT_PCT } from '../utils/discounts';
 import { useQueryTab } from '../components/useQueryTab';
+import { useDocRoute } from '../components/useDocRoute';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -117,6 +118,31 @@ export default function Orders() {
       message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الطلبات');
     } finally { setLoading(false); }
   };
+
+  /** الطلب بيتفتح على نفس الصفحة — ومعاه العنوان، عشان «رجوع» يقفله بدل ما يطلّعك من الشاشة. */
+  const openOrder = (o: Order) => { setCreating(false); setDetail(o); markOpen(o.id); };
+
+  // الطلب المفتوح جزء من العنوان — الشرح في `useDocRoute`.
+  const { markOpen, markClosed } = useDocRoute<Order>({
+    rows: orders,
+    openId: detail?.id ?? null,
+    open: (o) => openOrder(o),
+    close: () => closeDoc(),
+    loading,
+    // **مش في الكشف ≠ مش موجود** — الرابط ممكن ييجي من بره لطلب برّه الصفحة المحمّلة،
+    // وبنجيبه كامل بسطوره عشان صفحة المستند مالهاش صف ناقص تقرا منه.
+    fetchOne: async (id) => {
+      try {
+        return (await api.get(`/api/v1/orders/${id}`)).data as Order;
+      } catch {
+        message.warning(`الطلب رقم ${id} مش موجود`);
+        return null;
+      }
+    },
+  });
+
+  /** بيسيب الطلب المفتوح ويرجّع للكشف — والعنوان بيتنضّف معاه. */
+  const closeDoc = () => { setDetail(null); markClosed(); };
 
   useEffect(() => {
     load();
@@ -325,7 +351,7 @@ export default function Orders() {
       const at = rows.findIndex((r) => r.id === detail?.id);
       const target = at >= 0 ? rows[at + step]
         : (step > 0 ? rows[0] : rows[rows.length - 1]);
-      if (target) { setCreating(false); setDetail(target); }
+      if (target) openOrder(target);
     };
     return [
       { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />, onClick: clear },
@@ -505,7 +531,7 @@ export default function Orders() {
     try {
       await api.post(`/api/v1/orders/${detail.id}/convert`, { invoice_id: invoiceId });
       message.success('اتربط الطلب بالفاتورة');
-      setDetail(null); setInvoiceId(undefined); load();
+      closeDoc(); setInvoiceId(undefined); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر ربط الطلب');
     }
@@ -515,7 +541,7 @@ export default function Orders() {
     try {
       await api.post(`/api/v1/orders/${o.id}/cancel`);
       message.success('تم إلغاء الطلب');
-      setDetail(null); load();
+      closeDoc(); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الطلب');
     }
@@ -602,7 +628,7 @@ export default function Orders() {
 
       <Table<Order>
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
-        onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
+        onRow={(r) => ({ onClick: () => openOrder(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد طلبات' }}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
@@ -740,7 +766,7 @@ export default function Orders() {
         title={(
           <Space>
             <Button type="text" icon={<ArrowLeftOutlined />}
-              onClick={() => setDetail(null)}>رجوع</Button>
+              onClick={closeDoc}>رجوع</Button>
             <span>{detail.document_number}</span>
           </Space>
         )}
@@ -825,7 +851,7 @@ export default function Orders() {
         )}
 
         <div style={{ marginTop: 16, textAlign: 'left' }}>
-          <Button onClick={() => setDetail(null)}>إغلاق</Button>
+          <Button onClick={closeDoc}>إغلاق</Button>
         </div>
       </Card>
       )}
