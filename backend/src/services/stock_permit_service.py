@@ -53,7 +53,8 @@ def _doc_number(db: Session, kind: PermitKind) -> str:
 def create_permit(
     db: Session, *, kind: str, warehouse_id: int, lines: list[dict],
     actor_user_id: int, reason: str | None = None, notes: str | None = None,
-    statement1: str | None = None, permit_date: date | None = None,
+    statement1: str | None = None, external_document_number: str | None = None,
+    permit_date: date | None = None,
 ) -> StockPermit:
     try:
         permit_kind = PermitKind(kind)
@@ -93,7 +94,8 @@ def create_permit(
     permit = StockPermit(
         document_number=_doc_number(db, permit_kind), kind=permit_kind,
         warehouse_id=warehouse_id, permit_date=permit_date, reason=reason, notes=notes,
-        statement1=statement1, total_cost=ZERO, actor_user_id=actor_user_id,
+        statement1=statement1, external_document_number=external_document_number,
+        total_cost=ZERO, actor_user_id=actor_user_id,
     )
     db.add(permit)
     db.flush()
@@ -172,6 +174,7 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
         # البيان بيتورّث زي الملاحظات — الإذن وعكسه بيتقروا جنب بعض، والعكس من غير
         # بيان بيبقى سطر مالوش معنى في كشف المخزن.
         statement1=original.statement1,
+        external_document_number=getattr(original, 'external_document_number', None),
         total_cost=original.total_cost, reverses_id=original.id, actor_user_id=actor_user_id,
     )
     db.add(reversal)

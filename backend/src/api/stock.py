@@ -348,6 +348,7 @@ class PermitIn(BaseModel):
     notes: str | None = None
     # البيان — سطر الكلام اللي بيتطبع على الإذن نفسه. الشرح في `models/stock_permit.py`.
     statement1: str | None = Field(default=None, max_length=200)
+    external_document_number: str | None = Field(default=None, max_length=40)
     permit_date: date | None = None
 
 
@@ -372,6 +373,7 @@ class PermitOut(BaseModel):
     # **لازم يبقى هنا كمان مش على الإدخال بس** — بايدانتيك بيرمي أي حقل مش معرّف على
     # موديل الرد في صمت، فالبيان يتكتب في القاعدة ويرجع فاضي للشاشة.
     statement1: str | None = None
+    external_document_number: str | None = None
     total_cost: Decimal
     is_reversal: bool
     reversed_by: int | None = None
@@ -394,6 +396,7 @@ def _permit_out(db: Session, p) -> PermitOut:
         warehouse_id=p.warehouse_id, warehouse_name=warehouse.name if warehouse else None,
         permit_date=p.permit_date, reason=p.reason, notes=p.notes,
         statement1=getattr(p, "statement1", None),
+        external_document_number=getattr(p, "external_document_number", None),
         total_cost=p.total_cost, is_reversal=p.reverses_id is not None,
         reversed_by=reversal, created_at=p.created_at,
         lines=[PermitLineOut(
@@ -419,6 +422,7 @@ def create_permit(
             db, kind=body.kind, warehouse_id=body.warehouse_id,
             lines=[ln.model_dump() for ln in body.lines], actor_user_id=current.id,
             reason=body.reason, notes=body.notes, statement1=body.statement1,
+            external_document_number=body.external_document_number,
             permit_date=body.permit_date,
         )
     except stock_permit_service.StockPermitError as exc:

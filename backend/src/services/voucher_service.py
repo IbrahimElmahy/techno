@@ -154,6 +154,7 @@ def _create(
     # البيان — بتاع ورقة السند نفسها، مش وصف الحركة المحاسبية. `description` هو اللي
     # بيروح لسطور القيد وبيتقرا في كشف الحساب؛ ده بيفضل على المستند وبس.
     statement1: str | None = None,
+    external_document_number: str | None = None,
 ) -> Voucher:
     voucher = Voucher(
         document_number=_doc_number(db, kind), kind=kind, amount=amount,
@@ -165,6 +166,7 @@ def _create(
         reference=reference, description=description, ledger_entry_id=None,
         reverses_id=reverses_id, actor_user_id=actor_user_id, family=family,
         statement1=statement1,
+        external_document_number=external_document_number,
         # السند مالوش مخزن، ففرعه فرع اللي كتبه.
         branch_id=branch_for(db, actor_user_id=actor_user_id),
         client_uuid=client_uuid,
@@ -233,6 +235,7 @@ def create_receipt(
     treasury_id: int | None = None, family: str | None = None,
     on_total: bool = False, client_uuid: str | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
+    external_document_number: str | None = None,
 ) -> Voucher:
     """سند قبض — تحصيل من عميل. النقدية تدخل الخزينة المختارة أو عهدة المندوب المحصِّل.
 
@@ -265,7 +268,7 @@ def create_receipt(
             customer_id=customer_id, treasury_id=safe_id,
             credit_split=[(a.account_id, v) for a, v in parts],
             family=None,        # None on the voucher means «على الإجمالي», same as the argument
-            client_uuid=client_uuid, statement1=statement1,
+            client_uuid=client_uuid, statement1=statement1, external_document_number=external_document_number,
         )
 
     party = _customer_account(db, customer_id, family)
@@ -278,7 +281,7 @@ def create_receipt(
         statement="تحصيل من عميل" + (f" — {family}" if family else ""),
         customer_id=customer_id, treasury_id=safe_id, family=family,
         client_uuid=client_uuid,
-        cost_center_id=cost_center_id, statement1=statement1,
+        cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
     )
 
 
@@ -296,6 +299,7 @@ def create_payment(
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
+    external_document_number: str | None = None,
 ) -> Voucher:
     """سند صرف — دفع لمورد من الخزينة."""
     value = _positive(amount)
@@ -310,7 +314,7 @@ def create_payment(
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=payment_method, entry_type="payment", statement="دفع لمورد",
         supplier_id=supplier_id, treasury_id=safe_id,
-        cost_center_id=cost_center_id, statement1=statement1,
+        cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
     )
 
 
@@ -357,6 +361,7 @@ def create_cash_transfer(
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
+    external_document_number: str | None = None,
 ) -> Voucher:
     """تحويل بين الخزائن — مدين الخزينة المستقبِلة ودائن المرسِلة."""
     value = _positive(amount)
@@ -373,7 +378,7 @@ def create_cash_transfer(
         payment_method=None, entry_type="cash_transfer",
         statement=f"تحويل من {source.name} إلى {dest.name}",
         treasury_id=source.id, to_treasury_id=dest.id,
-        cost_center_id=cost_center_id, statement1=statement1,
+        cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
     )
 
 
@@ -382,6 +387,7 @@ def create_handover(
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, family: str | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
+    external_document_number: str | None = None,
 ) -> Voucher:
     """توريد المندوب — نقل النقدية من عهدة المندوب لخزينة الشركة.
 
@@ -410,7 +416,7 @@ def create_handover(
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=None, entry_type="rep_handover", statement="توريد مندوب للخزينة",
         rep_user_id=rep_user_id,
-        cost_center_id=cost_center_id, statement1=statement1,
+        cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
     )
 
 

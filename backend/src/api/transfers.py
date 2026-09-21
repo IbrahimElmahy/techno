@@ -53,6 +53,7 @@ class TransferCreate(BaseModel):
     client_uuid: str | None = None
     # البيان والملاحظات — «الإذن ده ليه». الشرح في `models/transfer.py`.
     statement1: str | None = Field(default=None, max_length=200)
+    external_document_number: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=500)
 
 
@@ -77,6 +78,7 @@ class TransferOut(BaseModel):
     # حقل مش معرّف على موديل الرد في صمت، فالخانة تتكتب في القاعدة وترجع فاضية للشاشة،
     # واللي بيجرّب بيفتكر إن الحفظ نفسه هو اللي مش شغال.
     statement1: str | None = None
+    external_document_number: str | None = None
     notes: str | None = None
     lines: list["TransferLineOut"] = []
 
@@ -121,6 +123,7 @@ def _out(t) -> TransferOut:
         transfer_date=str(t.transfer_date) if getattr(t, "transfer_date", None) else None,
         reject_reason=getattr(t, "reject_reason", None),
         statement1=getattr(t, "statement1", None),
+        external_document_number=getattr(t, "external_document_number", None),
         notes=getattr(t, "notes", None),
         # The lines the approver acts on. An old document has none and keeps answering through
         # its own item/quantity above, so nothing already posted has to be migrated.
@@ -177,7 +180,8 @@ def create_transfer(
             dest_kind=body.dest.location_kind, dest_id=body.dest.location_id,
             initiated_by=current.id, transfer_date=body.transfer_date,
             client_uuid=body.client_uuid,
-            statement1=body.statement1, notes=body.notes)
+            statement1=body.statement1, notes=body.notes,
+            external_document_number=body.external_document_number)
         # السطور جوّه نفس المعاملة: المستند بيوصل كامل أو مايوصلش. سطر واحد غلط
         # بيرجّع المستند كله، والتطبيق بيفضل شايل الطلب ويعيد — بدل ما يسيب نُص طلب
         # على السيرفر ويعتبر نفسه خلص.

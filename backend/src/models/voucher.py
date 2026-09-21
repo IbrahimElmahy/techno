@@ -85,6 +85,15 @@ class Voucher(Base):
     # البيان ده بتاع الورقة اللي العميل بيمضي عليها: «دفعة أولى عن أمر التوريد ١٢٠٣».
     # اتخلطوا قبل كده فالموظف كان بيكتب كلام الورقة في `description` وييجي في كشف
     # الحساب مكان وصف الحركة.
+    # **رقم الورقة اللي في إيده** — بيتحفظ **جنب** رقمنا، مش بداله.
+    #
+    # المستند عندنا رقمه بيتولّد بالتسلسل (`TRF-000050`)، والورقة اللي بيمضي عليها أمين
+    # المخزن عليها رقم تاني من دفتره. واللي بيدوّر بعد شهر بيدوّر برقم الورقة اللي في
+    # إيده — ومن غير الخانة دي مافيش طريق من الورقة للشاشة غير التاريخ والاسم.
+    #
+    # موجودة على الفواتير الأربعة من (030)؛ التحويل والأذون والسندات كانوا ناقصينها.
+    external_document_number: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, index=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # Nullable so the voucher row can exist before its entry (Postgres enforces FKs immediately).

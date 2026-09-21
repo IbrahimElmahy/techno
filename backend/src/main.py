@@ -691,6 +691,10 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("stock_transfer", "notes", "VARCHAR(500)"),
     ("stock_permit", "statement1", "VARCHAR(200)"),
     ("voucher", "statement1", "VARCHAR(200)"),
+    # رقم الورقة اللي في إيده — الشرح في الموديلات. الفواتير الأربعة عندها من (030).
+    ("stock_transfer", "external_document_number", "VARCHAR(40)"),
+    ("stock_permit", "external_document_number", "VARCHAR(40)"),
+    ("voucher", "external_document_number", "VARCHAR(40)"),
     # (009) العهدة بقت لكل (مندوب × خط): «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)».
     # لازم العمود يتعمل هنا **قبل** `_sync_constraints` — القيد الجديد
     # `uq_custody_rep_family` مبني عليه، وترتيب النداءات فوق بيضمن ده.

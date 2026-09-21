@@ -68,6 +68,15 @@ class StockTransfer(Base):
     # الرقم ده بيخلّي الإعادة ترجّع نفس المستند بدل ما تعمل واحد جديد، والسطور بقت
     # بتتبعت مع الترويسة في نداء واحد — فالطلب بيوصل كامل أو مايوصلش.
     client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    # **رقم الورقة اللي في إيده** — بيتحفظ **جنب** رقمنا، مش بداله.
+    #
+    # المستند عندنا رقمه بيتولّد بالتسلسل (`TRF-000050`)، والورقة اللي بيمضي عليها أمين
+    # المخزن عليها رقم تاني من دفتره. واللي بيدوّر بعد شهر بيدوّر برقم الورقة اللي في
+    # إيده — ومن غير الخانة دي مافيش طريق من الورقة للشاشة غير التاريخ والاسم.
+    #
+    # موجودة على الفواتير الأربعة من (030)؛ التحويل والأذون والسندات كانوا ناقصينها.
+    external_document_number: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, index=True)
     initiated_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -48,6 +48,15 @@ class StockPermit(Base):
     # `reason` بيتكتب من النظام كمان (العكس بيحط «عكس EP-…» فيه) فمش مكان لكلام
     # المستخدم، و`notes` ملاحظة داخلية. البيان هو اللي بيبان في كشف الحساب وعلى الإذن
     # المطبوع زي ما بيبان على الفاتورة بالظبط — وخانة واحدة تكفي هنا.
+    # **رقم الورقة اللي في إيده** — بيتحفظ **جنب** رقمنا، مش بداله.
+    #
+    # المستند عندنا رقمه بيتولّد بالتسلسل (`TRF-000050`)، والورقة اللي بيمضي عليها أمين
+    # المخزن عليها رقم تاني من دفتره. واللي بيدوّر بعد شهر بيدوّر برقم الورقة اللي في
+    # إيده — ومن غير الخانة دي مافيش طريق من الورقة للشاشة غير التاريخ والاسم.
+    #
+    # موجودة على الفواتير الأربعة من (030)؛ التحويل والأذون والسندات كانوا ناقصينها.
+    external_document_number: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, index=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     total_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     reverses_id: Mapped[int | None] = mapped_column(
