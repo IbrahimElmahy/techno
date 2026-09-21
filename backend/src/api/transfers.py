@@ -39,6 +39,18 @@ class TransferCreate(BaseModel):
     dest: LocationIn
     # (036) اليوم اللي البضاعة اتحركت فيه. مابيتبعتش ⇒ المستند بيقرا بتاريخ تسجيله.
     transfer_date: date | None = None
+    # (038) المستند كامل في نداء واحد — الترويسة وسطورها مع بعض.
+    #
+    # التطبيق كان بيكتب الترويسة وبعدين يبعت نداء لكل صنف. طلب فيه أربعين صنف = واحد
+    # وأربعين نداء، وأي واحد فيهم يقع على شبكة ضعيفة بيسيب على السيرفر **مستند ناقص**
+    # والطلب على الجهاز لسه مش متزامن — فالمزامنة اللي بعدها بتعمل مستند تاني ناقص.
+    # ده اللي المندوب شافه: الطلب مش واصل كامل، والاعتماد بيحرّك اللي وصل بس.
+    #
+    # فاضل مقبول إنها تكون فاضية: شاشة الويب بتعمل الترويسة الأول وبتضيف السطور من
+    # الشاشة، والنسخ القديمة من التطبيق برضه.
+    lines: list["LineIn"] = []
+    # رقم الجهاز. الإعادة بترجّع نفس المستند بدل ما تعمل واحد جديد.
+    client_uuid: str | None = None
 
 
 class TransferOut(BaseModel):
@@ -139,18 +151,36 @@ def create_transfer(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
+    # (038) نفس الطلب اتبعت تاني ⇒ نفس المستند يرجع. الاتصال بيقطع بعد ما السيرفر
+    # يكتب وقبل ما الرد يوصل، والتطبيق بيعيد — من غير الفحص ده الإعادة بتعمل مستند
+    # تاني بنفس البضاعة، والاعتماد بيحرّكها مرتين.
+    if body.client_uuid:
+        seen = db.scalar(select(StockTransfer)
+                         .where(StockTransfer.client_uuid == body.client_uuid)
+                         .options(selectinload(StockTransfer.lines)))
+        if seen is not None:
+            return _out(seen)
     try:
         t = transfer_service.initiate(
             db, item_id=body.item_id, quantity=body.quantity, route=body.route,
             source_kind=body.source.location_kind, source_id=body.source.location_id,
             dest_kind=body.dest.location_kind, dest_id=body.dest.location_id,
-            initiated_by=current.id, transfer_date=body.transfer_date)
+            initiated_by=current.id, transfer_date=body.transfer_date,
+            client_uuid=body.client_uuid)
+        # السطور جوّه نفس المعاملة: المستند بيوصل كامل أو مايوصلش. سطر واحد غلط
+        # بيرجّع المستند كله، والتطبيق بيفضل شايل الطلب ويعيد — بدل ما يسيب نُص طلب
+        # على السيرفر ويعتبر نفسه خلص.
+        for ln in body.lines:
+            transfer_service.add_line(db, transfer_id=t.id, item_id=ln.item_id,
+                                      quantity=ln.quantity, actor_user_id=current.id)
     except TransferError as exc:
         # Covers an illegal route, a non-positive quantity, same source/destination, and asking
         # for more than the source holds.
+        db.rollback()
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "transfer_invalid", "message": str(exc)})
     db.commit()
+    db.refresh(t)
     return _out(t)
 
 

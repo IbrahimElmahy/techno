@@ -452,6 +452,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
     ("sales_invoice", "client_uuid", "VARCHAR(64)"),
     ("voucher", "client_uuid", "VARCHAR(64)"),
+    # (038) ونفس الحكاية لإذن التحويل — الشرح في `models/transfer.py`.
+    ("stock_transfer", "client_uuid", "VARCHAR(64)"),
     # (032) مرتجع المبيعات بقى يتعكس زي مردود الشرا.
     ("sales_return", "reversed_at", "DATETIME"),
     ("sales_return", "reversal_entry_id", "BIGINT"),
@@ -732,6 +734,9 @@ _ADDED_CONSTRAINTS: list[tuple[str, str, tuple[str, ...]]] = [
     # (009) عهدة واحدة لكل (مندوب × خط). العمود `custody.family` بيتعمل في
     # `_ensure_columns` اللي بيجري قبل الدالة دي — القيد ده مالوش معنى من غيره.
     ("custody", "uq_custody_rep_family", ("rep_id", "family")),
+    # (038) إعادة رفع نفس الطلب من التطبيق بترجّع نفس المستند — القيد هو اللي بيضمنها
+    # لما نسختين من التطبيق تبعتوا في نفس اللحظة، مش الفحص اللي في الراوتر.
+    ("stock_transfer", "uq_stock_transfer_client_uuid", ("client_uuid",)),
 ]
 
 

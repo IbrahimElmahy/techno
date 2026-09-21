@@ -57,6 +57,17 @@ class StockTransfer(Base):
     # لفرع تاني بيفضل مقروء عند المصدر لأنه هو اللي صرفه.
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
+    # (038) رقم الجهاز للإذن — الرفع من التطبيق مابيكتبش نفس الطلب مرتين.
+    #
+    # الرفع كان بيتعمل على مراحل: المستند الأول وبعده سطر سطر بنداء لكل صنف. طلب فيه
+    # أربعين صنف = واحد وأربعين نداء على شبكة عربية، وأي واحد فيهم يقع بيرمي العملية
+    # كلها قبل ما الطلب يتعلّم إنه اترفع. المزامنة اللي بعدها بتبدأ من الأول فبتعمل
+    # **مستند تاني** ناقص، والأول ناقص برضه — وde اللي المندوب شافه: «الطلب مش واصل
+    # كامل»، والاعتماد بيحرّك اللي وصل بس.
+    #
+    # الرقم ده بيخلّي الإعادة ترجّع نفس المستند بدل ما تعمل واحد جديد، والسطور بقت
+    # بتتبعت مع الترويسة في نداء واحد — فالطلب بيوصل كامل أو مايوصلش.
+    client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
     initiated_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

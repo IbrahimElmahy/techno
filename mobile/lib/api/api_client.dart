@@ -547,9 +547,16 @@ class ApiClient {
   /// الإذن بيوصل السيرفر **معلّق** — المندوب بيطلب والمسؤول بيراجع ويعتمد أو يرفض. ده مش
   /// تفصيلة: المندوب مالوش صلاحية الاعتماد عن قصد، والسيرفر هو اللي بيمنعها مش الشاشة.
   ///
-  /// الإذن بيتكتب على مرحلتين — المستند الأول وبعده سطوره — لأن السيرفر كده. لو السطور
-  /// وقعت بعد ما المستند اتكتب، بيفضل إذن معلّق بسطر واحد على السيرفر: مرئي ومفهوم
-  /// وممكن يتعدّل أو يترفض، مش حاجة ضايعة.
+  /// **الطلب كله في نداء واحد.** كان بيتكتب على مراحل: الترويسة الأول وبعدين نداء
+  /// لكل صنف. طلب فيه أربعين صنف = واحد وأربعين نداء على شبكة عربية، وأي نداء فيهم
+  /// يقع بيرمي العملية قبل `markTransferSynced` — فبيفضل على السيرفر **مستند ناقص**،
+  /// والطلب على الجهاز لسه مش متزامن، والمزامنة اللي بعدها بتعمل مستند تاني ناقص.
+  /// ده اللي المندوب شافه: الطلب مش واصل كامل، والاعتماد بيحرّك اللي وصل بس.
+  ///
+  /// دلوقتي الترويسة وسطورها بيتبعتوا مع بعض، والسيرفر بيكتبهم في معاملة واحدة —
+  /// المستند بيوصل كامل أو مايوصلش. و`client_uuid` بيخلّي الإعادة ترجّع نفس المستند
+  /// بدل ما تعمل واحد جديد: الاتصال اللي بيقطع بعد ما السيرفر يكتب وقبل ما الرد يوصل
+  /// كان بيعمل نسختين من نفس البضاعة.
   Future<int> pushTransfers() async {
     final pending = await LocalDb.instance.transfers(synced: false);
     var sent = 0;
@@ -562,8 +569,10 @@ class ApiClient {
           .post(await _uri('/transfers'),
               headers: await _headers(),
               body: jsonEncode({
+                // الترويسة لسه شايلة أول صنف عشان النسخ القديمة من السيرفر —
+                // والسطور هي اللي الاعتماد بيمشي عليها.
                 'item_id': first['item_id'],
-                'quantity': first['quantity'],
+                'quantity': '${first['quantity']}',
                 'route': _routeFor(
                     '${t['source_kind']}', '${t['dest_kind']}'),
                 'source': {
@@ -576,8 +585,13 @@ class ApiClient {
                 },
                 // تاريخ الطلب زي ما المندوب كتبه. فاضي ⇒ السيرفر بيحط تاريخ اليوم.
                 'transfer_date': t['transfer_date'],
+                'client_uuid': t['client_uuid'],
+                'lines': [
+                  for (final l in lines)
+                    {'item_id': l['item_id'], 'quantity': '${l['quantity']}'},
+                ],
               }))
-          .timeout(const Duration(seconds: 60));
+          .timeout(const Duration(seconds: 90));
       if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
       if (r.statusCode != 200 && r.statusCode != 201) {
         throw ApiException(r.statusCode, 'إذن تحويل: ${_error(r)}');
@@ -585,15 +599,13 @@ class ApiClient {
       final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
       final serverId = body['id'] as int;
 
-      // كل الأصناف بتنزل كسطور — بما فيهم الأول. ترويسة المستند شايلة الأول عشان
-      // النسخ القديمة، والسطور هي اللي الاعتماد بيمشي عليها.
-      for (final l in lines) {
-        await http.post(await _uri('/transfers/$serverId/lines'),
-            headers: await _headers(),
-            body: jsonEncode({
-              'item_id': l['item_id'],
-              'quantity': '${l['quantity']}',
-            })).timeout(const Duration(seconds: 45));
+      // **الفحص بيقارن اللي رجع باللي اتبعت.** المستند اللي رجع ناقص سطور معناه إن
+      // حاجة غلط، والسكوت عليه بيقفل الطلب على الجهاز وهو ناقص — وده بالظبط اللي كان
+      // بيحصل. الاستثناء بيخلّي الطلب في الطابور لحد ما يوصل كامل.
+      final got = (body['lines'] as List?)?.length ?? 0;
+      if (got != lines.length) {
+        throw ApiException(
+            502, 'إذن تحويل: وصل $got صنف من ${lines.length} — الطلب لسه في الطابور');
       }
 
       await LocalDb.instance.markTransferSynced(
