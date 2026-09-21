@@ -48,6 +48,8 @@ from src.models.warehouse import Custody
 ZERO = Decimal("0")
 
 
+from src.lib import reporting  # noqa: E402  (دورة استيراد: التقرير بيقرا من هنا كمان)
+
 def _with_ids(link: str, ids) -> str:
     """الرابط ومعاه أرقام الصفوف — بيحترم `?` اللي فيه أصلاً."""
     ids = [int(i) for i in ids][:MAX_IDS]
@@ -232,6 +234,7 @@ def _last_sold(db: Session) -> dict[int, date]:
 
 
 def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
+                   branch_id: int | None = None,
                    now: datetime | None = None) -> Issue | None:
     """بضاعة راكدة — رصيد موجود ومحصلش عليه بيع من كذا شهر.
 
@@ -247,10 +250,20 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
     cutoff = (now.date() if isinstance(now, datetime) else now) - timedelta(days=days)
     last_sold = _last_sold(db)
 
+    # **وبمخازن الفرع اللي بيبص، زي التقرير بالظبط.**
+    #
+    # `reports/stagnant` بيتفلتر بفرع اللي فاتحه؛ الفحص هنا ماكانش بيتفلتر. فمدير فرع
+    # كان بيقرا «٤٣٣ صنف راكد» على الرئيسية، ويدوس «افتح» فيلاقي الكشف **فاضي** — لأن
+    # الرابط شايل أصناف فروع تانية هو أصلاً مش شايفها، والتقرير بيفلترها. رقمين لنفس
+    # السؤال، والرابط بينهم بيودّي على لا حاجة.
+    mine = reporting.branch_warehouse_ids(db, branch_id)
+
     # الرصيد بيتجمّع على الصنف كله: اللي في خمس مخازن صنف واحد، مش خمسة.
     held: dict[int, Decimal] = {}
-    for iid, kind, _lid, qty in on_hand:
+    for iid, kind, lid, qty in on_hand:
         if kind != LocationKind.warehouse.value or qty <= ZERO:
+            continue
+        if mine is not None and lid not in mine:
             continue
         held[iid] = held.get(iid, ZERO) + qty
 
@@ -683,7 +696,8 @@ def check_reps_without_store(db: Session) -> Issue | None:
     )
 
 
-def run_all(db: Session, *, now: datetime | None = None) -> dict:
+def run_all(db: Session, *, now: datetime | None = None,
+            branch_id: int | None = None) -> dict:
     """كل الفحوصات — والصفحة الفاضية إجابة برضه."""
     on_hand = _on_hand_by_location(db)
     labels = _item_labels(db)
@@ -692,7 +706,7 @@ def run_all(db: Session, *, now: datetime | None = None) -> dict:
     found: list[Issue | None] = [
         check_negative_stock(db, on_hand, labels, places),
         *check_reorder(db, on_hand, labels),
-        check_stagnant(db, on_hand, labels, now=now),
+        check_stagnant(db, on_hand, labels, now=now, branch_id=branch_id),
         check_items_without_price(db),
         check_items_without_category(db),
         check_min_over_max(db),
