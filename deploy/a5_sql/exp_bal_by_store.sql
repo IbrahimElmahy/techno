@@ -22,6 +22,16 @@ SET NOCOUNT ON;
 -- الكامل.
 --
 -- **وأول المدة (`AznType = 0`) داخل** — ده رصيد مش حركة، ومن غيره الأرقام بتبدأ من صفر.
+-- **الكمية = الوحدات + الكسر.** a5 بيكتب الكمية في عمودين: `n_count_unit` الوحدات
+-- الصحيحة، و`n_count_single` الباقي بالوحدة الصغيرة، و`item_units` معامل التحويل
+-- بينهم. الصنف اللي بالكيلو ومعامله ١٠٠٠ بيتكتب «١٩ و٢٥٠» يعني ١٩٫٢٥ كيلو.
+--
+-- التصدير كان بياخد `n_count_unit` وحده فالكسر كان بيضيع: فاتورة FC-S10780 دخلت
+-- عندنا ١٩ بينما إجماليها عند a5 ٢٬٠٩٨٫٢٥ = ١٩٫٢٥ × ١٠٩. قِسناها على ٧٬٨٤٧ سطر
+-- من غير خصم: الصيغة دي بتطابق الإجمالي في ٧٬٨٣٤ منهم، والقديمة في ٤٬٨٣١ بس.
+--
+-- والمشكلة في **فرع المصنع (السادات) وحده**: ٣٬٠٥٣ سطر فيهم كسر. العلياء وأكتوبر
+-- صفر — بيبيعوا بالقطعة.
 SELECT LTRIM(RTRIM(ISNULL(code,''))),
        REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(nm,''))),CHAR(13),' '),CHAR(10),' '),
        REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(store,''))),CHAR(13),' '),CHAR(10),' '),
@@ -29,28 +39,28 @@ SELECT LTRIM(RTRIM(ISNULL(code,''))),
 FROM (
     -- اللي مش تحويل: وزن كامل
     SELECT Item_cod AS code, Item_name AS nm, StoreIn_name AS store,
-           ISNULL(n_count_unit,0) AS qty
+           CAST(ISNULL(n_count_unit,0) + ISNULL(ISNULL(n_count_single,0) / NULLIF(item_units,0), 0) AS DECIMAL(18,4)) AS qty
       FROM AzonDt
      WHERE ISNULL(AznType,0) <> 6 AND ISNULL(StoreIn_name,'') <> ''
     UNION ALL
-    SELECT Item_cod, Item_name, StoreOut_name, -ISNULL(n_count_unit,0)
+    SELECT Item_cod, Item_name, StoreOut_name, -CAST(ISNULL(n_count_unit,0) + ISNULL(ISNULL(n_count_single,0) / NULLIF(item_units,0), 0) AS DECIMAL(18,4))
       FROM AzonDt
      WHERE ISNULL(AznType,0) <> 6 AND ISNULL(StoreOut_name,'') <> ''
     UNION ALL
     -- التحويل: الصف المتطابق بيتطوي مع توأمه، والمفرد بياخد وزنه كامل
     SELECT Item_cod, Item_name, StoreIn_name,
-           SUM(ISNULL(n_count_unit,0)) / COUNT(*)
+           SUM(CAST(ISNULL(n_count_unit,0) + ISNULL(ISNULL(n_count_single,0) / NULLIF(item_units,0), 0) AS DECIMAL(18,4))) / COUNT(*)
       FROM AzonDt
      WHERE ISNULL(AznType,0) = 6 AND ISNULL(StoreIn_name,'') <> ''
      GROUP BY Azn_id, Item_cod, Item_name, StoreIn_name, StoreOut_name,
-              ISNULL(n_count_unit,0)
+              CAST(ISNULL(n_count_unit,0) + ISNULL(ISNULL(n_count_single,0) / NULLIF(item_units,0), 0) AS DECIMAL(18,4))
     UNION ALL
     SELECT Item_cod, Item_name, StoreOut_name,
-           -SUM(ISNULL(n_count_unit,0)) / COUNT(*)
+           -SUM(CAST(ISNULL(n_count_unit,0) + ISNULL(ISNULL(n_count_single,0) / NULLIF(item_units,0), 0) AS DECIMAL(18,4))) / COUNT(*)
       FROM AzonDt
      WHERE ISNULL(AznType,0) = 6 AND ISNULL(StoreOut_name,'') <> ''
      GROUP BY Azn_id, Item_cod, Item_name, StoreIn_name, StoreOut_name,
-              ISNULL(n_count_unit,0)
+              CAST(ISNULL(n_count_unit,0) + ISNULL(ISNULL(n_count_single,0) / NULLIF(item_units,0), 0) AS DECIMAL(18,4))
 ) x
 GROUP BY LTRIM(RTRIM(ISNULL(code,''))),
          REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(nm,''))),CHAR(13),' '),CHAR(10),' '),
