@@ -84,6 +84,23 @@ export default function Manufacturing() {
     return (id: number) => m.get(id)?.name ?? `#${id}`;
   }, [rawMaterials, products]);
 
+  /**
+   * وحدة الصنف — **الرقم لوحده مش كمية**.
+   *
+   * «٥٠» في ورقة تصنيع ممكن تكون خمسين قطعة أو خمسين كيلو، والفرق بينهم هو الفرق بين
+   * تشغيلة صح وتشغيلة غلط. الشاشة كانت بتكتب الرقم مجرّد في كل مكان، واللي بيقرا
+   * بيفتح كارت الصنف عشان يعرف هو بيعدّ إيه.
+   *
+   * وبتيجي من الصنف نفسه، مش من السطر: سطر الأمر عنده `unit` (الوحدة اللي اتكتب
+   * بيها) بس الكميات كلها متخزّنة بالوحدة الأساسية بعد الضرب في المعامل — فعرض وحدة
+   * السطر جنب رقم أساسي بيقول حاجة غلط.
+   */
+  const itemUnit = useMemo(() => {
+    const m = new Map<number, string>();
+    [...rawMaterials, ...products].forEach((i) => m.set(i.id, i.unit_of_measure || ''));
+    return (id: number) => m.get(id) || '';
+  }, [rawMaterials, products]);
+
   const whName = useMemo(() => {
     const m = new Map<number, Warehouse>();
     warehouses.forEach((w) => m.set(w.id, w));
@@ -130,8 +147,8 @@ export default function Manufacturing() {
           children: (
             <ProductionOrdersTab
               products={products} rawMaterials={rawMaterials} warehouses={warehouses}
-              branches={branches} boms={boms} itemName={itemName} whName={whName}
-              active={tab === 'orders'}
+              branches={branches} boms={boms} itemName={itemName} itemUnit={itemUnit}
+              whName={whName} active={tab === 'orders'}
             />
           ),
         },
@@ -674,6 +691,16 @@ function POFlow({ state }: { state: POState }) {
 
 const num = (v: string | number) => Number(v).toLocaleString(numeralsLocale());
 
+/** كمية ومعاها وحدتها. الوحدة أصغر وأخفت — الرقم هو اللي بيتقرا، وهي بتقول بيعدّ إيه. */
+function Qty({ value, unit }: { value: string | number; unit?: string }) {
+  return (
+    <span>
+      {num(value)}
+      {unit ? <span style={{ fontSize: '0.85em', opacity: 0.6 }}>{' '}{unit}</span> : null}
+    </span>
+  );
+}
+
 /**
  * الفرق بين المفروض واللي حصل. **الصفر في «المفروض» معناه مافيش خطة متسجّلة** — زي
  * الأوامر المنقولة من a5، المصدر فيه اللي اتصرف بس — فبنقول «—» بدل ما نعرض الكمية
@@ -742,11 +769,12 @@ const poPaper = (r: { external_document_number: string | null }) => {
 };
 
 function ProductionOrdersTab({
-  products, rawMaterials, warehouses, branches, boms, itemName, whName, active,
+  products, rawMaterials, warehouses, branches, boms, itemName, itemUnit, whName, active,
 }: {
   products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
   branches: { id: number; name: string }[]; boms: Bom[];
   itemName: (id: number) => string;
+  itemUnit: (id: number) => string;
   whName: (id: number | null | undefined) => string;
   /** التبويب ده هو الظاهر دلوقتي — بيتمرّر لـ`useDocRoute` كـ`enabled`.
    *
@@ -1096,18 +1124,24 @@ function ProductionOrdersTab({
     // **المخطّط واللي طلع في خانة واحدة.** ده السؤال اللي الورقة موجودة عشانه، وكان
     // لازم تفتح صف الأمر عشان تشوفه. المنقول من a5 مالوش خطة متسجّلة فبيقول الكمية بس.
     { title: 'المخطّط / اللي طلع', key: 'pq', width: 170,
-      render: (_: any, r: ProductionOrder) => (
-        Number(r.planned_quantity) ? (
+      render: (_: any, r: ProductionOrder) => {
+        // وحدة المنتج الأول — الورقة اللي فيها أكتر من منتج بوحدات مختلفة مجموعها
+        // مالوش وحدة واحدة، فبتتساب بدل ما نكتب وحدة غلط على رقم مجمّع.
+        const u = r.products.length === 1 ? itemUnit(r.products[0].item_id) : '';
+        return Number(r.planned_quantity) ? (
           <Space size={6}>
             <span style={{ opacity: 0.6 }}>{num(r.planned_quantity)}</span>
             <span style={{ opacity: 0.45 }}>←</span>
-            <strong>{num(r.product_quantity)}</strong>
+            <strong><Qty value={r.product_quantity} unit={u} /></strong>
             <Variance planned={r.planned_quantity} actual={r.product_quantity} />
           </Space>
-        ) : <strong>{num(r.product_quantity)}</strong>
-      ) },
+        ) : <strong><Qty value={r.product_quantity} unit={u} /></strong>;
+      } },
     { title: 'كمية الخامات', dataIndex: 'material_quantity', key: 'mq', width: 120,
-      render: (q: string) => num(q) },
+      render: (_: any, r: ProductionOrder) => {
+        const us = new Set(r.materials.map((m) => itemUnit(m.item_id)).filter(Boolean));
+        return <Qty value={r.material_quantity} unit={us.size === 1 ? [...us][0] : ''} />;
+      } },
     { title: 'قيمة الخامات', dataIndex: 'material_cost', key: 'mc', width: 125,
       render: (v: string, r: ProductionOrder) => noMoney(r, v) },
     { title: 'مصاريف', dataIndex: 'expense_amount', key: 'ex', width: 105,
@@ -1218,6 +1252,8 @@ function ProductionOrdersTab({
                 columns={[
                   { title: 'الصنف', key: 'n', render: (_: any, p: POProduct) => itemName(p.item_id) },
                   { title: 'المخزن', dataIndex: 'warehouse_id', render: (w: number | null) => whName(w) },
+                  { title: 'الوحدة', key: 'u', width: 80,
+                    render: (_: any, p: POProduct) => itemUnit(p.item_id) || '—' },
                   { title: 'المفروض', dataIndex: 'planned_quantity',
                     render: (q: string) => (Number(q) ? num(q) : '—') },
                   { title: 'اللي طلع', dataIndex: 'quantity', render: (q: string) => num(q) },
@@ -1233,7 +1269,8 @@ function ProductionOrdersTab({
                 ]} />
 
               <StatsRow gutter={16} style={{ margin: '12px 0' }}>
-                <Col span={6}><Statistic title="كمية المنتج" value={num(r.product_quantity)} /></Col>
+                <Col span={6}><Statistic title="كمية المنتج" value={num(r.product_quantity)}
+                  suffix={r.products.length === 1 ? itemUnit(r.products[0].item_id) : ''} /></Col>
                 <Col span={6}><Statistic title="كمية الخامات" value={num(r.material_quantity)} /></Col>
                 <Col span={6}><Statistic title="قيمة الخامات" value={noMoney(r, r.material_cost)} /></Col>
                 <Col span={6}><Statistic title="مصاريف" value={noMoney(r, r.expense_amount)} /></Col>
@@ -1250,6 +1287,8 @@ function ProductionOrdersTab({
                       return p ? itemName(p.item_id) : '—';
                     } },
                   { title: 'المخزن', dataIndex: 'warehouse_id', render: (w: number | null) => whName(w) },
+                  { title: 'الوحدة', key: 'u', width: 80,
+                    render: (_: any, m: POMaterial) => itemUnit(m.item_id) || '—' },
                   { title: 'المفروض', dataIndex: 'planned_quantity',
                     render: (q: string) => (Number(q) ? num(q) : '—') },
                   { title: 'اللي اتصرف', dataIndex: 'quantity', render: (q: string) => num(q) },
@@ -1361,7 +1400,9 @@ function ProductionOrdersTab({
                   محدش يعرف هيطلع كام، والرقمين جنب بعض كانوا بيتكتبوا نفس الرقم مرتين
                   فالفرق يطلع صفر على طول ورقم الإنتاج يضيع. بيتكتب عند الإقفال. */}
               <Col span={4}>
+                {/* الوحدة جنب الخانة — اللي بيكتب «٥٠» لازم يشوف هو بيكتب قطع ولا كيلو. */}
                 <InputNumber style={{ width: '100%' }} min={0.001} placeholder="الكمية المطلوبة"
+                  addonAfter={ln.item_id ? itemUnit(ln.item_id) || undefined : undefined}
                   value={ln.planned_quantity as any}
                   onChange={(v) => patchLine(ln.key, { planned_quantity: v as any }, 'qty')} />
               </Col>
@@ -1393,6 +1434,7 @@ function ProductionOrdersTab({
                 </Col>
                 <Col span={3}>
                   <InputNumber style={{ width: '100%' }} min={0} placeholder="المفروض"
+                    addonAfter={m.item_id ? itemUnit(m.item_id) || undefined : undefined}
                     value={m.planned_quantity as any}
                     onChange={(v) => patchMaterial(ln.key, m.key, {
                       planned_quantity: v as any,
@@ -1462,10 +1504,11 @@ function ProductionOrdersTab({
           <Row key={p.id} gutter={8} align="middle" style={{ marginBottom: 10 }}>
             <Col span={11}>{itemName(p.item_id)}</Col>
             <Col span={5} style={{ opacity: 0.65 }}>
-              المطلوب {num(p.planned_quantity)}
+              المطلوب <Qty value={p.planned_quantity} unit={itemUnit(p.item_id)} />
             </Col>
             <Col span={5}>
               <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
+                addonAfter={itemUnit(p.item_id) || undefined}
                 value={outputs[p.id] as any}
                 onChange={(v) => setOutputs((o) => ({ ...o, [p.id]: v as any }))} />
             </Col>
