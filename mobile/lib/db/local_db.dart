@@ -361,10 +361,6 @@ class LocalDb {
     final d = await db;
     final where = <String>[];
     final args = <Object?>[];
-    if (query.isNotEmpty) {
-      where.add('name LIKE ?');
-      args.add('%$query%');
-    }
     final types = (customerTypes ?? const <String>[])
         .where((t) => t.trim().isNotEmpty)
         .toList();
@@ -372,12 +368,21 @@ class LocalDb {
       where.add('customer_type IN (${List.filled(types.length, '?').join(',')})');
       args.addAll(types);
     }
+    // **البحث بالاسم بيحصل في دارت وحده — مافيش `LIKE` على الاسم الخام.**
+    //
+    // كان `name LIKE '%q%'` في الاستعلام وبعده ترشيح بالاسم الموحَّد في دارت.
+    // والترتيب ده بيلغي الترشيح التاني قبل ما يشتغل: `LIKE` بتاعة sqlite بتقارن
+    // الحروف زي ما هي، فـ«احمد» مابتلاقيش «أحمد» و«محمود» مابتلاقيش «فنى محمود
+    // ناصر» لو الاسم متكتب بشكل تاني — الصف بيتشال من النتيجة **قبل** ما `bare`
+    // تشوفه. و`limit * 5` كانت بتوسّع العيّنة بس، مابتصلّحش القاعدة.
+    //
+    // الجدول ده كاش محلي لعملاء مندوب واحد (مئات، مش ملايين)، فقراءته كاملة
+    // والترشيح فوقه أرخص من عمود موحَّد بمهاجرة — وبيخلّي قاعدة البحث في مكان واحد
+    // هو نفسه اللي بيرتّب (`bare`)، زي الخادم والويب بالظبط.
     final rows = await d.query('customer',
         where: where.isEmpty ? null : where.join(' AND '),
         whereArgs: where.isEmpty ? null : args,
-        // بنجيب أكتر من المطلوب لأن الترتيب والترشيح النهائي بيحصلوا تحت على
-        // الاسم الموحَّد — و`LIKE` بتاعة sqlite مابتعرفش الهمزة ولا التاء المربوطة.
-        orderBy: 'name', limit: query.isEmpty ? limit : limit * 5);
+        orderBy: 'name', limit: query.isEmpty ? limit : null);
     var out = rows.map(_customerFromRow).toList();
     if (query.isNotEmpty) {
       // **«احمد» لازم تلاقي «أحمد»، و«محمود» تلاقي «فنى محمود ناصر».**

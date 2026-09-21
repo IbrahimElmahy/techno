@@ -14,6 +14,7 @@ import 'day_summary_screen.dart';
 import 'my_stock_screen.dart';
 import 'price_sheets_screen.dart';
 import 'transfers_review_screen.dart';
+import 'receipts_review_screen.dart';
 import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
 import 'review_screen.dart';
@@ -32,6 +33,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _pending = 0;
   /// فواتير لسه على الجهاز — بتبان في نفس مكان المعاينات المستنية.
   int _pendingSales = 0;
+  /// وسندات القبض اللي لسه في الطابور — نفس الحكاية.
+  int _pendingReceipts = 0;
 
   @override
   void initState() {
@@ -61,11 +64,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final u = await LocalDb.instance.getKv('username') ?? '';
     final p = await LocalDb.instance.pendingCount();
     final ps = await LocalDb.instance.pendingSalesCount();
+    final pr = await LocalDb.instance.pendingReceiptsCount();
     if (mounted) {
       setState(() {
         _username = u;
         _pending = p;
         _pendingSales = ps;
+        _pendingReceipts = pr;
       });
     }
   }
@@ -224,6 +229,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const CollectCashScreen()));
+                      _refresh();
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  // **«تحصيلاتي» جنب «تحصيل من عميل»، زي «فواتيري» جنب الفاتورة.**
+                  //
+                  // السند بيتكتب عند العميل وبيترفع لما الشبكة ترجع، ومحدش كان
+                  // بيشوف الطابور: سند يقعد يومين على الجهاز والعميل في الدفاتر
+                  // لسه عليه فلوس هو دفعها. والمندوب نفسه ماكانش عنده حتة تقول له
+                  // «حصّلت كام النهارده».
+                  _BigAction(
+                    icon: Icons.receipt_long_outlined,
+                    color: AppColors.accent,
+                    title: 'تحصيلاتي',
+                    subtitle: _pendingReceipts > 0
+                        ? '$_pendingReceipts سند لسه ما اترفعش'
+                        : 'سندات القبض المسجلة على الجهاز',
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const ReceiptsReviewScreen()));
                       _refresh();
                     },
                   ),

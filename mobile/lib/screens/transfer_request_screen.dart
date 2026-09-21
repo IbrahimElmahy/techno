@@ -423,9 +423,17 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
               child: Center(child: Text('مافيش أصناف على الطلب لسه')),
             )
           else
-            for (final l in _lines)
+            // **الترقيم على السطر.** الطلب اللي فيه أربعين صنف بيتقري بالتليفون
+            // ويتقال في التليفون: «السطر رقم ١٢ خلّيه ٢٠». من غير رقم، اللي
+            // بيراجع بيعدّ بصباعه على الشاشة في كل مرة — وبيغلط. نفس الترقيم
+            // اللي في الويب على الفاتورة والإذن والمردود.
+            for (final (n, l) in _lines.indexed)
               Card(
                 child: ListTile(
+                  leading: Text('${n + 1}',
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700,
+                          color: Colors.black54)),
                   title: Text(l.item.name),
                   // «المتاح عندك» بيتكتب لما المصدر عربيته هو. الصنف الجاي من
                   // مخزن رصيده مش نازل على الجهاز — وصفر مكتوب تحت اسمه بيقرا
