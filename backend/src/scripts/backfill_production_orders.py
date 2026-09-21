@@ -81,10 +81,16 @@ def run(*, execute: bool) -> None:
             groups[work_order_ref(op.document_number)].append(
                 (op, mv_date or (mv_created.date() if mv_created else None)))
 
+        # **الموجود بيتقاس برقمنا مش برقم الورقة.** كان بيتقاس بـ
+        # `external_document_number`، وده بقى رقم a5 المجرّد (٣٥٣٧) بعد ما اتصلّح —
+        # والمفتاح اللي بنجمّع بيه هنا `FC-MFG-3537`. المقارنة بينهم كانت هتقول
+        # «مافيش حاجة اتعملت» وتكرّر الـ٢٠٢ أمر كلهم. `document_number` مشتق من نفس
+        # المفتاح بالحرف، فهو اللي بيتقاس بيه.
         done = {d for (d,) in db.execute(
-            select(ProductionOrder.external_document_number)
+            select(ProductionOrder.document_number)
             .where(ProductionOrder.imported_from == SOURCE)).all()}
-        todo = {k: v for k, v in groups.items() if k not in done}
+        todo = {k: v for k, v in groups.items()
+                if f"WO-{SOURCE.upper()}-{k}"[:24] not in done}
 
         n_prod = sum(1 for op, _ in (ln for v in todo.values() for ln in v)
                      if op.op_type == ManufactureOpType.produce)
@@ -116,7 +122,15 @@ def run(*, execute: bool) -> None:
                 # أرقام الشغل الجديد ولا بتخلّي أول أمر يتكتب بإيد يبدأ من ٣٥٣٨.
                 document_number=f"WO-{SOURCE.upper()}-{ref}"[:24],
                 production_date=when, branch_id=branch,
-                external_document_number=ref[:40], imported_from=SOURCE,
+                # **الورقة اللي في إيدهم رقمها «٣٥٣٧»، مش «FC-MFG-3537».**
+                #
+                # `external_document_number` معناه «رقم المستند عند صاحبه» — واللي
+                # بيدوّر على أمر شغل بيدوّر بالرقم اللي على الورقة اللي في المصنع.
+                # `FC-MFG-3537` رقم من تلفيقنا إحنا: بادئة فرع وكلمة MFG حطّيناهم
+                # عشان نرقّم العمليات، ومالهمش وجود عندهم. فالمخزّن هنا هو **آخر
+                # مقطع** — رقم أمر التشغيل في a5 (`EntgRef`) زي ما هو.
+                external_document_number=ref.rsplit("-", 1)[-1][:40],
+                imported_from=SOURCE,
                 state=ProductionState.done,
                 statement1="منقول من a5 — بغير تكلفة",
                 material_cost=ZERO, expense_amount=ZERO, total_cost=ZERO,
