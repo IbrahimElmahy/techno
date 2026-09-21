@@ -730,6 +730,23 @@ def confirm_production_order(
     return _po_out(order, production_order_service.reversed_ids(db))
 
 
+@router.post("/production-orders/{order_id}/start", response_model=POOut)
+def start_production_order(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    """مؤكد ← شغّال. ولا حركة مخزون — الشرح في `ProductionState`."""
+    _seen_po(db, order_id, current)
+    try:
+        order = production_order_service.start_order(
+            db, order_id=order_id, actor_user_id=current.id)
+    except ProductionOrderError as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
 @router.post("/production-orders/{order_id}/execute", response_model=POOut)
 def execute_production_order(
     order_id: int,

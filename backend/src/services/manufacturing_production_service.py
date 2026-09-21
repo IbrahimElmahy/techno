@@ -231,13 +231,20 @@ def create_order(
 
 
 def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **header) -> ProductionOrder:
-    """يعيد كتابة مسودة. **المسودة بس** — المنفّذ اتحرّك مخزون عليه، والتعديل فوقه
-    معناه حركة مكتوبة على ورقة بتقول حاجة تانية. اللي عايز يغيّره بيعكسه ويكتب غيره."""
+    """يعيد كتابة الأمر اللي لسه ماترحّلش. **المنفّذ لأ** — اتحرّك مخزون عليه، والتعديل
+    فوقه معناه حركة مكتوبة على ورقة بتقول حاجة تانية. اللي عايز يغيّره بيعكسه ويكتب غيره.
+
+    **والشغّال بيتعدّل وبيفضل شغّال.** ده الغرض منه أصلاً: الكميات الفعلية والفاقد
+    بيتكتبوا وهما بيحصلوا. رجوعه لمسودة كان معناه إن اللي بيسجّل نص تشغيلة بيرمي
+    الورقة بره الأرض ويطلب تأكيد تاني على شغل ماشي قدامه.
+    """
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
-    if order.state not in (ProductionState.draft, ProductionState.confirmed):
+    if order.state not in (ProductionState.draft, ProductionState.confirmed,
+                           ProductionState.in_progress):
         raise ProductionOrderError("الأمر المنفّذ مايتعدّلش — اعكسه واكتب غيره.")
+    was_running = order.state == ProductionState.in_progress
     for field in ("production_date", "branch_id", "external_document_number",
                   "statement1", "notes", "reviewed"):
         if field in header:
@@ -248,7 +255,11 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
         db.delete(line)
     db.flush()
     _build_lines(db, order, products)
-    order.state = ProductionState.draft
+    # المؤكد اللي اتعدّل بيرجع مسودة — المراجعة اتعملت على أرقام اتغيّرت. والشغّال
+    # بيفضل مكانه للسبب المكتوب فوق.
+    order.state = ProductionState.in_progress if was_running else ProductionState.draft
+    if not was_running:
+        order.reviewed = False
     audit_service.record(db, action="production_order.update", actor_user_id=actor_user_id,
                          entity_type="production_order", entity_id=order.id)
     return order
@@ -269,6 +280,27 @@ def confirm_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
     return order
 
 
+def start_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
+    """مؤكد ← شغّال: الورقة نزلت الأرض. **ولا حركة مخزون بتتكتب هنا.**
+
+    الفصل بين «اتراجعت» و«ماشية دلوقتي» هو اللي بيخلّي المشرف يعرف إيه اللي على
+    الماكينة من غير ما يسأل، وهو كمان المكان اللي الكميات الفعلية والفاقد بيتسجّلوا
+    فيه — قبل ما الورقة تتقفل وتتحوّل لذاكرة.
+    """
+    order = db.get(ProductionOrder, order_id)
+    if order is None:
+        raise ProductionOrderError("أمر التشغيل مش موجود.")
+    if order.imported_from is not None:
+        raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
+    if order.state != ProductionState.confirmed:
+        raise ProductionOrderError("التشغيل بيبدأ من الأمر المؤكد بس.")
+    order.state = ProductionState.in_progress
+    db.flush()
+    audit_service.record(db, action="production_order.start", actor_user_id=actor_user_id,
+                         entity_type="production_order", entity_id=order.id)
+    return order
+
+
 def execute_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
     """مؤكد ← منفّذ: بيصرف كل خامة من مخزنها وبيضيف كل منتج لمخزنه، والتكلفة بتتجمّد.
 
@@ -280,7 +312,8 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
         raise ProductionOrderError("أمر التشغيل مش موجود.")
     if order.imported_from is not None:
         raise ProductionOrderError("الأمر المنقول من a5 اتنفّذ في نظامهم — مايترحّلش تاني.")
-    if order.state not in (ProductionState.draft, ProductionState.confirmed):
+    if order.state not in (ProductionState.draft, ProductionState.confirmed,
+                           ProductionState.in_progress):
         raise ProductionOrderError("الأمر ده اترحّل قبل كده.")
 
     # المتوسط بيتقرا مرة واحدة لكل الأصناف — النداء جوّه اللفة بيبقى استعلام لكل سطر.

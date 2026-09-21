@@ -724,6 +724,10 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     # الجديدة وهي واصلة، والشاشة بتقول «تعذّر تسجيل طلب التحويل» من غير سبب مفهوم.
     ("stock_transfer", "route",
      "ENUM('central_to_branch','central_to_rep','rep_to_rep','rep_to_central')"),
+    # حالة «شغّال» في أمر التشغيل. `production_order.state` نوع ENUM أصلي في Postgres،
+    # فالقيمة الجديدة بتترفض عند القاعدة قبل ما توصل — «ابدأ التشغيل» كان هيقع بـ500.
+    ("production_order", "state",
+     "ENUM('draft','confirmed','in_progress','done','reversed')"),
     # خصم نقط المعاينة ورجوعها. `point_record.kind` ENUM أصلي في Postgres، والقيمة الجديدة
     # بتترفض عند القاعدة قبل ما توصل — قبول المعاينة كان هيقع بـ500 على السيرفر وهو ماشي
     # محلياً، لأن SQLite بيخزّن الـEnum نص من غير قيد.

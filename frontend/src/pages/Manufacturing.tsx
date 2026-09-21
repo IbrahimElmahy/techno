@@ -2,13 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
-  BuildOutlined,
+  BuildOutlined, PlayCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -611,7 +611,7 @@ function WastageTab({
  * التنفيذ، والواجهة عندها `purchase_price` وهو رقم تاني — فمعاينة بيه كانت هتقول رقم
  * والورقة تطلع برقم غيره.
  */
-type POState = 'draft' | 'confirmed' | 'done' | 'reversed';
+type POState = 'draft' | 'confirmed' | 'in_progress' | 'done' | 'reversed';
 
 interface POMaterial {
   id: number; product_line_id: number | null; item_id: number; warehouse_id: number | null;
@@ -636,9 +636,41 @@ interface ProductionOrder {
 const PO_STATE_TAG: Record<POState, { color: string; label: string }> = {
   draft: { color: 'default', label: 'مسودة' },
   confirmed: { color: 'blue', label: 'مؤكد' },
+  in_progress: { color: 'processing', label: 'شغّال' },
   done: { color: 'green', label: 'منفّذ' },
   reversed: { color: 'red', label: 'معكوس' },
 };
+
+/** خط سير الورقة — نفس ترتيب `ProductionState` على السيرفر. */
+const PO_FLOW: POState[] = ['draft', 'confirmed', 'in_progress', 'done'];
+
+/**
+ * شريط الحالة فوق الورقة — **اللي بيفتح أمر شغل لازم يعرف هو فين قبل ما يقرا رقم**.
+ *
+ * الحالة كانت وسم واحد في آخر عمود في الكشف، فاللي بيفتح الورقة مايعرفش إيه اللي
+ * فات وإيه اللي جاي — ولا إن «مؤكد» قدامها خطوة تانية أصلاً. الشريط بيقول التلاتة
+ * مع بعض: اللي عدّى، اللي إحنا فيه، واللي ناقص.
+ *
+ * والمعكوس مش مرحلة في الخط — هو نهاية تانية خالص — فبيتقال لوحده.
+ */
+function POFlow({ state }: { state: POState }) {
+  if (state === 'reversed') {
+    return (
+      <Tag color="red" style={{ marginInlineEnd: 0 }}>
+        اتعكس — الحركات المرآة اتكتبت والسطور فضلت في السجل
+      </Tag>
+    );
+  }
+  const at = PO_FLOW.indexOf(state);
+  return (
+    <Steps
+      size="small" current={at < 0 ? 0 : at}
+      status={state === 'done' ? 'finish' : 'process'}
+      items={PO_FLOW.map((k) => ({ title: PO_STATE_TAG[k].label }))}
+      style={{ maxWidth: 560 }}
+    />
+  );
+}
 
 const num = (v: string | number) => Number(v).toLocaleString(numeralsLocale());
 
@@ -882,7 +914,7 @@ function ProductionOrdersTab({
     } catch (err) { console.error(err); } finally { setSaving(false); }
   };
 
-  const act = async (r: ProductionOrder, verb: 'confirm' | 'execute', done: string) => {
+  const act = async (r: ProductionOrder, verb: 'confirm' | 'start' | 'execute', done: string) => {
     try {
       await api.post(`/api/v1/manufacturing/production-orders/${r.id}/${verb}`);
       message.success(done);
@@ -940,8 +972,19 @@ function ProductionOrdersTab({
       render: (_: any, r: ProductionOrder) => branchName(r.branch_id) },
     { title: 'المنتجات', key: 'np', width: 85,
       render: (_: any, r: ProductionOrder) => r.products.length },
-    { title: 'كمية المنتج', dataIndex: 'product_quantity', key: 'pq', width: 115,
-      render: (q: string) => num(q) },
+    // **المخطّط واللي طلع في خانة واحدة.** ده السؤال اللي الورقة موجودة عشانه، وكان
+    // لازم تفتح صف الأمر عشان تشوفه. المنقول من a5 مالوش خطة متسجّلة فبيقول الكمية بس.
+    { title: 'المخطّط / اللي طلع', key: 'pq', width: 170,
+      render: (_: any, r: ProductionOrder) => (
+        Number(r.planned_quantity) ? (
+          <Space size={6}>
+            <span style={{ opacity: 0.6 }}>{num(r.planned_quantity)}</span>
+            <span style={{ opacity: 0.45 }}>←</span>
+            <strong>{num(r.product_quantity)}</strong>
+            <Variance planned={r.planned_quantity} actual={r.product_quantity} />
+          </Space>
+        ) : <strong>{num(r.product_quantity)}</strong>
+      ) },
     { title: 'كمية الخامات', dataIndex: 'material_quantity', key: 'mq', width: 120,
       render: (q: string) => num(q) },
     { title: 'قيمة الخامات', dataIndex: 'material_cost', key: 'mc', width: 125,
@@ -980,9 +1023,25 @@ function ProductionOrdersTab({
               <>
                 <Button type="link" size="small" icon={<EditOutlined />}
                   onClick={() => openEdit(r)}>تعديل</Button>
+                {/* **الخطوة الطبيعية من المؤكد هي «ابدأ»، مش «رحّل».** فهي `primary`
+                    والترحيل بيفضل موجود لواحد بيسجّل تشغيلة خلصت خلاص. */}
+                <Button type="link" size="small" icon={<PlayCircleOutlined />}
+                  onClick={() => act(r, 'start', 'الأمر بقى شغّال — سجّل الكميات وهي بتحصل')}>
+                  ابدأ التشغيل
+                </Button>
                 <Button type="link" size="small"
                   onClick={() => act(r, 'execute', 'اتنفّذ الأمر: اتصرفت الخامات واتضاف الإنتاج')}>
                   تنفيذ وترحيل
+                </Button>
+              </>
+            )}
+            {r.state === 'in_progress' && (
+              <>
+                <Button type="link" size="small" icon={<EditOutlined />}
+                  onClick={() => openEdit(r)}>سجّل اللي حصل</Button>
+                <Button type="link" size="small"
+                  onClick={() => act(r, 'execute', 'اتنفّذ الأمر: اتصرفت الخامات واتضاف الإنتاج')}>
+                  إقفال وترحيل
                 </Button>
               </>
             )}
@@ -1031,6 +1090,14 @@ function ProductionOrdersTab({
         expandable={{
           expandedRowRender: (r: ProductionOrder) => (
             <div>
+              {/* **شريط الحالة فوق الورقة، قبل أي جدول.** اللي بيفتح أمر شغل أول سؤال
+                  عنده «هو فين؟» — والإجابة كانت وسم في آخر عمود في الكشف ورا عشر خانات
+                  أرقام. والأمر المنقول مالوش خط سير عندنا: هو خلص في a5 قبل ما يوصلنا. */}
+              <div style={{ marginBottom: 14 }}>
+                {r.imported_from
+                  ? <Tag color="gold">منقول من a5 — خلص في نظامهم، مالوش خط سير عندنا</Tag>
+                  : <POFlow state={r.state} />}
+              </div>
               <Divider orientation="right" style={{ margin: '4px 0 8px' }}>الإنتاج التام</Divider>
               <Table size="small" pagination={false} rowKey="id" dataSource={r.products}
                 columns={[
