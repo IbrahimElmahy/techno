@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from src.core.money import to_money, to_qty
 from src.models.catalog import Item, ItemKind, ItemPrice
+from src.models.customer import Customer
 from src.models.ledger import Account, AccountType, LedgerEntry, LedgerLine
 from src.services import ledger_service
 from src.models.sales import SalesInvoice, SalesInvoiceLine
@@ -110,6 +111,124 @@ class Issue:
     ids: list[int] = field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# عزل الفروع — الفحص بيقول للّي بيبصّ اللي **هو** يقدر يصلّحه
+# ---------------------------------------------------------------------------
+#
+# **اللي كشفه.** مدير فرع العلياء بيفتح الرئيسية فيلاقي «رصيد سالب» على أصناف
+# `FC-` (المصنع) و«فواتير بنودها من غير تكلفة» على `FC-S…`. مستندات مش بتاعته،
+# وشاشتها بترفض تفتحها له أصلاً — يعني الفحص بيوريه خلل مايقدرش يوصله ولا يصلّحه.
+#
+# ودي مش مضايقة شكلية: التقرير اللي فيه صفوف اللي بيقراه ماينفعش يعمل حاجة فيها
+# **بيتوقف عن القراية**. `check_stagnant` وحده هو اللي كان متعزل، ولسبب كان أوضح
+# (الرقم على الرئيسية مايطابقش الكشف) — والباقي كان لسه مفتوح.
+#
+# **والقاعدة هي نفسها في كل حتة: `branch_scope`** — اللي مالوش فرع بيشوف الكل، واللي
+# له فرع بيشوف فرعه **ومعاه الصفوف اللي فرعها فاضي** (الداتا القديمة قبل العزل).
+#
+# **وكل نوع بيتعزل من الحتة اللي بتخصّه فعلاً:**
+#
+# | الصف | فرعه منين |
+# |---|---|
+# | حركة مخزون · حجز | المخزن اللي فيه (`Warehouse.branch_id`) |
+# | عهدة | المندوب صاحبها (`User.branch_id`) |
+# | فاتورة · طلب · خزنة · عميل · قيد · حساب | عمود `branch_id` عليها |
+# | شيك | خزنته (`Cheque.treasury_id` → `Treasury.branch_id`) |
+# | صنف | **اتحرّك في مخزن مين** — الكتالوج مشترك ومافيش عليه عمود فرع |
+#
+# والصنف ده الاستثناء الوحيد اللي محتاج شرح: جدول `item` مالوش `branch_id`، والأصناف
+# بعد النقل بقت بأمر الواقع بتاعة فرع (`FC-` للمصنع و`AL-` للعلياء). التقسيم بالكود
+# كان هيبقى قاعدة مكتوبة في نص حرف، فالقاعدة بقت **الحركة**: الصنف اللي اتحرّك في
+# مخزن الفرع بتاعه. واللي مااتحركش في أي مكان بيفضل ظاهر للكل — زي `branch_id` الفاضي
+# بالظبط.
+#
+# **والفحوصات اللي مالهاش عزل مافيش.** كلها بتاخد `scope`، واللي مالوش دعوة بالفرع
+# بيسيبه — عشان الفحص الجاي يتكتب وهو شايف السؤال ده قدامه.
+
+
+@dataclass(frozen=True)
+class Scope:
+    """نطاق اللي بيبصّ. `everything` معناها مدير نظام أو حساب مركزي."""
+
+    branch_id: int | None = None
+    warehouses: frozenset[int] | None = None
+    custodies: frozenset[int] | None = None
+    items: frozenset[int] | None = None
+    treasuries: frozenset[int] | None = None
+
+    @property
+    def everything(self) -> bool:
+        return self.branch_id is None
+
+    def row(self, branch_id) -> bool:
+        """قاعدة `branch_scope` على صف عنده عمود فرع: فرعي، أو فرعه فاضي."""
+        return self.everything or branch_id is None or branch_id == self.branch_id
+
+    def place(self, kind, location_id: int) -> bool:
+        """مكان مخزون — مخزن أو عهدة."""
+        if self.everything:
+            return True
+        k = getattr(kind, "value", kind)
+        if k == LocationKind.warehouse.value:
+            return self.warehouses is None or location_id in self.warehouses
+        if k == LocationKind.custody.value:
+            return self.custodies is None or location_id in self.custodies
+        return True
+
+    def item(self, item_id: int) -> bool:
+        return self.everything or self.items is None or item_id in self.items
+
+
+def _scope(db: Session, branch_id: int | None, on_hand) -> Scope:
+    """بيبني النطاق مرة واحدة — استعلامين زيادة مش أكتر، والباقي من `on_hand`."""
+    if branch_id is None:
+        return Scope()
+    from src.models.warehouse import Warehouse
+
+    wh = {w.id for w in db.scalars(
+        select(Warehouse).where(
+            (Warehouse.branch_id == branch_id) | (Warehouse.branch_id.is_(None)))).all()}
+    reps = {u.id for u in db.scalars(
+        select(User).where((User.branch_id == branch_id) | (User.branch_id.is_(None)))).all()}
+    cust = {c.id for c in db.scalars(select(Custody)).all() if c.rep_id in reps}
+    tre = {t.id for t in db.scalars(select(Treasury)).all()
+           if t.branch_id in (None, branch_id)}
+
+    # **الصنف بيتبع مكان حركته.** واللي مالوش حركة خالص بيفضل مشترك: صنف في
+    # الكتالوج ومااتحركش في أي فرع مش بتاع حد، وإخفاؤه بيخلّي «منتج من غير سعر»
+    # ساكت عن أصناف محدش شافها.
+    moved: dict[int, set] = {}
+    for iid, kind, lid, _q in on_hand:
+        moved.setdefault(iid, set()).add((getattr(kind, "value", kind), lid))
+    mine_items = set()
+    for iid, places in moved.items():
+        for k, lid in places:
+            if (k == LocationKind.warehouse.value and lid in wh) or (
+                    k == LocationKind.custody.value and lid in cust):
+                mine_items.add(iid)
+                break
+    all_items = {row.id for row in db.execute(select(Item.id)).all()}
+    mine_items |= (all_items - set(moved))
+
+    return Scope(branch_id=branch_id, warehouses=frozenset(wh),
+                 custodies=frozenset(cust), items=frozenset(mine_items),
+                 treasuries=frozenset(tre))
+
+
+def _branch_sql(model, scope: Scope | None):
+    """شرط الفرع جوّه الاستعلام نفسه — مش فلترة بعد الجلب.
+
+    الفحوصات دي بتجمّع في SQL (`GROUP BY` على آلاف الفواتير)، والفلترة بعدها معناها
+    إن العدّ نفسه اتحسب على الشركة كلها وبعدين اتقصّ — يعني كل شغل الاستعلام اتعمل
+    على داتا هتترمي، والصفحة دي بتشتغل مع كل فتحة للرئيسية.
+    """
+    from sqlalchemy import or_, true
+
+    if scope is None or scope.everything:
+        return true()
+    return or_(model.branch_id == scope.branch_id, model.branch_id.is_(None))
+
+
 def _on_hand_by_location(db: Session) -> list[tuple[int, str, int, Decimal]]:
     """الرصيد لكل صنف في كل مكان — استعلام واحد."""
     signed = func.sum(case(
@@ -156,7 +275,8 @@ def _location_labels(db: Session) -> dict[tuple[str, int], str]:
 # المخزون — الأرقام اللي بتبقى غلط فعلاً
 # ---------------------------------------------------------------------------
 
-def check_negative_stock(db: Session, on_hand, labels, places=None) -> Issue | None:
+def check_negative_stock(db: Session, on_hand, labels, places=None,
+                         scope: Scope | None = None) -> Issue | None:
     """رصيد سالب.
 
     The invariant the whole system is built on (Principle XI): no item is negative anywhere, ever.
@@ -164,7 +284,9 @@ def check_negative_stock(db: Session, on_hand, labels, places=None) -> Issue | N
     not have them, so every cost, every valuation and every availability check downstream of that
     location is now computed from a quantity that never existed.
     """
-    bad = [(iid, kind, lid, qty) for iid, kind, lid, qty in on_hand if qty < ZERO]
+    sc = scope or Scope()
+    bad = [(iid, kind, lid, qty) for iid, kind, lid, qty in on_hand
+           if qty < ZERO and sc.place(kind, lid)]
     if not bad:
         return None
     return Issue(
@@ -183,15 +305,25 @@ def check_negative_stock(db: Session, on_hand, labels, places=None) -> Issue | N
     )
 
 
-def check_reorder(db: Session, on_hand, labels) -> list[Issue]:
-    """تحت الحد الأدنى / فوق الحد الأقصى — الحدود اللي الشركة نفسها حطتها (011)."""
+def check_reorder(db: Session, on_hand, labels, scope: Scope | None = None) -> list[Issue]:
+    """تحت الحد الأدنى / فوق الحد الأقصى — الحدود اللي الشركة نفسها حطتها (011).
+
+    **والرصيد بيتجمّع من أماكن الفرع وحدها.** الحد الأدنى على الصنف رقم واحد للشركة،
+    بس اللي بيقرا الفحص بيشتري لفرعه — فجمع بضاعة فرع تاني معاه بيقول «عندك كفاية»
+    والرف عنده فاضي.
+    """
+    sc = scope or Scope()
     totals: dict[int, Decimal] = {}
-    for iid, _kind, _lid, qty in on_hand:
+    for iid, kind, lid, qty in on_hand:
+        if not sc.place(kind, lid):
+            continue
         totals[iid] = totals.get(iid, ZERO) + qty
 
     below, above = [], []
     for item in db.scalars(select(Item).where(Item.active.is_(True))).all():
         if item.min_stock is None and item.max_stock is None:
+            continue
+        if not sc.item(item.id):
             continue
         have = totals.get(item.id, ZERO)
         if item.min_stock is not None and have < to_qty(item.min_stock):
@@ -234,7 +366,7 @@ def _last_sold(db: Session) -> dict[int, date]:
 
 
 def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
-                   branch_id: int | None = None,
+                   branch_id: int | None = None, scope: Scope | None = None,
                    now: datetime | None = None) -> Issue | None:
     """بضاعة راكدة — رصيد موجود ومحصلش عليه بيع من كذا شهر.
 
@@ -291,7 +423,7 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
 # المنتجات — الحقول الناقصة اللي بتخلي أرقام تانية غلط
 # ---------------------------------------------------------------------------
 
-def check_items_without_price(db: Session) -> Issue | None:
+def check_items_without_price(db: Session, scope: Scope | None = None) -> Issue | None:
     """منتج من غير سعر بيع — لا على الصنف ولا على أي شريحة.
 
     Not pedantry about a blank field: this is the number the invoice line reaches for. An item with
@@ -305,7 +437,7 @@ def check_items_without_price(db: Session) -> Issue | None:
             select(Item).where(Item.active.is_(True), Item.kind == ItemKind.product,
                                Item.sale_price.is_(None))
         ).all()
-        if i.id not in tiered
+        if i.id not in tiered and (scope or Scope()).item(i.id)
     ]
     if not rows:
         return None
@@ -317,7 +449,7 @@ def check_items_without_price(db: Session) -> Issue | None:
     )
 
 
-def check_items_without_category(db: Session) -> Issue | None:
+def check_items_without_category(db: Session, scope: Scope | None = None) -> Issue | None:
     """صنف من غير فئة — بيقع من كل تقرير وفلتر بيتقسّم بالفئة."""
     rows = [
         {"label": f"{i.code} — {i.name}", "detail": "مش تحت أي فئة"}
@@ -325,6 +457,7 @@ def check_items_without_category(db: Session) -> Issue | None:
             select(Item).where(Item.active.is_(True),
                                (Item.category.is_(None)) | (Item.category == ""))
         ).all()
+        if (scope or Scope()).item(i.id)
     ]
     if not rows:
         return None
@@ -336,7 +469,7 @@ def check_items_without_category(db: Session) -> Issue | None:
     )
 
 
-def check_min_over_max(db: Session) -> Issue | None:
+def check_min_over_max(db: Session, scope: Scope | None = None) -> Issue | None:
     """حد أدنى أكبر من الحد الأقصى — الصنف تحت وفوق في نفس الوقت."""
     rows = [
         {"label": f"{i.code} — {i.name}",
@@ -345,7 +478,7 @@ def check_min_over_max(db: Session) -> Issue | None:
             select(Item).where(Item.active.is_(True),
                                Item.min_stock.is_not(None), Item.max_stock.is_not(None))
         ).all()
-        if to_qty(i.min_stock) > to_qty(i.max_stock)
+        if to_qty(i.min_stock) > to_qty(i.max_stock) and (scope or Scope()).item(i.id)
     ]
     if not rows:
         return None
@@ -361,7 +494,7 @@ def check_min_over_max(db: Session) -> Issue | None:
 # فواتير العملاء
 # ---------------------------------------------------------------------------
 
-def check_invoice_lines_without_cost(db: Session) -> Issue | None:
+def check_invoice_lines_without_cost(db: Session, scope: Scope | None = None) -> Issue | None:
     """بنود اتباعت من غير تكلفة محفوظة — الربح عليها مش معروف.
 
     Cost is frozen onto the line when the invoice is written (030) so that past profit never moves.
@@ -372,6 +505,7 @@ def check_invoice_lines_without_cost(db: Session) -> Issue | None:
         select(SalesInvoice.id, SalesInvoice.document_number, func.count(SalesInvoiceLine.id))
         .join(SalesInvoiceLine, SalesInvoiceLine.invoice_id == SalesInvoice.id)
         .where(SalesInvoiceLine.unit_cost.is_(None))
+        .where(_branch_sql(SalesInvoice, scope))
         .group_by(SalesInvoice.id, SalesInvoice.document_number)
     ).all()
     if not rows:
@@ -388,7 +522,7 @@ def check_invoice_lines_without_cost(db: Session) -> Issue | None:
     )
 
 
-def check_empty_invoices(db: Session) -> Issue | None:
+def check_empty_invoices(db: Session, scope: Scope | None = None) -> Issue | None:
     """فاتورة من غير بنود — مستند بيقول باع ومش قايل باع إيه.
 
     **وفاتورة الكوبونات مش منها.** تسليم دفاتر الكوبونات للتاجر بيتكتب فاتورة بضاعتها
@@ -404,6 +538,7 @@ def check_empty_invoices(db: Session) -> Issue | None:
         select(SalesInvoice.id, SalesInvoice.document_number, SalesInvoice.net)
         .outerjoin(SalesInvoiceLine, SalesInvoiceLine.invoice_id == SalesInvoice.id)
         .where(SalesInvoice.id.not_in(with_coupons))
+        .where(_branch_sql(SalesInvoice, scope))
         .group_by(SalesInvoice.id, SalesInvoice.document_number, SalesInvoice.net)
         .having(func.count(SalesInvoiceLine.id) == 0)
     ).all()
@@ -424,7 +559,7 @@ def check_empty_invoices(db: Session) -> Issue | None:
 # الحسابات والفلوس
 # ---------------------------------------------------------------------------
 
-def check_unbalanced_entries(db: Session) -> Issue | None:
+def check_unbalanced_entries(db: Session, scope: Scope | None = None) -> Issue | None:
     """قيد مدينه مش قد دائنه — القاعدة الوحيدة اللي القيد المزدوج قايم عليها."""
     debit = func.sum(case((LedgerLine.direction == "debit", LedgerLine.amount), else_=0))
     credit = func.sum(case((LedgerLine.direction == "credit", LedgerLine.amount), else_=0))
@@ -433,6 +568,7 @@ def check_unbalanced_entries(db: Session) -> Issue | None:
         # المسودة ناقصة عن قصد — الفحص ده للمرحّل بس، وإلا كل مسودة بتطلع «قيد غير متوازن».
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(ledger_service.is_posted_sql())
+        .where(_branch_sql(LedgerEntry, scope))
         .group_by(LedgerLine.entry_id)
         .having(debit != credit)
     ).all()
@@ -449,7 +585,7 @@ def check_unbalanced_entries(db: Session) -> Issue | None:
     )
 
 
-def check_accounts_without_nature(db: Session) -> Issue | None:
+def check_accounts_without_nature(db: Session, scope: Scope | None = None) -> Issue | None:
     """حساب عليه رصيد ومالوش طبيعة — بيسقط من الميزانية في صمت.
 
     الميزانية بتصنّف كل حساب من `nature`، ولو فاضية بتقع على خريطة النوع. والنوع
@@ -470,6 +606,8 @@ def check_accounts_without_nature(db: Session) -> Issue | None:
         .join(LedgerLine, LedgerLine.account_id == Account.id)
         .where(Account.nature.is_(None),
                Account.account_type == AccountType.user_defined)
+        # كل فرع عنده شجرة حسابات كاملة — فالحساب ده فرعه على الحساب نفسه.
+        .where(_branch_sql(Account, scope))
         .group_by(Account.id, Account.code, Account.name)
     ).all()
     bad = [(i, c, n, b) for i, c, n, b in rows if abs(to_money(b or 0)) > Decimal("0.005")]
@@ -492,7 +630,7 @@ def check_accounts_without_nature(db: Session) -> Issue | None:
     )
 
 
-def check_negative_treasuries(db: Session) -> Issue | None:
+def check_negative_treasuries(db: Session, scope: Scope | None = None) -> Issue | None:
     """خزنة برصيد سالب — مفيش خزنة بتطلع أكتر من اللي فيها."""
     signed = case(
         (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
@@ -511,7 +649,9 @@ def check_negative_treasuries(db: Session) -> Issue | None:
     }
     rows = [
         {"label": t.name, "detail": f"الرصيد {_money(balances.get(t.account_id, ZERO))}"}
-        for t in db.scalars(select(Treasury).where(Treasury.active.is_(True))).all()
+        for t in db.scalars(select(Treasury)
+                            .where(Treasury.active.is_(True),
+                                   _branch_sql(Treasury, scope))).all()
         if balances.get(t.account_id, ZERO) < ZERO
     ]
     if not rows:
@@ -524,7 +664,7 @@ def check_negative_treasuries(db: Session) -> Issue | None:
     )
 
 
-def check_duplicate_customers(db: Session) -> Issue | None:
+def check_duplicate_customers(db: Session, scope: Scope | None = None) -> Issue | None:
     """عميل واحد في ملفين — «تكنو فلان» و«فلان».
 
     Two files means two balances, and neither one is what he owes.
@@ -533,6 +673,15 @@ def check_duplicate_customers(db: Session) -> Issue | None:
 
     plan = customer_merge_service.apply(db, dry_run=True)
     pairs = plan.get("pairs", [])
+    # **الخدمة بتدوّر على الشركة كلها عن قصد** — العميل المكرر ممكن يكون ملفه
+    # الأصلي في فرع والتاني في فرع تاني، والدمج قرار مركزي. اللي بيتفلتر هنا هو
+    # اللي بيتقال للّي بيبصّ: الزوج اللي ولا طرف فيه من فرعه مالوش عنده.
+    sc = scope or Scope()
+    if not sc.everything:
+        mine = {c.id for c in db.scalars(select(Customer)).all() if sc.row(c.branch_id)}
+        pairs = [p for p in pairs
+                 if (p.get("keep") or {}).get("id") in mine
+                 or (p.get("merge") or {}).get("id") in mine]
     if not pairs:
         return None
     return Issue(
@@ -554,7 +703,8 @@ def check_duplicate_customers(db: Session) -> Issue | None:
 # reports that nobody would think to go looking for: the point of putting them here is that each is
 # a deadline the company itself set and the data has quietly passed.
 
-def check_overdue_cheques(db: Session, *, now: datetime | None = None) -> Issue | None:
+def check_overdue_cheques(db: Session, *, scope: Scope | None = None,
+                          now: datetime | None = None) -> Issue | None:
     """شيكات فات استحقاقها وهي لسه تحت التحصيل — فلوس المفروض دخلت وماحدش سأل.
 
     A cheque past its due date and still `pending` is money the company is owed on a date that has
@@ -564,12 +714,17 @@ def check_overdue_cheques(db: Session, *, now: datetime | None = None) -> Issue 
     from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
 
     today = (now or datetime.utcnow()).date()
-    rows = db.execute(
-        select(Cheque.document_number, Cheque.cheque_number, Cheque.amount,
-               Cheque.due_date, Cheque.direction)
-        .where(Cheque.status == ChequeStatus.pending, Cheque.due_date < today)
-        .order_by(Cheque.due_date)
-    ).all()
+    # **الشيك مالوش عمود فرع — فرعه خزنته.** الشيك بيتسجّل على خزنة، والخزنة
+    # بتخصّ فرع. والشيك اللي مالوش خزنة بيفضل ظاهر للكل: نفس قاعدة `branch_id`
+    # الفاضي، ومحدش أولى بيه من حد.
+    sc = scope or Scope()
+    stmt = (select(Cheque.document_number, Cheque.cheque_number, Cheque.amount,
+                   Cheque.due_date, Cheque.direction)
+            .where(Cheque.status == ChequeStatus.pending, Cheque.due_date < today))
+    if not sc.everything and sc.treasuries is not None:
+        stmt = stmt.where((Cheque.treasury_id.is_(None))
+                          | (Cheque.treasury_id.in_(sc.treasuries)))
+    rows = db.execute(stmt.order_by(Cheque.due_date)).all()
     if not rows:
         return None
     total = sum((to_money(r.amount) for r in rows), ZERO)
@@ -587,7 +742,8 @@ def check_overdue_cheques(db: Session, *, now: datetime | None = None) -> Issue 
     )
 
 
-def check_expired_reservations(db: Session, *, now: datetime | None = None) -> Issue | None:
+def check_expired_reservations(db: Session, *, scope: Scope | None = None,
+                               now: datetime | None = None) -> Issue | None:
     """حجوزات سارية فات ميعادها — بضاعة محجوزة لحد محدش بيسأل عنه.
 
     An expired hold still subtracts from what the sales screen says is available, so the stock is
@@ -596,12 +752,15 @@ def check_expired_reservations(db: Session, *, now: datetime | None = None) -> I
     from src.models.reservation import Reservation, ReservationStatus
 
     today = (now or datetime.utcnow()).date()
-    rows = db.execute(
-        select(Reservation.document_number, Reservation.quantity, Reservation.expires_on)
+    # الحجز بيمسك بضاعة في مكان — فمكانه هو فرعه، زي حركة المخزون بالظبط.
+    sc = scope or Scope()
+    rows = [r for r in db.execute(
+        select(Reservation.document_number, Reservation.quantity, Reservation.expires_on,
+               Reservation.location_kind, Reservation.location_id)
         .where(Reservation.status == ReservationStatus.active,
                Reservation.expires_on < today)
         .order_by(Reservation.expires_on)
-    ).all()
+    ).all() if sc.place(r.location_kind, r.location_id)]
     if not rows:
         return None
     return Issue(
@@ -616,7 +775,8 @@ def check_expired_reservations(db: Session, *, now: datetime | None = None) -> I
     )
 
 
-def check_late_orders(db: Session, *, now: datetime | None = None) -> Issue | None:
+def check_late_orders(db: Session, *, scope: Scope | None = None,
+                      now: datetime | None = None) -> Issue | None:
     """طلبات مفتوحة فات ميعاد تسليمها."""
     from src.models.trade_order import OrderStatus, TradeOrder
 
@@ -626,6 +786,7 @@ def check_late_orders(db: Session, *, now: datetime | None = None) -> Issue | No
                TradeOrder.kind)
         .where(TradeOrder.status == OrderStatus.open,
                TradeOrder.due_date.is_not(None), TradeOrder.due_date < today)
+        .where(_branch_sql(TradeOrder, scope))
         .order_by(TradeOrder.due_date)
     ).all()
     if not rows:
@@ -644,7 +805,7 @@ def check_late_orders(db: Session, *, now: datetime | None = None) -> Issue | No
 
 # ---------------------------------------------------------------------------
 
-def check_reps_without_store(db: Session) -> Issue | None:
+def check_reps_without_store(db: Session, scope: Scope | None = None) -> Issue | None:
     """مندوب مالوش مخزن ولا عهدة — مايقدرش يبيع أصلاً.
 
     البيع من تطبيق المندوب بيخرج بضاعة من مكانه هو، وبيقيّد الفلوس اللي حصّلها في عهدته.
@@ -656,7 +817,8 @@ def check_reps_without_store(db: Session) -> Issue | None:
     """
     reps = db.scalars(
         select(User).where(User.role_id.in_(
-            select(Role.id).where(Role.name == RoleName.sales_rep)))
+            select(Role.id).where(Role.name == RoleName.sales_rep)),
+            _branch_sql(User, scope))
     ).all()
     if not reps:
         return None
@@ -702,24 +864,26 @@ def run_all(db: Session, *, now: datetime | None = None,
     on_hand = _on_hand_by_location(db)
     labels = _item_labels(db)
     places = _location_labels(db)
+    # نطاق واحد بيتبني مرة، وكل فحص بيقرا منه — مش كل فحص بيسأل عن الفرع لوحده.
+    sc = _scope(db, branch_id, on_hand)
 
     found: list[Issue | None] = [
-        check_negative_stock(db, on_hand, labels, places),
-        *check_reorder(db, on_hand, labels),
-        check_stagnant(db, on_hand, labels, now=now, branch_id=branch_id),
-        check_items_without_price(db),
-        check_items_without_category(db),
-        check_min_over_max(db),
-        check_invoice_lines_without_cost(db),
-        check_empty_invoices(db),
-        check_unbalanced_entries(db),
-        check_negative_treasuries(db),
-        check_accounts_without_nature(db),
-        check_duplicate_customers(db),
-        check_overdue_cheques(db, now=now),
-        check_expired_reservations(db, now=now),
-        check_late_orders(db, now=now),
-        check_reps_without_store(db),
+        check_negative_stock(db, on_hand, labels, places, scope=sc),
+        *check_reorder(db, on_hand, labels, scope=sc),
+        check_stagnant(db, on_hand, labels, now=now, branch_id=branch_id, scope=sc),
+        check_items_without_price(db, scope=sc),
+        check_items_without_category(db, scope=sc),
+        check_min_over_max(db, scope=sc),
+        check_invoice_lines_without_cost(db, scope=sc),
+        check_empty_invoices(db, scope=sc),
+        check_unbalanced_entries(db, scope=sc),
+        check_negative_treasuries(db, scope=sc),
+        check_accounts_without_nature(db, scope=sc),
+        check_duplicate_customers(db, scope=sc),
+        check_overdue_cheques(db, now=now, scope=sc),
+        check_expired_reservations(db, now=now, scope=sc),
+        check_late_orders(db, now=now, scope=sc),
+        check_reps_without_store(db, scope=sc),
     ]
     issues = [i for i in found if i is not None]
     issues.sort(key=lambda i: (SEVERITY_ORDER.get(i.severity, 9), -i.count))
@@ -736,4 +900,4 @@ def run_all(db: Session, *, now: datetime | None = None,
     }
 
 
-__all__ = ["Issue", "run_all"]
+__all__ = ["Issue", "Scope", "run_all"]
