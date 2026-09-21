@@ -18,7 +18,7 @@ from src.lib import arabic
 from src.models.catalog import Item, ItemKind, ItemPrice, ItemPriceHistory, PriceTier
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
 from src.models.sales import SalesInvoice, SalesInvoiceLine
-from src.models.stock import StockDirection, StockMovement
+from src.models.stock import LocationKind, StockDirection, StockMovement
 
 
 class ItemProfileError(Exception):
@@ -200,7 +200,40 @@ def _location_names(db: Session) -> dict[tuple[str, int], str]:
     return out
 
 
-def balance(db: Session, item_id: int) -> dict:
+def _branch_warehouses(db: Session, branch_id: int | None) -> set[int] | None:
+    """مخازن الفرع — أو `None` لما مافيش حصر."""
+    if branch_id is None:
+        return None
+    from src.models.warehouse import Warehouse
+
+    return {w.id for w in db.scalars(
+        select(Warehouse).where((Warehouse.branch_id == branch_id)
+                                | (Warehouse.branch_id.is_(None)))).all()}
+
+
+def _only_mine(stmt, mine: set[int] | None):
+    """حركة مخزون في أماكن الفرع.
+
+    **والعهدة بتعدّي زي ما هي.** العهدة مالهاش `branch_id`، وربطها بالمندوب بيضيف
+    استعلامين على صفحة بتتفتح كتير — وهي أصلاً بتتفلتر في شاشتها. اللي كان بيتسرّب
+    هنا هو المخزن.
+    """
+    if mine is None:
+        return stmt
+    return stmt.where((StockMovement.location_kind != LocationKind.warehouse)
+                      | (StockMovement.location_id.in_(mine)))
+
+
+def _doc_mine(model, branch_id: int | None):
+    """شرط الفرع على مستند — أو `TRUE` لما مافيش حصر."""
+    from sqlalchemy import true
+
+    if branch_id is None:
+        return true()
+    return or_(model.branch_id == branch_id, model.branch_id.is_(None))
+
+
+def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
     """One item's prices and its quantity in EVERY stock location — the stock-enquiry screen.
 
     Deliberately lean next to `profile`: a storekeeper flicking through items wants the numbers
@@ -217,19 +250,26 @@ def balance(db: Session, item_id: int) -> dict:
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
     )
+    mine = _branch_warehouses(db, branch_id)
     held = {
         (kind if isinstance(kind, str) else kind.value, loc_id): _qty(q)
         for kind, loc_id, q in db.execute(
-            select(StockMovement.location_kind, StockMovement.location_id,
-                   func.coalesce(func.sum(signed), 0))
-            .where(StockMovement.item_id == item_id)
+            _only_mine(select(StockMovement.location_kind, StockMovement.location_id,
+                              func.coalesce(func.sum(signed), 0))
+                       .where(StockMovement.item_id == item_id), mine)
             .group_by(StockMovement.location_kind, StockMovement.location_id)
         ).all()
     }
     names = _location_names(db)
 
+    # **ومخازن الفرع وحدها في الكشف.** الشاشة دي بتعدّد كل مكان حتى الفاضي — عشان
+    # «المخزن ده مافيهوش» تبقى إجابة — فالكشف الكامل كان بيسمّي مخازن فروع تانية
+    # وكمياتها لواحد مش شايفها في أي شاشة تانية.
     locations: list[dict] = []
-    for w in db.scalars(select(Warehouse).order_by(Warehouse.id)).all():
+    wh_stmt = select(Warehouse)
+    if mine is not None:
+        wh_stmt = wh_stmt.where(Warehouse.id.in_(mine))
+    for w in db.scalars(wh_stmt.order_by(Warehouse.id)).all():
         locations.append({
             "kind": "warehouse", "id": w.id, "name": w.name,
             "quantity": str(held.get(("warehouse", w.id), ZERO_QTY)),
@@ -250,19 +290,23 @@ def balance(db: Session, item_id: int) -> dict:
         select(SalesInvoiceLine.unit_price)
         .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
         .where(SalesInvoiceLine.item_id == item_id)
+        .where(_doc_mine(SalesInvoice, branch_id))
         .order_by(SalesInvoice.id.desc()).limit(1)
     )
     last_purchase = db.scalar(
         select(PurchaseInvoiceLine.unit_price)
         .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
         .where(PurchaseInvoiceLine.item_id == item_id)
+        .where(_doc_mine(PurchaseInvoice, branch_id))
         .order_by(PurchaseInvoice.id.desc()).limit(1)
     )
     # "Average" here is the average cost actually paid, which is what a valuation is read against.
     bought_qty, bought_value = db.execute(
         select(func.coalesce(func.sum(PurchaseInvoiceLine.quantity), 0),
                func.coalesce(func.sum(PurchaseInvoiceLine.line_total), 0))
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
         .where(PurchaseInvoiceLine.item_id == item_id)
+        .where(_doc_mine(PurchaseInvoice, branch_id))
     ).one()
     bought_qty = _qty(bought_qty)
 
@@ -284,12 +328,24 @@ def balance(db: Session, item_id: int) -> dict:
     }
 
 
-def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
+def profile(db: Session, item_id: int, *, limit: int = 200,
+            branch_id: int | None = None) -> Profile:
+    """ملف الصنف — **وبفرع اللي بيقرا**.
+
+    **الكتالوج مشترك، وتاريخ الصنف لأ.** الصفحة دي كانت بترجّع لمدير فرع العلياء
+    رصيد مخازن المصنع، و٦٤ فاتورة بيع بأسماء عملاء المصنع وأسعار بيعهم، و١٣ فاتورة
+    شرا بأسعار التكلفة، و١٨٣ حركة مخزون — كل ده من كارت صنف عادي، وهو مش قادر يفتح
+    ولا مستند منهم من شاشته.
+
+    فالصنف نفسه بيفضل مشترك (مافيش عمود فرع على `item`)، واللي بيتفلتر **تاريخه**:
+    الحركة بمخزنها، والفاتورة بفرعها.
+    """
     item = db.get(Item, item_id)
     if item is None:
         raise ItemProfileError("الصنف غير موجود.")
 
     names = _location_names(db)
+    mine = _branch_warehouses(db, branch_id)
 
     # --- stock, per location and in total ---
     signed = case(
@@ -297,9 +353,9 @@ def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
         else_=-StockMovement.quantity,
     )
     per_location = db.execute(
-        select(StockMovement.location_kind, StockMovement.location_id,
-               func.coalesce(func.sum(signed), 0))
-        .where(StockMovement.item_id == item_id)
+        _only_mine(select(StockMovement.location_kind, StockMovement.location_id,
+                          func.coalesce(func.sum(signed), 0))
+                   .where(StockMovement.item_id == item_id), mine)
         .group_by(StockMovement.location_kind, StockMovement.location_id)
     ).all()
     stock_rows = []
@@ -321,6 +377,7 @@ def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
         select(SalesInvoiceLine, SalesInvoice)
         .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
         .where(SalesInvoiceLine.item_id == item_id)
+        .where(_doc_mine(SalesInvoice, branch_id))
         .order_by(SalesInvoice.id.desc()).limit(limit)
     ).all()
     customer_names = _customer_names(db, [inv.customer_id for _, inv in sale_rows])
@@ -341,7 +398,9 @@ def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
     sold_qty, sold_value = db.execute(
         select(func.coalesce(func.sum(SalesInvoiceLine.quantity), 0),
                func.coalesce(func.sum(SalesInvoiceLine.line_total), 0))
+        .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
         .where(SalesInvoiceLine.item_id == item_id)
+        .where(_doc_mine(SalesInvoice, branch_id))
     ).one()
 
     # --- purchases of this item ---
@@ -349,6 +408,7 @@ def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
         select(PurchaseInvoiceLine, PurchaseInvoice)
         .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
         .where(PurchaseInvoiceLine.item_id == item_id)
+        .where(_doc_mine(PurchaseInvoice, branch_id))
         .order_by(PurchaseInvoice.id.desc()).limit(limit)
     ).all()
     supplier_names = _supplier_names(db, [inv.supplier_id for _, inv in purchase_rows])
@@ -368,7 +428,9 @@ def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
     bought_qty, bought_value = db.execute(
         select(func.coalesce(func.sum(PurchaseInvoiceLine.quantity), 0),
                func.coalesce(func.sum(PurchaseInvoiceLine.line_total), 0))
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
         .where(PurchaseInvoiceLine.item_id == item_id)
+        .where(_doc_mine(PurchaseInvoice, branch_id))
     ).one()
 
     # --- every stock movement, newest first ---
@@ -386,7 +448,7 @@ def profile(db: Session, item_id: int, *, limit: int = 200) -> Profile:
             "is_reversal": m.reverses_movement_id is not None,
         }
         for m in db.scalars(
-            select(StockMovement).where(StockMovement.item_id == item_id)
+            _only_mine(select(StockMovement).where(StockMovement.item_id == item_id), mine)
             .order_by(StockMovement.id.desc()).limit(limit)
         ).all()
     ]

@@ -69,7 +69,7 @@ def _item_names(db: Session) -> dict[int, str]:
 
 
 # --- reports ---------------------------------------------------------------
-def _op_batches(db: Session, product_id: int | None):
+def _op_batches(db: Session, product_id: int | None, branch_id: int | None = None):
     """الإنتاج اللي اتسجّل **عمليات** مش أوامر — مجمّع في دفعات زي ما حصل.
 
     **مش كل إنتاج بيجي من أمر تصنيع.** النقل من a5 بيسجّل `ManufacturingOp` لكل سطر
@@ -86,9 +86,17 @@ def _op_batches(db: Session, product_id: int | None):
     """
     from src.models.manufacturing import ManufactureOpType, ManufacturingOp
 
+    # **والعملية بتتبع مخزنها.** `ManufacturingOp` مالهاش عمود فرع — هي سطر حركة
+    # مش مستند — فالفرع بييجي من المكان اللي البضاعة اتحرّكت فيه، زي كل تقرير مخزون.
+    # ومن غير ده كان تقرير الإنتاج بيرجّع نفس الـ٢٠٢ دفعة لكل فرع مهما كان فرعه:
+    # الأوامر اتفلترت والدفعات لأ، والدفعات هي كل اللي في الجدول أصلاً.
     stmt = (select(ManufacturingOp, StockMovement.movement_date, StockMovement.created_at)
             .join(StockMovement, StockMovement.id == ManufacturingOp.stock_movement_id)
             .where(ManufacturingOp.reverses_op_id.is_(None)))
+    mine = branch_warehouse_ids(db, branch_id)
+    if mine is not None:
+        stmt = stmt.where(ManufacturingOp.location_kind == LocationKind.warehouse,
+                          ManufacturingOp.location_id.in_(mine))
     batches: dict[str, dict] = {}
     for op, mv_date, mv_created in db.execute(stmt).all():
         num = op.document_number or ""
@@ -108,10 +116,18 @@ def _op_batches(db: Session, product_id: int | None):
 
 
 def production_consumption(db: Session, *, date_from=None, date_to=None, period="month",
-                           product_id: int | None = None) -> dict:
-    """Actual production vs materials pulled, plus cost breakdown, bucketed by period."""
+                           product_id: int | None = None,
+                           branch_id: int | None = None) -> dict:
+    """Actual production vs materials pulled, plus cost breakdown, bucketed by period.
+
+    **وبفرع اللي بيقرا** — الإنتاج كله في المصنع، وتقرير بيوري تكاليفه وكمياته لمدير
+    فرع بيع مش شايف ولا أمر تشغيل منهم في شاشته.
+    """
     names = _item_names(db)
     stmt = select(ManufacturingOrder).where(ManufacturingOrder.reverses_order_id.is_(None))
+    if branch_id is not None:
+        stmt = stmt.where((ManufacturingOrder.branch_id == branch_id)
+                          | (ManufacturingOrder.branch_id.is_(None)))
     if product_id is not None:
         stmt = stmt.where(ManufacturingOrder.product_id == product_id)
     rows, buckets = [], {}
@@ -140,7 +156,7 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
 
     # الإنتاج المسجّل عمليات — نفس الصفوف بنفس الشكل، بلا تكلفة لأن العملية
     # مابتحملش تكلفة (الأمر هو اللي بيحسبها).
-    for batch in _op_batches(db, product_id):
+    for batch in _op_batches(db, product_id, branch_id):
         when = batch["when"]
         if when is None or not _in_range(when, date_from, date_to):
             continue
@@ -202,8 +218,13 @@ def inventory(db: Session, *, warehouse_id: int | None = None, item_id: int | No
 
 
 def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = None,
-            warehouse_id: int | None = None) -> dict:
-    """Waste from manufacturing orders (per-line waste_quantity) + standalone wastage documents."""
+            warehouse_id: int | None = None, branch_id: int | None = None) -> dict:
+    """Waste from manufacturing orders (per-line waste_quantity) + standalone wastage documents.
+
+    **والهالك بيتبع مخزنه.** السطر بيخصم من مخزن، والمخزن بيخصّ فرع — فده أدق من
+    عمود فرع على الأمر، وبيمشي على المستند المستقل اللي مالوش أمر أصلاً.
+    """
+    mine = branch_warehouse_ids(db, branch_id)
     names = _item_names(db)
     prices = {i.id: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
               for i in db.scalars(select(Item)).all()}
@@ -220,6 +241,8 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
         if item_id is not None and cons.item_id != item_id:
             continue
         if warehouse_id is not None and cons.warehouse_id != warehouse_id:
+            continue
+        if mine is not None and cons.warehouse_id not in mine:
             continue
         # تاريخ الإنتاج قبل وقت الكتابة — زي `production_consumption` بالظبط.
         when = order.production_date or order.created_at
@@ -238,6 +261,8 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
         if item_id is not None and d.item_id != item_id:
             continue
         if warehouse_id is not None and d.warehouse_id != warehouse_id:
+            continue
+        if mine is not None and d.warehouse_id not in mine:
             continue
         if not _in_range(d.created_at, date_from, date_to):
             continue
@@ -333,11 +358,21 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
             "item_count": len({r["item_id"] for r in rows})}
 
 
-def sales(db: Session, *, date_from=None, date_to=None, period="month") -> dict:
-    """Sales gross/net bucketed by period (for linking sales volume to production)."""
+def sales(db: Session, *, date_from=None, date_to=None, period="month",
+          branch_id: int | None = None) -> dict:
+    """Sales gross/net bucketed by period (for linking sales volume to production).
+
+    **وبفرع اللي بيقرا.** التقرير ده كان بيرجّع فواتير الشركة كلها — ٩٬٦٢٢ سطر فيهم
+    ٧٦٢ فاتورة مصنع بأسماء عملائها وأسعارها — لمدير فرع مش شايف ولا واحدة منهم في
+    كشف الفواتير بتاعه.
+    """
     rows, buckets = [], {}
     gross_total = net_total = ZERO
-    for inv in db.scalars(select(SalesInvoice).order_by(SalesInvoice.id)).all():
+    stmt = select(SalesInvoice)
+    if branch_id is not None:
+        stmt = stmt.where((SalesInvoice.branch_id == branch_id)
+                          | (SalesInvoice.branch_id.is_(None)))
+    for inv in db.scalars(stmt.order_by(SalesInvoice.id)).all():
         if not _in_range(inv.invoice_date or inv.created_at, date_from, date_to):
             continue
         gross_total += to_money(inv.gross)
@@ -355,29 +390,38 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month") -> dict:
     }
 
 
-def reorder(db: Session) -> dict:
+def reorder(db: Session, *, branch_id: int | None = None) -> dict:
     """Items whose total on-hand has drifted outside their advisory min/max limits (011).
 
     Only items that are actually a planning problem are listed: below the floor (buy more) or above
     the ceiling (too much cash tied up). An item sitting comfortably in range, or with no limits
     set at all, is not a problem and would only be noise here.
+
+    **والرصيد بيتجمّع من مخازن الفرع وحدها.** الحد الأدنى رقم واحد للشركة، بس اللي
+    بيقرا التقرير بيشتري لفرعه — وجمع بضاعة فرع تاني معاه بيقول «عندك كفاية» والرف
+    عنده فاضي، وده عكس الغرض من التقرير بالظبط.
     """
     signed = func.sum(case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
     ))
-    on_hand = {
-        item_id: to_qty(total)
-        for item_id, total in db.execute(
-            select(StockMovement.item_id, signed).group_by(StockMovement.item_id)
-        ).all()
-    }
+    mine = branch_warehouse_ids(db, branch_id)
+    stmt = select(StockMovement.item_id, signed).group_by(StockMovement.item_id)
+    if mine is not None:
+        stmt = (select(StockMovement.item_id, signed)
+                .where(StockMovement.location_kind == LocationKind.warehouse,
+                       StockMovement.location_id.in_(mine))
+                .group_by(StockMovement.item_id))
+    on_hand = {item_id: to_qty(total) for item_id, total in db.execute(stmt).all()}
 
     rows = []
     for item in db.scalars(
         select(Item).where(Item.active.is_(True)).order_by(Item.name)
     ).all():
         if item.min_stock is None and item.max_stock is None:
+            continue
+        # صنف مالوش حركة في مخازن الفرع خالص مش بتاع الفرع ده.
+        if mine is not None and item.id not in on_hand:
             continue
         have = on_hand.get(item.id, to_qty(0))
         if item.min_stock is not None and have < to_qty(item.min_stock):

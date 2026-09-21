@@ -204,15 +204,27 @@ def create_supplier(
     return _sup_out(supplier, db)
 
 
+def _seen(db: Session, supplier_id: int, current: CurrentUser) -> Supplier:
+    """المورد لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
+
+    الكشف كان متعزل (`branch_scope.scope`) والرابط المباشر لأ، فمدير فرع كان بيفتح
+    بطاقة مورد فرع تاني بالرقم ومعاها كشف حسابه وفواتير الشرا. الفلترة على القايمة
+    وحدها بتخبّي الصف، والرابط بيجيبه.
+    """
+    s = db.scalar(branch_scope.scope(
+        select(Supplier).where(Supplier.id == supplier_id), Supplier, current))
+    if s is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    return s
+
+
 @router.get("/{supplier_id}", response_model=SupplierOut)
 def get_supplier(
     supplier_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> SupplierOut:
-    s = db.get(Supplier, supplier_id)
-    if s is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    s = _seen(db, supplier_id, current)
     return _sup_out(s, db)
 
 
@@ -223,9 +235,7 @@ def update_supplier(
     current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_WRITE)),
     db: Session = Depends(get_db),
 ) -> SupplierOut:
-    s = db.get(Supplier, supplier_id)
-    if s is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    s = _seen(db, supplier_id, current)
     if body.name is not None:
         s.name = body.name
     if body.phone is not None:
@@ -281,13 +291,11 @@ def _doc_out(d) -> ProfileDocOut:
 @router.get("/{supplier_id}/profile", response_model=SupplierProfileOut)
 def supplier_profile(
     supplier_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> SupplierProfileOut:
     """The supplier's full file: balance, purchases, returns, payments, cheques."""
-    s = db.get(Supplier, supplier_id)
-    if s is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    s = _seen(db, supplier_id, current)
     p = supplier_profile_service.profile(db, supplier_id)
     base = _sup_out(s, db)
     base.balance = p.balance
@@ -308,12 +316,11 @@ def supplier_record_detail(
     supplier_id: int,
     kind: str,
     record_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     """Full detail of one row in the supplier's file — purchase, return, payment, cheque, entry."""
-    if db.get(Supplier, supplier_id) is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    _seen(db, supplier_id, current)
     try:
         return supplier_profile_service.record_detail(db, supplier_id, kind, record_id)
     except supplier_profile_service.SupplierProfileError as exc:
@@ -328,9 +335,7 @@ def deactivate_supplier(
     db: Session = Depends(get_db),
 ) -> None:
     """Deactivate the supplier; `hard=true` deletes him outright — only if he never moved."""
-    s = db.get(Supplier, supplier_id)
-    if s is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Supplier not found"})
+    s = _seen(db, supplier_id, current)
     if hard:
         try:
             _delete_supplier(db, s, current.id)
@@ -348,9 +353,10 @@ def deactivate_supplier(
 @router.get("/{supplier_id}/account", response_model=AccountBalanceOut)
 def supplier_account(
     supplier_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> AccountBalanceOut:
+    _seen(db, supplier_id, current)
     sa = db.scalar(select(SupplierAccount).where(SupplierAccount.supplier_id == supplier_id))
     if sa is None:
         raise HTTPException(404, {"code": "not_found", "message": "Supplier account not found"})

@@ -216,6 +216,26 @@ def _scope_filter(stmt, current: CurrentUser):
     return stmt
 
 
+def _seen(db: Session, customer_id: int, current: CurrentUser) -> Customer:
+    """العميل لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
+
+    **اللي كشفه.** `GET /customers/{id}` و`/profile` و`/account` كانوا بيفحصوا المندوب
+    وبس. فمدير فرع العلياء كان بيفتح كارت عميل المصنع بالرقم — وكشف حسابه وفواتيره
+    معاه — رغم إن الكشف نفسه مابيوريهوش. الفلترة اللي على القايمة وحدها مش عزل: هي
+    بتخبّي الصف، والرابط المباشر بيجيبه.
+
+    **وبيعيد استعمال `_scope_filter` نفسها مش قاعدة تانية.** لو الاتنين اتكتبوا على
+    حدة، أول تعديل على واحدة بيخلّي عميل بيبان في الكشف وبيرفض يتفتح — أو العكس،
+    وده أسوأ.
+
+    و٤٠٤ مش ٤٠٣: ٤٠٣ بيقول «موجود بس مش بتاعك»، ودي معلومة عن فرع تاني لوحدها.
+    """
+    c = db.scalar(_scope_filter(select(Customer).where(Customer.id == customer_id), current))
+    if c is None:
+        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    return c
+
+
 class PaginatedCustomersOut(BaseModel):
     rows: list[CustomerOut]
     total: int
@@ -465,11 +485,7 @@ def update_customer(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
     db: Session = Depends(get_db),
 ) -> CustomerOut:
-    c = db.get(Customer, customer_id)
-    if c is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
-    if current.rep_id is not None and c.rep_id != current.rep_id:
-        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    c = _seen(db, customer_id, current)
     if body.name is not None:
         c.name = body.name
     if body.phone is not None:
@@ -509,11 +525,7 @@ def deactivate_customer(
     db: Session = Depends(get_db),
 ) -> None:
     """Deactivate the customer; `hard=true` deletes him outright — but only if he never moved."""
-    c = db.get(Customer, customer_id)
-    if c is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
-    if current.rep_id is not None and c.rep_id != current.rep_id:
-        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    c = _seen(db, customer_id, current)
     if hard:
         try:
             customer_service.delete_customer(db, customer=c, actor_user_id=current.id)
@@ -534,11 +546,7 @@ def get_customer(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomerOut:
-    c = db.get(Customer, customer_id)
-    if c is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
-    if current.rep_id is not None and c.rep_id != current.rep_id:
-        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    c = _seen(db, customer_id, current)
     return _out(c, db)
 
 
@@ -549,9 +557,9 @@ def reassign_customer(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_REASSIGN)),
     db: Session = Depends(get_db),
 ) -> CustomerOut:
-    c = db.get(Customer, customer_id)
-    if c is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    # نقل العميل لمندوب تاني بيغيّر مين بيشوفه ومين بياخد عمولته — فاللي مايشوفوش
+    # أصلاً مايقدرش ينقله.
+    c = _seen(db, customer_id, current)
     customer_service.reassign_customer(
         db, customer=c, new_rep_id=body.new_rep_id,
         new_territory_id=body.new_territory_id, actor_user_id=current.id,
@@ -657,11 +665,7 @@ def customer_profile(
     db: Session = Depends(get_db),
 ) -> CustomerProfileOut:
     """The customer's full file: balance, invoices, returns, receipts, cheques, visits, points."""
-    c = db.get(Customer, customer_id)
-    if c is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
-    if current.rep_id is not None and c.rep_id != current.rep_id:
-        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    c = _seen(db, customer_id, current)
     p = customer_profile_service.profile(db, customer_id)
     base = _out(c, db)
     base.balance = p.balance
@@ -688,11 +692,7 @@ def customer_record_detail(
 ) -> dict:
     """Full detail of one row in the customer's file — invoice, return, receipt, cheque,
     inspection, coupon or ledger entry — in a uniform shape the UI renders generically."""
-    c = db.get(Customer, customer_id)
-    if c is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
-    if current.rep_id is not None and c.rep_id != current.rep_id:
-        raise HTTPException(403, {"code": "forbidden", "message": "Not your customer"})
+    c = _seen(db, customer_id, current)
     try:
         return customer_profile_service.record_detail(db, customer_id, kind, record_id)
     except customer_profile_service.CustomerProfileError as exc:
@@ -710,8 +710,7 @@ def customer_accounts(
     # بس لسه ماتعاملش مالياً». التانية دي حالة عادية — ٢٬٤١٩ عميل من ٣٬٨٨٤ — وكانت بتطلّع
     # «Account not found» أحمر فوق كارت عميل سليم تماماً. فبقى: العميل المش موجود بس هو اللي
     # بياخد 404، واللي مالوش حساب بياخد قايمة فاضية وإجمالي صفر، والشاشة تقول «مافيش حركة».
-    if db.get(Customer, customer_id) is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    _seen(db, customer_id, current)
     rows = db.scalars(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id)).all()
     out = [CustomerAccountOut(
@@ -734,8 +733,7 @@ def customer_account(
 ) -> CustomerAccountOut:
     # The customer's original, family-less account. Scoped rather than «whichever comes first»:
     # once a customer holds two, an unscoped query answers with an arbitrary one of them.
-    if db.get(Customer, customer_id) is None:
-        raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
+    _seen(db, customer_id, current)
     acc = db.scalar(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id,
         CustomerAccount.family.is_(None)))

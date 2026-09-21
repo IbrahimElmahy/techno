@@ -470,16 +470,33 @@ def list_permits(
     return [_permit_out(db, p) for p in rows]
 
 
+def _seen_permit(db: Session, permit_id: int, current: CurrentUser):
+    """الإذن لو مخزنه من فرع اللي بيسأل — و**٤٠٤ لو لأ**.
+
+    الكشف كان بيفلتر بالمخزن والرابط المباشر ماكانش، فمدير فرع كان بيفتح إذن صرف
+    المصنع بالرقم (`FC-IS1`) — **ويعكسه** كمان، لأن `reverse` كان بيتنده على الرقم
+    من غير أي فحص، والعكس بيحرّك مخزون فعلاً.
+    """
+    try:
+        permit = stock_permit_service.get_permit(db, permit_id)
+    except stock_permit_service.StockPermitError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+    if branch_scope.visible_branch_id(current) is not None:
+        mine = {w.id for w in db.scalars(
+            branch_scope.scope(select(Warehouse), Warehouse, current)).all()}
+        wid = getattr(permit, "warehouse_id", None)
+        if wid is not None and wid not in mine:
+            raise HTTPException(404, {"code": "not_found", "message": "الإذن مش موجود."})
+    return permit
+
+
 @router.get("/permits/{permit_id}", response_model=PermitOut)
 def get_permit(
     permit_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> PermitOut:
-    try:
-        return _permit_out(db, stock_permit_service.get_permit(db, permit_id))
-    except stock_permit_service.StockPermitError as exc:
-        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+    return _permit_out(db, _seen_permit(db, permit_id, current))
 
 
 @router.post("/permits/{permit_id}/reverse", response_model=PermitOut, status_code=201)
@@ -489,6 +506,7 @@ def reverse_permit(
     db: Session = Depends(get_db),
 ) -> PermitOut:
     """Posted documents are reversed, never edited or deleted — and only once."""
+    _seen_permit(db, permit_id, current)
     try:
         reversal = stock_permit_service.reverse_permit(
             db, permit_id=permit_id, actor_user_id=current.id)

@@ -26,11 +26,12 @@ router = APIRouter(tags=["reports"], prefix="/reports")
 def production_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     period: str = Query("month"), product_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
     return reporting.production_consumption(
-        db, date_from=date_from, date_to=date_to, period=period, product_id=product_id)
+        db, date_from=date_from, date_to=date_to, period=period, product_id=product_id,
+        branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/inventory")
@@ -48,11 +49,12 @@ def inventory_report(
 def wastage_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     item_id: int | None = Query(None), warehouse_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
     return reporting.wastage(db, date_from=date_from, date_to=date_to, item_id=item_id,
-                             warehouse_id=warehouse_id)
+                             warehouse_id=warehouse_id,
+                             branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/stagnant")
@@ -122,30 +124,37 @@ def stock_as_of_report(
 
 @router.get("/reorder")
 def reorder_report(
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
     """حد إعادة الطلب — items below their minimum or above their maximum stock (011)."""
-    return reporting.reorder(db)
+    return reporting.reorder(db, branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/sales")
 def sales_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     period: str = Query("month"),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.sales(db, date_from=date_from, date_to=date_to, period=period)
+    return reporting.sales(db, date_from=date_from, date_to=date_to, period=period,
+                           branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/summary")
 def get_summary(
     date_from: str | None = Query(None, description="ISO date; include docs on/after this day"),
     date_to: str | None = Query(None, description="ISO date; include docs on/before this day"),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
+    """أرقام الرئيسية الكبيرة — **وبفرع اللي بيقرا**.
+
+    التلات أرقام دي (مبيعات، مشتريات، خزنة) كانت بتتحسب على الشركة كلها، فمدير فرع
+    بيفتح الرئيسية فيلاقي إيراد الشركة كلها قدامه — رقم مش بتاعه، وبيخلّي أي مقارنة
+    يعملها بفرعه غلط كمان.
+    """
     def _apply_dates(stmt, col):
         if date_from:
             stmt = stmt.where(col >= clock.day_start_utc(date_from))
@@ -154,23 +163,27 @@ def get_summary(
         return stmt
 
     # Calculate total sales (optionally within the requested date range).
-    sales_stmt = _apply_dates(select(
+    sales_stmt = _apply_dates(branch_scope.scope(select(
         func.sum(SalesInvoice.gross).label("gross"),
         func.sum(SalesInvoice.net).label("net")
-    ), SalesInvoice.created_at)
+    ), SalesInvoice, current), SalesInvoice.created_at)
     sales_res = db.execute(sales_stmt).first()
     sales_gross = sales_res.gross or Decimal("0")
     sales_net = sales_res.net or Decimal("0")
 
     # Calculate total purchases
-    purchases_stmt = _apply_dates(select(
+    purchases_stmt = _apply_dates(branch_scope.scope(select(
         func.sum(PurchaseInvoice.cash_amount + PurchaseInvoice.credit_amount).label("total")
-    ), PurchaseInvoice.created_at)
+    ), PurchaseInvoice, current), PurchaseInvoice.created_at)
     purchases_res = db.execute(purchases_stmt).first()
     purchases_total = purchases_res.total or Decimal("0")
 
     # Calculate treasury balance
-    treasury_acc = db.scalar(select(Account).where(Account.account_type == AccountType.treasury))
+    # **وخزنة الفرع، مش أول خزنة في الشركة.** كل فرع عنده شجرة حسابات كاملة، فحساب
+    # الخزنة بيتاخد من فرع اللي بيقرا — والقديم كان بياخد أول صف طالع من القاعدة.
+    treasury_acc = db.scalar(branch_scope.scope(
+        select(Account).where(Account.account_type == AccountType.treasury),
+        Account, current))
     treasury_balance = Decimal("0")
     if treasury_acc:
         treasury_balance = ledger_service.balance_of(db, treasury_acc.id)

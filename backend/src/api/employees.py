@@ -215,15 +215,26 @@ def create_employee(
     return _out(db, emp)
 
 
+def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:
+    """الموظف لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
+
+    الكشف متعزل بالفرع والرابط المباشر ماكانش، فمدير فرع كان بيفتح بطاقة موظف فرع
+    تاني بالرقم — **ويعدّلها ويوقفها** كمان، لأن نفس الغياب كان على `PATCH` و`DELETE`.
+    """
+    emp = db.scalar(branch_scope.scope(
+        select(Employee).where(Employee.id == employee_id), Employee, current))
+    if emp is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
+    return emp
+
+
 @router.get("/employees/{employee_id}", response_model=EmployeeOut)
 def get_employee(
     employee_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_USER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_USER_READ)),
     db: Session = Depends(get_db),
 ) -> EmployeeOut:
-    emp = db.get(Employee, employee_id)
-    if emp is None:
-        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
+    emp = _seen_employee(db, employee_id, current)
     return _out(db, emp)
 
 
@@ -231,12 +242,10 @@ def get_employee(
 def update_employee(
     employee_id: int,
     body: EmployeePatch,
-    _: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> EmployeeOut:
-    emp = db.get(Employee, employee_id)
-    if emp is None:
-        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
+    emp = _seen_employee(db, employee_id, current)
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(emp, field, value)
     db.commit()
@@ -246,12 +255,10 @@ def update_employee(
 @router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_employee(
     employee_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
     """Deactivated, not deleted — the name must stay readable wherever it is already referenced."""
-    emp = db.get(Employee, employee_id)
-    if emp is None:
-        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
+    emp = _seen_employee(db, employee_id, current)
     emp.active = False
     db.commit()
