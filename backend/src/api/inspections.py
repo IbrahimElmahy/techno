@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import (
     CAP_INSPECTION_READ,
@@ -375,7 +376,8 @@ def get_inspections_summary(
     summary = inspection_service.inspections_summary(
         db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to,
         status=status_filter, visit_type=visit_type, printed=printed,
-        certificate_number=certificate_number, owner=owner, technician=technician, trader=trader, q=q)
+        certificate_number=certificate_number, owner=owner, technician=technician, trader=trader,
+        q=q, branch_id=branch_scope.visible_branch_id(current))
     return InspectionSummaryOut(**summary)
 
 
@@ -408,7 +410,7 @@ def list_inspections(
         db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to,
         status=status_filter, visit_type=visit_type, printed=printed,
         certificate_number=certificate_number, owner=owner, technician=technician, trader=trader,
-        q=q, limit=limit, offset=offset)
+        q=q, branch_id=branch_scope.visible_branch_id(current), limit=limit, offset=offset)
 
     m_ids = {i.merchant_customer_id for i in rows if i.merchant_customer_id is not None}
     m_rows = db.scalars(select(Customer).where(Customer.id.in_(m_ids))).all() if m_ids else []
@@ -554,5 +556,9 @@ def get_inspection(
     if current.role == RoleName.sales_rep and insp.rep_user_id != current.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "Not your inspection."})
+    # والمدير بفرعه — العزل بالمندوب مابيمسّهوش، هو مالوش `rep_id` أصلاً.
+    if not branch_scope.may_see(current, insp):
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "Inspection not found."})
     return _out_single(db, insp)
 

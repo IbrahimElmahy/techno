@@ -203,16 +203,28 @@ def list_receipts(
     return items_out
 
 
+def _seen_receipt(db: Session, receipt_id: int, current: CurrentUser):
+    """الاستلام لو من فرع اللي بيسأل — و**٤٠٤ لو لأ**.
+
+    الكشف كان متعزل (`branch_scope.visible`) والرقم لأ. والمهم إن `DELETE` كان على نفس
+    الحال: **إلغاء استلام فرع تاني**، وهو بيرجّع الأوراق للتداول وبيكتب قيد في اليومية.
+    """
+    try:
+        receipt = coupon_receipt_service.get_receipt(db, receipt_id)
+    except CouponReceiptError as exc:
+        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+    if not branch_scope.may_see(current, receipt):
+        raise HTTPException(404, {"code": "not_found", "message": "الاستلام مش موجود."})
+    return receipt
+
+
 @router.get("/{receipt_id}", response_model=ReceiptOut)
 def get_receipt(
     receipt_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> ReceiptOut:
-    try:
-        return _out(coupon_receipt_service.get_receipt(db, receipt_id))
-    except CouponReceiptError as exc:
-        raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
+    return _out(_seen_receipt(db, receipt_id, current))
 
 
 @router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -226,6 +238,7 @@ def delete_receipt(
     من غيره الورقة اللي اتستلمت غلط بتقفل رقمها للأبد — والاستلام الصح بعدها بيترفض
     «اتستلم قبل كده» وهي في إيد الراجل. الإلغاء بيتسجّل في اليومية بالأرقام.
     """
+    _seen_receipt(db, receipt_id, current)
     try:
         coupon_receipt_service.delete_receipt(
             db, receipt_id=receipt_id, actor_user_id=current.id)

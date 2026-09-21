@@ -315,11 +315,19 @@ def _build_inspection_stmt(
     status: InspectionStatus | None = None, visit_type: str | None = None,
     printed: bool | None = None, certificate_number: int | None = None,
     owner: str | None = None, technician: str | None = None, trader: str | None = None,
-    q: str | None = None,
+    q: str | None = None, branch_id: int | None = None,
 ):
+    from sqlalchemy import or_ as _or
     from src.models.customer import Customer
     stmt = select(Inspection)
     joined_customer = False
+
+    # **العزل بالمندوب ماكانش كفاية.** المعاينة بتتفلتر بـ`rep_user_id`، وده بيحمي
+    # المندوب من إنه يشوف شغل زميله — بس المدير مالوش `rep_id`، فكان بيشوف معاينات
+    # الفروع كلها. المعاينات كلها فرع واحد النهارده، فالمسار مفتوح ومش مسرّب بعد.
+    if branch_id is not None:
+        stmt = stmt.where(_or(Inspection.branch_id == branch_id,
+                              Inspection.branch_id.is_(None)))
 
     if visit_kind is not None:
         stmt = stmt.where(Inspection.visit_kind == visit_kind)
@@ -374,14 +382,14 @@ def list_inspections(
     status: InspectionStatus | None = None, visit_type: str | None = None,
     printed: bool | None = None, certificate_number: int | None = None,
     owner: str | None = None, technician: str | None = None, trader: str | None = None,
-    q: str | None = None,
+    q: str | None = None, branch_id: int | None = None,
     limit: int | None = None, offset: int = 0,
 ) -> tuple[list[Inspection], int]:
     stmt = _build_inspection_stmt(
         visit_kind=visit_kind, rep_user_id=rep_user_id, date_from=date_from, date_to=date_to,
         status=status, visit_type=visit_type, printed=printed,
         certificate_number=certificate_number, owner=owner, technician=technician,
-        trader=trader, q=q,
+        trader=trader, q=q, branch_id=branch_id,
     )
     # Total count after filters
     total_count = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
@@ -402,14 +410,14 @@ def inspections_summary(
     status: InspectionStatus | None = None, visit_type: str | None = None,
     printed: bool | None = None, certificate_number: int | None = None,
     owner: str | None = None, technician: str | None = None, trader: str | None = None,
-    q: str | None = None,
+    q: str | None = None, branch_id: int | None = None,
 ) -> dict:
     from sqlalchemy import case
     base_stmt = _build_inspection_stmt(
         visit_kind=visit_kind, rep_user_id=rep_user_id, date_from=date_from, date_to=date_to,
         status=status, visit_type=visit_type, printed=printed,
         certificate_number=certificate_number, owner=owner, technician=technician,
-        trader=trader, q=q,
+        trader=trader, q=q, branch_id=branch_id,
     )
     subq = base_stmt.order_by(None).subquery()
     summary_stmt = select(

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_INSPECTION_READ, CAP_INSPECTION_WRITE
 from src.core.db import get_db
@@ -89,6 +90,24 @@ class OwnerDetail(OwnerListItem):
     inspections: list[OwnerInspectionBrief] = []
 
 
+def _seen_owner(db: Session, owner_id: int, current: CurrentUser) -> Owner:
+    """المالك لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
+
+    `branch_id` على المسار ده كان **فلتر بيبعته اللي بينده**، مش عزل: مالوش أي علاقة
+    بفرع اللي بيقرا. والتطبيق بيسحب `/owners` كامل على الجهاز، يعني مندوب أي فرع
+    بيحمّل ملاك الشركة كلهم بأسمائهم وتليفوناتهم وعناوينهم.
+
+    كل الملاك دلوقتي فرع واحد (العلياء بتعمل المعاينات لوحدها)، فمافيش تسريب واقع
+    النهارده — بس المسار مفتوح، وأول معاينة في فرع تاني بتفتحه.
+    """
+    owner = db.scalar(branch_scope.scope(
+        select(Owner).where(Owner.id == owner_id), Owner, current))
+    if owner is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "Owner not found."})
+    return owner
+
+
 @router.get("", response_model=list[OwnerListItem])
 def list_owners(
     search: str | None = Query(default=None),
@@ -98,7 +117,7 @@ def list_owners(
     has_inspections: bool | None = Query(default=None),
     limit: int = Query(default=500, le=2000),
     offset: int = Query(default=0, ge=0),
-    _: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[OwnerListItem]:
     # Aggregated query for inspection count and last inspection date
@@ -121,6 +140,8 @@ def list_owners(
         )
         .outerjoin(insp_subq, Owner.id == insp_subq.c.owner_id)
     )
+    # `branch_id` تحت فلتر بيبعته اللي بينده؛ ده العزل.
+    stmt = branch_scope.scope(stmt, Owner, current)
 
     if search:
         q = f"%{search.strip()}%"
@@ -177,12 +198,10 @@ def list_owners(
 @router.get("/{owner_id}", response_model=OwnerDetail)
 def get_owner(
     owner_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> OwnerDetail:
-    owner = db.get(Owner, owner_id)
-    if owner is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "Owner not found."})
+    owner = _seen_owner(db, owner_id, current)
 
     inspections = db.scalars(
         select(Inspection)
@@ -243,7 +262,10 @@ def create_owner(
         floor_number=body.floor_number.strip() if body.floor_number else None,
         notes=body.notes.strip() if body.notes else None,
         territory_id=body.territory_id,
-        branch_id=body.branch_id,
+        # فرع اللي بيكتب — من غير كده المالك بيتكتب من غير فرع ويبان لكل الفروع.
+        branch_id=(body.branch_id
+                   if branch_scope.visible_branch_id(current) is None
+                   else branch_scope.visible_branch_id(current)),
         service_rep_id=body.service_rep_id,
         active=body.active,
     )
@@ -277,9 +299,7 @@ def update_owner(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
     db: Session = Depends(get_db),
 ) -> OwnerListItem:
-    owner = db.get(Owner, owner_id)
-    if owner is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "Owner not found."})
+    owner = _seen_owner(db, owner_id, current)
 
     if body.name is not None:
         owner.name = body.name.strip()
