@@ -67,8 +67,20 @@ export function useDocRoute<T extends { id: number }>(opts: {
   fetchOne: (id: number) => Promise<T | null>;
   /** لسه بيحمّل الكشف — الفتح بيستنى، عشان مايجيبش بالرقم وهو جاي في الصفحة. */
   loading?: boolean;
+  /**
+   * **الشاشة دي هي اللي شغّالة دلوقتي ولا لأ؟** — للشاشات اللي فيها تبويبات.
+   *
+   * antd بتسيب أي تبويب اتفتح مرة **شغّال ومخفي** بعده، فخُطّافه بيفضل بيسمع العنوان.
+   * ولما تبويبين على نفس الشاشة يسمعوا نفس `?doc=`، الرقم الواحد بيتفسّر في مساحتين
+   * `id` مختلفتين: واحد يفتح مستند مش بتاعه، والتاني يقع وهو بيقرا صف ناقص. ولو
+   * التبويب المخفي نده `close()` على رجوع، بيقفل مستند التبويب الظاهر.
+   *
+   * فالتبويب المخفي بيبعت `false` وبيسكت خالص: مابيفتحش، مابيقفلش، ومابيكتبش.
+   * الافتراضي `true` — الشاشة اللي مالهاش تبويبات مابتحسّش بوجوده.
+   */
+  enabled?: boolean;
 }) {
-  const { rows, openId, open, close, fetchOne, loading } = opts;
+  const { rows, openId, open, close, fetchOne, loading, enabled = true } = opts;
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   // جاي من شاشة تانية (كارت صنف، كشف حساب، تقرير) — مش من كشف الشاشة دي.
@@ -86,6 +98,8 @@ export function useDocRoute<T extends { id: number }>(opts: {
   const handled = useRef<number | null>(null);
 
   useEffect(() => {
+    // تبويب مخفي: مايسمعش ومايقفلش. الشرح عند `enabled`.
+    if (!enabled) return;
     if (wanted === openId) { handled.current = wanted; return; }
     if (wanted == null) {
       // العنوان مابقاش فيه مستند (رجوع، أو قفل من شاشة تانية) ⇒ اقفل.
@@ -101,10 +115,11 @@ export function useDocRoute<T extends { id: number }>(opts: {
     // كارت الصنف ممكن يبقى لمستند قديم برّه الصفحة.
     ref.current.fetchOne(wanted).then((r) => { if (r) ref.current.open(r, mode); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted, mode, openId, loading, rows.length]);
+  }, [wanted, mode, openId, loading, rows.length, enabled]);
 
   /** بيتنده جوّه دالة الفتح بتاعة الشاشة — بيدفع المستند على العنوان. */
   const markOpen = useCallback((id: number, m: DocMode = 'view') => {
+    if (!enabled) return;
     handled.current = id;
     // العنوان بيقول كده خلاص ⇒ مافيش خطوة جديدة. الشرح فوق.
     const key = m === 'edit' ? 'edit' : 'doc';
@@ -121,6 +136,7 @@ export function useDocRoute<T extends { id: number }>(opts: {
 
   /** بيتنده جوّه دالة القفل — بيشيل المستند من العنوان من غير ما يزوّد خطوة. */
   const markClosed = useCallback(() => {
+    if (!enabled) return;
     handled.current = null;
     // العنوان اتنضّف خلاص (رجوع المتصفح) ⇒ مافيش خطوة تانية تتعمل.
     if (!params.get('doc') && !params.get('edit')) return;
@@ -131,7 +147,7 @@ export function useDocRoute<T extends { id: number }>(opts: {
       next.delete('edit');
       return next;
     }, { replace: true });
-  }, [params, fromScreen, navigate, setParams]);
+  }, [params, fromScreen, navigate, setParams, enabled]);
 
   return { markOpen, markClosed };
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DraftTag from '../components/DraftTag';
 // **باسم مستعار عن قصد.** الملف ده عنده `PAGE_SIZE` بمعنى تاني خالص —
 // حد الجلب من الـAPI، مش عدد صفوف الجدول.
@@ -374,6 +374,7 @@ export default function Transfers() {
   };
 
   const closeCreate = () => {
+    clearDocParam();
     setCreateVisible(false); setEditing(null); setDraftQty({}); setViewOnly(false);
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
@@ -404,10 +405,52 @@ export default function Transfers() {
    * أعيد المشكلة عندي عشان أعرف السبب بالظبط. فالخُطّاف اتشال من هنا وحده: «رجوع» أنضف
    * من إن الإذن يفتح، بس إذن مابيفتحش مش مقايضة أصلاً. الشاشات التانية شغّالة بيه.
    */
+  /**
+   * كتابة الإذن المفتوح في العنوان وشيله.
+   *
+   * ⚠️ **في اتجاه واحد عن قصد** — زي شاشة الفواتير بالظبط، وللسبب اللي فوق: `useDocRoute`
+   * بيخلّي العنوان **يقود** الشاشة، وهي دي اللي خلّت الإذن يبطّل يتفتح هنا. فالشاشة
+   * بتكتب العنوان، والعنوان بيقود عند التحميل الأول وعند «رجوع» وبس.
+   */
+  const docInUrl = useRef<number | null>(null);
+  const writeDocParam = useCallback((id: number) => {
+    docInUrl.current = id;
+    const next = new URLSearchParams(window.location.search);
+    next.set('doc', String(id));
+    next.delete('edit'); next.delete('back');
+    setSearchParams(next, { replace: false });
+  }, [setSearchParams]);
+  const clearDocParam = useCallback(() => {
+    docInUrl.current = null;
+    const next = new URLSearchParams(window.location.search);
+    if (!next.has('doc') && !next.has('edit')) return;
+    next.delete('doc'); next.delete('edit'); next.delete('back');
+    setSearchParams(next, { replace: true });
+  }, [setSearchParams]);
+  /** قفل الإذن لما «رجوع» يشيله من العنوان — مش تفضية الحالة وبس: `closeCreate` هي اللي
+   *  بترجّع للكشف. */
+  const closeOnBackRef = useRef<(() => void) | null>(null);
+
+  closeOnBackRef.current = closeCreate;
+
   const pendingDoc = useRef<number | null>(null);
   useEffect(() => {
     const doc = searchParams.get('doc') || searchParams.get('edit');
-    if (doc) { pendingDoc.current = Number(doc); setSearchParams({}, { replace: true }); }
+    // البارامتر اللي إحنا كاتبينه وقت الفتح مش طلب فتح.
+    if (doc && Number(doc) === docInUrl.current) return;
+    // راح وإحنا لسه فاتحين ⇒ اللي شاله «رجوع» مش إحنا.
+    if (!doc && docInUrl.current !== null) {
+      docInUrl.current = null;
+      closeOnBackRef.current?.();
+      return;
+    }
+    if (doc) {
+      pendingDoc.current = Number(doc);
+      // `edit`/`back` بيتمسحوا؛ و`doc` بيفضل عشان التحديث يرجّعك لنفس الإذن.
+      const next = new URLSearchParams(window.location.search);
+      next.delete('edit'); next.delete('back');
+      setSearchParams(next, { replace: true });
+    }
     const wanted = pendingDoc.current;
     if (!wanted || !transfers.length) return;
     pendingDoc.current = null;
@@ -464,6 +507,7 @@ export default function Transfers() {
   };
 
   const openTransfer = async (t: TransferRecord) => {
+    writeDocParam(t.id);
     setEditing(t);
     setDraftQty({});
     /** الإذن اللي لسه تحت الاعتماد بيتفتح مفتوح لمين بيعتمد.

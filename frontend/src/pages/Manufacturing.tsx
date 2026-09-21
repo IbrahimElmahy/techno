@@ -144,6 +144,7 @@ export default function Manufacturing() {
             <ProductionOrdersTab
               products={products} rawMaterials={rawMaterials} warehouses={warehouses}
               branches={branches} boms={boms} itemName={itemName} whName={whName}
+              active={tab === 'orders'}
             />
           ),
         },
@@ -1138,12 +1139,17 @@ const newPOMaterial = (): DraftMaterial => ({ key: poSeq++ });
 const newPOProduct = (): DraftProduct => ({ key: poSeq++, materials: [] });
 
 function ProductionOrdersTab({
-  products, rawMaterials, warehouses, branches, boms, itemName, whName,
+  products, rawMaterials, warehouses, branches, boms, itemName, whName, active,
 }: {
   products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
   branches: { id: number; name: string }[]; boms: Bom[];
   itemName: (id: number) => string;
   whName: (id: number | null | undefined) => string;
+  /** التبويب ده هو الظاهر دلوقتي — بيتمرّر لـ`useDocRoute` كـ`enabled`.
+   *
+   *  antd بتسيب أي تبويب اتفتح مرة شغّال ومخفي بعدها، فخُطّافه بيفضل بيسمع العنوان
+   *  ويقفل مستند تبويب تاني على «رجوع». المخفي بيسكت. */
+  active: boolean;
 }) {
   const [rows, setRows] = useState<ProductionOrder[]>([]);
   const [total, setTotal] = useState(0);
@@ -1216,6 +1222,7 @@ function ProductionOrdersTab({
    */
   const { markOpen, markClosed } = useDocRoute<ProductionOrder>({
     rows,
+    enabled: active,
     openId: open && editingId != null ? editingId : null,
     open: (r) => openEdit(r),
     close: () => closeEditor(),
