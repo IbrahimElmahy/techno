@@ -122,6 +122,8 @@ def main() -> None:
 
     db = SessionLocal()
     try:
+        from src.models.catalog import Item
+        by_code_id = {i.code: i.id for i in db.scalars(select(Item)).all()}
         changed: list[tuple] = []
         skipped: dict[str, int] = defaultdict(int)
         docs_touched = 0
@@ -143,6 +145,19 @@ def main() -> None:
                               .order_by(LineM.id)).all()
             if len(wanted) != len(ours):
                 skipped[f"عدد السطور مختلف ({doc_type})"] += 1
+                continue
+
+            # **والترتيب لازم يطابق الصنف، مش العدد بس.**
+            #
+            # `fix_a5_missing_subunit_lines` بيكتب السطر اللي كان ناقص، وبياخد **آخر
+            # رقم** في المستند مهما كان مكانه عند a5. فالمستند اللي كان ناقص سطر بقى
+            # عدده مظبوط وترتيبه مش مظبوط — والمزاوجة بالترتيب ساعتها بتحطّ كمية
+            # صنف على صنف تاني. والحارس القديم (فرق أقل من وحدة) مابيمسكهاش لما
+            # الصنفين كميتهم قريبة.
+            if any(_clean(r[L_CODE]) and ln.item_id != by_code_id.get(
+                       f"{args.prefix}{_clean(r[L_CODE])}")
+                   for r, ln in zip(wanted, ours)):
+                skipped[f"ترتيب السطور مش زي a5 ({doc_type})"] += 1
                 continue
 
             # حركات المخزن بتاعة المستند، مجمّعة بالصنف وبترتيب كتابتها — نفس ترتيب
