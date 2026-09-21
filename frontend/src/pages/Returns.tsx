@@ -1671,7 +1671,18 @@ export default function Returns() {
     },
     {
       title: 'الإجراءات', key: 'actions', width: 140,
-      render: (_: any, record: ReturnRecord) => (
+      render: (_: any, record: ReturnRecord) => ((record as any).__isDraft ? (
+        // **سطر المسودّة مالوش أزرار مستند.** الكشف فيه نوعين سطور، والمسودّة مالهاش
+        // رقم ولا أثر — رقمها في الجدول سالب عشان يفضل فريد وسط أرقام حقيقية. فزرار
+        // الحذف كان بينده السيرفر برقم مش موجود ويرجّع «المستند مش موجود»، وزرار
+        // الطباعة بيجيب ورقة مافيش. الفعل الوحيد اللي ليه معنى هنا: امسح المسودّة.
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="مسح المسودّة">
+            <Button type="text" danger icon={<DeleteOutlined />}
+              onClick={() => removeDraft((record as any).__draft.id)} />
+          </Tooltip>
+        </Space>
+      ) : (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="عرض المرتجع">
             <Button type="text" icon={<EyeOutlined />}
@@ -1710,7 +1721,7 @@ export default function Returns() {
               }} />
           </Tooltip>
         </Space>
-      ),
+      )),
     },
   ];
 

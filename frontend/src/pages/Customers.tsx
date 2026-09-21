@@ -31,6 +31,8 @@ interface CustomerRecord {
   address: string | null;
   rep_id: number | null;
   service_rep_id: number | null;
+  supplier_id: number | null;
+  supplier_name: string | null;
   territory_id: number;
   default_price_tier: string | null;
   active: boolean;
@@ -381,6 +383,23 @@ export default function Customers() {
         const rep = reps.find((r) => r.id === repId);
         return rep ? rep.full_name : `مندوب #${repId}`;
       },
+    },
+    {
+      /**
+       * **الطرف ده مورد كمان.**
+       *
+       * الراجل اللي بنشتري منه وبنبيع له كارتين عندنا وكارت واحد عند a5 — والنتيجة إن
+       * «هو عليه كام؟» ليها إجابتين مالهمش طريق يتجمعوا. العمود ده بيقول الحقيقة على
+       * السطر: الكارت ده مربوط بكارت مورد، وده اسمه.
+       *
+       * مخفي افتراضياً زي أي عمود مالوش قيمة لأغلب الصفوف — بيتفتح من «الأعمدة» لما
+       * اللي بيراجع يبقى بيدوّر عليه.
+       */
+      title: 'مورد كمان',
+      dataIndex: 'supplier_name',
+      key: 'supplier_name',
+      ellipsis: true,
+      render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : '—'),
     },
     {
       // عمود تاني مش نفس العمود: الاتنين بيزوروا نفس العميل ومش نفس الراجل —

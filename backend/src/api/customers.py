@@ -85,6 +85,11 @@ class CustomerOut(BaseModel):
     # الراجل: واحد بيبيع له والتاني بيعاين عنده وياخد منه الكوبونات. عمود واحد
     # كان بيخلّي تقرير المناديب يجمّع الاتنين في رقم واحد.
     service_rep_id: int | None = None
+    # **نفس الطرف عندنا في الموردين.** الراجل اللي بنشتري منه وبنبيع له كارتين عندنا
+    # وكارت واحد عند a5. الرابط بيخلّي الشاشة توصّل بينهم، والاسم معاه عشان الكارت
+    # يقول «ده كمان مورد: فلان» من غير نداء تاني. الشرح في `models/customer.py`.
+    supplier_id: int | None = None
+    supplier_name: str | None = None
     territory_id: int
     default_price_tier: PriceTier | None = None
     active: bool
@@ -143,6 +148,20 @@ class CustomerAccountsOut(BaseModel):
     total_balance: Decimal
 
 
+def _supplier_name(db, supplier_id: int | None) -> str | None:
+    """اسم كارت المورد المربوط — أو `None`.
+
+    قراءة بالمفتاح الأساسي، و`db.get` بيجيب من الـsession لو الصف متحمّل خلاص —
+    فالكشف اللي فيه خمستاشر كارت مربوط بيقرا خمستاشر مرة مش أكتر.
+    """
+    if not supplier_id:
+        return None
+    from src.models.supplier import Supplier
+
+    row = db.get(Supplier, supplier_id)
+    return row.name if row else None
+
+
 def _out(c: Customer, db: Session | None = None,
          phones: dict[int, list[str]] | None = None) -> CustomerOut:
     if phones is not None:
@@ -156,6 +175,9 @@ def _out(c: Customer, db: Session | None = None,
         # التطبيع عند العرض بيخلّي الرقم يبان صح من غير ما نستنى إصلاح الداتا.
         phone=phone_fmt.display(c.phone) or None,
         rep_id=c.rep_id, service_rep_id=c.service_rep_id,
+        supplier_id=getattr(c, "supplier_id", None),
+        supplier_name=(_supplier_name(db, getattr(c, "supplier_id", None))
+                       if db is not None else None),
         territory_id=c.territory_id,
         default_price_tier=c.default_price_tier, active=c.active,
         governorate_id=c.governorate_id, markaz=c.markaz, address=c.address, phones=extra,

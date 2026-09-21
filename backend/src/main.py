@@ -400,6 +400,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("coupon_receipt_line", "coupon_issue_id", "BIGINT"),
     # مندوب خدمة العملاء — غير مندوب المبيعات، والاتنين بيزوروا نفس العميل.
     ("customer", "service_rep_id", "BIGINT"),
+    # نفس الطرف في الموردين — الشرح في `models/customer.py`.
+    ("customer", "supplier_id", "BIGINT"),
     # المعاينة اللي خصمت النقط من رصيد التاجر — الرفض بيدوّر عليه عشان يرجّع الخصم مرة واحدة.
     ("point_record", "inspection_id", "BIGINT"),
     # الجيب: معاينات ولا كوبونات. NULL = سطر قبل الفصل، والقراءة بتشتقّه من `kind`،

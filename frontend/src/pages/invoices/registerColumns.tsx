@@ -337,6 +337,29 @@ export function buildRegisterColumns({
       // «الصافى» and «الباقى» together — and those are the two numbers the list exists for.
       render: (_: any, record: any) => {
         const isSale = record.doc_type === 'sale';
+        // **سطر المسودّة مالوش أزرار مستند.**
+        //
+        // الكشف فيه نوعين سطور: مستندات ومسودّات. والمسودّة مالهاش رقم ولا أثر — رقمها
+        // في الجدول سالب عشان يفضل فريد وسط أرقام حقيقية. فزرار «حذف» كان بينده
+        // `DELETE /sales/-37` والسيرفر يرد «فاتورة البيع مش موجودة»، وزرار «طباعة»
+        // كان بيجيب مستند مش موجود. الأربع أزرار مالهمش معنى هنا، والموجود منهم
+        // بيوعد بحاجة مش قادر يعملها.
+        //
+        // والمسودّة ليها فعلين: تستكملها (ضغطة على السطر) أو تمسحها — وده اللي هنا.
+        if (record.__isDraft) {
+          return (
+            <Space size={2} onClick={(e) => e.stopPropagation()}>
+              <Tooltip title="مسح المسودّة">
+                <Button
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => onDeleteDraft?.(record.__draft.id)}
+                />
+              </Tooltip>
+            </Space>
+          );
+        }
         return (
           <Space size={2} onClick={(e) => e.stopPropagation()}>
             <Tooltip title={isSale ? 'عرض الفاتورة' : 'عرض المرتجع'}>

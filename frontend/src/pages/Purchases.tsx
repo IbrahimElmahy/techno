@@ -1835,7 +1835,18 @@ export default function Purchases() {
       title: 'الإجراءات',
       key: 'actions',
       width: 130,
-      render: (_: any, record: PurchaseRecord) => (
+      render: (_: any, record: PurchaseRecord) => ((record as any).__isDraft ? (
+        // **سطر المسودّة مالوش أزرار مستند.** الكشف فيه نوعين سطور، والمسودّة مالهاش
+        // رقم ولا أثر — رقمها في الجدول سالب عشان يفضل فريد وسط أرقام حقيقية. فزرار
+        // الحذف كان بينده السيرفر برقم مش موجود ويرجّع «المستند مش موجود»، وزرار
+        // الطباعة بيجيب ورقة مافيش. الفعل الوحيد اللي ليه معنى هنا: امسح المسودّة.
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="مسح المسودّة">
+            <Button type="text" danger icon={<DeleteOutlined />}
+              onClick={() => removeDraft((record as any).__draft.id)} />
+          </Tooltip>
+        </Space>
+      ) : (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="عرض الفاتورة">
             <Button type="text" icon={<EyeOutlined />} onClick={() => openRow(record)} />
@@ -1883,7 +1894,7 @@ export default function Purchases() {
             }} />
           </Tooltip>
         </Space>
-      ),
+      )),
     },
   ];
 
