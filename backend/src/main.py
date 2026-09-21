@@ -402,6 +402,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer", "service_rep_id", "BIGINT"),
     # نفس الطرف في الموردين — الشرح في `models/customer.py`.
     ("customer", "supplier_id", "BIGINT"),
+    # الفرع ده مصنع — الشرح في `models/org.py`. `DEFAULT FALSE` عشان الصفوف الموجودة
+    # تبقى «مش مصنع» من غير أي تغيير سلوك، والعمود `NOT NULL` في الموديل.
+    ("branch", "is_factory", "BOOLEAN NOT NULL DEFAULT FALSE"),
     # المعاينة اللي خصمت النقط من رصيد التاجر — الرفض بيدوّر عليه عشان يرجّع الخصم مرة واحدة.
     ("point_record", "inspection_id", "BIGINT"),
     # الجيب: معاينات ولا كوبونات. NULL = سطر قبل الفصل، والقراءة بتشتقّه من `kind`،

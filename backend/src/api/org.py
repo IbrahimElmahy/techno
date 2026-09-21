@@ -31,6 +31,8 @@ class BranchCreate(BaseModel):
     name: str
     governorate_id: int
     is_head_office: bool = False
+    # الفرع ده مصنع — بيشغّل قسم الإنتاج ويطفّي الكوبونات والنقاط والخط.
+    is_factory: bool = False
     # «بيان ١» و«بيان ٢» — two free note lines off their الفروع form (031).
     note1: str | None = None
     note2: str | None = None
@@ -40,6 +42,7 @@ class BranchUpdate(BaseModel):
     name: str | None = None
     governorate_id: int | None = None
     active: bool | None = None
+    is_factory: bool | None = None
     note1: str | None = None
     note2: str | None = None
 
@@ -55,6 +58,7 @@ class BranchOut(BaseModel):
     name: str
     governorate_id: int
     is_head_office: bool
+    is_factory: bool = False
     active: bool
     note1: str | None = None
     note2: str | None = None
@@ -132,7 +136,9 @@ def _branch_out(b: Branch) -> BranchOut:
     returned by the list and missing from the create response."""
     return BranchOut(
         id=b.id, name=b.name, governorate_id=b.governorate_id,
-        is_head_office=b.is_head_office, active=b.active, note1=b.note1, note2=b.note2,
+        is_head_office=b.is_head_office,
+        is_factory=bool(getattr(b, "is_factory", False)),
+        active=b.active, note1=b.note1, note2=b.note2,
     )
 
 
@@ -157,6 +163,7 @@ def create_branch(
 ) -> BranchOut:
     branch = Branch(
         name=body.name, governorate_id=body.governorate_id, is_head_office=body.is_head_office,
+        is_factory=body.is_factory,
         note1=body.note1, note2=body.note2,
     )
     db.add(branch)
@@ -185,6 +192,8 @@ def update_branch(
         b.governorate_id = body.governorate_id
     if body.active is not None:
         b.active = body.active
+    if body.is_factory is not None:
+        b.is_factory = body.is_factory
     # Omitted stays omitted: renaming a branch must not blank a note somebody left on it.
     for field in ("note1", "note2"):
         val = getattr(body, field)

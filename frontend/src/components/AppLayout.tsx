@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useShowsFactoryTools } from './useFactoryBranch';
 import {
   Layout, Menu, Button, Tabs, theme, Dropdown, Space, Avatar, Modal, Result, Tooltip,
 } from 'antd';
@@ -164,12 +165,16 @@ export default function AppLayout() {
    * at the leaves: a group is a heading, not a permission. A group left with nothing permitted is
    * removed rather than rendered empty, since a heading over an empty list reads as broken.
    */
+  const showsFactoryTools = useShowsFactoryTools();
   const buildItems = (nodes: (NavScreen | NavGroup)[]): any[] =>
     nodes
       .map((node) => {
         if (!isGroup(node)) {
           return node.roles.includes(userRole) ? { key: node.key, label: node.label } : null;
         }
+        // قسم المصنع بيتشال من غير فرع التصنيع — زي ما المجموعة اللي مافيهاش صلاحية
+        // بتتشال. الشرح في `navigation.ts` و`useFactoryBranch`.
+        if (node.factoryOnly && !showsFactoryTools) return null;
         const children = buildItems(node.children);
         return children.length ? { key: node.key, label: node.label, children } : null;
       })

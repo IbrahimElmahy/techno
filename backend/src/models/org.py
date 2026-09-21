@@ -38,6 +38,22 @@ class Branch(Base):
     # only be a shape somebody has to work around later.
     note1: Mapped[str | None] = mapped_column(String(300), nullable=True)
     note2: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # **الفرع ده مصنع.**
+    #
+    # فرع السادات بيصنّع مش بيوزّع، وشغله مختلف في اتجاهين:
+    #
+    # * **مافيهوش كوبونات ولا نقاط ولا خط (أبيض/بولي).** دول أدوات بيع التجزئة للتجار.
+    #   المصنع بيبيع خام وتشغيل لجهات، والخانات دي بتفضل فاضية على كل ورقة — بتاخد
+    #   مكان على الشاشة وبتخلّي اللي بيكتب يعدّي عليها كل مرة عشان يتأكد إنها مش مطلوبة.
+    # * **وقسم الإنتاج بتاعه هو.** أوامر التشغيل والوصفات والهوالك مالهمش معنى في فرع
+    #   بيستلم بضاعة تامّة ويبيعها، وظهورها في القايمة بيخلّي اللي في العلياء يفتحها
+    #   ويلاقي شاشة فاضية ويسأل.
+    #
+    # **خانة واحدة مش أربعة.** الأربع فروق دي جواب سؤال واحد — «الفرع ده مصنع ولا
+    # لأ؟» — وأربع خانات معناها إن واحدة تتنسي يوم ما يتفتح مصنع تاني.
+    #
+    # والافتراضي `False`: لحد ما حد يدوسها بإيده، مافيش شاشة في النظام بتتغيّر.
+    is_factory: Mapped[bool] = mapped_column(default=False, nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     governorate: Mapped[Governorate] = relationship()

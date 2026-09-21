@@ -29,12 +29,14 @@ export interface LineColumnsCtx {
   advanceFrom: (key: string) => void;
   setDocWarehouseId: (id: number | null) => void;
   setPanelItemId: (id: number | null) => void;
+  /** فرع المصنع مافيهوش نقاط — العمود بيتشال مش بيتعرض فاضي. */
+  hidePoints?: boolean;
 }
 
 export function buildLineColumns({
   viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
   saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
-  advanceFrom, setDocWarehouseId, setPanelItemId,
+  advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints = false,
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
   return [
     { key: 'idx', title: '#', width: 28, locked: true,
@@ -141,7 +143,8 @@ export function buildLineColumns({
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
       cell: (line) => money(saleLineNet(line)),
       footer: (rows) => money(rows.reduce((n, l) => n + saleLineNet(l), 0)) },
-    { key: 'points', title: 'النقاط', minWidth: 65,
+    // عمود النقاط بيتشال خالص في المصنع — عرضه فاضي بيخلّي اللي بيبص يسأل ليه.
+    ...(hidePoints ? [] : [{ key: 'points', title: 'النقاط', minWidth: 65,
       cellStyle: { whiteSpace: 'nowrap', color: '#b26a00' },
       // «مالوش نقط» و«لسه ماكتبتش الكمية» كانوا شكلهم واحد: شرطة. النقط = نقطة الصنف
       // × الكمية، فسطر لسه كميته فاضية بيطلع صفر — واللي بيبص بيفتكر إن الصنف مالوش
@@ -163,7 +166,7 @@ export function buildLineColumns({
         <span style={{ color: '#b26a00' }}>
           {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
         </span>
-      ) },
+      ) }] as EntryColumn<SaleLineItem>[]),
     { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
       cell: (line) => (
         viewOnly ? null : (

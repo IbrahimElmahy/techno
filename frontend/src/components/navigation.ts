@@ -31,6 +31,13 @@ export interface NavGroup {
   key: string;
   label: string;
   children: (NavScreen | NavGroup)[];
+  /**
+   * القسم ده بيبان في فرع التصنيع وحده (وللإدارة اللي مالهاش فرع).
+   *
+   * أوامر التشغيل والوصفات والهوالك مالهمش معنى في فرع بيستلم بضاعة تامّة ويبيعها،
+   * وظهورها في قايمة العلياء بيخلّي اللي يفتحها يلاقي شاشة فاضية ويسأل.
+   */
+  factoryOnly?: boolean;
 }
 
 export function isGroup(node: NavScreen | NavGroup): node is NavGroup {
@@ -323,6 +330,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
   {
     key: 'grp-production',
     label: 'ادارة انتاج',
+    factoryOnly: true,
     children: [
       { key: '/manufacturing?tab=recipes', label: 'نسب انتاج', roles: BUYING, a5: '/production-proportions' },
       { key: '/free-production', label: 'انتاج حر', roles: BUYING, a5: '/productions/free' },

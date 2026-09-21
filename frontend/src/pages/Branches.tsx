@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { forgetFactoryBranches } from '../components/useFactoryBranch';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
@@ -30,6 +31,7 @@ interface BranchRecord {
   name: string;
   governorate_id: number;
   is_head_office: boolean;
+  is_factory?: boolean;
   active: boolean;
   note1: string | null;
   note2: string | null;
@@ -93,7 +95,9 @@ export default function Branches() {
         note2: values.note2 || null,
         governorate_id: values.governorate_id,
         is_head_office: !!values.is_head_office,
+        is_factory: !!values.is_factory,
       });
+      forgetFactoryBranches();
       message.success('تم تسجيل الفرع');
       setCreateOpen(false);
       form.resetFields();
@@ -111,7 +115,11 @@ export default function Branches() {
         note1: values.note1 || null,
         note2: values.note2 || null,
         governorate_id: values.governorate_id,
+        is_factory: !!values.is_factory,
       });
+      // الكشف متخزّن في `useFactoryBranch` — لازم يترمي بعد التعديل وإلا القايمة
+      // بتفضل على الوضع القديم لحد ما التبويب يتقفل.
+      forgetFactoryBranches();
       message.success('اتعدّل الفرع');
       setEditing(null);
       fetchAll();
@@ -160,6 +168,7 @@ export default function Branches() {
         <Space size={4}>
           <span style={{ fontWeight: 600 }}>{name}</span>
           {record.is_head_office && <Tag color="blue">المركز الرئيسي</Tag>}
+          {record.is_factory && <Tag color="purple">مصنع</Tag>}
           {!record.active && <Tag color="red">مخفي</Tag>}
         </Space>
       ),
@@ -240,6 +249,22 @@ export default function Branches() {
             </Form.Item>
           </Col>
         )}
+        {/*
+          * **خانة واحدة بتحكم أربع فروق.**
+          *
+          * فرع التصنيع بيشتغل بشكل مختلف: مافيهوش كوبونات ولا نقاط ولا خط (أبيض/بولي)
+          * — دي أدوات بيع التجزئة للتجار — وقسم الإنتاج بتاعه هو وحده. الأربعة دول
+          * جواب سؤال واحد، وأربع خانات معناها إن واحدة تتنسي يوم ما يتفتح مصنع تاني.
+          *
+          * وبتتعدّل بعد الإنشاء كمان، مش وقت الإنشاء بس: الفروع موجودة خلاص، والمصنع
+          * منهم — فلو الخانة على الإنشاء وحده مافيش طريق نعلّم بيها غير قاعدة البيانات.
+          */}
+        <Col span={10}>
+          <Form.Item name="is_factory" valuePropName="checked" label=" "
+            tooltip="الفرع ده بيصنّع: قسم الإنتاج بيبان فيه، والكوبونات والنقاط وخط الفاتورة بيختفوا">
+            <Checkbox>فرع تصنيع</Checkbox>
+          </Form.Item>
+        </Col>
       </Row>
     </>
   );

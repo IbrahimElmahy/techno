@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useIsFactoryBranch } from '../components/useFactoryBranch';
 // **باسم مستعار عن قصد.** الملف ده عنده `PAGE_SIZE` بمعنى تاني خالص —
 // حد الجلب من الـAPI، مش عدد صفوف الجدول.
 import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
@@ -61,6 +62,14 @@ export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
   // فئات الورق اللي بيتسلّم للعميل. مصدر واحد: قائمة «فئات الكوبونات» في الإعدادات.
   const { options: couponKindOptions } = useLookup('coupon_kind');
+  /**
+   * **فرع المصنع مافيهوش كوبونات ولا نقاط ولا خط.**
+   *
+   * الكوبونات والنقاط والخط (أبيض/بولي) أدوات بيع التجزئة للتجار. المصنع بيبيع خام
+   * وتشغيل لجهات، فالخانات دي بتفضل فاضية على كل ورقة — بتاخد مكان وبتخلّي اللي
+   * بيكتب يعدّي عليها كل مرة عشان يتأكد إنها مش مطلوبة. الشرح في `useFactoryBranch`.
+   */
+  const isFactory = useIsFactoryBranch();
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
   const [filters, setFilters] = useState<InvoiceFilters>({});
@@ -1163,7 +1172,9 @@ export default function Invoices() {
    * «نوع الفاتورة» سؤال عن حساب العميل، فمابيتسألش غير لما يكون عنده أكتر من حساب فعلاً.
    * العميل العادي عنده واحد بس، والدورة بتخلص عند المخزن وتفتح المستند على طول.
    */
-  const afterWarehouseStep = (): null | 'family' => 'family';
+  // وباب «نوع الفاتورة» مابيتفتحش في المصنع: الخط أداة تجزئة، والمستند هناك مالوش
+  // خط. سؤال إجابته الوحيدة «مش مهم» بيتشال، مابيتسألش وبيتعدّى عليه.
+  const afterWarehouseStep = (): null | 'family' => (isFactory ? null : 'family');
 
   /** خيارات باب «نوع الفاتورة».
    *
@@ -1593,7 +1604,7 @@ export default function Invoices() {
   const lineColumns = buildLineColumns({
     viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
     saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
-    advanceFrom, setDocWarehouseId, setPanelItemId,
+    advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints: isFactory,
   });
   const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
 
@@ -2220,6 +2231,8 @@ function couponsTotal(inv: any): number {
                   options={reps.map((r) => ({ value: r.id, label: r.full_name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
+            {/* الخط أداة تجزئة — مش في المصنع. الشرح فوق عند `isFactory`. */}
+            {!isFactory && (
             <Col xs={12} md={6}>
               <Form.Item label="نوع الفاتورة (الخط)" style={{ marginBottom: 8 }}>
                 <Select
@@ -2232,6 +2245,7 @@ function couponsTotal(inv: any): number {
                 />
               </Form.Item>
             </Col>
+            )}
             <Col xs={12} md={6}>
               <Form.Item name="external_document_number" label="رقم المستند"
                 style={{ marginBottom: 8 }}>
@@ -2257,7 +2271,8 @@ function couponsTotal(inv: any): number {
             </Col>
           </Row>
 
-          {/* الكوبونات المصروفة */}
+          {/* الكوبونات المصروفة — مش في المصنع */}
+          {!isFactory && (
           <div style={{ marginTop: 14, marginBottom: 12 }}>
             <Row gutter={8} className="mini-head">
               <Col xs={24} md={7}>فئة الكوبون</Col>
@@ -2315,8 +2330,9 @@ function couponsTotal(inv: any): number {
               </div>
             )}
           </div>
+          )}
 
-          {families.length > 1 && (
+          {!isFactory && families.length > 1 && (
             <div style={{ marginBottom: 10 }}>
               <Segmented
                 block
@@ -2527,8 +2543,9 @@ function couponsTotal(inv: any): number {
                     color: due > 0.001 ? '#cf1322' : '#6AB42D', show: hasParty },
                 ]}
                 notes={[
+                  isFactory ? null : (
                   <>النقاط: <b style={{ color: '#F5A11D' }}>
-                    {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></>,
+                    {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></>),
                   creditAmount < -0.001 ? (
                     <>يسدّد من المديونية القديمة:{' '}
                       <b style={{ color: '#6AB42D' }}>{money(Math.abs(creditAmount))} ج.م</b></>
