@@ -346,6 +346,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     await SaleAddItemFlow.show(
       context,
       alreadyOnInvoice: {for (final l in _lines) l.itemId: l.quantity},
+      exceptInvoiceLocalId: _editingId,
       priceTier: _customer?.priceTier,
       onAdd: (picked, qty) {
         final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
@@ -444,7 +445,14 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   Future<List<_OverLine>> _overCustody() async {
     // بتتقري من القاعدة من جديد مش من `_free` — الطابور ممكن يكون اتغيّر (فاتورة تانية
     // اترفعت أو اتمسحت) والشاشة مفتوحة.
-    final free = await LocalDb.instance.availableForSaleAll();
+    //
+    // **وبنفس الاستثناء بتاع `_loadFree`.** من غيره الفاتورة اللي بتتعدّل بتتحسب
+    // مرتين: سطورها لسه في الطابور فبتتخصم من المتاح، وبعدين بتتقاس عليه تاني —
+    // فكل صنف فيها بيطلع «خلص من عربيتك» وهي هي البضاعة اللي واخداها. والسطر ده
+    // كان بيكتب النتيجة الغلط في `_free` كمان، فالتحذير الأحمر كان بيفضل على السطور
+    // بعد ما البوباب يتقفل.
+    final free = await LocalDb.instance
+        .availableForSaleAll(exceptInvoiceLocalId: _editingId);
     if (mounted) setState(() => _free = free);
     return [
       for (final l in _lines)
@@ -599,6 +607,26 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       if (l.variableDiscountPct >= 100) {
         return _say('خصم «${l.itemName}» ${_qty(l.variableDiscountPct)}٪ — '
             'الخانة دي نسبة مش مبلغ. اكتب رقم أقل من ١٠٠.');
+      }
+    }
+    // **البيع تحت سعر الشريحة بيتمنع هنا، مش عند المزامنة.**
+    //
+    // `sales_service` بيرفض أي سطر سعره أقل من سعر الشريحة لو اللي بيكتب مالوش
+    // صلاحية «البيع تحت السعر». والتطبيق ماكانش يعرف القاعدة دي، فالفاتورة كانت
+    // بتتحفظ وتقعد في الطابور ويرجع الرفض كل مزامنة — بعد ما البضاعة اتسلّمت والعميل
+    // واخد ورقته، ومن غير ما حاجة تتصلّح لوحدها. نفس الحساب بالظبط بيتعمل هنا وهو
+    // واقف عند العميل، وبنفس نص الرسالة عشان اللي يقراها يبقى شايف نفس الكلام.
+    if ((await LocalDb.instance.getKv('can_sell_below_price')) == '0') {
+      final tier = _customer?.priceTier;
+      final catalogue = {for (final i in await LocalDb.instance.saleItems()) i.itemId: i};
+      for (final l in _lines) {
+        final listed = catalogue[l.itemId]?.priceFor(tier);
+        if (listed == null || listed <= 0) continue;
+        if (l.unitPrice < listed - 0.0001) {
+          return _say('«${l.itemName}» بسعر ${_money(l.unitPrice)} وسعر الشريحة '
+              '${_money(listed)} — البيع تحت السعر محتاج صلاحية مالكش إياها. '
+              'ظبّط السعر أو كلّم المكتب.');
+        }
       }
     }
     final over = await _overCustody();

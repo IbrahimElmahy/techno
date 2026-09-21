@@ -340,6 +340,15 @@ class ApiClient {
     // بيتبعتوا مختلفين وقت الترحيل — فالجهاز بيحفظ اللي السيرفر قاله مش بيفترض.
     await LocalDb.instance.setKv('store_kind', '${body['store_kind'] ?? 'custody'}');
     await LocalDb.instance.setKv('store_id', '${body['store_id']}');
+    // **البيع تحت سعر الشريحة — مسموح ولا لأ.**
+    //
+    // الجهاز ماكانش يعرف، فكان بيسيب المندوب يكتب الفاتورة بسعر أقل وتقعد في الطابور
+    // والسيرفر يرفضها كل مزامنة: «مالكش الصلاحية دي» — بعد ما البضاعة اتسلّمت والعميل
+    // واخد ورقته. المنع لازم يحصل وهو عند العميل.
+    //
+    // سيرفر قديم مابيرجّعهاش ⇒ `true`، والسلوك زي ما كان.
+    await LocalDb.instance.setKv(
+        'can_sell_below_price', (body['can_sell_below_price'] ?? true) == true ? '1' : '0');
     await LocalDb.instance.replaceCustomers([
       for (final c in (body['customers'] as List))
         CustomerRef(

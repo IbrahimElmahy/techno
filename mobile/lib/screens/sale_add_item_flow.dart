@@ -48,6 +48,10 @@ class SaleAddItemFlow {
     // إذن التحويل بيبعت أصناف المخزن اللي هو مختاره: الإذن أصلاً بيتكتب عشان يطلب
     // حاجة مش معاه، فقايمة عربيته مالهاش معنى هناك.
     List<SaleItem>? source,
+    // **الفاتورة اللي بتتعدّل مابتتخصمش من متاحها.** سطورها لسه في الطابور، فلولا
+    // الاستثناء ده بتتحسب مرتين: مخصومة من الرصيد ومقيسة عليه — والمندوب بيضيف صنف
+    // على فاتورة قديمة فيلاقيه «خلص من عربيتك» وهي هي البضاعة اللي واخداها.
+    int? exceptInvoiceLocalId,
   }) async {
     final items = source ?? await LocalDb.instance.saleItems();
     // **الترتيب أبجدي، مرة واحدة هنا.** القايمة جاية من مصدرين (أصناف المخزن اللي
@@ -55,7 +59,8 @@ class SaleAddItemFlow {
     // الشاشة مرتّبة بشكل مختلف على حسب من فين فتحها. والترتيب في `arabic_sort` عشان
     // الهمزة والتاء المربوطة مايفرّقوش الاسم الواحد.
     sortByName<SaleItem>(items, (i) => i.name);
-    final free = await LocalDb.instance.availableForSaleAll();
+    final free = await LocalDb.instance
+        .availableForSaleAll(exceptInvoiceLocalId: exceptInvoiceLocalId);
     if (!context.mounted) return;
 
     // **مافيش ولا صنف على الجهاز = مشكلة مزامنة، مش عربية فاضية.**
