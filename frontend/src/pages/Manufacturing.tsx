@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Select, Space, Statistic, Table, Tabs, Tag, message,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -10,6 +10,7 @@ import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
   BuildOutlined,
 } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
@@ -133,8 +134,21 @@ export default function Manufacturing() {
       activeKey={tab} onChange={setTab}
       items={[
         {
+          // الشاشة المطلوبة: أمر تشغيل واحد بسطور منتجات وسطور خامات. القديمة (منتج
+          // واحد للأمر) اتنقلت لتبويب جنبها — تلات فروع شغّالة عليها دلوقتي، وشيلها
+          // معناه إن شغلهم يقف في نفس اليوم.
           key: 'orders',
-          label: <span><BuildOutlined /> أوامر التصنيع</span>,
+          label: <span><BuildOutlined /> أوامر التشغيل</span>,
+          children: (
+            <ProductionOrdersTab
+              products={products} rawMaterials={rawMaterials} warehouses={warehouses}
+              branches={branches} boms={boms} itemName={itemName} whName={whName}
+            />
+          ),
+        },
+        {
+          key: 'recipe-orders',
+          label: <span><BuildOutlined /> أوامر التصنيع (بالوصفة)</span>,
           children: (
             <OrdersTab
               orders={orders} products={products} warehouses={warehouses} branches={branches}
@@ -1033,6 +1047,594 @@ function WorkOrdersTab({ branches }: { branches: { id: number; name: string }[] 
         }}
         locale={{ emptyText: 'مافيش أوامر شغل منقولة' }}
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// أوامر التشغيل (032) — الورقة اللي بتطلّع كذا منتج من كذا خامة
+// ---------------------------------------------------------------------------
+/**
+ * الشاشة القديمة كانت بتعرض `ManufacturingOrder` — **منتج واحد لكل أمر**. وأمر المصنع
+ * بيطلّع أربعة، فالصفحة كانت بتوري حاجة تانية غير اللي في إيد الورشة.
+ *
+ * هنا الورقة بشكلها: ترويسة، جدول منتجات، إجماليات، جدول خامات — وكل خامة **منسوبة
+ * للمنتج بتاعها**، فتكلفة المنتج = مجموع خاماته + مصاريفه من غير أي توزيع بنسب.
+ *
+ * **وأهم عمود في الشاشة هو «الفرق».** كل سطر شايل «المفروض» (من الوصفة وقت فتح الأمر)
+ * و«اللي حصل»، والفرق بينهم هو الفاقد أو الزيادة. ده الرقم اللي المصنع بيسأل عليه
+ * ومافيش شاشة تانية بتقوله: الحركة بتقول اتصرف كام، والوصفة بتقول المفروض كام، ومحدش
+ * بيحطهم على نفس السطر.
+ *
+ * **والحركة مابتحصلش إلا عند التنفيذ.** المسودة تتعدّل وتتمسح براحتها، وماحدش بيخصم
+ * مخزون على ورقة لسه بتتكتب.
+ *
+ * **مافيش معاينة تكلفة في الفورم.** التكلفة بتتجمّد من متوسط التكلفة على السيرفر وقت
+ * التنفيذ، والواجهة عندها `purchase_price` وهو رقم تاني — فمعاينة بيه كانت هتقول رقم
+ * والورقة تطلع برقم غيره.
+ */
+type POState = 'draft' | 'confirmed' | 'done' | 'reversed';
+
+interface POMaterial {
+  id: number; product_line_id: number | null; item_id: number; warehouse_id: number | null;
+  planned_quantity: string; quantity: string; unit: string | null;
+  unit_cost: string; line_cost: string; waste_quantity: string;
+}
+interface POProduct {
+  id: number; item_id: number; warehouse_id: number | null;
+  planned_quantity: string; quantity: string; unit: string | null; bom_id: number | null;
+  material_cost: string; expense_amount: string; total_cost: string; unit_cost: string;
+}
+interface ProductionOrder {
+  id: number; document_number: string; production_date: string | null;
+  branch_id: number | null; external_document_number: string | null;
+  statement1: string | null; notes: string | null; state: POState; reviewed: boolean;
+  material_cost: string; expense_amount: string; total_cost: string;
+  planned_quantity: string; product_quantity: string; material_quantity: string;
+  imported_from: string | null; reversed: boolean; is_reversal: boolean;
+  products: POProduct[]; materials: POMaterial[];
+}
+
+const PO_STATE_TAG: Record<POState, { color: string; label: string }> = {
+  draft: { color: 'default', label: 'مسودة' },
+  confirmed: { color: 'blue', label: 'مؤكد' },
+  done: { color: 'green', label: 'منفّذ' },
+  reversed: { color: 'red', label: 'معكوس' },
+};
+
+const num = (v: string | number) => Number(v).toLocaleString(numeralsLocale());
+
+/**
+ * الفرق بين المفروض واللي حصل. **الصفر في «المفروض» معناه مافيش خطة متسجّلة** — زي
+ * الأوامر المنقولة من a5، المصدر فيه اللي اتصرف بس — فبنقول «—» بدل ما نعرض الكمية
+ * كلها على إنها فاقد.
+ */
+function Variance({ planned, actual }: { planned: string; actual: string }) {
+  const p = Number(planned);
+  if (!p) return <span style={{ color: '#aaa' }}>—</span>;
+  const d = Number(actual) - p;
+  if (!d) return <Tag color="green">مطابق</Tag>;
+  return (
+    <Tag color={d > 0 ? 'red' : 'blue'}>
+      {d > 0 ? '+' : ''}{num(d.toFixed(3))}
+    </Tag>
+  );
+}
+
+/** سطر في الفورم — مفتاح محلي عشان الحذف مايلخبطش الصفوف. */
+interface DraftMaterial {
+  key: number; item_id?: number; warehouse_id?: number;
+  planned_quantity?: number | null; quantity?: number | null; waste_quantity?: number | null;
+}
+interface DraftProduct {
+  key: number; item_id?: number; warehouse_id?: number;
+  planned_quantity?: number | null; quantity?: number | null;
+  bom_id?: number | null; expense_amount?: number | null; materials: DraftMaterial[];
+}
+
+let poSeq = 1;
+const newPOMaterial = (): DraftMaterial => ({ key: poSeq++ });
+const newPOProduct = (): DraftProduct => ({ key: poSeq++, materials: [] });
+
+function ProductionOrdersTab({
+  products, rawMaterials, warehouses, branches, boms, itemName, whName,
+}: {
+  products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
+  branches: { id: number; name: string }[]; boms: Bom[];
+  itemName: (id: number) => string;
+  whName: (id: number | null | undefined) => string;
+}) {
+  const [rows, setRows] = useState<ProductionOrder[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [query, setQuery] = useState('');
+  const [stateFilter, setStateFilter] = useState<POState | undefined>();
+  const [scope, setScope] = useState<'all' | 'ours' | 'imported'>('all');
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  // --- الورقة اللي بتتكتب ---
+  const [productionDate, setProductionDate] = useState<any>(null);
+  const [branchId, setBranchId] = useState<number | undefined>();
+  const [externalRef, setExternalRef] = useState('');
+  const [statement, setStatement] = useState('');
+  const [notes, setNotes] = useState('');
+  const [lines, setLines] = useState<DraftProduct[]>([]);
+
+  const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
+  const itemOptions = (list: Item[]) =>
+    list.map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` }));
+  const whOptions = warehouses.map((w) => ({ value: w.id, label: w.name }));
+
+  const branchName = useMemo(() => {
+    const m = new Map(branches.map((b) => [b.id, b.name]));
+    return (id: number | null) => (id == null ? '-' : m.get(id) ?? `#${id}`);
+  }, [branches]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/v1/manufacturing/production-orders', {
+        params: {
+          limit: pageSize, offset: (page - 1) * pageSize,
+          ...(query.trim() ? { search: query.trim() } : {}),
+          ...(stateFilter ? { state: stateFilter } : {}),
+          ...(scope === 'all' ? {} : { imported: scope === 'imported' }),
+        },
+      });
+      setRows(res.data?.rows ?? []);
+      setTotal(res.data?.total ?? 0);
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+
+  // الترقيم على السيرفر — المنقول لوحده بالآلاف، وتحميله كله عشان نعرض خمسين بيرجّع
+  // ميجابايتات في كل فتحة للشاشة.
+  useEffect(() => { load(); }, [page, pageSize, stateFilter, scope]);
+
+  const resetForm = () => {
+    setEditingId(null); setProductionDate(null); setBranchId(undefined);
+    setExternalRef(''); setStatement(''); setNotes(''); setLines([]);
+  };
+
+  const openNew = () => { resetForm(); setLines([newPOProduct()]); setOpen(true); };
+
+  const openEdit = (r: ProductionOrder) => {
+    setEditingId(r.id);
+    setProductionDate(r.production_date ? dayjs(r.production_date) : null);
+    setBranchId(r.branch_id ?? undefined);
+    setExternalRef(r.external_document_number || '');
+    setStatement(r.statement1 || '');
+    setNotes(r.notes || '');
+    setLines(r.products.map((p) => ({
+      key: poSeq++, item_id: p.item_id, warehouse_id: p.warehouse_id ?? undefined,
+      planned_quantity: Number(p.planned_quantity), quantity: Number(p.quantity),
+      bom_id: p.bom_id, expense_amount: Number(p.expense_amount),
+      materials: r.materials.filter((m) => m.product_line_id === p.id).map((m) => ({
+        key: poSeq++, item_id: m.item_id, warehouse_id: m.warehouse_id ?? undefined,
+        planned_quantity: Number(m.planned_quantity), quantity: Number(m.quantity),
+        waste_quantity: Number(m.waste_quantity),
+      })),
+    })));
+    setOpen(true);
+  };
+
+  const patchLine = (key: number, patch: Partial<DraftProduct>) =>
+    setLines((p) => p.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  const patchMaterial = (lineKey: number, matKey: number, patch: Partial<DraftMaterial>) =>
+    setLines((p) => p.map((x) => (x.key === lineKey
+      ? { ...x, materials: x.materials.map((y) => (y.key === matKey ? { ...y, ...patch } : y)) }
+      : x)));
+
+  /**
+   * يملا خامات سطر المنتج من وصفته، مضروبة في الكمية. **ده «المفروض»** — والمصروف
+   * بيتفتح بنفس الرقم عشان اللي مابيغيّرهوش يبقى قال «اتصرف زي الوصفة» صراحةً.
+   */
+  const fillFromRecipe = (key: number) => {
+    setLines((prev) => prev.map((ln) => {
+      if (ln.key !== key) return ln;
+      const bom = boms.find((b) => b.id === ln.bom_id)
+        ?? boms.find((b) => b.active && b.product_id === ln.item_id);
+      if (!bom) { message.info('المنتج ده مالوش وصفة'); return ln; }
+      const qty = Number(ln.planned_quantity ?? ln.quantity ?? 0);
+      if (!qty) { message.info('اكتب الكمية الأول'); return ln; }
+      const scale = qty / Number(bom.output_quantity || 1);
+      return {
+        ...ln,
+        bom_id: bom.id,
+        materials: bom.components.map((c) => {
+          // × معامل الوحدة زي الباك-إند بالظبط: سطر وصفة «٢ كرتونة» بيصرف ٢٤ قطعة،
+          // ومعاينة بتقول ٢ بتبعت أمين المخزن يدوّر على الـ٢٢ الباقيين.
+          const q = Number(c.quantity) * scale * Number(c.unit_factor ?? 1);
+          return { key: poSeq++, item_id: c.item_id, planned_quantity: q, quantity: q };
+        }),
+      };
+    }));
+  };
+
+  const payload = () => ({
+    production_date: productionDate ? productionDate.format('YYYY-MM-DD') : undefined,
+    branch_id: branchId ?? undefined,
+    external_document_number: externalRef || undefined,
+    statement1: statement || undefined,
+    notes: notes || undefined,
+    products: lines.map((ln) => ({
+      item_id: ln.item_id, quantity: ln.quantity,
+      planned_quantity: ln.planned_quantity ?? ln.quantity,
+      warehouse_id: ln.warehouse_id ?? undefined,
+      bom_id: ln.bom_id ?? undefined,
+      expense_amount: ln.expense_amount ?? 0,
+      materials: ln.materials.filter((m) => m.item_id && m.quantity).map((m) => ({
+        item_id: m.item_id, quantity: m.quantity,
+        planned_quantity: m.planned_quantity ?? m.quantity,
+        warehouse_id: m.warehouse_id ?? undefined,
+        waste_quantity: m.waste_quantity ?? 0,
+      })),
+    })),
+  });
+
+  const submit = async () => {
+    if (!lines.length) { message.warning('ضيف منتج واحد على الأقل'); return; }
+    for (const ln of lines) {
+      if (!ln.item_id || !ln.quantity) { message.warning('كل سطر منتج محتاج صنف وكمية'); return; }
+    }
+    setSaving(true);
+    try {
+      if (editingId) await api.put(`/api/v1/manufacturing/production-orders/${editingId}`, payload());
+      else await api.post('/api/v1/manufacturing/production-orders', payload());
+      message.success(editingId ? 'اتحفظت المسودة' : 'اتفتح أمر تشغيل كمسودة — مافيش حركة مخزون لسه');
+      setOpen(false); resetForm(); setPage(1); load();
+    } catch (err) { console.error(err); } finally { setSaving(false); }
+  };
+
+  const act = async (r: ProductionOrder, verb: 'confirm' | 'execute', done: string) => {
+    try {
+      await api.post(`/api/v1/manufacturing/production-orders/${r.id}/${verb}`);
+      message.success(done);
+      load();
+    } catch (err) { console.error(err); }
+  };
+
+  const reverse = (r: ProductionOrder) => {
+    showReversalConfirm({
+      title: 'التراجع عن أمر تشغيل',
+      content: `عكس «${r.document_number}» هيرجّع الخامات للمخزن ويشيل الإنتاج، وهيفضل في السجل كحركة عكسية مش مسح. لو الإنتاج اتباع أو اتصرف، العكس هيتمنع. تمام؟`,
+      onOk: async () => {
+        try {
+          await api.post(`/api/v1/manufacturing/production-orders/${r.id}/reverse`);
+          message.success('تم عكس أمر التشغيل');
+          load();
+        } catch (err) { console.error(err); }
+      },
+    });
+  };
+
+  const removeDraft = async (r: ProductionOrder) => {
+    try {
+      await api.delete(`/api/v1/manufacturing/production-orders/${r.id}`);
+      message.success('اتمسحت المسودة');
+      load();
+    } catch (err) { console.error(err); }
+  };
+
+  const noMoney = (r: ProductionOrder, v: string) =>
+    (r.imported_from || r.state !== 'done' ? '—' : `${fmtMoney(v)} ج.م`);
+
+  const columns = [
+    { title: 'المستند', dataIndex: 'document_number', key: 'doc',
+      render: (d: string) => <Tag color="blue">{d}</Tag> },
+    { title: 'التاريخ', dataIndex: 'production_date', key: 'date', width: 115,
+      render: (d: string | null) => d || '-' },
+    { title: 'رقم المستند', dataIndex: 'external_document_number', key: 'ext', width: 125,
+      render: (v: string | null) => v || '-' },
+    { title: 'الفرع', key: 'branch', width: 120,
+      render: (_: any, r: ProductionOrder) => branchName(r.branch_id) },
+    { title: 'المنتجات', key: 'np', width: 85,
+      render: (_: any, r: ProductionOrder) => r.products.length },
+    { title: 'كمية المنتج', dataIndex: 'product_quantity', key: 'pq', width: 115,
+      render: (q: string) => num(q) },
+    { title: 'كمية الخامات', dataIndex: 'material_quantity', key: 'mq', width: 120,
+      render: (q: string) => num(q) },
+    { title: 'قيمة الخامات', dataIndex: 'material_cost', key: 'mc', width: 125,
+      render: (v: string, r: ProductionOrder) => noMoney(r, v) },
+    { title: 'مصاريف', dataIndex: 'expense_amount', key: 'ex', width: 105,
+      render: (v: string, r: ProductionOrder) => noMoney(r, v) },
+    { title: 'الإجمالي', dataIndex: 'total_cost', key: 'tc', width: 120,
+      render: (v: string, r: ProductionOrder) => noMoney(r, v) },
+    { title: 'الحالة', key: 'state', width: 150,
+      render: (_: any, r: ProductionOrder) => (
+        <Space size={4}>
+          <Tag color={PO_STATE_TAG[r.state].color}>{PO_STATE_TAG[r.state].label}</Tag>
+          {r.imported_from && <Tag color="gold">منقول</Tag>}
+          {r.is_reversal && <Tag color="purple">حركة عكسية</Tag>}
+        </Space>
+      ) },
+    { title: 'إجراء', key: 'action', width: 230,
+      render: (_: any, r: ProductionOrder) => {
+        if (r.imported_from || r.is_reversal) return null;
+        return (
+          <Space size={2}>
+            {r.state === 'draft' && (
+              <>
+                <Button type="link" size="small" icon={<EditOutlined />}
+                  onClick={() => openEdit(r)}>تعديل</Button>
+                <Button type="link" size="small"
+                  onClick={() => act(r, 'confirm', 'اتأكد الأمر — لسه مافيش حركة مخزون')}>
+                  تأكيد
+                </Button>
+                <Popconfirm title="تمسح المسودة؟" onConfirm={() => removeDraft(r)}>
+                  <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </>
+            )}
+            {r.state === 'confirmed' && (
+              <>
+                <Button type="link" size="small" icon={<EditOutlined />}
+                  onClick={() => openEdit(r)}>تعديل</Button>
+                <Button type="link" size="small"
+                  onClick={() => act(r, 'execute', 'اتنفّذ الأمر: اتصرفت الخامات واتضاف الإنتاج')}>
+                  تنفيذ وترحيل
+                </Button>
+              </>
+            )}
+            {r.state === 'done' && (
+              <Button type="link" size="small" danger icon={<RollbackOutlined />}
+                onClick={() => reverse(r)}>تراجع وعكس</Button>
+            )}
+          </Space>
+        );
+      } },
+  ];
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16, textAlign: 'left' }}>
+        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openNew}>
+          أمر تشغيل جديد
+        </Button>
+      </div>
+
+      <Space style={{ marginBottom: 12 }} wrap>
+        <Input.Search allowClear style={{ width: 300 }}
+          placeholder="بحث برقم المستند أو رقم الورقة"
+          value={query} onChange={(e) => setQuery(e.target.value)}
+          onSearch={() => { setPage(1); load(); }} />
+        <Select allowClear style={{ width: 160 }} placeholder="الحالة" value={stateFilter}
+          onChange={(v) => { setStateFilter(v); setPage(1); }}
+          options={(Object.keys(PO_STATE_TAG) as POState[]).map((k) => ({
+            value: k, label: PO_STATE_TAG[k].label }))} />
+        <Select style={{ width: 180 }} value={scope}
+          onChange={(v) => { setScope(v); setPage(1); }}
+          options={[
+            { value: 'all', label: 'الكل' },
+            { value: 'ours', label: 'المكتوب عندنا' },
+            { value: 'imported', label: 'المنقول من a5' },
+          ]} />
+      </Space>
+
+      <Table
+        rowKey="id" loading={loading} dataSource={rows} columns={columns}
+        pagination={{
+          current: page, pageSize, total, showSizeChanger: true,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+        }}
+        expandable={{
+          expandedRowRender: (r: ProductionOrder) => (
+            <div>
+              <Divider orientation="right" style={{ margin: '4px 0 8px' }}>الإنتاج التام</Divider>
+              <Table size="small" pagination={false} rowKey="id" dataSource={r.products}
+                columns={[
+                  { title: 'الصنف', key: 'n', render: (_: any, p: POProduct) => itemName(p.item_id) },
+                  { title: 'المخزن', dataIndex: 'warehouse_id', render: (w: number | null) => whName(w) },
+                  { title: 'المفروض', dataIndex: 'planned_quantity',
+                    render: (q: string) => (Number(q) ? num(q) : '—') },
+                  { title: 'اللي طلع', dataIndex: 'quantity', render: (q: string) => num(q) },
+                  { title: 'الفرق', key: 'v',
+                    render: (_: any, p: POProduct) => (
+                      <Variance planned={p.planned_quantity} actual={p.quantity} />) },
+                  { title: 'قيمة الخامات', dataIndex: 'material_cost',
+                    render: (v: string) => noMoney(r, v) },
+                  { title: 'مصاريف', dataIndex: 'expense_amount',
+                    render: (v: string) => noMoney(r, v) },
+                  { title: 'الإجمالي', dataIndex: 'total_cost', render: (v: string) => noMoney(r, v) },
+                  { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', render: (v: string) => noMoney(r, v) },
+                ]} />
+
+              <StatsRow gutter={16} style={{ margin: '12px 0' }}>
+                <Col span={6}><Statistic title="كمية المنتج" value={num(r.product_quantity)} /></Col>
+                <Col span={6}><Statistic title="كمية الخامات" value={num(r.material_quantity)} /></Col>
+                <Col span={6}><Statistic title="قيمة الخامات" value={noMoney(r, r.material_cost)} /></Col>
+                <Col span={6}><Statistic title="مصاريف" value={noMoney(r, r.expense_amount)} /></Col>
+              </StatsRow>
+
+              <Divider orientation="right" style={{ margin: '4px 0 8px' }}>الخامات</Divider>
+              <Table size="small" pagination={false} rowKey="id" dataSource={r.materials}
+                columns={[
+                  { title: 'الصنف', key: 'n', render: (_: any, m: POMaterial) => itemName(m.item_id) },
+                  { title: 'للمنتج', key: 'p',
+                    render: (_: any, m: POMaterial) => {
+                      const p = r.products.find((x) => x.id === m.product_line_id);
+                      // المنقول مافيهوش نسبة — المصدر مابيقولش أنهي خامة راحت لأنهي منتج.
+                      return p ? itemName(p.item_id) : '—';
+                    } },
+                  { title: 'المخزن', dataIndex: 'warehouse_id', render: (w: number | null) => whName(w) },
+                  { title: 'المفروض', dataIndex: 'planned_quantity',
+                    render: (q: string) => (Number(q) ? num(q) : '—') },
+                  { title: 'اللي اتصرف', dataIndex: 'quantity', render: (q: string) => num(q) },
+                  { title: 'الفرق', key: 'v',
+                    render: (_: any, m: POMaterial) => (
+                      <Variance planned={m.planned_quantity} actual={m.quantity} />) },
+                  { title: 'الهالك', dataIndex: 'waste_quantity',
+                    render: (q: string) => (Number(q) ? num(q) : '-') },
+                  { title: 'متوسط', dataIndex: 'unit_cost', render: (v: string) => noMoney(r, v) },
+                  { title: 'الإجمالي', dataIndex: 'line_cost', render: (v: string) => noMoney(r, v) },
+                ]} />
+
+              {r.imported_from && (
+                <p style={{ color: '#ad6800', marginTop: 12 }}>
+                  الأمر ده اتلمّ من حركة منقولة من a5. تصدير a5 مافيهوش عمود تكلفة ولا كمية
+                  مخطّطة، فالتكلفة والفرق مابيتعرضوش بدل ما يتخمّنوا — والخامات مش منسوبة
+                  لمنتج لنفس السبب.
+                </p>
+              )}
+              {r.state !== 'done' && !r.imported_from && (
+                <p style={{ color: '#888', marginTop: 12 }}>
+                  الأمر لسه ماترحّلش — مافيش أي حركة مخزون عليه، والتكلفة بتتحسب وقت التنفيذ.
+                </p>
+              )}
+              {(r.statement1 || r.notes) && (
+                <p style={{ color: '#888', marginTop: 8 }}>{r.statement1} {r.notes}</p>
+              )}
+            </div>
+          ),
+        }}
+        locale={{ emptyText: 'مافيش أوامر تشغيل' }}
+      />
+
+      <TabModal centered title={editingId ? 'تعديل مسودة أمر تشغيل' : 'أمر تشغيل جديد'}
+        width={1050} open={open} onCancel={() => setOpen(false)} destroyOnHidden
+        footer={
+          <Space>
+            <Button onClick={() => setLines((p) => [...p, newPOProduct()])}>+ منتج</Button>
+            <Button type="primary" loading={saving} onClick={submit}>
+              {editingId ? 'حفظ المسودة' : 'فتح الأمر كمسودة'}
+            </Button>
+          </Space>
+        }>
+        <Row gutter={12}>
+          <Col span={6}>
+            <div style={{ marginBottom: 4 }}>تاريخ الإنتاج</div>
+            <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD"
+              value={productionDate} onChange={setProductionDate} placeholder="النهارده" />
+          </Col>
+          <Col span={6}>
+            <div style={{ marginBottom: 4 }}>الفرع</div>
+            <Select allowClear style={{ width: '100%' }} value={branchId} onChange={setBranchId}
+              options={branches.map((b) => ({ value: b.id, label: b.name }))} placeholder="الفرع" />
+          </Col>
+          <Col span={6}>
+            <div style={{ marginBottom: 4 }}>رقم المستند</div>
+            <Input value={externalRef} onChange={(e) => setExternalRef(e.target.value)}
+              maxLength={40} placeholder="رقم الورقة اللي في إيدك" />
+          </Col>
+          <Col span={6}>
+            <div style={{ marginBottom: 4 }}>البيان</div>
+            <Input value={statement} onChange={(e) => setStatement(e.target.value)} maxLength={200} />
+          </Col>
+        </Row>
+
+        {lines.map((ln, idx) => (
+          <Card key={ln.key} size="small" style={{ marginTop: 12 }} title={`منتج ${idx + 1}`}
+            extra={lines.length > 1 && (
+              <Button type="text" danger icon={<DeleteOutlined />}
+                onClick={() => setLines((p) => p.filter((x) => x.key !== ln.key))} />
+            )}>
+            <Row gutter={8}>
+              <Col span={7}>
+                <Select showSearch style={{ width: '100%' }} placeholder="المنتج"
+                  value={ln.item_id} options={itemOptions(products)}
+                  filterOption={searchFilter} filterSort={searchRank}
+                  onChange={(v) => patchLine(ln.key, {
+                    item_id: v,
+                    bom_id: boms.find((b) => b.active && b.product_id === v)?.id ?? null,
+                  })} />
+              </Col>
+              <Col span={5}>
+                {/* نسخ الوصفة البديلة (A/B/C عند a5) = وصفات متعددة لنفس المنتج. */}
+                <Select allowClear style={{ width: '100%' }} placeholder="الوصفة"
+                  value={ln.bom_id ?? undefined}
+                  options={boms.filter((b) => b.product_id === ln.item_id)
+                    .map((b) => ({ value: b.id, label: b.active ? b.name : `${b.name} (قديمة)` }))}
+                  onChange={(v) => patchLine(ln.key, { bom_id: v ?? null })} />
+              </Col>
+              <Col span={4}>
+                <Select style={{ width: '100%' }} placeholder="مخزن الإنتاج" value={ln.warehouse_id}
+                  options={whOptions}
+                  onChange={(v) => patchLine(ln.key, { warehouse_id: v })} />
+              </Col>
+              <Col span={3}>
+                <InputNumber style={{ width: '100%' }} min={0.001} placeholder="المفروض"
+                  value={ln.planned_quantity as any}
+                  onChange={(v) => patchLine(ln.key, {
+                    planned_quantity: v as any,
+                    // اللي طلع بيتفتح على نفس الرقم — اللي مايغيّرهوش يبقى قال «طلع زي
+                    // المفروض» صراحةً، مش سابه فاضي.
+                    quantity: ln.quantity == null ? (v as any) : ln.quantity,
+                  })} />
+              </Col>
+              <Col span={3}>
+                <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
+                  value={ln.quantity as any}
+                  onChange={(v) => patchLine(ln.key, { quantity: v as any })} />
+              </Col>
+              <Col span={2}>
+                <Button block size="small" onClick={() => fillFromRecipe(ln.key)}>وصفة</Button>
+              </Col>
+            </Row>
+            <Row gutter={8} style={{ marginTop: 8 }}>
+              <Col span={7}>
+                <InputNumber style={{ width: '100%' }} min={0} placeholder="مصاريف السطر"
+                  value={ln.expense_amount as any}
+                  onChange={(v) => patchLine(ln.key, { expense_amount: v as any })} />
+              </Col>
+            </Row>
+
+            <Divider orientation="right" style={{ margin: '12px 0 8px' }}>خاماته</Divider>
+            {ln.materials.map((m) => (
+              <Row gutter={8} key={m.key} style={{ marginBottom: 6 }}>
+                <Col span={7}>
+                  <Select showSearch style={{ width: '100%' }} placeholder="الخامة"
+                    value={m.item_id} options={itemOptions(allItems)}
+                    filterOption={searchFilter} filterSort={searchRank}
+                    onChange={(v) => patchMaterial(ln.key, m.key, { item_id: v })} />
+                </Col>
+                <Col span={5}>
+                  <Select style={{ width: '100%' }} placeholder="مخزن الخامة" value={m.warehouse_id}
+                    options={whOptions}
+                    onChange={(v) => patchMaterial(ln.key, m.key, { warehouse_id: v })} />
+                </Col>
+                <Col span={3}>
+                  <InputNumber style={{ width: '100%' }} min={0} placeholder="المفروض"
+                    value={m.planned_quantity as any}
+                    onChange={(v) => patchMaterial(ln.key, m.key, {
+                      planned_quantity: v as any,
+                      quantity: m.quantity == null ? (v as any) : m.quantity,
+                    })} />
+                </Col>
+                <Col span={3}>
+                  <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اتصرف"
+                    value={m.quantity as any}
+                    onChange={(v) => patchMaterial(ln.key, m.key, { quantity: v as any })} />
+                </Col>
+                <Col span={3}>
+                  <InputNumber style={{ width: '100%' }} min={0} placeholder="هالك"
+                    value={m.waste_quantity as any}
+                    onChange={(v) => patchMaterial(ln.key, m.key, { waste_quantity: v as any })} />
+                </Col>
+                <Col span={3}>
+                  {/* الفرق بيبان وانت بتكتب — الرقم ده هو اللي المصنع بيسأل عليه. */}
+                  <Variance planned={String(m.planned_quantity ?? 0)}
+                    actual={String(m.quantity ?? 0)} />
+                  <Button type="text" danger size="small" icon={<DeleteOutlined />}
+                    onClick={() => patchLine(ln.key, {
+                      materials: ln.materials.filter((y) => y.key !== m.key) })} />
+                </Col>
+              </Row>
+            ))}
+            <Button size="small" onClick={() => patchLine(ln.key, {
+              materials: [...ln.materials, newPOMaterial()] })}>+ خامة</Button>
+          </Card>
+        ))}
+
+        <div style={{ marginTop: 12 }}>
+          <div style={{ marginBottom: 4 }}>ملاحظات</div>
+          <Input.TextArea rows={2} maxLength={500} value={notes}
+            onChange={(e) => setNotes(e.target.value)} />
+        </div>
+      </TabModal>
     </div>
   );
 }

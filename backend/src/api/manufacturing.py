@@ -15,7 +15,9 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_MANUFACTURE_READ, CAP_MANUFACTURE_WRITE
 from src.core.db import get_db
 from src.models.stock import LocationKind
+from src.services import manufacturing_production_service as production_order_service
 from src.services import manufacturing_service
+from src.services.manufacturing_production_service import ProductionOrderError
 from src.services.manufacturing_service import ManufacturingError
 from src.services.stock_service import StockError
 
@@ -452,3 +454,267 @@ def list_work_orders(
         return rows
     return {"rows": rows[offset:offset + limit], "total": len(rows),
             "limit": limit, "offset": offset}
+
+
+
+
+# ---------------------------------------------------------------------------
+# أوامر التشغيل (032) — كذا منتج وكذا خامة في ورقة واحدة، بحالات صريحة.
+# ---------------------------------------------------------------------------
+class POMaterialIn(BaseModel):
+    item_id: int
+    quantity: Decimal                                # اللي اتصرف فعلاً
+    planned_quantity: Decimal | None = None          # المفروض؛ من غيره = نفس المصروف
+    warehouse_id: int | None = None
+    unit: str | None = None
+    waste_quantity: Decimal = Decimal("0")
+
+
+class POProductIn(BaseModel):
+    item_id: int
+    quantity: Decimal
+    planned_quantity: Decimal | None = None
+    warehouse_id: int | None = None
+    unit: str | None = None
+    bom_id: int | None = None
+    expense_amount: Decimal = Decimal("0")
+    # الخامات جوّه المنتج مش قايمة لوحدها: كده مستحيل يتبعت سطر خامة مش منسوب لمنتج،
+    # وتكلفة المنتج تفضل محسوبة من غير تخمين. القايمة الفاضية = اعمل الوصفة زي ما هي.
+    materials: list[POMaterialIn] = []
+
+
+class POIn(BaseModel):
+    products: list[POProductIn]
+    production_date: date | None = None
+    branch_id: int | None = None
+    external_document_number: str | None = Field(default=None, max_length=40)
+    statement1: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=500)
+    reviewed: bool = False
+    # ترحيل فوري لواحد بيسجّل شغل خلص؛ من غيرها الأمر بيتفتح مسودة ومافيش حركة مخزون.
+    execute: bool = False
+
+
+class POMaterialOut(BaseModel):
+    id: int
+    product_line_id: int | None
+    item_id: int
+    warehouse_id: int | None
+    planned_quantity: Decimal
+    quantity: Decimal
+    unit: str | None
+    unit_cost: Decimal
+    line_cost: Decimal
+    waste_quantity: Decimal
+
+
+class POProductOut(BaseModel):
+    id: int
+    item_id: int
+    warehouse_id: int | None
+    planned_quantity: Decimal
+    quantity: Decimal
+    unit: str | None
+    bom_id: int | None
+    material_cost: Decimal
+    expense_amount: Decimal
+    total_cost: Decimal
+    unit_cost: Decimal
+
+
+class POOut(BaseModel):
+    id: int
+    document_number: str
+    production_date: date | None
+    branch_id: int | None
+    external_document_number: str | None
+    statement1: str | None
+    notes: str | None
+    state: str
+    reviewed: bool
+    material_cost: Decimal
+    expense_amount: Decimal
+    total_cost: Decimal
+    planned_quantity: Decimal
+    product_quantity: Decimal
+    material_quantity: Decimal
+    imported_from: str | None
+    reversed: bool
+    is_reversal: bool
+    products: list[POProductOut]
+    materials: list[POMaterialOut]
+
+
+def _po_out(o, rev_ids: set[int]) -> POOut:
+    return POOut(
+        id=o.id, document_number=o.document_number, production_date=o.production_date,
+        branch_id=o.branch_id, external_document_number=o.external_document_number,
+        statement1=o.statement1, notes=o.notes, state=o.state.value, reviewed=o.reviewed,
+        material_cost=o.material_cost, expense_amount=o.expense_amount,
+        total_cost=o.total_cost, planned_quantity=o.planned_quantity,
+        product_quantity=o.product_quantity, material_quantity=o.material_quantity,
+        imported_from=o.imported_from,
+        reversed=o.id in rev_ids, is_reversal=o.reverses_id is not None,
+        products=[POProductOut(
+            id=p.id, item_id=p.item_id, warehouse_id=p.warehouse_id,
+            planned_quantity=p.planned_quantity, quantity=p.quantity,
+            unit=p.unit, bom_id=p.bom_id, material_cost=p.material_cost,
+            expense_amount=p.expense_amount, total_cost=p.total_cost, unit_cost=p.unit_cost)
+            for p in o.products],
+        materials=[POMaterialOut(
+            id=m.id, product_line_id=m.product_line_id, item_id=m.item_id,
+            warehouse_id=m.warehouse_id, planned_quantity=m.planned_quantity,
+            quantity=m.quantity, unit=m.unit, unit_cost=m.unit_cost,
+            line_cost=m.line_cost, waste_quantity=m.waste_quantity)
+            for m in o.materials],
+    )
+
+
+def _po_products(body: POIn):
+    return [{
+        "item_id": p.item_id, "quantity": p.quantity,
+        "planned_quantity": p.planned_quantity,
+        "warehouse_id": p.warehouse_id, "unit": p.unit, "bom_id": p.bom_id,
+        "expense_amount": p.expense_amount,
+        "materials": [{
+            "item_id": m.item_id, "quantity": m.quantity,
+            "planned_quantity": m.planned_quantity,
+            "warehouse_id": m.warehouse_id, "unit": m.unit,
+            "waste_quantity": m.waste_quantity,
+        } for m in p.materials],
+    } for p in body.products]
+
+
+@router.get("/production-orders")
+def list_production_orders(
+    search: str | None = None,
+    branch_id: int | None = None,
+    state: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    imported: bool | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    db: Session = Depends(get_db),
+):
+    orders = production_order_service.list_orders(
+        db, search=search, branch_id=branch_id, state=state, date_from=date_from,
+        date_to=date_to, imported=imported)
+    rev_ids = production_order_service.reversed_ids(db)
+    # نفس عقد الترقيم اللي باقي القوايم ماشية عليه: `limit` بيرجّع غلاف بالإجمالي،
+    # ومن غيره بترجع القايمة زي ما هي.
+    if limit is None:
+        return [_po_out(o, rev_ids) for o in orders]
+    return {"rows": [_po_out(o, rev_ids) for o in orders[offset:offset + limit]],
+            "total": len(orders), "limit": limit, "offset": offset}
+
+
+@router.get("/production-orders/{order_id}", response_model=POOut)
+def get_production_order(
+    order_id: int,
+    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    order = production_order_service.get_order(db, order_id)
+    if order is None:
+        raise HTTPException(404, {"code": "not_found", "message": "أمر التشغيل مش موجود"})
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+@router.post("/production-orders", response_model=POOut, status_code=status.HTTP_201_CREATED)
+def create_production_order(
+    body: POIn,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    try:
+        order = production_order_service.create_order(
+            db, products=_po_products(body), actor_user_id=current.id,
+            production_date=body.production_date, branch_id=body.branch_id,
+            external_document_number=body.external_document_number,
+            statement1=body.statement1, notes=body.notes, reviewed=body.reviewed,
+            execute=body.execute)
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+@router.put("/production-orders/{order_id}", response_model=POOut)
+def update_production_order(
+    order_id: int,
+    body: POIn,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    try:
+        order = production_order_service.update_order(
+            db, order_id=order_id, products=_po_products(body), actor_user_id=current.id,
+            production_date=body.production_date, branch_id=body.branch_id,
+            external_document_number=body.external_document_number,
+            statement1=body.statement1, notes=body.notes, reviewed=body.reviewed)
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+@router.post("/production-orders/{order_id}/confirm", response_model=POOut)
+def confirm_production_order(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    try:
+        order = production_order_service.confirm_order(
+            db, order_id=order_id, actor_user_id=current.id)
+    except ProductionOrderError as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+@router.post("/production-orders/{order_id}/execute", response_model=POOut)
+def execute_production_order(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    try:
+        order = production_order_service.execute_order(
+            db, order_id=order_id, actor_user_id=current.id)
+    except (ProductionOrderError, StockError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+@router.post("/production-orders/{order_id}/reverse", response_model=POOut,
+             status_code=status.HTTP_201_CREATED)
+def reverse_production_order(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    try:
+        order = production_order_service.reverse_order(
+            db, order_id=order_id, actor_user_id=current.id)
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+@router.delete("/production-orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_production_order(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        production_order_service.delete_draft(
+            db, order_id=order_id, actor_user_id=current.id)
+    except ProductionOrderError as exc:
+        raise _conflict(exc)
+    db.commit()

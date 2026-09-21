@@ -72,6 +72,11 @@ DOCS: tuple[DocSpec, ...] = (
             ("src.models.stock_count", "StockCount", "count_date")),
     DocSpec("manufacturing_order", "أمر تصنيع", ("manufacturing",),
             ("src.models.manufacturing", "ManufacturingOrder", "production_date")),
+    # (032) أمر التشغيل — كذا منتج وكذا خامة في ورقة واحدة. مستند تاني غير «أمر تصنيع»
+    # بجدول تاني، فاسمه لازم يبقى تاني: اسم واحد للاتنين معناه إن `source_doc_id` بيشاور
+    # على جدولين، وأول واحد يقرا الحركة بيفتح الصف الغلط.
+    DocSpec("production_order", "أمر تشغيل", (),
+            ("src.models.manufacturing", "ProductionOrder", "production_date")),
     DocSpec("inspection", "معاينة", (),
             ("src.models.inspection", "Inspection", "inspection_date")),
     # ورقة أول المدة المنقولة من a5 — مالهاش صف في أي جدول، وتاريخها بيتحسب في
