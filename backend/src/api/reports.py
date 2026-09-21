@@ -69,7 +69,9 @@ def stagnant_report(
 def trade_report(
     doc_type: str = Query("sale", description="sale | sale_return | purchase | purchase_return"),
     level: str = Query("document", description="document | line"),
-    group_by: str = Query("none", description="none | party | item | warehouse"),
+    group_by: str = Query(
+        "none",
+        description="none | party | item | warehouse | category | main_category"),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     party_id: int | None = Query(None),

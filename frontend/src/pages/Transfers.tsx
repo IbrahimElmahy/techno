@@ -34,6 +34,7 @@ import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import DocumentAttachments from '../components/DocumentAttachments';
 import { useTableColumns } from '../components/ColumnSettings';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -71,6 +72,11 @@ interface TransferRecord {
   dest_location_id: number | null;
   created_at: string | null;
   transfer_date: string | null;
+  /** «بيان» و«رقم المستند» و«ملاحظات» — سطور الكلام اللي الإذن كان عريان منها.
+   *  اختيارية لأن الإذن المنقول من a5 مالوش ولا واحدة فيهم. */
+  statement1?: string | null;
+  external_document_number?: string | null;
+  notes?: string | null;
 }
 
 interface StockRow {
@@ -162,6 +168,15 @@ export default function Transfers() {
   const [stockLoading, setStockLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [lines, setLines] = useState<TransferLine[]>([]);
+  /**
+   * سطور الكلام على الإذن — «بيان» و«رقم المستند» و«ملاحظات».
+   *
+   * «رقم المستند» هو رقم الورقة اللي في إيد اللي بيحوّل، مش رقمنا: رقمنا بيتحجز عندنا
+   * وهو بيفضل ماسك ورقة عليها رقم تاني، وبيدوّر بيه. فالاتنين بيتحفظوا جنب بعض.
+   */
+  const [statement1, setStatement1] = useState('');
+  const [externalDocNumber, setExternalDocNumber] = useState('');
+  const [docNotes, setDocNotes] = useState('');
   /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف — انظر `lineKeyboard`. */
   const advance = advanceFrom(lines, setFocusLineKey, () => setPickerOpen(true));
 
@@ -354,12 +369,14 @@ export default function Transfers() {
   const startNew = () => {
     setSource(null); setDest(null); setLines([]); setCreateVisible(false);
     setViewOnly(false); setEditing(null);
+    setStatement1(''); setExternalDocNumber(''); setDocNotes('');
     setNewStep('source');
   };
 
   const closeCreate = () => {
     setCreateVisible(false); setEditing(null); setDraftQty({}); setViewOnly(false);
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
+    setStatement1(''); setExternalDocNumber(''); setDocNotes('');
   };
 
   /**
@@ -405,8 +422,9 @@ export default function Transfers() {
 
   /** المسودّة — الطلب اللي اتكتب ولسه ما اتبعتش. الشرح في `useDraft`. */
   const draftPayload = useMemo(() => ({
-    source, dest, lines, notes: null,
-  }), [source, dest, lines]);
+    source, dest, lines, notes: docNotes || null,
+    statement1, external_document_number: externalDocNumber,
+  }), [source, dest, lines, docNotes, statement1, externalDocNumber]);
 
   const {
     drafts, savedAt: draftSavedAt, discard: discardDraft,
@@ -434,6 +452,9 @@ export default function Transfers() {
     setSource(x.source ?? null);
     setDest(x.dest ?? null);
     setLines(x.lines || []);
+    setStatement1(x.statement1 || '');
+    setExternalDocNumber(x.external_document_number || '');
+    setDocNotes(x.notes || '');
     setCreateVisible(true);
     // **ورصيد المصدر بيتجاب معاها.** `setSource` لوحدها بتحطّ المصدر من غير ما تملا
     // `sourceStock`، فالمسودّة بتتفتح بمصدر مكتوب ومنتقي أصناف فاضي — واللي بيستكمل
@@ -452,6 +473,10 @@ export default function Transfers() {
      *  اعتماد، والإذن المعتمد أو المرفوض، بيفضلوا للقراءة زي ما هما: دي بضاعة اتحركت خلاص. */
     setViewOnly(!(t.status === 'pending' && canApprove));
     setTransferDate(dayjs(t.transfer_date || t.created_at || undefined));
+    // القديم المنقول مالوش الحقول دي أصلاً، فالفاضي هو الحالة الطبيعية مش الخطأ.
+    setStatement1(t.statement1 || '');
+    setExternalDocNumber(t.external_document_number || '');
+    setDocNotes(t.notes || '');
     // A permit written before the lines table carries its item on the DOCUMENT and has no line
     // row, so there is nothing to PATCH and nothing to DELETE — and the page ended up inviting an
     // edit it could not offer: «عدّل الكميات أو شيل صنف» printed above a quantity that was plain
@@ -604,6 +629,9 @@ export default function Transfers() {
         source: { location_kind: src.kind, location_id: src.id },
         dest: { location_kind: dst.kind, location_id: dst.id },
         transfer_date: transferDate.format('YYYY-MM-DD'),
+        statement1: statement1 || null,
+        external_document_number: externalDocNumber || null,
+        notes: docNotes || null,
       });
       // The header line is already on the document; add it as a real line too, so every item
       // lives in the same place and the approver's table has no special first row.
@@ -847,6 +875,10 @@ export default function Transfers() {
       ? locValue(t.dest_location_kind, t.dest_location_id) : null;
     setEditing(null); setDraftQty({});
     setSource(src); setDest(dst);
+    // سطور الكلام بتتنقل مع المحتوى — التصحيح مش بيبدأ من ورقة فاضية.
+    setStatement1(t.statement1 || '');
+    setExternalDocNumber(t.external_document_number || '');
+    setDocNotes(t.notes || '');
     // Read the source's stock BEFORE building the lines: the quantity box is capped at what is
     // available, so a line built against a zero would refuse the very quantity being corrected —
     // and the reversal has just put the goods back, so the number is right there to be read.
@@ -1410,6 +1442,26 @@ export default function Transfers() {
             </Col>
           </Row>
 
+          {/* سطور الكلام. بتتكتب مرة واحدة وقت الإنشاء — الإذن بعد ما يترحّل مافيش
+              endpoint بيعدّل ترويسته، فبتبان مقفولة زي التاريخ والمصدر بالظبط. */}
+          <Row gutter={16} style={{ marginTop: 12 }}>
+            <Col xs={24} md={8}>
+              <div style={{ marginBottom: 6, fontWeight: 600 }}>بيان</div>
+              <Input size="large" placeholder="اختياري" disabled={!!editing || viewOnly}
+                value={statement1} onChange={(e) => setStatement1(e.target.value)} />
+            </Col>
+            <Col xs={24} md={8}>
+              <div style={{ marginBottom: 6, fontWeight: 600 }}>رقم المستند</div>
+              <Input size="large" placeholder="رقم الإذن الورقي" disabled={!!editing || viewOnly}
+                value={externalDocNumber} onChange={(e) => setExternalDocNumber(e.target.value)} />
+            </Col>
+            <Col xs={24} md={8}>
+              <div style={{ marginBottom: 6, fontWeight: 600 }}>ملاحظات</div>
+              <Input size="large" placeholder="اختياري" disabled={!!editing || viewOnly}
+                value={docNotes} onChange={(e) => setDocNotes(e.target.value)} />
+            </Col>
+          </Row>
+
           {source && dest && sameLocation && (
             <Alert style={{ marginTop: 12 }} type="error" showIcon
               message="المصدر والوجهة نفس الموقع — اختر وجهة مختلفة" />
@@ -1483,6 +1535,11 @@ export default function Transfers() {
               )}
             />
           )}
+
+          {/* صور الورقة — إذن التحويل الموقّع عليه وإيصال الاستلام. `editing?.id`
+              بيبقى `undefined` على الإذن الجديد، والمكوّن بيختفي لحد ما يترحّل
+              وياخد رقم يتعلّق عليه. */}
+          <DocumentAttachments docType="stock_transfer" docId={editing?.id} />
 
           <div style={{
             marginTop: 16, padding: 16, borderRadius: 10,

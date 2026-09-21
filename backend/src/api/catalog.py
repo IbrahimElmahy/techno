@@ -32,7 +32,7 @@ from src.models.catalog import (
 )
 from src.models.stock import LocationKind, StockMovement
 from src.lib import item_card as item_card_lib
-from src.services import audit_service, item_profile_service, serial_service
+from src.services import audit_service, item_profile_service, lookup_service, serial_service
 from src.services.serial_service import SerialError
 
 router = APIRouter(tags=["catalog"], prefix="/items")
@@ -164,8 +164,15 @@ def list_items(
     On-hand comes from ONE grouped query over the movements, so filtering by stock costs the
     same as listing.
     """
+    # **الفئة الرئيسية بتجرّ فروعها.** (031) الفئات بقت شجرة مستويين، والصنف بيتعلّق
+    # بالورقة (الفرعية) — فالفلترة على رئيسية من غير فروعها بترجّع كشف فاضي واللي
+    # قدامه يقول «الفئة دي مافيهاش حاجة». الفئة اللي مالهاش فروع بترجع لوحدها،
+    # فالفلترة في الفرع اللي مش عامل شجرة هي هي بالحرف.
+    cats: str | list[str] | None = category
+    if category:
+        cats = lookup_service.with_children(db, lookup_service.ITEM_CATEGORY, category)
     stmt = item_profile_service.apply_filters(
-        select(Item), q=q, kind=kind.value if kind else None, category=category,
+        select(Item), q=q, kind=kind.value if kind else None, category=cats,
         active=active, warehouse_id=warehouse_id,
     )
     # **عزل الفروع — الكتالوج مشترك والصنف مالوش عمود فرع.**

@@ -41,6 +41,7 @@ import TotalsLadder from '../components/TotalsLadder';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import DocumentAttachments from '../components/DocumentAttachments';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
@@ -2493,6 +2494,11 @@ function couponsTotal(inv: any): number {
             * غير ما يقول حاجة. ورصيد الصنف بيتشاف جوّه بوباب اختيار الصنف — وهو المكان اللي
             * السؤال بيتسأل فيه فعلاً وانت بتقول هاخد منه كام.
             */}
+          {/* صور الورقة — الفاتورة الموقّعة وإيصال الاستلام. `viewInvoice` بيفضل `null`
+              على الفاتورة الجديدة (شوف `resetDocument`)، والمكوّن بيختفي لحد ما تترحّل
+              وياخد رقم يتعلّق عليه. */}
+          <DocumentAttachments docType="sales_invoice" docId={viewInvoice?.id} />
+
           {/* Totals + payment — see TotalsLadder for why this is one ladder and not a strip. */}
           {(() => {
             const invoiceDiscount = grossTotal - netTotal;

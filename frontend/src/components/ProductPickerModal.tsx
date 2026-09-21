@@ -7,6 +7,7 @@ import { keepInView } from '../utils/keepInView';
 import { normalizeAr } from './ListToolbar';
 import { TabModal } from './TabModal';
 import { qty, numeralsLocale } from '../utils/money';
+import { useCategoryTree, withChildren } from '../hooks/useCategoryTree';
 
 /**
  * اختيار الصنف — categories on one side, their products on the other, in a window of its own.
@@ -60,6 +61,21 @@ export default function ProductPickerModal({
 }: Props) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  /**
+   * **الشجرة: فئة رئيسية ← فئة فرعية ← أصناف.** (031)
+   *
+   * الرئيسية المختارة **محلية هنا**، والفئة اللي بتطلع برّه (`onCategoryChange`) بتفضل
+   * **فرعية زي ما كانت بالحرف**. الشاشات اللي بتنده الشباك بتستعمل الفئة دي في لوحة
+   * أرصدتها بمقارنة `s.category === activeCategory` — فلو بعتنا لها قيمة رئيسية،
+   * وهي فئة مافيش صنف متعلّق بيها مباشرةً في الغالب، لوحتهم كانت هتفضى من غير سبب
+   * ظاهر. اختيار الرئيسية بيبعت لهم `null` يعني «كل الفئات» — حالة هما عارفينها
+   * وشغّالين عليها من الأول.
+   *
+   * ومن غير شجرة (`hasTree === false`) مافيش رئيسية تتختار أصلاً، والشريط بيرسم نفس
+   * القايمة المسطّحة بنفس الترتيب — الفرع اللي ما عملش شجرة شاشته زي ما هي.
+   */
+  const { tree } = useCategoryTree();
+  const [activeRoot, setActiveRoot] = useState<string | null>(null);
   const [bulk, setBulk] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
   /**
@@ -91,8 +107,55 @@ export default function ProductPickerModal({
   const availableRef = useRef(availableFor);
   availableRef.current = availableFor;
 
+  /** الفئة اللي جاية من برّه بتفتح مجموعتها، عشان الفرعية تبان تحت رئيسيتها. */
+  useEffect(() => {
+    if (!activeCategory) return;   // «كل الفئات» أو رئيسية مختارة — القرار محلي
+    setActiveRoot(tree.parentOf[activeCategory] || null);
+  }, [activeCategory, tree]);
+
+  /**
+   * الفئات المقبولة دلوقتي — `null` يعني الكل.
+   *
+   * فرعية مختارة ⇒ هي وحدها. رئيسية مختارة ⇒ هي وفروعها. القيمة `Set` محسوبة مرة
+   * ومحطوطة في اعتمادات الفلترة تحت، عشان الفلترة على آلاف الصنف تفضل بتتعاد لما
+   * الاختيار يتغيّر بس — مش كل رندر.
+   */
+  const accepted = useMemo(() => {
+    if (activeCategory) return new Set([activeCategory]);
+    if (activeRoot) return new Set(withChildren(tree, activeRoot));
+    return null;
+  }, [activeCategory, activeRoot, tree]);
+
+  /**
+   * الشريط: رئيسية ومعاها فروعها.
+   *
+   * الفئات النازلة من الشاشة هي فئات **الأصناف** — يعني الفرعيات — والرئيسية ممكن
+   * مايبقاش عليها ولا صنف مباشر فماتنزلش فيهم خالص. فالشجرة بتتبني من جذر كل فئة:
+   * `rootOf(c)`، واللي مالوش أب جذره هو نفسه. من غير شجرة النتيجة بتبقى نفس القايمة
+   * المرتّبة اللي كانت بالحرف — كل فئة مجموعة لوحدها من غير فروع.
+   */
+  const groups = useMemo(() => {
+    const kids = new Map<string, string[]>();
+    const roots: string[] = [];
+    categories.forEach((c) => {
+      const root = tree.parentOf[c] || c;
+      if (!kids.has(root)) { kids.set(root, []); roots.push(root); }
+      if (root !== c) kids.get(root)!.push(c);
+    });
+    roots.sort(compareArabic);
+    return roots.map((root) => ({
+      value: root,
+      children: (kids.get(root) || []).sort(compareArabic),
+    }));
+  }, [categories, tree]);
+
+  const catLabel = (c: string) => categoryLabels[c] || tree.labels[c] || c;
+  /** اسم اللي متفلتر عليه دلوقتي — للبحث ولرسالة «مافيش نتيجة». */
+  const activeLabel = activeCategory ? catLabel(activeCategory)
+    : (activeRoot ? catLabel(activeRoot) : null);
+
   const visible = useMemo(() => {
-    let list = activeCategory ? products.filter((p) => p.category === activeCategory) : products;
+    let list = accepted ? products.filter((p) => accepted.has(p.category)) : products;
     const needle = normalizeAr(query);
     if (needle) {
       // البحث جوّه الفئة المختارة، مش في الكتالوج كله.
@@ -130,7 +193,7 @@ export default function ProductPickerModal({
     // عشان «ماسورة 2» تيجي قبل «ماسورة 10» مش بعدها.
     return sortByName(list, (p) => p.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, activeCategory, products, disableOutOfStock, onlyAvailableStock,
+  }, [query, accepted, products, disableOutOfStock, onlyAvailableStock,
       availabilityVersion]);
 
   /** بيترسم من القايمة قد إيه.
@@ -139,12 +202,12 @@ export default function ProductPickerModal({
    *  ثواني قبل ما يبان. المعروض بيتقصّ، وبيزيد لما اللي بيدوّر يوصل لآخر القايمة. */
   const PAGE = 120;
   const [shown, setShown] = useState(PAGE);
-  useEffect(() => { setShown(PAGE); }, [query, activeCategory, open, onlyAvailableStock]);
+  useEffect(() => { setShown(PAGE); }, [query, activeCategory, activeRoot, open, onlyAvailableStock]);
   const rendered = useMemo(() => visible.slice(0, shown), [visible, shown]);
 
   // Back to the top whenever the list underneath changes, so the highlight is never left pointing
   // at a row that scrolled out from under it.
-  useEffect(() => { setCursor(0); }, [query, activeCategory, open, onlyAvailableStock]);
+  useEffect(() => { setCursor(0); }, [query, activeCategory, activeRoot, open, onlyAvailableStock]);
   // …and never past the end when a search narrows the list.
   useEffect(() => {
     setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
@@ -199,8 +262,8 @@ export default function ProductPickerModal({
         <div style={{ flex: 1, minWidth: 260 }}>
           <Input
             ref={searchRef} size="large" allowClear value={query}
-            placeholder={activeCategory
-              ? `ابحث في «${categoryLabels[activeCategory] || activeCategory}» بالاسم أو الكود`
+            placeholder={activeLabel
+              ? `ابحث في «${activeLabel}» بالاسم أو الكود`
               : 'ابحث بالاسم أو الكود — أو اختر فئة من جنب'}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
@@ -231,28 +294,67 @@ export default function ProductPickerModal({
             {/* من غيرها الفئة بتبقى طريق في اتجاه واحد: تدوسها ومافيش حاجة تشيلها، والبحث
                 يفضل محبوس فيها. */}
             <div
-              onClick={() => onCategoryChange(null)}
+              onClick={() => { setActiveRoot(null); onCategoryChange(null); }}
               style={{
                 padding: '8px 10px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
-                background: activeCategory === null ? '#6AB42D' : '#f6faf3',
-                color: activeCategory === null ? '#fff' : undefined,
-                border: '1px solid #e6efe3', fontWeight: activeCategory === null ? 700 : 400,
+                background: activeCategory === null && activeRoot === null ? '#6AB42D' : '#f6faf3',
+                color: activeCategory === null && activeRoot === null ? '#fff' : undefined,
+                border: '1px solid #e6efe3',
+                fontWeight: activeCategory === null && activeRoot === null ? 700 : 400,
               }}>
               كل الفئات
             </div>
-            {[...categories].sort(compareArabic).map((c) => {
-              const active = c === activeCategory;
+            {groups.map((g) => {
+              // الرئيسية مختارة = واقفين عليها هي وفروعها، يعني مافيش فرعية مختارة.
+              const rootActive = activeRoot === g.value && !activeCategory;
+              // الرئيسية اللي عليها أصناف مباشرةً بتفضل قابلة للاختيار زي ما كانت —
+              // والفئة المسطّحة (من غير فروع) هي نفس الصف القديم بالحرف.
               return (
-                <div key={c}
-                  onClick={() => onCategoryChange(c)}
-                  style={{
-                    padding: '8px 10px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
-                    background: active ? '#6AB42D' : '#f6faf3',
-                    color: active ? '#fff' : undefined,
-                    border: '1px solid #e6efe3', fontWeight: active ? 700 : 400,
-                  }}>
-                  {categoryLabels[c] || c}
-                </div>
+                <React.Fragment key={g.value}>
+                  <div
+                    onClick={() => {
+                      if (g.children.length) {
+                        // رئيسية: بتتفلتر محلياً على فروعها، وبتبعت «كل الفئات» لبرّه —
+                        // شوف تعليق `activeRoot` فوق.
+                        setActiveRoot(g.value);
+                        onCategoryChange(null);
+                      } else {
+                        setActiveRoot(null);
+                        onCategoryChange(g.value);
+                      }
+                    }}
+                    style={{
+                      padding: '8px 10px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
+                      background: (rootActive || activeCategory === g.value) ? '#6AB42D' : '#f6faf3',
+                      color: (rootActive || activeCategory === g.value) ? '#fff' : undefined,
+                      border: '1px solid #e6efe3',
+                      fontWeight: (rootActive || activeCategory === g.value || g.children.length)
+                        ? 700 : 400,
+                    }}>
+                    {catLabel(g.value)}
+                    {g.children.length > 0 && (
+                      <span style={{ fontSize: 11, opacity: 0.75, marginInlineStart: 6 }}>
+                        ({g.children.length})
+                      </span>
+                    )}
+                  </div>
+                  {g.children.map((c) => {
+                    const active = c === activeCategory;
+                    return (
+                      <div key={c}
+                        onClick={() => { setActiveRoot(g.value); onCategoryChange(c); }}
+                        style={{
+                          padding: '6px 10px', borderRadius: 6, marginBottom: 4,
+                          marginInlineStart: 14, cursor: 'pointer', fontSize: 13,
+                          background: active ? '#6AB42D' : '#fbfdfa',
+                          color: active ? '#fff' : undefined,
+                          border: '1px solid #eef4ec', fontWeight: active ? 700 : 400,
+                        }}>
+                        {catLabel(c)}
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
               );
             })}
             {rendered.length < visible.length && (
@@ -270,8 +372,8 @@ export default function ProductPickerModal({
             {visible.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={query
-                  ? (activeCategory
-                    ? `لا يوجد صنف بهذا الاسم في «${categoryLabels[activeCategory] || activeCategory}» — جرّب «كل الفئات»`
+                  ? (activeLabel
+                    ? `لا يوجد صنف بهذا الاسم في «${activeLabel}» — جرّب «كل الفئات»`
                     : 'لا يوجد صنف بهذا الاسم')
                   : (onlyAvailableStock ? 'لا توجد أصناف برصيد متاح في هذا المخزن' : 'لا توجد أصناف')} />
             ) : rendered.map((p, i) => {

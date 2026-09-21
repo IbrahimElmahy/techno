@@ -25,6 +25,7 @@ import { netOf } from '../utils/discounts';
 import ProductPickerModal from '../components/ProductPickerModal';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import TotalsLadder from '../components/TotalsLadder';
+import DocumentAttachments from '../components/DocumentAttachments';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
@@ -1461,6 +1462,10 @@ export default function Returns() {
                 </Row>
               </>
             )}
+
+            {/* صور الورقة — سند المردود الموقّع عليه. `viewReturn` بيفضل `null` على
+                السند الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. */}
+            <DocumentAttachments docType="sales_return" docId={viewReturn?.id} />
 
             {(() => {
               const returnDiscount = grossTotal - netTotal;

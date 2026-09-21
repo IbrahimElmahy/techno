@@ -6,6 +6,7 @@ import {
 import { InputNumber } from './NumberInput';
 import { api } from '../api/client';
 import { useLookup } from '../hooks/useLookup';
+import { useCategoryTree, categorySelectOptions } from '../hooks/useCategoryTree';
 import { TabModal } from './TabModal';
 
 /**
@@ -40,6 +41,12 @@ export default function ItemEditModal({
   const [item, setItem] = useState<any>(null);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const { options: categoryOptions } = useLookup('item_category');
+  // الفئات كشجرة — الرئيسية عنوان مجموعة وفروعها تحتها. (031) القيمة المتخزّنة زي ما
+  // هي، ولو مافيش شجرة القايمة بترجع مسطّحة بنفس الترتيب بالظبط.
+  const { tree: categoryTree } = useCategoryTree();
+  const categoryTreeOptions = React.useMemo(
+    () => categorySelectOptions(categoryTree, categoryOptions),
+    [categoryTree, categoryOptions]);
   const { options: uomOptions } = useLookup('unit_of_measure');
 
   useEffect(() => {
@@ -185,7 +192,7 @@ export default function ItemEditModal({
             <Col xs={24} md={12}>
               <Form.Item name="category" label="الفئة">
                 <Select allowClear showSearch
-                  options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={categoryTreeOptions} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

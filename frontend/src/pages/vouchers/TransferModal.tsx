@@ -70,6 +70,14 @@ export default function TransferModal({
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
+                  {/* «بيان السند» كلام الورقة — التحويل بين الخزن كان مالوش ولا سطر كلام. */}
+                  <Form.Item name="statement1" label="بيان السند">
+                    <Input placeholder="الكلام المكتوب على ورقة السند" style={{ width: 220 }} />
+                  </Form.Item>
+                  {/* رقم الورقة اللي اتكتبت بالإيد — جنب رقم السند عندنا مش بداله. */}
+                  <Form.Item name="external_document_number" label="رقم المستند">
+                    <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />
+                  </Form.Item>
                   <Form.Item>
                     <Button type="primary" htmlType="submit" loading={posting}>
                       تحويل

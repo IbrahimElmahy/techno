@@ -22,6 +22,7 @@ import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import TotalsLadder from '../components/TotalsLadder';
+import DocumentAttachments from '../components/DocumentAttachments';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
@@ -1639,6 +1640,10 @@ export default function Purchases() {
               )}
             </Col>
           </Row>
+
+          {/* صور الورقة — فاتورة المورد وإذن الاستلام. `viewPurchase` بيفضل `null` على
+              الفاتورة الجديدة، والمكوّن بيختفي لحد ما تترحّل وتاخد رقم يتعلّق عليه. */}
+          <DocumentAttachments docType="purchase_invoice" docId={viewPurchase?.id} />
 
           <Divider />
 

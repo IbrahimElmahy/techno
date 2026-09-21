@@ -34,6 +34,7 @@ import { useLookup } from '../hooks/useLookup';
 import { VoucherKeyStrip, RunnerWorld } from '../components/VoucherKeyRunner';
 import { defaultTreasuryId } from '../components/VoucherFields';
 import { TabModal } from '../components/TabModal';
+import DocumentAttachments from '../components/DocumentAttachments';
 import { money, numeralsLocale } from '../utils/money';
 // البوبابات اتفصلت لملفاتها — الشاشة كانت ١٤٧٨ سطر فيها ستة فوق بعض.
 import ReceiptModal from './vouchers/ReceiptModal';
@@ -1032,6 +1033,21 @@ const Vouchers: React.FC = () => {
         destroyOnHidden
       >
         {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
+        {/* تحت صورة السند مش جوّاها — `VoucherDocument` هي ورقة الطباعة، والزيادة
+            عليها بتتطبع. وده كلام الشاشة: بيان الورقة، ورقمها عند العميل، وصورها. */}
+        {voucherView && (
+          <>
+            <Descriptions column={2} size="small" bordered style={{ marginTop: 12 }}>
+              <Descriptions.Item label="بيان السند">
+                {voucherView.statement1 || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="رقم المستند">
+                {voucherView.external_document_number || '-'}
+              </Descriptions.Item>
+            </Descriptions>
+            <DocumentAttachments docType="voucher" docId={voucherView.id} />
+          </>
+        )}
       </TabModal>
 
       <ReceiptModal

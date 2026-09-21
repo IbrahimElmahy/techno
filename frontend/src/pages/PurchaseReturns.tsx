@@ -31,6 +31,7 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import PartyPickerModal from '../components/PartyPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
+import DocumentAttachments from '../components/DocumentAttachments';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
@@ -1274,6 +1275,10 @@ export default function PurchaseReturns() {
             </table>
           </div>
         )}
+
+        {/* صور الورقة — إشعار المورد وإذن الخروج. `editingId` بيفضل `null` على المردود
+            الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. */}
+        <DocumentAttachments docType="purchase_return" docId={editingId} />
 
         <Divider style={{ margin: '10px 0' }} />
 

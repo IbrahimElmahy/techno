@@ -40,7 +40,10 @@ const DOC_SCREEN: Partial<Record<DocType, DocKind>> = {
 
 type DocType = 'sale' | 'sale_return' | 'purchase' | 'purchase_return';
 type Level = 'document' | 'line';
-type GroupBy = 'none' | 'party' | 'item' | 'warehouse';
+// (031) الفئة والفئة الرئيسية — تجميعتين زيادة على نفس المحرك، مش تقرير جديد.
+// «بالفئة» بيجمّع على فئة الصنف زي ما هي، و«بالفئة الرئيسية» بيرد كل فرعية لأبوها.
+// الفرع اللي ما عملش شجرة بياخد من الاتنين نفس الصفوف — الفئة اللي مالهاش أب هي جذرها.
+type GroupBy = 'none' | 'party' | 'item' | 'warehouse' | 'category' | 'main_category';
 
 const DOC_LABELS: Record<DocType, string> = {
   sale: 'طلبات البيع',
@@ -194,7 +197,9 @@ export default function TradeReports() {
   const columns: any[] = grouped
     ? [
       { title: groupBy === 'party' ? (isSale ? 'العميل' : 'المورد')
-        : groupBy === 'item' ? 'الصنف' : 'المخزن',
+        : groupBy === 'item' ? 'الصنف'
+          : groupBy === 'category' ? 'الفئة'
+            : groupBy === 'main_category' ? 'الفئة الرئيسية' : 'المخزن',
       dataIndex: 'label', ...textColumn(rows, (r: any) => r.label),
       render: (v: string) => <b>{v}</b> },
       { title: 'عدد المستندات', dataIndex: 'document_count', align: 'left' as const,
@@ -357,6 +362,8 @@ export default function TradeReports() {
               { value: 'none', label: 'تفصيلي' },
               { value: 'party', label: isSale ? 'بالعميل' : 'بالمورد' },
               { value: 'item', label: 'بالصنف' },
+              { value: 'category', label: 'بالفئة' },
+              { value: 'main_category', label: 'بالرئيسية' },
               { value: 'warehouse', label: 'بالمخزن' },
             ]}
           />

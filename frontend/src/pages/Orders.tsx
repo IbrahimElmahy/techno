@@ -24,6 +24,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
+import DocumentAttachments from '../components/DocumentAttachments';
 import { printReport } from '../print/reportSheet';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 import { money, qty } from '../utils/money';
@@ -796,6 +797,9 @@ export default function Orders() {
                   render: (v: string) => <b>{money(v)}</b> },
               ]}
             />
+
+            {/* صور الورقة — التسعيرة الممضية أو طلب العميل بخطّ إيده. */}
+            <DocumentAttachments docType="trade_order" docId={detail.id} />
 
             {detail.status === 'open' && (
               <Card size="small" title="ربط بفاتورة">

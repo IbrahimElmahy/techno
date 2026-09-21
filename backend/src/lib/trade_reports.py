@@ -28,15 +28,19 @@ from src.models.purchasing import (
     PurchaseReturn,
     PurchaseReturnLine,
 )
+from src.models.lookup import LookupOption
 from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from src.models.supplier import Supplier
 from src.models.warehouse import Warehouse
+from src.services import lookup_service
 
 ZERO_QTY = Decimal("0.000")
 
 DOC_TYPES = ("sale", "sale_return", "purchase", "purchase_return")
 LEVELS = ("document", "line")
-GROUPS = ("none", "party", "item", "warehouse")
+# (031) `category` = فئة الصنف زي ما هي · `main_category` = الفئة الرئيسية اللي فوقها.
+# الاتنين اتزادوا زيادة: اللي بيطلب تجميع قديم بياخد نفس الصفوف بالحرف.
+GROUPS = ("none", "party", "item", "warehouse", "category", "main_category")
 
 # Profit is only meaningful where we sold something and captured what it cost us.
 _PROFIT_DOCS = ("sale", "sale_return")
@@ -67,12 +71,17 @@ def _in_range(when, date_from: date | None, date_to: date | None) -> bool:
     return True
 
 
-def _names(db: Session) -> tuple[dict, dict, dict, dict]:
-    items = {i.id: (i.code, i.name, i.unit_of_measure) for i in db.scalars(select(Item)).all()}
+def _names(db: Session) -> tuple[dict, dict, dict, dict, dict]:
+    # الكتالوج بيتقرا **مرة** والخريطتين بيتبنوا من نفس اللفّة — لفّة تانية على ٢٬٦٤٠
+    # صنف عشان عمود واحد بتتدفع في كل تقرير حتى اللي مش بيجمّع بالفئة أصلاً.
+    all_items = db.scalars(select(Item)).all()
+    items = {i.id: (i.code, i.name, i.unit_of_measure) for i in all_items}
+    # (031) فئة كل صنف — بتتقرا هنا، مش باستعلام لكل سطر وقت التجميع.
+    item_cats = {i.id: i.category for i in all_items}
     customers = {c.id: c.name for c in db.scalars(select(Customer)).all()}
     suppliers = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
     warehouses = {w.id: w.name for w in db.scalars(select(Warehouse)).all()}
-    return items, customers, suppliers, warehouses
+    return items, item_cats, customers, suppliers, warehouses
 
 
 def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, warehouse_id,
@@ -226,7 +235,7 @@ def trade(
         raise TradeReportError(f"group_by must be one of {GROUPS}.")
 
     date_from, date_to = _as_date(date_from), _as_date(date_to)
-    items, customers, suppliers, warehouses = _names(db)
+    items, item_cats, customers, suppliers, warehouses = _names(db)
     party_names = customers if doc_type.startswith("sale") else suppliers
     wants_profit = doc_type in _PROFIT_DOCS
 
@@ -238,6 +247,31 @@ def trade(
 
     def item_label(iid):
         return items.get(iid, (None, f"#{iid}", None))[1]
+
+    # **التجميع بالفئة — والرئيسية.** (031)
+    #
+    # القايمة كلها بتتقرا في استعلامين قبل اللفّة (عشرات الصفوف)، وكل سطر بعد كده
+    # بيتحوّل لفئته بقراءة من قاموس. الشكل التاني — استعلام على `lookup_option` لكل
+    # سطر عشان نعرف أبوه — بيبقى آلاف الرحلات على تقرير شهر واحد.
+    #
+    # والاسم المعروض من القايمة مش من `Item.category`: الصنف ماسك **القيمة** المتولّدة
+    # وقت الإنشاء (`مواسير_PVC`)، والشاشات كلها بتعرض الليبل. تقرير يقول اسم تاني عن
+    # باقي النظام بيخلّي اللي بيقارن يفتكر إنهم فئتين.
+    #
+    # والاستعلامين مابيتعملوش غير للتجميعتين دول: تقرير بيجمّع بالعميل مالوش دعوة
+    # بقايمة الفئات، ومافيش سبب يدفع تمنها.
+    cat_parents: dict[str, str] = {}
+    cat_labels: dict[str, str] = {}
+    if group_by in ("category", "main_category"):
+        cat_parents = lookup_service.parent_map(db, lookup_service.ITEM_CATEGORY)
+        cat_labels = dict(db.execute(
+            select(LookupOption.value, LookupOption.label)
+            .where(LookupOption.category == lookup_service.ITEM_CATEGORY)).all())
+
+    def cat_label(value):
+        # الصنف من غير فئة بيتجمّع تحت دلو باسمه بدل ما يقع من التقرير — الرقم اللي
+        # ناقص من الكشف أوحش من سطر مكتوب عليه «بدون فئة».
+        return "بدون فئة" if value is None else (cat_labels.get(value) or value)
 
     # --- totals are summed from the flat lines, so every shape agrees with every other ---
     total_amount = to_money(sum((r["amount"] for r in flat), ZERO))
@@ -287,6 +321,13 @@ def trade(
             "item": lambda r: (r["item_id"], item_label(r["item_id"])),
             "warehouse": lambda r: (r["warehouse_id"],
                                     warehouses.get(r["warehouse_id"], f"#{r['warehouse_id']}")),
+            "category": lambda r: (item_cats.get(r["item_id"]),
+                                   cat_label(item_cats.get(r["item_id"]))),
+            # خطوة واحدة لفوق: الفرعية بتترد لأبوها، والرئيسية بتفضل هي هي — فالفرع
+            # اللي مش عامل شجرة بيطلع نفس صفوف «الفئة» بالظبط.
+            "main_category": lambda r: (
+                lookup_service.root_of(cat_parents, item_cats.get(r["item_id"])),
+                cat_label(lookup_service.root_of(cat_parents, item_cats.get(r["item_id"])))),
         }[group_by]
         buckets: dict = {}
         for r in flat:

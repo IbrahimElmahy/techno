@@ -11,6 +11,7 @@ import {
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import ItemEditModal from '../components/ItemEditModal';
+import { useCategoryTree } from '../hooks/useCategoryTree';
 import { SerialsPanel, UnitsPanel } from '../components/ItemUnitsPanel';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DocumentLink, { useOpenDocument } from '../components/DocumentLink';
@@ -53,6 +54,16 @@ export default function ItemProfile() {
   const goBack = useBackTo('/catalog');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  // شجرة الفئات — الكارت بيعرض الطريق «الرئيسية ← الفرعية» بدل قيمة واحدة. (031)
+  const { tree: categoryTree } = useCategoryTree();
+  /** «الرئيسية ← الفرعية» بالأسماء المعروضة، أو الاسم لوحده لو الفئة رئيسية. */
+  const categoryPath = (value: string | null | undefined): string => {
+    if (!value) return '';
+    const label = categoryTree.labels[value] || value;
+    const parent = categoryTree.parentOf[value];
+    if (!parent) return label;
+    return `${categoryTree.labels[parent] || parent} ← ${label}`;
+  };
   const [editOpen, setEditOpen] = useState(false);
   const { user, can } = useAuth();
   // Same gate as the catalog list: only the roles allowed to create items may edit one.
@@ -233,7 +244,14 @@ export default function ItemProfile() {
                           {KIND_LABEL[it.kind] || it.kind}
                         </Descriptions.Item>
                         <Descriptions.Item label="وحدة القياس">{it.unit_of_measure}</Descriptions.Item>
-                        <Descriptions.Item label="التصنيف">{it.category || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="التصنيف">
+                          {/* **الاسم مش القيمة.** الكارت كان بيعرض `it.category` خام —
+                              وهي القيمة المتولّدة وقت الإنشاء (`مواسير_PVC`) — بينما كل
+                              شاشة تانية بتعرض الليبل. والطريق بيتكتب كامل عشان اللي
+                              عنده فئتين فرعيتين بنفس الاسم تحت رئيسيتين مختلفتين
+                              يعرف هو تحت أنهي واحدة. من غير شجرة بيطلع اسم واحد. */}
+                          {categoryPath(it.category) || '-'}
+                        </Descriptions.Item>
                         <Descriptions.Item label="الحالة">
                           {it.active ? <Tag color="green">نشط</Tag> : <Tag color="red">معطل</Tag>}
                         </Descriptions.Item>

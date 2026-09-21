@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
+import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
@@ -152,6 +153,11 @@ export default function Manufacturing() {
               itemName={itemName} loading={loading} reload={loadAll}
             />
           ),
+        },
+        {
+          key: 'work-orders',
+          label: <span><BuildOutlined /> أوامر الشغل (a5)</span>,
+          children: <WorkOrdersTab branches={branches} />,
         },
         {
           key: 'wastage',
@@ -894,6 +900,139 @@ function WastageTab({
           </Form.Item>
         </Form>
       </TabModal>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// أوامر الشغل المنقولة من a5 — قراءة فقط
+// ---------------------------------------------------------------------------
+/**
+ * **٤٬٣٨٩ سطر تصنيع منقولين من مصنع السادات ومش باينين في ولا شاشة.** تبويب «أوامر
+ * التصنيع» بيقرا `ManufacturingOrder` وحده — منتج واحد لكل أمر — والمنقول اتسجّل
+ * `ManufacturingOp` لأن أمر a5 بيطلّع كذا منتج (الشرح في `import_a5_manufacturing`).
+ * فالرصيد طالع مظبوط، واللي بيدوّر على أمر شغل رقم ٣٥٣٧ مالقيهوش.
+ *
+ * التبويب ده بيلمّهم في شكلهم الأصلي: مستند واحد، جدول منتجات فوق وجدول خامات تحت.
+ * **قراءة فقط** — مافيش زر بيكتب صف هنا، ومافيش خانة فلوس: تصدير a5 فيه كمية ومخزن
+ * وبس، وحساب متوسط النهارده وعرضه على إنتاج حصل من سنة بيبقى رقم يبان صح وتاريخه كداب.
+ */
+interface WorkOrderLine {
+  op_id: number; document_number: string; item_id: number; code: string; name: string;
+  unit: string; quantity: string; warehouse_id: number; warehouse: string; is_reversal: boolean;
+}
+interface WorkOrder {
+  ref: string; date: string | null; branch_id: number | null;
+  product_quantity: string; material_quantity: string;
+  products: WorkOrderLine[]; materials: WorkOrderLine[];
+}
+
+const WO_LINE_COLUMNS = [
+  { title: 'الكود', dataIndex: 'code', width: 110 },
+  { title: 'الصنف', dataIndex: 'name' },
+  { title: 'الوحدة', dataIndex: 'unit', width: 90 },
+  { title: 'العدد', dataIndex: 'quantity', width: 110,
+    render: (q: string) => Number(q).toLocaleString(numeralsLocale()) },
+  { title: 'المخزن', dataIndex: 'warehouse', width: 160 },
+];
+
+function WorkOrdersTab({ branches }: { branches: { id: number; name: string }[] }) {
+  const [rows, setRows] = useState<WorkOrder[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const branchName = useMemo(() => {
+    const m = new Map(branches.map((b) => [b.id, b.name]));
+    return (id: number | null) => (id == null ? '-' : m.get(id) ?? `#${id}`);
+  }, [branches]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/v1/manufacturing/work-orders', {
+        params: {
+          limit: pageSize, offset: (page - 1) * pageSize,
+          ...(query.trim() ? { search: query.trim() } : {}),
+        },
+      });
+      setRows(res.data?.rows ?? []);
+      setTotal(res.data?.total ?? 0);
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+
+  // الترقيم على السيرفر — الأوامر بالآلاف، وتحميلها كلها عشان نعرض خمسين كان
+  // بيرجّع ميجابايتات في كل فتحة للتبويب.
+  useEffect(() => { load(); }, [page, pageSize]);
+
+  const columns = [
+    { title: 'أمر الشغل', dataIndex: 'ref', key: 'ref',
+      render: (r: string) => <Tag color="blue">{r}</Tag> },
+    { title: 'التاريخ', dataIndex: 'date', key: 'date', width: 120,
+      render: (d: string | null) => d || '-' },
+    { title: 'الفرع', key: 'branch', width: 140,
+      render: (_: any, r: WorkOrder) => branchName(r.branch_id) },
+    { title: 'المنتجات', key: 'np', width: 100,
+      render: (_: any, r: WorkOrder) => r.products.length },
+    { title: 'كمية المنتج', key: 'pq', width: 130,
+      render: (_: any, r: WorkOrder) => Number(r.product_quantity).toLocaleString(numeralsLocale()) },
+    { title: 'الخامات', key: 'nm', width: 100,
+      render: (_: any, r: WorkOrder) => r.materials.length },
+    { title: 'كمية الخامات', key: 'mq', width: 130,
+      render: (_: any, r: WorkOrder) => Number(r.material_quantity).toLocaleString(numeralsLocale()) },
+  ];
+
+  return (
+    <div>
+      <Card size="small" style={{ marginBottom: 12, background: '#fffbe6', borderColor: '#ffe58f' }}>
+        شغل منقول من a5 — للعرض والمراجعة بس. مافيش تعديل ولا عكس عليه من هنا، والتكلفة
+        مش موجودة في المصدر أصلاً فمابتتعرضش.
+      </Card>
+
+      <Space style={{ marginBottom: 12 }}>
+        <Input.Search
+          allowClear style={{ width: 320 }}
+          placeholder="بحث برقم أمر الشغل أو باسم صنف"
+          value={query} onChange={(e) => setQuery(e.target.value)}
+          onSearch={() => { setPage(1); load(); }}
+        />
+      </Space>
+
+      <Table
+        rowKey="ref" loading={loading} dataSource={rows} columns={columns}
+        pagination={{
+          current: page, pageSize, total, showSizeChanger: true,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          onChange: (p, s) => { setPage(p); setPageSize(s); },
+        }}
+        expandable={{
+          expandedRowRender: (r: WorkOrder) => (
+            <div>
+              <Divider orientation="right" style={{ margin: '4px 0 8px' }}>الإنتاج التام</Divider>
+              <Table size="small" pagination={false} rowKey="op_id"
+                dataSource={r.products} columns={WO_LINE_COLUMNS}
+                locale={{ emptyText: 'مافيش سطور إنتاج في الأمر ده' }} />
+              <StatsRow gutter={16} style={{ margin: '12px 0' }}>
+                <Col span={12}>
+                  <Statistic title="كمية المنتج"
+                    value={Number(r.product_quantity).toLocaleString(numeralsLocale())} />
+                </Col>
+                <Col span={12}>
+                  <Statistic title="كمية الخامات"
+                    value={Number(r.material_quantity).toLocaleString(numeralsLocale())} />
+                </Col>
+              </StatsRow>
+              <Divider orientation="right" style={{ margin: '4px 0 8px' }}>الخامات</Divider>
+              <Table size="small" pagination={false} rowKey="op_id"
+                dataSource={r.materials} columns={WO_LINE_COLUMNS}
+                locale={{ emptyText: 'مافيش سطور خامات في الأمر ده' }} />
+            </div>
+          ),
+        }}
+        locale={{ emptyText: 'مافيش أوامر شغل منقولة' }}
+      />
     </div>
   );
 }

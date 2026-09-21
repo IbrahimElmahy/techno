@@ -129,6 +129,15 @@ export default function ReceiptModal({
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />
                   </Form.Item>
+                  {/* «بيان» الورقة — غير «البيان» اللي فوق: ده وصف الحركة في القيد،
+                      وده الكلام المكتوب على السند نفسه. الاتنين موجودين في a5. */}
+                  <Form.Item name="statement1" label="بيان السند">
+                    <Input placeholder="الكلام المكتوب على ورقة السند" style={{ width: 220 }} />
+                  </Form.Item>
+                  {/* رقم الورقة اللي في إيد العميل — بيتحفظ جنب رقم السند عندنا. */}
+                  <Form.Item name="external_document_number" label="رقم المستند">
+                    <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />
+                  </Form.Item>
                   <Form.Item>
                     <Button type="primary" htmlType="submit" loading={posting}>
                       تسجيل السند

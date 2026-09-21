@@ -97,7 +97,7 @@ def apply_filters(
     *,
     q: str | None = None,
     kind: str | None = None,
-    category: str | None = None,
+    category: str | list[str] | None = None,
     active: bool | None = None,
     warehouse_id: int | None = None,
 ) -> Select:
@@ -118,7 +118,13 @@ def apply_filters(
     if kind:
         stmt = stmt.where(Item.kind == ItemKind(kind))
     if category:
-        stmt = stmt.where(Item.category == category)
+        # **الفئة ممكن تيجي قيمة واحدة أو قايمة قيم.** (031) اللي بيفلتر على فئة
+        # رئيسية عايز فروعها معاها — والأصناف متعلّقة بالفرعية، فالرئيسية لوحدها
+        # بترجّع كشف فاضي. اللي بيفلتر على فئة عادية بيبعت قيمة واحدة وبتتقارن
+        # بـ`==` زي ما كانت بالحرف.
+        values = [category] if isinstance(category, str) else list(category)
+        stmt = (stmt.where(Item.category == values[0]) if len(values) == 1
+                else stmt.where(Item.category.in_(values)))
     if active is not None:
         stmt = stmt.where(Item.active.is_(active))
     if warehouse_id is not None:

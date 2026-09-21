@@ -59,6 +59,8 @@ interface Permit {
   id: number; document_number: string; kind: Kind;
   warehouse_id: number; warehouse_name: string | null;
   permit_date: string | null; reason: string | null; notes: string | null;
+  /** «بيان» و«رقم المستند» — اختيارية لأن الأذون المنقولة من a5 مالهاش ولا واحدة. */
+  statement1?: string | null; external_document_number?: string | null;
   total_cost: string; is_reversal: boolean; reversed_by: number | null;
   created_at: string | null; lines: PermitLine[];
 }
@@ -94,6 +96,14 @@ export default function StockPermits() {
   const [permitDate, setPermitDate] = useState<Dayjs>(dayjs());
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
+  /**
+   * «بيان» و«رقم المستند».
+   *
+   * «رقم المستند» مش رقمنا — ده رقم الورقة اللي في إيد اللي جاب البضاعة أو صرفها،
+   * وهو بيدوّر بيه. بيتحفظ **جنب** رقم الإذن عندنا، مش بداله.
+   */
+  const [statement1, setStatement1] = useState('');
+  const [externalDocNumber, setExternalDocNumber] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   // The doors. «إيه نوع الإذن» is already answered by the tab that opened this, so the one thing
   // left to ask before the lines is which store — and an issue cannot even list its items until
@@ -157,8 +167,9 @@ export default function StockPermits() {
   /** المسودّة — الإذن اللي اتكتب ولسه ما اترحّلش. الشرح في `useDraft`. */
   const draftPayload = useMemo(() => ({
     kind, warehouseId, lines, reason, notes,
+    statement1, external_document_number: externalDocNumber,
     permit_date: permitDate ? dayjs(permitDate).format('YYYY-MM-DD') : null,
-  }), [kind, warehouseId, lines, reason, notes, permitDate]);
+  }), [kind, warehouseId, lines, reason, notes, statement1, externalDocNumber, permitDate]);
 
   const {
     drafts, savedAt: draftSavedAt, discard: discardDraft,
@@ -189,12 +200,15 @@ export default function StockPermits() {
     setLines(x.lines || []);
     setReason(x.reason || '');
     setNotes(x.notes || '');
+    setStatement1(x.statement1 || '');
+    setExternalDocNumber(x.external_document_number || '');
     if (x.permit_date) setPermitDate(dayjs(x.permit_date));
     setCreating(true);
   };
 
   const resetDraft = () => {
     setLines([]); setReason(''); setNotes('');
+    setStatement1(''); setExternalDocNumber('');
     setPermitDate(dayjs()); setWarehouseId(undefined);
   };
 
@@ -273,6 +287,8 @@ export default function StockPermits() {
       await api.post('/api/v1/stock/permits', {
         kind, warehouse_id: warehouseId, lines: payload,
         reason: reason || null, notes: notes || null,
+        statement1: statement1 || null,
+        external_document_number: externalDocNumber || null,
         permit_date: permitDate.format('YYYY-MM-DD'),
       });
       message.success(kind === 'issue' ? 'تم تسجيل إذن الصرف'
@@ -311,6 +327,8 @@ export default function StockPermits() {
     setPermitDate(p.permit_date ? dayjs(p.permit_date) : dayjs());
     setReason(p.reason || '');
     setNotes(p.notes || '');
+    setStatement1(p.statement1 || '');
+    setExternalDocNumber(p.external_document_number || '');
     setLines(p.lines.map((l, i) => ({
       key: i + 1,
       item_id: l.item_id,
@@ -400,6 +418,18 @@ export default function StockPermits() {
         <Col xs={24} md={8}>
           <Input placeholder="السبب (جرد، مرتجع ورشة، عينة…)" value={reason}
             onChange={(e) => setReason(e.target.value)} />
+        </Col>
+      </Row>
+
+      {/* «بيان» و«رقم المستند» — سطر كلام زيادة، ورقم الورقة اللي في إيده. */}
+      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
+        <Col xs={24} md={12}>
+          <Input placeholder="بيان (اختياري)" value={statement1}
+            onChange={(e) => setStatement1(e.target.value)} />
+        </Col>
+        <Col xs={24} md={12}>
+          <Input placeholder="رقم المستند — رقم الإذن الورقي" value={externalDocNumber}
+            onChange={(e) => setExternalDocNumber(e.target.value)} />
         </Col>
       </Row>
 
@@ -550,6 +580,11 @@ export default function StockPermits() {
           <b>{money(detail.total_cost)}</b>
         </Descriptions.Item>
         <Descriptions.Item label="السبب" span={2}>{detail.reason || '-'}</Descriptions.Item>
+        <Descriptions.Item label="بيان">{detail.statement1 || '-'}</Descriptions.Item>
+        {/* رقم الورقة اللي عنده — بيتعرض جنب رقم الإذن عندنا اللي في عنوان الصفحة. */}
+        <Descriptions.Item label="رقم المستند">
+          {detail.external_document_number || '-'}
+        </Descriptions.Item>
         <Descriptions.Item label="ملاحظات" span={2}>{detail.notes || '-'}</Descriptions.Item>
       </Descriptions>
       <Table<PermitLine>

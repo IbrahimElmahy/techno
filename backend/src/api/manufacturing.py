@@ -403,3 +403,52 @@ def reverse_order(
         raise _conflict(exc)
     db.commit()
     return _order_out(order, _reversed_ids(db))
+
+
+# ---------------------------------------------------------------------------
+# أوامر الشغل المنقولة من a5 — قراءة فقط.
+# ---------------------------------------------------------------------------
+# الشرح في `manufacturing_service.list_work_orders`: ٤٬٣٨٩ سطر تصنيع منقولين ومش باينين
+# في ولا شاشة، لأن تبويب الأوامر بيقرا `ManufacturingOrder` وحده. النقطة دي بتوريهم في
+# شكلهم الأصلي — مستند بسطور منتجات وسطور خامات — من غير ما تكتب صف.
+class WorkOrderLineOut(BaseModel):
+    op_id: int
+    document_number: str
+    item_id: int
+    code: str
+    name: str
+    unit: str
+    quantity: str
+    warehouse_id: int
+    warehouse: str
+    is_reversal: bool
+
+
+class WorkOrderOut(BaseModel):
+    ref: str
+    date: str | None
+    branch_id: int | None
+    product_quantity: str
+    material_quantity: str
+    products: list[WorkOrderLineOut]
+    materials: list[WorkOrderLineOut]
+
+
+@router.get("/work-orders")
+def list_work_orders(
+    search: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    db: Session = Depends(get_db),
+):
+    rows = manufacturing_service.list_work_orders(
+        db, search=search, date_from=date_from, date_to=date_to)
+    # نفس عقد الترقيم اللي باقي القوايم ماشية عليه: `limit` بيرجّع غلاف بالإجمالي،
+    # ومن غيره بترجع القايمة زي ما هي عشان أي نداء قديم مايتكسرش.
+    if limit is None:
+        return rows
+    return {"rows": rows[offset:offset + limit], "total": len(rows),
+            "limit": limit, "offset": offset}

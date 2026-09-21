@@ -81,6 +81,14 @@ export default function PaymentModal({
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />
                   </Form.Item>
+                  {/* «بيان السند» كلام الورقة، مش وصف الحركة في القيد اللي فوق. */}
+                  <Form.Item name="statement1" label="بيان السند">
+                    <Input placeholder="الكلام المكتوب على ورقة السند" style={{ width: 220 }} />
+                  </Form.Item>
+                  {/* رقم الورقة اللي في إيد المورد — جنب رقم السند عندنا مش بداله. */}
+                  <Form.Item name="external_document_number" label="رقم المستند">
+                    <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />
+                  </Form.Item>
                   <Form.Item>
                     <Button type="primary" htmlType="submit" loading={posting}>
                       تسجيل السند

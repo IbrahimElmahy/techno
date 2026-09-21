@@ -460,3 +460,97 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Manufact
                          entity_type="manufacturing_order", entity_id=rev.id,
                          before={"order": order_id})
     return rev
+
+
+# ---------------------------------------------------------------------------
+# أوامر الشغل المنقولة من a5 — قراءة فقط.
+# ---------------------------------------------------------------------------
+# **٤٬٣٨٩ سطر تصنيع منقولين من مصنع السادات مش باينين في ولا شاشة.** تبويب «أوامر
+# التصنيع» بيقرا `ManufacturingOrder` وحده، والمنقول اتسجّل `ManufacturingOp` لأن أمر a5
+# بيطلّع كذا منتج وأمرنا منتج واحد (الشرح في `scripts/import_a5_manufacturing`). النتيجة
+# إن الرصيد مظبوط بس اللي بيدوّر على أمر شغل رقم ٣٥٣٧ مالقيهوش.
+#
+# الدالة دي بتلمّ السطور دي في شكلها الأصلي — مستند واحد بسطور منتجات وسطور خامات —
+# **من غير ما تكتب صف واحد**. هي المنظر اللي المستند الجديد هيحلّ محلّه، وفي نفس الوقت
+# إثبات إن مفتاح التجميع سليم قبل ما تتنقل الداتا عليه.
+def work_order_ref(document_number: str | None) -> str:
+    """«FC-MFG-3336-001» ← أمر الشغل «FC-MFG-3336» اللي السطر ده جزء منه.
+
+    نفس الاتفاق اللي `import_a5_manufacturing` بيكتب بيه و`lib/reporting._op_batches`
+    بيقراه. مكتوب هنا كدالة عشان اللي هيغيّر المستورد يلاقي القرّاء كلهم بالاسم.
+    """
+    num = document_number or ""
+    return num.rsplit("-", 1)[0] if "-" in num else num
+
+
+def list_work_orders(db: Session, *, search: str | None = None,
+                     date_from=None, date_to=None) -> list[dict]:
+    """أوامر الشغل المنقولة، الأحدث أولاً: ترويسة + سطور منتجات + سطور خامات.
+
+    **مافيش فلوس في الرد.** تصدير a5 (`a5_mfg.tsv`) فيه كمية ومخزن وبس — مافيش عمود
+    تكلفة أصلاً. وحساب «متوسط» النهارده وعرضه على إنتاج حصل من سنة بيبقى رقم يبان صح
+    وتاريخه كداب، فالخانة بترجع فاضية بدل ما تتخمّن.
+
+    والتاريخ من `movement_date` مش من `created_at`: النقل كتب شغل سنة كاملة في يوم واحد.
+    """
+    from src.models.stock import StockMovement
+    from src.models.warehouse import Warehouse
+
+    wh_name = {w.id: w.name for w in db.scalars(select(Warehouse)).all()}
+    wh_branch = {w.id: w.branch_id for w in db.scalars(select(Warehouse)).all()}
+    names = {i.id: i.name for i in db.scalars(select(Item)).all()}
+    codes = {i.id: i.code for i in db.scalars(select(Item)).all()}
+    units = {i.id: i.unit_of_measure for i in db.scalars(select(Item)).all()}
+
+    stmt = (select(ManufacturingOp, StockMovement.movement_date, StockMovement.created_at)
+            .outerjoin(StockMovement, StockMovement.id == ManufacturingOp.stock_movement_id))
+
+    orders: dict[str, dict] = {}
+    for op, mv_date, mv_created in db.execute(stmt).all():
+        ref = work_order_ref(op.document_number)
+        when = mv_date or (mv_created.date() if mv_created else None)
+        o = orders.setdefault(ref, {
+            "ref": ref, "date": when, "branch_id": None,
+            "products": [], "materials": [],
+            "product_quantity": ZERO, "material_quantity": ZERO,
+        })
+        # أقدم تاريخ في المجموعة هو تاريخ الأمر — السطور كلها نفس اليوم في العادي،
+        # والأقدم بيحمي من سطر اتصلّح بعدين فاخد تاريخ تاني.
+        if when and (o["date"] is None or when < o["date"]):
+            o["date"] = when
+        wid = int(op.location_id)
+        if o["branch_id"] is None:
+            o["branch_id"] = wh_branch.get(wid)
+        produce = op.op_type == ManufactureOpType.produce
+        line = {
+            "op_id": op.id, "document_number": op.document_number,
+            "item_id": op.item_id, "code": codes.get(op.item_id, ""),
+            "name": names.get(op.item_id, f"#{op.item_id}"),
+            "unit": units.get(op.item_id, ""),
+            "quantity": str(to_qty(op.quantity)),
+            "warehouse_id": wid, "warehouse": wh_name.get(wid, f"#{wid}"),
+            "is_reversal": op.reverses_op_id is not None,
+        }
+        if produce:
+            o["products"].append(line)
+            o["product_quantity"] += to_qty(op.quantity)
+        else:
+            o["materials"].append(line)
+            o["material_quantity"] += to_qty(op.quantity)
+
+    rows = list(orders.values())
+    if date_from:
+        rows = [r for r in rows if r["date"] and str(r["date"]) >= str(date_from)]
+    if date_to:
+        rows = [r for r in rows if r["date"] and str(r["date"]) <= str(date_to)]
+    if search:
+        q = search.strip()
+        rows = [r for r in rows if q in r["ref"]
+                or any(q in ln["name"] or q in (ln["code"] or "")
+                       for ln in (*r["products"], *r["materials"]))]
+    for r in rows:
+        r["date"] = str(r["date"]) if r["date"] else None
+        r["product_quantity"] = str(r["product_quantity"])
+        r["material_quantity"] = str(r["material_quantity"])
+    rows.sort(key=lambda r: (r["date"] or "", r["ref"]), reverse=True)
+    return rows

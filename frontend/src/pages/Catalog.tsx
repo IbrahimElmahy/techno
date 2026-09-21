@@ -16,6 +16,7 @@ import { netOf } from '../utils/discounts';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { useCategoryTree, categorySelectOptions } from '../hooks/useCategoryTree';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { money, numeralsLocale } from '../utils/money';
@@ -312,6 +313,17 @@ export default function Catalog() {
   const { options: kindOptions } = useLookup('item_kind');
   const { options: uomOptions } = useLookup('unit_of_measure');
   const { options: categoryOptions } = useLookup('item_category');
+  /**
+   * الفئات كشجرة — الرئيسية عنوان مجموعة وفروعها تحتها. (031)
+   *
+   * القيمة المتخزّنة ما اتغيّرتش: الاختيار لسه نص `value` زي ما كان، والصنف القديم
+   * بيفضل على فئته بالحرف. ولو مافيش شجرة `categorySelectOptions` بترجّع نفس القايمة
+   * المسطّحة اللي دخلت — فالفرع اللي ما عملش شجرة بيشوف نفس المنسدلة.
+   */
+  const { tree: categoryTree } = useCategoryTree();
+  const categoryTreeOptions = useMemo(
+    () => categorySelectOptions(categoryTree, categoryOptions),
+    [categoryTree, categoryOptions]);
   const kindLabels = labelMap(kindOptions);
   const categoryLabels = labelMap(categoryOptions);
   const [items, setItems] = useState<ItemRecord[]>([]);
@@ -889,10 +901,13 @@ export default function Catalog() {
               ]} />
           </Col>
           <Col xs={12} md={4}>
-            <Select allowClear style={{ width: '100%' }} placeholder="الفئة"
+            {/* اختيار فئة رئيسية بيجيب فروعها معاها — التوسعة بتحصل على السيرفر
+                (`with_children`)، عشان الكشف مترقّم والفلترة عليه مش محلية. */}
+            <Select allowClear showSearch optionFilterProp="label"
+              style={{ width: '100%' }} placeholder="الفئة"
               value={filters.category}
               onChange={(v) => setFilter('category', v)}
-              options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))} />
+              options={categoryTreeOptions} />
           </Col>
           <Col xs={12} md={4}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المخزن الافتراضي"
@@ -1030,7 +1045,7 @@ export default function Catalog() {
             <Col span={8}>
               <Form.Item name="category" label="الفئه">
                 <Select allowClear showSearch placeholder="اختر الفئة"
-                  options={categoryOptions.map((o) => ({ value: o.value, label: o.label }))}
+                  options={categoryTreeOptions}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>

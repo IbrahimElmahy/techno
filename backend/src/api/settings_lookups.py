@@ -27,6 +27,9 @@ class OptionOut(BaseModel):
     active: bool
     is_system: bool
     description: str | None = None
+    # قيمة الفئة الأب — `None` يعني رئيسية. (031) بتنزل مع كل قايمة، والشاشات اللي
+    # مش عاملة شجرة بتلاقيها `None` في كل صف فبتتصرف زي ما هي.
+    parent_value: str | None = None
 
 
 class OptionCreate(BaseModel):
@@ -35,6 +38,7 @@ class OptionCreate(BaseModel):
     label: str
     sort_order: int | None = None
     description: str | None = None
+    parent_value: str | None = None
 
 
 class OptionUpdate(BaseModel):
@@ -42,12 +46,16 @@ class OptionUpdate(BaseModel):
     sort_order: int | None = None
     active: bool | None = None
     description: str | None = None
+    # `null`/غايب = ماتلمسش الأب · `""` = خلّيها رئيسية. لازم تتفرّق الحالتين، وإلا
+    # أي تعديل اسم من شاشة قديمة مابتبعتش الحقل كان بيفكّ الشجرة في صمت.
+    parent_value: str | None = None
 
 
 def _out(o) -> OptionOut:
     return OptionOut(id=o.id, category=o.category, value=o.value, label=o.label,
                      sort_order=o.sort_order, active=o.active, is_system=o.is_system,
-                     description=getattr(o, 'description', None))
+                     description=getattr(o, 'description', None),
+                     parent_value=getattr(o, 'parent_value', None))
 
 
 @router.get("/categories")
@@ -78,7 +86,8 @@ def create_option(
     try:
         opt = lookup_service.create_option(
             db, category=body.category, value=body.value, label=body.label,
-            sort_order=body.sort_order, description=body.description)
+            sort_order=body.sort_order, description=body.description,
+            parent_value=body.parent_value)
     except LookupError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "lookup_invalid", "message": str(exc)})
     db.commit()
@@ -95,7 +104,8 @@ def update_option(
     try:
         opt = lookup_service.update_option(
             db, option_id=option_id, label=body.label, sort_order=body.sort_order,
-            active=body.active, description=body.description)
+            active=body.active, description=body.description,
+            parent_value=body.parent_value)
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": str(exc)})
     db.commit()
