@@ -38,6 +38,16 @@ interface Props {
   priceFor?: (itemId: number) => number | string | null;
   /** بيمنع اختيار صنف رصيده صفر في المكان اللي `availableFor` بتقيس عليه. */
   disableOutOfStock?: boolean;
+  /**
+   * بيتغيّر لما الرصيد اللي `availableFor` بتقرا منه يتغيّر — المخزن اتبدّل، أو
+   * أرصدته وصلت بعد ما الشباك اتفتح.
+   *
+   * `availableFor` نفسها دالة جديدة كل رندر، فمينفعش تدخل في اعتمادات الميمو (الفلترة
+   * على آلاف الصنف كانت هتتعاد كل رندر والشباك ياخد ثواني يفتح). والنتيجة إن القايمة
+   * كانت بتتحسب مرة وتفضل على رصيد المخزن القديم لحد ما اللي قدامها يكتب حرف. النص ده
+   * بيدي الميمو حاجة يتعلّق بيها من غير التكلفة دي.
+   */
+  availabilityVersion?: string | number;
 }
 
 const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
@@ -46,7 +56,7 @@ const fmtPrice = (v: any) => Number(v || 0).toLocaleString('ar-EG', { minimumFra
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
-  disableOutOfStock = false,
+  disableOutOfStock = false, availabilityVersion,
 }: Props) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -97,10 +107,20 @@ export default function ProductPickerModal({
     }
     const avail = availableRef.current;
     if (disableOutOfStock && onlyAvailableStock && avail) {
-      list = list.filter((p) => {
+      const inStock = list.filter((p) => {
         const av = avail(p.id);
         return av === null || av > 0;
       });
+      // **الفلتر اللي بيخفي كل حاجة مش فلتر.**
+      //
+      // `availableFor` بترجّع صفر لما أرصدة المخزن لسه ما وصلتش — «مش معروف» و«مافيش»
+      // بيطلعوا نفس الرقم. فأول ما المخزن يتغيّر والأرصدة في السكة، كل صنف بيجاوب صفر
+      // والقايمة بتتفضّى بالكامل: اللي قدامه بيدوّر على صنف موجود في المخزن ومش لاقي
+      // ولا سطر، ومافيش حاجة بتقول له ليه.
+      //
+      // القاعدة هنا بتمسك ده وأي سبب تاني يعمله (النداء وقع، المخزن فاضي فعلاً):
+      // النتيجة الفاضية معناها إن القياس مش موثوق، والكتالوج الكامل أنفع من شاشة فاضية.
+      list = inStock.length ? inStock : list;
     }
     // **الترتيب أبجدي عربي، آخر خطوة قبل العرض.**
     //
@@ -110,7 +130,8 @@ export default function ProductPickerModal({
     // عشان «ماسورة 2» تيجي قبل «ماسورة 10» مش بعدها.
     return sortByName(list, (p) => p.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, activeCategory, products, disableOutOfStock, onlyAvailableStock]);
+  }, [query, activeCategory, products, disableOutOfStock, onlyAvailableStock,
+      availabilityVersion]);
 
   /** بيترسم من القايمة قد إيه.
    *

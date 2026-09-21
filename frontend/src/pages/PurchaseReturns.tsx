@@ -1133,7 +1133,9 @@ export default function PurchaseReturns() {
         products={items as any}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
-        availableFor={(id) => (warehouseId ? (availability[warehouseId]?.[id] ?? 0) : null)}
+        availableFor={(id) => (warehouseId && availability[warehouseId]
+          ? (availability[warehouseId][id] ?? 0) : null)}
+        availabilityVersion={`${warehouseId ?? ''}|${Object.keys(availability).join(',')}`}
         onCancel={() => setPickerOpen(false)}
         onPick={(id) => { setPickerOpen(false); addReturnLine(id); }}
         onPickMany={(ids) => { setPickerOpen(false); ids.forEach(addReturnLine); }} />

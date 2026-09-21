@@ -1387,7 +1387,9 @@ export default function Returns() {
                   products={products}
                   activeCategory={activeCategory}
                   onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
-                  availableFor={(id) => (docWarehouseId ? (availability[docWarehouseId]?.[id] ?? 0) : null)}
+                  availableFor={(id) => (docWarehouseId && availability[docWarehouseId]
+                    ? (availability[docWarehouseId][id] ?? 0) : null)}
+                  availabilityVersion={`${docWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
                   onCancel={() => setPickerOpen(false)}
                   onPick={(id) => {
                     setPickerOpen(false);

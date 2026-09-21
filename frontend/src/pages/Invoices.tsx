@@ -2401,8 +2401,9 @@ function couponsTotal(inv: any): number {
             products={products}
             activeCategory={activeCategory}
             onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
-            availableFor={(id) => (docWarehouseId === null
+            availableFor={(id) => (docWarehouseId === null || !availability[docWarehouseId]
               ? null : availableFor(id, null, docWarehouseId))}
+            availabilityVersion={`${docWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
             disableOutOfStock
             onCancel={() => setPickerOpen(false)}
             onPick={(id) => {

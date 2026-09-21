@@ -2197,7 +2197,9 @@ export default function Purchases() {
         products={items as any}
         activeCategory={activeCategory}
         onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
-        availableFor={(id) => (stickyWarehouseId ? (availability[stickyWarehouseId]?.[id] ?? 0) : null)}
+        availableFor={(id) => (stickyWarehouseId && availability[stickyWarehouseId]
+          ? (availability[stickyWarehouseId][id] ?? 0) : null)}
+        availabilityVersion={`${stickyWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
         onCancel={() => setPickerOpen(false)}
         onPick={(id) => {
           setPickerOpen(false);
