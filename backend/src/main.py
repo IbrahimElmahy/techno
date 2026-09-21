@@ -15,6 +15,7 @@ from src.api import (  # Sales & Inventory (002
     after_sales_reports,
     attachments,  # مرفقات الزيارات (صور المندوب)
     document_attachments,  # مرفقات أي مستند — صور وPDF على الفاتورة والإذن والسند
+    a5_sync,  # استقبال تصدير a5 من فرع بعيد — المصنع بيرفع وإحنا بنستورد
     attendance,  # الحضور والانصراف (HR-2)
     audit,
     auth,
@@ -205,6 +206,7 @@ def create_app() -> FastAPI:
     app.include_router(after_sales_reports.router, prefix=prefix)
     app.include_router(attachments.router, prefix=prefix)
     app.include_router(document_attachments.router, prefix=prefix)
+    app.include_router(a5_sync.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(drafts.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
