@@ -776,6 +776,9 @@ function ProductionOrdersTab({
   // التبويب المفتوح جوّه الفورم. بيرجع لـ«الشغل» مع كل فتح — ده اللي حد فاتح الورقة
   // عايزه، والبيان والملاحظات بيتكتبوا مرة.
   const [formTab, setFormTab] = useState('work');
+  // الأمر اللي بيتقفل دلوقتي، ومعاه اللي طلع لكل سطر منتج.
+  const [closing, setClosing] = useState<ProductionOrder | null>(null);
+  const [outputs, setOutputs] = useState<Record<number, number | null>>({});
 
   const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
   const itemOptions = (list: Item[]) =>
@@ -977,8 +980,9 @@ function ProductionOrdersTab({
     statement1: statement || undefined,
     notes: notes || undefined,
     products: lines.map((ln) => ({
-      item_id: ln.item_id, quantity: ln.quantity,
-      planned_quantity: ln.planned_quantity ?? ln.quantity,
+      item_id: ln.item_id,
+      // الفتح بيبعت المخطّط بس — السيرفر بيفتح «اللي طلع» عليه، والإقفال بيستبدله.
+      planned_quantity: ln.planned_quantity,
       warehouse_id: ln.warehouse_id ?? undefined,
       bom_id: ln.bom_id ?? undefined,
       expense_amount: ln.expense_amount ?? 0,
@@ -1009,6 +1013,32 @@ function ProductionOrdersTab({
     try {
       await api.post(`/api/v1/manufacturing/production-orders/${r.id}/${verb}`);
       message.success(done);
+      load();
+    } catch (err) { console.error(err); }
+  };
+
+  /**
+   * **الإقفال بيسأل عن اللي طلع فعلاً.** الخامة اتصرفت وقت البدء والورقة عارفة
+   * المخطّط؛ الرقم الوحيد اللي لسه ناقص هو اللي خرج من الماكينة — وده اللي بيتكتب
+   * هنا، وعليه بتتقسّم التكلفة.
+   *
+   * وبيتفتح على المخطّط: اللي طلع زي ما اتخطّط بيدوس «إقفال» على طول.
+   */
+  const openClose = (r: ProductionOrder) => {
+    setOutputs(Object.fromEntries(r.products.map((p) => [p.id, Number(p.planned_quantity)
+      || Number(p.quantity)])));
+    setClosing(r);
+  };
+
+  const submitClose = async () => {
+    if (!closing) return;
+    const bad = closing.products.find((p) => !Number(outputs[p.id]));
+    if (bad) { message.error(`اكتب اللي طلع من «${itemName(bad.item_id)}»`); return; }
+    try {
+      await api.post(`/api/v1/manufacturing/production-orders/${closing.id}/execute`,
+        { outputs });
+      message.success('اتقفل الأمر: الإنتاج اتضاف للمخزن والتكلفة اتحسبت');
+      setClosing(null);
       load();
     } catch (err) { console.error(err); }
   };
@@ -1114,29 +1144,23 @@ function ProductionOrdersTab({
               <>
                 <Button type="link" size="small" icon={<EditOutlined />}
                   onClick={() => openEdit(r)}>تعديل</Button>
-                {/* **الخطوة الطبيعية من المؤكد هي «ابدأ»، مش «رحّل».** فهي `primary`
-                    والترحيل بيفضل موجود لواحد بيسجّل تشغيلة خلصت خلاص. */}
+                {/* **الخطوة الطبيعية من المؤكد هي «اصرف الخامات».** والإقفال المباشر
+                    بيفضل موجود لواحد بيسجّل تشغيلة خلصت خلاص — الاتنين بيحصلوا مرة. */}
                 <Button type="link" size="small" icon={<PlayCircleOutlined />}
-                  onClick={() => act(r, 'start', 'الأمر بقى شغّال — سجّل الكميات وهي بتحصل')}>
-                  ابدأ التشغيل
+                  onClick={() => act(r, 'start', 'اتصرفت الخامات — الأمر بقى شغّال')}>
+                  اصرف الخامات وابدأ
                 </Button>
-                <Button type="link" size="small"
-                  onClick={() => act(r, 'execute', 'اتنفّذ الأمر: اتصرفت الخامات واتضاف الإنتاج')}>
-                  تنفيذ وترحيل
+                <Button type="link" size="small" onClick={() => openClose(r)}>
+                  صرف وإقفال مرة واحدة
                 </Button>
               </>
             )}
             {r.state === 'in_progress' && (
-              <>
-                <Button type="link" size="small" icon={<EditOutlined />}
-                  onClick={() => openEdit(r)}>سجّل اللي حصل</Button>
-                <Button type="link" size="small"
-                  onClick={() => act(r, 'execute', 'اتنفّذ الأمر: اتصرفت الخامات واتضاف الإنتاج')}>
-                  إقفال وترحيل
-                </Button>
-              </>
+              <Button type="link" size="small" onClick={() => openClose(r)}>
+                سجّل اللي طلع واقفل
+              </Button>
             )}
-            {r.state === 'done' && (
+            {(r.state === 'done' || r.state === 'in_progress') && (
               <Button type="link" size="small" danger icon={<RollbackOutlined />}
                 onClick={() => reverse(r)}>تراجع وعكس</Button>
             )}
@@ -1333,21 +1357,13 @@ function ProductionOrdersTab({
                   options={whOptions}
                   onChange={(v) => patchLine(ln.key, { warehouse_id: v }, 'qty')} />
               </Col>
-              <Col span={3}>
-                <InputNumber style={{ width: '100%' }} min={0.001} placeholder="المفروض"
+              {/* **الورقة بتتفتح على خطة بس.** «اللي طلع» مش خانة هنا: وقت فتح الأمر
+                  محدش يعرف هيطلع كام، والرقمين جنب بعض كانوا بيتكتبوا نفس الرقم مرتين
+                  فالفرق يطلع صفر على طول ورقم الإنتاج يضيع. بيتكتب عند الإقفال. */}
+              <Col span={4}>
+                <InputNumber style={{ width: '100%' }} min={0.001} placeholder="الكمية المطلوبة"
                   value={ln.planned_quantity as any}
-                  onChange={(v) => patchLine(ln.key, {
-                    planned_quantity: v as any,
-                    // «اللي طلع» بيمشي ورا «المفروض» لحد ما حد يكتب فيه — الشرح عند
-                    // `quantityTouched`.
-                    quantity: ln.quantityTouched ? ln.quantity : (v as any),
-                  }, 'qty')} />
-              </Col>
-              <Col span={3}>
-                <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
-                  value={ln.quantity as any}
-                  onChange={(v) => patchLine(ln.key,
-                    { quantity: v as any, quantityTouched: true })} />
+                  onChange={(v) => patchLine(ln.key, { planned_quantity: v as any }, 'qty')} />
               </Col>
               <Col span={2}>
                 <Button block size="small" onClick={() => fillFromRecipe(ln.key)}>وصفة</Button>
@@ -1428,6 +1444,42 @@ function ProductionOrdersTab({
             },
           ]}
         />
+      </TabModal>
+
+      {/* **شاشة الإقفال: الرقم الوحيد اللي لسه ناقص.**
+          الخامة اتصرفت وقت البدء والمخطّط متسجّل، فاللي بيتسأل هنا هو اللي خرج من
+          الماكينة فعلاً — وعليه بتتقسّم التكلفة، ومنه بيطلع رقم الإنتاج. */}
+      <TabModal centered open={closing != null} onCancel={() => setClosing(null)}
+        title={closing ? `إقفال ${closing.document_number} — اللي طلع فعلاً` : ''}
+        width={620} destroyOnHidden
+        footer={
+          <Space>
+            <Button onClick={() => setClosing(null)}>إلغاء</Button>
+            <Button type="primary" onClick={submitClose}>إقفال وترحيل</Button>
+          </Space>
+        }>
+        {closing?.products.map((p) => (
+          <Row key={p.id} gutter={8} align="middle" style={{ marginBottom: 10 }}>
+            <Col span={11}>{itemName(p.item_id)}</Col>
+            <Col span={5} style={{ opacity: 0.65 }}>
+              المطلوب {num(p.planned_quantity)}
+            </Col>
+            <Col span={5}>
+              <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
+                value={outputs[p.id] as any}
+                onChange={(v) => setOutputs((o) => ({ ...o, [p.id]: v as any }))} />
+            </Col>
+            <Col span={3}>
+              <Variance planned={String(p.planned_quantity)}
+                actual={String(outputs[p.id] ?? 0)} />
+            </Col>
+          </Row>
+        ))}
+        <p style={{ color: '#888', marginTop: 12 }}>
+          {closing?.state === 'in_progress'
+            ? 'الخامات اتصرفت خلاص وقت البدء — الإقفال بيضيف الإنتاج للمخزن ويحسب التكلفة.'
+            : 'الأمر ده ماصرفش خاماته لسه — الإقفال هيصرفها ويضيف الإنتاج مرة واحدة.'}
+        </p>
       </TabModal>
     </div>
   );

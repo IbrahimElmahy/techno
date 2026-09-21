@@ -513,7 +513,8 @@ def _seen_po(db: Session, order_id: int, current: CurrentUser):
 # ---------------------------------------------------------------------------
 class POMaterialIn(BaseModel):
     item_id: int
-    quantity: Decimal                                # اللي اتصرف فعلاً
+    # اختيارية زي المنتج: الورقة بتتفتح على خطة، والمصروف بيتفتح عليها.
+    quantity: Decimal | None = None                  # اللي اتصرف فعلاً
     planned_quantity: Decimal | None = None          # المفروض؛ من غيره = نفس المصروف
     warehouse_id: int | None = None
     unit: str | None = None
@@ -522,7 +523,10 @@ class POMaterialIn(BaseModel):
 
 class POProductIn(BaseModel):
     item_id: int
-    quantity: Decimal
+    # **الكمية اللي طلعت اختيارية وقت الفتح.** الورقة بتتفتح على خطة؛ اللي طلع فعلاً
+    # مايتعرفش غير بعد ما الشغل يخلص، وبيتكتب عند الإقفال (`/execute`). ومن غيرها
+    # بتتفتح على المخطّط — عشان اللي بيسجّل تشغيلة خلصت خلاص مايكتبش نفس الرقم مرتين.
+    quantity: Decimal | None = None
     planned_quantity: Decimal | None = None
     warehouse_id: int | None = None
     unit: str | None = None
@@ -747,16 +751,24 @@ def start_production_order(
     return _po_out(order, production_order_service.reversed_ids(db))
 
 
+class POOutputIn(BaseModel):
+    """اللي طلع فعلاً لكل سطر منتج — بيتبعت وقت الإقفال."""
+
+    outputs: dict[int, Decimal] = {}
+
+
 @router.post("/production-orders/{order_id}/execute", response_model=POOut)
 def execute_production_order(
     order_id: int,
+    body: POOutputIn | None = None,
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
     _seen_po(db, order_id, current)
     try:
         order = production_order_service.execute_order(
-            db, order_id=order_id, actor_user_id=current.id)
+            db, order_id=order_id, actor_user_id=current.id,
+            outputs=(body.outputs if body else None))
     except (ProductionOrderError, StockError) as exc:
         raise _conflict(exc)
     db.commit()
