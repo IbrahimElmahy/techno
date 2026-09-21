@@ -5,6 +5,7 @@ import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
 import { amountToArabicWords } from '../utils/arabicNumberWords';
 import { COMPANY, companyLines } from '../config/company';
+import { money as n } from '../utils/money';
 
 /**
  * A real cash voucher (سند) — receipt, payment, expense, rep hand-over or treasury transfer.
@@ -63,9 +64,6 @@ const STATEMENT: Record<VoucherKind, string> = {
   rep_handover: 'ورّد المندوب',
   cash_transfer: 'حُوِّل من الخزينة',
 };
-
-const n = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function rows(d: VoucherDoc): [string, string][] {
   const out: [string, string][] = [];

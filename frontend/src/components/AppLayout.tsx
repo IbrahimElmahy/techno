@@ -28,6 +28,8 @@ import {
 } from './navigation';
 import { useAuth, RoleName } from './AuthProvider';
 import RowDensityControl from './RowDensity';
+import NumeralsControl from './Numerals';
+import { bindNumeralsUser } from '../utils/numerals';
 import { useFullscreen } from './FullscreenToggle';
 import Logo from './Logo';
 import { useTabs } from './TabsContext';
@@ -94,6 +96,15 @@ export default function AppLayout() {
   const { activeId, openTab } = useTabs();
   const [fullscreen, toggleFullscreen] = useFullscreen();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  /*
+   * شكل الأرقام متخزّن باسم المستخدم، والربط بيتعمل من هنا.
+   *
+   * المخزن بيقرا الاسم من الجلسة مرة واحدة وقت تحميل الموديول، وده كفاية لفتحة
+   * الصفحة. إنما اللي يخرج ويدخل بحساب تاني من غير تحديث كان هياخد اختيار اللي
+   * قبله — فالربط بيتعاد كل ما المستخدم يتغيّر.
+   */
+  useEffect(() => { bindNumeralsUser(user?.username ?? null); }, [user?.username]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -227,6 +238,16 @@ export default function AppLayout() {
         <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
           <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>ارتفاع الصف</div>
           <RowDensityControl />
+        </div>
+      ),
+    },
+    {
+      // نفس وقفة الحدث: اللي بيجرّب الشكلين بيبص على الجدول اللي ورا القايمة وهو بيبدّل.
+      key: 'numerals',
+      label: (
+        <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
+          <div style={{ fontSize: 12, color: '#888', marginBottom: 6 }}>شكل الأرقام</div>
+          <NumeralsControl />
         </div>
       ),
     },

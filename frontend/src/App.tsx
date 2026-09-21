@@ -74,10 +74,22 @@ import { DensityProvider } from './components/RowDensity';
 import ColumnResizeProvider from './components/ColumnResize';
 import Login from './pages/Login';
 import { setApiBaseURL } from './api/client';
+import { useNumerals } from './utils/numerals';
 
 export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [apiUrl, setApiUrl] = useState('');
+
+  /*
+   * الاشتراك في شكل الأرقام من هنا — وده كل ميكانيكية «التغيير يبان فوراً».
+   *
+   * `money` و`qty` دوال عادية مش هوكس، فالخلية اللي بتناديها مش بتعرف إن الاختيار
+   * اتغيّر. و`App` هو أعلى مكوّن بيرسم الشجرة كلها بنفسه، فرندر واحد له بيعيد إنشاء
+   * كل العناصر تحته وبالتالي يعيد رسمها — من غير إعادة تحميل، ومن غير ما تتفكّ
+   * (نفس الأنواع في نفس الأماكن ⇒ الحالة بتفضل: التبويبات المفتوحة والمسودّات
+   * النصّ مكتوبة مابتضيعش).
+   */
+  useNumerals();
 
   useEffect(() => {
     // Load config from Electron IPC

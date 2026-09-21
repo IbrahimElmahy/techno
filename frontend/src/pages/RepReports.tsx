@@ -16,6 +16,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn } from '../components/gridColumns';
 
 import { useCanSeeStats } from '../components/StatsRow';
+import { money, qty } from '../utils/money';
 /**
  * تقارير مندوبين — three of their four report screens; the fourth (عمولة تحصيلات مندوبين) already
  * lives on the finance screen and its menu entry points there.
@@ -38,11 +39,6 @@ interface RepItemRow {
   rep_user_id: number; rep_name: string; item_id: number; item_name: string;
   quantity: string; net: string;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function RepReports() {
   const navigate = useNavigate();

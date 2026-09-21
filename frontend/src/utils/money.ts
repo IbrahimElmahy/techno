@@ -9,18 +9,34 @@
  * طول — و`toFixed` بيطلّع أرقام لاتينية دايماً مهما كانت لغة الشاشة. فالملف ده هو المكان
  * الواحد: أي شاشة بتعرض فلوس بتنده من هنا، واللي هيتكتب بكرة كمان.
  *
+ * **والشكل نفسه بقى اختيار المستخدم** — عربي «٠١٢٣» ولا إنجليزي «0123» (شوف
+ * `utils/numerals.ts`). عشان كده اللغة بتتقرا عند كل نداء مش متكتوبة ثابتة: الاختيار
+ * بيتغيّر والشاشة مفتوحة، واللي اتنسّق قبل التغيير لازم يتنسّق تاني من غير إعادة تحميل.
+ *
  * **الخانات اللي بيتكتب فيها استثناء مقصود.** `InputNumber` بيعرض اللي اتكتب، والكيبورد
  * بيكتب لاتيني — لو حشرنا أرقام عربية جوّه خانة، التعديل عليها بيبوظ. فالقاعدة: اللي
- * بيتقرا بس عربي، واللي بيتكتب زي ما الإيد كتبته.
+ * بيتقرا بس بياخد شكل المستخدم، واللي بيتكتب زي ما الإيد كتبته.
  *
  * و`toFixed` لسه صح في مكان واحد: الأرقام اللي رايحة للسيرفر. دي مش عرض، دي بيانات، ولازم
  * تفضل لاتينية عشان الطرف التاني يقراها.
  */
+import { numeralsLocale } from './numerals';
 
-/** فلوس — منزلتين دايماً، بأرقام عربية. */
+export { numeralsLocale } from './numerals';
+
+/** فلوس — منزلتين دايماً، بشكل الأرقام اللي المستخدم اختاره. */
 export const money = (v: unknown): string =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(v || 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** كميات ونقاط — من غير منازل مفروضة، لأن «١» أوضح من «١٫٠٠٠» في عمود كمية. */
 export const qty = (v: unknown): string =>
-  Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+  Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
+
+/**
+ * أي رقم تاني — أعداد، نسب، تواريخ معدودة.
+ *
+ * موجودة عشان اللي مش فلوس ولا كمية مايرجعش يكتب `toLocaleString` بإيده بلغة ثابتة:
+ * أول ما يعملها، العمود ده بيفضل عربي وباقي الشاشة بتسمع كلام المستخدم.
+ */
+export const num = (v: unknown, options?: Intl.NumberFormatOptions): string =>
+  Number(v || 0).toLocaleString(numeralsLocale(), options ?? { maximumFractionDigits: 3 });

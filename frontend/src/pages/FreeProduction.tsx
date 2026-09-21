@@ -16,6 +16,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
+import { money } from '../utils/money';
 
 /**
  * انتاج حر — production that happened without a stored recipe.
@@ -49,10 +50,6 @@ interface Order {
 }
 
 interface DraftLine { key: number; item_id?: number; quantity?: number | null }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 export default function FreeProduction() {
   const navigate = useNavigate();

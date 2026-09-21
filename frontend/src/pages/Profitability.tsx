@@ -17,6 +17,7 @@ import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money } from '../utils/money';
 type Dimension = 'cost_center' | 'branch';
 
 interface Row {
@@ -28,10 +29,6 @@ interface Totals {
   rows: number; income: string; expenses: string; profit: string;
   margin_pct: string | null; unassigned_lines: number;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 export interface ProfitabilityView { label: string; dimension: Dimension }
 

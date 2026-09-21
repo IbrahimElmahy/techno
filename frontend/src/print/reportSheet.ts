@@ -15,6 +15,7 @@
  * numbers nobody can date, and it will be read six months later as if it were current.
  */
 import { type DocMeta, printDocument } from './brand';
+import { numeralsLocale } from '../utils/money';
 
 /** عمود مطبوع: عنوانه، وإزاي بنطلع قيمته من الصف. */
 export interface PrintColumn<T = any> {
@@ -119,7 +120,7 @@ export interface PayslipData {
 }
 
 export function printPayslip(slip: PayslipData): void {
-  const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
+  const money = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
   const rows = slip.details.map((d) => `<tr>

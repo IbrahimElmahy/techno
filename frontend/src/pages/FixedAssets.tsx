@@ -15,6 +15,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
+import { money } from '../utils/money';
 /**
  * الأصول الثابتة والإهلاك — an asset is paid for once and consumed over years, so its cost
  * belongs to the months that used it rather than the month it was bought.
@@ -37,10 +38,6 @@ interface Asset {
 interface ScheduleRow {
   year: number; month: number; amount: string; ledger_entry_id: number | null;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 const METHOD_LABELS: Record<string, string> = {
   straight_line: 'القسط الثابت',

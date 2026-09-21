@@ -19,15 +19,16 @@ import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
 
 import StatsRow from '../components/StatsRow';
+import { numeralsLocale } from '../utils/money';
 // --- Shared helpers -----------------------------------------------------------------------
 type Period = 'week' | 'month' | 'year';
 type Range = [Dayjs | null, Dayjs | null] | null;
 
 const egp = (v: string | number | null | undefined) =>
-  Number(v ?? 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
+  Number(v ?? 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
 
 const qty = (v: string | number | null | undefined) =>
-  Number(v ?? 0).toLocaleString('ar-EG', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+  Number(v ?? 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 
 const PERIOD_LABEL: Record<Period, string> = { week: 'أسبوعي', month: 'شهري', year: 'سنوي' };
 

@@ -16,6 +16,7 @@ import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money, qty as num } from '../utils/money';
 /**
  * تقارير الموارد البشرية — تسعتاشر اسم من محرك واحد.
  *
@@ -54,11 +55,6 @@ const SUBJECT_LABELS: Record<Subject, string> = {
 
 /** المواضيع اللي بترجّع مبالغ باسم موظف — الباك إند بيطلب `salary.view` عليها. */
 const MONEY_SUBJECTS: Subject[] = ['payroll', 'cost', 'advance', 'adjustment'];
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
-const num = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 interface Totals { rows: number; quantity: string; amount: string }
 interface Page { limit: number | null; offset: number; total_rows: number; truncated: boolean }

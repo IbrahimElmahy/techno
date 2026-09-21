@@ -20,6 +20,7 @@ import StatsRow from '../components/StatsRow';
 import {
   LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
 } from '../print/itemLogSheet';
+import { money, qty } from '../utils/money';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -37,11 +38,6 @@ interface Row {
   unit_of_measure: string | null; location: string;
   quantity: string; unit_cost: string; value: string;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 const METHOD_LABELS: Record<string, string> = {
   average: 'المتوسط المرجح',

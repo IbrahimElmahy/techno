@@ -43,6 +43,12 @@ class StockPermit(Base):
     permit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # البيان — السطر اللي بيتطبع على الورقة نفسها، غير `reason` وغير `notes`.
+    #
+    # `reason` بيتكتب من النظام كمان (العكس بيحط «عكس EP-…» فيه) فمش مكان لكلام
+    # المستخدم، و`notes` ملاحظة داخلية. البيان هو اللي بيبان في كشف الحساب وعلى الإذن
+    # المطبوع زي ما بيبان على الفاتورة بالظبط — وخانة واحدة تكفي هنا.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     total_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     reverses_id: Mapped[int | None] = mapped_column(
         ForeignKey("stock_permit.id"), unique=True, nullable=True

@@ -20,6 +20,7 @@ import StatsRow from '../components/StatsRow';
 import {
   LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
 } from '../print/itemLogSheet';
+import { qty, money } from '../utils/money';
 
 /**
  * جرد المخازن · جرد عام المخازن — صفوف وأعمدة، وخلاص.
@@ -75,11 +76,6 @@ interface TotalRow {
   /** How many stores it sits in — «متفرّق في كام مخزن» is the first thing asked of a total. */
   locations: number;
 }
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 /** Same labels as جرد حتى تاريخ, because it is the same setting being reported. */
 const METHOD_LABELS: Record<string, string> = {

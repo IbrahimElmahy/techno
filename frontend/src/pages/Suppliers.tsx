@@ -17,6 +17,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
+import { money } from '../utils/money';
 interface SupplierRecord {
   id: number;
   code: string;
@@ -66,9 +67,6 @@ const ExtraPhonesList = () => (
     )}
   </Form.List>
 );
-
-const money = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // The list endpoint now carries each supplier's balance (one grouped query on the server),
 // so the grid no longer fires a request per row.

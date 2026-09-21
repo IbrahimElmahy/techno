@@ -20,6 +20,7 @@ import StatsRow from '../components/StatsRow';
 import { useMovementLabels, useMovementTypes } from '../lib/movementTypes';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
+import { qty, money } from '../utils/money';
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
  *
@@ -77,11 +78,6 @@ interface CardOut {
   opening_balance: string; closing_balance: string;
   total_in: string; total_out: string; rows: CardRow[];
 }
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 export default function ItemCard() {
   // الأسماء العربية والقايمة من الخادم — نسخة واحدة لكل الشاشات.

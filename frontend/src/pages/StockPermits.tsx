@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { money, qty } from '../utils/money';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
@@ -23,6 +24,7 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import DocumentAttachments from '../components/DocumentAttachments';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 
@@ -63,10 +65,6 @@ interface Permit {
 
 interface DraftLine { key: number; item_id?: number; quantity?: number; unit_cost?: number }
 
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function StockPermits() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -564,6 +562,10 @@ export default function StockPermits() {
             render: (v: string) => <b>{money(v)}</b> },
         ]}
       />
+
+      {/* صور الورقة — الإذن الموقّع عليه، وإيصال الاستلام. بيتقبل بعد الترحيل لأن
+          الصورة مابتغيّرش كمية ولا قيد، والورق أصلاً بيتصوّر بعد ما يتوقّع. */}
+      <DocumentAttachments docType="stock_permit" docId={detail.id} />
 
       <div style={{
         marginTop: 16, padding: 16, borderRadius: 10,

@@ -76,6 +76,8 @@ from src.models.employee import Employee, JobTitle  # noqa: E402
 from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 from src.models.attachment import InspectionAttachment  # noqa: E402
+# مرفقات أي مستند — جدول واحد بمفتاح (نوع، رقم).
+from src.models.document_attachment import DocumentAttachment  # noqa: E402
 from src.models.hr_org import Department, EmployeeTermination  # noqa: E402
 from src.models.hr_leave import LeaveEntitlement, LeaveRequest, LeaveType  # noqa: E402
 from src.models.hr_payroll_run import (  # noqa: E402
@@ -109,7 +111,7 @@ __all__ = [
     "LookupOption", "WastageDocument", "ContactPhone", "Inspection", "InspectionItem",
     "Voucher", "Treasury", "PeriodLock", "Cheque", "CommissionRule",
     "InspectionItemType", "StockSetting", "StockPermit", "StockPermitLine", "FixedAsset", "DepreciationRecord", "Employee", "JobTitle", "CouponReceipt", "CouponReceiptLine", "RoleCapability", "TradeOrder", "TradeOrderLine", "SalesInvoiceExpense", "VoucherKey",
-    "InspectionAttachment",
+    "InspectionAttachment", "DocumentAttachment",
     "Department", "EmployeeTermination",
     "WorkShift", "EmployeeShiftAssignment", "Holiday", "AttendanceDay", "AttendanceImport",
     "LeaveType", "LeaveEntitlement", "LeaveRequest",

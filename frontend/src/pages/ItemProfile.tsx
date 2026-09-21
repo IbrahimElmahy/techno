@@ -21,14 +21,11 @@ import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
 import { useMovementLabels } from '../lib/movementTypes';
+import { money, qty } from '../utils/money';
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
  * movement it ever made, and every time its price changed.
  */
-
-const money = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 const KIND_LABEL: Record<string, string> = {
   product: 'منتج تام', raw_material: 'مادة خام',

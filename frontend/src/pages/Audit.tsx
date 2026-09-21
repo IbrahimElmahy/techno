@@ -8,6 +8,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import { numeralsLocale } from '../utils/money';
 
 interface AuditLog {
   id: number;
@@ -153,7 +154,7 @@ export default function Audit() {
       dataIndex: 'created_at',
       key: 'created_at',
       ...dateColumn<AuditLog>((r) => r.created_at),
-      render: (dateStr: string) => new Date(dateStr).toLocaleString('ar-EG'),
+      render: (dateStr: string) => new Date(dateStr).toLocaleString(numeralsLocale()),
       width: '20%',
     },
     {

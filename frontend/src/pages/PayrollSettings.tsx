@@ -10,6 +10,7 @@ import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableColumns } from '../components/ColumnSettings';
 import { TabModal } from '../components/TabModal';
+import { money } from '../utils/money';
 
 /**
  * إعدادات المرتبات — البنود، والشرايح، وأرقام المسير.
@@ -49,10 +50,6 @@ interface Version {
   active: boolean;
   brackets: Bracket[];
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 /**
  * نفس حساب الضريبة اللي على السيرفر — للمعاينة الحيّة بس.

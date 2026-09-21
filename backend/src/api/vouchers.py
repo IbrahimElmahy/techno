@@ -58,6 +58,9 @@ class ReceiptIn(BaseModel):
     client_uuid: str | None = None
     # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
+    # البيان — كلام ورقة السند، مش وصف الحركة المحاسبية (`description`). واحدة تكفي
+    # على السندات؛ التلاتة اللي في الفواتير جم من مطابقة a5.
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class PaymentIn(BaseModel):
@@ -70,6 +73,7 @@ class PaymentIn(BaseModel):
     payment_method: str | None = Field(default=None, max_length=32)
     # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class HandoverIn(BaseModel):
@@ -84,6 +88,7 @@ class HandoverIn(BaseModel):
     reference: str | None = Field(default=None, max_length=80)
     # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class ExpenseIn(BaseModel):
@@ -98,6 +103,7 @@ class ExpenseIn(BaseModel):
     cost_center_id: int | None = None
     # توزيع تحليلي بدل المركز الواحد — `{"3": 60, "7": 40}` ومجموعه ١٠٠.
     cost_center_distribution: dict[str, Decimal] | None = None
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class CashTransferIn(BaseModel):
@@ -109,6 +115,7 @@ class CashTransferIn(BaseModel):
     reference: str | None = Field(default=None, max_length=80)
     # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class TreasuryIn(BaseModel):
@@ -170,6 +177,9 @@ class VoucherOut(BaseModel):
     # the customer signs, and a field that goes in and never comes back is a field nobody can use.
     family: str | None = None
     cost_center_id: int | None = None
+    # البيان. **لازم يتعرّف هنا كمان مش على الإدخال بس** — بايدانتيك بيرمي أي حقل مش
+    # معرّف على موديل الرد في صمت، فالخانة تتكتب في القاعدة وترجع فاضية للشاشة.
+    statement1: str | None = None
     ledger_entry_id: int | None
     is_reversal: bool
 
@@ -265,6 +275,7 @@ def _out(v) -> VoucherOut:
         description=v.description, ledger_entry_id=v.ledger_entry_id,
         family=getattr(v, "family", None),
         cost_center_id=getattr(v, "cost_center_id", None),
+        statement1=getattr(v, "statement1", None),
         is_reversal=v.reverses_id is not None,
     )
 
@@ -365,7 +376,8 @@ def create_receipt(
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
             family=body.family, on_total=body.on_total,
-            client_uuid=body.client_uuid, cost_center_id=body.cost_center_id)
+            client_uuid=body.client_uuid, cost_center_id=body.cost_center_id,
+            statement1=body.statement1)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -389,7 +401,7 @@ def create_payment(
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
-            cost_center_id=body.cost_center_id)
+            cost_center_id=body.cost_center_id, statement1=body.statement1)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -413,7 +425,7 @@ def create_handover(
             db, rep_user_id=body.rep_user_id, amount=body.amount, actor_user_id=current.id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, family=body.family,
-            cost_center_id=body.cost_center_id)
+            cost_center_id=body.cost_center_id, statement1=body.statement1)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -437,7 +449,7 @@ def create_expense(
             actor_user_id=current.id, actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
-            cost_center_id=body.cost_center_id,
+            cost_center_id=body.cost_center_id, statement1=body.statement1,
             cost_center_distribution=body.cost_center_distribution)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
@@ -461,7 +473,7 @@ def create_cash_transfer(
             db, from_treasury_id=body.from_treasury_id, to_treasury_id=body.to_treasury_id,
             amount=body.amount, actor_user_id=current.id, voucher_date=body.voucher_date,
             description=body.description, reference=body.reference,
-            cost_center_id=body.cost_center_id)
+            cost_center_id=body.cost_center_id, statement1=body.statement1)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()

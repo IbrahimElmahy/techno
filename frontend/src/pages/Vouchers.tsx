@@ -34,7 +34,7 @@ import { useLookup } from '../hooks/useLookup';
 import { VoucherKeyStrip, RunnerWorld } from '../components/VoucherKeyRunner';
 import { defaultTreasuryId } from '../components/VoucherFields';
 import { TabModal } from '../components/TabModal';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 // البوبابات اتفصلت لملفاتها — الشاشة كانت ١٤٧٨ سطر فيها ستة فوق بعض.
 import ReceiptModal from './vouchers/ReceiptModal';
 import PaymentModal from './vouchers/PaymentModal';
@@ -72,7 +72,7 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
       .finally(() => setLoading(false));
   }, [treasuryId, range]);
 
-  const fmt = (v: any) => Number(v || 0).toLocaleString('ar-EG',
+  const fmt = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(),
     { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (

@@ -14,6 +14,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 
 import StatsRow from '../components/StatsRow';
+import { qty as num } from '../utils/money';
 const { Text, Title } = Typography;
 
 /**
@@ -53,9 +54,6 @@ interface LedgerData {
 }
 
 const PAGE_SIZE = 200;
-
-const num = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function PointsLedger() {
   const navigate = useNavigate();

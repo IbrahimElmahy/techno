@@ -17,6 +17,7 @@ import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money, qty } from '../utils/money';
 // Only the kinds that have a screen able to show them; a purchase return has no screen of its
 // own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
 const DOC_SCREEN: Partial<Record<DocType, DocKind>> = {
@@ -47,11 +48,6 @@ const DOC_LABELS: Record<DocType, string> = {
   purchase: 'فواتير الشراء',
   purchase_return: 'مرتجعات الشراء',
 };
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 interface Totals {
   quantity: string; net: string; revenue: string;

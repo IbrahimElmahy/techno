@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Spin } from 'antd';
 import { api } from '../api/client';
+import { money } from '../utils/money';
 
 /**
  * The customer's overall outstanding balance — just the ONE total of what he owes. The figure is
@@ -8,9 +9,6 @@ import { api } from '../api/client';
  * (any amount paid is deducted from the total automatically). Shown below a sale/return document
  * and inside the create forms once a customer is picked.
  */
-
-const money = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function CustomerAccountPanel({
   customerId, variant = 'block',

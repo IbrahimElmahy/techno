@@ -10,7 +10,7 @@ import { Button, Select, Space, Tag, Tooltip } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import { InputNumber } from '../../components/NumberInput';
 import type { EntryColumn } from '../../components/EntryGrid';
-import { money } from '../../utils/money';
+import { money, numeralsLocale } from '../../utils/money';
 import { QTY_DATA_ATTR } from '../../utils/duplicateItem';
 import { SaleLineItem, Warehouse } from './types';
 
@@ -80,7 +80,7 @@ export function buildLineColumns({
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
         viewOnly ? (
-          <b>{Number(line.quantity || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b>
+          <b>{Number(line.quantity || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b>
         ) : (
           <InputNumber size="small" style={{ width: '100%' }} min={0.001}
             data-qty-key={line.key} data-grid-col="qty" keyboard={false}
@@ -95,7 +95,7 @@ export function buildLineColumns({
         )
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
-        .toLocaleString('ar-EG', { maximumFractionDigits: 3 }) },
+        .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }) },
     { key: 'unit_price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         viewOnly ? (
@@ -148,12 +148,12 @@ export function buildLineColumns({
       // نقط أصلاً ويسأل ليه.
       cell: (line) => {
         const v = linePoints(line);
-        if (v) return v.toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+        if (v) return v.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
         const per = line.item_id ? (pointValues[line.item_id] || 0) : 0;
         if (per > 0) {
           return (
             <span style={{ color: '#b0b0b0' }} title={`${per} نقطة للوحدة`}>
-              × {per.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+              × {per.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
             </span>
           );
         }
@@ -161,7 +161,7 @@ export function buildLineColumns({
       },
       footer: () => (
         <span style={{ color: '#b26a00' }}>
-          {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+          {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
         </span>
       ) },
     { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,

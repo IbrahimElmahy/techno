@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Row, Col, Statistic, Tag } from 'antd';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 
 export interface CouponKindStat {
   key: string;
@@ -103,7 +103,7 @@ export default function CouponStatsOverview({
                       {k.label}
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 700, color: k.active ? '#1677ff' : '#262626', marginTop: 2 }}>
-                      {Number(k.count || 0).toLocaleString('ar-EG')}
+                      {Number(k.count || 0).toLocaleString(numeralsLocale())}
                     </div>
                     {k.value !== undefined && (
                       <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 1 }}>

@@ -11,6 +11,7 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money } from '../utils/money';
 /**
  * ذمم الموظفين — «سلفت مين وكام، ولسه عليه كام».
  *
@@ -52,9 +53,6 @@ interface Payload {
   total_balance: string;
   unlinked_employees: number;
 }
-
-const money = (v: string | number | null | undefined) =>
-  Number(v ?? 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function EmployeeReceivables() {
   const [data, setData] = useState<Payload | null>(null);

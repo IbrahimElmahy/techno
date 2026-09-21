@@ -32,13 +32,11 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money } from '../utils/money';
 /**
  * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
  * purchase invoices, returns, payment vouchers and cheques, each row opening in a popup.
  */
-
-const money = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 interface DocRow {
   id: number;

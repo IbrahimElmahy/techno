@@ -73,6 +73,106 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/*
+ * الجداول مسطّرة زي الإكسل — خط بين الصفوف **وبين الأعمدة**.
+ *
+ * antd بترسم خط أفقي تحت الصف وخلاص. على جدول عشر أعمدة، العين وهي ماشية على السطر
+ * مالهاش حاجة تمسكها فبتنطّ لعمود جنبه — واللي بيقرا كارت صنف أو تقرير بيقارن الرقم
+ * بالاسم اللي على يمينه، فالنطّة دي مش مضايقة شكلية، دي رقم اتقرا على السطر الغلط.
+ * الخط الرأسي هو اللي بيمنعها، وهو اللي الإكسل بيرسمه.
+ *
+ * **هنا مرة واحدة، مش شاشة شاشة.** فيه أكتر من ١٧٠ جدول في النظام؛ `bordered` على كل
+ * واحد فيهم يبقى ١٧٠ تعديل، وشاشة تتكتب الشهر الجاي وتنساه. ومافيش ولا `<Table bordered>`
+ * مكتوب في الريبو دلوقتي (اللي موجود `Descriptions bordered` وليها رسمها) فمافيش خط
+ * هيتكرر فوق خط.
+ *
+ * والخطوط **رفيعة وفاتحة** عن قصد: جدول أربعميت سطر بخطوط تخينة بيبقى شبكة والداتا
+ * ضايعة جوّاها. الخط بيدلّ العين، مش بياخد انتباهها.
+ *
+ * `border-inline-end` مش `border-left`: الشاشة RTL، والحد المنطقي بيقع على الناحية الصح
+ * لوحده لو أي مكوّن اتقلب لـLTR. وآخر عمود من غير خط عشان مايتلزقش على حافة الجدول.
+ *
+ * والسِلِكْتور مبدوء بـ`.ant-table-wrapper` عشان يبقى بنفس قوة سِلِكْتور antd بالظبط —
+ * فبيغلبه بالترتيب (ملفنا بيتحقن بعده)، من غير `!important` يكسر حالات زي hover على
+ * عمود الترتيب.
+ */
+.ant-table-wrapper .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table-tbody > tr > td,
+.ant-table-wrapper .ant-table-summary > tr > td,
+.ant-table-wrapper .ant-table-summary > tr > th {
+  border-inline-end: 1px solid #e4ebe1;
+}
+.ant-table-wrapper .ant-table-thead > tr > th:last-child,
+.ant-table-wrapper .ant-table-tbody > tr > td:last-child,
+.ant-table-wrapper .ant-table-summary > tr > td:last-child,
+.ant-table-wrapper .ant-table-summary > tr > th:last-child {
+  border-inline-end: none;
+}
+/* الخط الأفقي: موجود أصلاً بس باهت جداً (`rgba(5,5,5,0.06)`) — بقى بنفس لون الرأسي
+   عشان الشبكة تتقرا شبكة واحدة مش خطين بلونين. */
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #e4ebe1;
+}
+/*
+ * الرأس مميّز عن الجسم — لونه ولون الخط اللي تحته.
+ *
+ * نفس لون ترويسة `.entry-grid` بالظبط، عشان جدول العرض وجدول الإدخال يتقروا بنفس
+ * الطريقة. والخط تحت الرأس أتقل شوية من خطوط الجسم: هو الحد اللي بيقول «تحت ده داتا».
+ */
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: #f2f9f3;
+  border-bottom: 1.5px solid #dce8d9;
+}
+.ant-table-wrapper .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table-summary > tr > td,
+.ant-table-wrapper .ant-table-summary > tr > th {
+  border-inline-end-color: #dce8d9;
+}
+/*
+ * الصف اللي الماوس عليه — لازم يفضل باين وسط الخطوط.
+ *
+ * رمادي antd الافتراضي (`#fafafa`) على شبكة فيها خطوط بيختفي: الفرق بينه وبين الأبيض
+ * أقل من الفرق بين الخط والخلفية، فالعين بتشوف الخطوط مش الصف. لمسة خضرا فاتحة من لون
+ * النظام بتفرق من غير ما تغطي الأرقام.
+ *
+ * الخطوط بتفضل ظاهرة لأنها على الخلايا نفسها مش على خلفية الصف. و`.row-cursor`
+ * و`.row-arrived` بـ`!important` فبيغلبوا الـhover — ودي الصح: «انت واقف فين» أهم من
+ * «الماوس فوق إيه».
+ */
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td,
+.ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background: #eef7e9;
+}
+/* الصف المختار — أغمق من الـhover، لأنه قرار اتاخد مش مجرد مرور. */
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: #e2f2d5;
+}
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected:hover > td {
+  background: #d8ecc7;
+}
+
+/*
+ * الورق كمان.
+ *
+ * المتصفح بيشيل الخلفيات وقت الطباعة افتراضياً، فالرأس بيطلع أبيض والشبكة اللي فوق
+ * مبنية على لون فاتح جداً ممكن تختفي على طابعة ضعيفة. فالخطوط بتتقّل شوية في الطباعة
+ * وبس — جدول مطبوع من غير خطوط بيبقى عمود أرقام عايمة، وده بالظبط اللي بنصلّحه.
+ * (المستندات اللي بتتطبع من `print/brand.ts` ليها شبكتها الكاملة أصلاً، ودي للشاشات
+ * اللي بتتطبع من المتصفح على طول.)
+ */
+@media print {
+  .ant-table-wrapper .ant-table-thead > tr > th,
+  .ant-table-wrapper .ant-table-tbody > tr > td,
+  .ant-table-wrapper .ant-table-summary > tr > td,
+  .ant-table-wrapper .ant-table-summary > tr > th {
+    border: 1px solid #9fb39a !important;
+  }
+  .ant-table-wrapper .ant-table-thead > tr > th {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
 /*
  * الخانات والخلايا بتاخد وزنها ولونها بالصريح.
  *
@@ -354,6 +454,18 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 .entry-grid tbody tr:last-child td {
   border-bottom: none;
+}
+/* وجدول الإدخال مسطّر زي جداول العرض — نفس السبب بالظبط: السطر اللي بتكتب فيه كمية
+   وسعر وخصم ومخزن محتاج يفضل سطر واحد وانت ماشي عليه بالتاب. */
+.entry-grid thead th,
+.entry-grid tbody td,
+.entry-grid tfoot td {
+  border-inline-end: 1px solid #e4ebe1;
+}
+.entry-grid thead th:last-child,
+.entry-grid tbody td:last-child,
+.entry-grid tfoot td:last-child {
+  border-inline-end: none;
 }
 .entry-grid tbody tr:hover td {
   background: #f8fbf7;

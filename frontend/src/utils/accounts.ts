@@ -4,6 +4,7 @@
  * of their own. Three screens naming the same five natures is three places for them to drift, and
  * a chart where «مصروفات» is spelled two ways is a chart nobody trusts to add up.
  */
+import { numeralsLocale } from './money';
 
 export const NATURE_LABEL: Record<string, string> = {
   asset: 'أصول',
@@ -39,7 +40,7 @@ export const MAIN_LEVELS = [
 ];
 
 export const egp = (v: string | number) =>
-  parseFloat(String(v)).toLocaleString('ar-EG',
+  parseFloat(String(v)).toLocaleString(numeralsLocale(),
     { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export interface ChartAccount {

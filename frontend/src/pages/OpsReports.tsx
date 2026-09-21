@@ -16,6 +16,7 @@ import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money, qty as num } from '../utils/money';
 /**
  * تقارير التشغيل — النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات.
  *
@@ -51,11 +52,6 @@ const SUBJECT_LABELS: Record<Subject, string> = {
 
 /** المواضيع اللي «العدد» فيها نقاط مش قطع — العمود بيسمّي نفسه صح. */
 const POINT_SUBJECTS: Subject[] = ['points', 'inspections'];
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
-const num = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 interface Totals {
   rows: number; counted: number; excluded: number; quantity: string; amount: string;

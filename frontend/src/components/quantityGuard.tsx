@@ -1,4 +1,5 @@
 import { Modal } from 'antd';
+import { qty } from '../utils/money';
 
 /**
  * الكمية — مايتكتبش فيها سالب، ولا أكتر من اللي في المخزن.
@@ -20,8 +21,6 @@ import { Modal } from 'antd';
  * Checked on blur and on Enter rather than on every keystroke — typing «50» passes through «5»,
  * and a dialog that fires mid-number is a dialog people learn to dismiss without reading.
  */
-
-const qty = (v: number) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export interface QuantityCheck {
   /** ما اتكتب. */

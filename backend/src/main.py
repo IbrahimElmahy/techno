@@ -14,6 +14,7 @@ from src.api import (  # Sales & Inventory (002
     advances,  # السلف والجزاءات (HR-5)
     after_sales_reports,
     attachments,  # مرفقات الزيارات (صور المندوب)
+    document_attachments,  # مرفقات أي مستند — صور وPDF على الفاتورة والإذن والسند
     attendance,  # الحضور والانصراف (HR-2)
     audit,
     auth,
@@ -203,6 +204,7 @@ def create_app() -> FastAPI:
     app.include_router(coupon_receipts.router, prefix=prefix)
     app.include_router(after_sales_reports.router, prefix=prefix)
     app.include_router(attachments.router, prefix=prefix)
+    app.include_router(document_attachments.router, prefix=prefix)
     # Admin utilities (demo data seeding)
     app.include_router(drafts.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
@@ -680,6 +682,13 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("item", "min_stock", "NUMERIC(18,3)"),
     ("item", "max_stock", "NUMERIC(18,3)"),
     ("item", "is_perishable", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    # البيان على المستندات اللي مالهاش. الفاتورة ومردودها وفاتورة الشرا ومردودها عندهم
+    # تلاتة (مطابقة a5)؛ دول خانة واحدة بقرار صاحب النظام. و`stock_transfer` بياخد
+    # `notes` كمان لأنه المستند الوحيد اللي مافيهوش ولا سطر كلام أصلاً.
+    ("stock_transfer", "statement1", "VARCHAR(200)"),
+    ("stock_transfer", "notes", "VARCHAR(500)"),
+    ("stock_permit", "statement1", "VARCHAR(200)"),
+    ("voucher", "statement1", "VARCHAR(200)"),
     # (009) العهدة بقت لكل (مندوب × خط): «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)».
     # لازم العمود يتعمل هنا **قبل** `_sync_constraints` — القيد الجديد
     # `uq_custody_rep_family` مبني عليه، وترتيب النداءات فوق بيضمن ده.

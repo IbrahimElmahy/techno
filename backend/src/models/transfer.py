@@ -74,6 +74,17 @@ class StockTransfer(Base):
     # (031) ليه اترفض. On the document because the person who asked for the transfer reads this
     # screen, not the audit log.
     reject_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    # البيان والملاحظات — نفس اللي على الفاتورة ومردودها، بس خانة بيان واحدة.
+    #
+    # إذن التحويل كان المستند الوحيد اللي بيخرج بضاعة من مكان لمكان من غير ولا سطر كلام
+    # عليه: لا بيان ولا ملاحظات. فاللي بيعتمد بيشوف أصناف وكميات وخلاص، والسبب («تغذية
+    # عربية المندوب قبل خط الصعيد») بيتقال على التليفون ومابيفضلش على الورقة. وبعد
+    # الاعتماد بشهر محدش بيعرف الإذن ده كان ليه.
+    #
+    # خانة واحدة مش تلاتة: التلاتة في الفواتير جم من مطابقة a5، وصاحب النظام قال إن
+    # المستندات دي واحدة تكفيها.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     lines: Mapped[list["StockTransferLine"]] = relationship(
         back_populates="transfer", cascade="all, delete-orphan")
     out_movement_id: Mapped[int | None] = mapped_column(

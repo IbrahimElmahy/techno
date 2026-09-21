@@ -7,6 +7,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
+import { money, numeralsLocale } from '../utils/money';
 /**
  * نظرة مدير الشركة على الفروع.
  *
@@ -28,9 +29,7 @@ interface Row {
   users_count: number; reps_count: number; customers_count: number;
 }
 
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG',
-  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const num = (v: any) => Number(v || 0).toLocaleString('ar-EG');
+const num = (v: any) => Number(v || 0).toLocaleString(numeralsLocale());
 
 export default function BranchOverview() {
   const [rows, setRows] = useState<Row[]>([]);

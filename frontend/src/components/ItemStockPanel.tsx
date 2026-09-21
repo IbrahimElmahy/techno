@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Empty, Spin, Tag, Tooltip } from 'antd';
 import { api } from '../api/client';
+import { qty, money } from '../utils/money';
 
 /**
  * رصيد الصنف في كل المخازن — the side panel that answers "do we actually have it, and where"
@@ -38,11 +39,6 @@ interface Props {
   onPickItem?: (itemId: number) => void;
   title?: string;
 }
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 export default function ItemStockPanel({
   itemId, category, products = [], onPickItem, title = 'رصيد الصنف في المخازن',

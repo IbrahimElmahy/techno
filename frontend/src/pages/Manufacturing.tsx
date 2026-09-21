@@ -19,6 +19,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
+import { numeralsLocale } from '../utils/money';
 interface Warehouse { id: number; name: string; }
 interface Item {
   id: number; code: string; name: string;
@@ -61,7 +62,7 @@ const RESOURCE_KIND_OPTIONS = (Object.keys(RESOURCE_KIND_LABELS) as ResourceKind
   .map((k) => ({ value: k, label: RESOURCE_KIND_LABELS[k] }));
 
 const fmtMoney = (v: string | number) =>
-  Number(v).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(v).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function Manufacturing() {
   // «نسب انتاج» and «انتاج حسب النسب» are two entries in their menu and two tabs here.

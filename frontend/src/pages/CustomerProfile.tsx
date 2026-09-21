@@ -34,19 +34,15 @@ import { printReport, type PrintColumn } from '../print/reportSheet';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 
 import StatsRow from '../components/StatsRow';
+import { money, qty as pointsNum, numeralsLocale } from '../utils/money';
 /**
  * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
  * customer, with a back arrow. Shows everything tied to him: balance, account statement,
  * invoices, returns, receipts, cheques, visits and loyalty points.
  */
 
-const money = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 /** النقط كسور (صنف ممكن يساوي ١/٦ نقطة) — الحد الأدنى صفر خانات عشان الأرقام الصحيحة
  *  تفضل نظيفة، والأقصى ٣ عشان الكسر مايتقرّبش لصفر ويختفي. */
-const pointsNum = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 /** One receivable account — a customer holds one per product family. */
 interface AccountRow {
@@ -827,7 +823,7 @@ export default function CustomerProfile() {
                       النقط كسور (١/٦ نقطة)، فالتنسيق بيسمح بـ٣ خانات بدل ما يقرّبها لصفر. */}
                   <Statistic
                     title="رصيد النقاط"
-                    value={pointsBalance.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                    value={pointsBalance.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
                     valueStyle={{ color: pointsBalance < 0 ? '#cf1322' : undefined }}
                   />
                 </Card>
@@ -1310,7 +1306,7 @@ export default function CustomerProfile() {
                         <Col xs={12} md={6}>
                           <Card size="small">
                             <Statistic title="الرصيد"
-                              value={pointsBalance.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                              value={pointsBalance.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
                               valueStyle={{ color: pointsBalance < 0 ? '#cf1322' : '#1677ff' }} />
                           </Card>
                         </Col>

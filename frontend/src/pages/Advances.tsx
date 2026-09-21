@@ -19,6 +19,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { TabModal } from '../components/TabModal';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import { money } from '../utils/money';
 
 /**
  * السلف والجزاءات.
@@ -66,10 +67,6 @@ interface Adjustment {
   status: string;
   applied: boolean;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 const ADVANCE_STATUS: Record<string, { label: string; color?: string }> = {
   active: { label: 'بتتقسّط', color: 'blue' },

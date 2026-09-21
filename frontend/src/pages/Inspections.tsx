@@ -27,6 +27,7 @@ import ExportExcelButton from '../components/ExportExcelButton';
 import DateRangeFilter from '../components/DateRangeFilter';
 
 import StatsRow from '../components/StatsRow';
+import { numeralsLocale } from '../utils/money';
 interface InspectionLine {
   id: number;
   item_id: number | null;
@@ -640,7 +641,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
                       <div style={{ maxWidth: 280 }}>
                         ستُعاد البضاعة إلى عهدة المندوب
                         {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
-                          <>، وترجع <b>{Number(detail.total_points).toLocaleString('ar-EG')}</b>
+                          <>، وترجع <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
                           {' '}نقطة لرصيد <b>{detail.merchant_name}</b></>
                         ) : null}.
                       </div>
@@ -660,7 +661,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
                     description={(
                       <div style={{ maxWidth: 280 }}>
                         {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
-                          <>هتتخصم <b>{Number(detail.total_points).toLocaleString('ar-EG')}</b>
+                          <>هتتخصم <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
                           {' '}نقطة من رصيد <b>{detail.merchant_name}</b>.</>
                         ) : (
                           <>المعاينة دي مالهاش تاجر مربوط — مافيش نقط هتتخصم.</>

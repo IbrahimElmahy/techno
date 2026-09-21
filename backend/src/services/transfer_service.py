@@ -70,7 +70,8 @@ def _location_branch(db: Session, kind: LocationKind, location_id: int) -> int |
 
 def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source_id,
              dest_kind, dest_id, initiated_by, transfer_date=None,
-             client_uuid: str | None = None) -> StockTransfer:
+             client_uuid: str | None = None,
+             statement1: str | None = None, notes: str | None = None) -> StockTransfer:
     want_src, want_dst = _ROUTE_KINDS[route]
     if source_kind != want_src or dest_kind != want_dst:
         raise TransferError("نوع التحويل ده مش متاح بين المكانين دول.")
@@ -101,6 +102,7 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         dest_location_kind=dest_kind, dest_location_id=dest_id,
         status=TransferStatus.pending, initiated_by=initiated_by,
         transfer_date=transfer_date, client_uuid=client_uuid,
+        statement1=statement1, notes=notes,
         branch_id=branch_for(db, actor_user_id=initiated_by,
                              location_kind=source_kind, location_id=source_id),
     )

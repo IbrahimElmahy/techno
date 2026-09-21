@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Spin, Table } from 'antd';
 import { api } from '../api/client';
 import type { DocKind } from './DocumentLink';
+import { numeralsLocale } from '../utils/money';
 
 /**
  * حركة المستند المخزنية — أصناف الفاتورة تحت سطر الكشف.
@@ -84,7 +85,7 @@ export default function DocumentItemLines({ kind, id, itemName, warehouseName, m
     return <span style={{ color: '#8c8c8c' }}>لا توجد لهذا المستند سطور أصناف</span>;
   }
 
-  const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+  const qty = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
 
   return (
     <Table
@@ -104,7 +105,7 @@ export default function DocumentItemLines({ kind, id, itemName, warehouseName, m
           render: (_: unknown, l: Line) => (l.unit_price != null ? money(l.unit_price) : dash) },
         { title: 'الخصم', key: 'disc', align: 'left' as const, width: 100,
           render: (_: unknown, l: Line) => (Number(l.discount_pct)
-            ? `${Number(l.discount_pct).toLocaleString('ar-EG')}%` : dash) },
+            ? `${Number(l.discount_pct).toLocaleString(numeralsLocale())}%` : dash) },
         { title: 'الإجمالي', key: 'total', align: 'left' as const, width: 130,
           render: (_: unknown, l: Line) => (l.line_total != null
             ? <b>{money(l.line_total)}</b> : dash) },

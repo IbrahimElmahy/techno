@@ -42,7 +42,7 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import { applyPct, combinePct } from '../utils/discounts';
@@ -966,7 +966,7 @@ export default function Invoices() {
     seen[sig] = now;
     if (repeated) return;
     const u = unit ? ` ${unit}` : '';
-    const n = stock.toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+    const n = stock.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
     // شبّاك بيتقفل بضغطة، مش رسالة بتعدّي لوحدها.
     //
     // القص بيغيّر رقم اللي بيكتب تحت إيده. التوست بيروح بعد تلات ثواني — واللي بيكتب
@@ -1309,7 +1309,7 @@ export default function Invoices() {
       message.error(
         `«${prod?.name ?? 'الصنف'}»: المطلوب ${asked} يتجاوز المتاح في «${wh?.name ?? 'المخزن'}» `
         + `(${availableFor(short.item_id, short.unit, lineWarehouse(short))
-          .toLocaleString('ar-EG', { maximumFractionDigits: 3 })})`,
+          .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })})`,
       );
       return;
     }
@@ -2528,7 +2528,7 @@ function couponsTotal(inv: any): number {
                 ]}
                 notes={[
                   <>النقاط: <b style={{ color: '#F5A11D' }}>
-                    {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b></>,
+                    {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></>,
                   creditAmount < -0.001 ? (
                     <>يسدّد من المديونية القديمة:{' '}
                       <b style={{ color: '#6AB42D' }}>{money(Math.abs(creditAmount))} ج.م</b></>

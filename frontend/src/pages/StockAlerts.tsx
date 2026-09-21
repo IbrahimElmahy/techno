@@ -12,6 +12,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useNavigate } from 'react-router-dom';
 
 import StatsRow from '../components/StatsRow';
+import { qty } from '../utils/money';
 /**
  * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
  * what do I need to buy (below the reorder level), and what is about to go bad.
@@ -32,8 +33,6 @@ interface ReorderRow {
   excess: string | null;
   flag: 'below_min' | 'above_max';
 }
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 /**
  * حد إعادة الطلب — كام لازم نشتري.

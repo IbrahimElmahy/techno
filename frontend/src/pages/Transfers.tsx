@@ -38,6 +38,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import StatsRow from '../components/StatsRow';
+import { qty } from '../utils/money';
 // حجم الصفحة. الكشف كله بقى 1437 تحويل بـ17 ألف سطر بعد نقل داتا a5، وتحميلهم
 // كلهم كان بياخد 7.6 ثانية على السيرفر نفسه قبل ما الشبكة تشوف حاجة.
 const PAGE_SIZE = 300;
@@ -107,9 +108,6 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
   rejected: { color: 'error', text: 'مرفوض' },
   reversed: { color: 'default', text: 'ملغي' },
 };
-
-const qty = (v: any) =>
-  Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 /** Bucket for items that carry no category, so they stay reachable in the category-first flow. */
 const NO_CATEGORY = '__none__';

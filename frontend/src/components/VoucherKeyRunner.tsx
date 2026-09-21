@@ -10,6 +10,7 @@ import { api } from '../api/client';
 import PartyField from './PartyField';
 import { Treasury, defaultTreasuryId } from './VoucherFields';
 import { TabModal } from './TabModal';
+import { money } from '../utils/money';
 
 /**
  * تشغيل المفتاح — الأبواب اللي بيفتحها لحد ما السند يترحّل.
@@ -65,10 +66,6 @@ export const KIND_COLORS: Record<string, string> = {
   transfer: 'purple',
   journal: 'default',
 };
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 interface Party { id: number; name?: string; full_name?: string; username?: string }
 interface Account { id: number; code: string | null; name: string | null; parent_id: number | null;

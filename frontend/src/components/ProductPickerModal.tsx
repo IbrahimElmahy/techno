@@ -6,6 +6,7 @@ import {
 import { keepInView } from '../utils/keepInView';
 import { normalizeAr } from './ListToolbar';
 import { TabModal } from './TabModal';
+import { qty, numeralsLocale } from '../utils/money';
 
 /**
  * اختيار الصنف — categories on one side, their products on the other, in a window of its own.
@@ -50,8 +51,7 @@ interface Props {
   availabilityVersion?: string | number;
 }
 
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
-const fmtPrice = (v: any) => Number(v || 0).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
+const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
 
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,

@@ -26,6 +26,7 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
 import { printReport } from '../print/reportSheet';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { money, qty } from '../utils/money';
 
 /**
  * طلبات البيع والشراء — شيت تسعير، مش مستند حركة.
@@ -66,11 +67,6 @@ interface DraftLine {
   unit?: string | null;
   discount_pct?: number;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 const STATUS_LABELS: Record<string, { text: string; color?: string }> = {
   open: { text: 'مفتوح', color: 'blue' },

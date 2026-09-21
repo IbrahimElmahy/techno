@@ -10,6 +10,7 @@ type Preset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
 const PRESET_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
 import { api } from '../api/client';
 import { useMovementLabels } from '../lib/movementTypes';
+import { qty } from '../utils/money';
 
 /**
  * سجل عمليات الصنف — قايمة منسدلة، وتفاصيل اللي تختاره تحته.
@@ -47,8 +48,6 @@ export interface MovementHistoryTarget {
   dateTo?: string | null;
 }
 
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 export default function MovementHistoryLog({
   target, onClose, periodFilter = true,

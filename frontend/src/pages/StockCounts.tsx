@@ -17,6 +17,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import { useCanSeeStats } from '../components/StatsRow';
+import { qty, money } from '../utils/money';
 /**
  * جرد المخازن و جرد عام — the counting cycle.
  *
@@ -48,10 +49,6 @@ interface Sheet {
   notes: string | null; created_at: string; posted_at: string | null;
   line_count: number; counted_count: number; lines?: Line[];
 }
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG',
-  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function StockCounts() {
   const canSeeStats = useCanSeeStats();

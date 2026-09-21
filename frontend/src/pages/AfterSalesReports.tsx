@@ -13,6 +13,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
 
 import { useCanSeeStats } from '../components/StatsRow';
+import { numeralsLocale } from '../utils/money';
 /**
  * تقارير ما بعد البيع — خمسة من قايمة «تقارير متابعة» في نظامهم القديم.
  *
@@ -56,8 +57,8 @@ interface RepRow {
   last_visit: string | null;
 }
 
-const num = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 0 });
-const pts = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 1 });
+const num = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 0 });
+const pts = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 1 });
 
 export default function AfterSalesReports() {
   const navigate = useNavigate();

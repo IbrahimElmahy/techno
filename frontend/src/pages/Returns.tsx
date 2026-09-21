@@ -42,7 +42,7 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
@@ -1006,7 +1006,7 @@ export default function Returns() {
         if (v) {
           return (
             <span style={{ color: '#F5A11D', fontWeight: 600 }}>
-              {v.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+              {v.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
             </span>
           );
         }
@@ -1014,7 +1014,7 @@ export default function Returns() {
         return per > 0
           ? (
             <span style={{ color: '#b0b0b0' }} title={`${per} نقطة للوحدة`}>
-              × {per.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+              × {per.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
             </span>
           )
           : <span style={{ color: '#b0b0b0' }}>-</span>;
@@ -1493,7 +1493,7 @@ export default function Returns() {
                     { label: 'صافي المرتجع', value: money(netTotal),
                       strong: true, color: '#cf4b1a', rule: true },
                     { label: 'النقاط المستردّة', value: totalReturnPoints
-                        .toLocaleString('ar-EG', { maximumFractionDigits: 3 }),
+                        .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }),
                       color: '#b26a00', show: totalReturnPoints > 0 },
                     ...families.map((a) => ({
                       label: `مديونية ${a.family}`,
@@ -1516,7 +1516,7 @@ export default function Returns() {
                   ]}
                   notes={[
                     <>نقاط تُخصم من العميل: <b style={{ color: '#F5A11D' }}>
-                      {totalPoints.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}</b></>,
+                      {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></>,
                     cashRefund > 0.001 ? (
                       <>مسترد نقداً: <b style={{ color: '#cf4b1a' }}>{money(cashRefund)} ج.م</b></>
                     ) : null,

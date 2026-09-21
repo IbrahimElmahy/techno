@@ -5,7 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
@@ -346,6 +346,8 @@ class PermitIn(BaseModel):
     lines: list[PermitLineIn]
     reason: str | None = None
     notes: str | None = None
+    # البيان — سطر الكلام اللي بيتطبع على الإذن نفسه. الشرح في `models/stock_permit.py`.
+    statement1: str | None = Field(default=None, max_length=200)
     permit_date: date | None = None
 
 
@@ -367,6 +369,9 @@ class PermitOut(BaseModel):
     permit_date: date | None = None
     reason: str | None = None
     notes: str | None = None
+    # **لازم يبقى هنا كمان مش على الإدخال بس** — بايدانتيك بيرمي أي حقل مش معرّف على
+    # موديل الرد في صمت، فالبيان يتكتب في القاعدة ويرجع فاضي للشاشة.
+    statement1: str | None = None
     total_cost: Decimal
     is_reversal: bool
     reversed_by: int | None = None
@@ -388,6 +393,7 @@ def _permit_out(db: Session, p) -> PermitOut:
         id=p.id, document_number=p.document_number, kind=p.kind.value,
         warehouse_id=p.warehouse_id, warehouse_name=warehouse.name if warehouse else None,
         permit_date=p.permit_date, reason=p.reason, notes=p.notes,
+        statement1=getattr(p, "statement1", None),
         total_cost=p.total_cost, is_reversal=p.reverses_id is not None,
         reversed_by=reversal, created_at=p.created_at,
         lines=[PermitLineOut(
@@ -412,7 +418,8 @@ def create_permit(
         permit = stock_permit_service.create_permit(
             db, kind=body.kind, warehouse_id=body.warehouse_id,
             lines=[ln.model_dump() for ln in body.lines], actor_user_id=current.id,
-            reason=body.reason, notes=body.notes, permit_date=body.permit_date,
+            reason=body.reason, notes=body.notes, statement1=body.statement1,
+            permit_date=body.permit_date,
         )
     except stock_permit_service.StockPermitError as exc:
         raise HTTPException(422, {"code": "permit_invalid", "message": str(exc)}) from exc

@@ -14,6 +14,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useTableKeyboard } from '../components/keyboard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
+import { numeralsLocale } from '../utils/money';
 
 /**
  * الموظفون والوظائف — deliberately not the users screen.
@@ -35,7 +36,7 @@ interface JobTitle { id: number; name: string; description: string | null; activ
 
 const money = (v: any) => (v === null || v === undefined || v === ''
   ? '-'
-  : Number(v).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  : Number(v).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 export default function Employees() {
   const [employees, setEmployees] = useState<Employee[]>([]);

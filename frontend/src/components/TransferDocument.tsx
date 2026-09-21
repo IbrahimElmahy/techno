@@ -1,4 +1,5 @@
 import { printDocument } from '../print/brand';
+import { qty } from '../utils/money';
 
 /**
  * طباعة إذن التحويل — الورقة اللي بتمشي مع البضاعة.
@@ -29,8 +30,6 @@ export interface TransferDoc {
   approvedBy?: string | null;
   lines: TransferPrintLine[];
 }
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
 
 const STATUS: Record<string, string> = {
   pending: 'بانتظار الاعتماد',

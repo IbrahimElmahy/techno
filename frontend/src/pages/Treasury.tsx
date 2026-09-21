@@ -14,7 +14,7 @@ import { textColumn, numberColumn, choiceColumn } from '../components/gridColumn
 import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 
 interface LedgerLine {
   id: number;
@@ -89,7 +89,7 @@ export default function Treasury() {
   const fetchBalance = async () => {
     try {
       const res = await api.get('/api/v1/treasury/balance');
-      setBalance(parseFloat(res.data.balance).toLocaleString('ar-EG', {
+      setBalance(parseFloat(res.data.balance).toLocaleString(numeralsLocale(), {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }));

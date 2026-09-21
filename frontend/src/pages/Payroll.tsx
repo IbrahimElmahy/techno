@@ -21,6 +21,7 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, printPayslip } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money } from '../utils/money';
 /**
  * مسير الرواتب.
  *
@@ -79,10 +80,6 @@ interface RunDetail extends Run {
   accrual_entry_id: number | null;
   lines: Line[];
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 const STATUS: Record<string, { label: string; color?: string }> = {
   draft: { label: 'مسودة', color: 'orange' },

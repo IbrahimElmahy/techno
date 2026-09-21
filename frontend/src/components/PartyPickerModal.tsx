@@ -11,6 +11,7 @@ import { normalizeAr } from './ListToolbar';
 import { useLookup } from '../hooks/useLookup';
 import { TabModal } from './TabModal';
 import { keepInView } from '../utils/keepInView';
+import { numeralsLocale } from '../utils/money';
 
 /**
  * اختيار الطرف — the first step of every sale/purchase document.
@@ -326,7 +327,7 @@ export default function PartyPickerModal({
                     <span style={{ color: '#6b6b6b', fontSize: 12 }}>{party.phone}</span>)}
                   {party.balance != null && Number(party.balance) !== 0 && (
                     <Tag color={Number(party.balance) > 0 ? 'red' : 'green'}>
-                      {Number(Math.abs(Number(party.balance))).toLocaleString('ar-EG',
+                      {Number(Math.abs(Number(party.balance))).toLocaleString(numeralsLocale(),
                         { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
                     </Tag>
                   )}

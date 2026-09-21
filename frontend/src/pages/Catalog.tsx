@@ -18,7 +18,7 @@ import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 
 import StatsRow from '../components/StatsRow';
 // The five negotiated tiers plus the published list price, in the order and wording their form
@@ -656,7 +656,7 @@ export default function Catalog() {
       dataIndex: 'pieces_per_unit',
       key: 'pieces_per_unit',
       width: 85,
-      render: (v: string | null) => (v ? Number(v).toLocaleString('ar-EG') : '-'),
+      render: (v: string | null) => (v ? Number(v).toLocaleString(numeralsLocale()) : '-'),
     },
     {
       title: 'القطعة',
@@ -734,7 +734,7 @@ export default function Catalog() {
         const n = Number(v || 0);
         return (
           <b style={{ color: n > 0 ? '#3f8600' : n < 0 ? '#cf1322' : '#6b6b6b' }}>
-            {n.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+            {n.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
           </b>
         );
       },
@@ -975,7 +975,7 @@ export default function Catalog() {
                   <strong>{g.label}</strong>
                   <Tag color="blue">{g.rows.length} صنف</Tag>
                   <Tag color={g.onHand > 0 ? 'green' : 'default'}>
-                    الرصيد: {g.onHand.toLocaleString('ar-EG', { maximumFractionDigits: 3 })}
+                    الرصيد: {g.onHand.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
                   </Tag>
                 </Space>
               ),

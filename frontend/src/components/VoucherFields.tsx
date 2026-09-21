@@ -7,6 +7,7 @@ import { InputNumber } from './NumberInput';
 import { PlusOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { TabModal } from './TabModal';
+import { money } from '../utils/money';
 
 /**
  * الخزنة وحساب المصروف — الحقلين اللي بيتحدد بيهم الفلوس بتتحرك منين وعلى إيه.
@@ -21,10 +22,6 @@ import { TabModal } from './TabModal';
  * one and told nobody. «اتحكم بالخزنة اللي مربوط بيها أي حاجة» is exactly that complaint: not a
  * missing field, a hidden decision.
  */
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 export interface Treasury {
   id: number; name: string; kind?: string; balance?: string | number;

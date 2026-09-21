@@ -37,7 +37,7 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
@@ -156,7 +156,7 @@ interface PurchaseDetail extends PurchaseRecord {
 const fmtDate = (v: string) => {
   if (!v) return '-';
   const d = new Date(v);
-  return isNaN(d.getTime()) ? v : d.toLocaleString('ar-EG');
+  return isNaN(d.getTime()) ? v : d.toLocaleString(numeralsLocale());
 };
 
 export default function Purchases() {
@@ -1431,7 +1431,7 @@ export default function Purchases() {
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
-        .toLocaleString('ar-EG', { maximumFractionDigits: 3 }) },
+        .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }) },
     { key: 'price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}

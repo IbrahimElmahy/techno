@@ -8,6 +8,7 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { normalizeAr } from '../components/ListToolbar';
 import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
+import { qty, numeralsLocale } from '../utils/money';
 
 /**
  * رصيد صنف — the storekeeper's enquiry screen: pick a category, pick an item, and every price and
@@ -54,9 +55,7 @@ const TIER_LABELS: Record<string, string> = {
 const money = (v: any) =>
   v === null || v === undefined || v === ''
     ? '0.00'
-    : Number(v).toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-const qty = (v: any) => Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 });
+    : Number(v).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function StockBalance() {
   /** سجل عمليات الصنف في المخزن ده — نفس السطح اللي الجرد بيستعمله. */

@@ -25,6 +25,7 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
+import { money, numeralsLocale } from '../utils/money';
 type Subject = 'account' | 'item';
 
 interface StatementLine {
@@ -86,10 +87,6 @@ interface StatementOut {
   aging?: Aging;
   reconcilable?: boolean;
 }
-
-const money = (v: any) => Number(v || 0).toLocaleString('ar-EG', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 
 export default function AccountStatement() {
   const [search, setSearch] = useSearchParams();
@@ -438,7 +435,7 @@ export default function AccountStatement() {
     ? { debit: 'داخل', credit: 'خارج', before: 'الرصيد قبل', after: 'الرصيد بعد' }
     : { debit: 'مدين', credit: 'دائن', before: 'الرصيد قبل', after: 'الرصيد بعد' };
   const num = (v: any) => (isItem
-    ? Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 3 })
+    ? Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })
     : money(v));
 
   const columns: ColumnsType<StatementLine> = [
@@ -773,7 +770,7 @@ export default function AccountStatement() {
       if (r.quantity_in_unit) facts.push(['الكمية بالوحدة', `${r.quantity_in_unit} ${r.unit ?? ''}`]);
       if (r.unit_price != null) facts.push(['سعر الوحدة', money(r.unit_price)]);
       if (r.discount_pct != null && Number(r.discount_pct)) {
-        facts.push(['الخصم', `${Number(r.discount_pct).toLocaleString('ar-EG')}%`]);
+        facts.push(['الخصم', `${Number(r.discount_pct).toLocaleString(numeralsLocale())}%`]);
       }
       if (r.tax_amount != null && Number(r.tax_amount)) facts.push(['الضريبة', money(r.tax_amount)]);
       if (r.line_total != null) facts.push(['إجمالي السطر', <b key="t">{money(r.line_total)}</b>]);

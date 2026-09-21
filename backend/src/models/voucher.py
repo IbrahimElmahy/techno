@@ -79,6 +79,13 @@ class Voucher(Base):
     payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)  # نقدي/آجل...
     reference: Mapped[str | None] = mapped_column(String(80), nullable=True)  # رقم الإيصال/الشيك
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # البيان — نفس خانة الفاتورة، وبخانة واحدة بس على السندات.
+    #
+    # `description` بيروح لسطور القيد وبيتقرا في كشف الحساب، فهو وصف الحركة المحاسبية.
+    # البيان ده بتاع الورقة اللي العميل بيمضي عليها: «دفعة أولى عن أمر التوريد ١٢٠٣».
+    # اتخلطوا قبل كده فالموظف كان بيكتب كلام الورقة في `description` وييجي في كشف
+    # الحساب مكان وصف الحركة.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # Nullable so the voucher row can exist before its entry (Postgres enforces FKs immediately).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),
