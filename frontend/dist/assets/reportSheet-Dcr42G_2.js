@@ -1,0 +1,18 @@
+import{p as o}from"./brand-BkcEBXTg.js";import{K as u}from"./index-D2kcG40i.js";function i(t){return t==null?"":String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}function m(t,e){return typeof e.value=="function"?e.value(t):t[e.value]}function g(t,e,r){if(!t.length)return"";const d=t.map(a=>`<th>${i(a.title)}</th>`).join(""),n=e.map(a=>`<tr>${t.map(l=>`<td${l.numeric?' style="text-align:left;direction:ltr"':""}>${i(m(a,l))}</td>`).join("")}</tr>`).join(""),s=e.length?"":`<tr><td colspan="${t.length}">مفيش بيانات في المدى المحدد</td></tr>`,c=r!=null&&r.length?`<table class="totals">${r.map(a=>`<tr><td>${i(a.label)}</td><td>${i(a.value)}</td></tr>`).join("")}</table>`:"";return`<table class="grid"><thead><tr>${d}</tr></thead><tbody>${n}${s}</tbody></table>${c}`}function y(t,e,r,d){const n={...t,meta:[...t.meta??[],["عدد السطور",String(r.length)]]};o(n,g(e,r,d))}function f(t){const e=n=>Number(n||0).toLocaleString(u(),{minimumFractionDigits:2,maximumFractionDigits:2}),d=`<table class="grid">
+      <thead><tr><th>البند</th><th>العدد</th><th>استحقاق</th><th>استقطاع</th></tr></thead>
+      <tbody>${t.details.map(n=>`<tr>
+      <td style="text-align:start">${i(n.label)}</td>
+      <td>${n.quantity?i(Number(n.quantity)):""}</td>
+      <td class="num">${n.kind==="earning"?e(n.amount):""}</td>
+      <td class="num">${n.kind==="deduction"?e(n.amount):""}</td>
+    </tr>`).join("")}</tbody>
+    </table>
+    <table class="totals">
+      <tr><td>إجمالي الاستحقاق</td><td>${e(t.line.gross)}</td></tr>
+      <tr><td>إجمالي الاستقطاع</td><td>${e(t.line.total_deductions)}</td></tr>
+      <tr><td>الصافي</td><td>${e(t.line.net)}</td></tr>
+    </table>
+    <div class="signatures">
+      <div class="sig">توقيع الموظف</div>
+      <div class="sig">المختص</div>
+    </div>`;o({title:"قسيمة راتب",number:t.run.document_number,meta:[["الموظف",t.employee_name??""],["الشهر",`${t.run.year}/${String(t.run.month).padStart(2,"0")}`]],note:"قسيمة صادرة آلياً — أي اعتراض يتقدّم خلال شهر من تاريخ الصرف."},d)}export{f as a,y as p,g as r};

@@ -700,6 +700,16 @@ interface DraftProduct {
   key: number; item_id?: number; warehouse_id?: number;
   planned_quantity?: number | null; quantity?: number | null;
   bom_id?: number | null; expense_amount?: number | null; materials: DraftMaterial[];
+  /**
+   * **اللي كاتب الورقة لمس الخامات بإيده ولا لأ؟**
+   *
+   * الوصفة بتفجّر الخامات لوحدها أول ما تختار المنتج، وبتتحدّث لما تغيّر الكمية — بس
+   * بعد ما حد يعدّل سطر بإيده، **التحديث التلقائي بيقف**. من غير الشرط ده، واحد بيزوّد
+   * خامة برّه الوصفة أو بيظبّط كمية وبعدين بيصلّح رقم المنتج بيلاقي شغله اتمسح.
+   *
+   * وبيرجع `false` لما يدوس «طلّع الوصفة» صراحةً — ده طلبه إن الورقة ترجع للوصفة.
+   */
+  materialsTouched?: boolean;
 }
 
 let poSeq = 1;
@@ -754,6 +764,9 @@ function ProductionOrdersTab({
   const [statement, setStatement] = useState('');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftProduct[]>([]);
+  // التبويب المفتوح جوّه الفورم. بيرجع لـ«الشغل» مع كل فتح — ده اللي حد فاتح الورقة
+  // عايزه، والبيان والملاحظات بيتكتبوا مرة.
+  const [formTab, setFormTab] = useState('work');
 
   const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
   const itemOptions = (list: Item[]) =>
@@ -787,7 +800,7 @@ function ProductionOrdersTab({
 
   const resetForm = () => {
     setEditingId(null); setProductionDate(null); setBranchId(undefined);
-    setExternalRef(''); setStatement(''); setNotes(''); setLines([]);
+    setExternalRef(''); setStatement(''); setNotes(''); setLines([]); setFormTab('work');
   };
 
   const openNew = () => { resetForm(); setLines([newPOProduct()]); setOpen(true); };
@@ -837,6 +850,10 @@ function ProductionOrdersTab({
       key: poSeq++, item_id: p.item_id, warehouse_id: p.warehouse_id ?? undefined,
       planned_quantity: Number(p.planned_quantity), quantity: Number(p.quantity),
       bom_id: p.bom_id, expense_amount: Number(p.expense_amount),
+      // **الورقة المفتوحة للتعديل خاماتها محسومة.** هي اللي اتسجّل فعلاً — يمكن
+      // اتعدّلت بإيد وقت الشغل — فالتفجير التلقائي مايلمسهاش. من غير السطر ده، أول
+      // تصليح في كمية المنتج كان هيمسح كل اللي اتسجّل ويرجّعه لأرقام الوصفة.
+      materialsTouched: true,
       materials: r.materials.filter((m) => m.product_line_id === p.id).map((m) => ({
         key: poSeq++, item_id: m.item_id, warehouse_id: m.warehouse_id ?? undefined,
         planned_quantity: Number(m.planned_quantity), quantity: Number(m.quantity),
@@ -846,36 +863,80 @@ function ProductionOrdersTab({
     setOpen(true);
   };
 
-  const patchLine = (key: number, patch: Partial<DraftProduct>) =>
-    setLines((p) => p.map((x) => (x.key === key ? { ...x, ...patch } : x)));
+  /**
+   * تعديل سطر منتج. `recompute` معناها «ده تغيير الوصفة بتتبعه» — المنتج أو الوصفة
+   * أو الكمية أو المخزن — فالخامات بتتفجّر من الوصفة بعده، إلا لو حد لمسها بإيده.
+   */
+  const patchLine = (key: number, patch: Partial<DraftProduct>, recompute = false) =>
+    setLines((p) => p.map((x) => {
+      if (x.key !== key) return x;
+      const next = { ...x, ...patch };
+      return recompute ? withRecipe(next) : next;
+    }));
   const patchMaterial = (lineKey: number, matKey: number, patch: Partial<DraftMaterial>) =>
     setLines((p) => p.map((x) => (x.key === lineKey
-      ? { ...x, materials: x.materials.map((y) => (y.key === matKey ? { ...y, ...patch } : y)) }
+      ? {
+        ...x,
+        // أول لمسة بإيد بتوقف التحديث التلقائي من الوصفة — الشرح عند `materialsTouched`.
+        materialsTouched: true,
+        materials: x.materials.map((y) => (y.key === matKey ? { ...y, ...patch } : y)),
+      }
       : x)));
 
   /**
-   * يملا خامات سطر المنتج من وصفته، مضروبة في الكمية. **ده «المفروض»** — والمصروف
-   * بيتفتح بنفس الرقم عشان اللي مابيغيّرهوش يبقى قال «اتصرف زي الوصفة» صراحةً.
+   * خامات سطر المنتج من وصفته، مضروبة في الكمية — أو `null` لو مافيش وصفة أو كمية.
+   *
+   * **ده «المفروض»**، والمصروف بيتفتح بنفس الرقم عشان اللي مابيغيّرهوش يبقى قال
+   * «اتصرف زي الوصفة» صراحةً مش سابه فاضي.
+   *
+   * ومخزن الخامة بييجي من مخزن الإنتاج لو الوصفة مش قايلة حاجة: الحالة الغالبة إن
+   * الاتنين مكان واحد، والخانة الفاضية كانت بتوقف الحفظ برسالة «الصنف محتاج مخزن».
    */
+  const recipeMaterials = (ln: DraftProduct): DraftMaterial[] | null => {
+    const bom = boms.find((b) => b.id === ln.bom_id)
+      ?? boms.find((b) => b.active && b.product_id === ln.item_id);
+    if (!bom) return null;
+    const qty = Number(ln.planned_quantity ?? ln.quantity ?? 0);
+    if (!qty) return null;
+    const scale = qty / Number(bom.output_quantity || 1);
+    return bom.components.map((c) => {
+      // × معامل الوحدة زي الباك-إند بالظبط: سطر وصفة «٢ كرتونة» بيصرف ٢٤ قطعة،
+      // ومعاينة بتقول ٢ بتبعت أمين المخزن يدوّر على الـ٢٢ الباقيين.
+      const q = Number(c.quantity) * scale * Number(c.unit_factor ?? 1);
+      return {
+        key: poSeq++, item_id: c.item_id, planned_quantity: q, quantity: q,
+        warehouse_id: ln.warehouse_id,
+      };
+    });
+  };
+
+  /**
+   * **الوصفة بتتفجّر لوحدها.** اختيار المنتج أو تغيير الكمية بيعيد بناء الخامات من
+   * غير ما حد يدوس حاجة — ده الغرض من الوصفة أصلاً، والزرار اللي كان لازم تفتكره
+   * كان بيخلّي أمر يتكتب من غير خامات وينكسر عند الحفظ.
+   *
+   * وبيسكت خالص لو اللي كاتب الورقة لمس الخامات بإيده. الشرح عند `materialsTouched`.
+   */
+  const withRecipe = (ln: DraftProduct): DraftProduct => {
+    if (ln.materialsTouched) return ln;
+    const rows = recipeMaterials(ln);
+    return rows ? { ...ln, materials: rows } : ln;
+  };
+
+  /** زر «طلّع الوصفة» — طلب صريح، فبيتجاهل اللمس وبيرجّع السطر للوصفة. */
   const fillFromRecipe = (key: number) => {
     setLines((prev) => prev.map((ln) => {
       if (ln.key !== key) return ln;
+      const rows = recipeMaterials(ln);
+      if (!rows) {
+        const hasBom = boms.some((b) => b.product_id === ln.item_id);
+        message.info(hasBom ? 'اكتب الكمية الأول' : 'المنتج ده مالوش وصفة');
+        return ln;
+      }
       const bom = boms.find((b) => b.id === ln.bom_id)
         ?? boms.find((b) => b.active && b.product_id === ln.item_id);
-      if (!bom) { message.info('المنتج ده مالوش وصفة'); return ln; }
-      const qty = Number(ln.planned_quantity ?? ln.quantity ?? 0);
-      if (!qty) { message.info('اكتب الكمية الأول'); return ln; }
-      const scale = qty / Number(bom.output_quantity || 1);
-      return {
-        ...ln,
-        bom_id: bom.id,
-        materials: bom.components.map((c) => {
-          // × معامل الوحدة زي الباك-إند بالظبط: سطر وصفة «٢ كرتونة» بيصرف ٢٤ قطعة،
-          // ومعاينة بتقول ٢ بتبعت أمين المخزن يدوّر على الـ٢٢ الباقيين.
-          const q = Number(c.quantity) * scale * Number(c.unit_factor ?? 1);
-          return { key: poSeq++, item_id: c.item_id, planned_quantity: q, quantity: q };
-        }),
-      };
+      return { ...ln, bom_id: bom?.id ?? ln.bom_id ?? null, materials: rows,
+               materialsTouched: false };
     }));
   };
 
@@ -1178,29 +1239,42 @@ function ProductionOrdersTab({
             </Button>
           </Space>
         }>
-        <Row gutter={12}>
-          <Col span={6}>
+        {/* **الترويسة فوق ثابتة، والشغل جوّه تبويبات.**
+            الورقة كانت عمود واحد طويل: بيانات المستند، وبعدها كل منتج بخاماته، وبعدها
+            الملاحظات. اللي بيكتب تشغيلة فيها تلات منتجات كان بينزل ويطلع في المودال
+            عشان يشوف التاريخ اللي كتبه. دلوقتي التاريخ والفرع والورقة فوق دايماً،
+            والباقي في تبويبين: **الشغل** (المنتجات وخاماتها) و**بيانات المستند**
+            (البيان والملاحظات) — اللي بيتكتب مرة، بره طريق اللي بيتكتب كل سطر. */}
+        <Row gutter={12} style={{
+          position: 'sticky', top: 0, zIndex: 2, paddingBottom: 12, marginBottom: 4,
+          // خلفية صريحة: العنصر اللاصق بيعوم فوق المحتوى، و`inherit` بيسيبه شفاف
+          // فالسطور بتعدّي من وراه وهي بتتزحلق. النظام فاتح بس (مافيش `darkAlgorithm`).
+          background: '#fff',
+        }}>
+          <Col span={8}>
             <div style={{ marginBottom: 4 }}>تاريخ الإنتاج</div>
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD"
               value={productionDate} onChange={setProductionDate} placeholder="النهارده" />
           </Col>
-          <Col span={6}>
+          <Col span={8}>
             <div style={{ marginBottom: 4 }}>الفرع</div>
             <Select allowClear style={{ width: '100%' }} value={branchId} onChange={setBranchId}
               options={branches.map((b) => ({ value: b.id, label: b.name }))} placeholder="الفرع" />
           </Col>
-          <Col span={6}>
-            <div style={{ marginBottom: 4 }}>رقم المستند</div>
+          <Col span={8}>
+            <div style={{ marginBottom: 4 }}>رقم الورقة</div>
             <Input value={externalRef} onChange={(e) => setExternalRef(e.target.value)}
               maxLength={40} placeholder="رقم الورقة اللي في إيدك" />
           </Col>
-          <Col span={6}>
-            <div style={{ marginBottom: 4 }}>البيان</div>
-            <Input value={statement} onChange={(e) => setStatement(e.target.value)} maxLength={200} />
-          </Col>
         </Row>
 
-        {lines.map((ln, idx) => (
+        <Tabs
+          activeKey={formTab} onChange={setFormTab}
+          items={[
+            {
+              key: 'work',
+              label: `الشغل (${lines.length})`,
+              children: <>{lines.map((ln, idx) => (
           <Card key={ln.key} size="small" style={{ marginTop: 12 }} title={`منتج ${idx + 1}`}
             extra={lines.length > 1 && (
               <Button type="text" danger icon={<DeleteOutlined />}
@@ -1214,7 +1288,7 @@ function ProductionOrdersTab({
                   onChange={(v) => patchLine(ln.key, {
                     item_id: v,
                     bom_id: boms.find((b) => b.active && b.product_id === v)?.id ?? null,
-                  })} />
+                  }, true)} />
               </Col>
               <Col span={5}>
                 {/* نسخ الوصفة البديلة (A/B/C عند a5) = وصفات متعددة لنفس المنتج. */}
@@ -1222,12 +1296,12 @@ function ProductionOrdersTab({
                   value={ln.bom_id ?? undefined}
                   options={boms.filter((b) => b.product_id === ln.item_id)
                     .map((b) => ({ value: b.id, label: b.active ? b.name : `${b.name} (قديمة)` }))}
-                  onChange={(v) => patchLine(ln.key, { bom_id: v ?? null })} />
+                  onChange={(v) => patchLine(ln.key, { bom_id: v ?? null }, true)} />
               </Col>
               <Col span={4}>
                 <Select style={{ width: '100%' }} placeholder="مخزن الإنتاج" value={ln.warehouse_id}
                   options={whOptions}
-                  onChange={(v) => patchLine(ln.key, { warehouse_id: v })} />
+                  onChange={(v) => patchLine(ln.key, { warehouse_id: v }, true)} />
               </Col>
               <Col span={3}>
                 <InputNumber style={{ width: '100%' }} min={0.001} placeholder="المفروض"
@@ -1237,7 +1311,7 @@ function ProductionOrdersTab({
                     // اللي طلع بيتفتح على نفس الرقم — اللي مايغيّرهوش يبقى قال «طلع زي
                     // المفروض» صراحةً، مش سابه فاضي.
                     quantity: ln.quantity == null ? (v as any) : ln.quantity,
-                  })} />
+                  }, true)} />
               </Col>
               <Col span={3}>
                 <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
@@ -1294,20 +1368,35 @@ function ProductionOrdersTab({
                     actual={String(m.quantity ?? 0)} />
                   <Button type="text" danger size="small" icon={<DeleteOutlined />}
                     onClick={() => patchLine(ln.key, {
+                      materialsTouched: true,
                       materials: ln.materials.filter((y) => y.key !== m.key) })} />
                 </Col>
               </Row>
             ))}
+            {/* زيادة أو مسح خامة بإيد = لمسة، فالتحديث التلقائي من الوصفة بيقف بعدها. */}
             <Button size="small" onClick={() => patchLine(ln.key, {
+              materialsTouched: true,
               materials: [...ln.materials, newPOMaterial()] })}>+ خامة</Button>
           </Card>
-        ))}
-
-        <div style={{ marginTop: 12 }}>
-          <div style={{ marginBottom: 4 }}>ملاحظات</div>
-          <Input.TextArea rows={2} maxLength={500} value={notes}
-            onChange={(e) => setNotes(e.target.value)} />
-        </div>
+              ))}</>,
+            },
+            {
+              key: 'doc',
+              label: 'بيانات المستند',
+              children: (
+                <div style={{ paddingTop: 8 }}>
+                  <div style={{ marginBottom: 4 }}>البيان</div>
+                  <Input value={statement} maxLength={200}
+                    onChange={(e) => setStatement(e.target.value)}
+                    placeholder="سطر واحد بيتطبع على الورقة" />
+                  <div style={{ margin: '12px 0 4px' }}>ملاحظات</div>
+                  <Input.TextArea rows={4} maxLength={500} value={notes}
+                    onChange={(e) => setNotes(e.target.value)} />
+                </div>
+              ),
+            },
+          ]}
+        />
       </TabModal>
     </div>
   );

@@ -1,0 +1,1 @@
+import{K as m}from"./index-D2kcG40i.js";const a=i=>Number(i||0).toLocaleString(m(),{minimumFractionDigits:2,maximumFractionDigits:2}),n=i=>Number(i||0).toLocaleString(m(),{maximumFractionDigits:3}),r=(i,t)=>Number(i||0).toLocaleString(m(),t??{maximumFractionDigits:3});export{a as m,r as n,n as q};
