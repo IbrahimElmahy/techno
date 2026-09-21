@@ -867,11 +867,13 @@ function ProductionOrdersTab({
    * تعديل سطر منتج. `recompute` معناها «ده تغيير الوصفة بتتبعه» — المنتج أو الوصفة
    * أو الكمية أو المخزن — فالخامات بتتفجّر من الوصفة بعده، إلا لو حد لمسها بإيده.
    */
-  const patchLine = (key: number, patch: Partial<DraftProduct>, recompute = false) =>
+  const patchLine = (
+    key: number, patch: Partial<DraftProduct>, recompute: false | 'qty' | 'product' = false,
+  ) =>
     setLines((p) => p.map((x) => {
       if (x.key !== key) return x;
       const next = { ...x, ...patch };
-      return recompute ? withRecipe(next) : next;
+      return recompute ? withRecipe(next, recompute === 'product') : next;
     }));
   const patchMaterial = (lineKey: number, matKey: number, patch: Partial<DraftMaterial>) =>
     setLines((p) => p.map((x) => (x.key === lineKey
@@ -916,11 +918,28 @@ function ProductionOrdersTab({
    * كان بيخلّي أمر يتكتب من غير خامات وينكسر عند الحفظ.
    *
    * وبيسكت خالص لو اللي كاتب الورقة لمس الخامات بإيده. الشرح عند `materialsTouched`.
+   *
+   * **و`seedQty` بتحط كمية مبدئية لما تكون فاضية** — وده اللي بيخلّي اختيار المنتج
+   * لوحده يوري حاجة. من غيرها، اللي بيختار منتج له وصفة كان بيلاقي «خاماته» فاضية
+   * ويفتكر إن الوصفة مش شغّالة، وهي بس مستنية رقم. الكمية بتبقى ناتج الوصفة (وحدة
+   * في كل وصفات المصنع)، وأول ما يكتب الكمية الحقيقية كل حاجة بتتظبط بالنسبة.
+   *
+   * وبتتحط وقت تغيير المنتج أو الوصفة بس — مش مع كل تغيير في الكمية. لو اتحطت هناك
+   * كمان، اللي بيمسح الرقم عشان يكتب غيره كان هيلاقي «١» بترجع تحت إيده وهو بيكتب.
    */
-  const withRecipe = (ln: DraftProduct): DraftProduct => {
+  const withRecipe = (ln: DraftProduct, seedQty = false): DraftProduct => {
     if (ln.materialsTouched) return ln;
-    const rows = recipeMaterials(ln);
-    return rows ? { ...ln, materials: rows } : ln;
+    let next = ln;
+    if (seedQty && !Number(next.planned_quantity) && !Number(next.quantity)) {
+      const bom = boms.find((b) => b.id === next.bom_id)
+        ?? boms.find((b) => b.active && b.product_id === next.item_id);
+      if (bom) {
+        const q = Number(bom.output_quantity) || 1;
+        next = { ...next, planned_quantity: q, quantity: q };
+      }
+    }
+    const rows = recipeMaterials(next);
+    return rows ? { ...next, materials: rows } : next;
   };
 
   /** زر «طلّع الوصفة» — طلب صريح، فبيتجاهل اللمس وبيرجّع السطر للوصفة. */
@@ -1288,7 +1307,7 @@ function ProductionOrdersTab({
                   onChange={(v) => patchLine(ln.key, {
                     item_id: v,
                     bom_id: boms.find((b) => b.active && b.product_id === v)?.id ?? null,
-                  }, true)} />
+                  }, 'product')} />
               </Col>
               <Col span={5}>
                 {/* نسخ الوصفة البديلة (A/B/C عند a5) = وصفات متعددة لنفس المنتج. */}
@@ -1296,12 +1315,12 @@ function ProductionOrdersTab({
                   value={ln.bom_id ?? undefined}
                   options={boms.filter((b) => b.product_id === ln.item_id)
                     .map((b) => ({ value: b.id, label: b.active ? b.name : `${b.name} (قديمة)` }))}
-                  onChange={(v) => patchLine(ln.key, { bom_id: v ?? null }, true)} />
+                  onChange={(v) => patchLine(ln.key, { bom_id: v ?? null }, 'product')} />
               </Col>
               <Col span={4}>
                 <Select style={{ width: '100%' }} placeholder="مخزن الإنتاج" value={ln.warehouse_id}
                   options={whOptions}
-                  onChange={(v) => patchLine(ln.key, { warehouse_id: v }, true)} />
+                  onChange={(v) => patchLine(ln.key, { warehouse_id: v }, 'qty')} />
               </Col>
               <Col span={3}>
                 <InputNumber style={{ width: '100%' }} min={0.001} placeholder="المفروض"
@@ -1311,7 +1330,7 @@ function ProductionOrdersTab({
                     // اللي طلع بيتفتح على نفس الرقم — اللي مايغيّرهوش يبقى قال «طلع زي
                     // المفروض» صراحةً، مش سابه فاضي.
                     quantity: ln.quantity == null ? (v as any) : ln.quantity,
-                  }, true)} />
+                  }, 'qty')} />
               </Col>
               <Col span={3}>
                 <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
