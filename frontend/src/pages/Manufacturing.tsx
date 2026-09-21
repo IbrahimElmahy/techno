@@ -710,6 +710,15 @@ interface DraftProduct {
    * وبيرجع `false` لما يدوس «طلّع الوصفة» صراحةً — ده طلبه إن الورقة ترجع للوصفة.
    */
   materialsTouched?: boolean;
+  /**
+   * **اللي كاتب الورقة كتب في «اللي طلع» بإيده ولا لأ؟**
+   *
+   * «اللي طلع» بيمشي ورا «المفروض» لحد ما حد يكتب فيه — عشان اللي مايغيّرهوش يبقى
+   * قال «طلع زي ما اتخطّط» صراحةً. وكان بيتحط مرة واحدة بس (`quantity == null`)،
+   * فاللي بيمسح الكمية ويكتب غيرها كان بيسيب «اللي طلع» على الرقم القديم — أو فاضي،
+   * والحفظ يترفض «الكمية لازم تكون أكبر من صفر» وهو شايف رقم قدامه في «المفروض».
+   */
+  quantityTouched?: boolean;
 }
 
 let poSeq = 1;
@@ -850,6 +859,8 @@ function ProductionOrdersTab({
       key: poSeq++, item_id: p.item_id, warehouse_id: p.warehouse_id ?? undefined,
       planned_quantity: Number(p.planned_quantity), quantity: Number(p.quantity),
       bom_id: p.bom_id, expense_amount: Number(p.expense_amount),
+      // والكمية اللي طلعت كذلك: هي رقم مسجّل، مايمشيش ورا «المفروض» لو حد ظبّطه.
+      quantityTouched: true,
       // **الورقة المفتوحة للتعديل خاماتها محسومة.** هي اللي اتسجّل فعلاً — يمكن
       // اتعدّلت بإيد وقت الشغل — فالتفجير التلقائي مايلمسهاش. من غير السطر ده، أول
       // تصليح في كمية المنتج كان هيمسح كل اللي اتسجّل ويرجّعه لأرقام الوصفة.
@@ -1327,15 +1338,16 @@ function ProductionOrdersTab({
                   value={ln.planned_quantity as any}
                   onChange={(v) => patchLine(ln.key, {
                     planned_quantity: v as any,
-                    // اللي طلع بيتفتح على نفس الرقم — اللي مايغيّرهوش يبقى قال «طلع زي
-                    // المفروض» صراحةً، مش سابه فاضي.
-                    quantity: ln.quantity == null ? (v as any) : ln.quantity,
+                    // «اللي طلع» بيمشي ورا «المفروض» لحد ما حد يكتب فيه — الشرح عند
+                    // `quantityTouched`.
+                    quantity: ln.quantityTouched ? ln.quantity : (v as any),
                   }, 'qty')} />
               </Col>
               <Col span={3}>
                 <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
                   value={ln.quantity as any}
-                  onChange={(v) => patchLine(ln.key, { quantity: v as any })} />
+                  onChange={(v) => patchLine(ln.key,
+                    { quantity: v as any, quantityTouched: true })} />
               </Col>
               <Col span={2}>
                 <Button block size="small" onClick={() => fillFromRecipe(ln.key)}>وصفة</Button>
