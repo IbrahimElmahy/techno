@@ -169,7 +169,7 @@ def card(
                              or mv.movement_type,
             # الاسم العربي بييجي من السجل مش من الشاشة — كانت تلات نسخ منه في
             # ملفات `.tsx` وكل واحدة ناسية نوع.
-            "movement_label": stock_docs.label(mv.movement_type, kind="movement"),
+            "movement_label": stock_docs.movement_label(mv.movement_type, mv.source_doc_type),
             "direction": mv.direction.value,
             "quantity_in": str(quantity if is_in else ZERO_QTY),
             "quantity_out": str(ZERO_QTY if is_in else quantity),

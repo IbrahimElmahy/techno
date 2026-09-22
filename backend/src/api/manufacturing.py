@@ -740,12 +740,18 @@ def start_production_order(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
-    """مؤكد ← شغّال. ولا حركة مخزون — الشرح في `ProductionState`."""
+    """مؤكد ← شغّال: **بيصرف الخامات**. الشرح في `start_order`.
+
+    و`StockError` بتتمسك هنا زي التلات نداءات التانية. كانت ناقصة، والبدء بقى بيصرف
+    خامات بعد ما كان مابيحركش حاجة — فخامة مش كفاية كانت بتطلع **500** بدل ٤٠٩،
+    واللي قدام الشاشة بيقرا «حصل خطأ» بدل «الرصيد مايكفيش: «خام قطع صرف» في مخزن
+    الخامات المتاح منه ٠ والمطلوب صرفه ٦٦». الرسالة دي مكتوبة وكانت بتترمي.
+    """
     _seen_po(db, order_id, current)
     try:
         order = production_order_service.start_order(
             db, order_id=order_id, actor_user_id=current.id)
-    except ProductionOrderError as exc:
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
         raise _conflict(exc)
     db.commit()
     return _po_out(order, production_order_service.reversed_ids(db))

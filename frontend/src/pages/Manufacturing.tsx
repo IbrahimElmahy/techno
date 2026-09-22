@@ -722,6 +722,14 @@ function Variance({ planned, actual }: { planned: string; actual: string }) {
 interface DraftMaterial {
   key: number; item_id?: number; warehouse_id?: number;
   planned_quantity?: number | null; quantity?: number | null; waste_quantity?: number | null;
+  /**
+   * **حد اختار مخزن الخامة دي بإيده؟**
+   *
+   * من غير العلامة دي مافيش طريقة نفرّق بين مخزن النظام حطّه لوحده ومخزن الراجل
+   * قصده. `materialsTouched` على مستوى سطر المنتج كله — يعني تعديل كمية خامة واحدة
+   * كان هيجمّد مخازن الخمسة، والعكس: إعادة الاختيار التلقائي كانت هتمسح اختياره.
+   */
+  warehouseTouched?: boolean;
 }
 interface DraftProduct {
   key: number; item_id?: number; warehouse_id?: number;
@@ -808,6 +816,14 @@ function ProductionOrdersTab({
   const [closing, setClosing] = useState<ProductionOrder | null>(null);
   const [outputs, setOutputs] = useState<Record<number, number | null>>({});
   const [waste, setWaste] = useState<Record<number, number | null>>({});
+  /**
+   * **الخامة دي موجودة فين وبكام** — `صنف → [{مخزن، رصيد}]` مرتّبة بالأكبر.
+   *
+   * الورقة بتتكتب على خطة، والصرف بيحصل وقت «ابدأ» — فالمخزن الغلط مابيبانش غلط إلا
+   * بعد ما الورقة تكون اتكتبت واتأكدت. الكشف ده بيخلّي الشاشة تختار المخزن اللي فيه
+   * البضاعة فعلاً وتوري المتاح جنب كل خامة، بدل ما المصنع يكتشف عند الضغطة الأخيرة.
+   */
+  const [stock, setStock] = useState<Map<number, { wh: number; qty: number }[]>>(new Map());
 
   const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
   const itemOptions = (list: Item[]) =>
@@ -924,9 +940,87 @@ function ProductionOrdersTab({
         ...x,
         // أول لمسة بإيد بتوقف التحديث التلقائي من الوصفة — الشرح عند `materialsTouched`.
         materialsTouched: true,
-        materials: x.materials.map((y) => (y.key === matKey ? { ...y, ...patch } : y)),
+        materials: x.materials.map((y) => (y.key === matKey
+          ? { ...y, ...patch,
+              // اختيار المخزن بإيد بيتقفل عليه — الشرح عند `warehouseTouched`.
+              ...('warehouse_id' in patch ? { warehouseTouched: true } : {}) }
+          : y)),
       }
       : x)));
+
+  /**
+   * **بيجيب أرصدة خامات الورقة، وبيرجّع كل خامة لمخزنها لما الرصيد يوصل.**
+   *
+   * الأرصدة بتتحمّل بعد ما السطر يتكتب (نداء شبكة)، فالتفجير اللي حصل قبلها اختار
+   * مخزن المنتج لأنه ماكانش يعرف حاجة تانية. ده بيصلّحه لما الرد يوصل — وبيسيب أي
+   * مخزن حد اختاره بإيده زي ما هو.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const ids = lines.flatMap((ln) => ln.materials.map((m) => m.item_id))
+      .filter((i): i is number => !!i);
+    if (ids.length) loadStock(ids);
+    setLines((prev) => {
+      let changed = false;
+      const next = prev.map((ln) => {
+        const mats = ln.materials.map((m) => {
+          if (m.warehouseTouched || !m.item_id || !stock.has(m.item_id)) return m;
+          const wh = bestWarehouse(m.item_id, Number(m.planned_quantity ?? 0),
+                                   ln.warehouse_id);
+          if (wh === m.warehouse_id) return m;
+          changed = true;
+          return { ...m, warehouse_id: wh };
+        });
+        return changed ? { ...ln, materials: mats } : ln;
+      });
+      return changed ? next : prev;
+    });
+  }, [open, lines, stock]);
+
+  /** بيجيب أرصدة الأصناف دي لو لسه مش عندنا. بيسكت لو كلها متحمّلة. */
+  const loadStock = async (ids: number[]) => {
+    const want = [...new Set(ids.filter((i) => i && !stock.has(i)))];
+    if (!want.length) return;
+    try {
+      const res = await api.get('/api/v1/stock/by-item',
+                                { params: { item_ids: want.join(',') } });
+      setStock((prev) => {
+        const next = new Map(prev);
+        // الصنف اللي اتسأل عنه ومالوش صف = مافيش منه حاجة في أي مخزن. لازم يتسجّل
+        // كقايمة فاضية، وإلا هنفضل نساله عليه كل مرة والشاشة تقول «متاح —» بدل «٠».
+        want.forEach((i) => next.set(i, []));
+        (res.data as { item_id: number; location_id: number; on_hand: string }[])
+          .forEach((r) => next.set(r.item_id,
+                                   [...(next.get(r.item_id) ?? []),
+                                    { wh: r.location_id, qty: Number(r.on_hand) }]));
+        next.forEach((v) => v.sort((a, b) => b.qty - a.qty));
+        return next;
+      });
+    } catch { /* الرصيد تحسين للعرض — فشله مايوقفش كتابة الورقة */ }
+  };
+
+  /** رصيد الخامة في مخزن معيّن، أو `null` لو لسه مش متحمّل. */
+  const availableIn = (itemId?: number, wh?: number | null): number | null => {
+    if (!itemId || !wh) return null;
+    const rows = stock.get(itemId);
+    if (!rows) return null;
+    return rows.find((r) => r.wh === wh)?.qty ?? 0;
+  };
+
+  /**
+   * **المخزن اللي الخامة دي تتصرف منه فعلاً.**
+   *
+   * أول مخزن فيه الكمية المطلوبة؛ وإلا اللي فيه الأكتر (عشان اللي بيكتب يشوف رقم
+   * قريب ويقرّر)؛ وإلا مخزن المنتج زي الأول.
+   *
+   * قبل كده كانت الخامات كلها بتاخد مخزن المنتج — والنتيجة أمر ٢٠٦: منتج مخزنه
+   * «مخزن الخامات»، وأربع خامات من خمسة مالهمش فيه ولا وحدة، والصرف وقع عند «ابدأ».
+   */
+  const bestWarehouse = (itemId?: number, need = 0, fallback?: number) => {
+    const rows = itemId ? stock.get(itemId) : undefined;
+    if (!rows?.length) return fallback;
+    return (rows.find((r) => r.qty >= need) ?? rows[0]).wh;
+  };
 
   /**
    * خامات سطر المنتج من وصفته، مضروبة في الكمية — أو `null` لو مافيش وصفة أو كمية.
@@ -950,7 +1044,7 @@ function ProductionOrdersTab({
       const q = Number(c.quantity) * scale * Number(c.unit_factor ?? 1);
       return {
         key: poSeq++, item_id: c.item_id, planned_quantity: q, quantity: q,
-        warehouse_id: ln.warehouse_id,
+        warehouse_id: bestWarehouse(c.item_id, q, ln.warehouse_id),
       };
     });
   };
@@ -1469,7 +1563,21 @@ function ProductionOrdersTab({
                 {/* «اتصرف» و«هالك» مش خانات هنا — الورقة بتتفتح على خطة. المصروف
                     بيتحدّد وقت الصرف (من المخطّط)، والهالك بيتكتب عند الإقفال: محدش
                     يعرف هيبوظ كام وهو بيخطّط. */}
+                {/* **المتاح في المخزن ده** — الرقم اللي كان بيتعرف بعد فوات الأوان.
+                    الصرف بيحصل عند «ابدأ»، فالنقص كان بيبان بعد ما الورقة تتكتب
+                    وتتأكد. أحمر معناه الورقة دي هتقف عند الصرف. */}
                 <Col span={6}>
+                  {(() => {
+                    const have = availableIn(m.item_id, m.warehouse_id);
+                    const need = Number(m.planned_quantity ?? 0);
+                    if (have == null) return null;
+                    return (
+                      <span style={{ fontSize: 12, lineHeight: '32px',
+                                     color: have < need ? '#cf1322' : '#8c8c8c' }}>
+                        متاح {num(have.toFixed(3))} {m.item_id ? itemUnit(m.item_id) : ''}
+                      </span>
+                    );
+                  })()}
                   <Button type="text" danger size="small" icon={<DeleteOutlined />}
                     onClick={() => patchLine(ln.key, {
                       materialsTouched: true,

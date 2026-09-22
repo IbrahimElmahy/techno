@@ -133,6 +133,20 @@ MOVES: tuple[MoveSpec, ...] = (
 )
 
 
+#: مستندات مصدر بتغيّر اسم الحركة اللي جايّة منها.
+#:
+#: **ليه.** `a5_opening_fix` حركة `opening` زي الافتتاحي بالظبط — عن قصد: عشان الرصيد
+#: التاريخي مايطلعش سالب في تقرير بتاريخ قديم. بس كارت الصنف كان بيسمّي الاتنين
+#: «بضاعة أول المدة»، فالصنف اللي اتصلّح كان بيبان وكأن **رصيده الافتتاحي اتسجّل
+#: مرتين** — تسعة أصناف، والمصنع لاحظهم وحسبهم داتا مكرّرة.
+#:
+#: والاتنين مش نفس الحاجة: الأول رقم a5 نقله، والتاني استنتاج من النقص — أقل كمية
+#: المستندات بتثبتها. الشرح الكامل في `scripts/fix_negative_stock.py`.
+_SOURCE_MOVE_LABELS: dict[str, str] = {
+    "a5_opening_fix": "تسوية رصيد افتتاحي",
+}
+
+
 class StockDoc:
     """ثوابت أسماء المستندات — نفس اللي في [DOCS]، عشان الكود يكتبها غلط ما ينفعش.
 
@@ -299,3 +313,10 @@ def date_of(db, source_doc_type: str | None, source_doc_id: int | None):
         return getattr(value, "date", lambda: value)() if hasattr(value, "date") else value
     except Exception:  # noqa: BLE001 — الشرح فوق
         return None
+
+
+def movement_label(movement_type: str | None, source_doc_type: str | None = None) -> str:
+    """اسم الحركة زي ما بيتعرض — **والمصدر بيغلب النوع** لما يكون بيقول حاجة زيادة."""
+    if source_doc_type and source_doc_type in _SOURCE_MOVE_LABELS:
+        return _SOURCE_MOVE_LABELS[source_doc_type]
+    return label(movement_type, kind="movement")

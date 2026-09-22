@@ -74,7 +74,8 @@ export default function ItemProfile() {
 
   // Each record tab keeps its own search.
   const movementsFilter = useListFilter<any>(data?.movements || [], {
-    search: (m) => [m.source, m.location, m.quantity, moveLabels[m.movement_type] || m.movement_type],
+    search: (m) => [m.source, m.location, m.quantity,
+                    (m as any).movement_label || moveLabels[m.movement_type] || m.movement_type],
     filters: {
       movement_type: (m, v) => m.movement_type === v,
       direction: (m, v) => m.direction === v,
@@ -345,8 +346,13 @@ export default function ItemProfile() {
                           pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         columns={[
                         { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
-                        { title: 'النوع', dataIndex: 'movement_type', key: 't', ...textColumn(data?.movements ?? [], (r: any) => moveLabels[r.movement_type] || r.movement_type),
-                          render: (v: string) => moveLabels[v] || v },
+                        // `movement_label` بييجي من السيرفر وبيغلب الاسم العام: «تسوية
+                        // رصيد افتتاحي» حركتها `opening` زي الافتتاحي بالظبط، والصنف
+                        // اللي اتصلّح كان بيبان وكأن افتتاحيه اتسجّل مرتين.
+                        { title: 'النوع', dataIndex: 'movement_type', key: 't',
+                          ...textColumn(data?.movements ?? [],
+                                        (r: any) => r.movement_label || moveLabels[r.movement_type] || r.movement_type),
+                          render: (_v: string, r: any) => r.movement_label || moveLabels[r.movement_type] || r.movement_type },
                         { title: 'الاتجاه', dataIndex: 'direction', key: 'dir', ...choiceColumn<any>([{ text: 'وارد', value: 'in' }, { text: 'صادر', value: 'out' }], (r, v) => r.direction === v),
                           render: (v: string) => (v === 'in'
                             ? <Tag color="green" icon={<RiseOutlined />}>وارد</Tag>

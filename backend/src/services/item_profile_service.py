@@ -14,7 +14,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
-from src.lib import arabic
+from src.lib import arabic, stock_docs
 from src.models.catalog import Item, ItemKind, ItemPrice, ItemPriceHistory, PriceTier
 from src.models.purchasing import PurchaseInvoice, PurchaseInvoiceLine
 from src.models.sales import SalesInvoice, SalesInvoiceLine
@@ -439,6 +439,9 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
             "id": m.id,
             "date": str(m.movement_date) if m.movement_date else _as_date(m.created_at),
             "movement_type": m.movement_type,
+            # الاسم بييجي من السجل ومعاه المصدر — «تسوية رصيد افتتاحي» مش «بضاعة أول
+            # المدة». الشرح في `_SOURCE_MOVE_LABELS`.
+            "movement_label": stock_docs.movement_label(m.movement_type, m.source_doc_type),
             "direction": getattr(m.direction, "value", str(m.direction)),
             "quantity": str(_qty(m.quantity)),
             "location": names.get(

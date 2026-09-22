@@ -326,6 +326,70 @@ def _pending_out(db: Session, kind: LocationKind, location_id: int,
     return out
 
 
+
+class ItemLocationRow(BaseModel):
+    """رصيد صنف واحد في مخزن واحد — صف من كشف «الصنف ده موجود فين»."""
+
+    item_id: int
+    location_id: int
+    on_hand: Decimal
+
+
+@router.get("/by-item", response_model=list[ItemLocationRow])
+def stock_by_item(
+    item_ids: str = Query(..., description="أرقام الأصناف مفصولة بفاصلة"),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> list[ItemLocationRow]:
+    """أرصدة مجموعة أصناف في **كل** المخازن المسموح بيها — عكس `/by-location` بالظبط.
+
+    `/by-location` بيجاوب «المخزن ده فيه إيه» وده كفاية لإذن تحويل: المخزن متحدّد
+    والسؤال عن محتواه. لكن ورقة التصنيع بتسأل السؤال المقلوب: **الخامة دي موجودة
+    فين؟** — وعشان تجاوبه بالقديم لازم تنده على كل مخزن على حدة وتلمّ، وشاشة الأمر
+    كانت بتتجنّبه فبتحط خامات الوصفة كلها في مخزن المنتج.
+
+    وده اللي كسر أمر ٢٠٦: المنتج مخزنه «مخزن الخامات»، فالخامات الخمسة كلها راحت هناك
+    — وواحدة بس منهم اللي فيه فعلاً، والباقي في «حقن قطع الصرف» و«الجودة». الورقة
+    اتكتبت وتأكدت واتضغط «ابدأ»، وساعتها بس الصرف وقع على رصيد صفر.
+
+    **وبيرجّع الموجب بس**، لأن السؤال «أصرف من فين» والمخزن اللي رصيده صفر مش إجابة.
+    والمقاس على الفروع زي أي مكان تاني: مخازن فرعك والمشترك، مش مخازن غيرك.
+    """
+    try:
+        ids = [int(x) for x in item_ids.split(",") if x.strip()]
+    except ValueError:
+        raise HTTPException(422, {"code": "bad_item_ids", "message": "أرقام أصناف غير صالحة"})
+    if not ids:
+        return []
+    # سقف عشان نداء واحد مايجرّش كل الكتالوج. الشاشة بتبعت خامات ورقة واحدة.
+    ids = ids[:1000]
+
+    branch_id = branch_scope.visible_branch_id(current)
+    wq = select(Warehouse.id)
+    if branch_id is not None:
+        wq = wq.where((Warehouse.branch_id == branch_id) | (Warehouse.branch_id.is_(None)))
+    allowed = [r[0] for r in db.execute(wq).all()]
+    if not allowed:
+        return []
+
+    signed = case(
+        (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+        else_=-StockMovement.quantity,
+    )
+    rows = db.execute(
+        select(StockMovement.item_id, StockMovement.location_id,
+               func.coalesce(func.sum(signed), 0))
+        .where(StockMovement.location_kind == LocationKind.warehouse,
+               StockMovement.item_id.in_(ids),
+               StockMovement.location_id.in_(allowed))
+        .group_by(StockMovement.item_id, StockMovement.location_id)
+    ).all()
+    out = [ItemLocationRow(item_id=r[0], location_id=r[1], on_hand=Decimal(str(r[2] or 0)))
+           for r in rows]
+    return sorted([r for r in out if r.on_hand > 0],
+                  key=lambda r: (r.item_id, -r.on_hand))
+
+
 # ----------------------------------------------------- إذن إضافة / إذن صرف (B5)
 
 
