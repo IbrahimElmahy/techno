@@ -344,7 +344,7 @@ export default function SupplierProfile() {
 
   const itemNameOf = (id: number) => {
     const it = items.find((x: any) => x.id === id);
-    return it ? (it.code ? `${it.code} — ${it.name}` : it.name) : `صنف #${id}`;
+    return it ? it.name : `صنف #${id}`;
   };
   const whName = (id: number | null | undefined) => {
     if (!id) return null;

@@ -200,7 +200,7 @@ export default function AccountStatement() {
       const d = res.data || {};
       setStatement({
         account_id: itemId,
-        account_name: `${d.item_name ?? ''}${d.item_code ? ` (${d.item_code})` : ''}`,
+        account_name: `${d.item_name ?? ''}`,
         opening_balance: d.opening_balance ?? '0',
         closing_balance: d.closing_balance ?? '0',
         total_debit: d.total_in ?? '0',
@@ -639,7 +639,7 @@ export default function AccountStatement() {
 
   const itemNameOf = (id: number) => {
     const it = items.find((x: any) => x.id === id);
-    return it ? (it.code ? `${it.code} — ${it.name}` : it.name) : `صنف #${id}`;
+    return it ? it.name : `صنف #${id}`;
   };
   const whName = (id: number | null | undefined) => {
     if (!id) return null;
@@ -867,7 +867,7 @@ export default function AccountStatement() {
                 placeholder="اختر الصنف" value={itemId} onChange={setItemId}
                 options={items.map((i: any) => ({
                   value: i.id,
-                  label: i.code ? `${i.code} — ${i.name}` : i.name,
+                  label: i.name, search: i.code || '',
                 }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
             <Col xs={24} md={4}>

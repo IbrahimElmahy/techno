@@ -630,13 +630,8 @@ export default function Catalog() {
   // fits without dragging sideways, which is the only way the price is ever beside the name you
   // looked it up by.
   const columns = [
-    {
-      title: 'رقم',
-      dataIndex: 'code',
-      key: 'code',
-      width: 100,
-      render: (code: string) => <Tag>{code}</Tag>,
-    },
+    // عمود «رقم» (كود الصنف) اتشال: بياخد عرض من كل كشف ومحدش بيقراه، والكود
+    // موجود في ملف الصنف نفسه وبيتبحث بيه من أي قايمة. الشرح في `utils/itemLabel`.
     {
       title: 'الفئه',
       dataIndex: 'category',

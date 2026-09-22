@@ -75,9 +75,18 @@ export function sortByName<T>(rows: T[], name: (r: T) => string | null | undefin
 // اللي جاية مرتّبة من السيرفر مايتعادش ترتيبها في الشاشة بقاعدة تانية.
 
 /** نص الخيار اللي بيتبحث فيه — العنوان، وإلا القيمة. */
+/**
+ * النص اللي البحث بيقيس عليه — **المعروض ومعاه المخفي**.
+ *
+ * `search` حقل زيادة على الخيار مش بيتعرض: أكواد الأصناف والمخازن اتشالت من الشاشة
+ * لأنها بتاكل نص عرض القايمة ومحدش بيقراها، **بس اللي بيدوّر بالكود لسه محتاجها
+ * تلاقيه**. من غير السطر ده، إخفاء الكود كان بيمنع البحث بيه كمان.
+ */
 function optionText(option: any): string {
   const raw = option?.label ?? option?.title ?? option?.children ?? option?.value;
-  return normalizeAr(typeof raw === 'string' || typeof raw === 'number' ? raw : '');
+  const shown = normalizeAr(typeof raw === 'string' || typeof raw === 'number' ? raw : '');
+  const hidden = option?.search;
+  return typeof hidden === 'string' ? `${shown} ${normalizeAr(hidden)}` : shown;
 }
 
 /**

@@ -3,13 +3,14 @@ import { searchFilter, searchRank } from '../utils/arabicSort';
 import { printWorkOrder, type WorkOrderStage } from '../print/workOrderSheet';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, Tooltip, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
   BuildOutlined, PlayCircleOutlined, PrinterOutlined, DownloadOutlined, UndoOutlined,
+  CheckOutlined, InboxOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -409,7 +410,8 @@ function RecipesTab({
                         // (٢٬٧٤١ صنف — نقل a5 نقلهم كده)، فالقايمة المفلترة كانت بتطلع
                         // فاضية والوصفة المفتوحة بتوري رقم الصنف بدل اسمه.
                         options={[...rawMaterials, ...products].map((r) => ({
-                          value: r.id, label: `${r.code} — ${r.name} (${r.unit_of_measure})` }))} />
+                          value: r.id, label: `${r.name} (${r.unit_of_measure})`,
+                          search: r.code || '' }))} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
@@ -898,7 +900,8 @@ function ProductionOrdersTab({
 
   const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
   const itemOptions = (list: Item[]) =>
-    list.map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` }));
+    // الكود مش بيتعرض، بيتبحث بيه — الشرح في `utils/itemLabel`.
+    list.map((i) => ({ value: i.id, label: i.name, search: i.code || '' }));
   const whOptions = warehouses.map((w) => ({ value: w.id, label: w.name }));
 
   const branchName = useMemo(() => {
@@ -1470,71 +1473,68 @@ function ProductionOrdersTab({
           {r.is_reversal && <Tag color="purple">حركة عكسية</Tag>}
         </Space>
       ) },
-    { title: 'إجراء', key: 'action', width: 330,
+    /**
+     * **أيقونات، مش جمل.**
+     *
+     * العمود كان فيه لحد ستة أزرار بنص كامل («اصرف مواد الجودة»، «سجّل اللي طلع
+     * واقفل») فبياخد تلت عرض الشاشة ويلف على سطرين — والكشف اللي المفروض يوري حالة
+     * الشغل بيبقى نصه أزرار. كل إجراء بقى أيقونة واحدة باسمها في التلميح.
+     *
+     * **والاستلام والإقفال بقوا باب واحد**: الاتنين بيسألوا نفس السؤال («طلع كام؟»)
+     * ويختلفوا في «خلصنا ولا لسه» — وزرارين جنب بعض كان بيخلّي اللي عايز يسجّل دفعة
+     * يدوس «إقفال» ويقفل الورقة عليها.
+     */
+    { title: 'إجراء', key: 'action', width: 150, align: 'center' as const,
       render: (_: any, r: ProductionOrder) => {
         if (r.imported_from || r.is_reversal) return null;
+        const icon = (
+          title: string, node: React.ReactNode, onClick: () => void,
+          danger = false, primary = false,
+        ) => (
+          <Tooltip title={title}>
+            <Button type={primary ? 'primary' : 'text'} size="small" danger={danger}
+              icon={node} onClick={onClick} />
+          </Tooltip>
+        );
         return (
-          <Space size={2}>
+          <Space size={0}>
             {r.state === 'draft' && (
               <>
-                <Button type="link" size="small" icon={<EditOutlined />}
-                  onClick={() => openEdit(r)}>تعديل</Button>
-                <Button type="link" size="small"
-                  onClick={() => act(r, 'confirm', 'اتأكد الأمر — لسه مافيش حركة مخزون')}>
-                  تأكيد
-                </Button>
+                {icon('تعديل', <EditOutlined />, () => openEdit(r))}
+                {icon('تأكيد', <CheckOutlined />,
+                  () => act(r, 'confirm', 'اتأكد الأمر — لسه مافيش حركة مخزون'))}
                 <Popconfirm title="تمسح المسودة؟" onConfirm={() => removeDraft(r)}>
-                  <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+                  <Tooltip title="مسح المسودة">
+                    <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+                  </Tooltip>
                 </Popconfirm>
               </>
             )}
-            {r.state !== 'draft' && (
-              <Button type="link" size="small" icon={<PrinterOutlined />}
-                onClick={() => printOrder(r, 'production')}>إذن التشغيل</Button>
-            )}
-            {/* **صرف الجودة خطوة لوحدها** — بتبان لما الأمر يبقى شغّال ولسه فيه
-                مواد تعبئة ما اتصرفتش. أول ما تتصرف الزرار بيختفي، ومكانه زرار
-                طباعة إذنها. */}
-            {r.state === 'in_progress' && qualityPending(r) > 0 && (
-              <Button type="link" size="small" icon={<ExperimentOutlined />}
-                onClick={() => act(r, 'issue-quality',
-                  'اتصرفت مواد التعبئة')}>
-                اصرف مواد الجودة
-              </Button>
-            )}
+            {r.state === 'confirmed' && icon('تعديل', <EditOutlined />, () => openEdit(r))}
+            {r.state !== 'draft'
+              && icon('طباعة إذن التشغيل', <PrinterOutlined />,
+                      () => printOrder(r, 'production'))}
+            {/* إذن الجودة بيبان بعد ما موادها تتصرف — قبلها الورقة لسه مش حقيقية. */}
             {r.state !== 'draft' && qualityPending(r) === 0
-              && r.materials.some((m) => stageOf(m.stage) === 'quality') && (
-              <Button type="link" size="small" icon={<PrinterOutlined />}
-                onClick={() => printOrder(r, 'quality')}>إذن الجودة</Button>
-            )}
-            {r.state === 'confirmed' && (
-              <>
-                <Button type="link" size="small" icon={<EditOutlined />}
-                  onClick={() => openEdit(r)}>تعديل</Button>
-                {/* **الخطوة الطبيعية من المؤكد هي «اصرف الخامات».** والإقفال المباشر
-                    بيفضل موجود لواحد بيسجّل تشغيلة خلصت خلاص — الاتنين بيحصلوا مرة. */}
-                <Button type="link" size="small" icon={<PlayCircleOutlined />}
-                  onClick={() => act(r, 'start', 'اتصرفت الخامات — الأمر بقى شغّال')}>
-                  اصرف الخامات وابدأ
-                </Button>
-                <Button type="link" size="small" onClick={() => openClose(r)}>
-                  صرف وإقفال مرة واحدة
-                </Button>
-              </>
-            )}
-            {r.state === 'in_progress' && (
-              <Button type="link" size="small" icon={<DownloadOutlined />}
-                onClick={() => openReceive(r)}>استلام دفعة</Button>
-            )}
-            {r.state === 'in_progress' && (
-              <Button type="link" size="small" onClick={() => openClose(r)}>
-                سجّل اللي طلع واقفل
-              </Button>
-            )}
-            {(r.state === 'done' || r.state === 'in_progress') && (
-              <Button type="link" size="small" danger icon={<RollbackOutlined />}
-                onClick={() => reverse(r)}>تراجع وعكس</Button>
-            )}
+              && r.materials.some((m) => stageOf(m.stage) === 'quality')
+              && icon('طباعة إذن الجودة', <PrinterOutlined style={{ color: '#d48806' }} />,
+                      () => printOrder(r, 'quality'))}
+            {r.state === 'confirmed'
+              && icon('اصرف الخامات وابدأ', <PlayCircleOutlined />,
+                      () => act(r, 'start', 'اتصرفت الخامات — الأمر بقى شغّال'), false, true)}
+            {/* **صرف الجودة خطوة لوحدها** — بتبان لما الأمر يبقى شغّال ولسه فيه مواد
+                تعبئة ما اتصرفتش. أول ما تتصرف الأيقونة بتختفي ومكانها طباعة إذنها. */}
+            {r.state === 'in_progress' && qualityPending(r) > 0
+              && icon(`اصرف مواد الجودة (${num(qualityPending(r))})`,
+                      <ExperimentOutlined style={{ color: '#d48806' }} />,
+                      () => act(r, 'issue-quality', 'اتصرفت مواد التعبئة'))}
+            {(r.state === 'in_progress' || r.state === 'confirmed')
+              && icon(r.state === 'in_progress'
+                        ? 'الاستلام والإقفال' : 'صرف وإقفال مرة واحدة',
+                      <InboxOutlined />, () => openReceive(r), false,
+                      r.state === 'in_progress')}
+            {(r.state === 'done' || r.state === 'in_progress')
+              && icon('تراجع وعكس', <RollbackOutlined />, () => reverse(r), true)}
           </Space>
         );
       } },
@@ -1892,157 +1892,226 @@ function ProductionOrdersTab({
         />
       </TabModal>
 
-      {/* **شاشة الاستلام: الدفعة اللي وصلت النهارده.**
-          الأمر بعشرين ألف قطعة مابيتسلّمش مرة واحدة. كل دفعة بتدخل المخزن بتاريخها،
-          والأمر بيفضل شغّال لحد ما حد يقول «خلاص». */}
+      {/**
+        * **باب واحد: الاستلام والإقفال.**
+        *
+        * الاتنين بيسألوا نفس السؤال — «طلع كام؟» — ويختلفوا في حاجة واحدة: «خلصنا ولا
+        * لسه». شاشتين منفصلتين كانت بتخلّي اللي عايز يسجّل دفعة يدوس «إقفال» ويقفل
+        * الورقة على دفعة من أربعة.
+        *
+        * وسجل الدفعات جوّه معاهم، لأنه الجواب على السؤال اللي بيتسأل قبل الاتنين:
+        * «أنا واصلني كام لحد دلوقتي؟».
+        */}
       <TabModal centered open={receiving != null} onCancel={() => setReceiving(null)}
-        title={receiving ? `استلام إنتاج — ${receiving.document_number}` : ''}
-        width={680} destroyOnHidden
-        footer={
-          <Space>
-            <Button onClick={() => setReceiving(null)}>إلغاء</Button>
-            <Button type="primary" onClick={submitReceive}>سجّل الاستلام</Button>
-          </Space>
-        }>
-        <Row gutter={8} align="middle" style={{ marginBottom: 14 }}>
-          <Col span={6}>تاريخ الاستلام</Col>
-          <Col span={10}>
-            {/* **يوم الاستلام، مش يوم الإدخال.** الورشة بتقفل تشغيلة بالليل والمكتب
-                بيدخّلها الصبح — وتأريخها بيوم الإدخال بيحط الإنتاج في اليوم الغلط. */}
-            <DatePicker style={{ width: '100%' }} value={receiptDate}
-              onChange={setReceiptDate} allowClear={false} />
-          </Col>
-        </Row>
-        {receiving?.products.map((p) => {
-          const plan = Number(p.planned_quantity);
-          const got = Number(p.received_quantity || 0);
-          const left = plan - got;
-          const now = Number(received[p.id] || 0);
-          const after = got + now;
+        title={receiving
+          ? `${receiving.document_number} — الاستلام والإقفال`
+          : ''}
+        width={760} destroyOnHidden footer={null}>
+        {receiving && (() => {
+          const totalGot = receiving.products.reduce(
+            (a, p) => a + Number(p.received_quantity || 0), 0);
+          const totalPlan = receiving.products.reduce(
+            (a, p) => a + Number(p.planned_quantity), 0);
           return (
-            <Row key={p.id} gutter={8} align="middle" style={{ marginBottom: 12 }}>
-              <Col span={9}>
-                <div style={{ fontWeight: 600 }}>{itemName(p.item_id)}</div>
-                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
-                  المطلوب <Qty value={p.planned_quantity} unit={itemUnit(p.item_id)} />
-                  {got > 0 && <> · اتستلم <b>{num(got)}</b></>}
-                </div>
-              </Col>
-              <Col span={6}>
-                <InputNumber style={{ width: '100%' }} min={0} placeholder="اللي وصل النهارده"
-                  addonAfter={itemUnit(p.item_id) || undefined}
-                  value={received[p.id] as any}
-                  onChange={(v) => setReceived((x) => ({ ...x, [p.id]: v as any }))} />
-              </Col>
-              <Col span={9} style={{ fontSize: 12 }}>
-                {/* **الإجمالي بعد الدفعة دي، والفرق عن المخطّط.** الزيادة والنقص
-                    الاتنين مسموحين — اللي طلع هو اللي طلع. الرقم هنا بيقول الوضع
-                    قبل ما حد يدوس، مش بعدين في تقرير. */}
-                {now > 0 ? (
-                  <>
-                    الإجمالي هيبقى <b>{num(after)}</b> {itemUnit(p.item_id)}
-                    {after > plan && (
-                      <Tag color="gold" style={{ marginInlineStart: 6 }}>
-                        زيادة {num(after - plan)}
-                      </Tag>
-                    )}
-                    {after < plan && (
-                      <Tag style={{ marginInlineStart: 6 }}>باقي {num(plan - after)}</Tag>
-                    )}
-                  </>
-                ) : (
-                  <span style={{ color: '#8c8c8c' }}>
-                    {left > 0 ? `الباقي ${num(left)}` : 'اتستلم بالكامل'}
-                  </span>
-                )}
-              </Col>
-            </Row>
+            <>
+              <Alert type="info" showIcon style={{ marginBottom: 12 }}
+                message={totalGot > 0
+                  ? `اتستلم ${num(totalGot)} من ${num(totalPlan)} — الباقي ${num(totalPlan - totalGot)}`
+                  : `لسه مااستلمتش حاجة. المخطّط ${num(totalPlan)}`} />
+              <Tabs defaultActiveKey={receiving.state === 'in_progress' ? 'take' : 'close'}
+                items={[
+                  ...(receiving.state === 'in_progress' ? [{
+                    key: 'take',
+                    label: `استلام دفعة${receiving.receipts?.length
+                      ? ` (${num(receiving.receipts.length)})` : ''}`,
+                    children: (
+                      <>
+                        <Row gutter={8} align="middle" style={{ marginBottom: 14 }}>
+                          <Col span={6}>تاريخ الاستلام</Col>
+                          <Col span={10}>
+                            {/* **يوم الاستلام، مش يوم الإدخال.** الورشة بتقفل تشغيلة
+                                بالليل والمكتب بيدخّلها الصبح. */}
+                            <DatePicker style={{ width: '100%' }} value={receiptDate}
+                              onChange={setReceiptDate} allowClear={false} />
+                          </Col>
+                        </Row>
+                        {receiving.products.map((p) => {
+                          const plan = Number(p.planned_quantity);
+                          const got = Number(p.received_quantity || 0);
+                          const now = Number(received[p.id] || 0);
+                          const after = got + now;
+                          return (
+                            <Row key={p.id} gutter={8} align="middle"
+                              style={{ marginBottom: 12 }}>
+                              <Col span={9}>
+                                <div style={{ fontWeight: 600 }}>{itemName(p.item_id)}</div>
+                                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                                  المطلوب <Qty value={p.planned_quantity}
+                                    unit={itemUnit(p.item_id)} />
+                                  {got > 0 && <> · اتستلم <b>{num(got)}</b></>}
+                                </div>
+                              </Col>
+                              <Col span={6}>
+                                <InputNumber style={{ width: '100%' }} min={0}
+                                  placeholder="اللي وصل"
+                                  addonAfter={itemUnit(p.item_id) || undefined}
+                                  value={received[p.id] as any}
+                                  onChange={(v) => setReceived(
+                                    (x) => ({ ...x, [p.id]: v as any }))} />
+                              </Col>
+                              {/* **الإجمالي بعد الدفعة دي، والفرق عن المخطّط.** الزيادة
+                                  والنقص الاتنين مسموحين — اللي طلع هو اللي طلع. */}
+                              <Col span={9} style={{ fontSize: 12 }}>
+                                {now > 0 ? (
+                                  <>
+                                    الإجمالي <b>{num(after)}</b> {itemUnit(p.item_id)}
+                                    {after > plan && (
+                                      <Tag color="gold" style={{ marginInlineStart: 6 }}>
+                                        زيادة {num(after - plan)}
+                                      </Tag>
+                                    )}
+                                    {after < plan && (
+                                      <Tag style={{ marginInlineStart: 6 }}>
+                                        باقي {num(plan - after)}
+                                      </Tag>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span style={{ color: '#8c8c8c' }}>
+                                    {plan - got > 0
+                                      ? `الباقي ${num(plan - got)}` : 'اتستلم بالكامل'}
+                                  </span>
+                                )}
+                              </Col>
+                            </Row>
+                          );
+                        })}
+                        <div style={{ textAlign: 'left', marginTop: 8 }}>
+                          <Button type="primary" icon={<DownloadOutlined />}
+                            onClick={submitReceive}>سجّل الاستلام</Button>
+                        </div>
+
+                        {!!receiving.receipts?.length && (
+                          <>
+                            <Divider orientation="right" style={{ margin: '16px 0 8px' }}>
+                              سجل الدفعات
+                            </Divider>
+                            <Table size="small" pagination={false} rowKey="id"
+                              dataSource={receiving.receipts}
+                              columns={[
+                                { title: 'التاريخ', dataIndex: 'receipt_date', width: 110,
+                                  render: (v: string | null) => v || '-' },
+                                { title: 'المنتج', key: 'it',
+                                  render: (_: any, rc: POReceipt) => {
+                                    const ln = receiving.products.find(
+                                      (x) => x.id === rc.product_line_id);
+                                    return ln ? itemName(ln.item_id) : '-';
+                                  } },
+                                { title: 'الكمية', dataIndex: 'quantity', width: 110,
+                                  align: 'center' as const,
+                                  render: (v: string, rc: POReceipt) => {
+                                    const ln = receiving.products.find(
+                                      (x) => x.id === rc.product_line_id);
+                                    return <b>{num(v)} {ln ? itemUnit(ln.item_id) : ''}</b>;
+                                  } },
+                                /* **دفعة غلط لازم يبقى ليها طريقة.** اللي سجّل ٥٠٠ وهو
+                                   قاصد ٥٠ كان لازم يعكس الأمر كله — فيرجّع خامات اتصرفت
+                                   فعلاً ودفعات صح. */
+                                { title: '', key: 'x', width: 44, align: 'center' as const,
+                                  render: (_: any, rc: POReceipt) => (
+                                    <Popconfirm title="تعكس الدفعة دي؟"
+                                      onConfirm={() => undoReceipt(rc)}>
+                                      <Tooltip title="عكس الدفعة">
+                                        <Button type="text" danger size="small"
+                                          icon={<UndoOutlined />} />
+                                      </Tooltip>
+                                    </Popconfirm>
+                                  ) },
+                              ]} />
+                          </>
+                        )}
+                      </>
+                    ),
+                  }] : []),
+                  {
+                    key: 'close',
+                    label: 'إقفال الأمر',
+                    children: (
+                      <>
+                        {/* **الرقم هنا هو الإجمالي اللي طلع، مش الباقي.** اللي استلم
+                            دفعات بيلاقيه مكتوب — والفرق بينه وبين المستلم هو اللي
+                            بيتحرّك دلوقتي. */}
+                        {receiving.products.map((p) => (
+                          <Row key={p.id} gutter={8} align="middle"
+                            style={{ marginBottom: 10 }}>
+                            <Col span={10}>
+                              <div style={{ fontWeight: 600 }}>{itemName(p.item_id)}</div>
+                              <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                                المطلوب <Qty value={p.planned_quantity}
+                                  unit={itemUnit(p.item_id)} />
+                              </div>
+                            </Col>
+                            <Col span={7}>
+                              <InputNumber style={{ width: '100%' }} min={0.001}
+                                placeholder="إجمالي اللي طلع"
+                                addonAfter={itemUnit(p.item_id) || undefined}
+                                value={outputs[p.id] as any}
+                                onChange={(v) => setOutputs(
+                                  (o) => ({ ...o, [p.id]: v as any }))} />
+                            </Col>
+                            <Col span={7}>
+                              <Variance planned={String(p.planned_quantity)}
+                                actual={String(outputs[p.id] ?? 0)} />
+                            </Col>
+                          </Row>
+                        ))}
+                        {/* **والهالك هنا كمان.** محدش يعرف هيبوظ كام وهو بيخطّط؛ وهو
+                            جزء من الخامة اللي خرجت خلاص — مش خصم زيادة. */}
+                        {receiving.materials.length > 0 && (
+                          <>
+                            <Divider orientation="right" style={{ margin: '14px 0 10px' }}>
+                              الهالك من الخامات
+                            </Divider>
+                            {receiving.materials.map((m) => (
+                              <Row key={m.id} gutter={8} align="middle"
+                                style={{ marginBottom: 8 }}>
+                                <Col span={10}>
+                                  {itemName(m.item_id)}
+                                  <Tag color={stageOf(m.stage) === 'quality' ? 'gold' : 'green'}
+                                    style={{ marginInlineStart: 6 }}>
+                                    {stageLabel(m.stage)}
+                                  </Tag>
+                                </Col>
+                                <Col span={7} style={{ opacity: 0.65, fontSize: 12 }}>
+                                  اتصرف <Qty value={m.quantity} unit={itemUnit(m.item_id)} />
+                                </Col>
+                                <Col span={7}>
+                                  <InputNumber style={{ width: '100%' }} min={0}
+                                    max={Number(m.quantity)} placeholder="هالك"
+                                    addonAfter={itemUnit(m.item_id) || undefined}
+                                    value={waste[m.id] as any}
+                                    onChange={(v) => setWaste(
+                                      (w) => ({ ...w, [m.id]: v as any }))} />
+                                </Col>
+                              </Row>
+                            ))}
+                          </>
+                        )}
+                        <p style={{ color: '#888', marginTop: 12 }}>
+                          {receiving.state === 'in_progress'
+                            ? 'الخامات اتصرفت خلاص وقت البدء — الإقفال بيضيف الباقي للمخزن ويحسب التكلفة.'
+                            : 'الأمر ده ماصرفش خاماته لسه — الإقفال هيصرفها ويضيف الإنتاج مرة واحدة.'}
+                        </p>
+                        <div style={{ textAlign: 'left' }}>
+                          <Button type="primary" onClick={submitClose}>إقفال وترحيل</Button>
+                        </div>
+                      </>
+                    ),
+                  },
+                ]} />
+            </>
           );
-        })}
-        {!!receiving?.receipts?.length && (
-          <>
-            <Divider orientation="right" style={{ margin: '8px 0' }}>اللي اتستلم قبل كده</Divider>
-            {receiving.receipts.map((rc) => {
-              const line = receiving.products.find((x) => x.id === rc.product_line_id);
-              return (
-                <Row key={rc.id} gutter={8} style={{ fontSize: 12, marginBottom: 4 }}>
-                  <Col span={9}>{line ? itemName(line.item_id) : '-'}</Col>
-                  <Col span={6}><b>{num(rc.quantity)}</b></Col>
-                  <Col span={6} style={{ color: '#8c8c8c' }}>{rc.receipt_date || '-'}</Col>
-                  {/* **دفعة غلط لازم يبقى ليها طريقة.** اللي سجّل ٥٠٠ وهو قاصد ٥٠
-                      كان لازم يعكس الأمر كله — فيرجّع خامات اتصرفت فعلاً ودفعات صح. */}
-                  <Col span={3}>
-                    <Popconfirm title="تعكس الدفعة دي؟" onConfirm={() => undoReceipt(rc)}>
-                      <Button type="text" danger size="small" icon={<UndoOutlined />} />
-                    </Popconfirm>
-                  </Col>
-                </Row>
-              );
-            })}
-          </>
-        )}
-      </TabModal>
-
-      {/* **شاشة الإقفال: الرقم الوحيد اللي لسه ناقص.**
-          الخامة اتصرفت وقت البدء والمخطّط متسجّل، فاللي بيتسأل هنا هو اللي خرج من
-          الماكينة فعلاً — وعليه بتتقسّم التكلفة، ومنه بيطلع رقم الإنتاج. */}
-      <TabModal centered open={closing != null} onCancel={() => setClosing(null)}
-        title={closing ? `إقفال ${closing.document_number} — اللي طلع فعلاً` : ''}
-        width={620} destroyOnHidden
-        footer={
-          <Space>
-            <Button onClick={() => setClosing(null)}>إلغاء</Button>
-            <Button type="primary" onClick={submitClose}>إقفال وترحيل</Button>
-          </Space>
-        }>
-        {closing?.products.map((p) => (
-          <Row key={p.id} gutter={8} align="middle" style={{ marginBottom: 10 }}>
-            <Col span={11}>{itemName(p.item_id)}</Col>
-            <Col span={5} style={{ opacity: 0.65 }}>
-              المطلوب <Qty value={p.planned_quantity} unit={itemUnit(p.item_id)} />
-            </Col>
-            <Col span={5}>
-              <InputNumber style={{ width: '100%' }} min={0.001} placeholder="اللي طلع"
-                addonAfter={itemUnit(p.item_id) || undefined}
-                value={outputs[p.id] as any}
-                onChange={(v) => setOutputs((o) => ({ ...o, [p.id]: v as any }))} />
-            </Col>
-            <Col span={3}>
-              <Variance planned={String(p.planned_quantity)}
-                actual={String(outputs[p.id] ?? 0)} />
-            </Col>
-          </Row>
-        ))}
-        {/* **والهالك هنا كمان.** محدش يعرف هيبوظ كام وهو بيخطّط؛ الرقم ده بيتعرف
-            بعد ما الشغل يخلص. وهو جزء من الخامة اللي خرجت خلاص — مش خصم زيادة —
-            بيقول قد إيه منها راح في الزبالة بدل ما يدخل في المنتج. */}
-        {closing && closing.materials.length > 0 && (
-          <>
-            <Divider orientation="right" style={{ margin: '14px 0 10px' }}>
-              الهالك من الخامات
-            </Divider>
-            {closing.materials.map((m) => (
-              <Row key={m.id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
-                <Col span={11}>{itemName(m.item_id)}</Col>
-                <Col span={6} style={{ opacity: 0.65 }}>
-                  اتصرف <Qty value={m.quantity} unit={itemUnit(m.item_id)} />
-                </Col>
-                <Col span={7}>
-                  <InputNumber style={{ width: '100%' }} min={0} max={Number(m.quantity)}
-                    placeholder="هالك" addonAfter={itemUnit(m.item_id) || undefined}
-                    value={waste[m.id] as any}
-                    onChange={(v) => setWaste((w) => ({ ...w, [m.id]: v as any }))} />
-                </Col>
-              </Row>
-            ))}
-          </>
-        )}
-
-        <p style={{ color: '#888', marginTop: 12 }}>
-          {closing?.state === 'in_progress'
-            ? 'الخامات اتصرفت خلاص وقت البدء — الإقفال بيضيف الإنتاج للمخزن ويحسب التكلفة.'
-            : 'الأمر ده ماصرفش خاماته لسه — الإقفال هيصرفها ويضيف الإنتاج مرة واحدة.'}
-        </p>
+        })()}
       </TabModal>
     </div>
   );

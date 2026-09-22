@@ -342,7 +342,7 @@ export default function ItemCard() {
             placeholder={category ? `أصناف «${categoryLabels[category] || category}»` : 'اختر الصنف'}
             value={itemId} onChange={setItemId}
             options={pickableItems.map((i: any) => ({
-              value: i.id, label: i.code ? `${i.code} — ${i.name}` : i.name }))}
+              value: i.id, label: i.name, search: i.code || '' }))}
             notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>

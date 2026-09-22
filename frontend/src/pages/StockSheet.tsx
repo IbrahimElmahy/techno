@@ -232,10 +232,7 @@ export default function StockSheet() {
    * الفئة is shown, and جرد حتى تاريخ grew the same column so the three still match.
    */
   const columns = [
-    { title: 'الكود', dataIndex: 'code', key: 'code', width: 120,
-      ...textColumn(source, (r: any) => r.code),
-      render: (v: string | null) => (v
-        ? <Tag style={{ direction: 'ltr' }}>{v}</Tag> : <span style={{ color: '#8c8c8c' }}>-</span>) },
+    // عمود الكود اتشال من الكشف — بيفضل في التصدير وبيتبحث بيه.
     { title: 'الصنف', dataIndex: 'name', key: 'name', ellipsis: true,
       ...textColumn(source, (r: any) => r.name),
       render: (v: string) => <b>{v}</b> },

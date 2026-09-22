@@ -74,8 +74,7 @@ export default function StockAlerts() {
 
 
   const columns = [
-    { title: 'الكود', dataIndex: 'code', ...textColumn(reorder, (r: ReorderRow) => r.code),
-      render: (c: string) => <Tag>{c}</Tag> },
+    // عمود الكود اتشال من الكشف — بيفضل في التصدير.
     { title: 'الصنف', dataIndex: 'name', ...textColumn(reorder, (r: ReorderRow) => r.name),
       render: (n: string) => <b>{n}</b> },
     { title: 'الرصيد الحالي', dataIndex: 'on_hand',
