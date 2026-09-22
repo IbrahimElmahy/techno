@@ -1,0 +1,1 @@
+import{u as s,j as u,l as e}from"./index-BYEYMIrK.js";function r({children:t,...n}){const{can:a}=s();return a("stats.view")?u.jsx(e,{...n,children:t}):null}function i(){const{can:t}=s();return t("stats.view")}export{r as S,i as u};
