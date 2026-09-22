@@ -27,6 +27,7 @@ import DocumentAttachments from '../components/DocumentAttachments';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
+import LoadPeriodModal from '../components/LoadPeriodModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
@@ -307,6 +308,7 @@ export default function Purchases() {
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [viewPurchase, setViewPurchase] = useState<PurchaseDetail | null>(null);
+  const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
   /**
    * الفاتورة اللي بتتعدّل دلوقتي — لسه مرحّلة، والعكس هيحصل وقت الحفظ.
    *
@@ -953,10 +955,10 @@ export default function Purchases() {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => {
-          if (isSaved && viewPurchase) openDetail({ id: viewPurchase.id } as any);
-          else loadLookups();
-        },
+        // **«تحميل» بقى بيعمل حاجة تبان.** كان بيعيد تحميل المستند المفتوح أو
+        // القوايم — يعني بيشتغل من غير ما يحصل حاجة، وده شكل الزرار المكسور.
+        // الشرح في `components/LoadPeriodModal`.
+        onClick: () => setLoadPeriodOpen(true),
       },
     ];
   };
@@ -1566,6 +1568,16 @@ export default function Purchases() {
         current={!viewPurchase && !editingId ? 'draft'
           : ((viewPurchase as any)?.reversed_by ? 'reversed' : 'posted')}
       />
+      <LoadPeriodModal
+        open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
+        title="تحميل فواتير شراء فترة" endpoint="/api/v1/purchases"
+        columns={[
+          { title: 'المستند', key: 'document_number', width: 150 },
+          { title: 'التاريخ', key: 'purchase_date', width: 120 },
+          { title: 'المورد', key: 'supplier_name' },
+          { title: 'الإجمالي', key: 'total', width: 130, money: true },
+        ]}
+        onPick={(r) => openDetail(r)} />
       <DocumentToolbar actions={purchaseToolbar()} />
       <Form form={form} layout="vertical" size="small" className="doc-form"
         onValuesChange={() => setFormTick((n) => n + 1)}

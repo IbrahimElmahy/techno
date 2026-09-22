@@ -1066,10 +1066,21 @@ def list_sales(
         stmt = stmt.where(SalesInvoice.document_number.like(f"%{q.strip()}%"))
     if customer_id is not None:
         stmt = stmt.where(SalesInvoice.customer_id == customer_id)
+    # **الفلتر على تاريخ الفاتورة، مش على ساعة إدخالها.**
+    #
+    # كان على `created_at`، وده «امتى اتكتبت في النظام» مش «امتى اتعملت». والفرق مش
+    # نظري: فلتر ١ لـ٢٢ سبتمبر كان بيرجّع **١٬٤٨٦** فاتورة، **٧٠٥** منهم تاريخهم قبل
+    # سبتمبر خالص — دول المنقولين من a5، اتكتبوا في القاعدة يوم النقل فبقوا كلهم
+    # «سبتمبر». والصح ٧٨١.
+    #
+    # وحتى في الشغل اليومي: ١٬٢٣٦ فاتورة تاريخها غير يوم إدخالها، لأن المكتب بيدخّل
+    # ورق امبارح الصبح. الفلتر على الإدخال بيحطّهم في اليوم الغلط.
+    #
+    # و`invoice_date` تاريخ مجرّد، فمافيش حساب توقيت — `day_start_utc` مابقتش لازمة.
     if date_from is not None:
-        stmt = stmt.where(SalesInvoice.created_at >= clock.day_start_utc(date_from))
+        stmt = stmt.where(SalesInvoice.invoice_date >= date_from)
     if date_to is not None:
-        stmt = stmt.where(SalesInvoice.created_at < clock.day_end_utc(date_to))
+        stmt = stmt.where(SalesInvoice.invoice_date <= date_to)
     if payment == "cash":       # fully paid (nothing on credit)
         stmt = stmt.where(SalesInvoice.credit_amount == 0)
     elif payment == "credit":   # fully on credit (nothing paid)

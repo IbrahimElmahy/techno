@@ -28,6 +28,7 @@ import { combineDiscounts, netOf } from '../utils/discounts';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
+import LoadPeriodModal from '../components/LoadPeriodModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
@@ -119,8 +120,6 @@ export default function Invoices() {
    * الفترة اللي اتطلبت.
    */
   const [loadRangeOpen, setLoadRangeOpen] = useState(false);
-  const [loadRange, setLoadRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
-  const [loadingRange, setLoadingRange] = useState(false);
   /**
    * **نتيجة «تحميل» بتفضل قدامك ككشف، مش بتفتح أول فاتورة وتختفي.**
    *
@@ -1591,36 +1590,6 @@ export default function Invoices() {
 
   /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
   /** بيحمّل فواتير الفترة في نفس قايمة التنقل، وبيفتح أولها. */
-  const loadPeriod = async () => {
-    const from = loadRange?.[0];
-    const to = loadRange?.[1];
-    if (!from || !to) { message.warning('اختار الفترة الأول'); return; }
-    setLoadingRange(true);
-    try {
-      const next = {
-        ...filters,
-        date_from: from.format('YYYY-MM-DD'),
-        date_to: to.format('YYYY-MM-DD'),
-      } as InvoiceFilters;
-      setFilters(next);
-      const res = await api.get('/api/v1/sales', {
-        params: { ...next, limit: PAGE_SIZE },
-      });
-      const rows = res.data || [];
-      setInvoices(rows);
-      if (!rows.length) {
-        setPeriodRows([]);
-        message.info('مافيش فواتير في الفترة دي');
-        return;
-      }
-      // الكشف بيفضل مفتوح — الشرح عند `periodRows`.
-      setPeriodRows(rows);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفترة');
-    } finally {
-      setLoadingRange(false);
-    }
-  };
 
   const neighbour = (step: number) => {
     if (!viewInvoice) return null;
@@ -2174,10 +2143,7 @@ function couponsTotal(inv: any): number {
         icon: <ReloadOutlined />,
         // **الدوسة التانية بترجّع الكشف اللي اتحمّل، مش بتمسحه.** واللي عايز فترة
         // تانية بيدوس «فترة تانية» جوّه الكشف — فمحدش بيخسر تحميل بالغلط.
-        onClick: () => {
-          if (periodRows?.length) { setLoadRangeOpen(true); return; }
-          setLoadRange(null); setPeriodRows(null); setLoadRangeOpen(true);
-        },
+        onClick: () => setLoadRangeOpen(true),
       },
     ];
   };
@@ -2701,62 +2667,20 @@ function couponsTotal(inv: any): number {
 
         <TreasuryGate {...treasuryGate} />
 
-        {/* **«تحميل»: فترة ← كشف ← تدوس على اللي عايزه.**
-            كانت بتفتح أول فاتورة في الفترة وتقفل — واللي بيدوّر على واحدة بعينها
-            بيلاقي نفسه جوّه غيرها. دلوقتي الكشف بيفضل قدامه، والدوسة التانية على
-            «تحميل» بترجّعه بدل ما تمسحه. */}
-        <TabModal
-          open={loadRangeOpen}
-          title={periodRows?.length
-            ? `فواتير الفترة — ${periodRows.length}`
-            : 'تحميل فواتير فترة'}
-          width={periodRows?.length ? 760 : 520}
-          confirmLoading={loadingRange}
-          onCancel={() => setLoadRangeOpen(false)}
-          footer={periodRows?.length ? (
-            <Space>
-              <Button onClick={() => { setPeriodRows(null); setLoadRange(null); }}>
-                فترة تانية
-              </Button>
-              <Button onClick={() => setLoadRangeOpen(false)}>إغلاق</Button>
-            </Space>
-          ) : (
-            <Space>
-              <Button onClick={() => setLoadRangeOpen(false)}>إلغاء</Button>
-              <Button type="primary" loading={loadingRange}
-                disabled={!(loadRange?.[0] && loadRange?.[1])}
-                onClick={loadPeriod}>تحميل</Button>
-            </Space>
-          )}
-        >
-          {periodRows?.length ? (
-            <Table size="small" rowKey="id" dataSource={periodRows}
-              pagination={{ pageSize: 10, size: 'small' }}
-              onRow={(r: any) => ({
-                style: { cursor: 'pointer' },
-                onClick: () => { setLoadRangeOpen(false); openDetail(r); },
-              })}
-              columns={[
-                { title: 'المستند', dataIndex: 'document_number', width: 150 },
-                { title: 'التاريخ', dataIndex: 'invoice_date', width: 120 },
-                { title: 'العميل', dataIndex: 'customer_name', ellipsis: true },
-                { title: 'الإجمالي', dataIndex: 'total', width: 130,
-                  align: 'left' as const,
-                  render: (v: string) => <b>{money(v)}</b> },
-              ]} />
-          ) : (
-            <>
-              <DateRangeFilter
-                value={loadRange as any}
-                onChange={(v) => setLoadRange(v as any)}
-              />
-              <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-                هيتحمّل فواتير الفترة دي في كشف، وتدوس على اللي عايزه — و«السابق»
-                و«التالى» بيمشوا بينهم بعد ما تفتح واحدة.
-              </div>
-            </>
-          )}
-        </TabModal>
+        {/* المكوّن مشترك مع الشرا والمرتجعين — الشرح في `components/LoadPeriodModal`.
+            و`onLoaded` بيحط الفترة في كشف الشاشة كمان، فأسهم «السابق» و«التالى»
+            تمشي جوّه اللي اتحمّل مش جوّه آخر صفحة كانت مفتوحة. */}
+        <LoadPeriodModal
+          open={loadRangeOpen} onCancel={() => setLoadRangeOpen(false)}
+          title="تحميل فواتير فترة" endpoint="/api/v1/sales"
+          columns={[
+            { title: 'المستند', key: 'document_number', width: 150 },
+            { title: 'التاريخ', key: 'invoice_date', width: 120 },
+            { title: 'العميل', key: 'customer_name' },
+            { title: 'الإجمالي', key: 'total', width: 130, money: true },
+          ]}
+          onLoaded={(rows) => { setInvoices(rows); setPeriodRows(rows); }}
+          onPick={(r) => openDetail(r)} />
 
         {/*
           * الباب التالت: **المخزن**.

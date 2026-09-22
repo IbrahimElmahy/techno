@@ -29,6 +29,7 @@ import DocumentAttachments from '../components/DocumentAttachments';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
+import LoadPeriodModal from '../components/LoadPeriodModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
@@ -263,6 +264,7 @@ export default function Returns() {
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
   const [viewReturn, setViewReturn] = useState<any>(null);
+  const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
 
   /** المسودّة — نفس قاعدة طلب البيع. الشرح في `useDraft`. */
   const draftPayload = useMemo(() => ({
@@ -809,10 +811,8 @@ export default function Returns() {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => {
-          if (isSaved && viewReturn) openDetail({ id: viewReturn.id } as any);
-          else loadLookups();
-        },
+        // الشرح في `components/LoadPeriodModal`.
+        onClick: () => setLoadPeriodOpen(true),
       },
     ];
   };
@@ -1205,6 +1205,16 @@ export default function Returns() {
           current={!viewReturn && !editingSourceId ? 'draft'
             : (viewReturn?.reversed_by ? 'reversed' : 'posted')}
         />
+          <LoadPeriodModal
+            open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
+            title="تحميل مرتجعات فترة" endpoint="/api/v1/sales/returns"
+            columns={[
+              { title: 'المستند', key: 'document_number', width: 150 },
+              { title: 'التاريخ', key: 'return_date', width: 120 },
+              { title: 'العميل', key: 'customer_name' },
+              { title: 'القيمة', key: 'value', width: 130, money: true },
+            ]}
+            onPick={(r) => openDetail(r)} />
           <DocumentToolbar actions={returnToolbar()} />
           <Form form={createForm} layout="vertical" size="small" className="doc-form"
             onFinish={handleSubmit}>

@@ -30,6 +30,7 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal from '../components/PartyPickerModal';
 import DocumentBar from '../components/DocumentBar';
+import LoadPeriodModal from '../components/LoadPeriodModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import TotalsLadder from '../components/TotalsLadder';
 import DocumentAttachments from '../components/DocumentAttachments';
@@ -151,6 +152,7 @@ export default function PurchaseReturns() {
   const [detail, setDetail] = useState<any>(null);
   // المردود اللي مفتوح للعرض
   const [viewing, setViewing] = useState<any>(null);
+  const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
   const [qty, setQty] = useState<Record<number, number | null>>({});
   const [saving, setSaving] = useState(false);
@@ -469,10 +471,8 @@ export default function PurchaseReturns() {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => {
-          if (isSaved && viewing) openReturn({ id: viewing.id } as any);
-          else load();
-        },
+        // الشرح في `components/LoadPeriodModal`.
+        onClick: () => setLoadPeriodOpen(true),
       },
     ];
   };
@@ -1197,6 +1197,16 @@ export default function PurchaseReturns() {
           current={!viewing && !editingId ? 'draft'
             : (viewing?.reversed_by ? 'reversed' : 'posted')}
         />
+        <LoadPeriodModal
+          open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
+          title="تحميل مردودات شراء فترة" endpoint="/api/v1/purchases/returns"
+          columns={[
+            { title: 'المستند', key: 'document_number', width: 150 },
+            { title: 'التاريخ', key: 'return_date', width: 120 },
+            { title: 'المورد', key: 'supplier_name' },
+            { title: 'القيمة', key: 'value', width: 130, money: true },
+          ]}
+          onPick={(r) => openReturn(r)} />
         <DocumentToolbar actions={returnToolbar()} />
 
         <Form layout="vertical" size="small" className="doc-form">

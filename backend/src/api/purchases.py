@@ -202,6 +202,12 @@ class PaginatedPurchasesOut(BaseModel):
 def list_purchases(
     response: Response,
     supplier_id: int | None = Query(None),
+    # **فلتر الفترة** — كان ناقص خالص، فالكشف بيرجّع آخر الصفوف مهما كان المطلوب.
+    # و«تحميل فترة» في الشاشة كان بيبعت التاريخين وبيترميوا في السكات، فالنتيجة
+    # فواتير من شهور تانية — اللي بيقراها بيفتكر إن الفلتر مش شغال، وهو صح.
+    # نفس اسم الوسيطين اللي في المبيعات بالحرف، عشان الشاشة تكلّم الاتنين بنفس اللغة.
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     limit: int | None = Query(None),
     offset: int = Query(0),
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
@@ -211,6 +217,10 @@ def list_purchases(
     base_stmt = branch_scope.scope(select(PurchaseInvoice), PurchaseInvoice, current)
     if supplier_id:
         base_stmt = base_stmt.where(PurchaseInvoice.supplier_id == supplier_id)
+    if date_from:
+        base_stmt = base_stmt.where(PurchaseInvoice.purchase_date >= date_from)
+    if date_to:
+        base_stmt = base_stmt.where(PurchaseInvoice.purchase_date <= date_to)
 
     total = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
 
@@ -268,6 +278,9 @@ def list_purchases(
 @router.get("/returns", response_model=list[PurchaseReturnListOut])
 def list_purchase_returns(
     supplier_id: int | None = None,
+    # الفترة — زي `list_purchases` بالظبط، والشرح هناك.
+    date_from: date | None = None,
+    date_to: date | None = None,
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[PurchaseReturnListOut]:
@@ -278,9 +291,14 @@ def list_purchase_returns(
     suppliers this month».
     """
     # المعكوس مابيظهرش: بضاعته رجعت وقيده اتعكس، فهو مستند في الدفتر ومش حركة في السجل.
+    _q = (branch_scope.scope(select(PurchaseReturn), PurchaseReturn, current)
+          .where(PurchaseReturn.reversed_at.is_(None)))
+    if date_from:
+        _q = _q.where(PurchaseReturn.return_date >= date_from)
+    if date_to:
+        _q = _q.where(PurchaseReturn.return_date <= date_to)
     rows = db.scalars(
-        branch_scope.scope(select(PurchaseReturn), PurchaseReturn, current)
-        .where(PurchaseReturn.reversed_at.is_(None))
+        _q
         .order_by(PurchaseReturn.id.desc())
     ).all()
     invoices = {
