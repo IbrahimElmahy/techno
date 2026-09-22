@@ -32,11 +32,25 @@ const AWAY = 'tab-dialog-away';
 const away = (onScreen: boolean, existing?: string) =>
   [existing, onScreen ? '' : AWAY].filter(Boolean).join(' ') || undefined;
 
-export function TabModal({ open, rootClassName, ...rest }: ModalProps) {
+/**
+ * **الدوسة برّه الشباك مابتقفلوش.**
+ *
+ * antd الافتراضي بيقفل على النقرة برّه، وده صح لتلميح وغلط لخطوة في دورة: منتقي
+ * العميل بيتقفل بنقرة زايدة، والمستند بيكمل على إنك خلصت الخطوة — من غير ما تختار
+ * حاجة. واللي بيحصل بعدها إن الشاشة بتعدّي خطوة والحارس شايف إنها اتعملت، فالدورة
+ * بتكمل ناقصة وبتقع في الآخر برسالة مالهاش علاقة بالمكان اللي وقعت فيه.
+ *
+ * والخروج بيفضل موجود: Esc والزرار. الفرق إنه بقى **قرار** مش نقرة على الجنب.
+ *
+ * القاعدة هنا مش في كل شباك على حدة — سبعين نسخة من قاعدة يعني قاعدة صح في تسعة
+ * وستين. واللي عايز العكس بيبعت `maskClosable` صراحةً.
+ */
+export function TabModal({ open, rootClassName, maskClosable, ...rest }: ModalProps) {
   const onScreen = useOnScreen();
   return (
     <Modal
       {...rest}
+      maskClosable={maskClosable ?? false}
       open={!!open && onScreen}
       rootClassName={away(onScreen, rootClassName)}
     />

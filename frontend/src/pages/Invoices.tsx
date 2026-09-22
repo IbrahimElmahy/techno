@@ -121,6 +121,14 @@ export default function Invoices() {
   const [loadRangeOpen, setLoadRangeOpen] = useState(false);
   const [loadRange, setLoadRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [loadingRange, setLoadingRange] = useState(false);
+  /**
+   * **نتيجة «تحميل» بتفضل قدامك ككشف، مش بتفتح أول فاتورة وتختفي.**
+   *
+   * كانت بتقفل الشباك وتفتح أول فاتورة في الفترة، واللي بيدوّر على فاتورة بعينها
+   * بيلاقي نفسه جوّه واحدة تانية ولازم يضرب «التالى» عشرين مرة. الكشف ده هو
+   * اللي هو سأل عنه: فواتير الفترة، بيدوس على اللي عايزه.
+   */
+  const [periodRows, setPeriodRows] = useState<any[] | null>(null);
 
   // Standalone invoice detail/view (separate from the return wizard)
   // Each user hides the columns they never read; the choice is theirs alone and per screen.
@@ -1600,10 +1608,13 @@ export default function Invoices() {
       });
       const rows = res.data || [];
       setInvoices(rows);
-      setLoadRangeOpen(false);
-      if (!rows.length) { message.info('مافيش فواتير في الفترة دي'); return; }
-      message.success(`اتحمّل ${rows.length} فاتورة — اتنقل بينهم بـ«السابق» و«التالى»`);
-      await openDetail(rows[0]);
+      if (!rows.length) {
+        setPeriodRows([]);
+        message.info('مافيش فواتير في الفترة دي');
+        return;
+      }
+      // الكشف بيفضل مفتوح — الشرح عند `periodRows`.
+      setPeriodRows(rows);
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفترة');
     } finally {
@@ -2161,7 +2172,12 @@ function couponsTotal(inv: any): number {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => { setLoadRange(null); setLoadRangeOpen(true); },
+        // **الدوسة التانية بترجّع الكشف اللي اتحمّل، مش بتمسحه.** واللي عايز فترة
+        // تانية بيدوس «فترة تانية» جوّه الكشف — فمحدش بيخسر تحميل بالغلط.
+        onClick: () => {
+          if (periodRows?.length) { setLoadRangeOpen(true); return; }
+          setLoadRange(null); setPeriodRows(null); setLoadRangeOpen(true);
+        },
       },
     ];
   };
@@ -2676,6 +2692,11 @@ function couponsTotal(inv: any): number {
 
         <PartyPickerModal
           open={partyPickerOpen} kind="customer"
+          // **نفس الأبواب اللي برّه بالظبط.** النسخة دي كانت بتفتح على العملاء وحدهم،
+          // والنسخة اللي بتتفتح من الكشف بتفتح على العملاء والموظفين والموردين — فاللي
+          // بيفتح فاتورة من جوّه مايقدرش يختار موظف، واللي اتعلّم إيده على واحدة
+          // بيلاقي التانية بتقول حاجة تانية. القايمة واحدة عشان السلوك واحد.
+          kinds={['customer', 'employee', 'supplier']}
           excludeTypes={['plumber']}
           onPick={handlePartyPicked}
           // `setNewStep(null)` مش زيادة: من غيرها الإلغاء بيقفل الشباك ويسيب الدورة واقفة على
@@ -2687,26 +2708,61 @@ function couponsTotal(inv: any): number {
 
         <TreasuryGate {...treasuryGate} />
 
-        {/* «تحميل» — فترة، والأسهم بتمشي جوّاها. */}
+        {/* **«تحميل»: فترة ← كشف ← تدوس على اللي عايزه.**
+            كانت بتفتح أول فاتورة في الفترة وتقفل — واللي بيدوّر على واحدة بعينها
+            بيلاقي نفسه جوّه غيرها. دلوقتي الكشف بيفضل قدامه، والدوسة التانية على
+            «تحميل» بترجّعه بدل ما تمسحه. */}
         <TabModal
           open={loadRangeOpen}
-          title="تحميل فواتير فترة"
-          okText="تحميل"
-          cancelText="إلغاء"
+          title={periodRows?.length
+            ? `فواتير الفترة — ${periodRows.length}`
+            : 'تحميل فواتير فترة'}
+          width={periodRows?.length ? 760 : 520}
           confirmLoading={loadingRange}
-          okButtonProps={{ disabled: !(loadRange?.[0] && loadRange?.[1]) }}
-          onOk={loadPeriod}
           onCancel={() => setLoadRangeOpen(false)}
-          destroyOnHidden
+          footer={periodRows?.length ? (
+            <Space>
+              <Button onClick={() => { setPeriodRows(null); setLoadRange(null); }}>
+                فترة تانية
+              </Button>
+              <Button onClick={() => setLoadRangeOpen(false)}>إغلاق</Button>
+            </Space>
+          ) : (
+            <Space>
+              <Button onClick={() => setLoadRangeOpen(false)}>إلغاء</Button>
+              <Button type="primary" loading={loadingRange}
+                disabled={!(loadRange?.[0] && loadRange?.[1])}
+                onClick={loadPeriod}>تحميل</Button>
+            </Space>
+          )}
         >
-          <DateRangeFilter
-            value={loadRange as any}
-            onChange={(v) => setLoadRange(v as any)}
-          />
-          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-            هيتحمّل فواتير الفترة دي، وتفتح أولها — و«السابق» و«التالى» بيمشوا
-            بينهم من غير ما ترجع للكشف.
-          </div>
+          {periodRows?.length ? (
+            <Table size="small" rowKey="id" dataSource={periodRows}
+              pagination={{ pageSize: 10, size: 'small' }}
+              onRow={(r: any) => ({
+                style: { cursor: 'pointer' },
+                onClick: () => { setLoadRangeOpen(false); openDetail(r); },
+              })}
+              columns={[
+                { title: 'المستند', dataIndex: 'document_number', width: 150 },
+                { title: 'التاريخ', dataIndex: 'invoice_date', width: 120 },
+                { title: 'العميل', dataIndex: 'customer_name', ellipsis: true },
+                { title: 'الإجمالي', dataIndex: 'total', width: 130,
+                  align: 'left' as const,
+                  render: (v: string) => <b>{money(v)}</b> },
+              ]} />
+          ) : (
+            <>
+              <DateRangeFilter
+                value={loadRange as any}
+                onChange={(v) => setLoadRange(v as any)}
+              />
+              <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+                هيتحمّل فواتير الفترة دي في كشف، وتدوس على اللي عايزه — و«السابق»
+                و«التالى» بيمشوا بينهم بعد ما تفتح واحدة.
+              </div>
+            </>
+          )}
         </TabModal>
 
         {/*
