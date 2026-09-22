@@ -74,6 +74,17 @@ class BomComponent(Base):
     # column existed means, so they keep consuming exactly what they always consumed.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    # **مرحلة الشغل اللي الخامة دي بتتصرف فيها.** `production` الخام اللي بيدخل
+    # الماكينة، و`quality` التعبئة اللي بتتحط على المنتج بعد ما يطلع (كرتون، أكياس).
+    #
+    # ليه على الوصفة مش على الأمر: الفرق ده بتاع المنتج نفسه، مش بتاع تشغيلة بعينها —
+    # الكرتونة دايماً بتتحط بعد الإنتاج. ولو اتكتب على كل أمر لوحده، كل واحد بيفتح
+    # ورقة هيحدّده من دماغه وهيختلف من مرة للتانية.
+    #
+    # `VARCHAR` مش `Enum`: القيمة بتتخزّن نص، والإضافة عليها بعدين مابتحتاجش
+    # `ALTER TYPE` على قاعدة شغّالة. والفاضي معناه `production` — وده اللي كل وصفة
+    # اتكتبت قبل العمود ده تقصده.
+    stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     bom: Mapped[Bom] = relationship(back_populates="components")
 

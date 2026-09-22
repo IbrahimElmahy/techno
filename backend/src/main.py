@@ -376,6 +376,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # من لهجة للتانية، والفشل هنا بيتبلع عند مستوى info فبيفضل غلط في صمت.
     # ترويسة المردود وسطوره = بتوع الفاتورة — المردود نسخة منها بالعكس.
     # (HR) حساب ذمة الموظف — الربط بيتعمل مرة بـ`link_employee_receivables`.
+    # (التصنيع) مرحلة صرف الخامة: تصنيع ولا جودة. الشرح في `models/bom.py`.
+    ("bom_component", "stage", "VARCHAR(16)"),
+    ("production_order_material", "stage", "VARCHAR(16)"),
     ("employee", "receivable_account_id", "BIGINT"),
     # (ما بعد البيع) الرقم التاني للمالك — الملف بيدّي رقمين لأغلبهم.
     ("owner", "phone2", "VARCHAR(32)"),

@@ -292,6 +292,12 @@ class ProductionOrderMaterial(Base):
     unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     line_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     waste_quantity: Mapped[object] = mapped_column(QTY, nullable=False, default=0)
+    # مرحلة الصرف — بتتنسخ من الوصفة وقت فتح الأمر. الشرح في `BomComponent.stage`.
+    # وبتتنسخ مش بتتقرا من الوصفة وقت الصرف، لأن الوصفة بتتعدّل والأمر القديم لازم
+    # يفضل قايل إنه صرف إيد بإيه.
+    stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # الحركة اللي صرفت السطر ده. **وهي كمان اللي بتقول إنه اتصرف**: سطر بـ`NULL`
+    # هنا لسه في المخزن — وده اللي بيخلّي الصرف على مرحلتين ممكن من غير حالة جديدة.
     stock_movement_id: Mapped[int | None] = mapped_column(
         ForeignKey("stock_movement.id"), nullable=True)
 

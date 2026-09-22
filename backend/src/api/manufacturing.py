@@ -107,6 +107,8 @@ class ComponentIn(BaseModel):
     quantity: Decimal
     # The unit the quantity is written in; omit for the item's base unit (008).
     unit: str | None = None
+    # `production` | `quality` — إمتى الخامة دي بتتصرف. الشرح في `models/bom.py`.
+    stage: str | None = None
 
 
 class ResourceIn(BaseModel):
@@ -136,6 +138,7 @@ class ComponentOut(BaseModel):
     quantity: Decimal
     unit: str | None = None
     unit_factor: Decimal = Decimal("1")
+    stage: str = "production"
 
 
 class ResourceOut(BaseModel):
@@ -162,6 +165,7 @@ def _bom_out(bom) -> BomOut:
         components=[ComponentOut(
             item_id=c.item_id, quantity=c.quantity, unit=getattr(c, "unit", None),
             unit_factor=getattr(c, "unit_factor", None) or Decimal("1"),
+            stage=getattr(c, "stage", None) or "production",
         ) for c in bom.components],
         resources=[ResourceOut(kind=r.kind.value, name=r.name, quantity=r.quantity, rate=r.rate)
                    for r in bom.resources],
@@ -200,7 +204,7 @@ def create_bom(
     try:
         bom = manufacturing_service.create_bom(
             db, product_id=body.product_id, name=body.name, output_quantity=body.output_quantity,
-            components=[(c.item_id, c.quantity, c.unit) for c in body.components],
+            components=[(c.item_id, c.quantity, c.unit, c.stage) for c in body.components],
             resources=[(r.kind, r.name, r.quantity, r.rate) for r in body.resources],
             actor_user_id=current.id)
     except ManufacturingError as exc:
@@ -219,12 +223,17 @@ def update_bom(
     try:
         bom = manufacturing_service.update_bom(
             db, bom_id=bom_id, name=body.name, output_quantity=body.output_quantity,
-            components=[(c.item_id, c.quantity, c.unit) for c in body.components],
+            components=[(c.item_id, c.quantity, c.unit, c.stage) for c in body.components],
             resources=[(r.kind, r.name, r.quantity, r.rate) for r in body.resources],
             actor_user_id=current.id)
     except ManufacturingError as exc:
         raise _conflict(exc)
     db.commit()
+    # **الرد بيتقرا من القاعدة تاني.** التعديل بيمسح السطور ويكتب غيرها، والـsession
+    # لسه ماسك القايمة القديمة — فالرد كان بيرجّع الوصفة **قبل** التعديل، والشاشة
+    # اللي بتصدّقه بتفضل وراها خطوة. أول حاجة بانت منه: المرحلة اتحفظت `quality` في
+    # القاعدة والرد قال `production`.
+    db.refresh(bom)
     return _bom_out(bom)
 
 
@@ -513,6 +522,8 @@ def _seen_po(db: Session, order_id: int, current: CurrentUser):
 # ---------------------------------------------------------------------------
 class POMaterialIn(BaseModel):
     item_id: int
+    # مرحلة الصرف، بتتنسخ من الوصفة. الشرح في `models/bom.py`.
+    stage: str | None = None
     # اختيارية زي المنتج: الورقة بتتفتح على خطة، والمصروف بيتفتح عليها.
     quantity: Decimal | None = None                  # اللي اتصرف فعلاً
     planned_quantity: Decimal | None = None          # المفروض؛ من غيره = نفس المصروف
@@ -552,6 +563,10 @@ class POIn(BaseModel):
 class POMaterialOut(BaseModel):
     id: int
     product_line_id: int | None
+    stage: str = "production"
+    # **اتصرف ولا لأ.** الشاشة بتعرف الخطوة الجاية من السطور الباقية، مش من حالة
+    # الأمر — الشرح في `manufacturing_production_service.pending`.
+    issued: bool = False
     item_id: int
     warehouse_id: int | None
     planned_quantity: Decimal
@@ -619,7 +634,8 @@ def _po_out(o, rev_ids: set[int]) -> POOut:
             id=m.id, product_line_id=m.product_line_id, item_id=m.item_id,
             warehouse_id=m.warehouse_id, planned_quantity=m.planned_quantity,
             quantity=m.quantity, unit=m.unit, unit_cost=m.unit_cost,
-            line_cost=m.line_cost, waste_quantity=m.waste_quantity)
+            line_cost=m.line_cost, waste_quantity=m.waste_quantity,
+            stage=(m.stage or "production"), issued=m.stock_movement_id is not None)
             for m in o.materials],
     )
 
@@ -766,6 +782,27 @@ class POOutputIn(BaseModel):
 
     outputs: dict[int, Decimal] = {}
     waste: dict[int, Decimal] = {}
+
+
+@router.post("/production-orders/{order_id}/issue-quality", response_model=POOut)
+def issue_quality_materials(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    """**إذن خامات الجودة** — الكرتون والأكياس بعد ما المنتج يطلع.
+
+    خطوة لوحدها لأن الورقتين بيروحوا لناس مختلفين في وقتين مختلفين. الشرح الكامل
+    في `manufacturing_production_service.issue_quality`.
+    """
+    _seen_po(db, order_id, current)
+    try:
+        order = production_order_service.issue_quality(
+            db, order_id=order_id, actor_user_id=current.id)
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
 
 
 @router.post("/production-orders/{order_id}/execute", response_model=POOut)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
-import { printWorkOrder } from '../print/workOrderSheet';
+import { printWorkOrder, type WorkOrderStage } from '../print/workOrderSheet';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, message,
@@ -30,7 +30,20 @@ interface Item {
   kind: 'raw_material' | 'product'; unit_of_measure: string;
   purchase_price: string | null; active: boolean;
 }
-interface Component { item_id: number; quantity: string; unit?: string | null; unit_factor?: string; }
+type Stage = 'production' | 'quality';
+
+/** مرحلة صرف الخامة — إذن لكل واحدة، بيروح لناس مختلفين في وقتين مختلفين. */
+const STAGES: { value: Stage; label: string; short: string; color: string }[] = [
+  { value: 'production', label: 'تصنيع — بتدخل الماكينة', short: 'تصنيع', color: 'green' },
+  { value: 'quality', label: 'جودة — بتتحط على المنتج بعد ما يطلع', short: 'جودة', color: 'gold' },
+];
+const stageOf = (v?: string | null): Stage => (v === 'quality' ? 'quality' : 'production');
+const stageLabel = (v?: string | null) => STAGES.find((x) => x.value === stageOf(v))!.short;
+
+interface Component {
+  item_id: number; quantity: string; unit?: string | null; unit_factor?: string;
+  stage?: string | null;
+}
 interface AltUnit { name: string; factor: string }
 type ResourceKind = 'labor' | 'machine' | 'overhead' | 'other';
 interface BomResource { kind: ResourceKind; name: string; quantity: string; rate: string; }
@@ -224,7 +237,9 @@ function RecipesTab({
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ output_quantity: 1, components: [{}], resources: [] });
+    form.setFieldsValue({
+      output_quantity: 1, components: [{ stage: 'production' }], resources: [],
+    });
     setOpen(true);
   };
   // A recipe is master data: the row opens it for editing, because there is nothing to «view» in a
@@ -240,6 +255,7 @@ function RecipesTab({
       output_quantity: Number(bom.output_quantity),
       components: bom.components.map((c) => ({
         item_id: c.item_id, quantity: Number(c.quantity), unit: c.unit || undefined,
+        stage: stageOf(c.stage),
       })),
       resources: (bom.resources || []).map((r) => ({
         kind: r.kind, name: r.name, quantity: Number(r.quantity), rate: Number(r.rate),
@@ -258,6 +274,7 @@ function RecipesTab({
       output_quantity: values.output_quantity,
       components: (values.components || []).map((c: any) => ({
         item_id: c.item_id, quantity: c.quantity, unit: c.unit || null,
+        stage: c.stage || 'production',
       })),
       resources,
     };
@@ -388,12 +405,16 @@ function RecipesTab({
                             form.setFieldsValue({ components: rows });
                           }
                         }}
-                        options={rawMaterials.map((r) => ({ value: r.id, label: `${r.name} (${r.unit_of_measure})` }))} />
+                        // **كل الأصناف، مش «الخامات» بس.** كتالوج العميل كله `product`
+                        // (٢٬٧٤١ صنف — نقل a5 نقلهم كده)، فالقايمة المفلترة كانت بتطلع
+                        // فاضية والوصفة المفتوحة بتوري رقم الصنف بدل اسمه.
+                        options={[...rawMaterials, ...products].map((r) => ({
+                          value: r.id, label: `${r.code} — ${r.name} (${r.unit_of_measure})` }))} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
-                      <InputNumber min={0.001} placeholder="الكمية" />
-                        data-grid-col="qty" keyboard={false}
+                      <InputNumber min={0.001} placeholder="الكمية"
+                        data-grid-col="qty" keyboard={false} />
                     </Form.Item>
                     {/* «الوحدة» — the recipe is written in whatever unit the workshop speaks
                         («٢ كرتونة»)، and the conversion to base units happens when the order
@@ -401,7 +422,7 @@ function RecipesTab({
                     <Form.Item noStyle shouldUpdate>
                       {({ getFieldValue }) => {
                         const iid = getFieldValue(['components', field.name, 'item_id']);
-                        const raw = rawMaterials.find((r) => r.id === iid);
+                        const raw = [...rawMaterials, ...products].find((r) => r.id === iid);
                         const alts = unitOpts[iid] || [];
                         return (
                           <Form.Item {...field} name={[field.name, 'unit']}
@@ -416,10 +437,20 @@ function RecipesTab({
                         );
                       }}
                     </Form.Item>
+                    {/* **المرحلة** — إمتى الخامة دي بتتصرف. الخام بيتصرف أول ما الأمر
+                        يبدأ ويروح للمكن؛ الكرتون والأكياس بإذن تاني بعد ما المنتج يطلع.
+                        وهي على الوصفة مش على الأمر لأن الفرق ده بتاع المنتج نفسه:
+                        الكرتونة دايماً بتتحط بعد الإنتاج، مش حسب رأي اللي فاتح الورقة. */}
+                    <Form.Item {...field} name={[field.name, 'stage']}
+                      style={{ marginBottom: 0 }} initialValue="production">
+                      <Select style={{ minWidth: 200 }}
+                        options={STAGES.map((x) => ({ value: x.value, label: x.label }))} />
+                    </Form.Item>
                     <DeleteOutlined onClick={() => remove(field.name)} style={{ color: '#ff4d4f' }} />
                   </Space>
                 ))}
-                <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                <Button type="dashed" onClick={() => add({ stage: 'production' })} block
+                  icon={<PlusOutlined />}>
                   إضافة خامة
                 </Button>
               </>
@@ -442,13 +473,13 @@ function RecipesTab({
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
-                      <InputNumber min={0} placeholder="ساعات/كمية" style={{ width: 110 }} />
-                        data-grid-col="hours" keyboard={false}
+                      <InputNumber min={0} placeholder="ساعات/كمية" style={{ width: 110 }}
+                        data-grid-col="hours" keyboard={false} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'rate']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'السعر' }]}>
-                      <InputNumber min={0} placeholder="سعر الوحدة" style={{ width: 110 }} />
-                        data-grid-col="rate" keyboard={false}
+                      <InputNumber min={0} placeholder="سعر الوحدة" style={{ width: 110 }}
+                        data-grid-col="rate" keyboard={false} />
                     </Form.Item>
                     <DeleteOutlined onClick={() => remove(field.name)} style={{ color: '#ff4d4f' }} />
                   </Space>
@@ -641,6 +672,9 @@ interface POMaterial {
   id: number; product_line_id: number | null; item_id: number; warehouse_id: number | null;
   planned_quantity: string; quantity: string; unit: string | null;
   unit_cost: string; line_cost: string; waste_quantity: string;
+  stage?: string | null;
+  /** اتصرف من المخزن ولا لسه. ده اللي بيحدّد الخطوة الجاية، مش حالة الأمر. */
+  issued?: boolean;
 }
 interface POProduct {
   id: number; item_id: number; warehouse_id: number | null;
@@ -727,7 +761,7 @@ function Variance({ planned, actual }: { planned: string; actual: string }) {
 
 /** سطر في الفورم — مفتاح محلي عشان الحذف مايلخبطش الصفوف. */
 interface DraftMaterial {
-  key: number; item_id?: number; warehouse_id?: number;
+  key: number; item_id?: number; warehouse_id?: number; stage?: Stage;
   planned_quantity?: number | null; quantity?: number | null; waste_quantity?: number | null;
   /**
    * **حد اختار مخزن الخامة دي بإيده؟**
@@ -764,7 +798,7 @@ interface DraftProduct {
 }
 
 let poSeq = 1;
-const newPOMaterial = (): DraftMaterial => ({ key: poSeq++ });
+const newPOMaterial = (): DraftMaterial => ({ key: poSeq++, stage: 'production' });
 const newPOProduct = (): DraftProduct => ({ key: poSeq++, materials: [] });
 
 /** رقم ورقة الأمر المنقول — بأرقام المستخدم، **من غير فاصلة آلاف**.
@@ -925,7 +959,7 @@ function ProductionOrdersTab({
       materials: r.materials.filter((m) => m.product_line_id === p.id).map((m) => ({
         key: poSeq++, item_id: m.item_id, warehouse_id: m.warehouse_id ?? undefined,
         planned_quantity: Number(m.planned_quantity), quantity: Number(m.quantity),
-        waste_quantity: Number(m.waste_quantity),
+        waste_quantity: Number(m.waste_quantity), stage: stageOf(m.stage),
       })),
     })));
     setOpen(true);
@@ -1021,7 +1055,8 @@ function ProductionOrdersTab({
    * بيخلّي اللي بيقراه يشك في الرقم اللي بعده.
    */
   const shortages = useMemo(() => {
-    const out: { name: string; wh: string; need: number; have: number; unit: string }[] = [];
+    const out: { name: string; wh: string; need: number; have: number; unit: string;
+                 stage: Stage }[] = [];
     lines.forEach((ln) => ln.materials.forEach((m) => {
       if (!m.item_id) return;
       const need = Number(m.planned_quantity ?? 0);
@@ -1033,7 +1068,7 @@ function ProductionOrdersTab({
         : 0;
       if (have >= need) return;
       out.push({ name: itemName(m.item_id), wh: whName(m.warehouse_id),
-                 need, have, unit: itemUnit(m.item_id) });
+                 need, have, unit: itemUnit(m.item_id), stage: stageOf(m.stage) });
     }));
     return out;
     // الأسماء في المصفوفة عن قصد: الكشف اتكوّن وهو لسه مالقاش أسماء الأصناف
@@ -1087,6 +1122,7 @@ function ProductionOrdersTab({
       return {
         key: poSeq++, item_id: c.item_id, planned_quantity: q, quantity: q,
         warehouse_id: bestWarehouse(c.item_id, q, ln.warehouse_id),
+        stage: stageOf(c.stage),
       };
     });
   };
@@ -1160,6 +1196,7 @@ function ProductionOrdersTab({
           item_id: m.item_id,
           planned_quantity: m.planned_quantity ?? m.quantity,
           warehouse_id: m.warehouse_id ?? undefined,
+          stage: stageOf(m.stage),
         })),
     })),
   });
@@ -1187,10 +1224,16 @@ function ProductionOrdersTab({
   };
 
   /** ورقة الورشة — الشرح في `print/workOrderSheet`. */
-  const printOrder = (r: ProductionOrder) =>
-    printWorkOrder(r, { itemName, itemCode, itemUnit, whName, branchName });
+  const printOrder = (r: ProductionOrder, stage: WorkOrderStage = 'production') =>
+    printWorkOrder(r, { itemName, itemCode, itemUnit, whName, branchName }, stage);
 
-  const act = async (r: ProductionOrder, verb: 'confirm' | 'start' | 'execute', done: string) => {
+  /** خامات الجودة اللي لسه ما اتصرفتش — هي اللي بتقرّر الزرار يبان ولا لأ. */
+  const qualityPending = (r: ProductionOrder) =>
+    r.materials.filter((m) => stageOf(m.stage) === 'quality' && !m.issued).length;
+
+  const act = async (
+    r: ProductionOrder, verb: 'confirm' | 'start' | 'execute' | 'issue-quality', done: string,
+  ) => {
     try {
       const res = await api.post(
         `/api/v1/manufacturing/production-orders/${r.id}/${verb}`);
@@ -1199,13 +1242,19 @@ function ProductionOrdersTab({
       // **التأكيد بيعرض الطباعة على طول.** ده وقتها بالظبط: الأرقام اتراجعت،
       // والخطوة اللي بعدها إن حد في الورشة يمسك ورقة. وبتتطبع من رد السيرفر مش من
       // الصف القديم — الحالة اتغيّرت لسه.
-      if (verb === 'confirm') {
+      // **كل صرف له ورقته.** التأكيد بيعرض إذن التصنيع (اللي بيروح للمكن)، وصرف
+      // الجودة بيعرض إذن التعبئة. ودي وقتهم بالظبط — الورقة بتتطبع وهي لسه هي
+      // اللي هتتنفّذ.
+      if (verb === 'confirm' || verb === 'issue-quality') {
         const fresh = (res?.data ?? r) as ProductionOrder;
+        const quality = verb === 'issue-quality';
         Modal.confirm({
-          title: 'الأمر اتأكد',
-          content: 'تطبع أمر الشغل وتديه للورشة؟',
+          title: quality ? 'اتصرفت مواد التعبئة' : 'الأمر اتأكد',
+          content: quality
+            ? 'تطبع إذن الجودة وتديه للتعبئة؟'
+            : 'تطبع إذن التشغيل وتديه للورشة؟',
           okText: 'اطبع', cancelText: 'بعدين',
-          onOk: () => printOrder(fresh),
+          onOk: () => printOrder(fresh, quality ? 'quality' : 'production'),
         });
       }
     } catch (err) { console.error(err); }
@@ -1333,7 +1382,7 @@ function ProductionOrdersTab({
           {r.is_reversal && <Tag color="purple">حركة عكسية</Tag>}
         </Space>
       ) },
-    { title: 'إجراء', key: 'action', width: 230,
+    { title: 'إجراء', key: 'action', width: 330,
       render: (_: any, r: ProductionOrder) => {
         if (r.imported_from || r.is_reversal) return null;
         return (
@@ -1353,7 +1402,22 @@ function ProductionOrdersTab({
             )}
             {r.state !== 'draft' && (
               <Button type="link" size="small" icon={<PrinterOutlined />}
-                onClick={() => printOrder(r)}>طباعة</Button>
+                onClick={() => printOrder(r, 'production')}>إذن التشغيل</Button>
+            )}
+            {/* **صرف الجودة خطوة لوحدها** — بتبان لما الأمر يبقى شغّال ولسه فيه
+                مواد تعبئة ما اتصرفتش. أول ما تتصرف الزرار بيختفي، ومكانه زرار
+                طباعة إذنها. */}
+            {r.state === 'in_progress' && qualityPending(r) > 0 && (
+              <Button type="link" size="small" icon={<ExperimentOutlined />}
+                onClick={() => act(r, 'issue-quality',
+                  'اتصرفت مواد التعبئة')}>
+                اصرف مواد الجودة
+              </Button>
+            )}
+            {r.state !== 'draft' && qualityPending(r) === 0
+              && r.materials.some((m) => stageOf(m.stage) === 'quality') && (
+              <Button type="link" size="small" icon={<PrinterOutlined />}
+                onClick={() => printOrder(r, 'quality')}>إذن الجودة</Button>
             )}
             {r.state === 'confirmed' && (
               <>
@@ -1552,11 +1616,25 @@ function ProductionOrdersTab({
               children: <>
           {shortages.length > 0 && (
             <Alert type="error" showIcon style={{ marginBottom: 12 }}
-              message={`${num(shortages.length)} خامة مش كفاية في مخزنها — الأمر هيقف عند «ابدأ»`}
+              // **الرسالة بتقول الأمر هيقف فين بالظبط.** خامة تصنيع ناقصة بتوقف
+              // «ابدأ»، ومادة تعبئة ناقصة بتوقف «اصرف مواد الجودة» — والاتنين
+              // خطوتين مختلفتين في وقتين مختلفين، فتحذير واحد لهم كان بيوري
+              // اللي بيبدأ النهارده مشكلة مالهاش دعوة بيه.
+              message={(() => {
+                const prod = shortages.filter((x) => x.stage === 'production').length;
+                const qual = shortages.length - prod;
+                const parts: string[] = [];
+                if (prod) parts.push(`${num(prod)} خامة تصنيع — الأمر هيقف عند «ابدأ»`);
+                if (qual) parts.push(`${num(qual)} مادة تعبئة — هتقف عند «اصرف مواد الجودة»`);
+                return `مش كفاية في مخزنها: ${parts.join(' · ')}`;
+              })()}
               description={(
                 <ul style={{ margin: 0, paddingInlineStart: 18 }}>
                   {shortages.map((sh, i) => (
                     <li key={i}>
+                      <Tag color={sh.stage === 'quality' ? 'gold' : 'green'}>
+                        {stageLabel(sh.stage)}
+                      </Tag>
                       «{sh.name}» في {sh.wh} — متاح {num(sh.have.toFixed(3))} {sh.unit}
                       {' '}والمطلوب {num(sh.need.toFixed(3))}
                       {' '}(<b>ناقص {num((sh.need - sh.have).toFixed(3))}</b>)
@@ -1639,13 +1717,19 @@ function ProductionOrdersTab({
                       quantity: m.quantity == null ? (v as any) : m.quantity,
                     })} />
                 </Col>
+                {/* المرحلة بتتفجّر من الوصفة وبتتعدّل هنا للحالة الاستثنائية. */}
+                <Col span={3}>
+                  <Select style={{ width: '100%' }} value={m.stage ?? 'production'}
+                    options={STAGES.map((x) => ({ value: x.value, label: x.short }))}
+                    onChange={(v) => patchMaterial(ln.key, m.key, { stage: v })} />
+                </Col>
                 {/* «اتصرف» و«هالك» مش خانات هنا — الورقة بتتفتح على خطة. المصروف
                     بيتحدّد وقت الصرف (من المخطّط)، والهالك بيتكتب عند الإقفال: محدش
                     يعرف هيبوظ كام وهو بيخطّط. */}
                 {/* **المتاح في المخزن ده** — الرقم اللي كان بيتعرف بعد فوات الأوان.
                     الصرف بيحصل عند «ابدأ»، فالنقص كان بيبان بعد ما الورقة تتكتب
                     وتتأكد. أحمر معناه الورقة دي هتقف عند الصرف. */}
-                <Col span={6}>
+                <Col span={3}>
                   {(() => {
                     const have = availableIn(m.item_id, m.warehouse_id);
                     const need = Number(m.planned_quantity ?? 0);

@@ -174,7 +174,10 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
                 warehouse_id=_warehouse(db, raw, m.get("warehouse_id")),
                 planned_quantity=m_planned, quantity=m_qty, unit=m_unit,
                 unit_factor=to_qty(m_factor), unit_cost=ZERO, line_cost=ZERO,
-                waste_quantity=waste))
+                waste_quantity=waste,
+                # بتتنسخ من الوصفة وقت الفتح، مابتتقراش منها وقت الصرف: الوصفة
+                # بتتعدّل والأمر القديم لازم يفضل قايل إنه صرف إيه إمتى.
+                stage=(m.get("stage") or STAGE_PRODUCTION)))
             total_material_qty += m_qty
 
         total_expense += expense
@@ -284,15 +287,48 @@ def confirm_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
     return order
 
 
-def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int) -> Decimal:
-    """بيصرف كل خامة من مخزنها وبيجمّد تكلفتها. بيرجّع إجمالي قيمة الخامات.
+#: مراحل صرف الخامة. الشرح في `models/bom.py`.
+STAGE_PRODUCTION = "production"
+STAGE_QUALITY = "quality"
+
+
+def stage_of(material) -> str:
+    """مرحلة السطر — والفاضي تصنيع.
+
+    كل سطر اتكتب قبل العمود ده خامة تصنيع، وده اللي كان بيحصل فعلاً: الكل كان
+    بيتصرف مرة واحدة عند البدء.
+    """
+    return material.stage or STAGE_PRODUCTION
+
+
+def pending(order: ProductionOrder, stage: str | None = None) -> list:
+    """الخامات اللي **لسه ما اتصرفتش** — والمرحلة لو اتحدّدت.
+
+    `stock_movement_id` الفاضي هو اللي بيقول إن السطر لسه في المخزن. وده اللي بيخلّي
+    الصرف على مرحلتين ممكن من غير حالة جديدة في `ProductionState`: الأمر بيفضل
+    «شغّال»، واللي بيحدّد الخطوة الجاية هو السطور الباقية مش رقم في عمود.
+    """
+    return [m for m in order.materials
+            if m.stock_movement_id is None
+            and (stage is None or stage_of(m) == stage)]
+
+
+def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
+                     *, stage: str | None = None) -> Decimal:
+    """بيصرف خامات المرحلة دي من مخازنها وبيجمّد تكلفتها. بيرجّع قيمة اللي اتصرف.
 
     **التكلفة بتتجمّد لحظة الصرف**، مش كل مرة الشاشة تتفتح: الأمر اللي خاماته خرجت
     الشهر اللي فات مايتغيّرش سعره لما تتشترى خامة بسعر جديد النهارده.
+
+    **واللي اتصرف مابيتصرفش تاني.** الصرف بقى على خطوتين، والنداء التاني بيعدّي على
+    نفس القايمة — من غير الشرط ده كان هيخصم الخام مرتين.
     """
-    averages = costing_service.average_cost_bulk(db, {m.item_id for m in order.materials})
+    rows = pending(order, stage)
+    if not rows:
+        return ZERO
+    averages = costing_service.average_cost_bulk(db, {m.item_id for m in rows})
     total = ZERO
-    for m in order.materials:
+    for m in rows:
         mv = stock_service.post_movement(
             db, item_id=m.item_id, location_kind=LocationKind.warehouse,
             location_id=int(m.warehouse_id), movement_type="consumption_out",
@@ -303,6 +339,36 @@ def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int) ->
         m.stock_movement_id = mv.id
         total += m.line_cost
     return to_money(total)
+
+
+def issue_quality(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
+    """**إذن خامات الجودة** — التعبئة اللي بتتحط على المنتج بعد ما يطلع.
+
+    خطوة لوحدها لأن الورقتين بيروحوا لناس مختلفين في وقتين مختلفين: إذن التصنيع
+    بيروح للمكن أول ما الأمر يبدأ، وإذن الجودة بيروح للتعبئة بعد ما الإنتاج يخلص.
+    صرفهم مع بعض كان معناه إن الكرتون يخرج من المخزن الصبح وهو مش هيتلمس غير
+    بالليل — والرصيد بيقول إنه مصروف وهو على الرف.
+
+    الأمر بيفضل «شغّال» بعدها؛ اللي بيتغيّر إن مافيش خامات جودة باقية.
+    """
+    order = db.get(ProductionOrder, order_id)
+    if order is None:
+        raise ProductionOrderError("أمر التشغيل مش موجود.")
+    if order.imported_from is not None:
+        raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
+    if order.state != ProductionState.in_progress:
+        raise ProductionOrderError("خامات الجودة بتتصرف للأمر الشغّال بس.")
+    if not pending(order, STAGE_QUALITY):
+        raise ProductionOrderError("مافيش خامات جودة لسه ما اتصرفتش في الأمر ده.")
+    order.material_cost = to_money(
+        to_money(order.material_cost)
+        + _issue_materials(db, order, actor_user_id, stage=STAGE_QUALITY))
+    order.total_cost = to_money(order.material_cost + order.expense_amount)
+    db.flush()
+    audit_service.record(db, action="production_order.issue_quality",
+                         actor_user_id=actor_user_id, entity_type="production_order",
+                         entity_id=order.id, after={"materials": str(order.material_cost)})
+    return order
 
 
 def start_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
@@ -328,7 +394,10 @@ def start_order(db: Session, *, order_id: int, actor_user_id: int) -> Production
         raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
     if order.state != ProductionState.confirmed:
         raise ProductionOrderError("التشغيل بيبدأ من الأمر المؤكد بس.")
-    order.material_cost = _issue_materials(db, order, actor_user_id)
+    # **خامات التصنيع بس.** خامات الجودة بتتصرف بإذن تاني بعد ما المنتج يطلع —
+    # الشرح في `issue_quality`.
+    order.material_cost = _issue_materials(db, order, actor_user_id,
+                                           stage=STAGE_PRODUCTION)
     order.total_cost = to_money(order.material_cost + order.expense_amount)
     order.state = ProductionState.in_progress
     db.flush()
@@ -395,18 +464,15 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
         db.flush()
 
     by_line: dict[int, Decimal] = {}
-    if order.state == ProductionState.in_progress:
-        # اتصرفت وقت البدء؛ التكلفة متجمّدة من ساعتها.
-        for m in order.materials:
-            if m.product_line_id is not None:
-                by_line[m.product_line_id] = (
-                    by_line.get(m.product_line_id, ZERO) + to_money(m.line_cost))
-    else:
-        _issue_materials(db, order, actor_user_id)
-        for m in order.materials:
-            if m.product_line_id is not None:
-                by_line[m.product_line_id] = (
-                    by_line.get(m.product_line_id, ZERO) + to_money(m.line_cost))
+    # **اللي لسه ما اتصرفش بيتصرف هنا** — أي مرحلة. ده بيغطّي التلات طرق بنفس
+    # السطر: اللي بيرحّل من «مسودة» على طول (تشغيلة خلصت خلاص)، واللي بدأ وصرف
+    # الجودة بإذنها، واللي بدأ وقفل من غير ما يصرف الجودة لوحدها. واللي اتصرف قبل
+    # كده بيعدّي بتكلفته المتجمّدة — `pending` بيشيله.
+    _issue_materials(db, order, actor_user_id)
+    for m in order.materials:
+        if m.product_line_id is not None:
+            by_line[m.product_line_id] = (
+                by_line.get(m.product_line_id, ZERO) + to_money(m.line_cost))
 
     material_cost = ZERO
     for p in order.products:
@@ -537,16 +603,20 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
         by_line[p.id] = line.id
 
     for m in original.materials:
-        mirror = stock_service.reverse_movement(
+        # **السطر اللي ما اتصرفش مالوش مرآة.** الأمر ممكن يتعكس وهو شغّال وخامات
+        # الجودة لسه في المخزن — وعكس حركة مش موجودة كان بيطلّع ٥٠٠. بيتكتب في
+        # الورقة من غير حركة عشان المرآة تفضل مقروءة جنب أصلها.
+        mirror = (stock_service.reverse_movement(
             db, original_id=m.stock_movement_id, actor_user_id=actor_user_id,
             movement_type="reverse_consumption_out")
+            if m.stock_movement_id else None)
         rev.materials.append(ProductionOrderMaterial(
             order_id=rev.id, product_line_id=by_line.get(m.product_line_id),
             item_id=m.item_id, warehouse_id=m.warehouse_id,
             planned_quantity=m.planned_quantity, quantity=m.quantity,
             unit=m.unit, unit_factor=m.unit_factor, unit_cost=m.unit_cost,
-            line_cost=m.line_cost, waste_quantity=m.waste_quantity,
-            stock_movement_id=mirror.id))
+            line_cost=m.line_cost, waste_quantity=m.waste_quantity, stage=m.stage,
+            stock_movement_id=(mirror.id if mirror else None)))
 
     original.state = ProductionState.reversed
     db.flush()

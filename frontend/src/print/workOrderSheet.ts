@@ -15,7 +15,22 @@ export interface WorkOrderMaterial {
   item_id: number;
   warehouse_id: number | null;
   planned_quantity: string;
+  stage?: string | null;
 }
+
+/** مرحلة الصرف اللي الورقة دي بتتطبع عنها. */
+export type WorkOrderStage = 'production' | 'quality';
+
+const STAGE_SHEET: Record<WorkOrderStage, { title: string; note: string }> = {
+  production: {
+    title: 'إذن تشغيل — خامات التصنيع',
+    note: 'الخامات دي بتتصرف مع بداية الأمر. اكتب المنصرف الفعلي بالقلم وسلّم الورقة للمكتب.',
+  },
+  quality: {
+    title: 'إذن جودة — مواد التعبئة',
+    note: 'المواد دي بتتصرف بعد ما الإنتاج يطلع. اكتب المنصرف الفعلي بالقلم وسلّم الورقة للمكتب.',
+  },
+};
 
 export interface WorkOrderProduct {
   id: number;
@@ -57,12 +72,24 @@ function qty(v: string | number): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
-export function printWorkOrder(doc: WorkOrderDoc, n: WorkOrderNames): void {
+/**
+ * `stage` بيحدّد الورقة دي بتاعة مين.
+ *
+ * **ورقتين مش ورقة**: إذن التصنيع بيروح للمكن أول ما الأمر يبدأ، وإذن الجودة بيروح
+ * للتعبئة بعد ما المنتج يطلع. طبعهم على ورقة واحدة معناه إن اللي على المكن شايف
+ * كرتون مالوش دعوة بيه، واللي في التعبئة شايف خام مش هيلمسه — وكل واحد فيهم ممكن
+ * يصرف اللي مش بتاعه.
+ */
+export function printWorkOrder(
+  doc: WorkOrderDoc, n: WorkOrderNames, stage: WorkOrderStage = 'production',
+): void {
+  const inStage = (m: { stage?: string | null }) =>
+    (m.stage === 'quality' ? 'quality' : 'production') === stage;
   const blocks = doc.products.map((p, i) => {
     // خامات السطر ده. واللي مش منسوب لمنتج (product_line_id فاضي) بيتحط تحت أول
     // منتج بدل ما يختفي — ورقة ناقصة خامة أسوأ من ورقة ترتيبها مش مظبوط.
-    const mine = doc.materials.filter((m) => m.product_line_id === p.id
-      || (i === 0 && m.product_line_id === null));
+    const mine = doc.materials.filter((m) => inStage(m)
+      && (m.product_line_id === p.id || (i === 0 && m.product_line_id === null)));
     const rows = mine.map((m) => `<tr>
       <td style="text-align:right">${esc(n.itemName(m.item_id))}</td>
       <td>${esc(n.itemCode(m.item_id))}</td>
@@ -91,7 +118,7 @@ export function printWorkOrder(doc: WorkOrderDoc, n: WorkOrderNames): void {
           <th style="width:34%">الخامة</th><th>الكود</th><th>تتصرف من</th>
           <th>الكمية المطلوبة</th><th>المنصرف فعلاً</th>
         </tr></thead>
-        <tbody>${rows || `<tr><td colspan="5">مافيش خامات على المنتج ده</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="5">مافيش خامات في المرحلة دي</td></tr>`}</tbody>
       </table>
     </div>`;
   }).join('');
@@ -106,13 +133,13 @@ export function printWorkOrder(doc: WorkOrderDoc, n: WorkOrderNames): void {
     </div>`;
 
   printDocument({
-    title: 'أمر تشغيل',
+    title: STAGE_SHEET[stage].title,
     number: doc.document_number,
     meta: [
       ['تاريخ الإنتاج', doc.production_date || '-'],
       ['الفرع', n.branchName(doc.branch_id)],
       ['رقم الورقة', doc.external_document_number || '-'],
     ],
-    note: 'الكميات المكتوبة هي المخطّط. اكتب المنصرف واللي طلع فعلاً بالقلم وسلّم الورقة للمكتب.',
+    note: STAGE_SHEET[stage].note,
   }, body);
 }

@@ -114,18 +114,20 @@ def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
 # Bill of materials (recipes) — 012-manufacturing-bom.
 # ---------------------------------------------------------------------------
 def _component_rows(components):
-    """Normalise recipe components to (item_id, quantity, unit).
+    """Normalise recipe components to (item_id, quantity, unit, stage).
 
     Callers written before units existed pass `(item_id, quantity)` and mean the base unit; both
     shapes are accepted so no existing caller has to be touched to keep meaning what it meant.
+
+    والمرحلة رابع عنصر، والناقصة معناها «تصنيع» — نفس السبب: كل وصفة اتكتبت قبل
+    العمود ده خاماتها كلها كانت بتتصرف مرة واحدة عند البدء.
     """
     rows = []
     for comp in components or []:
-        if len(comp) >= 3:
-            item_id, qty, unit = comp[0], comp[1], comp[2]
-        else:
-            item_id, qty, unit = comp[0], comp[1], None
-        rows.append((item_id, qty, unit or None))
+        item_id, qty = comp[0], comp[1]
+        unit = comp[2] if len(comp) >= 3 else None
+        stage = comp[3] if len(comp) >= 4 else None
+        rows.append((item_id, qty, unit or None, stage or None))
     return rows
 
 
@@ -139,13 +141,27 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
     if not components:
         raise ManufacturingError("التركيبة لازم يكون فيها خامة واحدة على الأقل.")
     seen: set[int] = set()
-    for item_id, qty, unit in _component_rows(components):
+    for item_id, qty, unit, _stage in _component_rows(components):
         if item_id in seen:
             raise ManufacturingError("فيه خامة متكررة أكتر من مرة في التركيبة.")
         seen.add(item_id)
         comp = db.get(Item, item_id)
-        if comp is None or comp.kind != ItemKind.raw_material:
-            raise ManufacturingError("مكوّنات التركيبة لازم تكون خامات.")
+        if comp is None:
+            raise ManufacturingError("مكوّن مش موجود في الكتالوج.")
+        # **المكوّن أي صنف، مش «خامة» بس.**
+        #
+        # الشرط القديم كان `kind == raw_material`، وهو منطقي في كتالوج متقسّم —
+        # وكتالوج العميل مش متقسّم: **٢٬٧٤١ صنف كلهم `product`**، لأن نقل a5 نقلهم
+        # كده وa5 مافيهوش التقسيمة دي أصلاً. يعني الشرط كان بيرفض كل وصفة تتكتب من
+        # الشاشة، والـ٤١٠ وصفة الموجودة دخلت بسكربت عدّى من جنبه.
+        #
+        # وهو مش شرط صح أصلاً في مصنع: نص المنتج بيدخل في المنتج التام — بوشة
+        # بتتصنّع وبعدين بتتركّب. منع ده معناه إن اللي بيعمل التركيب مايقدرش يكتب
+        # وصفته.
+        #
+        # اللي بيتمنع هو الحاجة الوحيدة اللي غلط فعلاً: **الصنف يكون مكوّن نفسه**.
+        if comp.id == product_id:
+            raise ManufacturingError("الصنف مايكونش مكوّن في وصفة نفسه.")
         if to_qty(qty) <= to_qty(0):
             raise ManufacturingError("كمية كل مكوّن لازم تكون أكبر من صفر.")
         # Rejected here rather than at order time: a recipe saved with a unit the item does not
@@ -167,11 +183,11 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
 
 
 def _persist_recipe_lines(db: Session, bom: Bom, components, resources) -> None:
-    for item_id, qty, unit in _component_rows(components):
+    for item_id, qty, unit, stage in _component_rows(components):
         item = db.get(Item, item_id)
         factor = uom_service.resolve_factor(db, item, unit) if unit else Decimal(1)
         db.add(BomComponent(bom_id=bom.id, item_id=item_id, quantity=to_qty(qty),
-                            unit=unit, unit_factor=to_qty(factor)))
+                            unit=unit, unit_factor=to_qty(factor), stage=stage))
     for kind, name, qty, rate in (resources or []):
         db.add(BomResource(bom_id=bom.id, kind=ResourceKind(kind), name=name,
                            quantity=to_qty(qty), rate=to_money(rate)))
