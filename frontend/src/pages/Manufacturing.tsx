@@ -1015,19 +1015,31 @@ function ProductionOrdersTab({
       warehouse_id: ln.warehouse_id ?? undefined,
       bom_id: ln.bom_id ?? undefined,
       expense_amount: ln.expense_amount ?? 0,
-      materials: ln.materials.filter((m) => m.item_id && m.quantity).map((m) => ({
-        item_id: m.item_id, quantity: m.quantity,
-        planned_quantity: m.planned_quantity ?? m.quantity,
-        warehouse_id: m.warehouse_id ?? undefined,
-        waste_quantity: m.waste_quantity ?? 0,
-      })),
+      // **الفلترة على المخطّط مش على المصروف.** «اتصرف» مابقاش خانة في الورقة،
+      // فالخامة اللي حد زوّدها بإيده مالهاش `quantity` — والفلترة القديمة كانت
+      // بتسقّطها في صمت، والأمر يتحفظ من غيرها.
+      materials: ln.materials
+        .filter((m) => m.item_id && (m.planned_quantity ?? m.quantity))
+        .map((m) => ({
+          item_id: m.item_id,
+          planned_quantity: m.planned_quantity ?? m.quantity,
+          warehouse_id: m.warehouse_id ?? undefined,
+        })),
     })),
   });
 
   const submit = async () => {
     if (!lines.length) { message.warning('ضيف منتج واحد على الأقل'); return; }
     for (const ln of lines) {
-      if (!ln.item_id || !ln.quantity) { message.warning('كل سطر منتج محتاج صنف وكمية'); return; }
+      // على المخطّط: «اللي طلع» مابقاش في الورقة، والتحقق عليه كان بيمنع حفظ أي
+      // منتج مالوش وصفة — لأن الرقم ده مابيتحطش غير لما الوصفة تتفجّر.
+      if (!ln.item_id || !ln.planned_quantity) {
+        message.warning('كل سطر منتج محتاج صنف وكمية'); return;
+      }
+      if (!ln.materials.some((m) => m.item_id && (m.planned_quantity ?? m.quantity))) {
+        message.warning(`«${itemName(ln.item_id)}» مالوش خامات — اختار وصفة أو ضيفها بإيدك`);
+        return;
+      }
     }
     setSaving(true);
     try {
