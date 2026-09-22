@@ -28,6 +28,7 @@ import TotalsLadder from '../components/TotalsLadder';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
+import DocumentBar from '../components/DocumentBar';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
@@ -1183,6 +1184,27 @@ export default function Returns() {
           </Space>
         )}
           extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
+        {/* **شريط الحالة** — نفس اللي على فاتورة البيع.
+            الحالة كانت بتتعرف من الأزرار المتاحة: اللي شايف «عكس» يبقى المستند مرحّل،
+            واللي مش شايفه يبقى… مش واضح. دلوقتي مكتوبة، وجنبها المسار والترقيم في
+            السجل والأسهم اللي بتمشي على نفس الترتيب اللي قدامك. */}
+        <DocumentBar
+          listLabel="مرتجعات المبيعات"
+          listTo="/returns"
+          title={viewReturn
+            ? (viewReturn.document_number || `#${viewReturn.id}`)
+            : (editingSourceId ? 'تعديل مرتجع' : 'مرتجع جديد')}
+          position={viewReturn
+            ? returns.findIndex((r: any) => r.id === viewReturn.id) + 1 || null : null}
+          total={viewReturn ? returns.length : null}
+          steps={[
+            { key: 'draft', label: 'مسودة' },
+            { key: 'posted', label: 'مرحّل', color: 'green' },
+            { key: 'reversed', label: 'معكوس', color: 'volcano' },
+          ]}
+          current={!viewReturn && !editingSourceId ? 'draft'
+            : (viewReturn?.reversed_by ? 'reversed' : 'posted')}
+        />
           <DocumentToolbar actions={returnToolbar()} />
           <Form form={createForm} layout="vertical" size="small" className="doc-form"
             onFinish={handleSubmit}>

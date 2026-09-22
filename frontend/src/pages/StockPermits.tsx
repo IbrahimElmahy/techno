@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { money, qty } from '../utils/money';
+import DocumentBar from '../components/DocumentBar';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
@@ -560,6 +561,19 @@ export default function StockPermits() {
    */
   const postedDoc = detail && (
     <>
+      {/* **شريط الحالة** — نفس اللي على فاتورة البيع. الحالة كانت بتتعرف من نص
+          التنبيه؛ دلوقتي مكتوبة كشريحة وجنبها المسار للسجل. */}
+      <DocumentBar
+        listLabel="أذون المخزن"
+        listTo="/stock-permits"
+        title={detail.document_number || `#${detail.id}`}
+        steps={[
+          { key: 'draft', label: 'مسودة' },
+          { key: 'posted', label: 'مرحّل', color: 'green' },
+          { key: 'reversed', label: 'معكوس', color: 'volcano' },
+        ]}
+        current={detail.reversed_by ? 'reversed' : 'posted'}
+      />
       <Alert
         type={detail.reversed_by ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
         message={detail.reversed_by ? 'الإذن ده اتعكس' : 'هذا الإذن مُرحَّل بالفعل'}

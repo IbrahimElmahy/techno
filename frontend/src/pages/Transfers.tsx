@@ -28,6 +28,7 @@ import { advanceFrom } from '../components/lineKeyboard';
 import { printTransfer } from '../components/TransferDocument';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import ProductPickerModal from '../components/ProductPickerModal';
+import DocumentBar from '../components/DocumentBar';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
@@ -1411,6 +1412,24 @@ export default function Transfers() {
     activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
   const screen = createVisible ? (
       <div>
+        {/* **شريط الحالة** — نفس اللي على فاتورة البيع.
+            الحالة كانت بتتعرف من الأزرار المتاحة: اللي شايف «عكس» يبقى المستند مرحّل،
+            واللي مش شايفه يبقى… مش واضح. دلوقتي مكتوبة، وجنبها المسار والترقيم في
+            السجل والأسهم اللي بتمشي على نفس الترتيب اللي قدامك. */}
+        <DocumentBar
+          listLabel="التحويلات"
+          listTo="/transfers"
+          title={editing
+            ? (editing.document_number || `#${editing.id}`)
+            : 'تحويل جديد'}
+          steps={[
+            { key: 'draft', label: 'مسودة' },
+            { key: 'posted', label: 'مرحّل', color: 'green' },
+            { key: 'reversed', label: 'معكوس', color: 'volcano' },
+          ]}
+          current={!editing ? 'draft'
+            : ((editing as any)?.status === 'approved' ? 'posted' : 'draft')}
+        />
         <DocumentToolbar actions={transferToolbar()} />
         <Card title={(
           <Space>
