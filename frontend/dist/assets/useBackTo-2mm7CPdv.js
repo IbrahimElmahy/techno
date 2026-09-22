@@ -1,1 +1,0 @@
-import{f as s,r as a}from"./index-O_4xN7pg.js";function n(e){const t=s();return a.useCallback(()=>{var o;const r=(o=window.history.state)==null?void 0:o.idx;if(typeof r=="number"&&r>0){t(-1);return}t(e)},[t,e])}export{n as u};

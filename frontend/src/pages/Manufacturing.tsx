@@ -762,6 +762,8 @@ function Variance({ planned, actual }: { planned: string; actual: string }) {
 /** سطر في الفورم — مفتاح محلي عشان الحذف مايلخبطش الصفوف. */
 interface DraftMaterial {
   key: number; item_id?: number; warehouse_id?: number; stage?: Stage;
+  /** حد غيّر المرحلة بإيده على السطر ده؟ ساعتها بس بتتبعت للسيرفر. */
+  stageTouched?: boolean;
   planned_quantity?: number | null; quantity?: number | null; waste_quantity?: number | null;
   /**
    * **حد اختار مخزن الخامة دي بإيده؟**
@@ -818,8 +820,8 @@ const poPaper = (r: { external_document_number: string | null }) => {
 };
 
 function ProductionOrdersTab({
-  products, rawMaterials, warehouses, branches, boms, itemName, itemUnit, itemCode,
-  whName, active,
+  products, rawMaterials, warehouses, branches, boms: propBoms, itemName, itemUnit,
+  itemCode, whName, active,
 }: {
   products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
   branches: { id: number; name: string }[]; boms: Bom[];
@@ -867,6 +869,15 @@ function ProductionOrdersTab({
    * البضاعة فعلاً وتوري المتاح جنب كل خامة، بدل ما المصنع يكتشف عند الضغطة الأخيرة.
    */
   const [stock, setStock] = useState<Map<number, { wh: number; qty: number }[]>>(new Map());
+  /**
+   * **نسخة طازة من الوصفات مع كل فتحة للورقة.**
+   *
+   * اللي جاي في الـprops اتحمّل لما الشاشة اتفتحت. تبويب مفتوح من ساعة بيفضل
+   * شايف الوصفة القديمة، والورقة اللي بتتكتب منه بتوري مراحل غلط. السيرفر
+   * بيصلّحها وقت الحفظ، بس اللي قدام الشاشة يستاهل يشوف الصح وهو بيكتب.
+   */
+  const [freshBoms, setFreshBoms] = useState<Bom[] | null>(null);
+  const boms = freshBoms ?? propBoms;
 
   const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
   const itemOptions = (list: Item[]) =>
@@ -903,7 +914,16 @@ function ProductionOrdersTab({
     setExternalRef(''); setStatement(''); setNotes(''); setLines([]); setFormTab('work');
   };
 
-  const openNew = () => { resetForm(); setLines([newPOProduct()]); setOpen(true); };
+  /** الوصفات بتتجدّد مع كل فتحة — الشرح عند `freshBoms`. */
+  const refreshBoms = () => {
+    api.get('/api/v1/manufacturing/boms')
+      .then((r) => setFreshBoms(r.data))
+      .catch(() => { /* النسخة اللي في الإيد بتكفّي للعرض */ });
+  };
+
+  const openNew = () => {
+    resetForm(); setLines([newPOProduct()]); refreshBoms(); setOpen(true);
+  };
 
   /**
    * أمر التشغيل المفتوح جزء من العنوان — الشرح في `useDocRoute`.
@@ -940,6 +960,7 @@ function ProductionOrdersTab({
 
   const openEdit = (r: ProductionOrder) => {
     markOpen(r.id, 'edit');
+    refreshBoms();
     setEditingId(r.id);
     setProductionDate(r.production_date ? dayjs(r.production_date) : null);
     setBranchId(r.branch_id ?? undefined);
@@ -960,6 +981,8 @@ function ProductionOrdersTab({
         key: poSeq++, item_id: m.item_id, warehouse_id: m.warehouse_id ?? undefined,
         planned_quantity: Number(m.planned_quantity), quantity: Number(m.quantity),
         waste_quantity: Number(m.waste_quantity), stage: stageOf(m.stage),
+        // الورقة المحفوظة مرحلتها اتسجّلت خلاص — بتتبعت زي ما هي مش بتتقرا تاني.
+        stageTouched: true,
       })),
     })));
     setOpen(true);
@@ -986,7 +1009,8 @@ function ProductionOrdersTab({
         materials: x.materials.map((y) => (y.key === matKey
           ? { ...y, ...patch,
               // اختيار المخزن بإيد بيتقفل عليه — الشرح عند `warehouseTouched`.
-              ...('warehouse_id' in patch ? { warehouseTouched: true } : {}) }
+              ...('warehouse_id' in patch ? { warehouseTouched: true } : {}),
+              ...('stage' in patch ? { stageTouched: true } : {}) }
           : y)),
       }
       : x)));
@@ -1196,7 +1220,11 @@ function ProductionOrdersTab({
           item_id: m.item_id,
           planned_quantity: m.planned_quantity ?? m.quantity,
           warehouse_id: m.warehouse_id ?? undefined,
-          stage: stageOf(m.stage),
+          // **المرحلة بتتبعت لو حد غيّرها بإيده بس.** الشاشة عندها نسخة من
+          // الوصفات اتحمّلت لما اتفتحت، وأي ورقة بتتكتب منها بعد ما الوصفة
+          // تتعدّل بتحمل النسخة القديمة لطول عمرها. السيرفر بيقراها من الوصفة
+          // اللي عنده — والسطر اللي حد قصده بيغلبها.
+          ...(m.stageTouched ? { stage: stageOf(m.stage) } : {}),
         })),
     })),
   });

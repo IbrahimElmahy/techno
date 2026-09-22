@@ -100,6 +100,19 @@ def recipe_plan(db: Session, *, product_id: int, quantity, bom_id: int | None = 
         c.quantity, scale, getattr(c, "unit_factor", 1) or 1)) for c in bom.components]
 
 
+def _active_bom(db: Session, *, product_id: int, bom_id=None):
+    """وصفة السطر: اللي اتحدّدت، وإلا النشطة بتاعة المنتج.
+
+    نفس اللي `recipe_plan` بيدوّر عليه — بس هنا محتاجين المكوّنات نفسها مش
+    الكميات، عشان نقرا منها المرحلة.
+    """
+    if bom_id:
+        return db.get(Bom, int(bom_id))
+    return db.scalars(select(Bom).where(Bom.product_id == product_id,
+                                        Bom.active.is_(True))
+                      .order_by(Bom.id.desc())).first()
+
+
 def _build_lines(db: Session, order: ProductionOrder, products) -> None:
     """يبني (أو يعيد بناء) سطور الأمر من الطلب. مافيش حركة مخزون هنا خالص.
 
@@ -140,6 +153,22 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
         order.products.append(line)
         db.flush()
 
+        # **مرحلة كل خامة بتتقرا من الوصفة هنا، مش من اللي الشاشة باعته.**
+        #
+        # الشاشة عندها نسخة من الوصفات اتحمّلت لما الصفحة اتفتحت. أول أمر اتكتب
+        # بعد ما المراحل اتظبطت طلع **كل خاماته تصنيع** — الكرتون والأكياس معاهم —
+        # لأن التبويب كان مفتوح من قبل التظبيط، والنسخة اللي في إيده قديمة.
+        #
+        # والحل مش «اعمل ريفريش»: أي شاشة مفتوحة من ساعة بتبقى قديمة، والورقة
+        # اللي بتتكتب منها بتحمل الغلط ده لطول عمرها. فالسيرفر بيقرا المرحلة من
+        # الوصفة اللي عنده، واللي بيتبعت من الشاشة بيغلبها **لو اتبعت صراحةً** —
+        # وده بيحصل بس لما حد يغيّرها بإيده على السطر.
+        bom_stage: dict[int, str] = {}
+        _bom = _active_bom(db, product_id=item.id, bom_id=p.get("bom_id"))
+        if _bom is not None:
+            bom_stage = {c.item_id: (c.stage or STAGE_PRODUCTION)
+                         for c in _bom.components}
+
         rows = p.get("materials") or []
         if not rows:
             # الوصفة هي المصدر الطبيعي للسطور، فلو مافيش سطور اتبعتت بنجيبها منها بدل
@@ -177,7 +206,9 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
                 waste_quantity=waste,
                 # بتتنسخ من الوصفة وقت الفتح، مابتتقراش منها وقت الصرف: الوصفة
                 # بتتعدّل والأمر القديم لازم يفضل قايل إنه صرف إيه إمتى.
-                stage=(m.get("stage") or STAGE_PRODUCTION)))
+                stage=(m.get("stage")
+                       or bom_stage.get(raw.id)
+                       or STAGE_PRODUCTION)))
             total_material_qty += m_qty
 
         total_expense += expense
