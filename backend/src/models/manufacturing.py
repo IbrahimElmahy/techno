@@ -223,6 +223,8 @@ class ProductionOrder(Base):
         cascade="all, delete-orphan", back_populates="order")
     materials: Mapped[list[ProductionOrderMaterial]] = relationship(
         cascade="all, delete-orphan", back_populates="order")
+    receipts: Mapped[list[ProductionOrderReceipt]] = relationship(
+        cascade="all, delete-orphan", back_populates="order")
 
 
 class ProductionOrderProduct(Base):
@@ -257,10 +259,54 @@ class ProductionOrderProduct(Base):
     expense_amount: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     total_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    # **اللي اتستلم لحد دلوقتي** — مجموع دفعات الاستلام على السطر ده.
+    #
+    # الأمر بعشرين ألف قطعة مابيتسلّمش مرة واحدة: بيجي ألف النهارده وألفين بكرة.
+    # من غير الرقم ده، البضاعة اللي في المخزن فعلاً مابتدخلش عليه غير يوم القفل —
+    # واللي بيقرا الرصيد في النص بيقرا صفر وهو شايف البضاعة قدامه.
+    received_quantity: Mapped[object] = mapped_column(QTY, nullable=False, default=0)
+    # حركة الإنتاج الأخيرة (المتبقّي وقت القفل). دفعات الاستلام حركاتها على
+    # `ProductionOrderReceipt` — السطر الواحد بقى له أكتر من حركة.
     stock_movement_id: Mapped[int | None] = mapped_column(
         ForeignKey("stock_movement.id"), nullable=True)
 
     order: Mapped[ProductionOrder] = relationship(back_populates="products")
+    receipts: Mapped[list[ProductionOrderReceipt]] = relationship(
+        cascade="all, delete-orphan", back_populates="product_line")
+
+
+class ProductionOrderReceipt(Base):
+    """دفعة إنتاج اتستلمت من الورشة — **جزء من الأمر، مش الأمر كله**.
+
+    الأمر بعشرين ألف قطعة بيتسلّم على مراحل: ألف النهارده وألفين بكرة وخمسة بعده.
+    كل دفعة سطر هنا بتاريخها وحركتها، والمخزون بيزيد وقتها — مش يوم القفل.
+
+    **وليه سطور مش رقم واحد بيتزوّد.** الرقم المجمّع بيقول «اتستلم ٣٬٠٠٠» ومابيقولش
+    إمتى ولا على كام مرة، والدفعة الغلط مايكونش ليها حركة تتعكس لوحدها. والسطر
+    بيدّي الاتنين: تاريخ كل استلام، وحركة مخزون مربوطة بيه.
+    """
+
+    __tablename__ = "production_order_receipt"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("production_order.id"),
+                                          nullable=False, index=True)
+    product_line_id: Mapped[int] = mapped_column(
+        ForeignKey("production_order_product.id"), nullable=False, index=True)
+    quantity: Mapped[object] = mapped_column(QTY, nullable=False)
+    # يوم الاستلام — مش يوم الإدخال. الورشة بتقفل تشغيلة بالليل والمكتب بيدخّلها
+    # الصبح، وتأريخها بيوم الإدخال بيحط الإنتاج في اليوم الغلط في كل تقرير.
+    receipt_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    stock_movement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("stock_movement.id"), nullable=True)
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(),
+                                                 nullable=False)
+
+    order: Mapped[ProductionOrder] = relationship(back_populates="receipts")
+    product_line: Mapped[ProductionOrderProduct] = relationship(
+        back_populates="receipts")
 
 
 class ProductionOrderMaterial(Base):

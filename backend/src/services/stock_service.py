@@ -173,6 +173,7 @@ def post_movement(
     source_doc_id: int | None = None,
     reverses_movement_id: int | None = None,
     allow_negative: bool = False,
+    movement_date=None,
 ) -> StockMovement:
     """Append one immutable movement; reject an `out` that would drive on-hand below zero.
 
@@ -205,7 +206,11 @@ def post_movement(
         # بيتقرا من المستند نفسه بدل ما يتمرّر من كل واحد من الـ٢٥ موضع اللي بيكتبوا
         # حركة: اللي بينسى يمرّره كان هيسيب صفوف بتاريخ تاني من غير ما حد يعرف.
         # ومافيش مستند ⇒ تاريخ النهارده، وهو الصح لحركة اتكتبت النهارده بإيد.
-        movement_date=(stock_docs.date_of(db, source_doc_type, source_doc_id)
+        # و`movement_date` الصريح بيغلب المستند — الحركة اللي ليها تاريخ **خاص بيها**
+        # جوّه ورقة أطول منها. دفعة استلام إنتاج مثلاً: الأمر اتفتح يوم، والدفعات
+        # بتوصل على أيام، وتأريخهم كلهم بيوم الأمر بيحط إنتاج أسبوع في يوم واحد.
+        movement_date=(movement_date
+                       or stock_docs.date_of(db, source_doc_type, source_doc_id)
                        or date.today()),
         # (037) فرع الحركة بيتاخد من مكانها، مش من اللي سجّلها.
         #

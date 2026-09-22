@@ -577,8 +577,17 @@ class POMaterialOut(BaseModel):
     waste_quantity: Decimal
 
 
+class POReceiptOut(BaseModel):
+    id: int
+    product_line_id: int
+    quantity: Decimal
+    receipt_date: date | None = None
+    notes: str | None = None
+
+
 class POProductOut(BaseModel):
     id: int
+    received_quantity: Decimal = Decimal("0")
     item_id: int
     warehouse_id: int | None
     planned_quantity: Decimal
@@ -612,6 +621,8 @@ class POOut(BaseModel):
     is_reversal: bool
     products: list[POProductOut]
     materials: list[POMaterialOut]
+    # دفعات الاستلام — الشاشة بتوري منها «اتستلم كام وإمتى» جنب المخطّط.
+    receipts: list[POReceiptOut] = []
 
 
 def _po_out(o, rev_ids: set[int]) -> POOut:
@@ -628,8 +639,13 @@ def _po_out(o, rev_ids: set[int]) -> POOut:
             id=p.id, item_id=p.item_id, warehouse_id=p.warehouse_id,
             planned_quantity=p.planned_quantity, quantity=p.quantity,
             unit=p.unit, bom_id=p.bom_id, material_cost=p.material_cost,
-            expense_amount=p.expense_amount, total_cost=p.total_cost, unit_cost=p.unit_cost)
+            expense_amount=p.expense_amount, total_cost=p.total_cost, unit_cost=p.unit_cost,
+            received_quantity=p.received_quantity)
             for p in o.products],
+        receipts=[POReceiptOut(
+            id=r.id, product_line_id=r.product_line_id, quantity=r.quantity,
+            receipt_date=r.receipt_date, notes=r.notes)
+            for r in sorted(o.receipts, key=lambda r: r.id)],
         materials=[POMaterialOut(
             id=m.id, product_line_id=m.product_line_id, item_id=m.item_id,
             warehouse_id=m.warehouse_id, planned_quantity=m.planned_quantity,
@@ -799,6 +815,55 @@ def issue_quality_materials(
     try:
         order = production_order_service.issue_quality(
             db, order_id=order_id, actor_user_id=current.id)
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+class POReceiveIn(BaseModel):
+    """دفعة استلام: كمية لكل سطر منتج، وتاريخ الاستلام."""
+
+    quantities: dict[int, Decimal] = {}
+    receipt_date: date | None = None
+    notes: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/production-orders/{order_id}/receive", response_model=POOut)
+def receive_production_output(
+    order_id: int,
+    body: POReceiveIn,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    """**استلام دفعة إنتاج** — البضاعة بتدخل المخزن دلوقتي والأمر بيفضل شغّال.
+
+    الشرح الكامل في `manufacturing_production_service.receive_output`.
+    """
+    _seen_po(db, order_id, current)
+    try:
+        order = production_order_service.receive_output(
+            db, order_id=order_id, actor_user_id=current.id,
+            rows=body.quantities, receipt_date=body.receipt_date, notes=body.notes)
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
+@router.delete("/production-orders/{order_id}/receipts/{receipt_id}",
+               response_model=POOut)
+def undo_production_receipt(
+    order_id: int,
+    receipt_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    """عكس دفعة استلام غلط. الشرح في `production_order_service.undo_receipt`."""
+    _seen_po(db, order_id, current)
+    try:
+        order = production_order_service.undo_receipt(
+            db, order_id=order_id, receipt_id=receipt_id, actor_user_id=current.id)
     except (ProductionOrderError, ManufacturingError, StockError) as exc:
         raise _conflict(exc)
     db.commit()

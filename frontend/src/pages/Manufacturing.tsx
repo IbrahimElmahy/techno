@@ -9,7 +9,7 @@ import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
-  BuildOutlined, PlayCircleOutlined, PrinterOutlined,
+  BuildOutlined, PlayCircleOutlined, PrinterOutlined, DownloadOutlined, UndoOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -676,8 +676,14 @@ interface POMaterial {
   /** اتصرف من المخزن ولا لسه. ده اللي بيحدّد الخطوة الجاية، مش حالة الأمر. */
   issued?: boolean;
 }
+interface POReceipt {
+  id: number; product_line_id: number; quantity: string;
+  receipt_date: string | null; notes: string | null;
+}
 interface POProduct {
   id: number; item_id: number; warehouse_id: number | null;
+  /** اللي اتستلم من السطر ده لحد دلوقتي — مجموع الدفعات. */
+  received_quantity?: string;
   planned_quantity: string; quantity: string; unit: string | null; bom_id: number | null;
   material_cost: string; expense_amount: string; total_cost: string; unit_cost: string;
 }
@@ -689,6 +695,7 @@ interface ProductionOrder {
   planned_quantity: string; product_quantity: string; material_quantity: string;
   imported_from: string | null; reversed: boolean; is_reversal: boolean;
   products: POProduct[]; materials: POMaterial[];
+  receipts?: POReceipt[];
 }
 
 const PO_STATE_TAG: Record<POState, { color: string; label: string }> = {
@@ -861,6 +868,16 @@ function ProductionOrdersTab({
   const [closing, setClosing] = useState<ProductionOrder | null>(null);
   const [outputs, setOutputs] = useState<Record<number, number | null>>({});
   const [waste, setWaste] = useState<Record<number, number | null>>({});
+  /**
+   * **شاشة الاستلام** — الأمر اللي شغّال والدفعة اللي وصلت النهارده.
+   *
+   * منفصلة عن الإقفال عن قصد: الإقفال بيقول «الشغل خلص واللي طلع كله كده»،
+   * والاستلام بيقول «وصل الجزء ده النهارده» والأمر لسه شغّال. جمعهم في شاشة واحدة
+   * كان معناه إن اللي بيستلم دفعة بيقفل الورقة عليها.
+   */
+  const [receiving, setReceiving] = useState<ProductionOrder | null>(null);
+  const [received, setReceived] = useState<Record<number, number | null>>({});
+  const [receiptDate, setReceiptDate] = useState<any>(null);
   /**
    * **الخامة دي موجودة فين وبكام** — `صنف → [{مخزن، رصيد}]` مرتّبة بالأكبر.
    *
@@ -1296,8 +1313,12 @@ function ProductionOrdersTab({
    * وبيتفتح على المخطّط: اللي طلع زي ما اتخطّط بيدوس «إقفال» على طول.
    */
   const openClose = (r: ProductionOrder) => {
-    setOutputs(Object.fromEntries(r.products.map((p) => [p.id, Number(p.planned_quantity)
-      || Number(p.quantity)])));
+    // **بيفتح على اللي اتستلم لو فيه دفعات** — ده الرقم اللي حصل فعلاً، والمخطّط
+    // بقى تخمين قديم جنبه. واللي مااستلمش حاجة بيفتح على المخطّط زي الأول.
+    setOutputs(Object.fromEntries(r.products.map((p) => [p.id,
+      Number(p.received_quantity) > 0
+        ? Number(p.received_quantity)
+        : (Number(p.planned_quantity) || Number(p.quantity))])));
     // الهالك بيفتح على اللي متسجّل (صفر في الغالب) — اللي مافيش عنده هالك بيسيبه.
     setWaste(Object.fromEntries(r.materials.map((m) => [m.id, Number(m.waste_quantity) || null])));
     setClosing(r);
@@ -1313,6 +1334,45 @@ function ProductionOrdersTab({
           Object.entries(waste).filter(([, v]) => Number(v) > 0)) });
       message.success('اتقفل الأمر: الإنتاج اتضاف للمخزن والتكلفة اتحسبت');
       setClosing(null);
+      load();
+    } catch (err) { console.error(err); }
+  };
+
+  /** بيفتح شاشة الاستلام على الباقي — الرقم اللي الغالب إنه هيتكتب. */
+  const openReceive = (r: ProductionOrder) => {
+    setReceived(Object.fromEntries(r.products.map((p) => {
+      const left = Number(p.planned_quantity) - Number(p.received_quantity || 0);
+      return [p.id, left > 0 ? left : null];
+    })));
+    setReceiptDate(dayjs());
+    setReceiving(r);
+  };
+
+  const undoReceipt = async (rc: POReceipt) => {
+    if (!receiving) return;
+    try {
+      const res = await api.delete(
+        `/api/v1/manufacturing/production-orders/${receiving.id}/receipts/${rc.id}`);
+      message.success('اتعكست الدفعة — الكمية خرجت من المخزن');
+      setReceiving(res.data as ProductionOrder);
+      load();
+    } catch (err) { console.error(err); }
+  };
+
+  const submitReceive = async () => {
+    if (!receiving) return;
+    const quantities = Object.fromEntries(
+      Object.entries(received).filter(([, v]) => Number(v) > 0));
+    if (!Object.keys(quantities).length) {
+      message.warning('اكتب الكمية اللي استلمتها'); return;
+    }
+    try {
+      await api.post(`/api/v1/manufacturing/production-orders/${receiving.id}/receive`, {
+        quantities,
+        receipt_date: receiptDate ? receiptDate.format('YYYY-MM-DD') : undefined,
+      });
+      message.success('اتسجّل الاستلام — البضاعة دخلت المخزن');
+      setReceiving(null);
       load();
     } catch (err) { console.error(err); }
   };
@@ -1461,6 +1521,10 @@ function ProductionOrdersTab({
                   صرف وإقفال مرة واحدة
                 </Button>
               </>
+            )}
+            {r.state === 'in_progress' && (
+              <Button type="link" size="small" icon={<DownloadOutlined />}
+                onClick={() => openReceive(r)}>استلام دفعة</Button>
             )}
             {r.state === 'in_progress' && (
               <Button type="link" size="small" onClick={() => openClose(r)}>
@@ -1722,66 +1786,90 @@ function ProductionOrdersTab({
               </Col>
             </Row>
 
-            <Divider orientation="right" style={{ margin: '12px 0 8px' }}>خاماته</Divider>
-            {ln.materials.map((m) => (
-              <Row gutter={8} key={m.key} style={{ marginBottom: 6 }}>
-                <Col span={7}>
-                  <Select showSearch style={{ width: '100%' }} placeholder="الخامة"
-                    value={m.item_id} options={itemOptions(allItems)}
-                    filterOption={searchFilter} filterSort={searchRank}
-                    onChange={(v) => patchMaterial(ln.key, m.key, { item_id: v })} />
-                </Col>
-                <Col span={5}>
-                  <Select style={{ width: '100%' }} placeholder="مخزن الخامة" value={m.warehouse_id}
-                    options={whOptions}
-                    onChange={(v) => patchMaterial(ln.key, m.key, { warehouse_id: v })} />
-                </Col>
-                <Col span={3}>
-                  <InputNumber style={{ width: '100%' }} min={0} placeholder="المفروض"
-                    addonAfter={m.item_id ? itemUnit(m.item_id) || undefined : undefined}
-                    value={m.planned_quantity as any}
-                    onChange={(v) => patchMaterial(ln.key, m.key, {
-                      planned_quantity: v as any,
-                      quantity: m.quantity == null ? (v as any) : m.quantity,
-                    })} />
-                </Col>
-                {/* المرحلة بتتفجّر من الوصفة وبتتعدّل هنا للحالة الاستثنائية. */}
-                <Col span={3}>
-                  <Select style={{ width: '100%' }} value={m.stage ?? 'production'}
-                    options={STAGES.map((x) => ({ value: x.value, label: x.short }))}
-                    onChange={(v) => patchMaterial(ln.key, m.key, { stage: v })} />
-                </Col>
-                {/* «اتصرف» و«هالك» مش خانات هنا — الورقة بتتفتح على خطة. المصروف
-                    بيتحدّد وقت الصرف (من المخطّط)، والهالك بيتكتب عند الإقفال: محدش
-                    يعرف هيبوظ كام وهو بيخطّط. */}
-                {/* **المتاح في المخزن ده** — الرقم اللي كان بيتعرف بعد فوات الأوان.
-                    الصرف بيحصل عند «ابدأ»، فالنقص كان بيبان بعد ما الورقة تتكتب
-                    وتتأكد. أحمر معناه الورقة دي هتقف عند الصرف. */}
-                <Col span={3}>
-                  {(() => {
-                    const have = availableIn(m.item_id, m.warehouse_id);
-                    const need = Number(m.planned_quantity ?? 0);
-                    if (have == null) return null;
-                    return (
-                      <span style={{ fontSize: 12, lineHeight: '32px',
-                                     color: have < need ? '#cf1322' : '#8c8c8c',
-                                     fontWeight: have < need ? 600 : 400 }}>
-                        متاح {num(have.toFixed(3))} {m.item_id ? itemUnit(m.item_id) : ''}
-                        {have < need && ` · ناقص ${num((need - have).toFixed(3))}`}
+            {/* **المرحلتين مفصولتين، مش عمود جوّه جدول واحد.**
+                الكشف الواحد بيخلّي اللي بيكتب يعدّ خامات هتخرج في وقتين مختلفين على
+                إنها طلب واحد، وبيقرا رقم إجمالي مالوش معنى. والقسمين هنا بيوروا
+                بالظبط الورقتين اللي هيتطبعوا: إذن للمكن وإذن للتعبئة. */}
+            {STAGES.map((st) => {
+              const rows = ln.materials.filter((m) => (m.stage ?? 'production') === st.value);
+              // القسم اللي مالوش سطور بيتعرض بزرار الإضافة بس — عشان اللي عايز
+              // يزوّد مادة تعبئة على منتج مالوش يلاقي مكانها.
+              return (
+                <div key={st.value} style={{ marginTop: 10 }}>
+                  <Divider orientation="right" style={{ margin: '10px 0 8px' }}>
+                    <Tag color={st.color}>{st.short}</Tag>
+                    {st.value === 'production' ? 'خامات بتدخل الماكينة' : 'مواد بتتحط بعد الإنتاج'}
+                    {rows.length > 0 && (
+                      <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+                        {' '}· {num(rows.length)}
                       </span>
-                    );
-                  })()}
-                  <Button type="text" danger size="small" icon={<DeleteOutlined />}
-                    onClick={() => patchLine(ln.key, {
-                      materialsTouched: true,
-                      materials: ln.materials.filter((y) => y.key !== m.key) })} />
-                </Col>
-              </Row>
-            ))}
-            {/* زيادة أو مسح خامة بإيد = لمسة، فالتحديث التلقائي من الوصفة بيقف بعدها. */}
-            <Button size="small" onClick={() => patchLine(ln.key, {
-              materialsTouched: true,
-              materials: [...ln.materials, newPOMaterial()] })}>+ خامة</Button>
+                    )}
+                  </Divider>
+                  {rows.map((m) => (
+                    <Row gutter={8} key={m.key} style={{ marginBottom: 6 }}>
+                      <Col span={8}>
+                        <Select showSearch style={{ width: '100%' }} placeholder="الخامة"
+                          value={m.item_id} options={itemOptions(allItems)}
+                          filterOption={searchFilter} filterSort={searchRank}
+                          onChange={(v) => patchMaterial(ln.key, m.key, { item_id: v })} />
+                      </Col>
+                      <Col span={5}>
+                        <Select style={{ width: '100%' }} placeholder="تتصرف من"
+                          value={m.warehouse_id} options={whOptions}
+                          onChange={(v) => patchMaterial(ln.key, m.key, { warehouse_id: v })} />
+                      </Col>
+                      <Col span={4}>
+                        <InputNumber style={{ width: '100%' }} min={0} placeholder="المطلوب"
+                          addonAfter={m.item_id ? itemUnit(m.item_id) || undefined : undefined}
+                          value={m.planned_quantity as any}
+                          onChange={(v) => patchMaterial(ln.key, m.key, {
+                            planned_quantity: v as any,
+                            quantity: m.quantity == null ? (v as any) : m.quantity,
+                          })} />
+                      </Col>
+                      {/* **المتاح في المخزن ده** — الرقم اللي كان بيتعرف بعد فوات
+                          الأوان: الصرف بيحصل عند «ابدأ»، فالنقص كان بيبان بعد ما
+                          الورقة تتكتب وتتأكد. */}
+                      <Col span={4}>
+                        {(() => {
+                          const have = availableIn(m.item_id, m.warehouse_id);
+                          const need = Number(m.planned_quantity ?? 0);
+                          if (have == null) return null;
+                          return (
+                            <span style={{ fontSize: 12, lineHeight: '32px',
+                                           color: have < need ? '#cf1322' : '#8c8c8c',
+                                           fontWeight: have < need ? 600 : 400 }}>
+                              متاح {num(have.toFixed(3))} {m.item_id ? itemUnit(m.item_id) : ''}
+                              {have < need && ` · ناقص ${num((need - have).toFixed(3))}`}
+                            </span>
+                          );
+                        })()}
+                      </Col>
+                      <Col span={3}>
+                        {/* نقل السطر للمرحلة التانية — أسهل من مسحه وكتابته تاني. */}
+                        <Button type="text" size="small" style={{ fontSize: 12 }}
+                          onClick={() => patchMaterial(ln.key, m.key, {
+                            stage: st.value === 'production' ? 'quality' : 'production' })}>
+                          ← {st.value === 'production' ? 'جودة' : 'تصنيع'}
+                        </Button>
+                        <Button type="text" danger size="small" icon={<DeleteOutlined />}
+                          onClick={() => patchLine(ln.key, {
+                            materialsTouched: true,
+                            materials: ln.materials.filter((y) => y.key !== m.key) })} />
+                      </Col>
+                    </Row>
+                  ))}
+                  {/* زيادة أو مسح خامة بإيد = لمسة، فالتحديث التلقائي من الوصفة بيقف. */}
+                  <Button size="small" onClick={() => patchLine(ln.key, {
+                    materialsTouched: true,
+                    materials: [...ln.materials,
+                                { ...newPOMaterial(), stage: st.value, stageTouched: true }],
+                  })}>
+                    + {st.value === 'production' ? 'خامة تصنيع' : 'مادة تعبئة'}
+                  </Button>
+                </div>
+              );
+            })}
           </Card>
               ))}</>,
             },
@@ -1802,6 +1890,97 @@ function ProductionOrdersTab({
             },
           ]}
         />
+      </TabModal>
+
+      {/* **شاشة الاستلام: الدفعة اللي وصلت النهارده.**
+          الأمر بعشرين ألف قطعة مابيتسلّمش مرة واحدة. كل دفعة بتدخل المخزن بتاريخها،
+          والأمر بيفضل شغّال لحد ما حد يقول «خلاص». */}
+      <TabModal centered open={receiving != null} onCancel={() => setReceiving(null)}
+        title={receiving ? `استلام إنتاج — ${receiving.document_number}` : ''}
+        width={680} destroyOnHidden
+        footer={
+          <Space>
+            <Button onClick={() => setReceiving(null)}>إلغاء</Button>
+            <Button type="primary" onClick={submitReceive}>سجّل الاستلام</Button>
+          </Space>
+        }>
+        <Row gutter={8} align="middle" style={{ marginBottom: 14 }}>
+          <Col span={6}>تاريخ الاستلام</Col>
+          <Col span={10}>
+            {/* **يوم الاستلام، مش يوم الإدخال.** الورشة بتقفل تشغيلة بالليل والمكتب
+                بيدخّلها الصبح — وتأريخها بيوم الإدخال بيحط الإنتاج في اليوم الغلط. */}
+            <DatePicker style={{ width: '100%' }} value={receiptDate}
+              onChange={setReceiptDate} allowClear={false} />
+          </Col>
+        </Row>
+        {receiving?.products.map((p) => {
+          const plan = Number(p.planned_quantity);
+          const got = Number(p.received_quantity || 0);
+          const left = plan - got;
+          const now = Number(received[p.id] || 0);
+          const after = got + now;
+          return (
+            <Row key={p.id} gutter={8} align="middle" style={{ marginBottom: 12 }}>
+              <Col span={9}>
+                <div style={{ fontWeight: 600 }}>{itemName(p.item_id)}</div>
+                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                  المطلوب <Qty value={p.planned_quantity} unit={itemUnit(p.item_id)} />
+                  {got > 0 && <> · اتستلم <b>{num(got)}</b></>}
+                </div>
+              </Col>
+              <Col span={6}>
+                <InputNumber style={{ width: '100%' }} min={0} placeholder="اللي وصل النهارده"
+                  addonAfter={itemUnit(p.item_id) || undefined}
+                  value={received[p.id] as any}
+                  onChange={(v) => setReceived((x) => ({ ...x, [p.id]: v as any }))} />
+              </Col>
+              <Col span={9} style={{ fontSize: 12 }}>
+                {/* **الإجمالي بعد الدفعة دي، والفرق عن المخطّط.** الزيادة والنقص
+                    الاتنين مسموحين — اللي طلع هو اللي طلع. الرقم هنا بيقول الوضع
+                    قبل ما حد يدوس، مش بعدين في تقرير. */}
+                {now > 0 ? (
+                  <>
+                    الإجمالي هيبقى <b>{num(after)}</b> {itemUnit(p.item_id)}
+                    {after > plan && (
+                      <Tag color="gold" style={{ marginInlineStart: 6 }}>
+                        زيادة {num(after - plan)}
+                      </Tag>
+                    )}
+                    {after < plan && (
+                      <Tag style={{ marginInlineStart: 6 }}>باقي {num(plan - after)}</Tag>
+                    )}
+                  </>
+                ) : (
+                  <span style={{ color: '#8c8c8c' }}>
+                    {left > 0 ? `الباقي ${num(left)}` : 'اتستلم بالكامل'}
+                  </span>
+                )}
+              </Col>
+            </Row>
+          );
+        })}
+        {!!receiving?.receipts?.length && (
+          <>
+            <Divider orientation="right" style={{ margin: '8px 0' }}>اللي اتستلم قبل كده</Divider>
+            {receiving.receipts.map((rc) => {
+              const line = receiving.products.find((x) => x.id === rc.product_line_id);
+              return (
+                <Row key={rc.id} gutter={8} style={{ fontSize: 12, marginBottom: 4 }}>
+                  <Col span={9}>{line ? itemName(line.item_id) : '-'}</Col>
+                  <Col span={6}><b>{num(rc.quantity)}</b></Col>
+                  <Col span={6} style={{ color: '#8c8c8c' }}>{rc.receipt_date || '-'}</Col>
+                  {/* **دفعة غلط لازم يبقى ليها طريقة.** اللي سجّل ٥٠٠ وهو قاصد ٥٠
+                      كان لازم يعكس الأمر كله — فيرجّع خامات اتصرفت فعلاً ودفعات صح. */}
+                  <Col span={3}>
+                    <Popconfirm title="تعكس الدفعة دي؟" onConfirm={() => undoReceipt(rc)}>
+                      <Button type="text" danger size="small" icon={<UndoOutlined />} />
+                    </Popconfirm>
+                  </Col>
+                </Row>
+              );
+            })}
+          </>
+        )}
       </TabModal>
 
       {/* **شاشة الإقفال: الرقم الوحيد اللي لسه ناقص.**

@@ -35,6 +35,7 @@ from src.lib import production
 from src.models.bom import Bom
 from src.models.catalog import Item
 from src.models.manufacturing import (
+    ProductionOrderReceipt,
     ProductionOrder,
     ProductionOrderMaterial,
     ProductionOrderProduct,
@@ -438,6 +439,95 @@ def start_order(db: Session, *, order_id: int, actor_user_id: int) -> Production
     return order
 
 
+def receive_output(db: Session, *, order_id: int, actor_user_id: int,
+                   rows: dict[int, Decimal], receipt_date=None,
+                   notes: str | None = None) -> ProductionOrder:
+    """**استلام دفعة إنتاج** — البضاعة بتدخل المخزن دلوقتي، والأمر بيفضل شغّال.
+
+    أمر بعشرين ألف قطعة مابيتسلّمش مرة واحدة: بيجي ألف النهارده وألفين بكرة. كل
+    دفعة بتكتب حركة `production_in` بتاريخها، فالمخزون بيمشي مع البضاعة اللي
+    دخلت فعلاً بدل ما يستنّى يوم القفل — واللي بيقرا الرصيد في النص كان بيقرا صفر
+    وهو شايف البضاعة قدامه.
+
+    ⛔ **ولا تكلفة بتتحسب هنا.** تكلفة الوحدة = تكلفة الخامات ÷ اللي طلع، واللي
+    طلع مش معروف لحد القفل. حساب تكلفة على أول دفعة بيدّي رقم بيتغيّر تحت إيد
+    اللي بيقراه مع كل دفعة جاية.
+    """
+    order = db.get(ProductionOrder, order_id)
+    if order is None:
+        raise ProductionOrderError("أمر التشغيل مش موجود.")
+    if order.imported_from is not None:
+        raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
+    if order.state != ProductionState.in_progress:
+        raise ProductionOrderError("الاستلام بيتعمل للأمر الشغّال بس.")
+    if not rows:
+        raise ProductionOrderError("مافيش كمية اتكتبت.")
+
+    by_id = {p.id: p for p in order.products}
+    when = receipt_date or order.production_date
+    total = to_qty(0)
+    for line_id, raw in rows.items():
+        line = by_id.get(int(line_id))
+        if line is None:
+            raise ProductionOrderError("سطر منتج مش في الأمر ده.")
+        q = to_qty(Decimal(str(raw or 0)))
+        if q <= to_qty(0):
+            continue
+        mv = stock_service.post_movement(
+            db, item_id=line.item_id, location_kind=LocationKind.warehouse,
+            location_id=int(line.warehouse_id), movement_type="production_in",
+            direction=StockDirection.in_, quantity=q, actor_user_id=actor_user_id,
+            source_doc_type=DOC_TYPE, source_doc_id=order.id, movement_date=when)
+        db.add(ProductionOrderReceipt(
+            order_id=order.id, product_line_id=line.id, quantity=q,
+            receipt_date=when, notes=notes, stock_movement_id=mv.id,
+            actor_user_id=actor_user_id))
+        line.received_quantity = to_qty(to_qty(line.received_quantity) + q)
+        total += q
+    if total <= to_qty(0):
+        raise ProductionOrderError("الكمية المستلمة لازم تكون أكبر من صفر.")
+    db.flush()
+    audit_service.record(db, action="production_order.receive",
+                         actor_user_id=actor_user_id, entity_type="production_order",
+                         entity_id=order.id, after={"quantity": str(total)})
+    return order
+
+
+def undo_receipt(db: Session, *, order_id: int, receipt_id: int,
+                 actor_user_id: int) -> ProductionOrder:
+    """**عكس دفعة استلام** — الكمية بتخرج من المخزن والدفعة بتتشال من الورقة.
+
+    لازم يكون فيه طريقة: اللي بيسجّل ٥٠٠ وهو قاصد ٥٠ لازم يقدر يصلّحها، وعكس الأمر
+    كله عشان دفعة غلط بيرجّع خامات اتصرفت فعلاً ودفعات صح اتستلمت فعلاً.
+
+    **والحركة بتتعكس، مش بتتمسح.** البضاعة دخلت المخزن ساعتها وحد يمكن قرا الرصيد
+    بعدها؛ المسح بيخلّي التاريخ يقول إنها مادخلتش أبداً. المرآة بتقول «دخلت
+    وخرجت»، وده اللي حصل.
+    """
+    order = db.get(ProductionOrder, order_id)
+    if order is None:
+        raise ProductionOrderError("أمر التشغيل مش موجود.")
+    if order.state != ProductionState.in_progress:
+        raise ProductionOrderError("عكس الاستلام بيتعمل للأمر الشغّال بس.")
+    rc = db.get(ProductionOrderReceipt, receipt_id)
+    if rc is None or rc.order_id != order.id:
+        raise ProductionOrderError("دفعة الاستلام مش في الأمر ده.")
+    if rc.stock_movement_id:
+        stock_service.reverse_movement(
+            db, original_id=rc.stock_movement_id, actor_user_id=actor_user_id,
+            movement_type="reverse_production_in")
+    line = db.get(ProductionOrderProduct, rc.product_line_id)
+    if line is not None:
+        left = to_qty(to_qty(line.received_quantity) - to_qty(rc.quantity))
+        line.received_quantity = left if left > to_qty(0) else to_qty(0)
+    db.delete(rc)
+    db.flush()
+    audit_service.record(db, action="production_order.undo_receipt",
+                         actor_user_id=actor_user_id, entity_type="production_order",
+                         entity_id=order.id, after={"quantity": str(rc.quantity)})
+    return order
+
+
 def execute_order(db: Session, *, order_id: int, actor_user_id: int,
                   outputs: dict[int, Decimal] | None = None,
                   waste: dict[int, Decimal] | None = None) -> ProductionOrder:
@@ -466,7 +556,16 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
                            ProductionState.in_progress):
         raise ProductionOrderError("الأمر ده اترحّل قبل كده.")
 
-    # الكميات اللي طلعت فعلاً — بتتكتب قبل أي حركة عشان التكلفة تتقسّم عليها صح.
+    # **الكمية اللي بتتكتب هنا هي الإجمالي اللي طلع، مش الباقي.**
+    #
+    # اللي استلم دفعات قبل كده بيكتب الرقم النهائي، والفرق بينه وبين المستلم هو
+    # اللي بيتحرّك دلوقتي. لو اتحسبت على إنها «كمية زيادة» كان اللي استلم ٣٬٠٠٠
+    # وكتب ٣٬٠٠٠ عند القفل هيدخّل ٦٬٠٠٠ المخزن.
+    #
+    # ومافيش سقف على المخطّط: **اللي طلع هو اللي طلع**. أمر بعشرة آلاف يطلع منه
+    # ١١ ألف حاجة بتحصل (خامة زيادة، معايرة أحسن)، والنقص كمان. الاتنين بيتسجّلوا
+    # زي ما هم، والفرق عن المخطّط هو **رقم الإنتاج** — أنفع رقم في الورقة، ورفضه
+    # بيخلّي اللي قدام الشاشة يزوّر الرقم عشان يعدّي.
     if outputs:
         by_id = {p.id: p for p in order.products}
         for line_id, qty in outputs.items():
@@ -476,7 +575,21 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
             q = to_qty(Decimal(str(qty)))
             if q <= to_qty(0):
                 raise ProductionOrderError("الكمية اللي طلعت لازم تكون أكبر من صفر.")
+            if q < to_qty(line.received_quantity):
+                raise ProductionOrderError(
+                    f"اللي طلع ({q}) أقل من اللي اتستلم خلاص "
+                    f"({to_qty(line.received_quantity)}) — اعكس دفعة الاستلام الغلط "
+                    f"من كشف الدفعات الأول.")
             line.quantity = q
+        order.product_quantity = to_qty(sum((to_qty(p.quantity) for p in order.products),
+                                            to_qty(0)))
+        db.flush()
+    else:
+        # مافيش رقم اتكتب: اللي اتستلم هو اللي طلع. ده اللي بيخلّي اللي استلم على
+        # دفعات يقفل الورقة من غير ما يعيد كتابة رقم هو كاتبه أربع مرات.
+        for p_line in order.products:
+            if to_qty(p_line.received_quantity) > to_qty(0):
+                p_line.quantity = to_qty(p_line.received_quantity)
         order.product_quantity = to_qty(sum((to_qty(p.quantity) for p in order.products),
                                             to_qty(0)))
         db.flush()
@@ -507,12 +620,19 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
 
     material_cost = ZERO
     for p in order.products:
-        mv = stock_service.post_movement(
+        # **الباقي بس بيتحرّك.** اللي اتستلم على دفعات دخل المخزن وقتها بحركته،
+        # وإعادة ترحيله هنا بتدخّله تاني. والباقي صفر لما الدفعات غطّت الكمية —
+        # وساعتها مافيش حركة أصلاً.
+        remaining = to_qty(to_qty(p.quantity) - to_qty(p.received_quantity))
+        mv = (stock_service.post_movement(
             db, item_id=p.item_id, location_kind=LocationKind.warehouse,
             location_id=int(p.warehouse_id), movement_type="production_in",
-            direction=StockDirection.in_, quantity=to_qty(p.quantity),
+            direction=StockDirection.in_, quantity=remaining,
             actor_user_id=actor_user_id, source_doc_type=DOC_TYPE, source_doc_id=order.id)
-        p.stock_movement_id = mv.id
+            if remaining > to_qty(0) else None)
+        if mv is not None:
+            p.stock_movement_id = mv.id
+        p.received_quantity = to_qty(p.quantity)
         p.material_cost = to_money(by_line.get(p.id, ZERO))
         p.total_cost = to_money(p.material_cost + p.expense_amount)
         p.unit_cost = production.unit_cost(p.total_cost, p.quantity)
@@ -632,6 +752,14 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
         rev.products.append(line)
         db.flush()
         by_line[p.id] = line.id
+
+    # **ودفعات الاستلام بتتعكس كمان.** كل دفعة حركتها لوحدها — والعكس اللي بيلحق
+    # حركة القفل بس كان بيسيب اللي اتستلم في النص داخل المخزن للأبد.
+    for rc in original.receipts:
+        if rc.stock_movement_id:
+            stock_service.reverse_movement(
+                db, original_id=rc.stock_movement_id, actor_user_id=actor_user_id,
+                movement_type="reverse_production_in")
 
     for m in original.materials:
         # **السطر اللي ما اتصرفش مالوش مرآة.** الأمر ممكن يتعكس وهو شغّال وخامات

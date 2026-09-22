@@ -379,6 +379,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # (التصنيع) مرحلة صرف الخامة: تصنيع ولا جودة. الشرح في `models/bom.py`.
     ("bom_component", "stage", "VARCHAR(16)"),
     ("production_order_material", "stage", "VARCHAR(16)"),
+    # (التصنيع) اللي اتستلم من السطر لحد دلوقتي — الاستلام بقى على دفعات.
+    ("production_order_product", "received_quantity", "DECIMAL(18,3) NOT NULL DEFAULT 0"),
     ("employee", "receivable_account_id", "BIGINT"),
     # (ما بعد البيع) الرقم التاني للمالك — الملف بيدّي رقمين لأغلبهم.
     ("owner", "phone2", "VARCHAR(32)"),
