@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
+import { printWorkOrder } from '../print/workOrderSheet';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
-  BuildOutlined, PlayCircleOutlined,
+  BuildOutlined, PlayCircleOutlined, PrinterOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -95,6 +96,12 @@ export default function Manufacturing() {
    * بيها) بس الكميات كلها متخزّنة بالوحدة الأساسية بعد الضرب في المعامل — فعرض وحدة
    * السطر جنب رقم أساسي بيقول حاجة غلط.
    */
+  const itemCode = useMemo(() => {
+    const m = new Map<number, string>();
+    [...rawMaterials, ...products].forEach((i) => m.set(i.id, i.code || ''));
+    return (id: number) => m.get(id) || '';
+  }, [rawMaterials, products]);
+
   const itemUnit = useMemo(() => {
     const m = new Map<number, string>();
     [...rawMaterials, ...products].forEach((i) => m.set(i.id, i.unit_of_measure || ''));
@@ -148,7 +155,7 @@ export default function Manufacturing() {
             <ProductionOrdersTab
               products={products} rawMaterials={rawMaterials} warehouses={warehouses}
               branches={branches} boms={boms} itemName={itemName} itemUnit={itemUnit}
-              whName={whName} active={tab === 'orders'}
+              itemCode={itemCode} whName={whName} active={tab === 'orders'}
             />
           ),
         },
@@ -777,12 +784,14 @@ const poPaper = (r: { external_document_number: string | null }) => {
 };
 
 function ProductionOrdersTab({
-  products, rawMaterials, warehouses, branches, boms, itemName, itemUnit, whName, active,
+  products, rawMaterials, warehouses, branches, boms, itemName, itemUnit, itemCode,
+  whName, active,
 }: {
   products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
   branches: { id: number; name: string }[]; boms: Bom[];
   itemName: (id: number) => string;
   itemUnit: (id: number) => string;
+  itemCode: (id: number) => string;
   whName: (id: number | null | undefined) => string;
   /** التبويب ده هو الظاهر دلوقتي — بيتمرّر لـ`useDocRoute` كـ`enabled`.
    *
@@ -1177,11 +1186,28 @@ function ProductionOrdersTab({
     } catch (err) { console.error(err); } finally { setSaving(false); }
   };
 
+  /** ورقة الورشة — الشرح في `print/workOrderSheet`. */
+  const printOrder = (r: ProductionOrder) =>
+    printWorkOrder(r, { itemName, itemCode, itemUnit, whName, branchName });
+
   const act = async (r: ProductionOrder, verb: 'confirm' | 'start' | 'execute', done: string) => {
     try {
-      await api.post(`/api/v1/manufacturing/production-orders/${r.id}/${verb}`);
+      const res = await api.post(
+        `/api/v1/manufacturing/production-orders/${r.id}/${verb}`);
       message.success(done);
       load();
+      // **التأكيد بيعرض الطباعة على طول.** ده وقتها بالظبط: الأرقام اتراجعت،
+      // والخطوة اللي بعدها إن حد في الورشة يمسك ورقة. وبتتطبع من رد السيرفر مش من
+      // الصف القديم — الحالة اتغيّرت لسه.
+      if (verb === 'confirm') {
+        const fresh = (res?.data ?? r) as ProductionOrder;
+        Modal.confirm({
+          title: 'الأمر اتأكد',
+          content: 'تطبع أمر الشغل وتديه للورشة؟',
+          okText: 'اطبع', cancelText: 'بعدين',
+          onOk: () => printOrder(fresh),
+        });
+      }
     } catch (err) { console.error(err); }
   };
 
@@ -1324,6 +1350,10 @@ function ProductionOrdersTab({
                   <Button type="link" size="small" danger icon={<DeleteOutlined />} />
                 </Popconfirm>
               </>
+            )}
+            {r.state !== 'draft' && (
+              <Button type="link" size="small" icon={<PrinterOutlined />}
+                onClick={() => printOrder(r)}>طباعة</Button>
             )}
             {r.state === 'confirmed' && (
               <>
