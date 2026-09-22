@@ -965,8 +965,13 @@ function ProductionOrdersTab({
       const next = prev.map((ln) => {
         const mats = ln.materials.map((m) => {
           if (m.warehouseTouched || !m.item_id || !stock.has(m.item_id)) return m;
-          const wh = bestWarehouse(m.item_id, Number(m.planned_quantity ?? 0),
-                                   ln.warehouse_id);
+          const need = Number(m.planned_quantity ?? 0);
+          // **المخزن اللي شايل الكمية مابيتلمسش.** الورقة القديمة بتتفتح بمخازنها
+          // المحفوظة، وإعادة اختيار عمياء كانت هتزحلق اختيار صح اتعمل بقصد. اللي
+          // بيتصلّح هو اللي فيه أقل من المطلوب — ودي هي اللي بتوقع عند «ابدأ».
+          const have = availableIn(m.item_id, m.warehouse_id);
+          if (m.warehouse_id && have != null && have >= need) return m;
+          const wh = bestWarehouse(m.item_id, need, ln.warehouse_id);
           if (wh === m.warehouse_id) return m;
           changed = true;
           return { ...m, warehouse_id: wh };
