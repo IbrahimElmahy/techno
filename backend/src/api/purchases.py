@@ -337,7 +337,10 @@ class PurchaseReturnDetailOut(PurchaseReturnListOut):
 @router.get("/returns/{return_id}", response_model=PurchaseReturnDetailOut)
 def get_purchase_return(
     return_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    # `current` مش `_`: الجسم بيقرا الاسم ده في حارس الفرع تحت. اتساب `_` من قبل ما
+    # الحارس يتضاف، فكل فتحة لمردود شرا كانت بتطلّع **500** — `NameError` مش خطأ
+    # منطق، يعني الشاشة كانت بتقع قبل ما تقرا أول حقل.
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> PurchaseReturnDetailOut:
     """المردود بسطوره — «رجّعنا إيه بالظبط».
