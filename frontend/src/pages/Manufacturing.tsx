@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -1004,6 +1004,34 @@ function ProductionOrdersTab({
     } catch { /* الرصيد تحسين للعرض — فشله مايوقفش كتابة الورقة */ }
   };
 
+  /**
+   * **الخامات اللي مخزنها مش شايلها** — الورقة دي هتقف عند «ابدأ» بسببها.
+   *
+   * بتتحسب من نفس الأرقام اللي السيرفر هيقيس عليها، فاللي الشاشة بتحذّر منه هو
+   * بالظبط اللي هيترفض. واللي لسه رصيده مش متحمّل مابيدخلش — تحذير من غير رقم
+   * بيخلّي اللي بيقراه يشك في الرقم اللي بعده.
+   */
+  const shortages = useMemo(() => {
+    const out: { name: string; wh: string; need: number; have: number; unit: string }[] = [];
+    lines.forEach((ln) => ln.materials.forEach((m) => {
+      if (!m.item_id) return;
+      const need = Number(m.planned_quantity ?? 0);
+      if (!need) return;
+      const rows = stock.get(m.item_id);
+      if (!rows) return;
+      const have = m.warehouse_id
+        ? (rows.find((r) => r.wh === m.warehouse_id)?.qty ?? 0)
+        : 0;
+      if (have >= need) return;
+      out.push({ name: itemName(m.item_id), wh: whName(m.warehouse_id),
+                 need, have, unit: itemUnit(m.item_id) });
+    }));
+    return out;
+    // الأسماء في المصفوفة عن قصد: الكشف اتكوّن وهو لسه مالقاش أسماء الأصناف
+    // والمخازن (الورقة بتتفتح من الرابط قبل ما القوايم توصل)، فكان بيقول «#3042 في
+    // #77» — رقم مالوش معنى لحد بيقرا تحذير عن بضاعة ناقصة.
+  }, [lines, stock, itemName, whName, itemUnit]);
+
   /** رصيد الخامة في مخزن معيّن، أو `null` لو لسه مش متحمّل. */
   const availableIn = (itemId?: number, wh?: number | null): number | null => {
     if (!itemId || !wh) return null;
@@ -1491,7 +1519,23 @@ function ProductionOrdersTab({
             {
               key: 'work',
               label: `الشغل (${lines.length})`,
-              children: <>{lines.map((ln, idx) => (
+              children: <>
+          {shortages.length > 0 && (
+            <Alert type="error" showIcon style={{ marginBottom: 12 }}
+              message={`${num(shortages.length)} خامة مش كفاية في مخزنها — الأمر هيقف عند «ابدأ»`}
+              description={(
+                <ul style={{ margin: 0, paddingInlineStart: 18 }}>
+                  {shortages.map((sh, i) => (
+                    <li key={i}>
+                      «{sh.name}» في {sh.wh} — متاح {num(sh.have.toFixed(3))} {sh.unit}
+                      {' '}والمطلوب {num(sh.need.toFixed(3))}
+                      {' '}(<b>ناقص {num((sh.need - sh.have).toFixed(3))}</b>)
+                    </li>
+                  ))}
+                </ul>
+              )} />
+          )}
+          {lines.map((ln, idx) => (
           <Card key={ln.key} size="small" style={{ marginTop: 12 }} title={`منتج ${idx + 1}`}
             extra={lines.length > 1 && (
               <Button type="text" danger icon={<DeleteOutlined />}
@@ -1578,8 +1622,10 @@ function ProductionOrdersTab({
                     if (have == null) return null;
                     return (
                       <span style={{ fontSize: 12, lineHeight: '32px',
-                                     color: have < need ? '#cf1322' : '#8c8c8c' }}>
+                                     color: have < need ? '#cf1322' : '#8c8c8c',
+                                     fontWeight: have < need ? 600 : 400 }}>
                         متاح {num(have.toFixed(3))} {m.item_id ? itemUnit(m.item_id) : ''}
+                        {have < need && ` · ناقص ${num((need - have).toFixed(3))}`}
                       </span>
                     );
                   })()}
