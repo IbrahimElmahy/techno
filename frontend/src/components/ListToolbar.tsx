@@ -38,6 +38,20 @@ export interface FilterDef {
    */
   kind?: 'select' | 'text';
   /**
+   * **اختيار أكتر من قيمة لنفس الفلتر** — الافتراضي لقوايم الاختيار.
+   *
+   * السؤال الحقيقي نادراً بيبقى «الفرع ده»؛ غالباً «الفرعين دول» أو «الأنواع
+   * التلاتة دي». والقايمة الواحدة كانت بتفرض إنك تعمل الكشف تلات مرات وتجمع
+   * بعينك — أو تسيب الفلتر وتدوّر في الكل.
+   *
+   * **والمعنى «أي واحدة منهم»**: الشرط بيتنفّذ على كل قيمة والنتايج بتتجمع.
+   * وعشان كده الشروط المكتوبة في الشاشات مااتلمستش ولا واحد: `(row, v) => row.x
+   * === v` لسه بتتنده بقيمة واحدة في المرة. اللي اتغيّر هو اللي بينده.
+   *
+   * `multi: false` بيرجّعه لقيمة واحدة — للفلتر اللي جمع قيمتين فيه مالوش معنى.
+   */
+  multi?: boolean;
+  /**
    * فلتر بيتخبى تحت «المزيد من الفلاتر».
    *
    * الشريط بيتحمّل بسرعة: بحث وتاريخ وتلات قوايم وزرار مسح وعدّاد بيبقوا تمن عناصر، وتمنية
@@ -90,7 +104,13 @@ export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {
       for (const [key, predicate] of Object.entries(options.filters || {})) {
         const v = values[key];
         if (v === undefined || v === null || v === '') continue;
-        if (!predicate(row, v)) return false;
+        // **القايمة معناها «أي واحدة منهم».** الشرط بيتنده لكل قيمة لوحدها
+        // والنتايج بتتجمع بـOR — فالشروط المكتوبة في التلاتين شاشة مااتلمستش:
+        // كل واحد فيهم لسه شايف قيمة مفردة زي ما اتكتب.
+        if (Array.isArray(v)) {
+          if (!v.length) continue;
+          if (!v.some((one) => predicate(row, one))) return false;
+        } else if (!predicate(row, v)) return false;
       }
       if (range && options.dateOf) {
         const raw = options.dateOf(row);
@@ -102,7 +122,10 @@ export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {
     });
   }, [rows, query, values, range, options]);
 
-  const active = !!query || Object.values(values).some((v) => v !== undefined && v !== null && v !== '')
+  // القايمة الفاضية مش فلتر شغّال — زي `undefined` بالظبط.
+  const active = !!query
+    || Object.values(values).some((v) => v !== undefined && v !== null && v !== ''
+                                         && !(Array.isArray(v) && !v.length))
     || !!range;
 
   return { query, setQuery, values, setValue, range, setRange, reset, filtered, active };
@@ -191,11 +214,24 @@ export default function ListToolbar({
     <Select
       allowClear
       showSearch
+      // **أكتر من قيمة لنفس الفلتر** — الشرح عند `FilterDef.multi`.
+      // و`maxTagCount="responsive"` عشان اختيار عشرة مايكبّرش الخانة ويكسر الصف:
+      // بتوري اللي يركب و«+٧».
+      mode={(f.multi ?? true) ? 'multiple' : undefined}
+      maxTagCount="responsive"
       style={{ width: '100%' }}
       placeholder={f.placeholder}
-      value={values[f.key] ?? undefined}
+      // القيمة المفردة بتتلفّ في قايمة للودجت. الشاشة اللي بتفتح على فلتر جاهز
+      // (`initialValues`) بتحطّه رقم، وantd في وضع المتعدد بيستنى مصفوفة.
+      value={(() => {
+        const v = values[f.key];
+        if (v === undefined || v === null || v === '') return undefined;
+        if ((f.multi ?? true) && !Array.isArray(v)) return [v];
+        return v;
+      })()}
       optionFilterProp="label"
-      onChange={(v) => onValueChange?.(f.key, v)}
+      onChange={(v) => onValueChange?.(
+        f.key, Array.isArray(v) && !v.length ? undefined : v)}
       // `undefined` مش قايمة فاضية: فلتر من غير خيارات كان بيوصل rc-select خام،
       // وأول ما الترشيح يشتغل عليه بيقع على `.length` — والشاشة بتفضل فاضية.
       options={f.options || []} filterOption={searchFilter} filterSort={searchRank}/>
@@ -208,10 +244,16 @@ export default function ListToolbar({
   for (const f of filters) {
     const v = values[f.key];
     if (v === undefined || v === null || v === '') continue;
-    const chosen = f.options?.find((o) => o.value === v);
+    if (Array.isArray(v) && !v.length) continue;
+    const nameOf = (one: any) =>
+      f.options?.find((o) => o.value === one)?.label ?? String(one);
+    // الشريحة بتسمّي أول قيمتين وبتعدّ الباقي — «الفرع: السادات، العلياء +٣».
+    const label = Array.isArray(v)
+      ? `${v.slice(0, 2).map(nameOf).join('، ')}${v.length > 2 ? ` +${v.length - 2}` : ''}`
+      : nameOf(v);
     facets.push({
       key: f.key,
-      label: `${f.placeholder}: ${chosen ? chosen.label : String(v)}`,
+      label: `${f.placeholder}: ${label}`,
       clear: () => onValueChange?.(f.key, undefined),
     });
   }
