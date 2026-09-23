@@ -390,6 +390,41 @@ def _rep_scope_check(db: Session, current: CurrentUser, customer_id: int, origin
             "message": "لازم تبيع من مخزنك انت."})
 
 
+def _line_locations_check(db: Session, current: CurrentUser, body) -> None:
+    """**كل سطر بيتحرّك من مكان مسموح للّي بيكتب** — مش مخزن المستند لوحده.
+
+    من (030) المخزن بقى على السطر، والفحص فضل على `origin` بس: مندوب يبعت `origin` =
+    مخزنه، وعلى السطر `warehouse_id` = المخزن الرئيسي لفرع تاني، والبضاعة تخرج من هناك.
+    ونفس الباب لموظف أي فرع. بيتنادى في البيع والمرتجع الحر (إنشاء وتعديل).
+
+    * المندوب: السطر يا من غير مخزن (بياخد مخزن المستند، اللي اتفحص قبله) يا مخزنه هو.
+    * اللي محبوس في فرع: مخزن المستند ومخزن كل سطر في فرعه (أو مالهمش فرع).
+    """
+    from src.models.warehouse import Warehouse
+
+    line_whs = {w for w in (getattr(ln, "warehouse_id", None) for ln in body.lines) if w}
+    if current.rep_id is not None:
+        store = rep_store(db, current.rep_id)
+        own = store[1] if store and getattr(store[0], "value", store[0]) == "warehouse" else None
+        if any(w != own for w in line_whs):
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "لازم كل الأصناف تتحرّك من مخزنك انت."})
+        return
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is None:
+        return
+    whs = set(line_whs)
+    if getattr(body.origin.location_kind, "value", body.origin.location_kind) == "warehouse":
+        whs.add(body.origin.location_id)
+    for wid in whs:
+        wh = db.get(Warehouse, wid)
+        if wh is None:
+            raise HTTPException(422, {"code": "validation", "message": f"مخزن رقم {wid} مش موجود."})
+        if wh.branch_id is not None and wh.branch_id != branch_id:
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": f"«{wh.name}» مش في فرعك — ماينفعش تبيع منه."})
+
+
 def _rep_treasuries(db: Session, rep_id: int) -> list[dict]:
     """صناديق المندوب دون غيره — (خط، حساب، اسم) لكل عهدة نشطة ليه.
 
@@ -723,6 +758,7 @@ def _build_sale(
     لوحده، أول حقل يتضاف للفاتورة هيتحط في واحد وينسى في التاني.
     """
     _rep_scope_check(db, current, body.customer_id, body.origin)
+    _line_locations_check(db, current, body)
     _reject_non_trader(db, body.customer_id)
     can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
     try:
@@ -1327,6 +1363,7 @@ def create_standalone_return(
     db: Session = Depends(get_db),
 ) -> dict:
     _rep_scope_check(db, current, body.customer_id, body.origin)
+    _line_locations_check(db, current, body)
     _reject_non_trader(db, body.customer_id)
     try:
         ret = sales_service.create_standalone_return(
@@ -1395,6 +1432,7 @@ def update_standalone_return(
     if not branch_scope.may_see(current, ret):
         raise HTTPException(404, {"code": "not_found", "message": "المرتجع مش موجود"})
     _rep_scope_check(db, current, body.customer_id, body.origin)
+    _line_locations_check(db, current, body)
     _reject_non_trader(db, body.customer_id)
     try:
         document_edit_service.purge_sales_return(db, ret)
@@ -1586,11 +1624,25 @@ def return_sale(
     current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
+    # **نفس نطاق الفاتورة نفسها.** كان المرتجع بيتعمل على أي فاتورة برقمها: مدير فرع يرجّع
+    # على فاتورة فرع تاني، ومندوب يرجّع على فاتورة زميله فتنزل مديونية عميل مش بتاعه.
+    inv = db.get(SalesInvoice, sale_id)
+    if inv is None or not branch_scope.may_see(current, inv):
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
+    if current.rep_id is not None and not (
+            inv.rep_id == current.id or (inv.rep_id is None and inv.actor_user_id == current.id)):
+        raise HTTPException(403, {"code": "forbidden",
+                                  "message": "مش فاتورتك — تقدر ترجّع على فواتيرك انت بس."})
+    # السيريالات بتتجمّع بالصنف زي الكميات — سطرين لنفس الصنف كان التاني بيمسح سيريالات الأول.
+    serials: dict[int, list[str]] = {}
+    for l in body.lines:
+        if l.serials:
+            serials.setdefault(l.item_id, []).extend(l.serials)
     try:
         ret = sales_service.return_sale(
             db, sales_invoice_id=sale_id, lines=[(l.item_id, l.quantity) for l in body.lines],
             actor_user_id=current.id,
-            serials={l.item_id: l.serials for l in body.lines if l.serials},
+            serials=serials,
             expiry_dates={l.item_id: l.expiry_date for l in body.lines if l.expiry_date},
         )
     except (SalesError, StockError) as exc:

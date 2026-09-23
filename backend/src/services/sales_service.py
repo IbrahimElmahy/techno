@@ -853,36 +853,50 @@ def return_sale(
     #
     # الخصمين بيتحسبوا بنفس ترتيب الفاتورة: خصم السطر على السطر، وخصم المستند على
     # المجموع مرة واحدة — عشان المرتجع الكامل يطلع `inv.net` بالظبط، مش تقريبه.
-    sold = {
-        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor),
-                     Decimal(ln.discount_pct or 0))
-        for ln in inv.lines
-    }
     doc_pct = Decimal(getattr(inv, "combined_pct", 0) or 0)
-    # (030) Each sold line remembers the warehouse it left from, so the return puts the goods back
-    # exactly there. Lines written before 030 fall back to the invoice's own location.
-    sold_from = {
-        ln.item_id: (ln.location_kind or inv.origin_location_kind,
-                     ln.location_id if ln.location_id is not None else inv.origin_location_id)
-        for ln in inv.lines
-    }
-    # (030) The cost the SALE booked — a return has to reverse that, not today's average.
-    sold_cost = {ln.item_id: ln.unit_cost for ln in inv.lines}
+    # **الصنف ممكن يبقى على أكتر من سطر** (030: من مخزنين، أو بسعرين). كانت قواميس بمفتاح
+    # الصنف، فآخر سطر بيغطّي على اللي قبله: المباع يتحسب كمية آخر سطر بس (فمرتجع سليم
+    # يترفض)، والبضاعة كلها ترجع لمخزن آخر سطر بسعره. دلوقتي سطور كل صنف بترتيبها.
+    by_item: dict[int, list] = {}
+    for ln in inv.lines:
+        by_item.setdefault(ln.item_id, []).append(ln)
     prior = _already_returned(db, sales_invoice_id)
 
-    value = ZERO
+    # **الطلب بيتجمّع بالصنف الأول.** `[{X,5},{X,5}]` على فاتورة فيها ٥ كان بيعدّي السطرين
+    # كل واحد لوحده (المرتجع السابق مابيزيدش جوّه اللفّة)، فالمخزن يدخله ١٠ والعميل ياخد ١٠.
+    wanted: dict[int, Decimal] = {}
     for item_id, qty in lines:
-        qty = Decimal(qty)
-        if item_id not in sold:
+        wanted[item_id] = wanted.get(item_id, ZERO) + Decimal(qty)
+
+    # كل كمية بتترجع بتتوزّع على سطور الصنف بالترتيب — اللي اترجّع قبل كده بياكل من أول
+    # سطر، والجديد من اللي بعده — وكل جزء بيرجع لمخزن سطره بسعره وخصمه وتكلفته.
+    parts: list[tuple[object, Decimal]] = []   # (سطر الفاتورة، الكمية)
+    value = ZERO
+    for item_id, qty in wanted.items():
+        rows = by_item.get(item_id)
+        if not rows:
             raise SalesError("الصنف ده مش على الفاتورة دي أصلاً.")
-        if prior.get(item_id, ZERO) + qty > sold[item_id][0]:
+        sold_qty = sum((Decimal(r.quantity) for r in rows), ZERO)
+        before = prior.get(item_id, ZERO)
+        if before + qty > sold_qty:
             # Arabic, because this one reaches a person. It fires most often on «تعديل» for an
             # invoice that has already been returned in full, and «Cumulative return exceeds sold
             # quantity» told them nothing about which invoice, which item, or what to do next.
             raise SalesError(
                 f"مرتجعات الفاتورة دي وصلت للكمية المباعة خلاص — "
-                f"اتباع {sold[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
-        value += discounts.apply(qty * sold[item_id][1], sold[item_id][3])
+                f"اتباع {sold_qty} واترجّع {before} قبل كده.")
+        skip, left = before, qty
+        for r in rows:
+            room = Decimal(r.quantity)
+            used = min(room, skip)
+            skip -= used
+            take = min(room - used, left)
+            if take > ZERO:
+                parts.append((r, take))
+                value += discounts.apply(take * to_money(r.unit_price), Decimal(r.discount_pct or 0))
+                left -= take
+            if left <= ZERO:
+                break
     value = discounts.apply(value, doc_pct)
 
     # VAT (021): a partial return gives back the same share of the tax that was charged, so a
@@ -910,18 +924,24 @@ def return_sale(
     )
     db.add(ret)
     db.flush()
-    for item_id, qty in lines:
-        base_qty = to_qty(Decimal(qty) * sold[item_id][2])  # (008) reverse stock in base units
-        back_kind, back_loc = sold_from[item_id]            # (030) back to where it left from
+    used_serials: dict[int, int] = {}
+    for sold_line, qty in parts:
+        item_id = sold_line.item_id
+        base_qty = to_qty(qty * to_qty(sold_line.unit_factor))  # (008) reverse stock in base units
+        # (030) back to where it left from; lines written before 030 fall back to the invoice's own.
+        back_kind = sold_line.location_kind or inv.origin_location_kind
+        back_loc = (sold_line.location_id if sold_line.location_id is not None
+                    else inv.origin_location_id)
         stock_service.post_movement(
             db, item_id=item_id, location_kind=back_kind,
             location_id=back_loc, movement_type="sale_return_in",
             direction=StockDirection.in_, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type=StockDoc.SALE_RETURN, source_doc_id=ret.id,
         )
-        ret.lines.append(SalesReturnLine(item_id=item_id, quantity=Decimal(qty),
+        # (030) The cost the SALE booked — a return reverses that, not today's average.
+        ret.lines.append(SalesReturnLine(item_id=item_id, quantity=qty,
                                          location_kind=back_kind, location_id=back_loc,
-                                         unit_cost=sold_cost.get(item_id)))
+                                         unit_cost=sold_line.unit_cost))
         item = db.get(Item, item_id)  # (009) restore serials for serialized items
         if item.is_perishable:
             # (011) Goods come back into the lot for their expiry, matching the stock-in above.
@@ -934,9 +954,13 @@ def return_sale(
             except batch_service.BatchError as exc:
                 raise SalesError(str(exc)) from exc
         if item.is_serialized:
-            ser = (serials or {}).get(item_id) or []
-            if Decimal(len(ser)) != to_qty(Decimal(qty)):
+            # السيريالات جاية للصنف كله؛ كل جزء بياخد نصيبه بالترتيب.
+            all_ser = (serials or {}).get(item_id) or []
+            if Decimal(len(all_ser)) != to_qty(wanted[item_id]):
                 raise SalesError("عدد السيريالات لازم يساوي الكمية المرتجعة.")
+            start = used_serials.get(item_id, 0)
+            ser = all_ser[start:start + int(qty)]
+            used_serials[item_id] = start + int(qty)
             try:
                 serial_service.restore_for_return(
                     db, item=item, invoice_id=inv.id, origin_kind=back_kind,

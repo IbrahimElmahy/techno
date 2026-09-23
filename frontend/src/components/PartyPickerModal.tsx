@@ -229,7 +229,9 @@ export default function PartyPickerModal({
           <span>{title ?? 'انشاء'}</span>
           {/* زرار إنشاء لكل تصنيف — في الترويسة زي الشاشة اللي العميل شغّال عليها، مش في
               الفوتر. الضغط بيفتح الفورم على التصنيف بتاعه على طول. */}
-          {!creating && (kinds ?? [kind]).map((k) => (
+          {/* الموظف مالوش زرار هنا: بيتعمل من شاشة الموظفين. وكان بيتكتب عليه «مورد جديد»
+              لأن أي تصنيف غير العميل كان بيتسمّى مورد — فشاشة البيع كانت بتعرض إنشاء مورد. */}
+          {!creating && (kinds ?? [kind]).filter((k) => k !== 'employee').map((k) => (
             <Button key={k} size="small" icon={<PlusOutlined />}
               onClick={() => { setActiveKind(k); setCreating(true); }}>
               {k === 'customer' ? 'عميل جديد' : 'مورد جديد'}

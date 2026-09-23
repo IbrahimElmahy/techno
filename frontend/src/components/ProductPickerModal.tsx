@@ -414,7 +414,7 @@ export default function ProductPickerModal({
                       </span>
                     )}
                     <b style={{ color: out ? '#999' : undefined }}>{p.name}</b>
-                    {p.code && <Tag style={{ marginInlineStart: 8 }}>{p.code}</Tag>}
+                    {/* الكود مابيتعرضش (قرار العميل) — البحث بيه لسه شغّال فوق. */}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {priceFor && priceFor(p.id) != null && (
