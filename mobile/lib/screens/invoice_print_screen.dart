@@ -221,7 +221,8 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
         pageFormat: format,
         theme: theme,
         textDirection: pw.TextDirection.rtl,
-        margin: const pw.EdgeInsets.all(20),
+        // هامش أصغر — نفس اللي اتعمل في طباعة النظام: الأبيض ده كان بياكل سطور.
+        margin: const pw.EdgeInsets.all(14),
         // **ترويسة خفيفة من الصفحة التانية وطايلع.** الورقة اللي بتتفصل عن أختها
         // بتبقى ورق سادة فيه أرقام: مين العميل وأنهي فاتورة؟ الترويسة الكاملة بلونها
         // مالهاش لزوم تتكرر — الرقم والاسم كفاية عشان الورقة تعرّف نفسها.
@@ -257,7 +258,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
             // ترويسة بلون النظام — الورقة اللي بتوصل واتساب لازم تتعرف من أول نظرة
             // إنها بتاعت مين، مش سطر أسود على أبيض زي أي إيصال.
             pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: pw.BoxDecoration(
                 color: _brand,
                 borderRadius: pw.BorderRadius.circular(6),
@@ -326,28 +327,26 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ),
             // بيانات الفاتورة في صندوق واحد — عمودين، زي ترويسة الفاتورة على النظام.
             pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: pw.BoxDecoration(
                 border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
                 borderRadius: pw.BorderRadius.circular(4),
               ),
-              child: pw.Row(children: [
-                pw.Expanded(
-                  child: pw.Column(children: [
-                    _row('العميل', '${inv['customer_name']}'),
-                    // التليفون على الورقة: اللي بيراجع فاتورة راجعة من واتساب بيدوّر
-                    // على العميل بالاسم، والأسماء بتتكرر — والرقم بيحسم.
-                    _row('التليفون', (_phone ?? '').trim().isEmpty ? '—' : _phone!),
-                    _row('المندوب', _rep),
-                  ]),
-                ),
-                pw.SizedBox(width: 12),
-                pw.Expanded(
-                  child: pw.Column(children: [
-                    _row('نوع الطلب', family ?? '—'),
-                    _row('التاريخ', '${inv['invoice_date']}'),
-                  ]),
-                ),
+              // **تلات أعمدة زي طباعة النظام** — نفس البيانات في سطرين بدل تلاتة.
+              // التليفون على الورقة: اللي بيراجع فاتورة راجعة من واتساب بيدوّر على
+              // العميل بالاسم، والأسماء بتتكرر — والرقم بيحسم.
+              child: pw.Column(children: [
+                pw.Row(children: [
+                  pw.Expanded(flex: 3, child: _row('العميل', '${inv['customer_name']}')),
+                  pw.Expanded(flex: 2, child: _row('التليفون',
+                      (_phone ?? '').trim().isEmpty ? '—' : _phone!)),
+                  pw.Expanded(flex: 2, child: _row('التاريخ', '${inv['invoice_date']}')),
+                ]),
+                pw.Row(children: [
+                  pw.Expanded(flex: 3, child: _row('المندوب', _rep)),
+                  pw.Expanded(flex: 2, child: _row('نوع الطلب', family ?? '—')),
+                  pw.Expanded(flex: 2, child: pw.SizedBox()),
+                ]),
               ]),
             ),
             pw.SizedBox(height: 10),
@@ -456,45 +455,60 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                       fontSize: 11, fontWeight: pw.FontWeight.bold)),
             ],
             pw.SizedBox(height: 12),
-            // الإجماليات في صندوق على الشمال — نفس سلم النظام، والباقي هو الرقم الكبير.
-            pw.Row(children: [
-              pw.Expanded(child: pw.SizedBox()),
-              pw.Container(
-                width: 230,
-                padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
-                  borderRadius: pw.BorderRadius.circular(4),
-                ),
-                // **الحساب كامل، مش رقم الطلب لوحده.**
-                //
-                // كانت بتقول «الباقي على العميل» وتقصد آجل الطلب ده بس. والعميل
-                // اللي عليه حساب من قبل بيقرا الرقم ده على إنه كل اللي عليه، فبيدفع
-                // على أساسه ويتفاجئ بعدين. فالورقة بقت بتقول اللي المندوب بيقوله
-                // بلسانه: كان عليك كذا، والطلب ده بكذا، ودفعت كذا، فالباقي كذا.
-                //
-                // و«الحساب السابق» بيتقرا من المستند نفسه (`prev_balance`) — اتخزّن
-                // ساعة الحفظ. قراءته من كاش العملاء وقت الطباعة بترجّع رقم تاني بعد
-                // أي مزامنة، فالورقة المتطبوعة تاني تقول غير الأولانية لنفس الطلب.
-                child: pw.Column(children: [
-                  // الخطوط الأول كل واحد لوحده، وتحتهم مجموعهم. المندوب بيتسأل
-                  // «أنا عليا كام في الأبيض؟» مش «أنا عليا كام؟» — والرقم المجمّع
-                  // لوحده مابيجاوبش، فبيرجع يفتح الشاشة قدام العميل.
-                  if (prevByFamily.isNotEmpty)
-                    for (final e in prevByFamily.entries)
-                      _total('ح سابق ${e.key}', _money(e.value)),
-                  if (prev != null)
-                    _total(prevByFamily.isEmpty ? 'الحساب السابق' : 'إجمالي الحساب السابق',
-                        _money(prev)),
-                  _total('إجمالي الطلب', _money(total)),
-                  _total('المدفوع نقداً', _money(cash)),
-                  pw.Divider(height: 8, color: PdfColors.grey400),
-                  _total(prev == null ? 'الباقي على العميل' : 'إجمالي المستحق',
-                      _money(prev == null ? credit : prev + total - cash),
-                      big: true),
+            // **الفوتر على عمودين — زي دفتر الفواتير ونفس طباعة النظام.**
+            //
+            //   ┌ الحساب ──────────────────────────┐ ┌ السداد ───────────┐
+            //   │ إجمالي الطلب                      │ │ المدفوع نقداً      │
+            //   │ يضاف إليه الحساب السابق (أبيض)    │ │ الباقي             │
+            //   │ الإجمالي                          │ │ مديونية بولي       │
+            //   └──────────────────────────────────┘ └───────────────────┘
+            //
+            // **والحساب السابق بتاع نوع الطلب بس.** كان بيكتب كل خط لوحده وتحتهم
+            // «إجمالي المستحق» بيجمع الأبيض على البولي — رقم مالوش حساب يتسدّ فيه،
+            // والمكتب بيحصّل كل خط لوحده. دلوقتي الطلب بيتجمع على حساب خطه، ومديونية
+            // الخط التاني بتتكتب لوحدها تحت الباقي.
+            //
+            // العميل اللي حسابه مش مقسوم (`prevByFamily` فاضي) بيفضل زي ما كان:
+            // `prev` هو حسابه كله.
+            ...(() {
+              final mine = (family != null && prevByFamily.containsKey(family))
+                  ? prevByFamily[family]
+                  : (prevByFamily.isEmpty ? prev : null);
+              final others = prevByFamily.entries
+                  .where((e) => e.key != family)
+                  .toList();
+              final left = mine == null ? credit : mine + total - cash;
+              final famTag = (family != null && prevByFamily.isNotEmpty) ? ' ($family)' : '';
+              pw.Widget box(List<pw.Widget> rows) => pw.Expanded(
+                    child: pw.Container(
+                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: pw.BoxDecoration(
+                        border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
+                        borderRadius: pw.BorderRadius.circular(4),
+                      ),
+                      child: pw.Column(children: rows),
+                    ),
+                  );
+              return [
+                pw.SizedBox(height: 8),
+                pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                  box([
+                    _total('إجمالي الطلب', _money(total)),
+                    if (mine != null) ...[
+                      _total('يضاف إليه الحساب السابق$famTag', _money(mine)),
+                      _total('الإجمالي', _money(mine + total), big: true),
+                    ],
+                  ]),
+                  pw.SizedBox(width: 8),
+                  box([
+                    _total('المدفوع نقداً', _money(cash)),
+                    _total('الباقي', _money(left), big: true),
+                    for (final e in others)
+                      _total('مديونية ${e.key}', _money(e.value)),
+                  ]),
                 ]),
-              ),
-            ]),
+              ];
+            })(),
             if ((inv['notes'] as String?)?.isNotEmpty == true) ...[
               pw.SizedBox(height: 10),
               pw.Text('ملاحظات: ${inv['notes']}', style: const pw.TextStyle(fontSize: 10)),
@@ -502,7 +516,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
             // **من غير `Spacer`.** كانت بتدفع التوقيعات لآخر الصفحة الواحدة؛ وفي مستند
             // بيتقسّم مالهاش ارتفاع تنتهي عنده فبترمي استثناء. التوقيعات بتيجي بعد آخر
             // سطر — وده مكانها الصح على ورقة من صفحتين.
-            pw.SizedBox(height: 14),
+            pw.SizedBox(height: 10),
             pw.Divider(color: PdfColors.grey400),
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -585,7 +599,8 @@ const _brand = PdfColor.fromInt(0xFF0E4C6D);
 
 pw.Widget _cell(String text, {bool bold = false, bool white = false, bool center = false}) =>
     pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+      // حشو أصغر — سطور أكتر في الصفحة، زي طباعة النظام.
+      padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       child: pw.Text(text,
           textAlign: center ? pw.TextAlign.center : pw.TextAlign.right,
           style: pw.TextStyle(
