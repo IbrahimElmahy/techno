@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, get_current_user
-from src.auth.rbac import ROLE_CAPABILITIES
+from src.auth.rbac import ALL_CAPABILITIES, RoleName, effective_capabilities
 from src.core.db import get_db
 from src.core import login_guard
 from src.core.security import create_access_token, verify_password
@@ -196,5 +196,9 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         branch_id=user.branch_id,
         territory_id=user.territory_id,
         active=user.active,
-        capabilities=sorted(ROLE_CAPABILITIES.get(current.role, set())),
+        # **اللي الدور ده بيقدر عليه فعلاً** — نفس `role_has_capability` اللي السيرفر بيحكم
+        # بيه. كان بيرجّع الافتراضي، فأي تعديل من شاشة الصلاحيات كان بيتطبّق في السيرفر
+        # ومابيوصلش للشاشة: زرار يبان لحد اتمنع منه، أو يختفي عن حد اتدّاله.
+        capabilities=sorted(ALL_CAPABILITIES if current.role == RoleName.system_admin
+                            else effective_capabilities(current.role)),
     )

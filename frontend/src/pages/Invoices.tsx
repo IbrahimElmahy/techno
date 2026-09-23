@@ -221,6 +221,7 @@ export default function Invoices() {
   // exactly these two strings — so the button and the gate cannot come to disagree.
   const { can, user } = useAuth();
   const canEditInvoice = can('sale.edit');
+  const canBonus = can('sale.bonus');
   // بوباب الخزنة قبل الحفظ. المندوب مابيتسألش — صندوق خطه بيتحدد لوحده (أمر ٠٠٩ بند ٥)،
   // والسؤال هنا للمكتب اللي قدامه أكتر من صندوق.
   const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate(
@@ -312,6 +313,15 @@ export default function Invoices() {
   const [pendingItems, setPendingItems] = useState<number[]>([]);
   const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
   const [cashAmount, setCashAmount] = useState<number>(0);
+  // **فاتورة بونص** — بضاعة هدية على فاتورة بيع لنفس العميل. قيمتها صفر ومابتلمسش رصيده.
+  // الربط بالفاتورة إجباري (قرار العميل)، والقايمة بتتجاب لما العميل يتحدد.
+  const [isBonus, setIsBonus] = useState(false);
+  const [bonusForId, setBonusForId] = useState<number | null>(null);
+  // رقم الفاتورة المربوطة لما تتفتح فاتورة بونص قديمة — لو أقدم من آخر ١٠٠ مش هتبقى في
+  // القايمة، والخانة كانت هتعرض رقم داخلي بدل رقم الفاتورة.
+  const bonusLinkedRef = useRef<{ id: number; number: string } | null>(null);
+  const [bonusTargets, setBonusTargets] = useState<
+    { id: number; document_number: string; invoice_date?: string | null; net: string }[]>([]);
   const [creditAmount, setCreditAmount] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
   // The category products are picked from — chosen once, stays until changed.
@@ -402,6 +412,8 @@ export default function Invoices() {
       customer_type: s.customer_type,
       revenue_account_id: s.revenue_account_id,
       family: s.family,
+      is_bonus: Boolean(s.is_bonus),
+      bonus_for_number: s.bonus_for_number ?? null,
       gross: Number(s.gross || 0),
       combined_pct: Number(s.combined_pct || 0),
       // الفرق نفسه، مش النسبة × الإجمالي: النسبة المجمّعة مقرّبة لمنزلتين، والطرح
@@ -640,7 +652,8 @@ export default function Invoices() {
 
   // Invoice computations: per-line discounts first, then the invoice-total discount.
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
-  const netTotal = netOf(grossTotal, discountPct);
+  // البونص قيمته صفر — «إجمالي الأصناف» فوق بيفضل يقول قيمتها بسعر البيع.
+  const netTotal = isBonus ? 0 : netOf(grossTotal, discountPct);
 
   /**
    * أعمدة شبكة سطور الفاتورة كبيانات — بأبعاد متناسقة ومساحات مريحة.
@@ -693,6 +706,10 @@ export default function Invoices() {
     setCashAmount(0);
     setCreditAmount(0);
     setDiscountPct(0);
+    setIsBonus(false);
+    setBonusForId(null);
+    setBonusTargets([]);
+    bonusLinkedRef.current = null;
     setSelectedCustomerId(null);
     setCustomerTier(null);
     setCustomerBalance(null);
@@ -1316,6 +1333,10 @@ export default function Invoices() {
       message.error('يرجى إضافة منتج أو تسجيل كوبونات لحفظ الفاتورة!');
       return;
     }
+    if (isBonus && !bonusForId) {
+      message.error('فاتورة البونص لازم تبقى على فاتورة بيع — اختار الفاتورة.');
+      return;
+    }
     // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has
     // to be caught here rather than posted as a zero-quantity line nobody meant to write.
     const noQty = validLines.find((l) => !Number(l.quantity));
@@ -1396,8 +1417,10 @@ export default function Invoices() {
               location_kind: 'warehouse',
               location_id: validLines[0]?.warehouse_id ?? docWarehouseId ?? warehouses[0]?.id ?? 1,
             },
-            variable_discount_pct: discountPct,
-            cash_amount: cashAmount,
+            variable_discount_pct: isBonus ? 0 : discountPct,
+            cash_amount: isBonus ? 0 : cashAmount,
+            is_bonus: isBonus,
+            bonus_for_invoice_id: isBonus ? bonusForId : null,
             // مش متبعوت عن قصد: السيرفر بيحسبه من المستحق (اللي فيه الضريبة والمصروفات)
             // ناقص النقدي. اللي على الشاشة تقدير للعرض، والحقيقة عند اللي بيرحّل.
             credit_amount: undefined,
@@ -1807,6 +1830,10 @@ function couponsTotal(inv: any): number {
 
       setDiscountPct(Number(det.variable_discount_pct ?? det.discount_pct ?? 0));
       setCashAmount(Number(det.cash_amount) || 0);
+      setIsBonus(Boolean(det.is_bonus));
+      setBonusForId(det.bonus_for_invoice_id ?? null);
+      bonusLinkedRef.current = det.bonus_for_invoice_id && det.bonus_for_number
+        ? { id: det.bonus_for_invoice_id, number: det.bonus_for_number } : null;
       setInvoiceDate(dayjs(det.invoice_date || det.created_at || undefined));
       setInvoiceFamily(det.family || null);
       createForm.setFieldsValue({
@@ -1916,13 +1943,44 @@ function couponsTotal(inv: any): number {
   };
 
   // Map a loaded invoice onto the shared invoice document (same shape drives screen + print).
+  // فواتير العميل اللي ينفع البونص يبقى عليها — بتتجاب لما «فاتورة بونص» تتختار وعميلها
+  // معروف. آخر ١٠٠ فاتورة بيع (من غير بونص)، والمربوطة حالياً بتتضاف لو أقدم منهم.
+  useEffect(() => {
+    if (!isBonus || !selectedCustomerId) { setBonusTargets([]); return; }
+    let alive = true;
+    api.get('/api/v1/sales', { params: { customer_id: selectedCustomerId, kind: 'sale', limit: 100 } })
+      .then((res) => {
+        if (!alive) return;
+        const rows = (Array.isArray(res.data) ? res.data : res.data?.items ?? [])
+          .filter((r: any) => r.id !== editingInvoice?.id);
+        const opts = rows.map((r: any) => ({
+          id: r.id, document_number: r.document_number,
+          invoice_date: r.invoice_date, net: r.net,
+        }));
+        const linked = bonusLinkedRef.current;
+        if (linked && !opts.some((o: any) => o.id === linked.id)) {
+          opts.push({ id: linked.id, document_number: linked.number, invoice_date: null, net: '0' });
+        }
+        setBonusTargets(opts);
+      })
+      .catch(() => { if (alive) setBonusTargets([]); });
+    return () => { alive = false; };
+  }, [isBonus, selectedCustomerId, editingInvoice?.id]);
+
   const invoiceDoc = (inv: any): InvoiceDoc | null => {
     if (!inv) return null;
     const customer = customers.find((c) => c.id === inv.customer_id);
+    // البونص سطوره بصفر، فقيمته بسعر البيع بتتحسب من الكمية × السعر.
+    const bonusValue = inv.is_bonus
+      ? (inv.lines || []).reduce((s: number, l: any) =>
+        s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0)
+      : null;
     return {
       kind: 'sale',
+      isBonus: Boolean(inv.is_bonus),
       document_number: inv.document_number,
-      date: (inv as any).created_at ?? null,
+      // تاريخ الفاتورة مش يوم إدخالها — الفاتورة بأثر رجعي كانت بتتطبع بتاريخ النهارده.
+      date: (inv as any).invoice_date ?? (inv as any).created_at ?? null,
       partyLabel: 'العميل',
       partyName: customer?.name ?? `#${inv.customer_id}`,
       partyPhone: (customer as any)?.phone ?? null,
@@ -1936,7 +1994,7 @@ function couponsTotal(inv: any): number {
         const a = postingAccounts.find((x: any) => x.id === inv.revenue_account_id);
         return a ? (a.name || a.code || null) : null;
       })(),
-      gross: inv.gross,
+      gross: bonusValue ?? inv.gross,
       discountPct: inv.combined_pct,
       net: inv.net,
       tax: (inv as any).tax_amount ?? 0,
@@ -1956,7 +2014,11 @@ function couponsTotal(inv: any): number {
         (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
       // (030) The paper number belongs on the printed document — it is how the customer's own
       // filing refers to this sale.
-      extraMeta: printMeta(inv),
+      extraMeta: [
+        ...(inv.is_bonus && inv.bonus_for_number
+          ? [['على طلب بيع', inv.bonus_for_number] as [string, string]] : []),
+        ...(printMeta(inv) ?? []),
+      ],
       lines: (inv.lines || []).map((l: any) => ({
         name: productName(l.item_id),
         itemId: l.item_id,
@@ -2234,10 +2296,10 @@ function couponsTotal(inv: any): number {
                 onClick={closeCreate}>رجوع</Button>
               <Typography.Text strong style={{ fontSize: 16 }}>
                 {viewInvoice
-                  ? `طلب بيع رقم: ${viewInvoice.document_number || ''}`
+                  ? `${isBonus ? 'فاتورة بونص' : 'طلب بيع'} رقم: ${viewInvoice.document_number || ''}`
                   : editingInvoice
-                    ? `تعديل طلب بيع #${editingInvoice.id}`
-                    : 'تسجيل طلب بيع جديد'}
+                    ? `تعديل ${isBonus ? 'فاتورة بونص' : 'طلب بيع'} #${editingInvoice.id}`
+                    : isBonus ? 'تسجيل فاتورة بونص جديدة' : 'تسجيل طلب بيع جديد'}
               </Typography.Text>
               {/* **نوع الفاتورة فوق، جنب رقمها.** كان متحدّد في باب «الفاتورة على
                   أنهي حساب؟» وبعدها مايبانش في أي حتة — فاللي فاتح فاتورة من الكشف
@@ -2305,9 +2367,33 @@ function couponsTotal(inv: any): number {
           <Row gutter={16}>
             <Col xs={12} md={4}>
               <Form.Item label="نوع المستند" style={{ marginBottom: 8 }}>
-                <Input value="طلب بيع" readOnly style={{ fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff', textAlign: 'center' }} />
+                {/* «فاتورة بونص» بتظهر للي معاه صلاحيتها بس. التبديل بيمسح الفاتورة المربوطة:
+                    الرجوع لطلب بيع مايسيبش ربط مالوش معنى. */}
+                <Select value={isBonus ? 'bonus' : 'sale'} disabled={viewOnly || (!canBonus && !isBonus)}
+                  onChange={(v) => { setIsBonus(v === 'bonus'); setBonusForId(null); if (v === 'bonus') setCashAmount(0); }}
+                  options={[
+                    { value: 'sale', label: 'طلب بيع' },
+                    ...(canBonus || isBonus ? [{ value: 'bonus', label: 'فاتورة بونص' }] : []),
+                  ]}
+                  style={{ fontWeight: 700 }} />
               </Form.Item>
             </Col>
+            {isBonus && (
+              <Col xs={24} md={8}>
+                <Form.Item label="على فاتورة بيع" required style={{ marginBottom: 8 }}
+                  help={!selectedCustomerId ? 'اختار العميل الأول' : undefined}>
+                  <Select showSearch allowClear disabled={viewOnly || !selectedCustomerId}
+                    placeholder="اختار الفاتورة اللي البونص عليها"
+                    value={bonusForId ?? undefined}
+                    onChange={(v) => setBonusForId(v ?? null)}
+                    optionFilterProp="label"
+                    options={bonusTargets.map((t) => ({
+                      value: t.id,
+                      label: `${t.document_number} — ${t.invoice_date ?? ''} — ${money(t.net)} ج.م`,
+                    }))} />
+                </Form.Item>
+              </Col>
+            )}
             <Col xs={12} md={4}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
@@ -2652,8 +2738,8 @@ function couponsTotal(inv: any): number {
                     <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
                       help={hasParty ? 'ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة' : undefined}>
                       <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
-                        disabled={viewOnly}
-                        value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
+                        disabled={viewOnly || isBonus}
+                        value={isBonus ? 0 : cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                     </Form.Item>
                   </>
                 )}

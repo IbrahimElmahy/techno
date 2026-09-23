@@ -119,6 +119,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/trade-reports?view=sales-items-grouped', label: 'مبيعات اصناف مجمعة', roles: R(SALES), a5: '/sales/item-grouped' },
           { key: '/trade-reports?view=invoice-profits', label: 'ارباح فواتير', roles: OFFICE, a5: '/invoicesprofits' },
           { key: '/trade-reports?view=item-profits', label: 'ارباح اصناف', roles: OFFICE, a5: '/sales/itemprofits' },
+          // البونص — البضاعة اللي خرجت هدية بسعرها وتكلفتها. مالوش شاشة في a5.
+          { key: '/bonus-report', label: 'تقرير البونص', roles: R(SALES) },
         ],
       },
       { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردود مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },

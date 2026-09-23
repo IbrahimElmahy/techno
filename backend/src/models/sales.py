@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    BigInteger, Date, DateTime, Enum, ForeignKey, Integer, String, func,
+    BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, Integer, String, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -88,6 +88,15 @@ class SalesInvoice(Base):
     # الاتنين لأنها بتحرّك مخزون وفلوس.
     client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True,
                                                     index=True)
+    # **فاتورة بونص** — بضاعة بتخرج هدية على فاتورة بيع. قيمتها صفر ومابتلمسش رصيد العميل،
+    # بس أصنافها بسعرها وتكلفتها على السطور عشان تقرير البونص يقول خرج بكام. كانت بتتكتب
+    # فاتورة عادية بخصم ١٠٠٪ — ٨٨٠ واحدة في ٢٠٢٦ لحد سبتمبر، و٣٧٨ ألف تكلفة في ٣ شهور
+    # مش باينين في أي تقرير. NULL = مش بونص (العمود اتضاف على جدول مليان).
+    is_bonus: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # الفاتورة اللي البونص عليها — إجباري للبونص الجديد (قرار العميل)، وممكن NULL للقديم
+    # اللي ماكانش ليه ربط واضح.
+    bonus_for_invoice_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_invoice.id"), nullable=True, index=True)
     # Denormalised totals of the invoice's expense lines, so a report does not have to join in
     # order to explain a figure the reader can already see on the document.
     expenses_billed: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)

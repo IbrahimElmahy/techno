@@ -210,6 +210,22 @@ def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
     return discounts.net_of(gross, combined_pct)
 
 
+def _assert_bonus_target(db: Session, target_id: int | None, customer_id: int,
+                         self_id: int | None) -> None:
+    """فاتورة البونص لازم تبقى على فاتورة بيع حقيقية لنفس العميل (قرار العميل)."""
+    if not target_id:
+        raise SalesError("فاتورة البونص لازم تبقى على فاتورة بيع — اختار الفاتورة.")
+    if self_id and target_id == self_id:
+        raise SalesError("فاتورة البونص ماينفعش تبقى على نفسها.")
+    target = db.get(SalesInvoice, target_id)
+    if target is None:
+        raise SalesError("فاتورة البيع اللي البونص عليها مش موجودة.")
+    if target.is_bonus:
+        raise SalesError("البونص لازم يبقى على فاتورة بيع، مش على بونص تاني.")
+    if target.customer_id != customer_id:
+        raise SalesError("فاتورة البونص لازم تبقى لنفس عميل الفاتورة اللي عليها.")
+
+
 def create_sale(
     db: Session,
     *,
@@ -266,7 +282,20 @@ def create_sale(
     # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
     # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
     cost_center_distribution: dict | None = None,
+    # فاتورة بونص — الشرح عند `SalesInvoice.is_bonus`. `bonus_for_invoice_id` إجباري معاها.
+    is_bonus: bool = False,
+    bonus_for_invoice_id: int | None = None,
 ) -> SalesInvoice:
+    if is_bonus:
+        _assert_bonus_target(db, bonus_for_invoice_id, customer_id, replace_invoice_id)
+        # **البونص مالوش فلوس.** الأصناف بسعرها والقيمة صفر، فمافيش نقدي ولا مصروف على
+        # العميل ولا خصم مستند — أي رقم فيهم معناه إن ده مش بونص، ده بيع.
+        if to_money(cash_amount or ZERO) != ZERO:
+            raise SalesError("فاتورة البونص مافيهاش فلوس — النقدي لازم يبقى صفر.")
+        if expenses:
+            raise SalesError("فاتورة البونص مافيهاش مصروفات.")
+        variable_discount_pct = ZERO
+        credit_amount = None
     # فاتورة كوبونات بس — من غير أي صنف.
     #
     # الشركة بتسلّم دفاتر كوبونات لعميل من غير ما تبيعه بضاعة في نفس الورقة، وده مستند
@@ -283,12 +312,12 @@ def create_sale(
                        or has_coupon_rows)
     if not lines and not has_coupons:
         raise SalesError("الفاتورة لازم يكون فيها صنف أو دفتر كوبونات على الأقل.")
-    fixed = fixed_discount_pct(db)
+    fixed = ZERO if is_bonus else fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
     # خصم بعد خصم: المتغيّر بيتحسب على الباقي بعد الثابت، مش على السعر الأصلي.
     # `combined` هي الحصيلة الفعلية — بتتكتب على المستند للعرض، والصافي بيتحسب
     # بالنِسَب الأصلية عشان تقريبها لمنزلتين مايدخلش في الفلوس.
-    combined = discounts.combine(fixed, variable)
+    combined = Decimal("100") if is_bonus else discounts.combine(fixed, variable)
     if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
         raise SalesError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
 
@@ -324,6 +353,9 @@ def create_sale(
             raise SalesError(str(exc)) from exc
         list_price = to_money(base_price * factor)  # price for one of the chosen unit
         unit_price = to_money(ln.unit_price) if ln.unit_price is not None else list_price
+        # البونص بيتسجّل بسعر الشريحة زي ما هو — السعر هنا للتقرير مش للتحصيل.
+        if is_bonus:
+            unit_price = list_price
         if unit_price < list_price and not can_sell_below:
             raise SalesError(
                 f"البيع بأقل من سعر الشريحة ({list_price}) محتاج صلاحية "
@@ -362,10 +394,13 @@ def create_sale(
             line_disc = (Decimal(ln.discount_pct) if ln.discount_pct is not None
                          else Decimal(customer.discount_pct) if customer.discount_pct is not None
                          else Decimal(item.default_discount_pct or 0))
-        if line_disc < ZERO or line_disc >= Decimal("100"):
+        if is_bonus:
+            # سطر البونص خصمه ١٠٠٪ وقيمته صفر — ده النوع اللي بيسمح بيه، مش خصم بيتكتب.
+            line_disc = Decimal("100")
+        elif line_disc < ZERO or line_disc >= Decimal("100"):
             raise SalesError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * unit_price
-        line_total = discounts.net_of(line_before, line_disc)
+        line_total = ZERO if is_bonus else discounts.net_of(line_before, line_disc)
         gross += line_total
         built.append((ln, unit_price, line_total, tier, factor, line_disc))
     gross = to_money(gross)
@@ -450,7 +485,10 @@ def create_sale(
     invoice = existing or SalesInvoice(
         prior_balance=prior_balance,
         other_family_balance=other_family_balance, other_family=other_family,
-        document_number=_doc_number(db, SalesInvoice, "SINV"),
+        # البونص بترقيمه: مابيتعدّش في فواتير البيع ولا بياخد رقم من سلسلتها.
+        document_number=_doc_number(db, SalesInvoice, "BNS" if is_bonus else "SINV"),
+        is_bonus=bool(is_bonus) or None,
+        bonus_for_invoice_id=bonus_for_invoice_id if is_bonus else None,
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,
         family=family,
@@ -502,6 +540,8 @@ def create_sale(
         existing.coupon_serial_to = (coupon_serial_to or None)
         existing.coupon_count = _coupon_count(coupon_serial_from, coupon_serial_to, coupon_count)
         existing.cost_center_id = cost_center_id
+        existing.is_bonus = bool(is_bonus) or None
+        existing.bonus_for_invoice_id = bonus_for_invoice_id if is_bonus else None
         if invoice_date is not None:
             existing.invoice_date = invoice_date
         invoice.lines.clear()

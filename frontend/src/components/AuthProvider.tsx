@@ -103,6 +103,17 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
           localStorage.setItem('token', res.data.access_token);
           setToken(res.data.access_token);
         }
+        // **والصلاحيات بتتحدّث معاه.** كانت بتتحفظ ساعة الدخول وبس، فصلاحية جديدة (زي
+        // «فاتورة بونص») أو تعديل من شاشة الصلاحيات مابيبانش غير لما الواحد يخرج ويدخل.
+        const me = await api.get('/api/v1/auth/me');
+        if (me.data?.capabilities) {
+          setUser((prev) => {
+            if (!prev) return prev;
+            const next = { ...prev, capabilities: me.data.capabilities };
+            localStorage.setItem('user', JSON.stringify(next));
+            return next;
+          });
+        }
       } catch {
         // A failed renewal is not a logout — the current token may still be valid, and the
         // 401 interceptor already handles the case where it isn't.

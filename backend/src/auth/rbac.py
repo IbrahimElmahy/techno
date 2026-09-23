@@ -108,6 +108,8 @@ CAP_SALE_WRITE = "sale.write"
 # Both go through a reversal, so both are gated where the reversal happens, not on the screen.
 CAP_SALE_EDIT = "sale.edit"
 CAP_SALE_DELETE = "sale.delete"
+# فاتورة البونص — بضاعة بتخرج هدية. صلاحية لوحدها عشان تتدّي وتتشال من غير البيع.
+CAP_SALE_BONUS = "sale.bonus"
 CAP_SELL_BELOW_PRICE = "sell.below_price"  # (007) charge below the resolved tier price
 CAP_TRANSFER_INITIATE = "transfer.initiate"
 CAP_TRANSFER_APPROVE = "transfer.approve"
@@ -168,6 +170,11 @@ ALL_CAPABILITIES |= _SALE_EDIT_ALL
 # وبس — القيد ده عند `update_sale` مش هنا، لأن الصلاحية مابتعرفش الفاتورة بتاعة مين.
 # كان واخد الاتنين من ٢٩ أغسطس، والحذف من غير أي فحص للفاتورة: أي مندوب يمسح أي فاتورة.
 ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).add(CAP_SALE_EDIT)
+# البونص: المكتب والمندوب الاتنين (قرار العميل ٢٠٢٦-٠٩-٢٤).
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager,
+              RoleName.sales_rep):
+    ROLE_CAPABILITIES.setdefault(_role, set()).add(CAP_SALE_BONUS)
+ALL_CAPABILITIES.add(CAP_SALE_BONUS)
 
 # Five price tiers (007): selling below the resolved tier price is a manager authority — granted to
 # System Admin, Branch Manager, Sales Manager; NOT Sales Rep (reps cannot undercut tiers).

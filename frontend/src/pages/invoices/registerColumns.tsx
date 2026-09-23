@@ -46,8 +46,11 @@ export function buildRegisterColumns({
       dataIndex: 'doc_type',
       key: 'doc_type',
       width: 100,
-      render: (t: string) => t === 'sale'
-        ? <Tag color="green" style={{ fontWeight: 600 }}>فاتورة بيع</Tag>
+      render: (t: string, r: any) => t === 'sale'
+        ? (r.is_bonus
+          // البونص نوع لوحده — قيمته صفر، واللي بيقرا الكشف لازم يعرفه من غير ما يفتحه.
+          ? <Tag color="gold" style={{ fontWeight: 600 }}>فاتورة بونص</Tag>
+          : <Tag color="green" style={{ fontWeight: 600 }}>فاتورة بيع</Tag>)
         : <Tag color="magenta" style={{ fontWeight: 600 }}>مرتجع بيع</Tag>,
     },
     {

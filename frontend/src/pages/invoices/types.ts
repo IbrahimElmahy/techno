@@ -15,6 +15,10 @@ export const PAGE_SIZE = 300;
 export interface InvoiceRecord {
   id: number;
   document_number: string;
+  /** فاتورة بونص، والفاتورة اللي هي عليها. */
+  is_bonus?: boolean;
+  bonus_for_invoice_id?: number | null;
+  bonus_for_number?: string | null;
   customer_id: number;
   gross: string;
   combined_pct: string;

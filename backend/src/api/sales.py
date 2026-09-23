@@ -8,12 +8,13 @@ from pydantic import BaseModel, Field
 from datetime import date
 from typing import Literal
 
-from sqlalchemy import case, delete as sa_delete, func, select
+from sqlalchemy import case, delete as sa_delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
     CAP_RETURN_WRITE,
+    CAP_SALE_BONUS,
     CAP_SALE_DELETE,
     CAP_SALE_EDIT,
     CAP_SALE_WRITE,
@@ -23,6 +24,7 @@ from src.auth.rbac import (
 )
 from src.core import clock
 from src.core.db import get_db
+from src.core.money import to_money
 from src.models.catalog import Item, ItemPrice, PriceTier
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import LedgerEntry, LedgerLine
@@ -157,6 +159,11 @@ class SaleCreate(BaseModel):
     family: str | None = None
     # (033) رقم الجهاز — بيخلّي إعادة الرفع ترجّع نفس الفاتورة بدل ما تكتب واحدة تانية.
     client_uuid: str | None = None
+    # فاتورة بونص على فاتورة بيع. التطبيق ممكن مايعرفش رقم الفاتورة لسه (اتكتبت من غير نت)
+    # فبيبعت `client_uuid` بتاعها، والسيرفر بيحلّه — الطابور بيرفع بالترتيب فهي بتوصل قبله.
+    is_bonus: bool = False
+    bonus_for_invoice_id: int | None = None
+    bonus_for_client_uuid: str | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -294,6 +301,10 @@ class SalesInvoiceOut(BaseModel):
     other_family: str | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
+    # فاتورة بونص، والفاتورة اللي هي عليها (رقمها للعرض والطباعة).
+    is_bonus: bool = False
+    bonus_for_invoice_id: int | None = None
+    bonus_for_number: str | None = None
 
 
 class InvoiceLineOut(BaseModel):
@@ -760,6 +771,22 @@ def _build_sale(
     _rep_scope_check(db, current, body.customer_id, body.origin)
     _line_locations_check(db, current, body)
     _reject_non_trader(db, body.customer_id)
+    bonus_for = body.bonus_for_invoice_id
+    if body.is_bonus:
+        if not role_has_capability(current.role, CAP_SALE_BONUS):
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "مالكش صلاحية «إصدار فاتورة بونص»."})
+        if bonus_for is None and body.bonus_for_client_uuid:
+            bonus_for = db.scalar(select(SalesInvoice.id).where(
+                SalesInvoice.client_uuid == body.bonus_for_client_uuid))
+        # المندوب بيعمل بونص على فواتيره هو بس — نفس قاعدة التعديل.
+        target = db.get(SalesInvoice, bonus_for) if bonus_for else None
+        if target is not None and (not branch_scope.may_see(current, target) or (
+                current.rep_id is not None and not (
+                    target.rep_id == current.id
+                    or (target.rep_id is None and target.actor_user_id == current.id)))):
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "البونص لازم يبقى على فاتورة من فواتيرك."})
     can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
     try:
         inv = sales_service.create_sale(
@@ -777,6 +804,7 @@ def _build_sale(
                 c.coupon_kind or c.coupon_type_id is not None or c.count
                 or c.serial_from or c.serial_to for c in body.coupons),
             can_sell_below=can_sell_below,
+            is_bonus=body.is_bonus, bonus_for_invoice_id=bonus_for,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,
             cost_center_id=body.cost_center_id,
@@ -877,6 +905,12 @@ def delete_sale(
     inv = db.get(SalesInvoice, sale_id)
     if inv is None or not branch_scope.may_see(current, inv):
         raise HTTPException(404, {"code": "delete_blocked", "message": "الفاتورة مش موجودة"})
+    # فاتورة عليها بونص مابتتمسحش قبله — البونص كان هيفضل مشاور على فاتورة مش موجودة.
+    bonuses = db.scalars(select(SalesInvoice.document_number).where(
+        SalesInvoice.bonus_for_invoice_id == sale_id)).all()
+    if bonuses:
+        raise HTTPException(409, {"code": "delete_blocked",
+                                  "message": f"الفاتورة دي عليها بونص ({'، '.join(bonuses)}) — امسحه الأول."})
     try:
         document_edit_service.delete_sale(
             db, invoice_id=sale_id, actor_user_id=current.id)
@@ -1073,6 +1107,11 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         notes=inv.notes,
         cost_center_id=getattr(inv, "cost_center_id", None),
         revenue_account_id=inv.revenue_account_id,
+        is_bonus=bool(getattr(inv, "is_bonus", None)),
+        bonus_for_invoice_id=getattr(inv, "bonus_for_invoice_id", None),
+        bonus_for_number=(db.scalar(select(SalesInvoice.document_number).where(
+            SalesInvoice.id == inv.bonus_for_invoice_id))
+            if db is not None and getattr(inv, "bonus_for_invoice_id", None) else None),
     )
 
 
@@ -1092,6 +1131,8 @@ def list_sales(
     # عندها، فالفحص اللي بيقول «٤ فواتير» كان بيعرض اللي منهم في الصفحة المحمّلة بس —
     # واحدة من أربعة، والتلاتة التانيين مش باينين ومافيش حاجة بتقول إنهم اتخفوا.
     ids: str | None = None,
+    # «bonus» = فواتير البونص بس، «sale» = من غيرها. فاضي = الكل.
+    kind: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
@@ -1105,6 +1146,10 @@ def list_sales(
     ماتخليش الأرقام تكدب.
     """
     stmt = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
+    if kind == "bonus":
+        stmt = stmt.where(SalesInvoice.is_bonus.is_(True))
+    elif kind == "sale":
+        stmt = stmt.where(or_(SalesInvoice.is_bonus.is_(None), SalesInvoice.is_bonus.is_(False)))
     if ids:
         wanted = [int(x) for x in ids.split(",") if x.strip().lstrip("-").isdigit()]
         # قايمة فاضية بعد التنضيف معناها إن اللي اتبعت مش أرقام — والرد ساعتها
@@ -1160,6 +1205,67 @@ def list_sales(
             for i in rows]
 
 
+@router.get("/bonus-report", response_model=dict)
+def bonus_report(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    group: str = "customer",   # customer | rep | month
+    rep_id: int | None = None,
+    customer_id: int | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """**تقرير البونص** — البضاعة اللي خرجت هدية، بسعر بيعها وبتكلفتها.
+
+    ده الرقم اللي ماكانش باين في أي حتة: البونص كان فاتورة بيع بصفر، فتقارير المبيعات
+    شايفاه صفر وتقرير الربح شايف تكلفته من غير ما يعرف هي راحت فين. التكلفة من السطر
+    نفسه (`unit_cost` المجمّدة يوم الفاتورة)، مش متوسط النهارده.
+    """
+    qty_value = SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price
+    qty_cost = SalesInvoiceLine.quantity * func.coalesce(SalesInvoiceLine.unit_cost, 0)
+    if group == "rep":
+        key = SalesInvoice.rep_id
+    elif group == "month":
+        key = func.to_char(SalesInvoice.invoice_date, "YYYY-MM")
+    else:
+        key = SalesInvoice.customer_id
+    stmt = (select(key.label("k"), func.count(func.distinct(SalesInvoice.id)),
+                   func.coalesce(func.sum(qty_value), 0), func.coalesce(func.sum(qty_cost), 0))
+            .join(SalesInvoiceLine, SalesInvoiceLine.invoice_id == SalesInvoice.id)
+            .where(SalesInvoice.is_bonus.is_(True)))
+    stmt = branch_scope.scope(stmt, SalesInvoice, current)
+    if date_from is not None:
+        stmt = stmt.where(SalesInvoice.invoice_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(SalesInvoice.invoice_date <= date_to)
+    if rep_id is not None:
+        stmt = stmt.where(SalesInvoice.rep_id == rep_id)
+    if customer_id is not None:
+        stmt = stmt.where(SalesInvoice.customer_id == customer_id)
+    if current.rep_id is not None:
+        stmt = stmt.where(SalesInvoice.rep_id == current.id)
+    rows = db.execute(stmt.group_by(key).order_by(func.sum(qty_cost).desc())).all()
+
+    names: dict = {}
+    keys = [r[0] for r in rows if r[0] is not None]
+    if group == "customer" and keys:
+        names = dict(db.execute(select(Customer.id, Customer.name)
+                                .where(Customer.id.in_(keys))).all())
+    elif group == "rep" and keys:
+        names = dict(db.execute(select(User.id, User.full_name).where(User.id.in_(keys))).all())
+    out = [{
+        "key": r[0],
+        "name": (names.get(r[0]) or ("بدون مندوب" if group == "rep" else "-")) if group != "month" else r[0],
+        "invoices": r[1], "value": str(to_money(r[2])), "cost": str(to_money(r[3])),
+    } for r in rows]
+    return {
+        "group": group, "rows": out,
+        "total_invoices": sum(r[1] for r in rows),
+        "total_value": str(to_money(sum((Decimal(r[2]) for r in rows), Decimal(0)))),
+        "total_cost": str(to_money(sum((Decimal(r[3]) for r in rows), Decimal(0)))),
+    }
+
+
 @router.get("/summary", response_model=dict)
 def sales_summary(
     q: str | None = None,
@@ -1179,7 +1285,9 @@ def sales_summary(
     تتحمّل: ٦١٦٣ فاتورة = ٢.٩ ميجا في كل فتحة، ٤٧ ثانية على الشبكة، والشاشة بتفصل قبلها.
     الجمع هنا بيخلّي القايمة تجيب صفحة والأرقام تفضل صح.
     """
-    inv = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
+    # البونص مش بيع: قيمته صفر، وعدّه كان بيكبّر «عدد الفواتير» من غير ما يدخل جنيه.
+    inv = branch_scope.scope(select(SalesInvoice), SalesInvoice, current).where(
+        or_(SalesInvoice.is_bonus.is_(None), SalesInvoice.is_bonus.is_(False)))
     ret = branch_scope.scope(select(SalesReturn), SalesReturn, current).where(
         SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
 

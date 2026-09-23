@@ -474,6 +474,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("account", "reconcilable", "BOOLEAN DEFAULT FALSE"),
     # (033) رقم الجهاز للفاتورة — الرفع من تطبيق المندوب مابيكتبش نفس الفاتورة مرتين.
     ("sales_invoice", "client_uuid", "VARCHAR(64)"),
+    # فاتورة البونص — الشرح عند `SalesInvoice.is_bonus`.
+    ("sales_invoice", "is_bonus", "BOOLEAN"),
+    ("sales_invoice", "bonus_for_invoice_id", "BIGINT"),
     ("voucher", "client_uuid", "VARCHAR(64)"),
     # (038) ونفس الحكاية لإذن التحويل — الشرح في `models/transfer.py`.
     ("stock_transfer", "client_uuid", "VARCHAR(64)"),

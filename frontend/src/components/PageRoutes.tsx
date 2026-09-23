@@ -62,6 +62,7 @@ const CouponReceipts = lazy(() => import('../pages/CouponReceipts'));
 const AfterSalesReports = lazy(() => import('../pages/AfterSalesReports'));
 const PointsLedger = lazy(() => import('../pages/PointsLedger'));
 const Invoices = lazy(() => import('../pages/Invoices'));
+const BonusReport = lazy(() => import('../pages/BonusReport'));
 const Returns = lazy(() => import('../pages/Returns'));
 const Loyalty = lazy(() => import('../pages/Loyalty'));
 const Treasury = lazy(() => import('../pages/Treasury'));
@@ -118,6 +119,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/purchases" element={<Purchases />} />
       <Route path="/manufacturing" element={<Manufacturing />} />
       <Route path="/invoices" element={<Invoices />} />
+      <Route path="/bonus-report" element={<BonusReport />} />
       <Route path="/returns" element={<Returns />} />
       <Route path="/transfers" element={<Transfers />} />
       <Route path="/stock-balance" element={<StockBalance />} />

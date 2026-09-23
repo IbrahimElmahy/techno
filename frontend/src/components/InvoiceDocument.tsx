@@ -67,6 +67,8 @@ export interface InvoiceDoc {
    * بتتطبع تحت «الباقي» عشان العميل يعرف الاتنين من غير ما يتخلطوا في رقم واحد.
    */
   otherFamily?: string | null;
+  /** فاتورة بونص — بضاعة هدية بقيمة صفر. الفوتر بيقول قيمتها بسعر البيع بدل الحساب. */
+  isBonus?: boolean;
   otherFamilyBalance?: string | number | null;
 }
 
@@ -78,7 +80,8 @@ export interface InvoiceDoc {
 // بتقول اتفقنا على إيه واستلم إيه — مش بتقوم مقام ورق قانوني.
 // (المشتريات والمرتجع زي ما هما: التسمية دي بتاعة اللي بيتسلّم للعميل.)
 const titleOf = (d: InvoiceDoc) => (
-  d.kind === 'sale' ? 'طلب بيع'
+  d.isBonus ? 'فاتورة بونص'
+  : d.kind === 'sale' ? 'طلب بيع'
     : d.kind === 'sale_return' ? 'مرتجع مبيعات'
       : 'فاتورة مشتريات');
 
@@ -119,7 +122,8 @@ function headMeta(d: InvoiceDoc, o: PrintOptions): [string, string][] {
   rows.push(['التاريخ',
     d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString('ar-EG')]);
   if (o.paidAndRemaining) {
-    rows.push(['طريقة السداد', Number(d.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي']);
+    // البونص مالوش سداد — «نقدي» عليه كانت بتقول إن العميل دفع.
+    if (!d.isBonus) rows.push(['طريقة السداد', Number(d.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي']);
   }
   return [...rows, ...(d.extraMeta || [])];
 }
@@ -182,6 +186,18 @@ function footerColumns(
   }
 
   const col = (rows: string[]) => (rows.length ? `<div class="f-col">${rows.join('')}</div>` : '');
+  // **البونص مالوش حساب.** قيمته صفر ومابيلمسش رصيد العميل، فسطور «الحساب السابق»
+  // و«الباقي» هتقول أرقام مالهاش علاقة بالورقة. اللي يهم فيها: خرج بكام بسعر البيع.
+  if (d.isBonus) {
+    return `
+    <div class="f-cols">${col([row('قيمة البونص بسعر البيع', cur(d.gross)),
+      row('المطلوب من العميل', cur(0), true)])}</div>
+    <div class="c-sigs">
+      <div class="sig">توقيع المستلم</div>
+      <div class="sig">المندوب</div>
+      <div class="sig">المحاسب</div>
+    </div>`;
+  }
   return `
     <div class="f-cols">${col(col1)}${col(col2)}${col(col3)}</div>
     <div class="c-sigs">
@@ -364,7 +380,7 @@ export default function InvoiceDocument({
         } />
         <MetaRow label="الهاتف" value={doc.partyPhone || '-'} />
         <MetaRow label="التاريخ" value={doc.date ? String(doc.date).slice(0, 10) : '-'} />
-        <MetaRow label="طريقة السداد" value={Number(doc.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي'} />
+        {!doc.isBonus && <MetaRow label="طريقة السداد" value={Number(doc.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي'} />}
         {doc.partyAddress ? <MetaRow label="العنوان" value={doc.partyAddress} /> : null}
         {doc.entryId ? <MetaRow label="رقم القيد" value={doc.entryId} /> : null}
         {(doc.extraMeta || []).map(([k, v]) => <MetaRow key={k} label={k} value={v} />)}
