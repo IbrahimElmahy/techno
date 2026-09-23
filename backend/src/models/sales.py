@@ -52,6 +52,14 @@ class SalesInvoice(Base):
     # `None` = فاتورة اترحّلت قبل ما العمود ده يوجد — الورقة ساعتها مابتعرضش السطر
     # بدل ما تخترع صفر.
     prior_balance: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    # **مديونية النوع التاني** — لو الفاتورة أبيض فده رصيد البولي، والعكس.
+    #
+    # العميل اللي عنده الخطّين بيسأل عن الاتنين وهو واقف، والورقة كانت بتقول
+    # إجمالي واحد مخلوط مايتفصلش. بيتقفل وقت الترحيل زي `prior_balance` بالظبط —
+    # للسبب نفسه: الرقم بيتغيّر مع كل حركة، والورقة لازم تقول نفس الكلام كل مرة
+    # تتطبع. و`NULL` = العميل عنده خط واحد، والسطر مابيتطبعش.
+    other_family_balance: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    other_family: Mapped[str | None] = mapped_column(String(16), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # مركز التكلفة — «المستند ده بتاع أنهي نشاط». اختياري، وبيتورّث لسطور القيد كلها.
     cost_center_id: Mapped[int | None] = mapped_column(

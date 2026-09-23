@@ -149,6 +149,8 @@ class SaleCreate(BaseModel):
     # حساب العميل قبل الفاتورة — اتقفل وقت الترحيل. `None` لفاتورة أقدم من العمود،
     # والورقة ساعتها بتسيب السطر بدل ما تخترع صفر.
     prior_balance: Decimal | None = None
+    other_family_balance: Decimal | None = None
+    other_family: str | None = None
     # مصروفات الفاتورة — billed (على العميل، بتزيد الصافي) أو operating (على الشركة).
     expenses: list[InvoiceExpenseIn] = []
     # (031) أبيض ولا بولي — which of the customer's accounts this invoice posts to.
@@ -288,6 +290,8 @@ class SalesInvoiceOut(BaseModel):
     # بتتطبع من الويب مالهاش طريقة تعرف الرقم أصلاً، والتليفون اللي بيقرا فاتورة
     # مش هو اللي كتبها بيطبع من غير سطر «الحساب السابق».
     prior_balance: Decimal | None = None
+    other_family_balance: Decimal | None = None
+    other_family: str | None = None
     expenses_billed: Decimal | None = None
     expenses_operating: Decimal | None = None
 
@@ -331,6 +335,8 @@ class SalesInvoiceDetail(BaseModel):
     # بتتطبع من الويب مالهاش طريقة تعرف الرقم أصلاً، والتليفون اللي بيقرا فاتورة
     # مش هو اللي كتبها بيطبع من غير سطر «الحساب السابق».
     prior_balance: Decimal | None = None
+    other_family_balance: Decimal | None = None
+    other_family: str | None = None
     # ---------------------------------------------------------------- ترويسة المستند
     #
     # **الحقول دي كانت ناقصة، والشاشة بتقراها.**
@@ -1009,6 +1015,8 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
         coupon_count=inv.coupon_count, invoice_date=inv.invoice_date,
         prior_balance=getattr(inv, "prior_balance", None),
+        other_family_balance=getattr(inv, "other_family_balance", None),
+        other_family=getattr(inv, "other_family", None),
         expenses_billed=getattr(inv, "expenses_billed", None),
         expenses_operating=getattr(inv, "expenses_operating", None),
         notes=inv.notes,
@@ -1490,6 +1498,8 @@ def get_sale(
         cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
         prior_balance=getattr(inv, "prior_balance", None),
+        other_family_balance=getattr(inv, "other_family_balance", None),
+        other_family=getattr(inv, "other_family", None),
         # الأسماء بتتقرا من الصف نفسه — نداء واحد، والشاشة مابتدوّرش في قايمة مقصوصة.
         customer_name=(db.get(Customer, inv.customer_id).name
                        if inv.customer_id else None),

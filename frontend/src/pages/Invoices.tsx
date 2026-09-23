@@ -1922,6 +1922,10 @@ function couponsTotal(inv: any): number {
       // حساب العميل قبل الفاتورة، متقفّل وقت الترحيل. بيتقرا من المستند مش من رصيد
       // العميل دلوقتي — الرصيد بيتغيّر مع كل حركة، ونفس الورقة كانت هتطلع برقمين.
       priorBalance: (inv as any).prior_balance ?? null,
+      // نوع الفاتورة والخط التاني — الشرح عند `footerColumns`.
+      family: (inv as any).family ?? null,
+      otherFamily: (inv as any).other_family ?? null,
+      otherFamilyBalance: (inv as any).other_family_balance ?? null,
       totalPoints: (inv.lines || []).reduce(
         (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
       // (030) The paper number belongs on the printed document — it is how the customer's own

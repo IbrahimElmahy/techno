@@ -429,15 +429,27 @@ def create_sale(
     # بعده. لو اتحسب وقت الطباعة، نسخة تانية من نفس المستند الشهر الجاي بتقول رقم تاني
     # — واللي بيقارن الورقتين بيلاقي تناقض مالوش تفسير. فبيتقرا **دلوقتي** ويتخزّن.
     #
-    # وبيتقاس على حسابات العميل كلها مش على حساب الخط ده وحده: اللي العميل بيسأل عنه
-    # وهو واقف هو «عليّا كام»، مش «عليّا كام على الأبيض».
+    # **وبيتقاس على حساب نوع الفاتورة بس** (أبيض أو بولي) — مش على الاتنين مع بعض.
+    #
+    # كان على كل حسابات العميل، بحجة إن العميل بيسأل «عليّا كام». بس الورقة بتقول
+    # «إجمالي الفاتورة + يضاف إليه الحساب السابق = الإجمالي»، يعني بتجمع فاتورة أبيض
+    # على مديونية بولي — رقم مالوش حساب يتسدّ فيه. والمكتب بيحصّل كل خط لوحده.
+    # فالحساب السابق بقى بتاع الخط ده، والخط التاني بيتطبع لوحده تحت (`other_*`).
+    #
+    # العميل اللي عنده حساب واحد (`family` فاضي) مابيتغيّرش: حسابه الوحيد هو كله.
+    _accounts = db.scalars(
+        select(CustomerAccount).where(CustomerAccount.customer_id == customer_id)).all()
+    _mine = [a for a in _accounts if family and a.family == family]
+    _others = [a for a in _accounts if family and a.family and a.family != family]
     prior_balance = ledger_service.total_balance_of(
-        db,
-        [a.account_id for a in db.scalars(
-            select(CustomerAccount).where(CustomerAccount.customer_id == customer_id)).all()],
-    )
+        db, [a.account_id for a in (_mine or _accounts)])
+    other_family_balance = (ledger_service.total_balance_of(
+        db, [a.account_id for a in _others]) if _others else None)
+    other_family = (_others[0].family if len({a.family for a in _others}) == 1
+                    else None) if _others else None
     invoice = existing or SalesInvoice(
         prior_balance=prior_balance,
+        other_family_balance=other_family_balance, other_family=other_family,
         document_number=_doc_number(db, SalesInvoice, "SINV"),
         customer_id=customer_id, origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id, gross=gross, fixed_discount_pct=fixed,

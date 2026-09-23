@@ -153,6 +153,20 @@ export const printStyles = `
     width: auto; flex: 1; border-top: 1px solid #98acb9; padding-top: 3px;
     font-size: 10.5px; text-align: center;
   }
+  /* الفوتر على أعمدة — زي دفتر الفواتير. الشرح عند footerColumns. */
+  .f-cols { display: flex; gap: 10px; margin-top: 8px; align-items: stretch; }
+  .f-col {
+    flex: 1; border: 1px solid #d9e6dc; border-radius: 4px; padding: 3px 0;
+  }
+  .f-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    padding: 3px 8px; font-size: 11.5px; border-bottom: 1px dotted #d9e6dc;
+  }
+  .f-row:last-child { border-bottom: none; }
+  .f-row b { white-space: nowrap; direction: ltr; }
+  .f-strong { background: #f2f9f3; font-weight: 800; }
+  .f-strong b { color: ${BRAND.green}; font-size: 13px; }
+  body.compact .c-sigs { padding-top: 22px; }
   body.compact .foot {
     margin-top: 8px; padding-top: 4px; border-top: 1px solid #d9e6dc; font-size: 9.5px;
   }

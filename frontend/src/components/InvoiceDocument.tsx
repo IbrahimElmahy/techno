@@ -60,6 +60,14 @@ export interface InvoiceDoc {
    * مستند أقدم من العمود، والسطر ساعتها مابيتعرضش بدل ما يخترع صفر.
    */
   priorBalance?: string | number | null;
+  /** نوع الفاتورة (أبيض/بولي) — بيتكتب جنب «الحساب السابق» عشان يبان إنه حساب الخط ده. */
+  family?: string | null;
+  /**
+   * **مديونية النوع التاني** وقت الترحيل — لو الفاتورة أبيض فده رصيد البولي.
+   * بتتطبع تحت «الباقي» عشان العميل يعرف الاتنين من غير ما يتخلطوا في رقم واحد.
+   */
+  otherFamily?: string | null;
+  otherFamilyBalance?: string | number | null;
 }
 
 
@@ -116,6 +124,73 @@ function headMeta(d: InvoiceDoc, o: PrintOptions): [string, string][] {
   return [...rows, ...(d.extraMeta || [])];
 }
 
+/**
+ * **الفوتر على تلات أعمدة — زي دفتر الفواتير اللي في إيد المكتب.**
+ *
+ *     ┌ الخصم ─────────┐ ┌ الحساب ─────────────────────┐ ┌ السداد ───────┐
+ *     │ قبل الخصم       │ │ إجمالي الفاتورة               │ │ المدفوع        │
+ *     │ الخصم           │ │ يضاف إليه الحساب السابق (أبيض) │ │ الباقي         │
+ *     │ الضريبة         │ │ الإجمالي                      │ │ مديونية البولي │
+ *     └────────────────┘ └──────────────────────────────┘ └───────────────┘
+ *
+ * كان جدول إجماليات واحد نازل تسع صفوف، وفيه «الإجمالي المستحق» و«الرصيد بعد الطلب»
+ * — والأخير بيجمع الأبيض على البولي في رقم مالوش حساب يتسدّ فيه.
+ *
+ * **والحساب السابق بتاع نوع الفاتورة بس.** العميل اللي عنده خطّين بيتحصّل منه كل خط
+ * لوحده، فالورقة بتجمع الفاتورة على حساب خطها، و**مديونية الخط التاني بتتكتب لوحدها
+ * تحت الباقي** — يعرف الاتنين من غير ما يتخلطوا.
+ *
+ * عمود الخصم بيختفي لو مافيش خصم ولا ضريبة، والتاني بيبقى «إجمالي الفاتورة» بس لما
+ * مايكونش فيه حساب سابق (المشتريات والمرتجعات).
+ */
+function footerColumns(
+  d: InvoiceDoc, o: PrintOptions, dPrior: number | null, discount: number,
+  pts: (v: any) => string,
+): string {
+  const row = (k: string, v: string, strong = false) =>
+    `<div class="f-row${strong ? ' f-strong' : ''}"><span>${k}</span><b>${v}</b></div>`;
+  const cur = (v: number | string) => `${n(v)} ج.م`;
+  const due = payable(d);
+
+  const col1: string[] = [];
+  if (discount > 0 || Number(d.tax || 0) > 0) {
+    col1.push(row('الإجمالي قبل الخصم', cur(d.gross)));
+    if (discount > 0) col1.push(row(`الخصم (${Number(d.discountPct || 0)}%)`, cur(discount)));
+    if (Number(d.tax || 0) > 0) col1.push(row('ضريبة القيمة المضافة', cur(d.tax as any)));
+  }
+
+  const fam = d.family ? ` (${d.family})` : '';
+  const col2: string[] = [row(d.kind === 'sale_return' ? 'إجمالي المرتجع' : 'إجمالي الفاتورة', cur(due))];
+  if (dPrior != null) {
+    col2.push(row(`يضاف إليه الحساب السابق${fam}`, cur(dPrior)));
+    col2.push(row('الإجمالي', cur(dPrior + due), true));
+  }
+
+  const col3: string[] = [];
+  if (o.paidAndRemaining) {
+    const paid = Number(d.cash || 0);
+    col3.push(row(cashLabel(d), cur(paid)));
+    // الباقي من «الإجمالي» لما فيه حساب سابق — ده اللي على العميل بعد الورقة دي.
+    const left = dPrior != null ? dPrior + due - paid : Number(d.credit || 0);
+    col3.push(row('الباقي', cur(left), true));
+  }
+  if (d.kind === 'sale' && d.otherFamilyBalance != null) {
+    col3.push(row(`مديونية ${d.otherFamily || 'الخط التاني'}`, cur(d.otherFamilyBalance)));
+  }
+  if (Number(d.totalPoints || 0) > 0) {
+    col3.push(row('نقاط الولاء', `${pts(d.totalPoints)} نقطة`));
+  }
+
+  const col = (rows: string[]) => (rows.length ? `<div class="f-col">${rows.join('')}</div>` : '');
+  return `
+    <div class="f-cols">${col(col1)}${col(col2)}${col(col3)}</div>
+    <div class="c-sigs">
+      <div class="sig">${d.kind === 'purchase' ? 'توقيع المورد' : 'توقيع المستلم'}</div>
+      <div class="sig">${d.kind === 'purchase' ? 'أمين المخزن' : 'المندوب'}</div>
+      <div class="sig">المحاسب</div>
+    </div>`;
+}
+
 /** Print this invoice on the shared company letterhead, honouring مفاتيح الطباعة. */
 export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
   const o = opts ?? loadPrintOptions();
@@ -145,31 +220,7 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
         <th>سعر الوحدة</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>
-    <div class="c-bottom">
-    <table class="totals">
-      ${dPrior != null ? `<tr><td>الحساب السابق</td>
-        <td style="text-align:left">${n(dPrior)} ج.م</td></tr>` : ''}
-      <tr><td>الإجمالي قبل الخصم</td><td style="text-align:left">${n(d.gross)} ج.م</td></tr>
-      ${discount > 0 ? `<tr><td>الخصم (${Number(d.discountPct || 0)}%)</td>
-        <td style="text-align:left">${n(discount)} ج.م</td></tr>` : ''}
-      <tr><td>الصافي</td><td style="text-align:left">${n(d.net)} ج.م</td></tr>
-      ${Number(d.tax || 0) > 0 ? `<tr><td>ضريبة القيمة المضافة</td>
-        <td style="text-align:left">${n(d.tax)} ج.م</td></tr>` : ''}
-      ${o.paidAndRemaining ? `<tr><td>${cashLabel(d)}</td>
-          <td style="text-align:left">${n(d.cash)} ج.م</td></tr>
-      <tr><td>${creditLabel(d)}</td><td style="text-align:left">${n(d.credit)} ج.م</td></tr>` : ''}
-      <tr><td>${payableLabel(d)}</td><td style="text-align:left">${n(payable(d))} ج.م</td></tr>
-      ${dPrior != null ? `<tr><td>الرصيد بعد الطلب</td>
-        <td style="text-align:left">${n(dPrior + payable(d) - Number(d.cash || 0))} ج.م</td></tr>` : ''}
-      ${Number(d.totalPoints || 0) > 0 ? `<tr><td>نقاط الولاء المكتسبة</td>
-        <td style="text-align:left">${pts(d.totalPoints)} نقطة</td></tr>` : ''}
-    </table>
-    <div class="c-sigs">
-      <div class="sig">${d.kind === 'purchase' ? 'توقيع المورد' : 'توقيع المستلم'}</div>
-      <div class="sig">${d.kind === 'purchase' ? 'أمين المخزن' : 'المندوب'}</div>
-      <div class="sig">المحاسب</div>
-    </div>
-    </div>`;
+    ${footerColumns(d, o, dPrior, discount, pts)}`;
   printDocument(
     {
       title: titleOf(d),
