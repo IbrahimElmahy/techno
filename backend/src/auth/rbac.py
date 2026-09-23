@@ -161,9 +161,13 @@ ALL_CAPABILITIES |= _SI_ALL
 # Deliberately NOT the sales rep: he writes invoices all day, and the whole point of splitting
 # these out is that writing one and unmaking one are different amounts of trust.
 _SALE_EDIT_ALL = {CAP_SALE_EDIT, CAP_SALE_DELETE}
-for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager, RoleName.sales_rep, RoleName.purchasing_manager):
+for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_manager, RoleName.purchasing_manager):
     ROLE_CAPABILITIES.setdefault(_role, set()).update(_SALE_EDIT_ALL)
 ALL_CAPABILITIES |= _SALE_EDIT_ALL
+# **المندوب بيعدّل ومابيمسحش** (قرار العميل ٢٠٢٦-٠٩-٢٣). التعديل بيصلّح فاتورته هو
+# وبس — القيد ده عند `update_sale` مش هنا، لأن الصلاحية مابتعرفش الفاتورة بتاعة مين.
+# كان واخد الاتنين من ٢٩ أغسطس، والحذف من غير أي فحص للفاتورة: أي مندوب يمسح أي فاتورة.
+ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).add(CAP_SALE_EDIT)
 
 # Five price tiers (007): selling below the resolved tier price is a manager authority — granted to
 # System Admin, Branch Manager, Sales Manager; NOT Sales Rep (reps cannot undercut tiers).

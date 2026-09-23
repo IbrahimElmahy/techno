@@ -804,6 +804,17 @@ def update_sale(
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     if not branch_scope.may_see(current, inv):
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
+    # **المندوب بيعدّل فواتيره هو بس** — اللي باسمه، أو اللي كتبها بنفسه من غير اسم مندوب.
+    # من غير ده أي مندوب بيبعت PUT على فاتورة زميله بعميل من عملاءه فتتنقل ليه. ومايقدرش
+    # يحط الفاتورة باسم حد تاني وهو بيعدّلها.
+    if current.rep_id is not None:
+        mine = inv.rep_id == current.id or (inv.rep_id is None and inv.actor_user_id == current.id)
+        if not mine:
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "مش فاتورتك — تقدر تعدّل فواتيرك انت بس."})
+        if body.rep_id not in (None, current.id):
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "ماينفعش تحط الفاتورة باسم مندوب تاني."})
     try:
         document_edit_service.assert_sale_editable(db, inv)
         # التكلفة المجمّدة بتتقرا **قبل** التفضية، لأن التفضية بتمسح السطور اللي شايلاها.
@@ -826,6 +837,10 @@ def delete_sale(
     db: Session = Depends(get_db),
 ) -> None:
     """حذف فاتورة بيع — بتروح هي وأثرها، مش بتتعكس."""
+    # نطاق الفرع زي العرض والتعديل: كان الحذف بيمسح فاتورة أي فرع لمجرد إن الرقم اتبعت.
+    inv = db.get(SalesInvoice, sale_id)
+    if inv is None or not branch_scope.may_see(current, inv):
+        raise HTTPException(404, {"code": "delete_blocked", "message": "الفاتورة مش موجودة"})
     try:
         document_edit_service.delete_sale(
             db, invoice_id=sale_id, actor_user_id=current.id)
