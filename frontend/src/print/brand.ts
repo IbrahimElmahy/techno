@@ -1,4 +1,4 @@
-import { BRAND, logoSvg } from '../components/Logo';
+import { BRAND, LOGO_DATA_URI, logoSvg } from '../components/Logo';
 
 
 /**
@@ -22,6 +22,18 @@ export interface DocMeta {
    *  A company printing onto pre-printed letterhead already has its logo and name on the paper;
    *  printing them again puts two of each on the page. The person at the counter is the only one
    *  who knows what is in the printer, so it is their switch to throw. */
+  /**
+   * **ورقة مضغوطة** — ترويسة سطر واحد، وبيانات في شبكة، وجدول أكثف.
+   *
+   * الترويسة العادية بتاخد تلت الصفحة: شعار كبير، وعنوان في سطر لوحده، وجدول
+   * بيانات بصف لكل حقة (عميل، تليفون، عنوان، فرع، مندوب، تاريخ، سداد — سبع صفوف).
+   * والذيل بياخد حتة تانية. فطلب بيع بعشرين صنف كان بيطلع في صفحتين، والصفحة
+   * التانية فيها سطرين وإجماليات.
+   *
+   * المضغوط بيدّي نفس المعلومة بالظبط — مافيش حقل اتشال — في ربع المساحة، والباقي
+   * للأصناف. والفواتير بس اللي بتستعمله: التقارير والسندات فاضل ترتيبها زي ما هو.
+   */
+  compact?: boolean;
   hide?: {
     logo?: boolean;
     companyName?: boolean;
@@ -96,6 +108,54 @@ export const printStyles = `
     font-size: 11px; color: #5d6f64; display: flex; justify-content: space-between; gap: 12px;
   }
   @media print { .no-print { display: none; } }
+
+  /* ============================ المضغوط — الشرح عند DocMeta.compact */
+  body.compact .sheet { max-width: none; }
+  .c-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding-bottom: 6px; border-bottom: 2px solid ${BRAND.green}; margin-bottom: 6px;
+  }
+  .c-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .c-brand img { display: block; }
+  .c-brand b { font-size: 14px; color: ${BRAND.green}; display: block; line-height: 1.2; }
+  .c-brand span { font-size: 10px; color: #5d6f64; display: block; line-height: 1.35; }
+  .c-doc { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .c-doc .t { font-size: 16px; font-weight: 800; color: ${BRAND.ink}; }
+  .c-doc .n {
+    background: ${BRAND.green}; color: #fff; padding: 2px 10px;
+    border-radius: 999px; font-weight: 700; font-size: 12px; direction: ltr;
+  }
+  /* البيانات في شبكة ٣ أعمدة، مش صف لكل حقل. */
+  .c-meta {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
+    border: 1px solid #d9e6dc; border-radius: 4px; margin-bottom: 6px;
+  }
+  .c-meta div {
+    padding: 3px 7px; font-size: 11px; border-bottom: 1px solid #eef4ef;
+    border-inline-start: 1px solid #eef4ef; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .c-meta div b { color: #3a4d41; font-weight: 700; margin-inline-end: 4px; }
+  body.compact table.grid th { padding: 4px 5px; font-size: 11px; }
+  body.compact table.grid td { padding: 3px 5px; font-size: 11px; line-height: 1.3; }
+  /* الإجماليات جنب التوقيعات في شريط واحد، مش تحتها. */
+  .c-bottom {
+    display: flex; gap: 14px; align-items: flex-start; margin-top: 6px;
+  }
+  .c-bottom .totals { margin: 0; width: 300px; flex-shrink: 0; }
+  body.compact .totals tr td { padding: 2px 8px; font-size: 11.5px; }
+  body.compact .totals tr:last-child td { font-size: 13px; }
+  .c-sigs {
+    flex: 1; display: flex; justify-content: space-around; align-self: flex-end;
+    gap: 10px; padding-top: 26px;
+  }
+  .c-sigs .sig {
+    width: auto; flex: 1; border-top: 1px solid #98acb9; padding-top: 3px;
+    font-size: 10.5px; text-align: center;
+  }
+  body.compact .foot {
+    margin-top: 8px; padding-top: 4px; border-top: 1px solid #d9e6dc; font-size: 9.5px;
+  }
 `;
 
 /** The letterhead + document title + meta table, ready to prepend to a document body. */
@@ -124,6 +184,29 @@ export function letterhead(meta: DocMeta): string {
   ${metaRows ? `<table class="meta">${metaRows}</table>` : ''}`;
 }
 
+/**
+ * ترويسة المضغوط: سطر واحد — الشركة على اليمين والمستند على الشمال — وتحته
+ * البيانات في شبكة ٣ أعمدة. الشرح عند `DocMeta.compact`.
+ */
+export function compactHead(meta: DocMeta): string {
+  const h = meta.hide || {};
+  const brand = (h.logo && h.companyName) ? '<div></div>' : `
+    <div class="c-brand">
+      ${h.logo ? '' : `<img src="${LOGO_DATA_URI}" width="54" alt="">`}
+      ${h.companyName ? '' : `<div><b>${COMPANY.nameAr}</b>
+        <span>${companyLines().slice(0, 2).join(' · ')}</span></div>`}
+    </div>`;
+  const doc = (h.invoiceTitle && h.invoiceNumber) ? '' : `
+    <div class="c-doc">
+      ${h.invoiceTitle ? '' : `<span class="t">${meta.title}</span>`}
+      ${(meta.number && !h.invoiceNumber) ? `<span class="n">${meta.number}</span>` : ''}
+    </div>`;
+  const cells = (meta.meta || [])
+    .map(([k, v]) => `<div><b>${k}:</b>${v ?? '-'}</div>`).join('');
+  return `<div class="c-head">${brand}${doc}</div>`
+    + (cells ? `<div class="c-meta">${cells}</div>` : '');
+}
+
 export function footer(note?: string, hideCompany = false): string {
   // الجملة الافتراضية نفسها بتسمّي الشركة، فالورقة اللي بتتشال منها الهوية بتسكت
   // خالص بدل ما تقول «صادر آلياً من نظام تكنو ثيرم».
@@ -136,11 +219,15 @@ export function footer(note?: string, hideCompany = false): string {
 
 /** Wrap a document body in the branded shell and open the browser's print dialog. */
 export function printDocument(meta: DocMeta, bodyHtml: string): void {
+  // المضغوط بيصغّر هامش الصفحة كمان: ١٢ مم من كل ناحية = ٢٤ مم من عرض A4
+  // (١٤٪) رايحين أبيض.
+  const page = meta.compact ? '<style>@page { size: A4; margin: 7mm; }</style>' : '';
+  const head = meta.compact ? compactHead(meta) : letterhead(meta);
   const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
 <title>${meta.title}${meta.number ? ` ${meta.number}` : ''}</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>${printStyles}</style></head>
-<body><div class="sheet">${letterhead(meta)}${bodyHtml}${footer(meta.note, Boolean(meta.hide?.companyFooter))}</div>
+<style>${printStyles}</style>${page}</head>
+<body class="${meta.compact ? 'compact' : ''}"><div class="sheet">${head}${bodyHtml}${footer(meta.note, Boolean(meta.hide?.companyFooter))}</div>
 <script>window.onload = function () { window.print(); };</script>
 </body></html>`;
   const win = window.open('', '_blank', 'width=1000,height=1000');

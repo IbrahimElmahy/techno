@@ -145,6 +145,7 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
         <th>سعر الوحدة</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>
+    <div class="c-bottom">
     <table class="totals">
       ${dPrior != null ? `<tr><td>الحساب السابق</td>
         <td style="text-align:left">${n(dPrior)} ج.م</td></tr>` : ''}
@@ -163,15 +164,19 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
       ${Number(d.totalPoints || 0) > 0 ? `<tr><td>نقاط الولاء المكتسبة</td>
         <td style="text-align:left">${pts(d.totalPoints)} نقطة</td></tr>` : ''}
     </table>
-    <div class="signatures">
+    <div class="c-sigs">
       <div class="sig">${d.kind === 'purchase' ? 'توقيع المورد' : 'توقيع المستلم'}</div>
       <div class="sig">${d.kind === 'purchase' ? 'أمين المخزن' : 'المندوب'}</div>
       <div class="sig">المحاسب</div>
+    </div>
     </div>`;
   printDocument(
     {
       title: titleOf(d),
       number: d.document_number,
+      // **الشكل المضغوط** — الشرح عند `DocMeta.compact`. الترويسة والذيل كانوا
+      // بياخدوا تلت الصفحة، فطلب بعشرين صنف كان بيطلع في صفحتين.
+      compact: true,
       meta: headMeta(d, o),
       note: NOTE[d.kind],
       hide: {
