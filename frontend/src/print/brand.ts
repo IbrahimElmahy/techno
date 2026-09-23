@@ -125,6 +125,15 @@ export const printStyles = `
     background: ${BRAND.green}; color: #fff; padding: 2px 10px;
     border-radius: 999px; font-weight: 700; font-size: 12px; direction: ltr;
   }
+  /* العنوان والبيانات والشركة في شريط واحد — الشرح عند compactHead. */
+  .c-one { align-items: stretch; }
+  .c-one .c-meta { flex: 1; margin-bottom: 0; }
+  /* الشركة ظاهرة ⇒ البيانات تحت بعرض الصفحة. الشرح عند compactHead. */
+  .c-one.c-branded { flex-wrap: wrap; row-gap: 5px; }
+  .c-one.c-branded .c-meta { order: 3; flex: 1 1 100%; }
+  .c-doc-stack {
+    flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px;
+  }
   /* البيانات في شبكة ٣ أعمدة، مش صف لكل حقل. */
   .c-meta {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
@@ -167,6 +176,13 @@ export const printStyles = `
   .f-strong { background: #f2f9f3; font-weight: 800; }
   .f-strong b { color: ${BRAND.green}; font-size: 13px; }
   body.compact .c-sigs { padding-top: 22px; }
+  /* الورق اللي لسه بيكتب .signatures و.totals بالشكل القديم (السندات،
+     التحويلات، التقارير) بياخد نفس الكثافة من غير ما حد يعيد كتابته. */
+  body.compact .signatures { margin-top: 20px; }
+  body.compact .signatures .sig { font-size: 10.5px; padding-top: 3px; width: 160px; }
+  body.compact table.totals { margin-top: 6px; }
+  body.compact table.meta td { padding: 3px 7px; font-size: 11px; }
+  body.compact h2, body.compact h3 { margin: 8px 0 4px; font-size: 13px; }
   body.compact .foot {
     margin-top: 8px; padding-top: 4px; border-top: 1px solid #d9e6dc; font-size: 9.5px;
   }
@@ -217,8 +233,22 @@ export function compactHead(meta: DocMeta): string {
     </div>`;
   const cells = (meta.meta || [])
     .map(([k, v]) => `<div><b>${k}:</b>${v ?? '-'}</div>`).join('');
-  return `<div class="c-head">${brand}${doc}</div>`
-    + (cells ? `<div class="c-meta">${cells}</div>` : '');
+  // **العنوان والبيانات في شريط واحد.** كانوا سطرين: «طلب بيع» ورقمه لوحدهم في سطر
+  // بعرض الصفحة كلها، وتحتهم شبكة البيانات — يعني سطر كامل لكلمتين. دلوقتي العنوان
+  // على اليمين والبيانات جنبه والشركة (لو ظاهرة) على الشمال.
+  const docStack = (h.invoiceTitle && h.invoiceNumber) ? '' : `
+    <div class="c-doc c-doc-stack">
+      ${h.invoiceTitle ? '' : `<span class="t">${meta.title}</span>`}
+      ${(meta.number && !h.invoiceNumber) ? `<span class="n">${meta.number}</span>` : ''}
+    </div>`;
+  void doc;
+  // **ولما الشركة ظاهرة، البيانات بتنزل سطر لوحدها.** الشريط الواحد مظبوط في طلب
+  // البيع (مالوش شعار): العنوان يمين والبيانات جنبه. لكن في الإذن والتحويل والتقرير
+  // الشعار بياخد الشمال، والبيانات بتتحشر في النص وقيمها بتتقطّع — «المخزن: مخزن ا…».
+  const branded = !(h.logo && h.companyName);
+  return `<div class="c-head c-one${branded ? ' c-branded' : ''}">${docStack}`
+    + (cells ? `<div class="c-meta">${cells}</div>` : '<div style="flex:1"></div>')
+    + `${(h.logo && h.companyName) ? '' : brand}</div>`;
 }
 
 export function footer(note?: string, hideCompany = false): string {
@@ -235,13 +265,17 @@ export function footer(note?: string, hideCompany = false): string {
 export function printDocument(meta: DocMeta, bodyHtml: string): void {
   // المضغوط بيصغّر هامش الصفحة كمان: ١٢ مم من كل ناحية = ٢٤ مم من عرض A4
   // (١٤٪) رايحين أبيض.
-  const page = meta.compact ? '<style>@page { size: A4; margin: 7mm; }</style>' : '';
-  const head = meta.compact ? compactHead(meta) : letterhead(meta);
+  // **المضغوط بقى الافتراضي لكل ورقة**، مش الفواتير بس — السندات والتحويلات
+  // والأذون وأوامر الشغل والتقارير كلهم كانوا بيبدأوا بترويسة بتاكل تلت الصفحة.
+  // `compact: false` بيرجّع الشكل القديم لورقة محتاجاه.
+  const compact = meta.compact ?? true;
+  const page = compact ? '<style>@page { size: A4; margin: 7mm; }</style>' : '';
+  const head = compact ? compactHead(meta) : letterhead(meta);
   const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
 <title>${meta.title}${meta.number ? ` ${meta.number}` : ''}</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${printStyles}</style>${page}</head>
-<body class="${meta.compact ? 'compact' : ''}"><div class="sheet">${head}${bodyHtml}${footer(meta.note, Boolean(meta.hide?.companyFooter))}</div>
+<body class="${compact ? 'compact' : ''}"><div class="sheet">${head}${bodyHtml}${footer(meta.note, Boolean(meta.hide?.companyFooter))}</div>
 <script>window.onload = function () { window.print(); };</script>
 </body></html>`;
   const win = window.open('', '_blank', 'width=1000,height=1000');

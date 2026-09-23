@@ -11,8 +11,9 @@ import { advanceFrom } from '../components/lineKeyboard';
 import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowLeftOutlined,
-  EditOutlined,
+  EditOutlined, PrinterOutlined,
 } from '@ant-design/icons';
+import { printPermit } from '../print/permitSheet';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -645,6 +646,10 @@ export default function StockPermits() {
               </Popconfirm>
             </>
           )}
+          {/* **الإذن بقى بيتطبع.** كان مالوش ورقة خالص — وإذن الصرف بالذات بيتمسك في
+              الإيد: أمين المخزن بيسلّم بيه والمستلم بيمضي. الشرح في `print/permitSheet`. */}
+          <Button size="large" icon={<PrinterOutlined />}
+            onClick={() => printPermit(detail)}>طباعة</Button>
           <Button size="large" onClick={closeDoc}>إغلاق</Button>
         </Space>
       </div>
