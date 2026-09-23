@@ -27,7 +27,7 @@ import {
 import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
 } from './navigation';
-import { useAuth, RoleName } from './AuthProvider';
+import { useAuth, RoleName, roleForAccess } from './AuthProvider';
 import RowDensityControl from './RowDensity';
 import NumeralsControl from './Numerals';
 import { bindNumeralsUser } from '../utils/numerals';
@@ -156,7 +156,7 @@ export default function AppLayout() {
   // The tree itself lives in `navigation.ts` — it mirrors the a5 menu the client's people already
   // know, section for section. See that file for why the arrangement is copied and the appearance
   // is not.
-  const userRole = user?.role || 'sales_rep';
+  const userRole = user ? roleForAccess(user.role) : 'sales_rep';
 
   /**
    * Build antd's menu items from the tree, dropping what this role may not open.

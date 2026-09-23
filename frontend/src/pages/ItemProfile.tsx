@@ -9,7 +9,7 @@ import {
   ReloadOutlined, ArrowRightOutlined, RiseOutlined, FallOutlined, EditOutlined, FileTextOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
-import { useAuth } from '../components/AuthProvider';
+import { useAuth, roleForAccess } from '../components/AuthProvider';
 import ItemEditModal from '../components/ItemEditModal';
 import { useCategoryTree } from '../hooks/useCategoryTree';
 import { SerialsPanel, UnitsPanel } from '../components/ItemUnitsPanel';
@@ -70,7 +70,7 @@ export default function ItemProfile() {
   const canEdit = can('catalog.write');
   const canEditPoints = can('product_points.write');
   const canEditPrices = ['system_admin', 'branch_manager', 'purchasing_manager']
-    .includes(user?.role || '');
+    .includes(roleForAccess(user?.role));
 
   // Each record tab keeps its own search.
   const movementsFilter = useListFilter<any>(data?.movements || [], {

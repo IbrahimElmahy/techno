@@ -11,6 +11,17 @@ const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 // بتقارن بالاسم ما كانتش بتعرفه، ولا TypeScript كان بينبّه عليها.
 export type RoleName = 'owner' | 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant' | 'viewer';
 
+/**
+ * **الدور اللي بتتقارن بيه قوايم الأدوار** — المالك بيتعامل كمدير نظام.
+ *
+ * القوايم في `navigation.ts` والحراس مكتوب فيها `system_admin` ومحدش فيهم فيه `owner`،
+ * فالمالك كان بيفتح النظام على شريط أقسام فاضي وكل شاشة بترد ٤٠٣ — وهو أعلى دور. السيرفر
+ * بيدّيه كل الصلاحيات أصلاً (`rbac.py`)، فالمقارنة هنا بتلحقه بيه بدل ما نكتبه في ميت قايمة.
+ */
+export function roleForAccess(role: RoleName | string | undefined | null): string {
+  return role === 'owner' ? 'system_admin' : (role || '');
+}
+
 export interface User {
   username: string;
   role: RoleName;

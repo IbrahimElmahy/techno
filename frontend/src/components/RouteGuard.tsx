@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth, RoleName } from './AuthProvider';
+import { useAuth, RoleName, roleForAccess } from './AuthProvider';
 import { Result, Button } from 'antd';
 
 interface RouteGuardProps {
@@ -22,7 +22,7 @@ export default function RouteGuard({ children, allowedRoles }: RouteGuardProps) 
   }
 
   // Check if role is allowed to access the target route
-  if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && user && !allowedRoles.includes(roleForAccess(user.role) as RoleName)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
         <Result
