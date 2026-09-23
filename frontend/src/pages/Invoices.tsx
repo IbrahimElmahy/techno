@@ -60,6 +60,11 @@ import {
 import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
 import StatsRow from '../components/StatsRow';
+/** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
+const newUuid = (): string =>
+  (globalThis.crypto as any)?.randomUUID?.()
+  ?? `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+
 export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
   // فئات الورق اللي بيتسلّم للعميل. مصدر واحد: قائمة «فئات الكوبونات» في الإعدادات.
@@ -286,6 +291,13 @@ export default function Invoices() {
    * الـref بتتكتب جوّه `onChange` نفسه، فالحارس بيقرا اللي المستخدم لسه مختاره.
    */
   const doorWarehouseRef = useRef<number | null>(null);
+  // **الحفظ مرة واحدة.** ضغطتين على الزرار أو F9 مرتين كانوا بيبعتوا طلبين وبيطلعوا
+  // فاتورتين. القفل ref (مش state بس) عشان الضغطة التانية بتيجي قبل ما React يرسم.
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  // ورقم للمستند الجديد بيتبعت `client_uuid` — لو طلبين وصلوا برضه، السيرفر بيرجّع
+  // نفس الفاتورة للتاني بدل ما يكتب واحدة جديدة (زي التطبيق بالظبط).
+  const clientUuidRef = useRef<string | null>(null);
   doorWarehouseRef.current = docWarehouseId;
   /**
    * الصنف اللي مستني المخزن يتحدّد قبل ما ينزل السطر.
@@ -662,6 +674,7 @@ export default function Invoices() {
    * من أول خطوة بنفسه بعد النداء.
    */
   const resetDocument = () => {
+    clientUuidRef.current = null;
     setViewOnly(false);
     setViewInvoice(null);
     // العنوان بيرجع للكشف مع قفل المستند — `replace` مش `push` عشان «رجوع» مايعيدش
@@ -1361,6 +1374,9 @@ export default function Invoices() {
         preselect: docCashAccountId,
       },
       async (cashAccountId) => {
+        if (savingRef.current) return;
+        savingRef.current = true;
+        setSaving(true);
         try {
           // التعديل بيروح للفاتورة نفسها. كان بيعكسها الأول وبعدين يكتب واحدة جديدة، فتصليح
           // سعر كان بيسيب وراه مرتجع محدش رجّعه ورقم فاتورة جديد على الورقة اللي في إيد
@@ -1369,7 +1385,9 @@ export default function Invoices() {
           const send = editingId
             ? (b: any) => api.put(`/api/v1/sales/${editingId}`, b)
             : (b: any) => api.post('/api/v1/sales', b);
+          if (!editingId && !clientUuidRef.current) clientUuidRef.current = newUuid();
           await send({
+            client_uuid: editingId ? undefined : clientUuidRef.current,
             customer_id: values.customer_id,
             // Who sold it. Recorded on the document so a commission report and a rep's own list of
             // invoices do not have to re-derive it from whoever owns the customer today.
@@ -1440,11 +1458,19 @@ export default function Invoices() {
           // بتفتح وفيها كوبونات فاتورة غيرها.
           // بعد ما السيرفر يرد بنجاح وبس — الفاتورة اللي اترفضت بتفضل مسودّة.
           discardDraft();
-          closeCreate();
+          // **قفل من غير سؤال.** `closeCreate` بيقارن اللي على الشاشة باللي اتفتح، والفاتورة
+          // لسه مليانة بسطورها — فكان بيسأل «تسيب المستند؟ … هيروحوا ومش هيرجعوا» عن
+          // فاتورة اتحفظت حالاً، واللي يدوس «أكمّل» يلاقيها قدامه ويحفظها تاني.
+          resetDocument();
+          setCreateVisible(false);
+          if (cameFromScreen.current) { cameFromScreen.current = false; navigate(-1); }
           fetchInvoices();
         } catch (err: any) {
           console.error(err);
           message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الفاتورة');
+        } finally {
+          savingRef.current = false;
+          setSaving(false);
         }
       },
     );
@@ -1998,10 +2024,30 @@ function couponsTotal(inv: any): number {
 
   const startNew = () => {
     // التفضية الأول، وبعدين أول باب في الدورة.
-    resetDocument();
-    setCreateVisible(true);
-    setNewStep('party');
-    setPartyPickerOpen(true);
+    const go = () => {
+      resetDocument();
+      setCreateVisible(true);
+      setNewStep('party');
+      setPartyPickerOpen(true);
+    };
+    // **«جديد» مابيمسحش شغل من غير سؤال** — نفس حكم «رجوع»: فاتورة لسه بتتكتب أو
+    // تعديل مااتحفظش بيسأل الأول، والمستند المتفرّج عليه بيعدّي على طول.
+    const verdict = verdictOnLeave({
+      readOnly: viewOnly,
+      savedDocument: editingInvoice != null,
+      now: currentFingerprint(),
+      whenOpened: openedFingerprint,
+      hasWork: lines.length > 0 || selectedCustomerId != null || Number(cashAmount || 0) > 0,
+    });
+    if (verdict === 'silent') { go(); return; }
+    Modal.confirm({
+      title: 'تبدأ فاتورة جديدة؟',
+      icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
+      content: verdict === 'confirm-edit'
+        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
+        : 'الفاتورة اللي على الشاشة مااتحفظتش وهتروح.',
+      okText: 'ابدأ جديدة', cancelText: 'أكمّل اللي فاتح', onOk: go,
+    });
   };
 
   /**
@@ -2058,7 +2104,7 @@ function couponsTotal(inv: any): number {
         label: 'حفظ',
         shortcut: 'F9',
         icon: <SaveOutlined />,
-        disabled: viewOnly || !hasContent || loading,
+        disabled: viewOnly || !hasContent || loading || saving,
         onClick: () => { createForm.submit(); },
       },
       {
@@ -2152,9 +2198,35 @@ function couponsTotal(inv: any): number {
     ];
   };
 
+  // **شباك واحد، بيترسم في الحالتين.** كان فيه نسختين (جوّه الكارت وتحت) فالدوسة بتفتح
+  // شباكين فوق بعض؛ اتشالت اللي جوّه — فبقى الشباك مترسوم في الكشف بس، وجوّه الفاتورة
+  // «رجوع» من المخزن ودوسة خانة العميل و«جديد» كانوا بيفتحوا شباك مش موجود. دلوقتي نفس
+  // العنصر بيتحط في الاتنين، ومافيش غير واحد على الشاشة في أي لحظة.
+  //
+  // ومن غير «الموردين»: الاختيار بيتكتب في `customer_id`، فرقم المورد كان بيروح رقم عميل.
+  const partyPicker = (
+    <PartyPickerModal
+      open={partyPickerOpen || newStep === 'party'} kind="customer"
+      kinds={['customer', 'employee']}
+      excludeTypes={['plumber']}
+      date={invoiceDate} onDateChange={(d) => setInvoiceDate(d)}
+      onPick={handlePartyPicked}
+      onCancel={() => {
+        setPartyPickerOpen(false);
+        // في أول الدورة: من غير عميل الإلغاء بيلغي الفاتورة؛ وبعميل (رجع من باب المخزن)
+        // بيرجّعه لباب المخزن تاني بدل ما يسيبه في فاتورة من غير مخزن. وفي النص بيقفل بس.
+        if (newStep === 'party') {
+          if (createForm.getFieldValue('customer_id')) { setNewStep('warehouse'); return; }
+          setCreateVisible(false);
+        }
+        setNewStep(null);
+      }} />
+  );
+
   if (createVisible) {
     return (
       <div>
+      {partyPicker}
       <Card
           title={
             <Space wrap>
@@ -2424,12 +2496,12 @@ function couponsTotal(inv: any): number {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
             {!viewOnly && (
-              <Button data-shortcut="F2"
+              <Button
                 type="primary" icon={<PlusOutlined />}
                 style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#6AB42D', borderColor: '#6AB42D' }}
                 onClick={() => setPickerOpen(true)}
               >
-                إضافة صنف للفاتورة (Enter أو F2)
+                إضافة صنف للفاتورة (Enter)
               </Button>
             )}
             <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
@@ -2643,7 +2715,7 @@ function couponsTotal(inv: any): number {
             <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Space>
-                  <Button type="primary" htmlType="submit">
+                  <Button type="primary" htmlType="submit" loading={saving}>
                     {editingInvoice ? 'حفظ تعديلات الفاتورة' : 'تسجيل وحفظ فاتورة البيع'}
                   </Button>
                   <Button onClick={closeCreate}>إلغاء</Button>
@@ -3020,13 +3092,7 @@ function couponsTotal(inv: any): number {
         * على التانية. و`kinds` بيدّي تصنيف جوّه الباب، فاللي بيدوّر على اسم ومش لاقيه في
         * العملاء بيبص في الموردين من غير ما يقفل ويفتح تاني.
         */}
-      <PartyPickerModal
-        open={partyPickerOpen || newStep === 'party'} kind="customer"
-        kinds={['customer', 'employee', 'supplier']}
-        excludeTypes={['plumber']}
-        date={invoiceDate} onDateChange={(d) => setInvoiceDate(d)}
-        onPick={handlePartyPicked}
-        onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
+      {partyPicker}
 
     </div>
   );
