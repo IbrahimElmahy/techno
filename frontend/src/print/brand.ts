@@ -125,15 +125,6 @@ export const printStyles = `
     background: ${BRAND.green}; color: #fff; padding: 2px 10px;
     border-radius: 999px; font-weight: 700; font-size: 12px; direction: ltr;
   }
-  /* العنوان والبيانات والشركة في شريط واحد — الشرح عند compactHead. */
-  .c-one { align-items: stretch; }
-  .c-one .c-meta { flex: 1; margin-bottom: 0; }
-  /* الشركة ظاهرة ⇒ البيانات تحت بعرض الصفحة. الشرح عند compactHead. */
-  .c-one.c-branded { flex-wrap: wrap; row-gap: 5px; }
-  .c-one.c-branded .c-meta { order: 3; flex: 1 1 100%; }
-  .c-doc-stack {
-    flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px;
-  }
   /* البيانات في شبكة ٣ أعمدة، مش صف لكل حقل. */
   .c-meta {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
@@ -233,22 +224,10 @@ export function compactHead(meta: DocMeta): string {
     </div>`;
   const cells = (meta.meta || [])
     .map(([k, v]) => `<div><b>${k}:</b>${v ?? '-'}</div>`).join('');
-  // **العنوان والبيانات في شريط واحد.** كانوا سطرين: «طلب بيع» ورقمه لوحدهم في سطر
-  // بعرض الصفحة كلها، وتحتهم شبكة البيانات — يعني سطر كامل لكلمتين. دلوقتي العنوان
-  // على اليمين والبيانات جنبه والشركة (لو ظاهرة) على الشمال.
-  const docStack = (h.invoiceTitle && h.invoiceNumber) ? '' : `
-    <div class="c-doc c-doc-stack">
-      ${h.invoiceTitle ? '' : `<span class="t">${meta.title}</span>`}
-      ${(meta.number && !h.invoiceNumber) ? `<span class="n">${meta.number}</span>` : ''}
-    </div>`;
-  void doc;
-  // **ولما الشركة ظاهرة، البيانات بتنزل سطر لوحدها.** الشريط الواحد مظبوط في طلب
-  // البيع (مالوش شعار): العنوان يمين والبيانات جنبه. لكن في الإذن والتحويل والتقرير
-  // الشعار بياخد الشمال، والبيانات بتتحشر في النص وقيمها بتتقطّع — «المخزن: مخزن ا…».
-  const branded = !(h.logo && h.companyName);
-  return `<div class="c-head c-one${branded ? ' c-branded' : ''}">${docStack}`
-    + (cells ? `<div class="c-meta">${cells}</div>` : '<div style="flex:1"></div>')
-    + `${(h.logo && h.companyName) ? '' : brand}</div>`;
+  // **سطرين: العنوان ورقمه فوق، والبيانات تحتهم بعرض الصفحة.** اتجرّب شريط واحد
+  // (العنوان جنب البيانات) واترفض — الرقم والعنوان لازم يبقوا لوحدهم وواضحين.
+  return `<div class="c-head">${brand}${doc}</div>`
+    + (cells ? `<div class="c-meta">${cells}</div>` : '');
 }
 
 export function footer(note?: string, hideCompany = false): string {
