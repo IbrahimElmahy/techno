@@ -954,7 +954,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         Navigator.pop(this.context);
       },
       child: Scaffold(
-      appBar: AppBar(title: Text(_isEditing ? 'تعديل فاتورة' : 'فاتورة بيع')),
+      // **نوع الفاتورة في العنوان فوق** — «فاتورة بيع — أبيض». كان متحدّد في أول
+      // الشاشة وبعدها مايبانش، والمندوب اللي بيكتب عشرين صنف بينسى هو على أنهي خط —
+      // وده بيحدّد أنهي حساب هيتسدّ منه.
+      appBar: AppBar(title: Text(
+          '${_isEditing ? 'تعديل فاتورة' : 'فاتورة بيع'}'
+          '${_family == null ? '' : ' — $_family'}')),
       // عمود، مش `ListView` واحدة للشاشة كلها.
       //
       // كانت الترويسة والسطور والإجماليات كلهم في قايمة واحدة بتلفّ: مع ٢٠ صنف

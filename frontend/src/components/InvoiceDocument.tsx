@@ -223,7 +223,9 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
     ${footerColumns(d, o, dPrior, discount, pts)}`;
   printDocument(
     {
-      title: titleOf(d),
+      // **نوع الفاتورة في العنوان نفسه** — «طلب بيع — أبيض». أول حاجة العين
+      // بتقراها في الورقة، والمكتب بيفرز بيها قبل أي رقم.
+      title: d.family ? `${titleOf(d)} — ${d.family}` : titleOf(d),
       number: d.document_number,
       // **الشكل المضغوط** — الشرح عند `DocMeta.compact`. الترويسة والذيل كانوا
       // بياخدوا تلت الصفحة، فطلب بعشرين صنف كان بيطلع في صفحتين.

@@ -2167,6 +2167,16 @@ function couponsTotal(inv: any): number {
                     ? `تعديل طلب بيع #${editingInvoice.id}`
                     : 'تسجيل طلب بيع جديد'}
               </Typography.Text>
+              {/* **نوع الفاتورة فوق، جنب رقمها.** كان متحدّد في باب «الفاتورة على
+                  أنهي حساب؟» وبعدها مايبانش في أي حتة — فاللي فاتح فاتورة من الكشف
+                  مايعرفش هي أبيض ولا بولي غير لما يفتكر أو يسأل. */}
+              {((viewInvoice as any)?.family || invoiceFamily) && (
+                <Tag color={((viewInvoice as any)?.family || invoiceFamily) === 'أبيض'
+                  ? 'default' : 'blue'}
+                  style={{ fontWeight: 700, fontSize: 13 }}>
+                  {(viewInvoice as any)?.family || invoiceFamily}
+                </Tag>
+              )}
               {viewInvoice && !viewOnly && (
                 <Tag color="orange" style={{ fontWeight: 600 }}>وضع التعديل</Tag>
               )}
