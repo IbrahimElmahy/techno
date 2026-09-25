@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
@@ -22,6 +22,7 @@ class WastageIn(BaseModel):
     warehouse_id: int
     quantity: Decimal
     reason: str | None = None
+    statement1: str | None = Field(default=None, max_length=200)  # البيان
 
 
 class WastageOut(BaseModel):
@@ -34,6 +35,7 @@ class WastageOut(BaseModel):
     total_cost: Decimal
     reason: str | None
     is_reversal: bool
+    statement1: str | None = None
 
 
 def _out(d) -> WastageOut:
@@ -41,6 +43,7 @@ def _out(d) -> WastageOut:
         id=d.id, document_number=d.document_number, item_id=d.item_id,
         warehouse_id=d.warehouse_id, quantity=d.quantity, unit_cost=d.unit_cost,
         total_cost=d.total_cost, reason=d.reason, is_reversal=d.reverses_id is not None,
+        statement1=getattr(d, "statement1", None),
     )
 
 
@@ -61,7 +64,7 @@ def create_wastage(
     try:
         doc = wastage_service.create_wastage(
             db, item_id=body.item_id, warehouse_id=body.warehouse_id, quantity=body.quantity,
-            reason=body.reason, actor_user_id=current.id)
+            reason=body.reason, statement1=body.statement1, actor_user_id=current.id)
     except (WastageError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "wastage_invalid", "message": str(exc)})
     db.commit()

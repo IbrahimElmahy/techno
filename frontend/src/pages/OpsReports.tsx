@@ -9,6 +9,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
+import StatementFilter, { statementColumn } from '../components/StatementFilter';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
@@ -111,6 +112,10 @@ export default function OpsReports() {
   const [repId, setRepId] = useState<number | undefined>();
   const [dueWithin, setDueWithin] = useState<number | undefined>(view?.dueWithinDays);
   const [onlyOpen, setOnlyOpen] = useState(!!view?.onlyOpen);
+  const [statement, setStatement] = useState('');
+  // الموضوع ده عليه «بيان» أصلاً؟ السيرفر هو اللي بيقول (الشيكات آه، النقاط لأ) — والخانة
+  // بتختفي بدل ما تبقى فلتر بيرجّع فاضي على طول.
+  const [statementOn, setStatementOn] = useState(false);
 
   const [rows, setRows] = useState<any[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
@@ -131,7 +136,11 @@ export default function OpsReports() {
     if (!view) return;
     setSubject(view.subject); setLevel(view.level); setGroupBy(view.groupBy);
     setDueWithin(view.dueWithinDays); setOnlyOpen(!!view.onlyOpen);
+    setStatement('');
   }, [viewKey]);
+
+  // البيان مكتوب على مستند من نوع معيّن — موضوع تاني مالوش نفس البيان.
+  useEffect(() => { setStatement(''); }, [subject]);
 
   const offPreset = !!view && (subject !== view.subject || level !== view.level
     || groupBy !== view.groupBy);
@@ -151,8 +160,12 @@ export default function OpsReports() {
     if (customerId) p.customer_id = customerId;
     if (repId) p.rep_id = repId;
     if (onlyOpen) p.only_open = true;
+    if (statement) p.statement = statement;
+    // السيرفر بيقسّم على ٥٠٠ سطر لو ماطلبناش — والشاشة مابتعرفش تطلب الصفحة اللي بعدها،
+    // فكان باقي السطور بيبقى بعيد عن اللي بيقرا. الحد الأقصى بتاع السيرفر، والجدول بيقسّم.
+    p.limit = 5000;
     return p;
-  }, [subject, level, groupBy, range, customerId, repId, dueWithin, onlyOpen]);
+  }, [subject, level, groupBy, range, customerId, repId, dueWithin, onlyOpen, statement]);
 
   const load = async () => {
     setLoading(true); setDenied(false);
@@ -161,6 +174,7 @@ export default function OpsReports() {
       setRows(res.data.rows || []);
       setTotals(res.data.totals || null);
       setPage(res.data.page || null);
+      setStatementOn(!!res.data.statement_supported);
     } catch (err: any) {
       if (err?.response?.status === 403) {
         setDenied(true); setRows([]); setTotals(null); setPage(null);
@@ -302,6 +316,7 @@ export default function OpsReports() {
       { title: subject === 'coupon_receipts' ? 'التاجر' : 'العميل', dataIndex: 'party',
         ...textColumn(rows, (r: any) => r.party), render: (v: string) => <b>{v || '-'}</b> },
       ...detailColumns,
+      ...(statementOn ? [statementColumn(rows)] : []),
     ];
 
   const rowKeyOf = (r: any, i?: number) => (grouped
@@ -338,6 +353,7 @@ export default function OpsReports() {
       pairs.push(['العميل', customers.find((c: any) => c.id === customerId)?.name ?? '']);
     }
     if (repId) pairs.push(['المندوب', users.find((u: any) => u.id === repId)?.full_name ?? '']);
+    if (statement) pairs.push(['البيان', statement]);
     if (totals?.excluded) pairs.push(['مستبعد من الإجمالي', `${totals.excluded} سطر ملغي`]);
     if (page?.truncated) {
       pairs.push(['ملحوظة', `معروض ${rows.length} من ${page.total_rows} سطر`]);
@@ -465,6 +481,11 @@ export default function OpsReports() {
             ]}
           />
         </Col>
+        {(statementOn || statement) && (
+          <Col xs={24} md={6}>
+            <StatementFilter value={statement} onChange={setStatement} />
+          </Col>
+        )}
       </Row>
 
       {denied && (

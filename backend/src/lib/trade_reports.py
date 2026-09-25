@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import report_statement
 from src.models.catalog import Item
 from src.models.customer import Customer
 from src.models.purchasing import (
@@ -85,7 +86,7 @@ def _names(db: Session) -> tuple[dict, dict, dict, dict, dict]:
 
 
 def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, warehouse_id,
-             branch_id=None):
+             branch_id=None, statement: str | None = None):
     """Flatten one document kind into a common row shape the rest of the engine works on.
 
     Every document kind ends up as: (document, party_id, line-ish facts). Doing the flattening
@@ -109,6 +110,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         for ln, doc in pairs:
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "line_id": ln.id, "statement": report_statement.text_of(doc),
                 "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.invoice_date or doc.created_at),
                 "party_id": doc.customer_id,
@@ -133,6 +135,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
             amount = to_money(ln.line_total) if ln.line_total is not None else ZERO
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "line_id": ln.id, "statement": report_statement.text_of(doc),
                 "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.return_date or doc.created_at),
                 "party_id": doc.customer_id,
@@ -154,6 +157,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         for ln, doc in pairs:
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "line_id": ln.id, "statement": report_statement.text_of(doc),
                 "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.purchase_date or doc.created_at),
                 "party_id": doc.supplier_id,
@@ -179,6 +183,7 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
             )
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
+                "line_id": ln.id, "statement": report_statement.text_of(doc),
                 "branch_id": getattr(doc, "branch_id", None),
                 "date": _as_date(doc.return_date or doc.created_at),
                 "party_id": inv.supplier_id,
@@ -190,9 +195,13 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
     else:
         raise TradeReportError(f"Unknown document type '{doc_type}'.")
 
+    # البيان على المستند — كل سطور الفاتورة بتاخد بيان فاتورتها، فالفلتر على مستوى السطر
+    # والمستند والتجميع بيطلّع نفس المستندات.
+    wanted = report_statement.needle(statement)
     kept = [
         r for r in rows
         if _in_range(r["date"], date_from, date_to)
+        and report_statement.matches(r["statement"], wanted)
         and (party_id is None or r["party_id"] == party_id)
         and (item_id is None or r["item_id"] == item_id)
         and (warehouse_id is None or r["warehouse_id"] == warehouse_id)
@@ -220,6 +229,7 @@ def trade(
     item_id: int | None = None,
     warehouse_id: int | None = None,
     branch_id: int | None = None,
+    statement: str | None = None,
 ) -> dict:
     """Sales/purchase figures at the requested level and grouping, with totals.
 
@@ -240,7 +250,7 @@ def trade(
     wants_profit = doc_type in _PROFIT_DOCS
 
     flat = _collect(db, doc_type, date_from, date_to, party_id, item_id, warehouse_id,
-                    branch_id=branch_id)
+                    branch_id=branch_id, statement=statement)
 
     def party_label(pid):
         return party_names.get(pid, f"#{pid}")
@@ -291,6 +301,7 @@ def trade(
                 "doc_id": r["doc_id"],
                 "document_number": r["document_number"], "date": str(r["date"]),
                 "party": party_label(r["party_id"]), "party_id": r["party_id"],
+                "statement": r["statement"],
                 "quantity": ZERO_QTY, "amount": ZERO, "cost": ZERO, "has_cost": True,
             })
             d["quantity"] = to_qty(d["quantity"] + r["quantity"])
@@ -305,9 +316,10 @@ def trade(
     elif group_by == "none" and level == "line":
         for r in flat:
             rows.append(_finish({
-                "doc_id": r["doc_id"],
+                "doc_id": r["doc_id"], "line_id": r["line_id"],
                 "document_number": r["document_number"], "date": str(r["date"]),
                 "party": party_label(r["party_id"]), "party_id": r["party_id"],
+                "statement": r["statement"],
                 "item": item_label(r["item_id"]), "item_id": r["item_id"],
                 "warehouse": warehouses.get(r["warehouse_id"], f"#{r['warehouse_id']}"),
                 "quantity": r["quantity"], "amount": r["amount"],

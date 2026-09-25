@@ -284,6 +284,7 @@ def create_order(
     branch_id: int | None = None,
     work_order_ref: str | None = None,   # «امر تشغيل» — the shop-floor docket, free text
     notes: str | None = None,
+    statement1: str | None = None,       # البيان
 ) -> ManufacturingOrder:
     """Consume components and produce the product in one document.
 
@@ -351,6 +352,7 @@ def create_order(
         stock_movement_id=None, actor_user_id=actor_user_id,
         production_date=production_date, branch_id=branch_id,
         work_order_ref=(work_order_ref or None), notes=(notes or None),
+        statement1=((statement1 or "").strip() or None),
     )
     db.add(order)
     db.flush()

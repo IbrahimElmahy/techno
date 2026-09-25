@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../models/discount.dart';
 import '../models/models.dart';
@@ -83,6 +84,22 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   final List<SaleCouponRow> _coupons = [];
   final List<SaleDraftLine> _lines = [];
   bool _saving = false;
+
+  /// المندوب شغّل «فاتورة بونص» بإيده.
+  ///
+  /// البونص بيتفتح بطريقتين: الزرار ده، أو إن **كل** السطور خصمها ١٠٠٪ (قرار العميل:
+  /// خصم ١٠٠٪ = بونص). الزرار بيحط ١٠٠٪ على كل السطور وبيقفل خانة الخصم — فالفاتورة
+  /// ماتبقاش بونص على الشاشة وسطورها بفلوس.
+  bool _bonusFlag = false;
+
+  /// فاتورة البيع اللي البونص عليها. `null` = لسه ما اتختارتش، والحفظ مستنيها: السيرفر
+  /// بيرفض بونص مش مربوط، والرفض ساعة المزامنة بيوقّف الطابور كله.
+  _BonusTarget? _bonusFor;
+
+  /// الفاتورة دي بونص؟ — الزرار، أو كل السطور ١٠٠٪. نفس سؤال السيرفر
+  /// (`_is_full_discount`)، فاللي الشاشة بتقول عليه بونص هو اللي هيتسجّل بونص.
+  bool get _isBonus =>
+      _bonusFlag || (_lines.isNotEmpty && _lines.every((l) => l.isFull));
 
   /// خانة الكمية بتاعة كل سطر — بالـ`itemId` مش بالترتيب.
   ///
@@ -185,13 +202,39 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       _coupons
         ..clear()
         ..addAll(_couponsFromJson(r['coupons'] as String?));
+      _bonusFlag = (r['is_bonus'] as int? ?? 0) == 1;
     });
+    // الربط قبل الخط الأساسي — من غيره فاتورة بونص اتفتحت وماحدش لمسها بتسأل
+    // «تسيب التعديل؟».
+    if (_bonusFlag) await _loadBonusTarget(r);
+    if (!mounted) return;
     // الخط الأساسي بيتاخد **بعد** ما الشاشة تمتلي، مش عند الفتح: اللي نزل دلوقتي هو
     // الفاتورة زي ما هي، فأي فرق بعد كده هو اللي المندوب عمله بإيده.
     //
     // وجوّه `setState` عشان `canPop` تتقري من تاني: هي بتتحسب وقت الرسم، والرسم اللي
     // فات كان لسه الخط الأساسي فيه فاضي.
     setState(() => _baseline = _fingerprint);
+  }
+
+  /// بيرجّع الفاتورة اللي البونص عليه زي ما اتخزّنت. لو كانت على الجهاز، رقمها بيتقري
+  /// من صفها دلوقتي — ممكن تكون اترفعت من ساعة ما البونص اتكتب.
+  Future<void> _loadBonusTarget(Map<String, Object?> r) async {
+    final uuid = r['bonus_for_client_uuid'] as String?;
+    final sid = r['bonus_for_invoice_id'] as int?;
+    if (uuid == null && sid == null) return;
+    final local = uuid == null ? null : await LocalDb.instance.saleInvoiceByUuid(uuid);
+    if (!mounted) return;
+    setState(() {
+      _bonusFor = _BonusTarget(
+        serverId: sid,
+        clientUuid: uuid,
+        number: (local?['document_number'] as String?) ??
+            (r['bonus_for_number'] as String?),
+        date: local?['invoice_date'] as String?,
+        net: (local?['total'] as num?)?.toDouble(),
+        onDevice: local != null && (local['synced'] as int? ?? 0) != 1,
+      );
+    });
   }
 
   List<SaleCouponRow> _couponsFromJson(String? raw) {
@@ -274,8 +317,18 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     super.dispose();
   }
 
-  double get _total => _lines.fold(0.0, (t, l) => t + l.net);
-  double get _cashAmount => double.tryParse(_cash.text.trim()) ?? 0;
+  /// صافي الفاتورة. البونص صفر — حتى لو سطر فضل بخصم أقل لأي سبب، الورقة والسيرفر
+  /// الاتنين بيقولوا صفر (السيرفر بيجبر كل سطر بونص على ١٠٠٪).
+  double get _total => _isBonus ? 0 : _lines.fold(0.0, (t, l) => t + l.net);
+
+  /// قيمة البضاعة بسعر البيع — الكمية × السعر، قبل أي خصم. ده اللي البونص «يسوى»، ونفس
+  /// حساب الويب (`bonusValue` في `Invoices.tsx`) عشان الرقمين يطابقوا.
+  double get _bonusValue => _lines.fold(0.0, (t, l) => t + l.gross);
+
+  /// البونص مالوش فلوس — النقدي صفر مهما كان مكتوب في الخانة. السيرفر بيرفض بونص فيه
+  /// نقدي، فالرقم ده لازم يطلع صفر من هنا مش يترفض بعدين.
+  double get _cashAmount =>
+      _isBonus ? 0 : (double.tryParse(_cash.text.trim()) ?? 0);
   double get _credit => max(0, _total - _cashAmount);
 
   /// حساب العميل السابق — قبل الفاتورة اللي بيكتبها دلوقتي.
@@ -298,6 +351,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     );
     if (picked == null) return;
     setState(() {
+      // البونص لازم يبقى على فاتورة لنفس العميل — عميل تاني ⇒ الربط القديم مالوش معنى.
+      if (_customer?.id != picked.id) _bonusFor = null;
       _customer = picked;
       // خط واحد ⇒ اتحدّد لوحده. أكتر من واحد ⇒ المندوب بيختار. ولا واحد ⇒ الفاتورة
       // بتنزل على المديونية كلها زي ما كانت بتعمل قبل ما الخطوط تتعرف أصلاً.
@@ -363,8 +418,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               // السعر والخصم من الصنف — الواحد بيراجع رقم، مش بيخترعه.
               unitPrice: picked.priceFor(_customer?.priceTier),
               // الثابت من الصنف، والمتغيّر بيبتدي صفر — ده اللي المندوب بيزوّده بإيده.
+              // **إلا في البونص**: الصنف بيدخل بـ١٠٠٪ زي اللي قبله، وإلا أول صنف
+              // يتضاف بيطلّع الفاتورة من البونص من غير ما حد يقصد.
               fixedDiscountPct: picked.defaultDiscountPct,
-              variableDiscountPct: 0,
+              variableDiscountPct: _isBonus ? 100 : 0,
             ));
           }
         });
@@ -603,11 +660,63 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     // الحساب وغلط عند الكتابة: المندوب اللي كتب مبلغ (١٠٠ج) في خانة نسبة كانت فاتورته
     // بتتحفظ وتترفع بخصم ٩٩٫٩٩٪ — عشرين تى بـ٢٢٫٥ بتطلع بخمسة صاغ، وماحدش شاف رسالة.
     // حصلت فعلاً في SINV-000023 وSINV-000025.
+    //
+    // **وبقى ١٠٠٪ بالظبط مسموح — ده البونص** (قرار العميل ٢٠٢٦-٠٩-٢٦). اللي فوق ١٠٠
+    // لسه بيترفض بنفس السبب: ده مبلغ اتكتب في خانة نسبة.
     for (final l in _lines) {
-      if (l.variableDiscountPct >= 100) {
+      if (l.variableDiscountPct > 100) {
         return _say('خصم «${l.itemName}» ${_qty(l.variableDiscountPct)}٪ — '
-            'الخانة دي نسبة مش مبلغ. اكتب رقم أقل من ١٠٠.');
+            'الخانة دي نسبة مش مبلغ. أعلى خصم ١٠٠٪ (بونص).');
       }
+    }
+    // **١٠٠٪ على سطر لوحده في فاتورة بيع بيترفض.**
+    //
+    // البونص الفاتورة كلها: السيرفر بيعتبرها بونص لما **كل** السطور ١٠٠٪ بس. سطر واحد
+    // ببلاش جوّه فاتورة بفلوس كان هيروح للسيرفر بخصم ١٠٠٪ على فاتورة بيع عادية —
+    // والسيرفر بيرفضه ساعة المزامنة، بعد ما البضاعة اتسلّمت. الهدية بتتكتب فاتورة
+    // بونص لوحدها على الفاتورة دي.
+    if (!_isBonus) {
+      for (final l in _lines) {
+        if (l.isFull) {
+          return _say('«${l.itemName}» بخصم ١٠٠٪ — ده بونص، والبونص فاتورة لوحدها. '
+              'احفظ البيع بخصم أقل من ١٠٠، واعمل فاتورة بونص عليه للهدية.');
+        }
+      }
+    }
+    if (_isBonus) {
+      // بونص من غير أصناف مالوش معنى — الهدية بضاعة.
+      if (_lines.isEmpty) return _say('البونص لازم يبقى فيه صنف على الأقل');
+      if (_bonusFor == null) {
+        // الحفظ بيقف والمنتقي بيتفتح على طول — السؤال واقف قدامه مش في رسالة وبس.
+        _say('البونص لازم يبقى على فاتورة بيع — اختار الفاتورة');
+        await _pickBonusTarget();
+        if (_bonusFor == null) return;
+        if (!mounted) return;
+      }
+    }
+    // **فاتورة عليها بونص لسه في الطابور مابتتغيّرش لعميل تاني ولا بتبقى بونص.**
+    //
+    // السيرفر بيرفض البونص لو فاتورته مش لنفس العميل (أو مش بيع)، والطابور بيقف عند
+    // أول رفض — فالبونص وكل اللي بعده كانوا هيفضلوا على الجهاز من غير ما حد يفهم ليه.
+    if (_isEditing && (widget.existing!['is_bonus'] as int? ?? 0) != 1) {
+      final uuid = widget.existing!['client_uuid'] as String?;
+      final movedCustomer = _customer!.id != widget.existing!['customer_id'];
+      if (uuid != null &&
+          (movedCustomer || _isBonus) &&
+          await LocalDb.instance.queuedBonusesOn(uuid) > 0) {
+        return _say('الفاتورة دي عليها بونص لسه ما اترفعش — '
+            'ماينفعش تتنقل لعميل تاني ولا تبقى بونص. ارفعهم الأول أو عدّل البونص.');
+      }
+    }
+    // البونص كله ١٠٠٪ — سطر فضل بخصم تاني (مثلاً كان متكتب قبل ما الزرار يتشغّل)
+    // بيتظبط هنا، عشان اللي يتخزّن ويتبعت هو نفس اللي الشاشة قالته: صفر.
+    if (_isBonus) {
+      setState(() {
+        for (final l in _lines) {
+          l.variableDiscountPct = 100;
+          _discCtl[l.itemId]?.text = _blank(100);
+        }
+      });
     }
     // **البيع تحت سعر الشريحة بيتمنع هنا، مش عند المزامنة.**
     //
@@ -714,6 +823,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           // بيتقرا وقت الطباعة، لأن الكاش بيتغيّر مع أول مزامنة بعدها.
           prevBalance: _prevBalance,
           prevBalancesJson: _prevBalancesJson(),
+          isBonus: _isBonus,
+          bonusForInvoiceId: _bonusFor?.serverId,
+          bonusForClientUuid: _bonusFor?.clientUuid,
+          bonusForNumber: _bonusFor?.number,
           lines: _lines,
         );
         if (!mounted) return;
@@ -741,6 +854,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         couponsJson: _couponsJson(),
         prevBalance: _prevBalance,
         prevBalancesJson: _prevBalancesJson(),
+        isBonus: _isBonus,
+        bonusForInvoiceId: _bonusFor?.serverId,
+        bonusForClientUuid: _bonusFor?.clientUuid,
+        bonusForNumber: _bonusFor?.number,
         lines: _lines,
       );
       if (!mounted) return;
@@ -807,6 +924,83 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       text: t, selection: TextSelection.collapsed(offset: t.length));
   }
 
+  /// زرار البونص. التشغيل بيحط ١٠٠٪ على كل السطور ويمسح النقدي؛ الإطفاء بيرجّع خصم
+  /// السطور اللي كانت ١٠٠٪ لصفر — **مش** للي كان قبلها: الرقم القديم مش متخزّن، وصفر
+  /// ظاهر في الخانة أصدق من تخمين.
+  void _setBonus(bool on) {
+    setState(() {
+      _bonusFlag = on;
+      for (final l in _lines) {
+        if (on) {
+          l.variableDiscountPct = 100;
+        } else if (l.variableDiscountPct >= 100) {
+          l.variableDiscountPct = 0;
+        }
+        _discCtl[l.itemId]?.text = _blank(l.variableDiscountPct);
+      }
+      if (on) _cash.clear();
+    });
+    // «على أنهي فاتورة؟» بيتسأل على طول — هو السؤال الوحيد اللي البونص محتاجه.
+    if (on && _customer != null && _bonusFor == null) _pickBonusTarget();
+  }
+
+  /// منتقي «على فاتورة بيع» — فواتير العميل ده اللي على الجهاز، ومعاها اللي على السيرفر
+  /// لو فيه شبكة.
+  Future<void> _pickBonusTarget() async {
+    if (_customer == null) return _say('اختار العميل الأول');
+    final picked = await showModalBottomSheet<_BonusTarget>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _BonusTargetSheet(
+          customerId: _customer!.id,
+          customerName: _customer!.name,
+          exceptLocalId: _editingId),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _bonusFor = picked);
+  }
+
+  /// الشريط اللي بيقول «دي فاتورة بونص» وعلى أنهي فاتورة — والضغط عليه بيغيّرها.
+  Widget _bonusStrip() {
+    final t = _bonusFor;
+    return Material(
+      color: const Color(0xFFFFF4E5),
+      child: InkWell(
+        onTap: _pickBonusTarget,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+          child: Row(
+            children: [
+              const Icon(Icons.card_giftcard, color: AppColors.accent, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('فاتورة بونص — هدية بقيمة صفر',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                    Text(
+                        t == null
+                            ? 'اضغط واختار «على فاتورة بيع» — الحفظ مستنيها'
+                            : 'على فاتورة بيع: ${t.label}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: t == null ? FontWeight.w700 : FontWeight.w400,
+                            color: t == null ? AppColors.danger : Colors.black87)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_left, color: Colors.black45),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// الحذف بيسأل الأول.
   ///
   /// سلة جنب خانة الكمية في سطر مضغوط = ضغطة غلط بتودّي صنف. والصنف اللي طار
@@ -869,7 +1063,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       for (final c in _coupons) '${c.kind ?? ''}|${c.serialFrom}|${c.serialTo}'
     ];
     return '${_customer?.id ?? ''}~${_family ?? ''}~${_cash.text.trim()}'
-        '~${_notes.text.trim()}~${ls.join(',')}~${cs.join(',')}';
+        '~${_notes.text.trim()}~${ls.join(',')}~${cs.join(',')}'
+        '~$_isBonus~${_bonusFor?.key ?? ''}';
   }
 
   /// اللي كانت الشاشة عليه أول ما فتحت — الخط اللي التغيير بيتقاس منه.
@@ -957,8 +1152,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // **نوع الفاتورة في العنوان فوق** — «فاتورة بيع — أبيض». كان متحدّد في أول
       // الشاشة وبعدها مايبانش، والمندوب اللي بيكتب عشرين صنف بينسى هو على أنهي خط —
       // وده بيحدّد أنهي حساب هيتسدّ منه.
+      //
+      // **والبونص بيقول إنه بونص في نفس المكان** — «فاتورة بونص — أبيض». المندوب
+      // اللي كتب ١٠٠٪ في آخر سطر لازم يشوف إن الفاتورة كلها اتقلبت، مش يكتشفها في
+      // الورقة.
       appBar: AppBar(title: Text(
-          '${_isEditing ? 'تعديل فاتورة' : 'فاتورة بيع'}'
+          '${_isBonus ? (_isEditing ? 'تعديل فاتورة بونص' : 'فاتورة بونص') : (_isEditing ? 'تعديل فاتورة' : 'فاتورة بيع')}'
           '${_family == null ? '' : ' — $_family'}')),
       // عمود، مش `ListView` واحدة للشاشة كلها.
       //
@@ -970,6 +1169,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         children: [
           _headerStrip(),
           const Divider(height: 1),
+          // شريط البونص مثبّت فوق زي الترويسة — «على فاتورة بيع رقم كذا» سؤال لازم
+          // يتجاوب قبل الحفظ، فمايتدفنش في آخر القايمة.
+          if (_isBonus) ...[
+            _bonusStrip(),
+            const Divider(height: 1),
+          ],
           Expanded(child: _linesList()),
         ],
       ),
@@ -1228,6 +1433,16 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   ),
                 ],
                 const SizedBox(width: 6),
+                // سطر البونص بيقول قيمته بسعر البيع مشطوبة جنب الصفر — المندوب بيشوف
+                // هو بيدّي هدية بكام، والصفر هو اللي بيتسجّل.
+                if (l.isFull && l.gross > 0) ...[
+                  Text(_money(l.gross),
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.black45,
+                          decoration: TextDecoration.lineThrough)),
+                  const SizedBox(width: 4),
+                ],
                 Text('${_money(l.net)} ج.م',
                     style: const TextStyle(
                         fontWeight: FontWeight.w800,
@@ -1307,8 +1522,16 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         l.itemId,
                         () => TextEditingController(
                             text: _blank(l.variableDiscountPct))),
-                    onChanged: (v) =>
-                        setState(() => l.variableDiscountPct = v),
+                    // زرار البونص شغّال ⇒ الخصم ١٠٠٪ ومقفول. اللي عايز يرجّع خصم عادي
+                    // بيطفي الزرار — وإلا يبقى بونص فيه سطر بفلوس.
+                    readOnly: _bonusFlag,
+                    onChanged: (v) => setState(() {
+                      l.variableDiscountPct = v;
+                      // ١٠٠٪ على كل السطور قلبت الفاتورة بونص — النقدي بيتمسح من
+                      // الخانة كمان، مش بس بيتحسب صفر: رقم مكتوب في خانة مقفولة
+                      // بيقول إن فيه فلوس اتقبضت.
+                      if (_isBonus) _cash.clear();
+                    }),
                   ),
                 ),
                 // سلة صريحة — بس بمقاس وحدود مضبوطة.
@@ -1439,15 +1662,33 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // **البونص بزرار صريح كمان** — مش بس بخصم ١٠٠٪ سطر سطر. اللي عايز يدّي
+            // عشرين صنف هدية مايكتبش ١٠٠ عشرين مرة.
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              value: _isBonus,
+              onChanged: _setBonus,
+              secondary: Icon(Icons.card_giftcard_outlined,
+                  color: _isBonus ? AppColors.accent : Colors.black38),
+              title: const Text('فاتورة بونص',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              subtitle: const Text('بضاعة هدية على فاتورة بيع — خصم ١٠٠٪ ومن غير فلوس',
+                  style: TextStyle(fontSize: 11)),
+            ),
+            const Divider(height: 12),
             const Text('الدفع',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
             const SizedBox(height: 8),
             TextField(
               controller: _cash,
+              // البونص مالوش فلوس — الخانة مقفولة بدل ما تتكتب ويترفض الرقم بعدين.
+              enabled: !_isBonus,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'المدفوع نقداً',
                 suffixText: 'ج.م',
+                helperText: _isBonus ? 'البونص مالوش فلوس — النقدي صفر' : null,
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -1473,6 +1714,14 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
             ],
             const SizedBox(height: 10),
+            // **البونص مالوش حساب.** قيمته صفر ومابيلمسش رصيد العميل، فسطور المديونية
+            // و«الباقي» هتقول أرقام مالهاش علاقة بالمستند ده. اللي يهم: البضاعة
+            // خرجت بكام بسعر البيع، والعميل مطلوب منه صفر. نفس فوتر الويب.
+            if (_isBonus) ...[
+              _totalRow('قيمة البونص بسعر البيع', _money(_bonusValue)),
+              const SizedBox(height: 6),
+              _totalRow('المطلوب من العميل', _money(0), big: true),
+            ] else ...[
             _totalRow('إجمالي الأصناف', _money(_total)),
             const SizedBox(height: 6),
             _totalRow('صافي الفاتورة', _money(_total), color: AppColors.primary),
@@ -1515,6 +1764,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               const SizedBox(height: 6),
             ],
             _totalRow('الباقي على العميل', _money(_dueAfter), big: true),
+            ],
             const SizedBox(height: 10),
             TextField(
               controller: _notes,
@@ -1586,8 +1836,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
                 child: Row(
                   children: [
-                    const Text('الإجمالي',
-                        style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    Text(_isBonus ? 'بونص' : 'الإجمالي',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: _isBonus ? AppColors.accent : Colors.black54,
+                            fontWeight:
+                                _isBonus ? FontWeight.w800 : FontWeight.w400)),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text('${_money(_total)} ج.م',
@@ -1600,7 +1854,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     ),
                     // نفس رقم اللوحة تحت — الشريط كان بيقول آجل الفاتورة دي بس واللوحة
                     // بتقول الباقي كله، فرقمين مختلفين بنفس الاسم في شاشة واحدة.
-                    Text('باقي ${_money(_dueAfter)}',
+                    Text(
+                        _isBonus
+                            ? 'قيمته ${_money(_bonusValue)}'
+                            : 'باقي ${_money(_dueAfter)}',
                         style: const TextStyle(fontSize: 12, color: Colors.black54)),
                   ],
                 ),
@@ -1613,11 +1870,205 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   ? const SizedBox(
                       width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.save_outlined),
-              label: Text(_saving ? 'بيحفظ…' : 'حفظ الفاتورة'),
+              label: Text(_saving
+                  ? 'بيحفظ…'
+                  : (_isBonus ? 'حفظ البونص' : 'حفظ الفاتورة')),
               style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// فاتورة البيع اللي البونص عليها.
+///
+/// الربط بطريقتين، والاتنين بيتخزّنوا لما يكونوا معروفين: `serverId` لفاتورة موجودة على
+/// السيرفر، و`clientUuid` لفاتورة اتكتبت على الجهاز — ممكن تكون لسه في الطابور ومالهاش
+/// رقم سيرفر أصلاً. السيرفر بيقدّم الرقم لو اتبعت، وإلا بيحلّ الـ`client_uuid`.
+class _BonusTarget {
+  const _BonusTarget({
+    this.serverId,
+    this.clientUuid,
+    this.number,
+    this.date,
+    this.net,
+    this.onDevice = false,
+    this.repName,
+  });
+
+  final int? serverId;
+  final String? clientUuid;
+
+  /// رقم المستند (`SINV-…`). `null` = لسه في الطابور ماخدش رقم.
+  final String? number;
+  final String? date;
+  final double? net;
+
+  /// لسه على الجهاز ما اترفعتش.
+  final bool onDevice;
+
+  /// مندوب الفاتورة زي ما السيرفر قاله — للي جاية من السيرفر بس. السيرفر بيرفض البونص
+  /// على فاتورة مندوب تاني، فالاسم بيتقال جنبها عشان المندوب مايختارهاش وهو مش واخد باله.
+  final String? repName;
+
+  String get key => '${serverId ?? ''}|${clientUuid ?? ''}';
+
+  String get label => [
+        number ?? 'فاتورة لسه على الجهاز',
+        if (date != null && date!.isNotEmpty) date!,
+        if (net != null) '${_money(net!)} ج.م',
+        if (onDevice && number == null) 'بتترفع قبل البونص',
+      ].join(' · ');
+}
+
+/// منتقي «على فاتورة بيع» للبونص.
+///
+/// **اللي على الجهاز الأول، وبعدين السيرفر لو فيه شبكة.** المندوب غالباً بيدّي الهدية
+/// على الفاتورة اللي لسه كاتبها قدام العميل — ودي على الجهاز، وممكن تكون لسه في الطابور.
+/// السيرفر بيكمّل الفواتير القديمة اللي مش على التليفون ده. ومن غير شبكة القايمة بتفضل
+/// شغّالة باللي على الجهاز، مابتقفش.
+class _BonusTargetSheet extends StatefulWidget {
+  const _BonusTargetSheet(
+      {required this.customerId, required this.customerName, this.exceptLocalId});
+
+  final int customerId;
+  final String customerName;
+  final int? exceptLocalId;
+
+  @override
+  State<_BonusTargetSheet> createState() => _BonusTargetSheetState();
+}
+
+class _BonusTargetSheetState extends State<_BonusTargetSheet> {
+  List<_BonusTarget> _rows = [];
+  bool _loading = true;
+
+  /// سبب إن فواتير السيرفر مش ظاهرة — `null` = ظهرت.
+  String? _serverNote;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final local = await LocalDb.instance
+        .saleInvoicesForBonus(widget.customerId, exceptLocalId: widget.exceptLocalId);
+    // اللي على الجهاز بيظهر على طول — الشبكة ممكن تاخد ثواني والمندوب واقف.
+    if (!mounted) return;
+    setState(() {
+      _rows = [for (final r in local) _fromLocal(r, null)];
+    });
+    List<Map<String, dynamic>> server = const [];
+    String? note;
+    try {
+      server = await ApiClient.instance.customerSaleInvoices(widget.customerId);
+    } catch (_) {
+      note = 'مافيش شبكة — ظاهر اللي على الجهاز بس';
+    }
+    if (!mounted) return;
+    // الفاتورة اللي اترفعت من الجهاز ده موجودة في الاتنين — بتظهر مرة واحدة، ومعاها
+    // رقم السيرفر عشان الربط يبقى بالرقم المباشر.
+    final byNumber = {
+      for (final e in server)
+        if (e['document_number'] != null) '${e['document_number']}': e
+    };
+    final localNumbers = <String>{};
+    final rows = <_BonusTarget>[];
+    for (final r in local) {
+      final n = r['document_number'] as String?;
+      if (n != null) localNumbers.add(n);
+      rows.add(_fromLocal(r, n == null ? null : byNumber[n]?['id'] as int?));
+    }
+    for (final e in server) {
+      final n = '${e['document_number'] ?? ''}';
+      if (localNumbers.contains(n)) continue;
+      rows.add(_BonusTarget(
+        serverId: e['id'] as int?,
+        number: n.isEmpty ? null : n,
+        date: '${e['invoice_date'] ?? e['created_at'] ?? ''}'.split('T').first,
+        net: double.tryParse('${e['net'] ?? ''}'),
+        repName: e['rep_name'] as String?,
+      ));
+    }
+    setState(() {
+      _rows = rows;
+      _serverNote = note;
+      _loading = false;
+    });
+  }
+
+  _BonusTarget _fromLocal(Map<String, Object?> r, int? serverId) => _BonusTarget(
+        serverId: serverId,
+        clientUuid: r['client_uuid'] as String?,
+        number: r['document_number'] as String?,
+        date: r['invoice_date'] as String?,
+        net: (r['total'] as num?)?.toDouble(),
+        onDevice: (r['synced'] as int? ?? 0) != 1,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.7,
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          const Text('البونص على أنهي فاتورة بيع؟',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: Text('فواتير ${widget.customerName}',
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ),
+          if (_loading) const LinearProgressIndicator(minHeight: 2),
+          if (_serverNote != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Text(_serverNote!,
+                  style: const TextStyle(fontSize: 11, color: AppColors.danger)),
+            ),
+          const Divider(height: 1),
+          Expanded(
+            child: _rows.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                          _loading
+                              ? 'بيدوّر…'
+                              : 'مافيش فواتير بيع للعميل ده.\n'
+                                  'البونص لازم يبقى على فاتورة بيع — اكتب البيع الأول.',
+                          textAlign: TextAlign.center),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: _rows.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final t = _rows[i];
+                      return ListTile(
+                        leading: Icon(
+                            t.onDevice ? Icons.schedule : Icons.receipt_long_outlined,
+                            color: t.onDevice ? AppColors.accent : AppColors.primary),
+                        title: Text(t.number ?? 'لسه على الجهاز — ما اترفعتش',
+                            style: const TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: Text([
+                          if (t.date != null && t.date!.isNotEmpty) t.date!,
+                          if (t.net != null) '${_money(t.net!)} ج.م',
+                          if (t.onDevice) 'في الطابور',
+                          if (t.repName != null && t.repName!.isNotEmpty)
+                            'مندوب: ${t.repName}',
+                        ].join(' · ')),
+                        onTap: () => Navigator.pop(context, t),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

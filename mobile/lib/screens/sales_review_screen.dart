@@ -257,19 +257,61 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
   int _couponTotal(Map<String, Object?> r) =>
       _couponRows(r).fold(0, (t, c) => t + _countOf(c));
 
+  /// رقم فاتورة البيع اللي البونص عليها. لو كانت على الجهاز، رقمها بيتقري من صفها
+  /// دلوقتي — ممكن تكون اترفعت بعد ما البونص اتكتب.
+  String? _bonusForNumber(Map<String, Object?> r) {
+    final uuid = r['bonus_for_client_uuid'] as String?;
+    if (uuid != null) {
+      for (final o in _rows) {
+        if (o['client_uuid'] == uuid) {
+          return (o['document_number'] as String?) ?? 'فاتورة لسه على الجهاز';
+        }
+      }
+    }
+    return r['bonus_for_number'] as String?;
+  }
+
   Widget _invoiceCard(Map<String, Object?> r) {
     final synced = (r['synced'] as int?) == 1;
+    // **البونص بيبان إنه بونص من القايمة.** إجماليه صفر، ومن غير العلامة بيتقري كفاتورة
+    // فاضية أو غلطانة — والمندوب بيراجع آخر اليوم بضاعة خرجت بكام وعلى مين.
+    final isBonus = (r['is_bonus'] as int? ?? 0) == 1;
+    final bonusFor = isBonus ? _bonusForNumber(r) : null;
     return Card(
       child: ExpansionTile(
         leading: Icon(
           synced ? Icons.check_circle : Icons.schedule,
           color: synced ? AppColors.success : AppColors.accent,
         ),
-        title: Text(r['customer_name'] as String? ?? '—',
-            style: const TextStyle(fontWeight: FontWeight.w700)),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(r['customer_name'] as String? ?? '—',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            if (isBonus) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text('بونص',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.black87)),
+              ),
+            ],
+          ],
+        ),
         subtitle: Text([
           r['invoice_date'] as String? ?? '',
           '${(r['total'] as num?)?.toStringAsFixed(2) ?? '0.00'} ج.م',
+          if (bonusFor != null) 'على $bonusFor',
           // العدد على السطر المقفول كمان — فاتورة كوبونات بس إجماليها صفر، وكانت
           // بتبان في القايمة كأنها ورقة فاضية ماحصلش فيها حاجة.
           if (_couponTotal(r) > 0) '${_couponTotal(r)} كوبون',
@@ -289,7 +331,9 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                       subtitle: Text([
                         '${_trim(l.quantity)} × ${l.unitPrice.toStringAsFixed(2)}',
                         if (l.fixedDiscountPct > 0) 'ثابت ${_trim(l.fixedDiscountPct)}%',
-                        if (l.variableDiscountPct > 0)
+                        if (isBonus)
+                          'بونص'
+                        else if (l.variableDiscountPct > 0)
                           'إضافي ${_trim(l.variableDiscountPct)}%',
                       ].join(' — ')),
                       trailing: Text('${l.net.toStringAsFixed(2)} ج.م',

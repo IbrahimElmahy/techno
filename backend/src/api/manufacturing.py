@@ -286,6 +286,7 @@ class OrderIn(BaseModel):
     branch_id: int | None = None
     work_order_ref: str | None = Field(default=None, max_length=60)
     notes: str | None = Field(default=None, max_length=500)
+    statement1: str | None = Field(default=None, max_length=200)  # البيان
 
 
 class OrderConsumptionOut(BaseModel):
@@ -321,6 +322,7 @@ class OrderOut(BaseModel):
     branch_id: int | None = None
     work_order_ref: str | None = None
     notes: str | None = None
+    statement1: str | None = None
     consumptions: list[OrderConsumptionOut]
     resources: list[OrderResourceOut]
 
@@ -348,6 +350,7 @@ def _order_out(order, reversed_ids: set[int]) -> OrderOut:
         branch_id=getattr(order, "branch_id", None),
         work_order_ref=getattr(order, "work_order_ref", None),
         notes=getattr(order, "notes", None),
+        statement1=getattr(order, "statement1", None),
         consumptions=[OrderConsumptionOut(item_id=c.item_id, quantity=c.quantity,
                                           unit_cost=c.unit_cost, line_cost=c.line_cost,
                                           waste_quantity=c.waste_quantity, warehouse_id=c.warehouse_id)
@@ -398,7 +401,8 @@ def create_order(
                        if body.resources is not None else None),
             wastes={w.item_id: w.quantity for w in body.wastes},
             production_date=body.production_date, branch_id=body.branch_id,
-            work_order_ref=body.work_order_ref, notes=body.notes)
+            work_order_ref=body.work_order_ref, notes=body.notes,
+            statement1=body.statement1)
     except (ManufacturingError, StockError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -679,6 +683,8 @@ def list_production_orders(
     date_from: date | None = None,
     date_to: date | None = None,
     imported: bool | None = None,
+    # البيان — جزء من الكلام (ILIKE). `search` بيدوّر فيه كمان؛ ده للي عايز يضيّق عليه بس.
+    statement: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
@@ -686,7 +692,7 @@ def list_production_orders(
 ):
     orders = production_order_service.list_orders(
         db, search=search, branch_id=branch_id, state=state, date_from=date_from,
-        date_to=date_to, imported=imported)
+        date_to=date_to, imported=imported, statement=statement)
     # **الفلترة بعد الخدمة مش جوّاها.** `list_orders` بتاخد `branch_id` كفلتر بيبعته
     # المستخدم، واللي بيختار الفرع بإيده يقدر يختار فرع غيره. العزل شرط تاني فوقه.
     orders = branch_scope.visible(current, orders)

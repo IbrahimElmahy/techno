@@ -61,6 +61,10 @@ class Cheque(Base):
     treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"), nullable=True)
 
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # البيان — كلام الورقة، غير `description` اللي بيتكتب وصف لسطر القيد. نفس الفصل اللي
+    # على السند (`models/voucher.py`): اللي بيكتب «شيك عن فاتورة ٤٥١» مايلاقيهوش مكتوب مكان
+    # وصف الحركة في كشف الحساب.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # The entry raised on registration, and the one raised on settlement/bounce.
     register_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),
                                                           nullable=True)

@@ -23,6 +23,7 @@ import CostCenterField from '../components/CostCenterField';
 import CostCenterSplit from '../components/CostCenterSplit';
 import DocumentBar from '../components/DocumentBar';
 import { api } from '../api/client';
+import { statementMeta } from '../utils/statements';
 import { useDraft } from '../components/useDraft';
 import { combineDiscounts, netOf } from '../utils/discounts';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
@@ -81,6 +82,8 @@ export default function Invoices() {
   const navigate = useNavigate();
   const [filters, setFilters] = useState<InvoiceFilters>({});
   const [search, setSearch] = useState('');
+  // خانة «البيان» — بيتبعت للسيرفر مع Enter بس، مش مع كل حرف.
+  const [stmtText, setStmtText] = useState('');
   /**
    * خانة البحث في السجل — عشان زرار «بحث» يوصلها.
    *
@@ -360,7 +363,8 @@ export default function Invoices() {
         api.get('/api/v1/sales', {
           params: { ...params, limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
         }),
-        api.get('/api/v1/sales/returns', { params: { limit: PAGE_SIZE } })
+        api.get('/api/v1/sales/returns', {
+          params: { limit: PAGE_SIZE, ...(params.statement ? { statement: params.statement } : {}) } })
           .catch(() => ({ data: [] })),
         api.get('/api/v1/sales/summary', { params }).catch(() => ({ data: null })),
       ]);
@@ -384,6 +388,7 @@ export default function Invoices() {
   const applySearch = () => setFilter('q', search.trim() || undefined);
 
   const resetFilters = () => {
+    setStmtText('');
     setSearch('');
     setFilters({});
     fetchInvoices({});
@@ -401,6 +406,7 @@ export default function Invoices() {
       document_number: s.document_number,
       original_invoice_number: null,
       external_document_number: s.external_document_number,
+      statement1: s.statement1 ?? null,
       date: String(s.invoice_date || s.created_at || '').slice(0, 10),
       customer_id: s.customer_id,
       rep_id: s.rep_id,
@@ -442,6 +448,7 @@ export default function Invoices() {
       document_number: r.document_number,
       original_invoice_number: r.invoice_document_number,
       external_document_number: r.external_document_number,
+      statement1: r.statement1 ?? null,
       date: String(r.return_date || r.created_at || '').slice(0, 10),
       customer_id: r.customer_id,
       rep_id: r.rep_id,
@@ -1662,6 +1669,7 @@ export default function Invoices() {
   const printMeta = (inv: any): [string, string][] | undefined => {
     const meta: [string, string][] = [];
     if (inv.external_document_number) meta.push(['رقم المستند', inv.external_document_number]);
+    meta.push(...statementMeta(inv));
     const rows: any[] = inv.coupons ?? [];
     const named = rows.filter(
       (c) => c.coupon_kind || c.coupon_type_name || c.serial_from || c.serial_to);
@@ -2370,7 +2378,10 @@ function couponsTotal(inv: any): number {
                 {/* «فاتورة بونص» بتظهر للي معاه صلاحيتها بس. التبديل بيمسح الفاتورة المربوطة:
                     الرجوع لطلب بيع مايسيبش ربط مالوش معنى. */}
                 <Select value={isBonus ? 'bonus' : 'sale'} disabled={viewOnly || (!canBonus && !isBonus)}
-                  onChange={(v) => { setIsBonus(v === 'bonus'); setBonusForId(null); if (v === 'bonus') setCashAmount(0); }}
+                  onChange={(v) => {
+                    setIsBonus(v === 'bonus'); setBonusForId(null);
+                    if (v === 'bonus') setCashAmount(0); else setDiscountPct(0);
+                  }}
                   options={[
                     { value: 'sale', label: 'طلب بيع' },
                     ...(canBonus || isBonus ? [{ value: 'bonus', label: 'فاتورة بونص' }] : []),
@@ -2476,6 +2487,13 @@ function couponsTotal(inv: any): number {
             <Col xs={12} md={6}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" disabled={viewOnly} />
+              </Form.Item>
+            </Col>
+            {/* **البيان** — كان بيتبعت للسيرفر (`statement1`) ومالوش خانة على الشاشة، فعمر ما
+                حد كتبه. بقى جنب الملاحظات، وبيتطبع، وبيتفلتر بيه في الكشف والتقارير. */}
+            <Col xs={24} md={12}>
+              <Form.Item name="statement1" label="البيان" style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري — بيتطبع على الفاتورة وبيتدوّر بيه" disabled={viewOnly} />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
@@ -2733,7 +2751,20 @@ function couponsTotal(inv: any): number {
                     <Form.Item label="خصم على إجمالي الفاتورة" style={{ marginBottom: 12 }}>
                       <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
                         disabled={viewOnly}
-                        value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
+                        value={isBonus ? 100 : discountPct} onChange={(val) => {
+                          // **خصم ١٠٠٪ = فاتورة بونص** (قرار العميل). اللي بيكتب ١٠٠ مش لازم يعرف
+                          // إن فيه نوع اسمه بونص: الفاتورة بتتحوّل لوحدها وبتطلب الفاتورة اللي
+                          // عليها. والنزول تحت ١٠٠ بيرجّعها طلب بيع عادي.
+                          const v = Number(val || 0);
+                          if (v >= 100 && !isBonus) {
+                            if (!canBonus) { message.error('مالكش صلاحية «إصدار فاتورة بونص».'); return; }
+                            setIsBonus(true); setBonusForId(null); setCashAmount(0);
+                            message.info('خصم ١٠٠٪ = فاتورة بونص — اختار فاتورة البيع اللي البونص عليها.');
+                            return;
+                          }
+                          if (v < 100 && isBonus) { setIsBonus(false); setBonusForId(null); }
+                          setDiscountPct(v >= 100 ? 0 : v);
+                        }} />
                     </Form.Item>
                     <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
                       help={hasParty ? 'ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة' : undefined}>
@@ -3086,6 +3117,12 @@ function couponsTotal(inv: any): number {
               value={filters.family}
               onChange={(v) => setFilter('family', v)}
               options={FAMILY_OPTIONS} />
+          </Col>
+          {/* البيان — بيتدوّر عليه في السيرفر (جزء من الكلام)، على الفواتير والمرتجعات. */}
+          <Col xs={12} sm={12} md={3}>
+            <Input.Search allowClear placeholder="البيان" value={stmtText}
+              onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
+              onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
           </Col>
           <Col xs={12} sm={12} md={4}>
             <DateRangeFilter

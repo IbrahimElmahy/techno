@@ -40,6 +40,8 @@ class ChequeIn(BaseModel):
     supplier_id: int | None = None
     treasury_id: int | None = None
     description: str | None = Field(default=None, max_length=255)
+    # البيان — كلام الورقة. الشرح في `models/cheque.py`.
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class ChequeSettleIn(BaseModel):
@@ -62,6 +64,7 @@ class ChequeOut(BaseModel):
     treasury_id: int | None
     description: str | None
     settled_on: date | None
+    statement1: str | None = None
 
 
 class ReportLineOut(BaseModel):
@@ -113,7 +116,7 @@ def _out(c) -> ChequeOut:
         cheque_number=c.cheque_number, bank_name=c.bank_name, amount=c.amount,
         issue_date=c.issue_date, due_date=c.due_date, customer_id=c.customer_id,
         supplier_id=c.supplier_id, treasury_id=c.treasury_id, description=c.description,
-        settled_on=c.settled_on,
+        settled_on=c.settled_on, statement1=getattr(c, "statement1", None),
     )
 
 
@@ -147,7 +150,8 @@ def register_cheque(
             amount=body.amount, due_date=body.due_date, issue_date=body.issue_date,
             bank_name=body.bank_name, customer_id=body.customer_id,
             supplier_id=body.supplier_id, treasury_id=body.treasury_id,
-            description=body.description, actor_user_id=current.id)
+            description=body.description, statement1=body.statement1,
+            actor_user_id=current.id)
     except (ChequeError, VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()

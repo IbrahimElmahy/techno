@@ -27,6 +27,7 @@ import ExportExcelButton from '../components/ExportExcelButton';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
+import { matchesStatement } from '../utils/statements';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { printDocument } from '../print/brand';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
@@ -312,16 +313,19 @@ const Vouchers: React.FC = () => {
   const [voucherQuery, setVoucherQuery] = useState('');
   const shownVouchers = voucherQuery
     ? vouchers.filter((v) =>
-        [v.document_number, KIND_LABEL[v.kind], partyName(v), v.payment_method, v.reference, v.description, v.amount]
+        [v.document_number, KIND_LABEL[v.kind], partyName(v), v.payment_method, v.reference, v.description, v.amount,
+          v.statement1, v.external_document_number]
           .some((f) => normalizeAr(f).includes(normalizeAr(voucherQuery))))
     : vouchers;
 
   const chequeFilter = useListFilter<any>(cheques, {
     initialValues: chequeDir ? { direction: chequeDir } : {},
-    search: (c) => [c.document_number, c.cheque_number, c.bank_name, c.amount, chequeParty(c)],
+    search: (c) => [c.document_number, c.cheque_number, c.bank_name, c.amount, chequeParty(c),
+      c.statement1],
     filters: {
       direction: (c, v) => c.direction === v,
       status: (c, v) => c.status === v,
+      statement: (c, v) => matchesStatement(c, v),
     },
     dateOf: (c) => c.due_date,
   });
@@ -343,6 +347,7 @@ const Vouchers: React.FC = () => {
       paymentMethod: v.payment_method,
       reference: v.reference,
       description: v.description,
+      statement: v.statement1 ?? null,
       family: (v as any).family ?? null,
       entryId: (v as any).ledger_entry_id ?? null,
       isReversal: v.is_reversal,
@@ -781,7 +786,7 @@ const Vouchers: React.FC = () => {
                 )}>
                 <div>
                   <ListToolbar
-                    searchPlaceholder="بحث برقم الشيك أو المستند أو البنك أو الطرف"
+                    searchPlaceholder="بحث برقم الشيك أو المستند أو البنك أو الطرف أو البيان"
                     query={chequeFilter.query} onQueryChange={chequeFilter.setQuery}
                     values={chequeFilter.values} onValueChange={chequeFilter.setValue}
                     showDateRange range={chequeFilter.range} onRangeChange={chequeFilter.setRange}
@@ -797,6 +802,7 @@ const Vouchers: React.FC = () => {
                           { value: 'bounced', label: 'مرتد' },
                           { value: 'cancelled', label: 'ملغي' },
                         ] },
+                      { key: 'statement', placeholder: 'البيان', kind: 'text', span: 4 },
                     ]}
                   />
                 </div>
@@ -826,6 +832,8 @@ const Vouchers: React.FC = () => {
                       render: (v: string) => <b>{money(v)}</b>,
                     },
                     { title: 'الاستحقاق', dataIndex: 'due_date', width: 110 },
+                    { title: 'البيان', dataIndex: 'statement1', width: 160, ellipsis: true,
+                      render: (v: string | null) => v || '-' },
                     {
                       title: 'الحالة',
                       dataIndex: 'status',
@@ -1072,13 +1080,11 @@ const Vouchers: React.FC = () => {
       >
         {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
         {/* تحت صورة السند مش جوّاها — `VoucherDocument` هي ورقة الطباعة، والزيادة
-            عليها بتتطبع. وده كلام الشاشة: بيان الورقة، ورقمها عند العميل، وصورها. */}
+            عليها بتتطبع. وده كلام الشاشة: رقم الورقة عند العميل، وصورها. «بيان السند»
+            اتنقل جوّه الورقة نفسها لأنه بيتطبع. */}
         {voucherView && (
           <>
             <Descriptions column={2} size="small" bordered style={{ marginTop: 12 }}>
-              <Descriptions.Item label="بيان السند">
-                {voucherView.statement1 || '-'}
-              </Descriptions.Item>
               <Descriptions.Item label="رقم المستند">
                 {voucherView.external_document_number || '-'}
               </Descriptions.Item>

@@ -721,6 +721,13 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # لازم العمود يتعمل هنا **قبل** `_sync_constraints` — القيد الجديد
     # `uq_custody_rep_family` مبني عليه، وترتيب النداءات فوق بيضمن ده.
     ("custody", "family", "VARCHAR(24)"),
+    # «البيان» على كل المستندات — دول كانوا من غيره خالص (أو عليهم `notes` بس، وهي ملاحظة
+    # داخلية مش كلام الورقة). نفس شكل البيان اللي فوق: nullable ومن غير default.
+    ("cheque", "statement1", "VARCHAR(200)"),
+    ("manufacturing_order", "statement1", "VARCHAR(200)"),
+    ("wastage_document", "statement1", "VARCHAR(200)"),
+    ("stock_count", "statement1", "VARCHAR(200)"),
+    ("trade_order", "statement1", "VARCHAR(200)"),
 ]
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).

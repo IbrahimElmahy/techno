@@ -15,6 +15,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.lib import report_statement
+
 # (kind, model, screen) — the kind is what the UI's DocumentLink understands.
 _SOURCES: list[tuple[str, str, str]] = [
     ("invoice", "src.models.sales:SalesInvoice", "/invoices"),
@@ -90,5 +92,9 @@ def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
                 # (031) Their كشف حساب carries a مندوب column. The line never held one, but the
                 # document that posted it always did — one join away, same as the item card.
                 "rep_user_id": _rep_of(doc),
+                # «البيان» اللي اتكتب على المستند نفسه (`statement1..3`). القيد مابيشيلوش —
+                # وصفه بيتولّد («فاتورة بيع …») — فكشف الحساب من غيره مايعرفش يتفلتر بالبيان
+                # اللي المستخدم كتبه بإيده على الفاتورة.
+                "statement": report_statement.text_of(doc),
             }
     return found

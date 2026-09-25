@@ -200,6 +200,8 @@ class StatementLineOut(BaseModel):
     entry_date: date
     entry_type: str
     description: str
+    # «البيان» المكتوب على المستند اللي رحّل السطر — غير `description` اللي هو وصف القيد.
+    doc_statement: str | None = None
     debit: Decimal
     credit: Decimal
     balance_before: Decimal
@@ -312,6 +314,7 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None) -> Sta
             doc_kind=(docs.get(ln.entry_id) or {}).get("kind"),
             doc_id=(docs.get(ln.entry_id) or {}).get("id"),
             doc_number=(docs.get(ln.entry_id) or {}).get("document_number"),
+            doc_statement=(docs.get(ln.entry_id) or {}).get("statement"),
             cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name,
             account_id=getattr(ln, "account_id", None),
             account_name=getattr(ln, "account_name", None),

@@ -30,6 +30,7 @@ class OpenIn(BaseModel):
     count_date: date | None = None
     item_ids: list[int] | None = None
     notes: str | None = Field(default=None, max_length=500)
+    statement1: str | None = Field(default=None, max_length=200)  # البيان
     # (031) نوع الجرد. The three differ in one thing only — which items land on the sheet — so this
     # is the whole difference between them at the API.
     kind: Literal["full", "cycle", "spot"] = "full"
@@ -45,6 +46,8 @@ class CountIn(BaseModel):
 
 class EnterIn(BaseModel):
     counts: list[CountIn]
+    # البيان — اختياري؛ لو مااتبعتش مابيتلمسش (`model_fields_set`).
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class LineOut(BaseModel):
@@ -76,6 +79,7 @@ class CountOut(BaseModel):
     # cycle count mistaken for a failed full count is how people stop trusting the numbers.
     kind: str = "full"
     notes: str | None
+    statement1: str | None = None
     created_at: str
     posted_at: str | None
     line_count: int
@@ -126,6 +130,7 @@ def _out(sheet: StockCount, items, warehouses, categories=None, costs=None,
         id=sheet.id, document_number=sheet.document_number, warehouse_id=sheet.warehouse_id,
         warehouse_name=(warehouses.get(sheet.warehouse_id) if sheet.warehouse_id else None),
         count_date=str(sheet.count_date), status=sheet.status.value, notes=sheet.notes,
+        statement1=getattr(sheet, "statement1", None),
         kind=(sheet.kind.value if getattr(sheet, "kind", None) else "full"),
         created_at=str(sheet.created_at),
         posted_at=str(sheet.posted_at) if sheet.posted_at else None,
@@ -169,6 +174,7 @@ def open_count(
         sheet = stock_count_service.open_sheet(
             db, warehouse_id=body.warehouse_id, count_date=body.count_date,
             actor_user_id=current.id, item_ids=body.item_ids, notes=body.notes,
+            statement1=body.statement1,
             kind=StockCountKind(body.kind), batch_size=body.batch_size)
     except StockCountError as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
@@ -188,7 +194,9 @@ def enter_counts(
         sheet = stock_count_service.enter_counts(
             db, count_id=count_id,
             counts={c.line_id: c.counted_quantity for c in body.counts},
-            actor_user_id=current.id)
+            actor_user_id=current.id,
+            **({"statement1": body.statement1}
+               if "statement1" in body.model_fields_set else {}))
     except StockCountError as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
     db.commit()

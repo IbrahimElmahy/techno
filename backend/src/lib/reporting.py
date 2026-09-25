@@ -12,6 +12,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import report_statement
 from src.models.catalog import Item
 from src.models.manufacturing import ManufacturingOrder, ManufacturingOrderConsumption
 from src.models.sales import SalesInvoice
@@ -117,13 +118,15 @@ def _op_batches(db: Session, product_id: int | None, branch_id: int | None = Non
 
 def production_consumption(db: Session, *, date_from=None, date_to=None, period="month",
                            product_id: int | None = None,
-                           branch_id: int | None = None) -> dict:
+                           branch_id: int | None = None,
+                           statement: str | None = None) -> dict:
     """Actual production vs materials pulled, plus cost breakdown, bucketed by period.
 
     **وبفرع اللي بيقرا** — الإنتاج كله في المصنع، وتقرير بيوري تكاليفه وكمياته لمدير
     فرع بيع مش شايف ولا أمر تشغيل منهم في شاشته.
     """
     names = _item_names(db)
+    wanted = report_statement.needle(statement)
     stmt = select(ManufacturingOrder).where(ManufacturingOrder.reverses_order_id.is_(None))
     if branch_id is not None:
         stmt = stmt.where((ManufacturingOrder.branch_id == branch_id)
@@ -137,6 +140,8 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         when = o.production_date or o.created_at
         if not _in_range(when, date_from, date_to):
             continue
+        if not report_statement.matches_obj(o, wanted):
+            continue
         consumed = to_qty(sum((to_qty(c.quantity) for c in o.consumptions), ZERO))
         rows.append({
             "id": o.id, "document_number": o.document_number,
@@ -146,6 +151,7 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
             "material_cost": str(to_money(o.material_cost)),
             "resource_cost": str(to_money(o.resource_cost)),
             "total_cost": str(to_money(o.total_cost)),
+            "statement": report_statement.text_of(o),
             "created_at": str(when),
         })
         b = buckets.setdefault(bucket_key(when, period),
@@ -156,7 +162,9 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
 
     # الإنتاج المسجّل عمليات — نفس الصفوف بنفس الشكل، بلا تكلفة لأن العملية
     # مابتحملش تكلفة (الأمر هو اللي بيحسبها).
-    for batch in _op_batches(db, product_id, branch_id):
+    # الدفعة المنقولة مالهاش بيان خالص (سطر حركة مش مستند)، فأول ما حد يفلتر ببيان
+    # بتقع — مش بتعدّي كأنها مطابقة.
+    for batch in ([] if wanted else _op_batches(db, product_id, branch_id)):
         when = batch["when"]
         if when is None or not _in_range(when, date_from, date_to):
             continue
@@ -167,7 +175,7 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
             "produced_quantity": str(to_qty(batch["produced"])),
             "consumed_quantity": str(to_qty(batch["consumed"])),
             "material_cost": "0.00", "resource_cost": "0.00", "total_cost": "0.00",
-            "created_at": str(when),
+            "statement": None, "created_at": str(when),
         })
         b = buckets.setdefault(bucket_key(when, period),
                                {"produced": ZERO, "consumed": ZERO, "total_cost": ZERO})
@@ -176,6 +184,8 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
     rows.sort(key=lambda r: r["created_at"])
     return {
         "rows": rows,
+        # الشاشة بتعرض خانة «البيان» بس لما المستند عنده بيان أصلاً.
+        "statement_supported": report_statement.supported(ManufacturingOrder),
         "by_period": [{"period": k, "produced_quantity": str(to_qty(v["produced"])),
                        "consumed_quantity": str(to_qty(v["consumed"])),
                        "total_cost": str(to_money(v["total_cost"]))}
@@ -218,7 +228,8 @@ def inventory(db: Session, *, warehouse_id: int | None = None, item_id: int | No
 
 
 def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = None,
-            warehouse_id: int | None = None, branch_id: int | None = None) -> dict:
+            warehouse_id: int | None = None, branch_id: int | None = None,
+            statement: str | None = None) -> dict:
     """Waste from manufacturing orders (per-line waste_quantity) + standalone wastage documents.
 
     **والهالك بيتبع مخزنه.** السطر بيخصم من مخزن، والمخزن بيخصّ فرع — فده أدق من
@@ -228,6 +239,7 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
     names = _item_names(db)
     prices = {i.id: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
               for i in db.scalars(select(Item)).all()}
+    wanted = report_statement.needle(statement)
     rows, total_qty, total_cost = [], ZERO, ZERO
 
     # From manufacturing orders (non-reversal), any consumption line with waste.
@@ -248,13 +260,16 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
         when = order.production_date or order.created_at
         if not _in_range(when, date_from, date_to):
             continue
+        if not report_statement.matches_obj(order, wanted):
+            continue
         cost = to_money(wq * prices.get(cons.item_id, ZERO))
         total_qty += wq
         total_cost += cost
         rows.append({"source": "manufacturing", "document_number": order.document_number,
                      "item_id": cons.item_id, "item_name": names.get(cons.item_id, ""),
                      "warehouse_id": cons.warehouse_id, "quantity": str(wq),
-                     "cost": str(cost), "created_at": str(when)})
+                     "cost": str(cost), "statement": report_statement.text_of(order),
+                     "created_at": str(when)})
 
     # Standalone wastage documents (exclude reversals; reversals net out).
     for d in db.scalars(select(WastageDocument).where(WastageDocument.reverses_id.is_(None))).all():
@@ -266,6 +281,8 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
             continue
         if not _in_range(d.created_at, date_from, date_to):
             continue
+        if not report_statement.matches_obj(d, wanted):
+            continue
         # Skip if this document has been reversed.
         reversed_ = db.scalar(select(WastageDocument.id).where(WastageDocument.reverses_id == d.id))
         if reversed_ is not None:
@@ -275,11 +292,15 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
         rows.append({"source": "document", "document_number": d.document_number,
                      "item_id": d.item_id, "item_name": names.get(d.item_id, ""),
                      "warehouse_id": d.warehouse_id, "quantity": str(to_qty(d.quantity)),
-                     "cost": str(to_money(d.total_cost)), "created_at": str(d.created_at)})
+                     "cost": str(to_money(d.total_cost)),
+                     "statement": report_statement.text_of(d),
+                     "created_at": str(d.created_at)})
 
     rows.sort(key=lambda r: r["created_at"])
     return {"rows": rows, "total_quantity": str(to_qty(total_qty)),
-            "total_cost": str(to_money(total_cost))}
+            "total_cost": str(to_money(total_cost)),
+            "statement_supported": (report_statement.supported(ManufacturingOrder)
+                                    or report_statement.supported(WastageDocument))}
 
 
 def last_sold_by_item(db: Session) -> dict[int, date]:
@@ -359,15 +380,20 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
 
 
 def sales(db: Session, *, date_from=None, date_to=None, period="month",
-          branch_id: int | None = None) -> dict:
+          branch_id: int | None = None, statement: str | None = None) -> dict:
     """Sales gross/net bucketed by period (for linking sales volume to production).
 
     **وبفرع اللي بيقرا.** التقرير ده كان بيرجّع فواتير الشركة كلها — ٩٬٦٢٢ سطر فيهم
     ٧٦٢ فاتورة مصنع بأسماء عملائها وأسعارها — لمدير فرع مش شايف ولا واحدة منهم في
     كشف الفواتير بتاعه.
     """
+    from src.models.customer import Customer
+
     rows, buckets = [], {}
     gross_total = net_total = ZERO
+    wanted = report_statement.needle(statement)
+    # اسم العميل مش رقمه — العمود كان بيعرض «#1234» (رقم الصف في قاعدتنا).
+    customers = dict(db.execute(select(Customer.id, Customer.name)).all())
     stmt = select(SalesInvoice)
     if branch_id is not None:
         stmt = stmt.where((SalesInvoice.branch_id == branch_id)
@@ -375,14 +401,21 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month",
     for inv in db.scalars(stmt.order_by(SalesInvoice.id)).all():
         if not _in_range(inv.invoice_date or inv.created_at, date_from, date_to):
             continue
+        if not report_statement.matches_obj(inv, wanted):
+            continue
         gross_total += to_money(inv.gross)
         net_total += to_money(inv.net)
-        rows.append({"document_number": inv.document_number, "customer_id": inv.customer_id,
+        rows.append({"id": inv.id, "document_number": inv.document_number,
+                     "customer_id": inv.customer_id,
+                     "customer_name": customers.get(inv.customer_id),
+                     "statement": report_statement.text_of(inv),
                      "gross": str(to_money(inv.gross)), "net": str(to_money(inv.net)),
                      "created_at": str(inv.invoice_date or inv.created_at)})
         b = buckets.setdefault(bucket_key(inv.invoice_date or inv.created_at, period), {"gross": ZERO, "net": ZERO})
         b["gross"] += to_money(inv.gross)
         b["net"] += to_money(inv.net)
+    # الترتيب بتاريخ المستند — الاستعلام بالـid، والفواتير المنقولة أرقامها مش بترتيب تواريخها.
+    rows.sort(key=lambda r: (r["created_at"], r["id"]))
     return {
         "rows": rows, "gross_total": str(to_money(gross_total)), "net_total": str(to_money(net_total)),
         "by_period": [{"period": k, "gross": str(to_money(v["gross"])), "net": str(to_money(v["net"]))}

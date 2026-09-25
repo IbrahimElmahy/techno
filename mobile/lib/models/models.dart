@@ -316,8 +316,19 @@ class SaleDraftLine {
   ///
   /// **والحساب في `discount.dart` مش هنا.** الصيغة مكتوبة مرة واحدة في اللغة دي، وإلا
   /// القاعدة بتتعدّل في مكان وتفضل قديمة في التاني — والسقف (٩٩٫٩٩) جوّه المحرك كمان.
-  double get discountPct =>
-      combineDiscounts([fixedDiscountPct, variableDiscountPct]);
+  ///
+  /// **إلا خصم ١٠٠٪ — ده بونص، وبيفضل ١٠٠ مش ٩٩٫٩٩.** المحرك بيقصّ عند ٩٩٫٩٩ عشان
+  /// السطر العادي مايبقاش بصفر، بس سطر البونص صفر فعلاً: البضاعة هدية (قرار العميل
+  /// ٢٠٢٦-٠٩-٢٦). من غير الاستثناء ده سطر بونص بعشرة آلاف كان هيطلع بجنيه، والشاشة
+  /// تقول «المطلوب ١» على فاتورة المفروض قيمتها صفر. والشاشة هي اللي بتمنع ١٠٠٪ على
+  /// سطر لوحده في فاتورة بيع — البونص الفاتورة كلها أو مفيش.
+  double get discountPct => isFull
+      ? 100
+      : combineDiscounts([fixedDiscountPct, variableDiscountPct]);
+
+  /// السطر ده ببلاش؟ — خصم ١٠٠٪ في أي خانة من الاتنين. نفس سؤال السيرفر
+  /// (`_is_full_discount` في `api/sales.py`).
+  bool get isFull => fixedDiscountPct >= 100 || variableDiscountPct >= 100;
 
   double get gross => quantity * unitPrice;
   double get net => netOf(gross, discountPct);

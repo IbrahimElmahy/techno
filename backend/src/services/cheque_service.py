@@ -79,6 +79,7 @@ def register_cheque(
     actor_user_id: int, issue_date: date | None = None, bank_name: str | None = None,
     customer_id: int | None = None, supplier_id: int | None = None,
     treasury_id: int | None = None, description: str | None = None,
+    statement1: str | None = None,
 ) -> Cheque:
     """استلام شيك من عميل أو تحرير شيك لمورد — القيمة تدخل حساب الشيكات لا الخزينة."""
     value = _positive(amount)
@@ -106,6 +107,7 @@ def register_cheque(
         status=ChequeStatus.pending, cheque_number=cheque_number.strip(), bank_name=bank_name,
         amount=value, issue_date=issued, due_date=due_date, customer_id=customer_id,
         supplier_id=supplier_id, treasury_id=treasury_id, description=description,
+        statement1=(statement1 or "").strip() or None,
         actor_user_id=actor_user_id,
     )
     db.add(cheque)

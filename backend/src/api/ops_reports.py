@@ -66,6 +66,7 @@ def ops_report(
     only_open: bool = Query(False),
     limit: int | None = Query(None),
     offset: int = Query(0),
+    statement: str | None = Query(None, description="البيان — جزء من الكلام"),
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -77,7 +78,7 @@ def ops_report(
             date_from=date_from, date_to=date_to, customer_id=customer_id,
             rep_id=rep_id, status=status, kind=kind,
             due_within_days=due_within_days, only_open=only_open,
-            limit=limit, offset=offset,
+            limit=limit, offset=offset, statement=statement,
         )
     except OpsReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc

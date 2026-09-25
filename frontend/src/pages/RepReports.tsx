@@ -11,6 +11,7 @@ import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import DateRangeFilter from '../components/DateRangeFilter';
+import StatementFilter from '../components/StatementFilter';
 import { useQueryTab } from '../components/useQueryTab';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn } from '../components/gridColumns';
@@ -46,6 +47,9 @@ export default function RepReports() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
     [dayjs().startOf('month'), dayjs()]);
   const [repId, setRepId] = useState<number | undefined>();
+  // البيان على السند (التحصيلات) أو على الفاتورة (مبيعات الأصناف) — نفس الخانة للتلات
+  // تابات زي الفترة بالظبط، عشان الأرقام اللي جنب بعض تبقى عن نفس المستندات.
+  const [statement, setStatement] = useState('');
 
   const [collections, setCollections] = useState<CollectionRow[]>([]);
   const [byCustomer, setByCustomer] = useState<ByCustomerRow[]>([]);
@@ -56,8 +60,9 @@ export default function RepReports() {
     const p: any = {};
     if (range) { p.date_from = range[0].format('YYYY-MM-DD'); p.date_to = range[1].format('YYYY-MM-DD'); }
     if (repId) p.rep_id = repId;
+    if (statement) p.statement = statement;
     return p;
-  }, [range, repId]);
+  }, [range, repId, statement]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -109,6 +114,7 @@ export default function RepReports() {
       <Select
         allowClear showSearch optionFilterProp="label" style={{ minWidth: 200 }}
         placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
+      <StatementFilter value={statement} onChange={setStatement} style={{ width: 220 }} />
       <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
     </Space>
   );

@@ -9,6 +9,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
+import StatementFilter, { statementColumn } from '../components/StatementFilter';
 import { useQueryTab } from '../components/useQueryTab';
 import DocumentLink, { DocKind, useOpenDocument } from '../components/DocumentLink';
 import { useTableKeyboard } from '../components/keyboard';
@@ -115,6 +116,7 @@ export default function TradeReports() {
   const [partyId, setPartyId] = useState<number | undefined>();
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
+  const [statement, setStatement] = useState('');
 
   const [rows, setRows] = useState<any[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
@@ -141,9 +143,13 @@ export default function TradeReports() {
   // The named report reasserts itself when the route changes — the tab workspace keeps every open
   // screen mounted, so arriving at a different report must reset the switches rather than inherit
   // whatever the last one left behind.
+  //
+  // والفلاتر كمان: «ارباح اصناف» اللي اتفتح بعد «مبيعات فواتير» كان بيورث الصنف والمخزن
+  // والبيان من التقرير اللي قبله، فبيطلع ناقص من غير ما حد يعرف ليه.
   useEffect(() => {
     if (!view) return;
     setDocType(view.docType); setLevel(view.level); setGroupBy(view.groupBy);
+    setItemId(undefined); setWarehouseId(undefined); setStatement('');
   }, [viewKey]);
 
   const offPreset = !!view && (docType !== view.docType || level !== view.level
@@ -158,8 +164,9 @@ export default function TradeReports() {
     if (partyId) p.party_id = partyId;
     if (itemId) p.item_id = itemId;
     if (warehouseId) p.warehouse_id = warehouseId;
+    if (statement) p.statement = statement;
     return p;
-  }, [docType, level, groupBy, range, partyId, itemId, warehouseId]);
+  }, [docType, level, groupBy, range, partyId, itemId, warehouseId, statement]);
 
   const load = async () => {
     setLoading(true);
@@ -220,6 +227,7 @@ export default function TradeReports() {
         render: (v: string) => (v ? String(v).slice(0, 10) : '-') },
       { title: isSale ? 'العميل' : 'المورد', dataIndex: 'party',
         ...textColumn(rows, (r: any) => r.party) },
+      statementColumn(rows),
       ...(level === 'line' ? [
         { title: 'الصنف', dataIndex: 'item', ...textColumn(rows, (r: any) => r.item),
           render: (v: string) => <b>{v}</b> },
@@ -257,6 +265,7 @@ export default function TradeReports() {
     if (warehouseId) {
       pairs.push(['المخزن', warehouses.find((w: any) => w.id === warehouseId)?.name ?? '']);
     }
+    if (statement) pairs.push(['البيان', statement]);
     return pairs;
   };
 
@@ -294,8 +303,10 @@ export default function TradeReports() {
   // رقم في تقرير مالوش قيمة من غير ما توصل للمستند اللي وراه. الزرار موجود في آخر السطر؛ ده
   // بيخلّي السطر كله يوصل لنفس المكان.
   const openDoc = useOpenDocument();
+  const rowKeyOf = (r: any) => (r.line_id ? `l-${r.line_id}`
+    : r.doc_id && !grouped ? `d-${r.doc_id}` : `g-${r.key ?? 'none'}`);
   const kb = useTableKeyboard<any>({
-    rows, rowKey: (r) => r.key ?? `${r.document_number}-${r.item_id ?? ''}-${r.warehouse ?? ''}`,
+    rows, rowKey: rowKeyOf,
     onOpen: (r) => { if (r.doc_id && DOC_SCREEN[docType]) openDoc(DOC_SCREEN[docType], r.doc_id); },
   });
 
@@ -371,7 +382,7 @@ export default function TradeReports() {
       </Row>
 
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={8}>
+        <Col xs={24} md={6}>
           <DateRangeFilter
             value={range as any}
             onChange={(v) => setRange(v as any)}
@@ -390,12 +401,15 @@ export default function TradeReports() {
             placeholder="كل الأصناف" value={itemId} onChange={setItemId}
             options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
-        <Col xs={24} md={5}>
+        <Col xs={24} md={4}>
           <Select
             allowClear style={{ width: '100%' }} placeholder="كل المخازن"
             value={warehouseId} onChange={setWarehouseId}
             options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
           />
+        </Col>
+        <Col xs={24} md={4}>
+          <StatementFilter value={statement} onChange={setStatement} />
         </Col>
       </Row>
 
@@ -440,7 +454,7 @@ export default function TradeReports() {
 
       <Table
         {...kb.tableProps}
-        rowKey={(r: any) => r.key ?? `${r.document_number}-${r.item_id ?? ''}-${r.warehouse ?? ''}`}
+        rowKey={rowKeyOf}
         size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
         locale={{ emptyText: 'لا توجد بيانات في هذه الفترة' }}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}

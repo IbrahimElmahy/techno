@@ -13,6 +13,7 @@ import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
@@ -45,6 +46,7 @@ interface Order {
   quantity: string; unit_cost: string; total_cost: string;
   material_cost?: string; resource_cost?: string;
   production_date?: string | null; work_order_ref?: string | null; notes?: string | null;
+  statement1?: string | null;
   reversed: boolean; is_reversal: boolean;
   consumptions: { item_id: number; quantity: string; line_cost: string }[];
 }
@@ -65,6 +67,7 @@ export default function FreeProduction() {
   const [productionDate, setProductionDate] = useState<Dayjs>(dayjs());
   const [workOrderRef, setWorkOrderRef] = useState('');
   const [notes, setNotes] = useState('');
+  const [statement1, setStatement1] = useState('');
   // Every typed box opens empty. A quantity that starts at 1 turns «5» into «15» for anybody who
   // types over it without clearing first — the same rule as every other document here.
   const [lines, setLines] = useState<DraftLine[]>([]);
@@ -144,7 +147,7 @@ export default function FreeProduction() {
   );
 
   const reset = () => {
-    setProductId(undefined); setQuantity(null); setWorkOrderRef(''); setNotes('');
+    setProductId(undefined); setQuantity(null); setWorkOrderRef(''); setNotes(''); setStatement1('');
     setLines([{ key: 1 }]);
   };
 
@@ -172,6 +175,7 @@ export default function FreeProduction() {
         production_date: productionDate.format('YYYY-MM-DD'),
         work_order_ref: workOrderRef || null,
         notes: notes || null,
+        statement1: statement1 || null,
       });
       message.success('تم تسجيل الإنتاج الحر');
       reset();
@@ -234,6 +238,10 @@ export default function FreeProduction() {
       align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
     },
     {
+      title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
+      render: (v: string | null) => v || '-',
+    },
+    {
       title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true,
       render: (v: string | null) => v || '-',
     },
@@ -243,7 +251,8 @@ export default function FreeProduction() {
   const visibleColumns = cols.apply(columns);
 
   const filter = useListFilter<Order>(orders, {
-    search: (o) => [o.document_number, o.work_order_ref, itemName(o.product_id)],
+    search: (o) => [o.document_number, o.work_order_ref, itemName(o.product_id), o.statement1],
+    filters: { statement: (o, v) => matchesStatement(o, v) },
     dateOf: (o) => o.production_date,
   });
 
@@ -312,6 +321,12 @@ export default function FreeProduction() {
           <Col xs={12} md={3}>
             <Form.Item label="أمر التشغيل" style={{ marginBottom: 0 }}>
               <Input value={workOrderRef} onChange={(e) => setWorkOrderRef(e.target.value)} />
+            </Form.Item>
+          </Col>
+          <Col xs={24}>
+            <Form.Item label="البيان" style={{ marginBottom: 0 }}>
+              <Input value={statement1} maxLength={200} placeholder="اختياري"
+                onChange={(e) => setStatement1(e.target.value)} />
             </Form.Item>
           </Col>
         </Row>
@@ -412,11 +427,12 @@ export default function FreeProduction() {
         }
       >
         <ListToolbar
-          searchPlaceholder="بحث برقم السند أو المنتج أو أمر التشغيل"
+          searchPlaceholder="بحث برقم السند أو المنتج أو أمر التشغيل أو البيان"
           query={filter.query} onQueryChange={filter.setQuery}
           values={filter.values} onValueChange={filter.setValue}
           showDateRange range={filter.range} onRangeChange={filter.setRange}
           onReset={filter.reset} total={orders.length} shown={filter.filtered.length}
+          filters={[{ key: 'statement', placeholder: 'البيان', kind: 'text' }]}
         />
         <Table
           {...kb.tableProps}

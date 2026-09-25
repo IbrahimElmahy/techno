@@ -38,6 +38,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   String? _phone;
   bool _loading = true;
 
+  /// رقم فاتورة البيع اللي البونص عليها — `null` للبيع العادي أو لو مش معروف.
+  String? _bonusFor;
+
   @override
   void initState() {
     super.initState();
@@ -58,8 +61,26 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
         if (c.id == cid) { phone = c.phone; break; }
       }
     }
+    // **رقم الفاتورة اللي البونص عليها بيتقري دلوقتي، مش ساعة الحفظ.** لو كانت لسه في
+    // الطابور ساعة ما البونص اتكتب، ماكانش ليها رقم؛ اترفعت قبله فرقمها بقى على صفها.
+    // والرقم اللي السيرفر ردّ بيه مع البونص احتياطي لو صفها مش على الجهاز ده.
+    String? bonusFor;
+    if ((widget.invoice['is_bonus'] as int? ?? 0) == 1) {
+      final uuid = widget.invoice['bonus_for_client_uuid'] as String?;
+      if (uuid != null) {
+        final target = await LocalDb.instance.saleInvoiceByUuid(uuid);
+        bonusFor = target?['document_number'] as String?;
+      }
+      bonusFor ??= widget.invoice['bonus_for_number'] as String?;
+    }
     if (mounted) {
-      setState(() { _lines = lines; _rep = rep; _phone = phone; _loading = false; });
+      setState(() {
+        _lines = lines;
+        _rep = rep;
+        _phone = phone;
+        _bonusFor = bonusFor;
+        _loading = false;
+      });
     }
   }
 
@@ -202,6 +223,10 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     // زي ما كانت. سطرين بأصفار على عميل مالوش غير حساب واحد بيسألوا سؤال مالوش لازمة.
     final prevByFamily = _familyBalances(inv['prev_balances'] as String?);
     final family = inv['family'] as String?;
+    // فاتورة بونص — بضاعة هدية على فاتورة بيع. قيمتها صفر، والورقة بتقول قيمتها بسعر
+    // البيع بدل الحساب.
+    final isBonus = (inv['is_bonus'] as int? ?? 0) == 1;
+    final bonusValue = _lines.fold<double>(0, (t, l) => t + l.gross);
     // الكوبونات المصروفة مع الفاتورة. من غيرها الفاتورة اللي كوبونات بس بتطلع ورقة
     // فاضية بإجمالي صفر — والعميل ماخد دفتر في إيده والورقة مش قايلة حاجة عنه.
     final coupons = _coupons(inv['coupons'] as String?);
@@ -284,9 +309,15 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                           // «بيع» عليها بتخلي اللي بيمسكها يدوّر على بضاعة مافيش.
                           // **ونوع الطلب في العنوان** — «طلب بيع — أبيض»، زي طباعة
                           // النظام: أول حاجة العين بتقراها في الورقة.
-                          _lines.isEmpty && coupons.isNotEmpty
-                              ? 'إذن تسليم كوبونات'
-                              : (family == null ? 'طلب بيع' : 'طلب بيع — $family'),
+                          //
+                          // **والبونص بيقول إنه بونص** — «فاتورة بونص — أبيض»، نفس اسمه
+                          // على النظام. اللي ماسك ورقة أصنافها بأصفار لازم يعرف من أول
+                          // سطر إنها هدية مش غلطة في الأسعار.
+                          isBonus
+                              ? (family == null ? 'فاتورة بونص' : 'فاتورة بونص — $family')
+                              : _lines.isEmpty && coupons.isNotEmpty
+                                  ? 'إذن تسليم كوبونات'
+                                  : (family == null ? 'طلب بيع' : 'طلب بيع — $family'),
                           // كان ١١ وهو تحت اسم الشركة؛ بقى هو الوحيد في الترويسة،
                           // فمينفعش يفضل بحجم سطر تابع.
                           style: const pw.TextStyle(
@@ -349,6 +380,16 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   pw.Expanded(flex: 2, child: _row('نوع الطلب', family ?? '—')),
                   pw.Expanded(flex: 2, child: pw.SizedBox()),
                 ]),
+                // البونص على أنهي بيعة — ده اللي بيربط الهدية بسببها. من غيره الورقة
+                // بتقول «بضاعة ببلاش» ومحدش يعرف على إيه.
+                if (isBonus)
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
+                    child: pw.Text(
+                        'على طلب بيع رقم ${_bonusFor ?? '— (لسه بيترفع)'}',
+                        style: const pw.TextStyle(
+                            fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                  ),
               ]),
             ),
             pw.SizedBox(height: 10),
@@ -377,8 +418,12 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: _brand),
                   children: [
-                    _cell('الإجمالي', bold: true, white: true, center: true),
-                    _cell('السعر بعد الخصم', bold: true, white: true, center: true),
+                    // البونص سطوره بصفر — الأعمدة بتقول القيمة بسعر البيع، وهي اللي
+                    // بتتجمع تحت في «قيمة البونص بسعر البيع».
+                    _cell(isBonus ? 'القيمة بسعر البيع' : 'الإجمالي',
+                        bold: true, white: true, center: true),
+                    _cell(isBonus ? 'سعر البيع' : 'السعر بعد الخصم',
+                        bold: true, white: true, center: true),
                     _cell('الكمية', bold: true, white: true, center: true),
                     _cell('الصنف', bold: true, white: true),
                     _cell('#', bold: true, white: true, center: true),
@@ -390,8 +435,11 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     decoration: pw.BoxDecoration(
                         color: i.isOdd ? PdfColors.grey100 : PdfColors.white),
                     children: [
-                      _cell(_money(_lines[i].net), center: true, bold: true),
-                      _netPriceCell(_lines[i]),
+                      _cell(_money(isBonus ? _lines[i].gross : _lines[i].net),
+                          center: true, bold: true),
+                      isBonus
+                          ? _cell(_money(_lines[i].unitPrice), center: true)
+                          : _netPriceCell(_lines[i]),
                       _cell(_trim(_lines[i].quantity), center: true),
                       _cell(_lines[i].itemName),
                       _cell('${i + 1}', center: true),
@@ -491,6 +539,20 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                       child: pw.Column(children: rows),
                     ),
                   );
+              // **البونص مالوش حساب.** قيمته صفر ومابيلمسش رصيد العميل، فالحساب
+              // السابق والباقي هيقولوا أرقام مالهاش علاقة بالورقة دي. اللي يهم: خرج
+              // بكام بسعر البيع، والمطلوب من العميل صفر. نفس فوتر طباعة النظام.
+              if (isBonus) {
+                return [
+                  pw.SizedBox(height: 8),
+                  pw.Row(children: [
+                    box([
+                      _total('قيمة البونص بسعر البيع', _money(bonusValue)),
+                      _total('المطلوب من العميل', _money(0), big: true),
+                    ]),
+                  ]),
+                ];
+              }
               return [
                 pw.SizedBox(height: 8),
                 pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [

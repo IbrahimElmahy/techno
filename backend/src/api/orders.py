@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -58,6 +58,7 @@ class OrderIn(BaseModel):
     # خصم على إجمالي الورقة، زيادة على خصم كل سطر — نفس الفاتورة.
     variable_discount_pct: Decimal = Decimal("0")
     notes: str | None = None
+    statement1: str | None = Field(default=None, max_length=200)  # البيان
     lines: list[OrderLineIn]
 
 
@@ -92,6 +93,7 @@ class OrderOut(BaseModel):
     variable_discount_pct: Decimal = Decimal("0")
     total: Decimal
     notes: str | None
+    statement1: str | None = None
     converted_invoice_id: int | None
     converted_at: datetime | None
     created_at: datetime | None
@@ -125,7 +127,7 @@ def _out(db: Session, o: TradeOrder, parties: tuple[dict, dict] | None = None) -
         customer_id=o.customer_id, supplier_id=o.supplier_id, order_date=o.order_date,
         due_date=o.due_date, warehouse_id=o.warehouse_id,
         gross=o.gross or ZERO, variable_discount_pct=o.variable_discount_pct or ZERO,
-        total=o.total, notes=o.notes,
+        total=o.total, notes=o.notes, statement1=getattr(o, "statement1", None),
         converted_invoice_id=o.converted_invoice_id, converted_at=o.converted_at,
         created_at=o.created_at,
         lines=[OrderLineOut(
@@ -166,6 +168,7 @@ def create_order(
         customer_id=body.customer_id, supplier_id=body.supplier_id,
         order_date=body.order_date, due_date=body.due_date, warehouse_id=body.warehouse_id,
         branch_id=body.branch_id, notes=body.notes,
+        statement1=(body.statement1 or "").strip() or None,
         gross=ZERO, variable_discount_pct=to_money(body.variable_discount_pct or 0),
         total=ZERO, actor_user_id=current.id,
     )

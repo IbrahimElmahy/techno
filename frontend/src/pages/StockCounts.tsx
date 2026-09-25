@@ -11,6 +11,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement } from '../utils/statements';
 import { useDocRoute } from '../components/useDocRoute';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
@@ -49,6 +50,7 @@ interface Sheet {
   kind?: 'full' | 'cycle' | 'spot' | null;
   notes: string | null; created_at: string; posted_at: string | null;
   line_count: number; counted_count: number; lines?: Line[];
+  statement1?: string | null;
 }
 
 export default function StockCounts() {
@@ -68,6 +70,12 @@ export default function StockCounts() {
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [countDate, setCountDate] = useState<Dayjs>(dayjs());
   const [notes, setNotes] = useState('');
+  const [statement1, setStatement1] = useState('');
+  /**
+   * البيان على الكشف المفتوح — بيتكتب هنا وبيتحفظ مع «حفظ العدّ» في نفس الضغطة.
+   * منفصل عن `statement1` بتاع شباك الفتح عشان فتح كشف جديد مايمسحش اللي بيتكتب هنا.
+   */
+  const [sheetStatement, setSheetStatement] = useState('');
   /**
    * نوع الجرد — والفرق بينهم حاجة واحدة: مين اللي بيدخل ورقة العد.
    *
@@ -113,6 +121,7 @@ export default function StockCounts() {
         warehouse_id: warehouseId ?? null,
         count_date: countDate.format('YYYY-MM-DD'),
         notes: notes || null,
+        statement1: statement1 || null,
         kind,
         // Sent only where they mean something: a batch size on a spot check, or a list of items on
         // a full count, would be a value the server has to decide to ignore.
@@ -122,6 +131,7 @@ export default function StockCounts() {
       message.success(`اتفتح كشف الجرد ${res.data.document_number}`);
       setOpenVisible(false);
       setSheet(res.data); setEntered({}); setDetailVisible(true);
+      setSheetStatement(res.data.statement1 || '');
       markOpen(res.data.id);
       load();
     } catch (err: any) {
@@ -134,6 +144,7 @@ export default function StockCounts() {
     try {
       const res = await api.get(`/api/v1/stock-counts/${row.id}`);
       setSheet(res.data);
+      setSheetStatement(res.data.statement1 || '');
       const seed: Record<number, number | null> = {};
       (res.data.lines || []).forEach((ln: Line) => {
         seed[ln.id] = ln.counted_quantity === null ? null : Number(ln.counted_quantity);
@@ -169,6 +180,7 @@ export default function StockCounts() {
           line_id: Number(lineId),
           counted_quantity: v === null || v === undefined ? null : String(v),
         })),
+        statement1: sheetStatement || null,
       });
       setSheet(res.data);
       message.success('تم حفظ العدّ');
@@ -203,8 +215,9 @@ export default function StockCounts() {
   };
 
   const filter = useListFilter<Sheet>(sheets, {
-    search: (s) => [s.document_number, s.warehouse_name, s.notes],
+    search: (s) => [s.document_number, s.warehouse_name, s.notes, s.statement1],
     filters: {
+      statement: (s, v) => matchesStatement(s, v),
       status: (s, v) => s.status === v,
       kind: (s, v) => (s as any).kind === v,
       // «اللي فيه فرق بس» and «اللي لسه ماتعدش», asked for by name. Both read the counts the list
@@ -310,6 +323,9 @@ export default function StockCounts() {
     { title: 'السطور', key: 'lines', width: 150,
       ...numberColumn((r: Sheet) => r.line_count),
       render: (_: any, r: Sheet) => `${r.counted_count} / ${r.line_count} متعدود` },
+    { title: 'البيان', dataIndex: 'statement1', ellipsis: true,
+      ...textColumn(sheets, (r: Sheet) => r.statement1),
+      render: (v: string | null) => v || '-' },
     { title: 'الحالة', dataIndex: 'status', width: 120,
       ...choiceColumn<Sheet>(
         [{ text: 'مفتوح', value: 'draft' }, { text: 'مترحّل', value: 'posted' },
@@ -338,7 +354,9 @@ export default function StockCounts() {
             {tableCols.control}
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-              onClick={() => { setWarehouseId(undefined); setNotes(''); setOpenVisible(true); }}>
+              onClick={() => {
+                setWarehouseId(undefined); setNotes(''); setStatement1(''); setOpenVisible(true);
+              }}>
               فتح كشف جرد
             </Button>
           </Space>
@@ -351,7 +369,7 @@ export default function StockCounts() {
         />
 
         <ListToolbar
-          searchPlaceholder="بحث برقم الكشف أو المخزن"
+          searchPlaceholder="بحث برقم الكشف أو المخزن أو البيان"
           query={filter.query} onQueryChange={filter.setQuery}
           values={filter.values} onValueChange={filter.setValue}
           showDateRange range={filter.range} onRangeChange={filter.setRange}
@@ -368,6 +386,7 @@ export default function StockCounts() {
             { key: 'progress', placeholder: 'حالة العد', span: 5, options: [
               { value: 'incomplete', label: 'لم ينتهِ العدّ بعد' },
               { value: 'complete', label: 'العد خلص' }] },
+            { key: 'statement', placeholder: 'البيان', kind: 'text', advanced: true, span: 6 },
           ]}
         />
 
@@ -436,6 +455,10 @@ export default function StockCounts() {
             <DatePicker style={{ width: '100%' }} value={countDate} allowClear={false}
               onChange={(d) => setCountDate(d || dayjs())} />
           </Form.Item>
+          <Form.Item label="البيان">
+            <Input value={statement1} maxLength={200} placeholder="اختياري"
+              onChange={(e) => setStatement1(e.target.value)} />
+          </Form.Item>
           <Form.Item label="ملاحظات" style={{ marginBottom: 0 }}>
             <Input.TextArea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Form.Item>
@@ -485,6 +508,14 @@ export default function StockCounts() {
                 valueStyle={{ color: totalOver > 0.005 ? '#6AB42D' : undefined }} />
             </Space>
             )}
+
+            {/* البيان — بيتعدّل والكشف مفتوح وبيتحفظ مع «حفظ العدّ»؛ بعد الترحيل للقراية بس. */}
+            <div style={{ marginBottom: 10, maxWidth: 520 }}>
+              <div style={{ marginBottom: 4, fontWeight: 600 }}>البيان</div>
+              <Input value={sheetStatement} maxLength={200} placeholder="اختياري"
+                disabled={!isDraft}
+                onChange={(e) => setSheetStatement(e.target.value)} />
+            </div>
 
             {/* فلاتر جوه الورقة. A full count is hundreds of lines, and «وريني اللي فيه فرق بس»
                 is asked every few minutes while counting. The counts above stay on ALL lines —

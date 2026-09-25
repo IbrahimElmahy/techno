@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, ZERO_QTY, to_money, to_qty
+from src.lib import report_statement
 from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
 from src.models.coupon_receipt import CouponReceipt
 from src.models.customer import Customer
@@ -47,6 +48,31 @@ GROUPS = ("none", "customer", "supplier", "rep", "kind", "status", "month", "bra
 
 DEFAULT_LIMIT = 500
 MAX_LIMIT = 5000
+
+# «البيان» — الموديل ورا كل موضوع، واسم خانة البيان عليه لو مش `statement1..3`.
+#
+# الشيك بيانه في `description` (الخانة اللي شاشة الخزينة بتسمّيها «البيان»). الباقي لسه
+# مالوش بيان؛ أول ما موديل منهم ياخد `statement1` الفلتر بيشتغل عليه من غير تعديل هنا —
+# `report_statement` بيعرف العمود من اسمه.
+_STATEMENT_SOURCE = {
+    "points": (PointRecord, ()),
+    "coupons": (Coupon, ()),
+    "coupon_receipts": (CouponReceipt, ()),
+    "inspections": (Inspection, ()),
+    "cheques": (Cheque, ("description",)),
+    "orders": (TradeOrder, ()),
+    "reservations": (Reservation, ()),
+}
+
+
+def statement_supported(subject: str) -> bool:
+    model, extra = _STATEMENT_SOURCE[subject]
+    return report_statement.supported(model, extra)
+
+
+def _statement_of(subject: str, obj) -> str | None:
+    model, extra = _STATEMENT_SOURCE[subject]
+    return report_statement.text_of(obj, extra)
 
 
 class OpsReportError(ValueError):
@@ -81,7 +107,8 @@ def _row(*, when: date | None = None, document_number: str | None = None,
          kind: str = "", label: str = "", status: str = "",
          branch_id: int | None = None, branch: str | None = None,
          shop: str | None = None, quantity=ZERO_QTY, amount=ZERO,
-         counts: bool = True, extra: dict | None = None) -> dict:
+         counts: bool = True, statement: str | None = None,
+         extra: dict | None = None) -> dict:
     """الشكل الموحّد اللي كل موضوع بيتسطّح ليه.
 
     `counts` هو الفرق بين «الصف ده موجود» و«الصف ده بيتحسب». A voided coupon belongs on the
@@ -97,6 +124,7 @@ def _row(*, when: date | None = None, document_number: str | None = None,
         "kind": kind, "label": label, "status": status,
         "branch_id": branch_id, "branch": branch,
         "shop": shop,
+        "statement": statement,
         "quantity": str(to_qty(Decimal(str(quantity or 0)))),
         "amount": str(to_money(Decimal(str(amount or 0)))),
         "counts": counts,
@@ -151,9 +179,12 @@ def _collect_points(db, look, filters) -> list[dict]:
             when=when,
             party_id=record.customer_id, party=look["customers"].get(record.customer_id),
             rep_id=record.actor_user_id, rep=look["users"].get(record.actor_user_id),
-            kind=kind, label=_point_label(kind), status=kind,
+            # النوع بالعربي — «النقاط بنوع الحركة» بيجمّع على `kind`، وكان بيعرض أسماء
+            # الـenum الإنجليزي (earn / redeem …) عناوين للصفوف. الإنجليزي فاضل في `status`.
+            kind=_point_label(kind), label=_point_label(kind), status=kind,
             # النقاط بتتحط في `quantity` مش `amount` — دي مش فلوس، والعمود بيقول كده.
             quantity=record.delta,
+            statement=_statement_of("points", record),
             extra={"delta": str(record.delta),
                    "sales_invoice_id": record.sales_invoice_id,
                    "coupon_id": record.coupon_id},
@@ -181,6 +212,7 @@ def _collect_coupons(db, look, filters) -> list[dict]:
             kind=types.get(coupon.coupon_type_id, coupon.kind.value),
             label=_COUPON_STATUS.get(status, status), status=status,
             quantity=1, amount=coupon.value,
+            statement=_statement_of("coupons", coupon),
             # الملغي بيتعرض ومابيتحسبش — إجمالي بيعدّ كوبونات ملغاة بيقول إن الشركة مدينة بيها.
             counts=status != "voided",
             extra={"serial": coupon.serial,
@@ -202,6 +234,10 @@ def _collect_coupon_receipts(db, look, filters) -> list[dict]:
             continue
         if filters.get("customer_id") and receipt.customer_id != filters["customer_id"]:
             continue
+        # فلتر المندوب كان بيتبعت من الشاشة ومابيتطبّقش هنا — «استلام الكوبونات بالمندوب»
+        # بعد ما تختار مندوب كان بيرجّع كل المناديب.
+        if filters.get("rep_id") and receipt.rep_user_id != filters["rep_id"]:
+            continue
         rows.append(_row(
             when=when, document_number=receipt.document_number,
             party_id=receipt.customer_id, party=look["customers"].get(receipt.customer_id),
@@ -212,6 +248,7 @@ def _collect_coupon_receipts(db, look, filters) -> list[dict]:
             quantity=receipt.coupon_count,
             amount=(Decimal(str(receipt.declared_value or 0))
                     * Decimal(str(receipt.coupon_count or 0))),
+            statement=_statement_of("coupon_receipts", receipt),
             extra={"declared_value": str(receipt.declared_value or 0),
                    "synced": receipt.client_uuid is not None,
                    "notes": receipt.notes},
@@ -247,6 +284,7 @@ def _collect_inspections(db, look, filters) -> list[dict]:
             quantity=visit.total_points,
             # المرفوضة بديل الحذف — بتفضل بتتعرض ومابتتحسبش.
             counts=status != "rejected",
+            statement=_statement_of("inspections", visit),
             extra={"visit_kind": visit.visit_kind.value,
                    "technician_name": visit.technician_name,
                    "owner_name": visit.owner_name,
@@ -272,6 +310,11 @@ def _collect_cheques(db, look, filters, *, today: date) -> list[dict]:
         if not _within(cheque.due_date, date_from, date_to):
             continue
         incoming = cheque.direction == ChequeDirection.incoming
+        # فلتر العميل كان بيتجاهَل هنا. والمقارنة على `customer_id` نفسه مش على الطرف: شيك
+        # صادر لمورد رقمه صدفةً زي رقم العميل كان هيعدّي لو قارنّا بالطرف.
+        if filters.get("customer_id") and not (
+                incoming and cheque.customer_id == filters["customer_id"]):
+            continue
         party_id = cheque.customer_id if incoming else cheque.supplier_id
         party = (look["customers"] if incoming else look["suppliers"]).get(party_id)
         status = cheque.status.value
@@ -283,6 +326,7 @@ def _collect_cheques(db, look, filters, *, today: date) -> list[dict]:
             label=_CHEQUE_STATUS.get(status, status), status=status,
             quantity=1, amount=cheque.amount,
             counts=status not in ("cancelled",),
+            statement=_statement_of("cheques", cheque),
             extra={"cheque_number": cheque.cheque_number,
                    "bank_name": cheque.bank_name,
                    "issue_date": str(cheque.issue_date) if cheque.issue_date else None,
@@ -307,6 +351,10 @@ def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
         if not _within(order.order_date, date_from, date_to):
             continue
         sale = order.kind.value == "sale"
+        # نفس فلتر العميل اللي كان بيتجاهَل في الشيكات — وطلب الشراء مالوش عميل أصلاً.
+        if filters.get("customer_id") and not (
+                sale and order.customer_id == filters["customer_id"]):
+            continue
         party_id = order.customer_id if sale else order.supplier_id
         party = (look["customers"] if sale else look["suppliers"]).get(party_id)
         status = order.status.value
@@ -319,6 +367,7 @@ def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
             label=_ORDER_STATUS.get(status, status), status=status,
             quantity=len(order.lines or []), amount=order.total,
             counts=status != "cancelled",
+            statement=_statement_of("orders", order),
             extra={"order_kind": order.kind.value,
                    "due_date": str(order.due_date) if order.due_date else None,
                    "converted_invoice_id": order.converted_invoice_id,
@@ -329,6 +378,7 @@ def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
 
 
 _RESERVATION_STATUS = {"active": "سارٍ", "converted": "اتحوّل لفاتورة", "cancelled": "ملغي"}
+_HOLD_PLACE = {"warehouse": "مخزن", "custody": "عهدة مندوب"}
 
 
 def _collect_reservations(db, look, filters, *, today: date) -> list[dict]:
@@ -343,10 +393,12 @@ def _collect_reservations(db, look, filters, *, today: date) -> list[dict]:
         rows.append(_row(
             when=hold.expires_on, document_number=hold.document_number,
             party_id=hold.customer_id, party=look["customers"].get(hold.customer_id),
-            kind=hold.location_kind.value,
+            # «مخزن» / «عهدة» مش اسم الـenum — التجميع بالنوع كان بيعرض warehouse و custody.
+            kind=_HOLD_PLACE.get(hold.location_kind.value, hold.location_kind.value),
             label=_RESERVATION_STATUS.get(status, status), status=status,
             quantity=hold.quantity,
             counts=status == "active",
+            statement=_statement_of("reservations", hold),
             extra={"item_id": hold.item_id,
                    "expires_on": str(hold.expires_on),
                    # حجز سارٍ فات ميعاده لسه ماسك بضاعة محدش بيسأل عنها.
@@ -426,6 +478,7 @@ def ops(
     limit: int | None = None,
     offset: int = 0,
     today: date | None = None,
+    statement: str | None = None,
 ) -> dict:
     """`subject` × `level` × `group_by` — تقارير التشغيل كلها من دالة واحدة."""
     if subject not in SUBJECTS:
@@ -470,13 +523,17 @@ def ops(
     if only_open:
         # «المفتوح» معناه مختلف في كل موضوع، وكله بيرجع لنفس الحاجة: اللي لسه بيستنى تصرّف.
         rows = [r for r in rows if r["status"] in ("pending", "open", "active", "issued")]
+    wanted = report_statement.needle(statement)
+    if wanted:
+        rows = [r for r in rows if report_statement.matches(r.get("statement"), wanted)]
+    supported = statement_supported(subject)
 
     totals = _totals(rows)
 
     if level == "summary" or group_by != "none":
         grouped = _group(rows, group_by)
         return {"subject": subject, "level": level, "group_by": group_by,
-                "rows": grouped, "totals": totals,
+                "rows": grouped, "totals": totals, "statement_supported": supported,
                 "page": {"limit": None, "offset": 0, "total_rows": len(grouped),
                          "truncated": False}}
 
@@ -485,7 +542,7 @@ def ops(
     page = rows[start:start + size] if size else rows[start:]
     return {
         "subject": subject, "level": level, "group_by": group_by,
-        "rows": page, "totals": totals,
+        "rows": page, "totals": totals, "statement_supported": supported,
         "page": {"limit": size or None, "offset": start, "total_rows": len(rows),
                  "truncated": start + len(page) < len(rows)},
     }

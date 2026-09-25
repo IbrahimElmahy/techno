@@ -27,6 +27,7 @@ import { guardQuantity } from '../components/quantityGuard';
 import { advanceFrom } from '../components/lineKeyboard';
 import { printTransfer } from '../components/TransferDocument';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentBar from '../components/DocumentBar';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
@@ -259,10 +260,12 @@ export default function Transfers() {
       t.document_number, t.quantity,
       locationName(t.source_location_kind, t.source_location_id),
       locationName(t.dest_location_kind, t.dest_location_id),
+      t.statement1, t.external_document_number, t.notes,
     ],
     filters: {
       status: (t, v) => t.status === v,
       route: (t, v) => t.route === v,
+      statement: (t, v) => matchesStatement(t, v),
     },
     dateOf: (t) => docDate(t) || t.created_at,
   });
@@ -839,6 +842,26 @@ export default function Transfers() {
     }
   };
 
+  /**
+   * سطور الكلام على إذن مفتوح وهو لسه تحت الاعتماد — بتتحفظ لما المؤشر يسيب الخانة.
+   *
+   * كانت بتتكتب مرة وقت الإنشاء بس، فغلطة في البيان كانت بتفضل على الورقة لحد ما حد يلغي
+   * الإذن كله ويعمله من جديد. الإذن الجديد (لسه ما اتبعتش) بيبعتهم مع الإنشاء زي ما هو.
+   */
+  const textsLocked = viewOnly || (!!editing && editing.status !== 'pending');
+  const saveEditingText = async (
+    field: 'statement1' | 'external_document_number' | 'notes', value: string,
+  ) => {
+    if (!editing || editing.status !== 'pending') return;
+    if ((editing[field] || '') === (value || '').trim()) return;
+    try {
+      await api.patch(`/api/v1/transfers/${editing.id}`, { [field]: value || null });
+      await refreshEditing(editing.id);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ التعديل');
+    }
+  };
+
   const rejectTransfer = async () => {
     if (!editing) return;
     try {
@@ -1013,6 +1036,7 @@ export default function Transfers() {
       dest: locationName(t.dest_location_kind, t.dest_location_id),
       date: docDate(t) || null,
       approvedBy: t.approved_by ? (userNames[t.approved_by] || null) : null,
+      statement1: t.statement1 || null,
       lines: docLines(t).map((l: any) => ({
         name: nameOfItem(l.item_id),
         quantity: l.quantity,
@@ -1256,6 +1280,8 @@ export default function Transfers() {
       sorter: (a: TransferRecord, b: TransferRecord) =>
         docDate(a).localeCompare(docDate(b)),
       render: (_: any, r: TransferRecord) => docDate(r) || '-' },
+    { title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
+      render: (v: string | null) => v || '-' },
     {
       title: 'الإجراءات', key: 'actions', width: 140, fixed: 'left' as const,
       render: (_: any, record: TransferRecord) => ((record as any).__isDraft ? (
@@ -1505,23 +1531,28 @@ export default function Transfers() {
             </Col>
           </Row>
 
-          {/* سطور الكلام. بتتكتب مرة واحدة وقت الإنشاء — الإذن بعد ما يترحّل مافيش
-              endpoint بيعدّل ترويسته، فبتبان مقفولة زي التاريخ والمصدر بالظبط. */}
+          {/* سطور الكلام. بتتكتب وقت الإنشاء، وبتتعدّل والإذن لسه تحت الاعتماد (بتتحفظ لما
+              المؤشر يسيب الخانة — زي كمية السطر). بعد الاعتماد بتتقفل زي التاريخ والمصدر:
+              التصحيح وقتها بإلغاء وطلب جديد، والكلام بيتنقل معاه. */}
           <Row gutter={16} style={{ marginTop: 12 }}>
             <Col xs={24} md={8}>
               <div style={{ marginBottom: 6, fontWeight: 600 }}>بيان</div>
-              <Input size="large" placeholder="اختياري" disabled={!!editing || viewOnly}
-                value={statement1} onChange={(e) => setStatement1(e.target.value)} />
+              <Input size="large" placeholder="اختياري" disabled={textsLocked} maxLength={200}
+                value={statement1} onChange={(e) => setStatement1(e.target.value)}
+                onBlur={() => saveEditingText('statement1', statement1)} />
             </Col>
             <Col xs={24} md={8}>
               <div style={{ marginBottom: 6, fontWeight: 600 }}>رقم المستند</div>
-              <Input size="large" placeholder="رقم الإذن الورقي" disabled={!!editing || viewOnly}
-                value={externalDocNumber} onChange={(e) => setExternalDocNumber(e.target.value)} />
+              <Input size="large" placeholder="رقم الإذن الورقي" disabled={textsLocked}
+                maxLength={40}
+                value={externalDocNumber} onChange={(e) => setExternalDocNumber(e.target.value)}
+                onBlur={() => saveEditingText('external_document_number', externalDocNumber)} />
             </Col>
             <Col xs={24} md={8}>
               <div style={{ marginBottom: 6, fontWeight: 600 }}>ملاحظات</div>
-              <Input size="large" placeholder="اختياري" disabled={!!editing || viewOnly}
-                value={docNotes} onChange={(e) => setDocNotes(e.target.value)} />
+              <Input size="large" placeholder="اختياري" disabled={textsLocked} maxLength={500}
+                value={docNotes} onChange={(e) => setDocNotes(e.target.value)}
+                onBlur={() => saveEditingText('notes', docNotes)} />
             </Col>
           </Row>
 
@@ -1711,7 +1742,7 @@ export default function Transfers() {
         }
       >
         <ListToolbar
-          searchPlaceholder="بحث برقم المستند أو الموقع"
+          searchPlaceholder="بحث برقم المستند أو الموقع أو البيان"
           query={filter.query} onQueryChange={filter.setQuery}
           values={filter.values} onValueChange={filter.setValue}
           showDateRange range={filter.range} onRangeChange={filter.setRange}
@@ -1722,6 +1753,7 @@ export default function Transfers() {
               options: Object.entries(STATUS_TAGS).map(([k, v]) => ({ value: k, label: v.text })) },
             { key: 'route', placeholder: 'نوع المناقلة',
               options: Object.entries(ROUTE_LABELS).map(([k, v]) => ({ value: k, label: v })) },
+            { key: 'statement', placeholder: 'البيان', kind: 'text' },
           ]}
         />
 

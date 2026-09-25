@@ -57,6 +57,9 @@ class TradeOrder(Base):
     variable_discount_pct: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     total: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # البيان — الكلام اللي بيتطبع على الورقة ويتدوّر بيه في السجل. غير `notes` الداخلية،
+    # ونفس الخانة اللي على الفواتير وباقي المستندات.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # The invoice this order became. Set once; a second conversion is refused.
     converted_invoice_id: Mapped[int | None] = mapped_column(nullable=True)

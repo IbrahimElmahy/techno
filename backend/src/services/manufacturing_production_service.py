@@ -650,7 +650,7 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
 
 def list_orders(db: Session, *, search: str | None = None, branch_id: int | None = None,
                 state: str | None = None, date_from=None, date_to=None,
-                imported: bool | None = None):
+                imported: bool | None = None, statement: str | None = None):
     stmt = select(ProductionOrder)
     if branch_id is not None:
         stmt = stmt.where(ProductionOrder.branch_id == branch_id)
@@ -666,8 +666,14 @@ def list_orders(db: Session, *, search: str | None = None, branch_id: int | None
         stmt = stmt.where(ProductionOrder.imported_from.is_(None))
     if search:
         q = f"%{search.strip()}%"
-        stmt = stmt.where(ProductionOrder.document_number.like(q)
-                          | ProductionOrder.external_document_number.like(q))
+        # البيان والملاحظات جوّه البحث العام كمان — اللي فاكر «تشغيلة العيد» مش فاكر رقمها.
+        stmt = stmt.where(ProductionOrder.document_number.ilike(q)
+                          | ProductionOrder.external_document_number.ilike(q)
+                          | ProductionOrder.statement1.ilike(q)
+                          | ProductionOrder.notes.ilike(q))
+    if statement and statement.strip():
+        # فلتر «البيان» لوحده — جزء من الكلام، من غير فرق حروف كبيرة وصغيرة.
+        stmt = stmt.where(ProductionOrder.statement1.ilike(f"%{statement.strip()}%"))
     return db.scalars(stmt.order_by(ProductionOrder.id.desc())).all()
 
 

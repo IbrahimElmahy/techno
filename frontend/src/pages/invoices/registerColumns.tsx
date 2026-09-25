@@ -77,6 +77,13 @@ export function buildRegisterColumns({
       render: (v: string | null) => v || '-',
     },
     {
+      title: 'البيان',
+      dataIndex: 'statement1',
+      key: 'statement1', ellipsis: true,
+      width: 160,
+      render: (v: string | null) => v || '-',
+    },
+    {
       title: 'رقم المستند',
       dataIndex: 'document_number',
       key: 'document_number', ellipsis: true,

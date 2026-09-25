@@ -19,6 +19,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { statementMeta } from '../utils/statements';
 import { useDocRoute } from '../components/useDocRoute';
 import { useDraft } from '../components/useDraft';
 import { netOf } from '../utils/discounts';
@@ -110,6 +111,8 @@ interface ReturnLineItem {
 
 interface Filters {
   q?: string; customer_id?: number; date_from?: string; date_to?: string;
+  /** جزء من «البيان». */
+  statement?: string;
 }
 
 
@@ -144,6 +147,8 @@ export default function Returns() {
 
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
+  // خانة «البيان» — بيتبعت للسيرفر مع Enter بس، مش مع كل حرف.
+  const [stmtText, setStmtText] = useState('');
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
   // `DocumentLink` has always claimed it could open a return in its own screen; this screen never
   // read the id, so «افتح المستند» landed on the list and left the reader to find the row again.
@@ -351,6 +356,7 @@ export default function Returns() {
       if (f.customer_id) params.customer_id = f.customer_id;
       if (f.date_from) params.date_from = f.date_from;
       if (f.date_to) params.date_to = f.date_to;
+      if (f.statement) params.statement = f.statement;
       const res = await api.get('/api/v1/sales/returns', { params });
       setReturns(res.data);
     } catch (err: any) {
@@ -391,7 +397,7 @@ export default function Returns() {
     setFilters(next); fetchReturns(next);
   };
   const applySearch = () => setFilter('q', search.trim() || undefined);
-  const resetFilters = () => { setSearch(''); setFilters({}); fetchReturns({}); };
+  const resetFilters = () => { setSearch(''); setStmtText(''); setFilters({}); fetchReturns({}); };
 
   const summary = useMemo(() => {
     const net = returns.reduce((s, r) => s + Number(r.net || 0), 0);
@@ -1042,7 +1048,9 @@ export default function Returns() {
     return {
       kind: 'sale_return',
       document_number: r.document_number,
-      date: r.created_at ?? null,
+      // تاريخ المرتجع نفسه مش يوم إدخاله، والبيان على الورقة زي فاتورة البيع.
+      date: r.return_date ?? r.created_at ?? null,
+      extraMeta: statementMeta(r),
       partyLabel: 'العميل',
       partyName: customerName ?? `#${r.customer_id}`,
       partyPhone: known?.phone ?? null,
@@ -1289,6 +1297,14 @@ export default function Returns() {
                 <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
                   <Input placeholder="اختياري" disabled={viewOnly} value={docNotes}
                     onChange={(e) => setDocNotes(e.target.value)} />
+                </Form.Item>
+              </Col>
+              {/* **البيان** — كان بيتبعت (`statement1`) ومالوش خانة، زي فاتورة البيع بالظبط. */}
+              <Col xs={24} md={12}>
+                <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+                  <Input placeholder="اختياري — بيتطبع وبيتدوّر بيه" disabled={viewOnly}
+                    value={statements[0]}
+                    onChange={(e) => setStatements([e.target.value, statements[1], statements[2]])} />
                 </Form.Item>
               </Col>
             </Row>
@@ -1818,6 +1834,11 @@ export default function Returns() {
                 setFilters(next); fetchReturns(next);
               }}
             />
+          </Col>
+          <Col xs={16} md={6}>
+            <Input.Search allowClear placeholder="البيان" value={stmtText}
+              onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
+              onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
           </Col>
           <Col xs={8} md={4}>
             <Button icon={<ClearOutlined />} onClick={resetFilters} block>مسح</Button>

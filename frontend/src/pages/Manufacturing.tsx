@@ -19,6 +19,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement } from '../utils/statements';
 import { useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -71,6 +72,7 @@ interface Wastage {
   id: number; document_number: string; item_id: number; warehouse_id: number;
   quantity: string; unit_cost: string; total_cost: string;
   reason: string | null; is_reversal: boolean;
+  statement1?: string | null;
 }
 
 const RESOURCE_KIND_LABELS: Record<ResourceKind, string> = {
@@ -516,8 +518,9 @@ function WastageTab({
     .map((i) => ({ value: i.id, label: `${i.name} (${i.unit_of_measure})` }));
 
   const filter = useListFilter(wastages, {
-    search: (w) => [w.document_number, itemName(w.item_id), w.reason],
+    search: (w) => [w.document_number, itemName(w.item_id), w.reason, w.statement1],
     filters: {
+      statement: (w, v) => matchesStatement(w, v),
       item_id: (w, v) => w.item_id === v,
       warehouse_id: (w, v) => w.warehouse_id === v,
       status: (w, v) => (v === 'reversal' ? w.is_reversal : !w.is_reversal),
@@ -543,6 +546,7 @@ function WastageTab({
         warehouse_id: values.warehouse_id,
         quantity: values.quantity,
         ...(values.reason ? { reason: values.reason } : {}),
+        ...(values.statement1 ? { statement1: values.statement1 } : {}),
       });
       message.success('تم تسجيل مستند الهالك');
       setOpen(false);
@@ -576,6 +580,8 @@ function WastageTab({
     { title: 'إجمالي التكلفة', dataIndex: 'total_cost', key: 'total',
       render: (v: string) => `${fmtMoney(v)} ج.م` },
     { title: 'السبب', dataIndex: 'reason', key: 'reason', render: (v: string | null) => v || '-' },
+    { title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
+      render: (v: string | null) => v || '-' },
     { title: 'الحالة', key: 'status', render: (_: any, r: Wastage) =>
         r.is_reversal ? <Tag color="purple">حركة عكسية</Tag> : <Tag color="green">مرحّل</Tag> },
     { title: 'إجراء', key: 'action', render: (_: any, r: Wastage) =>
@@ -598,7 +604,7 @@ function WastageTab({
       </div>
 
       <ListToolbar
-        searchPlaceholder="بحث برقم المستند أو الصنف أو السبب"
+        searchPlaceholder="بحث برقم المستند أو الصنف أو السبب أو البيان"
         query={filter.query} onQueryChange={filter.setQuery}
         values={filter.values} onValueChange={filter.setValue}
         onReset={filter.reset}
@@ -612,6 +618,7 @@ function WastageTab({
             { value: 'posted', label: 'مرحّل' },
             { value: 'reversal', label: 'حركة عكسية' },
           ] },
+          { key: 'statement', placeholder: 'البيان', kind: 'text' },
         ]}
       />
 
@@ -639,6 +646,9 @@ function WastageTab({
           </Form.Item>
           <Form.Item name="reason" label="السبب (اختياري)">
             <Input.TextArea rows={2} placeholder="سبب الهالك" />
+          </Form.Item>
+          <Form.Item name="statement1" label="البيان">
+            <Input placeholder="اختياري" maxLength={200} />
           </Form.Item>
         </Form>
       </TabModal>
@@ -1465,6 +1475,8 @@ function ProductionOrdersTab({
       render: (v: string, r: ProductionOrder) => noMoney(r, v) },
     { title: 'الإجمالي', dataIndex: 'total_cost', key: 'tc', width: 120,
       render: (v: string, r: ProductionOrder) => noMoney(r, v) },
+    { title: 'البيان', dataIndex: 'statement1', key: 'st', width: 160, ellipsis: true,
+      render: (v: string | null) => v || '-' },
     { title: 'الحالة', key: 'state', width: 150,
       render: (_: any, r: ProductionOrder) => (
         <Space size={4}>
@@ -1550,7 +1562,7 @@ function ProductionOrdersTab({
 
       <Space style={{ marginBottom: 12 }} wrap>
         <Input.Search allowClear style={{ width: 300 }}
-          placeholder="بحث برقم المستند أو رقم الورقة"
+          placeholder="بحث برقم المستند أو رقم الورقة أو البيان"
           value={query} onChange={(e) => setQuery(e.target.value)}
           onSearch={() => { setPage(1); load(); }} />
         <Select allowClear style={{ width: 160 }} placeholder="الحالة" value={stateFilter}
@@ -1651,8 +1663,11 @@ function ProductionOrdersTab({
                   الأمر لسه ماترحّلش — مافيش أي حركة مخزون عليه، والتكلفة بتتحسب وقت التنفيذ.
                 </p>
               )}
-              {(r.statement1 || r.notes) && (
-                <p style={{ color: '#888', marginTop: 8 }}>{r.statement1} {r.notes}</p>
+              {r.statement1 && (
+                <p style={{ marginTop: 8 }}><b>البيان:</b> {r.statement1}</p>
+              )}
+              {r.notes && (
+                <p style={{ color: '#888', marginTop: 4 }}><b>ملاحظات:</b> {r.notes}</p>
               )}
             </div>
           ),

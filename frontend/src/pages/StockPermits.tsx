@@ -21,6 +21,7 @@ import { useDocRoute } from '../components/useDocRoute';
 import { useDraft } from '../components/useDraft';
 import { useQueryTab } from '../components/useQueryTab';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
@@ -158,8 +159,12 @@ export default function StockPermits() {
   // list with the right kind waiting inside a modal nobody has opened yet.
   const filter = useListFilter(permits, {
     initialValues: kind === 'opening' ? { kind: 'opening' } : {},
-    search: (p) => [p.document_number, p.reason, p.warehouse_name],
-    filters: { kind: (p, v) => p.kind === v },
+    search: (p) => [p.document_number, p.reason, p.warehouse_name, p.statement1,
+      p.external_document_number, p.notes],
+    filters: {
+      kind: (p, v) => p.kind === v,
+      statement: (p, v) => matchesStatement(p, v),
+    },
     // الفلتر على تاريخ الإذن نفسه — هو اللي في عمود «التاريخ». `created_at` وقت
     // كتابة الصف، والمنقول من a5 كله اتكتب في يوم واحد: الفلترة عليه بتخفي إذن
     // ظاهر تاريخه يوليو لأنه اتسجّل عندنا في سبتمبر.
@@ -426,7 +431,7 @@ export default function StockPermits() {
       {/* «بيان» و«رقم المستند» — سطر كلام زيادة، ورقم الورقة اللي في إيده. */}
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={12}>
-          <Input placeholder="بيان (اختياري)" value={statement1}
+          <Input placeholder="البيان (اختياري)" value={statement1} maxLength={200}
             onChange={(e) => setStatement1(e.target.value)} />
         </Col>
         <Col xs={24} md={12}>
@@ -595,7 +600,7 @@ export default function StockPermits() {
           <b>{money(detail.total_cost)}</b>
         </Descriptions.Item>
         <Descriptions.Item label="السبب" span={2}>{detail.reason || '-'}</Descriptions.Item>
-        <Descriptions.Item label="بيان">{detail.statement1 || '-'}</Descriptions.Item>
+        <Descriptions.Item label="البيان">{detail.statement1 || '-'}</Descriptions.Item>
         {/* رقم الورقة اللي عنده — بيتعرض جنب رقم الإذن عندنا اللي في عنوان الصفحة. */}
         <Descriptions.Item label="رقم المستند">
           {detail.external_document_number || '-'}
@@ -679,6 +684,8 @@ export default function StockPermits() {
       // لأي حد عنده مسودّة إذن محفوظة. وده اللي كان بيحصل لمدير الفرع بالظبط.
       render: (l?: PermitLine[]) => (l ? l.length : 0) },
     { title: 'السبب', dataIndex: 'reason', render: (v: string) => v || '-' },
+    { title: 'البيان', dataIndex: 'statement1', ellipsis: true,
+      render: (v: string | null) => v || '-' },
     { title: 'التكلفة', dataIndex: 'total_cost', align: 'left',
       render: (v: string) => <b>{money(v)}</b> },
   ];
@@ -741,7 +748,7 @@ export default function StockPermits() {
     >
 
       <ListToolbar
-        searchPlaceholder="بحث برقم الإذن أو السبب"
+        searchPlaceholder="بحث برقم الإذن أو السبب أو البيان"
         query={filter.query} onQueryChange={filter.setQuery}
         values={filter.values} onValueChange={filter.setValue}
         showDateRange range={filter.range} onRangeChange={filter.setRange}
@@ -750,7 +757,7 @@ export default function StockPermits() {
           { value: 'receipt', label: 'إذن إضافة' },
           { value: 'issue', label: 'إذن صرف' },
           { value: 'opening', label: 'بضاعة أول المدة' },
-        ] }]}
+        ] }, { key: 'statement', placeholder: 'البيان', kind: 'text' }]}
       />
 
       <Table<Permit>

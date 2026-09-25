@@ -67,6 +67,9 @@ class StockCount(Base):
         Enum(StockCountStatus), default=StockCountStatus.draft, nullable=False
     )
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # البيان — كلام الكشف اللي بيتعرض في السجل ويتدوّر بيه («جرد آخر السنة»). غير `notes`
+    # الداخلية، ونفس الخانة اللي على باقي المستندات.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

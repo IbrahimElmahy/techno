@@ -20,7 +20,21 @@ class LocalDb {
     // و`main` خد ٢٢ و٢٥ و٢٦ — فالأجهزة اللي في الشارع دلوقتي كل واحد ناقصه ترقيات
     // التاني. الرقم ده أعلى من الاتنين وبيعمل **كل** اللي فاتهم، وكل واحدة محميّة
     // بـ`try`: اللي اتعمل قبل كده بيرمي وبيتتجاهل.
-    _db = await openDatabase(path, version: 30, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 31, onUpgrade: (d, from, to) async {
+      if (from < 31) {
+        // فاتورة البونص — بضاعة هدية على فاتورة بيع لنفس العميل. الربط بيتخزّن بالاتنين:
+        // رقم السيرفر لو الفاتورة اتاخدت من النظام، و`client_uuid` لو اتكتبت على الجهاز
+        // (ممكن تكون لسه في الطابور ومالهاش رقم سيرفر أصلاً). الفواتير القديمة كلها
+        // بيع عادي، فالافتراضي صفر مش تخمين.
+        for (final col in [
+          'is_bonus INTEGER NOT NULL DEFAULT 0',
+          'bonus_for_invoice_id INTEGER',
+          'bonus_for_client_uuid TEXT',
+          'bonus_for_number TEXT',
+        ]) {
+          try { await d.execute('ALTER TABLE sale_invoice ADD COLUMN $col'); } catch (_) {}
+        }
+      }
       if (from < 30) {
         // شيتات التسعير بتتخزّن على الجهاز. الجهاز القديم بياخد الجدولين فاضيين،
         // والشيتات اللي كانت مفتوحة قبل الترقية ماكانتش بتتحفظ أصلاً فمافيش داتا تضيع.
@@ -890,6 +904,12 @@ class LocalDb {
     /// رصيد كل خط قبل الطلب ده، JSON — «أبيض» و«بولى» كل واحد لوحده. `null` = العميل
     /// حسابه مش مقسوم، والورقة ساعتها بتقول سطر واحد زي ما كانت.
     String? prevBalancesJson,
+    /// فاتورة بونص — بضاعة هدية بقيمة صفر. لازم تبقى مربوطة بفاتورة بيع لنفس العميل:
+    /// برقم السيرفر لو معروف، أو بـ`client_uuid` لو الفاتورة اتكتبت على الجهاز.
+    bool isBonus = false,
+    int? bonusForInvoiceId,
+    String? bonusForClientUuid,
+    String? bonusForNumber,
     required List<SaleDraftLine> lines,
   }) async {
     final d = await db;
@@ -907,6 +927,10 @@ class LocalDb {
         'coupons': couponsJson,
         'prev_balance': prevBalance,
         'prev_balances': prevBalancesJson,
+        'is_bonus': isBonus ? 1 : 0,
+        'bonus_for_invoice_id': isBonus ? bonusForInvoiceId : null,
+        'bonus_for_client_uuid': isBonus ? bonusForClientUuid : null,
+        'bonus_for_number': isBonus ? bonusForNumber : null,
         'synced': 0,
         'created_at': DateTime.now().toIso8601String(),
       });
@@ -945,6 +969,12 @@ class LocalDb {
     /// رصيد كل خط قبل الطلب ده، JSON — «أبيض» و«بولى» كل واحد لوحده. `null` = العميل
     /// حسابه مش مقسوم، والورقة ساعتها بتقول سطر واحد زي ما كانت.
     String? prevBalancesJson,
+    /// فاتورة بونص — بضاعة هدية بقيمة صفر. لازم تبقى مربوطة بفاتورة بيع لنفس العميل:
+    /// برقم السيرفر لو معروف، أو بـ`client_uuid` لو الفاتورة اتكتبت على الجهاز.
+    bool isBonus = false,
+    int? bonusForInvoiceId,
+    String? bonusForClientUuid,
+    String? bonusForNumber,
     required List<SaleDraftLine> lines,
   }) async {
     final d = await db;
@@ -963,6 +993,12 @@ class LocalDb {
           'coupons': couponsJson,
           'prev_balance': prevBalance,
           'prev_balances': prevBalancesJson,
+          // الفاتورة ممكن تتحوّل من بيع لبونص أو العكس وهي في الطابور — فالربط بيتكتب
+          // من جديد، والبيع العادي بيتمسح ربطه بدل ما يفضل شايل ربط قديم مالوش معنى.
+          'is_bonus': isBonus ? 1 : 0,
+          'bonus_for_invoice_id': isBonus ? bonusForInvoiceId : null,
+          'bonus_for_client_uuid': isBonus ? bonusForClientUuid : null,
+          'bonus_for_number': isBonus ? bonusForNumber : null,
         },
         where: 'local_id = ? AND synced = 0',
         whereArgs: [localId],
@@ -985,6 +1021,44 @@ class LocalDb {
         where: synced == null ? null : 'synced = ?',
         whereArgs: synced == null ? null : [synced ? 1 : 0],
         orderBy: 'local_id DESC');
+  }
+
+  /// فواتير البيع (مش البونص) اللي على الجهاز لعميل بعينه — اللي في الطابور واللي
+  /// اترفعت. دي اللي البونص ممكن يتربط بيها وهو من غير شبكة.
+  ///
+  /// `exceptLocalId` = الفاتورة اللي بتتعدّل دلوقتي: مابتتربطش بنفسها.
+  Future<List<Map<String, Object?>>> saleInvoicesForBonus(int customerId,
+      {int? exceptLocalId}) async {
+    final d = await db;
+    return d.query('sale_invoice',
+        where: 'customer_id = ? AND COALESCE(is_bonus, 0) = 0'
+            '${exceptLocalId == null ? '' : ' AND local_id <> ?'}',
+        whereArgs: [customerId, if (exceptLocalId != null) exceptLocalId],
+        orderBy: 'local_id DESC',
+        limit: 100);
+  }
+
+  /// فاتورة على الجهاز بـ`client_uuid` بتاعها — عشان البونص يقول رقم الفاتورة اللي هو
+  /// عليها **دلوقتي**: لو كانت في الطابور ساعة الربط، رقمها بيتعرف بعد ما تترفع.
+  Future<Map<String, Object?>?> saleInvoiceByUuid(String clientUuid) async {
+    final d = await db;
+    final rows = await d.query('sale_invoice',
+        where: 'client_uuid = ?', whereArgs: [clientUuid], limit: 1);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// عدد فواتير البونص اللي في الطابور ومربوطة بالفاتورة دي.
+  ///
+  /// الفاتورة اللي عليها بونص لسه ما اترفعش مابتتغيّرش لعميل تاني ولا بتتحوّل لبونص:
+  /// السيرفر بيرفض البونص لو الفاتورة اللي هو عليها مش لنفس العميل، والطابور بيقف
+  /// عند أول رفض — فكل اللي بعده بيفضل على الجهاز.
+  Future<int> queuedBonusesOn(String clientUuid) async {
+    final d = await db;
+    final r = await d.rawQuery(
+        'SELECT COUNT(*) AS c FROM sale_invoice '
+        'WHERE synced = 0 AND is_bonus = 1 AND bonus_for_client_uuid = ?',
+        [clientUuid]);
+    return (r.first['c'] as int?) ?? 0;
   }
 
   Future<List<SaleDraftLine>> saleInvoiceLines(int invoiceLocalId) async {
@@ -1316,10 +1390,19 @@ class LocalDb {
     return (r.first['c'] as int?) ?? 0;
   }
 
-  Future<void> markSaleSynced(String clientUuid, String documentNumber) async {
+  Future<void> markSaleSynced(String clientUuid, String documentNumber,
+      {String? bonusForNumber}) async {
     final d = await db;
-    await d.update('sale_invoice', {'synced': 1, 'document_number': documentNumber},
-        where: 'client_uuid = ?', whereArgs: [clientUuid]);
+    await d.update(
+        'sale_invoice',
+        {
+          'synced': 1,
+          'document_number': documentNumber,
+          // رقم فاتورة البيع اللي البونص عليها زي ما السيرفر حلّه — الورقة بتقوله.
+          if (bonusForNumber != null) 'bonus_for_number': bonusForNumber,
+        },
+        where: 'client_uuid = ?',
+        whereArgs: [clientUuid]);
   }
 
   // --- التحصيل ------------------------------------------------------------------------
@@ -1507,6 +1590,11 @@ CREATE TABLE sale_invoice(
   prev_balance REAL,
   -- رصيد كل خط قبل الطلب، JSON. شوف `prevBalancesJson`.
   prev_balances TEXT,
+  -- فاتورة بونص (هدية بقيمة صفر) والفاتورة اللي هي عليها — بالرقم أو بـclient_uuid.
+  is_bonus INTEGER NOT NULL DEFAULT 0,
+  bonus_for_invoice_id INTEGER,
+  bonus_for_client_uuid TEXT,
+  bonus_for_number TEXT,
   synced INTEGER NOT NULL DEFAULT 0,
   document_number TEXT,
   created_at TEXT NOT NULL

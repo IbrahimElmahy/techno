@@ -98,6 +98,13 @@ class LineQtyIn(BaseModel):
     quantity: Decimal
 
 
+class TextsIn(BaseModel):
+    """سطور الكلام على الإذن — اللي مااتبعتش مابيتلمسش (`exclude_unset`)."""
+    statement1: str | None = Field(default=None, max_length=200)
+    external_document_number: str | None = Field(default=None, max_length=40)
+    notes: str | None = Field(default=None, max_length=500)
+
+
 class RejectIn(BaseModel):
     # Optional but asked for: «اترفض ليه» is the first question the person who requested it has.
     reason: str | None = None
@@ -360,6 +367,28 @@ def reject_transfer(
                             {"code": "transfer_conflict", "message": str(exc)})
     db.commit()
     return _out(t)
+
+
+@router.patch("/{transfer_id}", response_model=TransferOut)
+def update_transfer_texts(
+    transfer_id: int,
+    body: TextsIn,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    """تعديل البيان ورقم الورقة والملاحظات على إذن لسه تحت الاعتماد. الشرح في `set_texts`."""
+    t = db.get(StockTransfer, transfer_id)
+    if t is None or not branch_scope.may_see(current, t):
+        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود."})
+    try:
+        transfer_service.set_texts(
+            db, transfer_id=transfer_id, values=body.model_dump(exclude_unset=True),
+            actor_user_id=current.id)
+    except TransferError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
+    db.commit()
+    return _out(db.get(StockTransfer, transfer_id))
 
 
 @router.post("/{transfer_id}/lines", response_model=TransferOut,

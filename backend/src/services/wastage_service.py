@@ -28,7 +28,7 @@ def _doc_number(db: Session) -> str:
 
 def create_wastage(
     db: Session, *, item_id: int, warehouse_id: int, quantity, reason: str | None,
-    actor_user_id: int,
+    actor_user_id: int, statement1: str | None = None,
 ) -> WastageDocument:
     qty = to_qty(quantity)
     if qty <= to_qty(0):
@@ -40,6 +40,7 @@ def create_wastage(
     doc = WastageDocument(
         document_number=_doc_number(db), item_id=item_id, warehouse_id=warehouse_id, quantity=qty,
         unit_cost=unit_cost, total_cost=production.line_cost(qty, unit_cost), reason=reason,
+        statement1=(statement1 or "").strip() or None,
         stock_movement_id=None, actor_user_id=actor_user_id,
     )
     db.add(doc)
@@ -73,6 +74,8 @@ def reverse_wastage(db: Session, *, wastage_id: int, actor_user_id: int) -> Wast
         document_number=_doc_number(db), item_id=original.item_id,
         warehouse_id=original.warehouse_id, quantity=original.quantity, unit_cost=original.unit_cost,
         total_cost=original.total_cost, reason=original.reason, stock_movement_id=mirror.id,
+        # العكسي بيشيل بيان أصله — اللي بيدوّر بالبيان يلاقي الاتنين جنب بعض.
+        statement1=getattr(original, "statement1", None),
         reverses_id=wastage_id, actor_user_id=actor_user_id,
     )
     db.add(rev)

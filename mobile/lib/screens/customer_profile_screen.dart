@@ -336,7 +336,10 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
         for (final r in rows.take(15))
           ListTile(
             dense: true,
-            title: Text('${r['document_number'] ?? ''}'),
+            // فاتورة البونص رقمها `BNS-` وقيمتها صفر — العلامة بتقول إنها هدية مش
+            // فاتورة فاضية.
+            title: Text('${r['document_number'] ?? ''}'
+                '${'${r['document_number'] ?? ''}'.startsWith('BNS-') ? ' · بونص' : ''}'),
             subtitle: Text('${r['date'] ?? r['created_at'] ?? ''}'.split('T').first),
             trailing: Text('${_num(r['amount'] ?? r['net'] ?? r['value'])} ج.م',
                 style: const TextStyle(fontWeight: FontWeight.w700)),

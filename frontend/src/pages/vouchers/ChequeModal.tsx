@@ -124,6 +124,10 @@ export default function ChequeModal({
               </Form.Item>
             </Col>
           </Row>
+          {/* البيان — كلام الورقة («شيك عن فاتورة ٤٥١»). بيظهر في سجل الشيكات وبيتدوّر فيه. */}
+          <Form.Item name="statement1" label="البيان">
+            <Input placeholder="اختياري" maxLength={200} />
+          </Form.Item>
         </Form>
       </TabModal>
   );

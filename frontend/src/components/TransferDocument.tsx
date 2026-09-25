@@ -28,7 +28,16 @@ export interface TransferDoc {
   dest: string;
   date?: string | null;
   approvedBy?: string | null;
+  /** البيان — بيتطبع في الترويسة لو مكتوب. */
+  statement1?: string | null;
   lines: TransferPrintLine[];
+}
+
+/** البيان كلام حر بيكتبه المستخدم — والترويسة بتتبني HTML، فلازم يتهرّب قبل ما يتحط فيها. */
+function esc(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 const STATUS: Record<string, string> = {
@@ -73,6 +82,7 @@ export function printTransfer(d: TransferDoc): void {
     ['الحالة', STATUS[d.status] || d.status],
   ];
   if (d.approvedBy) meta.push(['اعتمده', d.approvedBy]);
+  if (d.statement1) meta.push(['البيان', esc(d.statement1)]);
 
   printDocument(
     {

@@ -30,6 +30,12 @@ export interface VoucherDoc {
   reference?: string | null;
   description?: string | null;
   /**
+   * «بيان السند» (`statement1`) — كلام الورقة اللي بيتمضي عليها، غير «البيان» اللي فوق
+   * (`description`، وصف الحركة في القيد). كان بيتعرض تحت صورة السند على الشاشة بس ومابيتطبعش،
+   * والورقة هي المكان اللي اتكتب عشانه أصلاً.
+   */
+  statement?: string | null;
+  /**
    * (031) أنهي مديونية السند ده سدّدها — «أبيض» / «بولي» / فاضية = على الإجمالي.
    *
    * On the printed sheet because the customer signs it: a receipt that does not say which debt it
@@ -79,6 +85,7 @@ function rows(d: VoucherDoc): [string, string][] {
   if (d.paymentMethod) out.push(['طريقة الدفع', d.paymentMethod]);
   if (d.reference) out.push(['المرجع', d.reference]);
   if (d.description) out.push(['البيان', d.description]);
+  if (d.statement) out.push(['بيان السند', d.statement]);
   if (d.entryId) out.push(['رقم القيد', String(d.entryId)]);
   if (d.isReversal) out.push(['ملاحظة', 'سند عكسي (إلغاء)']);
   return out;

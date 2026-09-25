@@ -20,6 +20,7 @@ import DocumentItemLines, { hasItemLines } from '../components/DocumentItemLines
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
+import StatementFilter, { statementMatches } from '../components/StatementFilter';
 import { normalizeAr } from '../components/ListToolbar';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
@@ -36,6 +37,8 @@ interface StatementLine {
   entry_date: string;
   entry_type: string;
   description: string;
+  /** «البيان» المكتوب على المستند اللي رحّل السطر — غير وصف القيد (`description`). */
+  doc_statement?: string | null;
   debit: string;
   credit: string;
   balance_before: string;
@@ -103,6 +106,7 @@ export default function AccountStatement() {
     q: search.get('q') || '',
     cc: (search.get('cc') || '').split(',').filter(Boolean),
     doc: search.get('doc') || '',
+    st: search.get('st') || '',
     x: search.get('x') === '1',
     z: search.get('z') === '1',
   };
@@ -291,6 +295,10 @@ export default function AccountStatement() {
   const [typeFilter, setTypeFilter] = useState<string[]>(u0.types);
   const [ccFilter, setCcFilter] = useState<string[]>(u0.cc);
   const [docNo, setDocNo] = useState(u0.doc);
+  // «البيان» — بيدوّر في بيان القيد وفي البيان المكتوب على المستند نفسه. فلتر في الشاشة
+  // زي باقي فلاتر الكشف: أول وآخر المدة بيفضلوا للحساب كله، و«تراكمي المعروض» بيمشي مع
+  // السطور المطابقة — فلترة في السيرفر كانت هتخلّي الرصيد الجاري رقم مالوش معنى.
+  const [stmtQ, setStmtQ] = useState(u0.st);
   const [exactMatch, setExactMatch] = useState(u0.x);
   const [hideZero, setHideZero] = useState(u0.z);
 
@@ -340,11 +348,12 @@ export default function AccountStatement() {
     if (ccFilter.length) p.set('cc', ccFilter.join(','));
     if (query.trim()) p.set('q', query.trim());
     if (docNo.trim()) p.set('doc', docNo.trim());
+    if (stmtQ.trim()) p.set('st', stmtQ.trim());
     if (exactMatch) p.set('x', '1');
     if (hideZero) p.set('z', '1');
     setSearch(p, { replace: true });
   }, [subject, accountId, mainKey, itemId, warehouseId, range, repFilter, typeFilter,
-    ccFilter, query, docNo, exactMatch, hideZero, setSearch]);
+    ccFilter, query, docNo, stmtQ, exactMatch, hideZero, setSearch]);
 
   const copyLink = async () => {
     try {
@@ -365,12 +374,13 @@ export default function AccountStatement() {
       if (typeFilter.length && !typeFilter.includes(l.entry_type)) return false;
       if (ccFilter.length && !ccFilter.includes(l.cost_center_name ?? '')) return false;
       if (hideZero && !Number(l.debit || 0) && !Number(l.credit || 0)) return false;
+      if (stmtQ.trim() && !statementMatches(stmtQ, l.description, l.doc_statement)) return false;
       if (dRaw) {
         const dn = normalizeAr(l.doc_number ?? '');
         if (exactMatch ? dn !== d : !dn.includes(d)) return false;
       }
       if (!q) return true;
-      const haystacks = [l.description, l.doc_number, l.rep_name, l.cost_center_name,
+      const haystacks = [l.description, l.doc_statement, l.doc_number, l.rep_name, l.cost_center_name,
         l.account_name, entryTypeLabel(l.entry_type)];
       return haystacks.some((v) => {
         const n = normalizeAr(v);
@@ -378,10 +388,10 @@ export default function AccountStatement() {
       });
     })
       .map((l, i) => ({ ...l, _serial: i + 1 }));
-  }, [lines, repFilter, typeFilter, ccFilter, hideZero, docNo, query, exactMatch]);
+  }, [lines, repFilter, typeFilter, ccFilter, hideZero, docNo, stmtQ, query, exactMatch]);
 
   const filtering = !!(repFilter || ccFilter.length || typeFilter.length
-    || query.trim() || docNo.trim() || hideZero);
+    || query.trim() || docNo.trim() || stmtQ.trim() || hideZero);
   // حساب ذمم؟ أعمدة المطابقة لا معنى لها على حساب إيراد أو خزينة، وعرضها فارغة
   // يجعل الشاشة تبدو ناقصة بدل أن تبدو غير منطبقة.
   const reconcilable = !!statement?.reconcilable;
@@ -424,8 +434,10 @@ export default function AccountStatement() {
     if (showStock) setExpandedKeys(shownLines.map(rowKeyOf));
   }, [showStock, shownLines]);
 
+  // الكيبورد بيمشي على المعروض — كان بيمشي على كل السطور، فالسهم بينزل على سطر مخفي
+  // بالفلتر والمؤشر بيختفي من الجدول.
   const kb = useTableKeyboard<StatementLine>({
-    rows: lines,
+    rows: shownLines,
     rowKey: rowKeyOf,
     onOpen: toggleRow,
   });
@@ -457,7 +469,15 @@ export default function AccountStatement() {
       ) : (v ?? '-')),
     }] : []),
     { title: 'البيان', dataIndex: 'description',
-      ...textColumn(lines, (l: StatementLine) => l.description) },
+      ...textColumn(lines, (l: StatementLine) => l.description),
+      // بيان المستند تحت وصف القيد — القيد بيقول «فاتورة بيع …» واللي كتبه المستخدم على
+      // الفاتورة («توريد مشروع كذا») كان مابيبانش في الكشف خالص.
+      render: (v: string, l: StatementLine) => (l.doc_statement && l.doc_statement !== v ? (
+        <Space direction="vertical" size={0}>
+          <span>{v}</span>
+          <span style={{ color: '#8c8c8c', fontSize: 12 }}>{l.doc_statement}</span>
+        </Space>
+      ) : v) },
     { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
       ...textColumn(lines, (l: StatementLine) => l.rep_name),
       render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
@@ -539,7 +559,12 @@ export default function AccountStatement() {
       case 'entry_date': return { title: 'التاريخ', value: (l) => String(l.entry_date || '').slice(0, 10) };
       case 'entry_type': return { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) };
       case 'account_name': return { title: 'الحساب الفرعي', value: (l) => l.account_name ?? '' };
-      case 'description': return { title: 'البيان', value: 'description' };
+      case 'description':
+        return {
+          title: 'البيان',
+          value: (l) => (l.doc_statement && l.doc_statement !== l.description
+            ? `${l.description} — ${l.doc_statement}` : l.description),
+        };
       case 'rep_name': return { title: 'مندوب', value: (l) => l.rep_name ?? '' };
       case 'cost_center_name': return { title: 'مركز التكلفة', value: (l) => l.cost_center_name ?? '' };
       case 'balance_before': return { title: LABELS.before, value: 'balance_before', numeric: true };
@@ -607,6 +632,7 @@ export default function AccountStatement() {
           ...(typeFilter.length
             ? [['نوع الحركة', typeFilter.map(entryTypeLabel).join('، ')] as [string, string]] : []),
           ...(docNo.trim() ? [['رقم المستند', docNo.trim()] as [string, string]] : []),
+          ...(stmtQ.trim() ? [['البيان', stmtQ.trim()] as [string, string]] : []),
           ...(query.trim()
             ? [[exactMatch ? 'بحث (تطابق تام)' : 'بحث', query.trim()] as [string, string]] : []),
           ...(hideZero ? [['عرض', 'بدون الحركات الصفرية'] as [string, string]] : []),
@@ -922,18 +948,21 @@ export default function AccountStatement() {
       </Row>
 
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={6}>
+        <Col xs={24} md={5}>
           <Select
             mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
             allowClear maxTagCount="responsive"
             placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
             options={ccOptions} disabled={!ccOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
-        <Col xs={24} md={5}>
+        <Col xs={24} md={4}>
           <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"
             value={docNo} onChange={(e) => setDocNo(e.target.value)} />
         </Col>
-        <Col xs={24} md={13}>
+        <Col xs={24} md={4}>
+          <StatementFilter value={stmtQ} onChange={setStmtQ} />
+        </Col>
+        <Col xs={24} md={11}>
           <Space wrap size={[4, 8]}>
             {PRESETS.map((p) => (
               <Button key={p.label} size="small"
@@ -967,16 +996,18 @@ export default function AccountStatement() {
             </Col>
             <Col xs={12} md={6}>
               <Card size="small">
-                <Statistic title={repFilter ? `${LABELS.debit} — ${repFilter}` : `إجمالي ${LABELS.debit}`}
-                  value={num(repFilter
+                {/* أي فلتر مش المندوب بس — بفلتر نوع أو بيان كان الكارت بيقول إجمالي
+                    الحساب كله والجدول تحته بيعرض جزء منه، والرقمين مابيتقابلوش. */}
+                <Statistic title={filtering ? `${LABELS.debit} (المعروض)` : `إجمالي ${LABELS.debit}`}
+                  value={num(filtering
                     ? shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)
                     : statement.total_debit)} />
               </Card>
             </Col>
             <Col xs={12} md={6}>
               <Card size="small">
-                <Statistic title={repFilter ? `${LABELS.credit} — ${repFilter}` : `إجمالي ${LABELS.credit}`}
-                  value={num(repFilter
+                <Statistic title={filtering ? `${LABELS.credit} (المعروض)` : `إجمالي ${LABELS.credit}`}
+                  value={num(filtering
                     ? shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)
                     : statement.total_credit)} />
               </Card>
@@ -1054,6 +1085,7 @@ export default function AccountStatement() {
                 ccFilter.length && `مركز تكلفة «${ccFilter.join('، ')}»`,
                 typeFilter.length && `نوع «${typeFilter.map(entryTypeLabel).join('، ')}»`,
                 docNo.trim() && `مستند «${docNo.trim()}»`,
+                stmtQ.trim() && `بيان «${stmtQ.trim()}»`,
                 query.trim() && `بحث «${query.trim()}»${exactMatch ? ' (تطابق تام)' : ''}`,
                 hideZero && 'بدون الحركات الصفرية',
               ].filter(Boolean).join(' · ')}

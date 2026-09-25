@@ -86,6 +86,9 @@ class ManufacturingOrder(Base):
     # table we own would reject the very references it exists to record.
     work_order_ref: Mapped[str | None] = mapped_column(String(60), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # البيان — نفس الخانة اللي على أمر التشغيل (`ProductionOrder.statement1`) وعلى باقي المستندات.
+    # غير `notes`: الملاحظة داخلية، والبيان هو الكلام اللي بيتعرض ويتدوّر بيه.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 

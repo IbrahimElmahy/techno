@@ -1,21 +1,23 @@
 from __future__ import annotations
 
 import io
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import Date, cast, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
-from src.core import clock
 from src.core.db import get_db
-from src.lib import health, reporting, stocktake, trade_reports
+from src.lib import health, report_statement, reporting, stocktake, trade_reports
+from src.models.customer import Customer
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
 from src.models.sales import SalesInvoice
+from src.models.supplier import Supplier
 from src.services import ledger_service
 from src.auth import branch_scope
 
@@ -26,12 +28,13 @@ router = APIRouter(tags=["reports"], prefix="/reports")
 def production_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     period: str = Query("month"), product_id: int | None = Query(None),
+    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
     return reporting.production_consumption(
         db, date_from=date_from, date_to=date_to, period=period, product_id=product_id,
-        branch_id=branch_scope.visible_branch_id(current))
+        statement=statement, branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/inventory")
@@ -49,11 +52,12 @@ def inventory_report(
 def wastage_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     item_id: int | None = Query(None), warehouse_id: int | None = Query(None),
+    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
     return reporting.wastage(db, date_from=date_from, date_to=date_to, item_id=item_id,
-                             warehouse_id=warehouse_id,
+                             warehouse_id=warehouse_id, statement=statement,
                              branch_id=branch_scope.visible_branch_id(current))
 
 
@@ -79,6 +83,7 @@ def trade_report(
     party_id: int | None = Query(None),
     item_id: int | None = Query(None),
     warehouse_id: int | None = Query(None),
+    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
@@ -91,7 +96,7 @@ def trade_report(
         return trade_reports.trade(
             db, doc_type=doc_type, level=level, group_by=group_by,
             date_from=date_from, date_to=date_to, party_id=party_id,
-            item_id=item_id, warehouse_id=warehouse_id,
+            item_id=item_id, warehouse_id=warehouse_id, statement=statement,
             # مستندات الفرع بس — المستندات نفسها مفلترة من زمان في سجلاتها،
             # والتقرير كان لسه بيجمّع عليها كلها.
             branch_id=branch_scope.visible_branch_id(current),
@@ -135,11 +140,12 @@ def reorder_report(
 def sales_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     period: str = Query("month"),
+    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
     return reporting.sales(db, date_from=date_from, date_to=date_to, period=period,
-                           branch_id=branch_scope.visible_branch_id(current))
+                           statement=statement, branch_id=branch_scope.visible_branch_id(current))
 
 
 @router.get("/summary")
@@ -155,18 +161,26 @@ def get_summary(
     بيفتح الرئيسية فيلاقي إيراد الشركة كلها قدامه — رقم مش بتاعه، وبيخلّي أي مقارنة
     يعملها بفرعه غلط كمان.
     """
-    def _apply_dates(stmt, col):
-        if date_from:
-            stmt = stmt.where(col >= clock.day_start_utc(date_from))
-        if date_to:
-            stmt = stmt.where(col < clock.day_end_utc(date_to))
+    # **بتاريخ المستند، مش بوقت كتابته.** `created_at` في الفواتير المنقولة من a5 هو يومين
+    # النقل نفسهم، فأرقام «الشهر ده» في الرئيسية كانت بتلمّ شغل سنة كاملة أو ترجع صفر —
+    # نفس الغلط اللي اتصلّح في تقارير المبيعات (`trade_reports`) من زمان. الفاتورة من غير
+    # تاريخ بترجع لتاريخ كتابتها بدل ما تقع من الرقم.
+    d_from = date.fromisoformat(str(date_from)[:10]) if date_from else None
+    d_to = date.fromisoformat(str(date_to)[:10]) if date_to else None
+
+    def _apply_dates(stmt, doc_date, created):
+        when = func.coalesce(doc_date, cast(created, Date))
+        if d_from:
+            stmt = stmt.where(when >= d_from)
+        if d_to:
+            stmt = stmt.where(when <= d_to)
         return stmt
 
     # Calculate total sales (optionally within the requested date range).
     sales_stmt = _apply_dates(branch_scope.scope(select(
         func.sum(SalesInvoice.gross).label("gross"),
         func.sum(SalesInvoice.net).label("net")
-    ), SalesInvoice, current), SalesInvoice.created_at)
+    ), SalesInvoice, current), SalesInvoice.invoice_date, SalesInvoice.created_at)
     sales_res = db.execute(sales_stmt).first()
     sales_gross = sales_res.gross or Decimal("0")
     sales_net = sales_res.net or Decimal("0")
@@ -174,7 +188,7 @@ def get_summary(
     # Calculate total purchases
     purchases_stmt = _apply_dates(branch_scope.scope(select(
         func.sum(PurchaseInvoice.cash_amount + PurchaseInvoice.credit_amount).label("total")
-    ), PurchaseInvoice, current), PurchaseInvoice.created_at)
+    ), PurchaseInvoice, current), PurchaseInvoice.purchase_date, PurchaseInvoice.created_at)
     purchases_res = db.execute(purchases_stmt).first()
     purchases_total = purchases_res.total or Decimal("0")
 
@@ -199,31 +213,75 @@ def get_summary(
 @router.get("/export")
 def export_report(
     report_type: str = Query(..., description="Type of report: sales, purchases, treasury"),
+    date_from: date | None = Query(None, description="تاريخ المستند من"),
+    date_to: date | None = Query(None, description="تاريخ المستند إلى"),
+    statement: str | None = Query(None, description="البيان — جزء من الكلام"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
+    """تصدير CSV سريع من «التقارير الشاملة».
+
+    **بالأسماء مش بالأرقام الداخلية.** الملف كان بيطلّع «كود العميل» = رقم الصف في قاعدتنا
+    و«نوع الحساب» = اسم الـenum بالإنجليزي — أرقام مالهاش معنى عند اللي بيفتح الإكسل.
+    **وبالفترة المختارة فوق:** كان بيصدّر كل فواتير الشركة من أول يوم مهما كانت الفترة.
+    """
     output = io.StringIO()
-    
+    wanted = report_statement.needle(statement)
+
+    def _csv(*values) -> str:
+        # الفاصلة جوّه اسم عميل أو بيان كانت بتكسر العمود — كل قيمة بين علامتين.
+        return ",".join('"' + str("" if v is None else v).replace('"', '""') + '"'
+                        for v in values) + "\n"
+
+    def _window(stmt, doc_date):
+        if date_from:
+            stmt = stmt.where(doc_date >= date_from)
+        if date_to:
+            stmt = stmt.where(doc_date <= date_to)
+        return stmt
+
     if report_type == "sales":
-        output.write("رقم الفاتورة,كود العميل,الإجمالي قبل الخصم,الصافي بعد الخصم,المدفوع نقداً,المدفوع آجل\n")
-        invoices = db.scalars(
-            branch_scope.scope(select(SalesInvoice), SalesInvoice, current)).all()
+        names = dict(db.execute(select(Customer.id, Customer.name)).all())
+        output.write(_csv("رقم الفاتورة", "التاريخ", "العميل", "البيان", "الإجمالي قبل الخصم",
+                          "الصافي بعد الخصم", "المدفوع نقداً", "المدفوع آجل"))
+        doc_date = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
+        invoices = db.scalars(_window(
+            branch_scope.scope(select(SalesInvoice), SalesInvoice, current), doc_date)
+            .order_by(doc_date, SalesInvoice.id)).all()
         for inv in invoices:
-            output.write(f"{inv.document_number},{inv.customer_id},{inv.gross},{inv.net},{inv.cash_amount},{inv.credit_amount}\n")
-            
+            if not report_statement.matches_obj(inv, wanted):
+                continue
+            output.write(_csv(inv.document_number, inv.invoice_date or inv.created_at.date(),
+                              names.get(inv.customer_id, ""), report_statement.text_of(inv),
+                              inv.gross, inv.net, inv.cash_amount, inv.credit_amount))
+
     elif report_type == "purchases":
-        output.write("رقم الفاتورة,كود المورد,المدفوع نقداً,المدفوع آجل\n")
-        invoices = db.scalars(
-            branch_scope.scope(select(PurchaseInvoice), PurchaseInvoice, current)).all()
+        names = dict(db.execute(select(Supplier.id, Supplier.name)).all())
+        output.write(_csv("رقم الفاتورة", "التاريخ", "المورد", "البيان",
+                          "المدفوع نقداً", "المدفوع آجل"))
+        doc_date = func.coalesce(PurchaseInvoice.purchase_date,
+                                 cast(PurchaseInvoice.created_at, Date))
+        invoices = db.scalars(_window(
+            branch_scope.scope(select(PurchaseInvoice), PurchaseInvoice, current), doc_date)
+            .order_by(doc_date, PurchaseInvoice.id)).all()
         for inv in invoices:
-            output.write(f"{inv.document_number},{inv.supplier_id},{inv.cash_amount},{inv.credit_amount}\n")
-            
+            if not report_statement.matches_obj(inv, wanted):
+                continue
+            output.write(_csv(inv.document_number, inv.purchase_date or inv.created_at.date(),
+                              names.get(inv.supplier_id, ""), report_statement.text_of(inv),
+                              inv.cash_amount, inv.credit_amount))
+
     else: # treasury balance report
-        output.write("كود الحساب,نوع الحساب,الرصيد المتاح\n")
-        accounts = db.scalars(select(Account)).all()
+        from src.services import chart_service
+
+        output.write(_csv("رقم الحساب", "اسم الحساب", "المجموعة", "الرصيد المتاح"))
+        # حسابات فرع اللي بيصدّر بس — زي الرئيسية بالظبط.
+        accounts = db.scalars(branch_scope.scope(select(Account), Account, current)).all()
+        owners = chart_service.bulk_owner_names(db, list(accounts))
         for acc in accounts:
             bal = ledger_service.balance_of(db, acc.id)
-            output.write(f"{acc.id},{acc.account_type.value},{bal}\n")
+            output.write(_csv(acc.code or "", acc.name or owners.get(acc.id) or "",
+                              chart_service.owner_group_label(acc.account_type) or "", bal))
 
     # Encode in UTF-8 with BOM for proper Arabic Excel compatibility
     csv_bytes = output.getvalue().encode('utf-8-sig')

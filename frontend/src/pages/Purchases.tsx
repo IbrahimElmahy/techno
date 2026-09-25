@@ -32,6 +32,7 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement, statementMeta, statementText } from '../utils/statements';
 import { useDraft } from '../components/useDraft';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
@@ -132,6 +133,10 @@ interface PurchaseRecord {
   tax_amount: string | null;
   tax_pct: string | null;
   net: string | null;
+  /** البيان — تلات خانات زي a5، والبحث والفلتر بيدوّروا فيهم التلاتة. */
+  statement1?: string | null;
+  statement2?: string | null;
+  statement3?: string | null;
 }
 
 interface PurchaseDetailLine {
@@ -354,7 +359,8 @@ export default function Purchases() {
   }, []);
 
   const purchasesFilter = useListFilter(purchases, {
-    search: (p) => [p.document_number, p.supplier_name, p.external_document_number, p.notes],
+    search: (p) => [p.document_number, p.supplier_name, p.external_document_number, p.notes,
+      p.statement1, p.statement2, p.statement3],
     filters: {
       kind: (p, v) => p.kind === v,
       supplier_id: (p, v) => p.supplier_id === v,
@@ -363,6 +369,8 @@ export default function Purchases() {
       external_document_number: (p, v) => (p.external_document_number || '')
         .toLowerCase().includes(String(v).toLowerCase()),
       notes: (p, v) => (p.notes || '').toLowerCase().includes(String(v).toLowerCase()),
+      // البيان — أي خانة من التلاتة، وبنفس توحيد الهمزات اللي في البحث.
+      statement: (p, v) => matchesStatement(p, v),
     },
     dateOf: (p) => p.purchase_date || p.created_at,
   });
@@ -418,6 +426,9 @@ export default function Purchases() {
         expense_account_name: null,
         parent_id: r.purchase_invoice_id,
         parent_document_number: r.purchase_document_number ?? null,
+        statement1: r.statement1 ?? null,
+        statement2: r.statement2 ?? null,
+        statement3: r.statement3 ?? null,
       }));
       setPurchases([...invoices, ...returns]);
     } catch (err: any) {
@@ -520,6 +531,9 @@ export default function Purchases() {
         notes: (det as any).notes || '',
         cost_center_id: (det as any).cost_center_id ?? null,
         cost_center_distribution: (det as any).cost_center_distribution ?? null,
+        statement1: det.statement1 || '',
+        statement2: det.statement2 || '',
+        statement3: det.statement3 || '',
       });
       setPurchaseDate((det as any).purchase_date
         ? dayjs((det as any).purchase_date)
@@ -556,6 +570,9 @@ export default function Purchases() {
           notes: (det as any).notes || '',
           cost_center_id: (det as any).cost_center_id ?? null,
           cost_center_distribution: (det as any).cost_center_distribution ?? null,
+          statement1: det.statement1 || '',
+          statement2: det.statement2 || '',
+          statement3: det.statement3 || '',
         },
       }));
       setCreateVisible(true);
@@ -598,7 +615,9 @@ export default function Purchases() {
         line_total: l.line_total,
       })),
       extraMeta: [['موقع الاستلام',
-        `${p.location_kind === 'warehouse' ? 'مستودع' : p.location_kind} #${p.location_id}`]],
+        `${p.location_kind === 'warehouse' ? 'مستودع' : p.location_kind} #${p.location_id}`],
+        // البيان بيتطبع على الورقة — `extraMeta` هو المدخل اللي الورقة المشتركة بتسيبه لكل مستند.
+        ...statementMeta(p)],
     };
   };
 
@@ -987,6 +1006,9 @@ export default function Purchases() {
     form.setFieldsValue({
       supplier_id: det.supplier_id,
       warehouse_id: det.location_id ?? undefined,
+      statement1: det.statement1 || '',
+      statement2: det.statement2 || '',
+      statement3: det.statement3 || '',
     });
     setPurchaseDate((det as any).purchase_date
       ? dayjs((det as any).purchase_date) : dayjs());
@@ -1020,6 +1042,9 @@ export default function Purchases() {
       form: {
         supplier_id: det.supplier_id,
         warehouse_id: det.location_id ?? undefined,
+        statement1: det.statement1 || '',
+        statement2: det.statement2 || '',
+        statement3: det.statement3 || '',
       },
     }));
     setCreateVisible(true);
@@ -1272,6 +1297,10 @@ export default function Purchases() {
       notes: v.form?.notes,
       cost_center_id: v.form?.cost_center_id,
       cost_center_distribution: v.form?.cost_center_distribution,
+      // البيان جزء من المستند — تعديله لوحده لازم يخلّي الشاشة تسأل قبل ما تقفل.
+      statement1: v.form?.statement1 || '',
+      statement2: v.form?.statement2 || '',
+      statement3: v.form?.statement3 || '',
     },
   });
 
@@ -1906,6 +1935,9 @@ export default function Purchases() {
     { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', width: 170, ellipsis: true,
       ...textColumn(purchases, (r: PurchaseRecord) => r.notes),
       render: (v: string | null) => v || '-' },
+    { title: 'البيان', dataIndex: 'statement1', key: 'statement1', width: 180, ellipsis: true,
+      ...textColumn(purchases, (r: PurchaseRecord) => statementText(r)),
+      render: (_: any, r: PurchaseRecord) => statementText(r) || '-' },
     {
       title: 'الإجراءات',
       key: 'actions',
@@ -1984,7 +2016,8 @@ export default function Purchases() {
    *  المخفي هنا نسب ومشتقات (الخصم % والضريبة % والإجمالي قبل الخصم) — بتتحسب من
    *  أعمدة معروضة أصلاً، فاللي محتاجها بيفتحها واللي مش محتاجها بيقرا جدول مقروء. */
   const listCols = useTableColumns('purchase-list', listColumns, {
-    defaultHidden: ['gross', 'combined_pct', 'tax_pct', 'expense_account_name', 'notes'],
+    defaultHidden: ['gross', 'combined_pct', 'tax_pct', 'expense_account_name', 'notes',
+      'statement1'],
     export: { name: 'المشتريات', rows: purchasesFilter.filtered },
   });
 
@@ -2075,7 +2108,7 @@ export default function Purchases() {
       <ListToolbar
         searchRef={listSearchRef}
         searchSpan={5}
-        searchPlaceholder="بحث برقم المستند أو المورد أو رقم فاتورته أو الملاحظات"
+        searchPlaceholder="بحث برقم المستند أو المورد أو رقم فاتورته أو الملاحظات أو البيان"
         query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}
         values={purchasesFilter.values} onValueChange={purchasesFilter.setValue}
         showDateRange range={purchasesFilter.range} onRangeChange={purchasesFilter.setRange}
@@ -2097,6 +2130,7 @@ export default function Purchases() {
           { key: 'external_document_number', placeholder: 'الفاتورة رقم', kind: 'text',
             advanced: true, span: 5 },
           { key: 'notes', placeholder: 'ملاحظات', kind: 'text', advanced: true, span: 6 },
+          { key: 'statement', placeholder: 'البيان', kind: 'text', advanced: true, span: 6 },
         ]}
       />
       {/*

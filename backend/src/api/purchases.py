@@ -133,6 +133,11 @@ class PurchaseListOut(BaseModel):
     #  قيمة الخصم بالجنيه — النسبة لوحدها مابتقولش كام اتخصم.
     discount_amount: Decimal = Decimal("0")
     tax_pct: Decimal = Decimal("0")
+    # البيان — كان بيتكتب ويتحفظ ومابيرجعش، ففتح الفاتورة للتعديل كان بيلاقيه فاضي والحفظ
+    # بعدها بيمسحه. نفس التلات خانات اللي على المردود.
+    statement1: str | None = None
+    statement2: str | None = None
+    statement3: str | None = None
 
 
 class PurchaseLineOut(BaseModel):
@@ -265,6 +270,7 @@ def list_purchases(
             discount_amount=to_money(gross - net),
             # الضريبة كنسبة من الصافي — الصافي صفر يعني مفيش نسبة، مش قسمة على صفر.
             tax_pct=(to_money(to_money(p.tax_amount or 0) / net * 100) if net else Decimal("0")),
+            statement1=p.statement1, statement2=p.statement2, statement3=p.statement3,
         ))
 
     response.headers["X-Total-Count"] = str(total)
@@ -432,6 +438,7 @@ def get_purchase(
         cost_center_distribution=analytic_read.distribution_of_entry(
             db, p.ledger_entry_id),
         location_kind=p.location_kind.value, location_id=p.location_id,
+        statement1=p.statement1, statement2=p.statement2, statement3=p.statement3,
         lines=[PurchaseLineOut(item_id=ln.item_id, quantity=ln.quantity, unit_price=ln.unit_price,
                                discount_pct=ln.discount_pct,
                                line_total=ln.line_total, unit=ln.unit) for ln in p.lines],

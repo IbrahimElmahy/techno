@@ -5,13 +5,14 @@
  * كل فتحة للصفحة زي التقارير اللي قبله. عشان كده هو مكوّن مستقل بحالته، والأب
  * بيديله الفترة وبس.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../../utils/pagination';
 import { Alert, Button, Card, Col, Row, Select, Space, Statistic, Table, Tag } from 'antd';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useQueryTab } from '../../components/useQueryTab';
+import StatementFilter, { statementMatches } from '../../components/StatementFilter';
 import { money, PartnerLedgerRow, PartnerLedgerLine } from './types';
 
 export default function PartnerLedgerTab({ params }: { params: () => Record<string, string> }) {
@@ -21,6 +22,7 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
     unknown as [string, (v: string) => void];
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [partnerLoading, setPartnerLoading] = useState(false);
+  const [stmtQ, setStmtQ] = useState('');
 
   const loadPartner = useCallback(async () => {
     setPartnerLoading(true);
@@ -36,6 +38,28 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
   }, [params, partnerKind, onlyOpen]);
 
   useEffect(() => { loadPartner(); }, [loadPartner]);
+
+  /**
+   * فلتر «البيان» — على سطور كل طرف، في الشاشة.
+   *
+   * الطرف اللي مالوش ولا سطر مطابق بيختفي، والمدين والدائن بيتحسبوا من السطور المطابقة
+   * بس عشان يقابلوا اللي في الجدول المفتوح تحته. أول وآخر المدة بيفضلوا للطرف كله —
+   * دول رصيده، مش مجموع كلام مكتوب.
+   */
+  const shownRows = useMemo(() => {
+    if (!stmtQ) return partnerRows;
+    return partnerRows
+      .map((r) => {
+        const lines = r.lines.filter((l) => statementMatches(stmtQ, l.statement, l.description));
+        return {
+          ...r,
+          lines,
+          debit: String(lines.reduce((t, l) => t + Number(l.debit || 0), 0)),
+          credit: String(lines.reduce((t, l) => t + Number(l.credit || 0), 0)),
+        };
+      })
+      .filter((r) => r.lines.length);
+  }, [partnerRows, stmtQ]);
 
   return (
     <Card
@@ -61,16 +85,24 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
               { value: 'open', label: 'اللي عليه مفتوح بس' },
             ]}
           />
+          <StatementFilter value={stmtQ} onChange={setStmtQ} style={{ width: 200 }} />
           <Button icon={<ReloadOutlined />} onClick={loadPartner}
                   loading={partnerLoading}>تحديث</Button>
         </Space>
       }
     >
+      {!!stmtQ && (
+        <Alert
+          type="info" showIcon style={{ marginBottom: 12 }}
+          message={`بيان «${stmtQ}» — ${shownRows.length} طرف من ${partnerRows.length}`}
+          description="المدين والدائن للسطور المطابقة للبيان فقط؛ أول وآخر المدة رصيد الطرف كله."
+        />
+      )}
       <Table<PartnerLedgerRow>
         rowKey={(r) => `${r.partner_kind}:${r.partner_id}`}
         size="small"
         loading={partnerLoading}
-        dataSource={partnerRows}
+        dataSource={shownRows}
         pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
         expandable={{
           expandedRowRender: (row) => (
@@ -132,11 +164,13 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
             render: (v: string) => money(v),
           },
           {
-            title: 'مدين', dataIndex: 'debit', width: 130, align: 'left' as const,
+            title: stmtQ ? 'مدين (المطابق)' : 'مدين', dataIndex: 'debit', width: 130,
+            align: 'left' as const,
             render: (v: string) => money(v),
           },
           {
-            title: 'دائن', dataIndex: 'credit', width: 130, align: 'left' as const,
+            title: stmtQ ? 'دائن (المطابق)' : 'دائن', dataIndex: 'credit', width: 130,
+            align: 'left' as const,
             render: (v: string) => money(v),
           },
           {

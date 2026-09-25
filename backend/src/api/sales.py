@@ -305,6 +305,8 @@ class SalesInvoiceOut(BaseModel):
     is_bonus: bool = False
     bonus_for_invoice_id: int | None = None
     bonus_for_number: str | None = None
+    # البيان في الكشف — عشان يبان ويتدوّر بيه من غير ما الفاتورة تتفتح.
+    statement1: str | None = None
 
 
 class InvoiceLineOut(BaseModel):
@@ -757,6 +759,46 @@ def rep_bundle(
     }
 
 
+# الحروف اللي بتتكتب بشكلين: «تجربة/تجربه»، «على/علي»، «أحمد/احمد». البحث بيوحّدهم في
+# الطرفين عشان اللي بيدوّر مايحتاجش يفتكر كتبها إزاي.
+_AR_FOLD = (("ة", "ه"), ("ى", "ي"), ("أ", "ا"), ("إ", "ا"), ("آ", "ا"))
+
+
+def _fold_sql(col):
+    expr = func.lower(func.coalesce(col, ""))
+    for a, b in _AR_FOLD:
+        expr = func.replace(expr, a, b)
+    return expr
+
+
+def _statement_like(model, text: str | None):
+    """فلتر «البيان» — جزء من الكلام في أي سطر من التلاتة، بتوحيد الهمزات والتاء المربوطة."""
+    if not text or not text.strip():
+        return None
+    needle = " ".join(text.split()).lower()
+    for a, b in _AR_FOLD:
+        needle = needle.replace(a, b)
+    pat = f"%{needle}%"
+    return or_(_fold_sql(model.statement1).like(pat), _fold_sql(model.statement2).like(pat),
+               _fold_sql(model.statement3).like(pat))
+
+
+def _is_full_discount(body: "SaleCreate") -> bool:
+    """الفاتورة كلها ببلاش؟ — خصم مستند ١٠٠٪، أو كل سطر خصمه ١٠٠٪."""
+    if Decimal(body.variable_discount_pct or 0) >= Decimal("100"):
+        return True
+    if not body.lines:
+        return False
+
+    def full(ln) -> bool:
+        if ln.fixed_discount_pct is not None or ln.variable_discount_pct is not None:
+            f = Decimal(ln.fixed_discount_pct or 0)
+            v = Decimal(ln.variable_discount_pct or 0)
+            return f >= 100 or v >= 100 or (1 - f / 100) * (1 - v / 100) <= 0
+        return Decimal(ln.discount_pct or 0) >= Decimal("100")
+    return all(full(ln) for ln in body.lines)
+
+
 def _build_sale(
     db: Session, body: "SaleCreate", current: CurrentUser, *,
     replace_invoice_id: int | None = None,
@@ -772,6 +814,12 @@ def _build_sale(
     _line_locations_check(db, current, body)
     _reject_non_trader(db, body.customer_id)
     bonus_for = body.bonus_for_invoice_id
+    # **خصم ١٠٠٪ = فاتورة بونص** (قرار العميل ٢٠٢٦-٠٩-٢٦). اللي بيكتب مش لازم يعرف إن فيه
+    # نوع اسمه بونص: خصم الفاتورة ١٠٠٪، أو كل السطور خصمها ١٠٠٪، معناه إن البضاعة هدية —
+    # والسيرفر بيسجّلها بونص بقواعده (مربوطة بفاتورة بيع، ومن غير فلوس). الخصم العادي لسه
+    # لازم يبقى أقل من ١٠٠٪.
+    if not body.is_bonus and _is_full_discount(body):
+        body.is_bonus = True
     if body.is_bonus:
         if not role_has_capability(current.role, CAP_SALE_BONUS):
             raise HTTPException(403, {"code": "forbidden",
@@ -1108,6 +1156,7 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         cost_center_id=getattr(inv, "cost_center_id", None),
         revenue_account_id=inv.revenue_account_id,
         is_bonus=bool(getattr(inv, "is_bonus", None)),
+        statement1=inv.statement1,
         bonus_for_invoice_id=getattr(inv, "bonus_for_invoice_id", None),
         bonus_for_number=(db.scalar(select(SalesInvoice.document_number).where(
             SalesInvoice.id == inv.bonus_for_invoice_id))
@@ -1133,6 +1182,8 @@ def list_sales(
     ids: str | None = None,
     # «bonus» = فواتير البونص بس، «sale» = من غيرها. فاضي = الكل.
     kind: str | None = None,
+    # جزء من «البيان» — الشرح عند `_statement_like`.
+    statement: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
@@ -1146,6 +1197,8 @@ def list_sales(
     ماتخليش الأرقام تكدب.
     """
     stmt = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
+    if (cond := _statement_like(SalesInvoice, statement)) is not None:
+        stmt = stmt.where(cond)
     if kind == "bonus":
         stmt = stmt.where(SalesInvoice.is_bonus.is_(True))
     elif kind == "sale":
@@ -1276,6 +1329,7 @@ def sales_summary(
     rep_id: int | None = None,
     family: str | None = None,
     external_document_number: str | None = None,
+    statement: str | None = None,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1291,6 +1345,9 @@ def sales_summary(
     ret = branch_scope.scope(select(SalesReturn), SalesReturn, current).where(
         SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
 
+    if (c1 := _statement_like(SalesInvoice, statement)) is not None:
+        inv = inv.where(c1)
+        ret = ret.where(_statement_like(SalesReturn, statement))
     if rep_id is not None:
         inv = inv.where(SalesInvoice.rep_id == rep_id)
         ret = ret.where(SalesReturn.rep_id == rep_id)
@@ -1432,6 +1489,7 @@ def list_standalone_returns(
     date_to: date | None = None,
     rep_id: int | None = None,
     family: str | None = None,
+    statement: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
@@ -1440,6 +1498,8 @@ def list_standalone_returns(
     """List standalone sales returns (customer-based), newest first."""
     stmt = branch_scope.scope(select(SalesReturn), SalesReturn, current).where(
         SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
+    if (cond := _statement_like(SalesReturn, statement)) is not None:
+        stmt = stmt.where(cond)
     if rep_id is not None:
         stmt = stmt.where(SalesReturn.rep_id == rep_id)
     if family:

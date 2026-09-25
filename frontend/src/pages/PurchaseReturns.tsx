@@ -24,6 +24,7 @@ import ExportExcelButton from '../components/ExportExcelButton';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement, statementMeta, statementText } from '../utils/statements';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
@@ -74,6 +75,10 @@ interface ReturnRow {
   supplier_name: string | null;
   value: string;
   created_at: string;
+  /** البيان — السيرفر بيرجّعه في السجل، فالبحث والفلتر بيدوّروا فيه من غير فتح المردود. */
+  statement1?: string | null;
+  statement2?: string | null;
+  statement3?: string | null;
 }
 
 interface PurchaseLine {
@@ -859,6 +864,11 @@ export default function PurchaseReturns() {
       render: (v: string | null) => v || '-',
     },
     {
+      title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
+      ...textColumn(rows, (r: ReturnRow) => statementText(r)),
+      render: (_: any, r: ReturnRow) => statementText(r) || '-',
+    },
+    {
       title: 'الإجراءات', key: 'actions', width: 140,
       render: (_: any, record: ReturnRow) => ((record as any).__isDraft ? (
         // **سطر المسودّة مالوش أزرار مستند.** الكشف فيه نوعين سطور، والمسودّة مالهاش
@@ -952,6 +962,8 @@ export default function PurchaseReturns() {
       extraMeta: [
         ['فاتورة الشراء', r.purchase_document_number || '-'],
         ...(r.notes ? ([['ملاحظات', r.notes]] as [string, string][]) : []),
+        // البيان بيتطبع على الورقة زي فاتورة الشرا بالظبط.
+        ...statementMeta(r),
       ],
     };
   };
@@ -961,13 +973,14 @@ export default function PurchaseReturns() {
 
   const filter = useListFilter<ReturnRow>(rows, {
     search: (r) => [r.document_number, r.purchase_document_number, r.supplier_name,
-      r.value, r.notes],
+      r.value, r.notes, r.statement1, r.statement2, r.statement3],
     filters: {
       supplier_id: (r, v) => r.supplier_id === v,
       document_number: (r, v) => (r.document_number || '').includes(String(v)),
       purchase_document_number: (r, v) => (r.purchase_document_number || '')
         .toLowerCase().includes(String(v).toLowerCase()),
       notes: (r, v) => (r.notes || '').toLowerCase().includes(String(v).toLowerCase()),
+      statement: (r, v) => matchesStatement(r, v),
     },
     // يوم ما البضاعة رجعت، مش يوم ما الصف اتكتب — مردود أول الشهر اتسجّل آخره كان بيقع برّه
     // المدى واللي بيدوّر عليه بيفتكره مش موجود.
@@ -1022,7 +1035,7 @@ export default function PurchaseReturns() {
         }
       >
         <ListToolbar
-          searchPlaceholder="بحث برقم السند أو الفاتورة أو المورد"
+          searchPlaceholder="بحث برقم السند أو الفاتورة أو المورد أو البيان"
           query={filter.query} onQueryChange={filter.setQuery}
           values={filter.values} onValueChange={filter.setValue}
           showDateRange range={filter.range} onRangeChange={filter.setRange}
@@ -1035,6 +1048,7 @@ export default function PurchaseReturns() {
             { key: 'purchase_document_number', placeholder: 'الفاتورة رقم', kind: 'text',
               advanced: true, span: 5 },
             { key: 'notes', placeholder: 'ملاحظات', kind: 'text', advanced: true, span: 6 },
+            { key: 'statement', placeholder: 'البيان', kind: 'text', advanced: true, span: 6 },
           ]}
         />
 

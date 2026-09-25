@@ -18,6 +18,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
 import DocumentLink from '../components/DocumentLink';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import type { ColumnsType } from 'antd/es/table';
@@ -55,6 +56,7 @@ interface Order {
   customer_id: number | null; supplier_id: number | null;
   order_date: string | null; due_date: string | null; warehouse_id: number | null;
   gross: string; variable_discount_pct: string; total: string; notes: string | null;
+  statement1?: string | null;
   converted_invoice_id: number | null; converted_at: string | null;
   created_at: string | null; lines: OrderLine[];
 }
@@ -97,6 +99,7 @@ export default function Orders() {
   const [unitsCache, setUnitsCache] = useState<Record<number,
     { name: string; factor: number; is_base: boolean }[]>>({});
   const [notes, setNotes] = useState('');
+  const [statement1, setStatement1] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
   // The doors, in the order the paper form asks: which kind of order, then who, then what.
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -176,8 +179,9 @@ export default function Orders() {
     // «طلب بيع» and «طلب شراء» are two screens in their menu. The kind belongs on the list, not
     // only inside the create dialog — an entry that shows both kinds is not the screen it names.
     initialValues: { kind },
-    search: (o) => [o.document_number, o.notes],
+    search: (o) => [o.document_number, o.notes, o.statement1],
     filters: {
+      statement: (o, v) => matchesStatement(o, v),
       kind: (o, v) => o.kind === v,
       status: (o, v) => o.status === v,
     },
@@ -342,7 +346,7 @@ export default function Orders() {
   const sheetToolbar = (): ToolbarAction[] => {
     const typed = lines.filter((l) => l.item_id).length;
     const clear = () => {
-      setLines([]); setNotes(''); setDueDate(null);
+      setLines([]); setNotes(''); setStatement1(''); setDueDate(null);
       setSheetDate(dayjs()); setDiscountPct(0);
     };
     const stepList = (step: number) => {
@@ -400,6 +404,7 @@ export default function Orders() {
           ...(o.due_date
             ? [['ساري لحد', String(o.due_date).slice(0, 10)]] as [string, string][]
             : []),
+          ...(o.statement1 ? [['البيان', o.statement1]] as [string, string][] : []),
           ...(o.notes ? [['ملاحظات', o.notes]] as [string, string][] : []),
         ],
         note: 'ورقة تسعير — لا تحرّك مخزوناً ولا خزينة.',
@@ -440,6 +445,7 @@ export default function Orders() {
     variable_discount_pct: String(discountPct || 0),
     total: String(draftTotal),
     notes: notes || null,
+    statement1: statement1 || null,
     converted_invoice_id: null,
     converted_at: null,
     created_at: null,
@@ -515,11 +521,11 @@ export default function Orders() {
         order_date: sheetDate.format('YYYY-MM-DD'),
         due_date: dueDate ? dueDate.format('YYYY-MM-DD') : null,
         variable_discount_pct: String(discountPct || 0),
-        notes: notes || null, lines: payload,
+        notes: notes || null, statement1: statement1 || null, lines: payload,
       });
       message.success('تم تسجيل الطلب');
       setCreating(false);
-      setLines([]); setNotes(''); setDueDate(null); setDiscountPct(0);
+      setLines([]); setNotes(''); setStatement1(''); setDueDate(null); setDiscountPct(0);
       load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الطلب');
@@ -568,6 +574,8 @@ export default function Orders() {
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'عدد الأصناف', dataIndex: 'lines',
       render: (l: OrderLine[]) => l.length },
+    { title: 'البيان', dataIndex: 'statement1', ellipsis: true,
+      render: (v: string | null) => v || '-' },
     { title: 'الإجمالي', dataIndex: 'total', align: 'left',
       render: (v: string) => <b>{money(v)}</b> },
     { title: 'الحالة', dataIndex: 'status',
@@ -611,7 +619,7 @@ export default function Orders() {
       />
 
       <ListToolbar
-        searchPlaceholder="بحث برقم الطلب أو الملاحظات"
+        searchPlaceholder="بحث برقم الطلب أو الملاحظات أو البيان"
         query={filter.query} onQueryChange={filter.setQuery}
         values={filter.values} onValueChange={filter.setValue}
         showDateRange range={filter.range} onRangeChange={filter.setRange}
@@ -623,6 +631,7 @@ export default function Orders() {
             { value: 'open', label: 'مفتوح' },
             { value: 'converted', label: 'تم التحويل' },
             { value: 'cancelled', label: 'ملغي' }] },
+          { key: 'statement', placeholder: 'البيان', kind: 'text' },
         ]}
       />
 
@@ -693,6 +702,12 @@ export default function Orders() {
               <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" value={notes}
                   onChange={(e) => setNotes(e.target.value)} />
+              </Form.Item>
+            </Col>
+            <Col xs={24}>
+              <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري — بيتطبع على الورقة" value={statement1}
+                  maxLength={200} onChange={(e) => setStatement1(e.target.value)} />
               </Form.Item>
             </Col>
           </Row>
@@ -804,6 +819,7 @@ export default function Orders() {
                   {STATUS_LABELS[detail.status]?.text}
                 </Tag>
               </Descriptions.Item>
+              <Descriptions.Item label="البيان">{detail.statement1 || '-'}</Descriptions.Item>
               <Descriptions.Item label="ملاحظات">{detail.notes || '-'}</Descriptions.Item>
             </Descriptions>
 

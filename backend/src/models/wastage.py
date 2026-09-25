@@ -26,6 +26,9 @@ class WastageDocument(Base):
     unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False)   # purchase_price snapshot
     total_cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # quantity × unit_cost
     reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    # البيان — نفس الخانة اللي على باقي المستندات. غير `reason`: السبب «ليه اتهلك»، والبيان
+    # كلام المستند اللي بيتعرض ويتدوّر بيه في السجل.
+    statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Nullable so the doc can be inserted before its movement exists (Postgres FK enforcement).
     stock_movement_id: Mapped[int | None] = mapped_column(ForeignKey("stock_movement.id"), nullable=True)
     reverses_id: Mapped[int | None] = mapped_column(

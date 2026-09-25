@@ -28,6 +28,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, RoleName
 from src.core.db import get_db
 from src.core.money import to_money
+from src.lib import report_statement
 from src.models.catalog import Item
 from src.models.customer import Customer
 from src.models.sales import SalesInvoice
@@ -86,10 +87,20 @@ def _scope(current: CurrentUser, rep_id: int | None) -> int | None:
     return current.id if current.role == RoleName.sales_rep else rep_id
 
 
-def _receipts(db: Session, date_from, date_to, rep_id: int | None) -> list[Voucher]:
-    rows = db.scalars(select(Voucher).where(Voucher.kind == VoucherKind.receipt)).all()
+def _receipts(db: Session, current: CurrentUser, date_from, date_to, rep_id: int | None,
+              statement: str | None = None) -> list[Voucher]:
+    # **سندات فرع اللي بيقرا بس.** «مبيعات اصناف مندوبين» جنبها متفلترة بالفرع من الأول،
+    # والتحصيلات كانت بتجمّع سندات الشركة كلها — فمدير الفرع بيشوف تحصيل مناديب فروع تانية.
+    stmt = branch_scope.scope(
+        select(Voucher).where(Voucher.kind == VoucherKind.receipt), Voucher, current)
+    wanted = report_statement.needle(statement)
+    rows = db.scalars(stmt).all()
     out = []
     for v in rows:
+        # السند عليه بيانين: «البيان» (`description`) و«بيان السند» (`statement1`) —
+        # الشاشة بتسمّي الاتنين بيان، فالفلتر بيدوّر في الاتنين.
+        if not report_statement.matches_obj(v, wanted, ("description",)):
+            continue
         if rep_id is not None and v.actor_user_id != rep_id:
             continue
         if not _in_window(v.voucher_date, date_from, date_to):
@@ -109,6 +120,7 @@ def collections(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     rep_id: int | None = Query(default=None),
+    statement: str | None = Query(default=None, description="البيان — جزء من الكلام"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CollectionRow]:
@@ -117,7 +129,7 @@ def collections(
     scope = _scope(current, rep_id)
 
     totals: dict[int, tuple[int, Decimal]] = {}
-    for v in _receipts(db, date_from, date_to, scope):
+    for v in _receipts(db, current, date_from, date_to, scope, statement):
         if v.actor_user_id not in reps:
             continue
         count, amount = totals.get(v.actor_user_id, (0, ZERO))
@@ -136,6 +148,7 @@ def collections_by_customer(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     rep_id: int | None = Query(default=None),
+    statement: str | None = Query(default=None, description="البيان — جزء من الكلام"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CollectionByCustomerRow]:
@@ -150,7 +163,7 @@ def collections_by_customer(
     names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
 
     totals: dict[tuple[int, int | None], tuple[int, Decimal]] = {}
-    for v in _receipts(db, date_from, date_to, scope):
+    for v in _receipts(db, current, date_from, date_to, scope, statement):
         if v.actor_user_id not in reps:
             continue
         key = (v.actor_user_id, v.customer_id)
@@ -174,6 +187,7 @@ def rep_items(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     rep_id: int | None = Query(default=None),
+    statement: str | None = Query(default=None, description="البيان — جزء من الكلام"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[RepItemRow]:
@@ -188,10 +202,9 @@ def rep_items(
     items = {i.id: i.name for i in db.scalars(select(Item)).all()}
     customer_rep = {c.id: c.rep_id for c in db.scalars(select(Customer)).all()}
 
-    invoices = db.scalars(
-        branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
-        .options(selectinload(SalesInvoice.lines))
-    ).all()
+    stmt = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
+    wanted = report_statement.needle(statement)
+    invoices = db.scalars(stmt.options(selectinload(SalesInvoice.lines))).all()
 
     totals: dict[tuple[int, int], tuple[Decimal, Decimal]] = {}
     for inv in invoices:
@@ -201,7 +214,12 @@ def rep_items(
             continue
         if scope is not None and rid != scope:
             continue
-        when = inv.created_at.date() if inv.created_at else None
+        if not report_statement.matches_obj(inv, wanted):
+            continue
+        # **تاريخ الفاتورة، مش وقت كتابتها.** الفواتير المنقولة من a5 `created_at` بتاعها
+        # يومين النقل، فمبيعات أي شهر حقيقي كانت بتطلع صفر، وشهر النقل بيلمّ سنة كاملة.
+        # والتحصيلات جنبها ماشية بتاريخ السند من الأول — فالتابين كانوا بيتكلموا عن فترتين.
+        when = inv.invoice_date or (inv.created_at.date() if inv.created_at else None)
         if not _in_window(when, date_from, date_to):
             continue
 

@@ -133,6 +133,8 @@ export interface InvoiceFilters {
   payment?: string;   // cash | credit | partial
   rep_id?: number;
   family?: string;
+  /** جزء من «البيان». */
+  statement?: string;
 }
 
 /**

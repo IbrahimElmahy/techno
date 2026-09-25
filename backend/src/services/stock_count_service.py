@@ -50,6 +50,7 @@ def open_sheet(
     db: Session, *, warehouse_id: int | None, count_date: date | None,
     actor_user_id: int, item_ids: list[int] | None = None, notes: str | None = None,
     kind: StockCountKind = StockCountKind.full, batch_size: int | None = None,
+    statement1: str | None = None,
 ) -> StockCount:
     """Open a sheet with a line per item to be counted.
 
@@ -94,6 +95,7 @@ def open_sheet(
         document_number=_doc_number(db), warehouse_id=warehouse_id,
         count_date=count_date or date.today(), status=StockCountStatus.draft,
         notes=(notes or None), actor_user_id=actor_user_id, kind=kind,
+        statement1=((statement1 or "").strip() or None),
     )
     db.add(sheet)
     db.flush()
@@ -133,15 +135,25 @@ def open_sheet(
     return sheet
 
 
+_UNSET = object()
+
+
 def enter_counts(
     db: Session, *, count_id: int, counts: dict[int, Decimal | None], actor_user_id: int,
+    statement1=_UNSET,
 ) -> StockCount:
-    """Write what was found, keyed by LINE id. Only a draft sheet accepts numbers."""
+    """Write what was found, keyed by LINE id. Only a draft sheet accepts numbers.
+
+    البيان بيتحفظ مع العدّ في نفس الضغطة («حفظ العدّ») وبنفس الشرط: الكشف لسه مفتوح. `_UNSET`
+    معناه «مااتبعتش» — غير `None` اللي معناه «امسحه».
+    """
     sheet = db.get(StockCount, count_id)
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
     if sheet.status != StockCountStatus.draft:
         raise StockCountError("الجرد ده مش مفتوح — القيم مابتتغيّرش بعد الترحيل.")
+    if statement1 is not _UNSET:
+        sheet.statement1 = (statement1 or "").strip() or None
 
     by_id = {ln.id: ln for ln in sheet.lines}
     for line_id, value in counts.items():

@@ -470,7 +470,17 @@ class ApiClient {
   ///
   /// `false` في المزامنة الشاملة بس، لأنها بتسحب الحزمة بنفسها بعد الرفع على طول.
   Future<int> pushSaleInvoices({bool refreshStock = true}) async {
-    final pending = await LocalDb.instance.saleInvoices(synced: false);
+    // **البونص بيترفع بعد فواتير البيع.**
+    //
+    // القايمة جاية من الأحدث للأقدم، والبونص بيتكتب بعد الفاتورة اللي هو عليها — فكان
+    // هيطلع الأول، والسيرفر يدوّر على فاتورته بالـ`client_uuid` مايلاقيهاش لأنها لسه
+    // على الجهاز، ويرفضه. والرفض بيوقّف الطابور كله، فالفاتورة الأصلية نفسها ماكانتش
+    // هتترفع. ترتيب البيع جوّه نفسه زي ما هو بالظبط.
+    final all = await LocalDb.instance.saleInvoices(synced: false);
+    final pending = [
+      for (final r in all) if ((r['is_bonus'] as int? ?? 0) != 1) r,
+      for (final r in all.reversed) if ((r['is_bonus'] as int? ?? 0) == 1) r,
+    ];
     var sent = 0;
     final storeId = int.tryParse(await LocalDb.instance.getKv('store_id') ?? '');
     final storeKind = await LocalDb.instance.getKv('store_kind') ?? 'custody';
@@ -480,6 +490,7 @@ class ApiClient {
     for (final inv in pending) {
       final lines = await LocalDb.instance
           .saleInvoiceLines(inv['local_id'] as int);
+      final isBonus = (inv['is_bonus'] as int? ?? 0) == 1;
       final r = await http
           .post(await _uri('/sales'),
               headers: await _headers(),
@@ -512,6 +523,16 @@ class ApiClient {
                     ? const []
                     : jsonDecode(inv['coupons'] as String),
                 'client_uuid': inv['client_uuid'],
+                // **فاتورة بونص** — هدية على فاتورة بيع لنفس العميل. الربط برقم السيرفر
+                // لو معروف، وإلا بـ`client_uuid` بتاع الفاتورة اللي اتكتبت على الجهاز:
+                // السيرفر بيحلّه، وهي بتترفع قبل البونص (الترتيب فوق).
+                //
+                // المفاتيح دي مابتتبعتش مع البيع العادي خالص — جسمه زي ما كان بالحرف.
+                if (isBonus) ...{
+                  'is_bonus': true,
+                  'bonus_for_invoice_id': inv['bonus_for_invoice_id'],
+                  'bonus_for_client_uuid': inv['bonus_for_client_uuid'],
+                },
                 'lines': [
                   for (final l in lines)
                     {
@@ -533,7 +554,8 @@ class ApiClient {
       if (r.statusCode == 200 || r.statusCode == 201) {
         final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
         await LocalDb.instance.markSaleSynced(
-            inv['client_uuid'] as String, body['document_number'] as String);
+            inv['client_uuid'] as String, body['document_number'] as String,
+            bonusForNumber: body['bonus_for_number'] as String?);
         sent++;
         continue;
       }
@@ -681,6 +703,30 @@ class ApiClient {
     if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// فواتير البيع بتاعة العميل على السيرفر — اللي البونص ممكن يتربط بيها.
+  ///
+  /// `kind=sale` بيشيل البونص نفسه (بونص على بونص مالوش معنى)، والسيرفر بيقصرها على
+  /// عملاء المندوب. **السقف قصير عن قصد**: المندوب واقف عند العميل، والقايمة دي إضافة
+  /// على اللي على الجهاز — الشبكة الوحشة ترجّع اللي على الجهاز بس، مش توقّفه.
+  Future<List<Map<String, dynamic>>> customerSaleInvoices(int customerId) async {
+    final r = await http
+        .get(
+            await _uri('/sales', {
+              'customer_id': '$customerId',
+              'kind': 'sale',
+              'limit': '100',
+            }),
+            headers: await _headers())
+        .timeout(const Duration(seconds: 12));
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    final rows = jsonDecode(utf8.decode(r.bodyBytes)) as List;
+    return [
+      for (final e in rows)
+        if (e is Map<String, dynamic> && e['is_bonus'] != true) e
+    ];
   }
 
   /// حسابات العميل بالخط — «أبيض» و«بولي» كل واحد برصيده، حي من السيرفر.

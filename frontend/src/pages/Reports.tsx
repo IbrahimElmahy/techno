@@ -17,6 +17,7 @@ import type { Dayjs } from 'dayjs';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
+import StatementFilter, { statementColumn } from '../components/StatementFilter';
 
 import StatsRow from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
@@ -42,10 +43,12 @@ const dateParams = (range: Range): Record<string, string> => {
 };
 
 // --- CSV export (preserved feature) -------------------------------------------------------
-const handleExport = async (reportType: string) => {
+// الفترة (والبيان) اللي على الشاشة بتتبعت مع التصدير — كان بيصدّر كل فواتير الشركة من
+// أول يوم مهما كانت الفترة المختارة فوق الزرار.
+const handleExport = async (reportType: string, extra: Record<string, string> = {}) => {
   try {
     const res = await api.get('/api/v1/reports/export', {
-      params: { report_type: reportType },
+      params: { report_type: reportType, ...extra },
       responseType: 'blob',
     });
     const url = URL.createObjectURL(res.data as Blob);
@@ -61,11 +64,13 @@ const handleExport = async (reportType: string) => {
   }
 };
 
-function ExportButton({ type, label }: { type: string; label: string }) {
+function ExportButton({ type, label, params }: {
+  type: string; label: string; params?: Record<string, string>;
+}) {
   return (
     <Button
       icon={<FileExcelOutlined />}
-      onClick={() => handleExport(type)}
+      onClick={() => handleExport(type, params)}
       style={{ backgroundColor: '#107c41', borderColor: '#107c41', color: '#fff' }}
     >
       {label}
@@ -107,8 +112,8 @@ export default function Reports() {
         </div>
         <Divider type="vertical" />
         <span>تصدير:</span>
-        <ExportButton type="sales" label="المبيعات CSV" />
-        <ExportButton type="purchases" label="المشتريات CSV" />
+        <ExportButton type="sales" label="المبيعات CSV" params={dateParams(range)} />
+        <ExportButton type="purchases" label="المشتريات CSV" params={dateParams(range)} />
         <ExportButton type="treasury" label="الأرصدة CSV" />
       </Space>
 
@@ -135,7 +140,9 @@ interface TabProps {
 
 // --- 1) Production & consumption ----------------------------------------------------------
 interface ProdRow {
+  _key?: string;
   document_number: string;
+  statement?: string | null;
   product_name: string;
   produced_quantity: string;
   consumed_quantity: string;
@@ -153,6 +160,9 @@ interface ProdPeriodRow {
 
 function ProductionTab({ period, range, items }: TabProps) {
   const [productId, setProductId] = useState<number | undefined>();
+  const [statement, setStatement] = useState('');
+  // السيرفر بيقول لو المستند ده عليه «بيان» أصلاً — الخانة بتظهر بس لما يكون فيه.
+  const [statementOn, setStatementOn] = useState(false);
   const [rows, setRows] = useState<ProdRow[]>([]);
   const [byPeriod, setByPeriod] = useState<ProdPeriodRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -162,14 +172,16 @@ function ProductionTab({ period, range, items }: TabProps) {
     try {
       const params: Record<string, any> = { period, ...dateParams(range) };
       if (productId) params.product_id = productId;
+      if (statement) params.statement = statement;
       const res = await api.get('/api/v1/reports/production', { params });
+      setStatementOn(!!res.data.statement_supported);
       // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setByPeriod(res.data.by_period || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
   // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
-  useEffect(() => { load(); }, [period, range, productId]);
+  useEffect(() => { load(); }, [period, range, productId, statement]);
 
   const periodCols = [
     { title: 'الفترة', dataIndex: 'period', key: 'period', ...textColumn(byPeriod, (r: any) => r.period) },
@@ -181,6 +193,7 @@ function ProductionTab({ period, range, items }: TabProps) {
   const detailCols = [
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', ...textColumn(rows, (r: any) => r.document_number), render: (c: string) => <Tag color="blue">{c}</Tag> },
     { title: 'المنتج', dataIndex: 'product_name', key: 'product_name', ...textColumn(rows, (r: any) => r.product_name) },
+    ...(statementOn ? [statementColumn(rows)] : []),
     { title: 'المنتَج', dataIndex: 'produced_quantity', key: 'produced_quantity', ...numberColumn<any>((r) => r.produced_quantity), align: 'left' as const, render: qty },
     { title: 'المستهلَك', dataIndex: 'consumed_quantity', key: 'consumed_quantity', ...numberColumn<any>((r) => r.consumed_quantity), align: 'left' as const, render: qty },
     { title: 'تكلفة الخامات', dataIndex: 'material_cost', key: 'material_cost', ...numberColumn<any>((r) => r.material_cost), align: 'left' as const, render: egp },
@@ -196,6 +209,9 @@ function ProductionTab({ period, range, items }: TabProps) {
           allowClear showSearch optionFilterProp="label" placeholder="كل المنتجات"
           style={{ width: 240 }} value={productId} onChange={setProductId}
           options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+        {(statementOn || statement) && (
+          <StatementFilter value={statement} onChange={setStatement} style={{ width: 240 }} />
+        )}
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
       </Space>
 
@@ -205,7 +221,9 @@ function ProductionTab({ period, range, items }: TabProps) {
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
-      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+      {/* `_key` مش رقم المستند: الدفعة المنقولة ممكن رقمها يطابق أمر تصنيع، والمفتاح المكرر
+          بيخلّي الجدول يعيد رسم صف مكان التاني. */}
+      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
@@ -290,6 +308,7 @@ function InventoryTab({ warehouses, items }: TabProps) {
 // --- 3) Wastage ---------------------------------------------------------------------------
 interface WasteRow {
   source: 'manufacturing' | 'document';
+  statement?: string | null;
   document_number: string;
   item_name: string;
   warehouse_id: number;
@@ -301,6 +320,8 @@ interface WasteRow {
 function WastageTab({ range, warehouses, items }: TabProps) {
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
+  const [statement, setStatement] = useState('');
+  const [statementOn, setStatementOn] = useState(false);
   const [rows, setRows] = useState<WasteRow[]>([]);
   const [totalQty, setTotalQty] = useState<string>('0');
   const [totalCost, setTotalCost] = useState<string>('0');
@@ -314,7 +335,9 @@ function WastageTab({ range, warehouses, items }: TabProps) {
       const params: Record<string, any> = { ...dateParams(range) };
       if (itemId) params.item_id = itemId;
       if (warehouseId) params.warehouse_id = warehouseId;
+      if (statement) params.statement = statement;
       const res = await api.get('/api/v1/reports/wastage', { params });
+      setStatementOn(!!res.data.statement_supported);
       // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setTotalQty(res.data.total_quantity ?? '0');
@@ -322,7 +345,7 @@ function WastageTab({ range, warehouses, items }: TabProps) {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
   // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
-  useEffect(() => { load(); }, [range, itemId, warehouseId]);
+  useEffect(() => { load(); }, [range, itemId, warehouseId, statement]);
 
   const columns = [
     { title: 'المصدر', dataIndex: 'source', key: 'source', ...textColumn(rows, (r: any) => r.source), width: 110,
@@ -332,6 +355,7 @@ function WastageTab({ range, warehouses, items }: TabProps) {
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', ...textColumn(rows, (r: any) => r.document_number), render: (c: string) => <Tag color="blue">{c}</Tag> },
     { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
     { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', ...textColumn(rows, (r: any) => whName(r.warehouse_id)), render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
+    ...(statementOn ? [statementColumn(rows)] : []),
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', ...numberColumn<any>((r) => r.quantity), align: 'left' as const, render: qty },
     { title: 'التكلفة', dataIndex: 'cost', key: 'cost', ...numberColumn<any>((r) => r.cost), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
     { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', ...dateColumn<any>((r) => r.created_at), render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
@@ -353,6 +377,9 @@ function WastageTab({ range, warehouses, items }: TabProps) {
           allowClear placeholder="كل المخازن" style={{ width: 200 }} value={warehouseId} onChange={setWarehouseId}
           options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
         />
+        {(statementOn || statement) && (
+          <StatementFilter value={statement} onChange={setStatement} style={{ width: 240 }} />
+        )}
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
       </Space>
 
@@ -463,6 +490,8 @@ function StagnantTab({ warehouses }: TabProps) {
 interface SalesRow {
   document_number: string;
   customer_id: number | null;
+  customer_name?: string | null;
+  statement?: string | null;
   gross: string;
   net: string;
   created_at: string;
@@ -474,6 +503,7 @@ interface SalesPeriodRow {
 }
 
 function SalesTab({ period, range }: TabProps) {
+  const [statement, setStatement] = useState('');
   const [rows, setRows] = useState<SalesRow[]>([]);
   const [byPeriod, setByPeriod] = useState<SalesPeriodRow[]>([]);
   const [grossTotal, setGrossTotal] = useState<string>('0');
@@ -484,6 +514,7 @@ function SalesTab({ period, range }: TabProps) {
     setLoading(true);
     try {
       const params: Record<string, any> = { period, ...dateParams(range) };
+      if (statement) params.statement = statement;
       const res = await api.get('/api/v1/reports/sales', { params });
       // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
@@ -493,7 +524,7 @@ function SalesTab({ period, range }: TabProps) {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
   // أي فلتر يتغيّر بيحمّل على طول.
-  useEffect(() => { load(); }, [period, range]);
+  useEffect(() => { load(); }, [period, range, statement]);
 
   const periodCols = [
     { title: 'الفترة', dataIndex: 'period', key: 'period', ...textColumn(byPeriod, (r: any) => r.period) },
@@ -503,7 +534,9 @@ function SalesTab({ period, range }: TabProps) {
 
   const detailCols = [
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', ...textColumn(rows, (r: any) => r.document_number), render: (c: string) => <Tag color="blue">{c}</Tag> },
-    { title: 'العميل', dataIndex: 'customer_id', key: 'customer_id', ...numberColumn<any>((r) => r.customer_id), render: (id: number | null) => id ? `#${id}` : '-' },
+    // اسم العميل — العمود كان بيعرض «#1234»، رقم الصف في قاعدتنا اللي مالوش معنى عند حد.
+    { title: 'العميل', dataIndex: 'customer_name', key: 'customer_name', ...textColumn(rows, (r: any) => r.customer_name), render: (v: string | null) => v || '-' },
+    statementColumn(rows),
     { title: 'الإجمالي', dataIndex: 'gross', key: 'gross', ...numberColumn<any>((r) => r.gross), align: 'left' as const, render: egp },
     { title: 'الصافي', dataIndex: 'net', key: 'net', ...numberColumn<any>((r) => r.net), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
     { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', ...dateColumn<any>((r) => r.created_at), render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
@@ -512,8 +545,10 @@ function SalesTab({ period, range }: TabProps) {
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
+        <StatementFilter value={statement} onChange={setStatement} style={{ width: 240 }} />
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
-        <ExportButton type="sales" label="تصدير CSV" />
+        <ExportButton type="sales" label="تصدير CSV"
+          params={{ ...dateParams(range), ...(statement ? { statement } : {}) }} />
       </Space>
 
       <StatsRow gutter={16} style={{ marginBottom: 16 }}>

@@ -416,6 +416,39 @@ def set_line_quantity(db, *, line_id: int, quantity,
     return line
 
 
+_TEXT_FIELDS = ("statement1", "external_document_number", "notes")
+
+
+def set_texts(db, *, transfer_id: int, values: dict,
+              actor_user_id: int | None = None) -> StockTransfer:
+    """تعديل سطور الكلام على الإذن — البيان ورقم الورقة والملاحظات — وهو لسه تحت الاعتماد.
+
+    كانت بتتكتب مرة وقت الإنشاء ومالهاش أي طريق تتعدّل بيه، فغلطة في البيان كانت بتفضل على
+    الورقة. الكلام مابيحرّكش بضاعة، بس بيتقفل مع الإذن زي الكميات: الإذن المعتمد اتطبع
+    واتمضى عليه، وتصحيحه بيبقى بإلغاء وطلب جديد (اللي بيشيل الكلام معاه).
+
+    `values` فيها بس الخانات اللي اتبعتت — اللي مااتبعتش بتفضل زي ما هي.
+    """
+    transfer = _pending(db, transfer_id)
+    before, after = {}, {}
+    for field in _TEXT_FIELDS:
+        if field not in values:
+            continue
+        new = (values[field] or "").strip() or None
+        old = getattr(transfer, field, None)
+        if new == old:
+            continue
+        before[field], after[field] = old, new
+        setattr(transfer, field, new)
+    if after:
+        db.flush()
+        audit_service.record(
+            db, action="transfer.texts", actor_user_id=actor_user_id,
+            entity_type="stock_transfer", entity_id=transfer.id,
+            before=before, after=after)
+    return transfer
+
+
 def remove_line(db, *, line_id: int, actor_user_id: int | None = None) -> None:
     """حذف صنف من الإذن — مش حذف الإذن.
 
