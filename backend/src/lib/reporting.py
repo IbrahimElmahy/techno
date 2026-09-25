@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from src.core.money import ZERO, to_money, to_qty
 from src.lib import report_statement
 from src.models.catalog import Item
-from src.models.manufacturing import ManufacturingOrder, ManufacturingOrderConsumption
+from src.models.manufacturing import (
+    ManufacturingOrder, ManufacturingOrderConsumption, ProductionOrder, ProductionState,
+)
 from src.models.sales import SalesInvoice
 from src.models.stock import LocationKind, StockDirection, StockDoc, StockMovement
 from src.models.wastage import WastageDocument
@@ -160,12 +162,65 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         b["consumed"] += consumed
         b["total_cost"] += to_money(o.total_cost)
 
+    # **أوامر التشغيل (`ProductionOrder`)** — الشاشة اللي المصنع شغّال عليها دلوقتي،
+    # والتقرير ماكانش بيقراها خالص: أي أمر اتنفّذ من الشاشة مالوش أثر هنا. المنفّذ
+    # بكميته وتكلفته المجمّدة؛ والشغّال باللي استُلم منه لحد دلوقتي والخامات اللي
+    # اتصرفت فعلاً، عشان التقرير يقول اللي دخل المخزن مش اللي اتخطّط.
+    po_refs: set[str] = set()
+    po = (select(ProductionOrder)
+          .where(ProductionOrder.state.in_([ProductionState.done, ProductionState.in_progress]),
+                 ProductionOrder.reverses_id.is_(None)))
+    if branch_id is not None:
+        po = po.where((ProductionOrder.branch_id == branch_id)
+                      | (ProductionOrder.branch_id.is_(None)))
+    for o in db.scalars(po.order_by(ProductionOrder.id)).all():
+        # الأمر المنقول من a5 هو نفسه دفعة العمليات اللي بنفس الرقم — بيتقرا من هنا
+        # (عليه التكلفة) والدفعة بتتشال تحت، وإلا الإنتاج بيتعدّ مرتين.
+        if o.document_number.startswith("WO-A5-"):
+            po_refs.add(o.document_number[len("WO-A5-"):])
+        if product_id is not None and not any(p.item_id == product_id for p in o.products):
+            continue
+        when = o.production_date or o.created_at
+        if not _in_range(when, date_from, date_to):
+            continue
+        if not report_statement.matches_obj(o, wanted):
+            continue
+        done = o.state == ProductionState.done
+        issued = [m for m in o.materials if m.stock_movement_id is not None]
+        produced = (to_qty(o.product_quantity) if done else
+                    to_qty(sum((to_qty(p.received_quantity) for p in o.products), ZERO)))
+        consumed = (to_qty(o.material_quantity) if done else
+                    to_qty(sum((to_qty(m.quantity) for m in issued), ZERO)))
+        mat_cost = (to_money(o.material_cost) if done else
+                    to_money(sum((to_money(m.line_cost) for m in issued), ZERO)))
+        res_cost = to_money(o.expense_amount) if done else ZERO
+        total = to_money(o.total_cost) if done else to_money(mat_cost + res_cost)
+        first = o.products[0].item_id if o.products else None
+        pname = names.get(first, "") + (f" +{len(o.products) - 1}" if len(o.products) > 1 else "")
+        rows.append({
+            "id": o.id, "document_number": o.document_number,
+            "product_id": first, "product_name": pname,
+            "produced_quantity": str(produced), "consumed_quantity": str(consumed),
+            "material_cost": str(mat_cost), "resource_cost": str(res_cost),
+            "total_cost": str(total),
+            "statement": report_statement.text_of(o),
+            "state": "منفّذ" if done else "شغّال",
+            "created_at": str(when),
+        })
+        b = buckets.setdefault(bucket_key(when, period),
+                               {"produced": ZERO, "consumed": ZERO, "total_cost": ZERO})
+        b["produced"] += produced
+        b["consumed"] += consumed
+        b["total_cost"] += total
+
     # الإنتاج المسجّل عمليات — نفس الصفوف بنفس الشكل، بلا تكلفة لأن العملية
     # مابتحملش تكلفة (الأمر هو اللي بيحسبها).
     # الدفعة المنقولة مالهاش بيان خالص (سطر حركة مش مستند)، فأول ما حد يفلتر ببيان
     # بتقع — مش بتعدّي كأنها مطابقة.
     for batch in ([] if wanted else _op_batches(db, product_id, branch_id)):
         when = batch["when"]
+        if batch["document_number"] in po_refs:
+            continue   # اتعدّت فوق كأمر تشغيل
         if when is None or not _in_range(when, date_from, date_to):
             continue
         rows.append({
@@ -185,7 +240,8 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
     return {
         "rows": rows,
         # الشاشة بتعرض خانة «البيان» بس لما المستند عنده بيان أصلاً.
-        "statement_supported": report_statement.supported(ManufacturingOrder),
+        "statement_supported": (report_statement.supported(ManufacturingOrder)
+                                or report_statement.supported(ProductionOrder)),
         "by_period": [{"period": k, "produced_quantity": str(to_qty(v["produced"])),
                        "consumed_quantity": str(to_qty(v["consumed"])),
                        "total_cost": str(to_money(v["total_cost"]))}
