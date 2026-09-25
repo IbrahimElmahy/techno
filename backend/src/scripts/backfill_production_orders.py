@@ -132,7 +132,9 @@ def run(*, execute: bool) -> None:
                 external_document_number=ref.rsplit("-", 1)[-1][:40],
                 imported_from=SOURCE,
                 state=ProductionState.done,
-                statement1="منقول من a5 — بغير تكلفة",
+                # من غير بيان: «بغير تكلفة» كانت بتفضل بعد ما التكلفة تتملي
+                # (`backfill_a5_production_costs`) — شوف `clear_a5_production_statement`.
+                statement1=None,
                 material_cost=ZERO, expense_amount=ZERO, total_cost=ZERO,
                 product_quantity=to_qty(0), material_quantity=to_qty(0),
                 actor_user_id=actor.id,
