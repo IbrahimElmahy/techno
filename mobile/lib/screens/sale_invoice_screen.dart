@@ -390,9 +390,6 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       }
     });
     await _repriceAll();
-    // صفحة البونص: «على أنهي فاتورة؟» بيتسأل أول ما العميل يتحدّد — هو السؤال الوحيد
-    // اللي البونص محتاجه زيادة عن البيع، ومنتقيه محتاج العميل الأول.
-    if (_isBonus && _bonusFor == null && mounted) await _pickBonusTarget();
   }
 
   Future<void> _repriceAll() async {
@@ -748,15 +745,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         }
       }
     }
-    if (_isBonus) {
-      if (_bonusFor == null) {
-        // الحفظ بيقف والمنتقي بيتفتح على طول — السؤال واقف قدامه مش في رسالة وبس.
-        _say('البونص لازم يبقى على فاتورة بيع — اختار الفاتورة');
-        await _pickBonusTarget();
-        if (_bonusFor == null) return;
-        if (!mounted) return;
-      }
-    }
+    // **البونص من غير ربط بفاتورة بيع مسموح** (قرار العميل ٢٠٢٦-٠٩-٢٨): العميل ممكن
+    // يجمّع تلات أربع فواتير وياخد بونص واحد عليهم كلهم. الربط اختياري من الشريط فوق.
     // **فاتورة عليها بونص لسه في الطابور مابتتغيّرش لعميل تاني.**
     //
     // السيرفر بيرفض البونص لو فاتورته مش لنفس العميل (أو مش بيع)، والطابور بيقف عند
@@ -1031,18 +1021,25 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
                     Text(
                         t == null
-                            ? 'اضغط واختار «على فاتورة بيع» — الحفظ مستنيها'
+                            ? 'على فاتورة بيع (اختياري) — اضغط لو عايز تربطه بفاتورة'
                             : 'على فاتورة بيع: ${t.label}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                             fontSize: 12,
-                            fontWeight: t == null ? FontWeight.w700 : FontWeight.w400,
-                            color: t == null ? AppColors.danger : Colors.black87)),
+                            color: t == null ? Colors.black54 : Colors.black87)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_left, color: Colors.black45),
+              // الربط اختياري، فلازم يبقى فيه طريقة تشيله بعد ما اتختار.
+              if (t != null)
+                IconButton(
+                  tooltip: 'من غير ربط',
+                  icon: const Icon(Icons.close, size: 18, color: Colors.black45),
+                  onPressed: () => setState(() => _bonusFor = null),
+                )
+              else
+                const Icon(Icons.chevron_left, color: Colors.black45),
             ],
           ),
         ),
@@ -2132,7 +2129,7 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
                           _loading
                               ? 'بيدوّر…'
                               : 'مافيش فواتير بيع للعميل ده.\n'
-                                  'البونص لازم يبقى على فاتورة بيع — اكتب البيع الأول.',
+                                  'البونص يتحفظ عادي من غير ربط.',
                           textAlign: TextAlign.center),
                     ),
                   )

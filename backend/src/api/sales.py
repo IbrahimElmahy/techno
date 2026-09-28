@@ -803,7 +803,6 @@ def _build_sale(
     db: Session, body: "SaleCreate", current: CurrentUser, *,
     replace_invoice_id: int | None = None,
     keep_costs: dict[int, Decimal] | None = None,
-    allow_unlinked_bonus: bool = False,
 ) -> SalesInvoice:
     """بيبني الفاتورة من الجسم — سواء جديدة أو مكان واحدة موجودة.
 
@@ -866,7 +865,6 @@ def _build_sale(
             client_uuid=body.client_uuid,
             replace_invoice_id=replace_invoice_id,
             keep_costs=keep_costs,
-            allow_unlinked_bonus=allow_unlinked_bonus,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,

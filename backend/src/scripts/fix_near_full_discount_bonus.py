@@ -122,7 +122,7 @@ def main() -> None:
                 body = _body(db, inv, bonus_for)
                 document_edit_service.purge_sale(db, inv)
                 new = _build_sale(db, body, current, replace_invoice_id=inv.id,
-                                  keep_costs=kept, allow_unlinked_bonus=True)
+                                  keep_costs=kept)
                 sp.commit()
             except (DocumentEditError, SalesError, Exception) as exc:  # noqa: BLE001
                 sp.rollback()

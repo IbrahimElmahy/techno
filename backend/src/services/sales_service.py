@@ -212,9 +212,7 @@ def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
 
 def _assert_bonus_target(db: Session, target_id: int | None, customer_id: int,
                          self_id: int | None) -> None:
-    """فاتورة البونص لازم تبقى على فاتورة بيع حقيقية لنفس العميل (قرار العميل)."""
-    if not target_id:
-        raise SalesError("فاتورة البونص لازم تبقى على فاتورة بيع — اختار الفاتورة.")
+    """الفاتورة اللي البونص مربوط بيها (لو اتربط) لازم تبقى فاتورة بيع حقيقية لنفس العميل."""
     if self_id and target_id == self_id:
         raise SalesError("فاتورة البونص ماينفعش تبقى على نفسها.")
     target = db.get(SalesInvoice, target_id)
@@ -282,15 +280,14 @@ def create_sale(
     # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
     # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
     cost_center_distribution: dict | None = None,
-    # فاتورة بونص — الشرح عند `SalesInvoice.is_bonus`. `bonus_for_invoice_id` إجباري معاها.
+    # فاتورة بونص — الشرح عند `SalesInvoice.is_bonus`. `bonus_for_invoice_id` **اختياري**:
+    # العميل ممكن يجمّع تلات أربع فواتير وياخد بونص واحد عليهم كلهم (قرار العميل
+    # ٢٠٢٦-٠٩-٢٨ — كان إجباري، والرسالة كانت بتوقّف المندوب والمكتب). لو اتبعت بيتفحص.
     is_bonus: bool = False,
     bonus_for_invoice_id: int | None = None,
-    # **للسكربتات بس** — تصحيح فواتير قديمة لبونص ومافيش فاتورة بيع واضحة تتربط بيها.
-    # الربط الغلط أسوأ من «مش معروف»؛ الشاشات والتطبيق مابيبعتوهاش أبداً.
-    allow_unlinked_bonus: bool = False,
 ) -> SalesInvoice:
     if is_bonus:
-        if not (allow_unlinked_bonus and bonus_for_invoice_id is None):
+        if bonus_for_invoice_id is not None:
             _assert_bonus_target(db, bonus_for_invoice_id, customer_id, replace_invoice_id)
         # **البونص مالوش فلوس.** الأصناف بسعرها والقيمة صفر، فمافيش نقدي ولا مصروف على
         # العميل ولا خصم مستند — أي رقم فيهم معناه إن ده مش بونص، ده بيع.

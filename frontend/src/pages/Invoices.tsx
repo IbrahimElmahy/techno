@@ -1397,12 +1397,8 @@ export default function Invoices() {
       message.error('يرجى إضافة منتج أو تسجيل كوبونات لحفظ الفاتورة!');
       return;
     }
-    if (isBonus && !bonusForId) {
-      message.error(bonusTargets.length
-        ? 'فاتورة البونص لازم تبقى على فاتورة بيع — اختارها من «البونص على فاتورة بيع» جنب الخصم.'
-        : 'العميل ده مالوش فواتير بيع — البونص لازم يبقى على فاتورة بيع للعميل نفسه.');
-      return;
-    }
+    // **الربط بفاتورة بيع اختياري** (قرار العميل ٢٠٢٦-٠٩-٢٨): العميل ممكن يجمّع تلات أربع
+    // فواتير وياخد بونص واحد عليهم كلهم — فمافيش فاتورة واحدة يتربط بيها.
     // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has
     // to be caught here rather than posted as a zero-quantity line nobody meant to write.
     const noQty = validLines.find((l) => !Number(l.quantity));
@@ -2030,12 +2026,6 @@ function couponsTotal(inv: any): number {
           opts.push({ id: linked.id, document_number: linked.number, invoice_date: null, net: '0' });
         }
         setBonusTargets(opts);
-        // **آخر فاتورة بيع للعميل بتتختار لوحدها.** خانة «على فاتورة بيع» فوق في رأس
-        // الفاتورة، واللي بيكتب ١٠٠٪ تحت في الإجماليات مابيشوفهاش — فكان بيدوس حفظ
-        // ويطلعله «لازم تبقى على فاتورة بيع» ويفتكر إن البونص بايظ. الاختيار بيتغيّر عادي.
-        if (opts.length && !editingInvoice?.id) {
-          setBonusForId((cur) => cur ?? opts[0].id);
-        }
       })
       .catch(() => { if (alive) setBonusTargets([]); });
     return () => { alive = false; };
@@ -2490,10 +2480,10 @@ function couponsTotal(inv: any): number {
             </Col>
             {isBonus && (
               <Col xs={24} md={8}>
-                <Form.Item label="على فاتورة بيع" required style={{ marginBottom: 8 }}
+                <Form.Item label="على فاتورة بيع (اختياري)" style={{ marginBottom: 8 }}
                   help={!selectedCustomerId ? 'اختار العميل الأول' : undefined}>
                   <Select showSearch allowClear disabled={viewOnly || !selectedCustomerId}
-                    placeholder="اختار الفاتورة اللي البونص عليها"
+                    placeholder="من غير ربط — على أكتر من فاتورة"
                     value={bonusForId ?? undefined}
                     onChange={(v) => setBonusForId(v ?? null)}
                     optionFilterProp="label"
@@ -2855,30 +2845,13 @@ function couponsTotal(inv: any): number {
                           if (v >= 100 && !isBonus) {
                             if (!canBonus) { message.error('مالكش صلاحية «إصدار فاتورة بونص».'); return; }
                             setIsBonus(true); setBonusForId(null); setCashAmount(0);
-                            message.info('خصم ١٠٠٪ = فاتورة بونص — اختار فاتورة البيع اللي البونص عليها.');
+                            message.info('خصم ١٠٠٪ = فاتورة بونص');
                             return;
                           }
                           if (v < 100 && isBonus) { setIsBonus(false); setBonusForId(null); }
                           setDiscountPct(v >= 100 ? 0 : v);
                         }} />
                     </Form.Item>
-                    {/* نفس خانة الرأس، هنا جنب الـ١٠٠٪ — اللي حوّل الفاتورة بونص من هنا يشوف
-                        هي على أنهي فاتورة من غير ما يطلع لفوق. */}
-                    {isBonus && (
-                      <Form.Item label="البونص على فاتورة بيع" required style={{ marginBottom: 12 }}
-                        help={selectedCustomerId && !bonusTargets.length
-                          ? 'العميل ده مالوش فواتير بيع — البونص لازم يبقى على فاتورة' : undefined}>
-                        <Select showSearch disabled={viewOnly || !selectedCustomerId}
-                          placeholder="اختار الفاتورة اللي البونص عليها"
-                          value={bonusForId ?? undefined}
-                          onChange={(v) => setBonusForId(v ?? null)}
-                          optionFilterProp="label"
-                          options={bonusTargets.map((t) => ({
-                            value: t.id,
-                            label: `${t.document_number} — ${t.invoice_date ?? ''} — ${money(t.net)} ج.م`,
-                          }))} />
-                      </Form.Item>
-                    )}
                     <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
                       help={hasParty ? 'ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة' : undefined}>
                       <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
