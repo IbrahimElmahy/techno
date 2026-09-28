@@ -130,6 +130,11 @@ def rep_name(db: Session, rep_user_id: int | None) -> str:
     return _rep_names(db, [rep_user_id]).get(rep_user_id, f"مندوب #{rep_user_id}")
 
 
+def _as_rep(name: str) -> str:
+    """«المندوب أحمد» — بس اللي اسمه أصلاً «مندوب السياره (أ)» مايبقاش «المندوب مندوب…»."""
+    return name if name.strip().startswith("مندوب") else f"المندوب {name}"
+
+
 def parse_range(serial_from, serial_to) -> tuple[int, int]:
     """النطاق كأرقام، أو رفض برسالة. رقم واحد (من غير «إلى») = ورقة واحدة."""
     raw_from = ascii_digits(serial_from)
@@ -620,7 +625,7 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
                 held_by.setdefault(r.rep_user_id, []).append(n)
 
         if not_held:
-            problems.append(f"{_label(not_held, kind)} مش في عهدة المندوب {rep_label}")
+            problems.append(f"{_label(not_held, kind)} مش في عهدة {_as_rep(rep_label)}")
         if given_by:
             invoice_ids = [i for i in given_by if i]
             docs = dict(db.execute(
@@ -634,9 +639,9 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
         for rid, ns in held_by.items():
             who = names.get(rid, f"مندوب #{rid}")
             if locked:
-                problems.append(f"{_label(ns, kind)} في عهدة {who} مش المندوب {rep_label}")
+                problems.append(f"{_label(ns, kind)} في عهدة {who} مش {_as_rep(rep_label)}")
             else:
-                problems.append(f"{_label(ns, kind)} في عهدة المندوب {who} — "
+                problems.append(f"{_label(ns, kind)} في عهدة {_as_rep(who)} — "
                                 "ماتتصرفش إلا على فاتورة باسمه")
 
     if problems:
