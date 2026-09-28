@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 import '../models/arabic_sort.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../models/coupon_custody.dart';
 import '../models/models.dart';
 
 /// Offline store: inspections recorded in the field live here first (synced=0),
@@ -912,6 +915,41 @@ class LocalDb {
           ));
     }
     return out;
+  }
+
+  /// عهدة الكوبونات من الحزمة — **بتتبدّل كلها مع كل سحب**، مش بتتزاد.
+  ///
+  /// المفتاحين بيتخزّنوا مع بعض في صف kv واحد: العهدة من غير قايمة الفئات مالهاش
+  /// معنى (المنع على الفئات اللي في القايمة بس)، والعكس برضه.
+  ///
+  /// سيرفر قديم مابيبعتش الاتنين ⇒ الصف بيتمسح، والجهاز بيرجع «مش عارف» — مافيش منع.
+  /// كاش قديم من سيرفر أحدث مايفضلش يمنع على عهدة ماحدش بيحدّثها.
+  Future<void> replaceCouponCustody(Object? custody, Object? kinds) async {
+    final d = await db;
+    if (custody == null && kinds == null) {
+      await d.delete('kv', where: 'key = ?', whereArgs: ['coupon_custody']);
+      return;
+    }
+    await setKv('coupon_custody',
+        jsonEncode({'custody': custody ?? const [], 'kinds': kinds ?? const []}));
+  }
+
+  /// عهدة الكوبونات زي ما المندوب يقدر يكتب منها دلوقتي = الكاش ناقص الطابور.
+  ///
+  /// الطرح على الكوبونات اللي في فواتير لسه على الجهاز (`synced = 0`) — نفس حساب
+  /// [availableForSaleAll] بالظبط بس على السريالات. `exceptInvoiceLocalId` = فاتورة
+  /// بتتعدّل: صفوفها القديمة مابتحجزش حاجة، اللي بيتكتب دلوقتي بياخد مكانها. من غيره
+  /// الفاتورة كانت هتقول على دفترها هي «اتكتب على فاتورة تانية».
+  Future<CouponCustody> couponCustody({int? exceptInvoiceLocalId}) async {
+    final raw = await getKv('coupon_custody');
+    if (raw == null || raw.isEmpty) return CouponCustody.none;
+    final queued = await (await db).rawQuery(
+        'SELECT local_id, customer_name, coupons FROM sale_invoice '
+        'WHERE synced = 0 AND coupons IS NOT NULL'
+        '${exceptInvoiceLocalId == null ? '' : ' AND local_id <> ?'}'
+        ' ORDER BY local_id',
+        [if (exceptInvoiceLocalId != null) exceptInvoiceLocalId]);
+    return CouponCustody.build(raw, queued);
   }
 
   /// بتحفظ فاتورة وسطورها في معاملة واحدة — فاتورة من غير سطور مش فاتورة.

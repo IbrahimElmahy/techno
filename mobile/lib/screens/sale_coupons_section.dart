@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../db/local_db.dart';
+import '../models/arabic_sort.dart';
+import '../models/coupon_custody.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
@@ -23,10 +25,16 @@ class SaleCouponRow {
       serialFrom.trim().isEmpty &&
       serialTo.trim().isEmpty;
 
+  /// الصف زي ما هو مكتوب — لفحص العهدة ([CouponCustody.check]).
+  CouponRowInput get asInput => (kind: kind, from: serialFrom, to: serialTo);
+
+  // الأرقام بتتخزّن إنجليزي: «١٠٥٠» من لوحة عربي هو هو «1050»، والسيرفر بيقارن
+  // السريال بعهدة المندوب وبمدى المرتجع — نص بأرقام تانية كان هيقول «مش في عهدتك».
   Map<String, Object?> toJson() => {
         'coupon_kind': (kind ?? '').isEmpty ? null : kind,
-        'serial_from': serialFrom.trim().isEmpty ? null : serialFrom.trim(),
-        'serial_to': serialTo.trim().isEmpty ? null : serialTo.trim(),
+        'serial_from':
+            serialFrom.trim().isEmpty ? null : asciiDigits(serialFrom.trim()),
+        'serial_to': serialTo.trim().isEmpty ? null : asciiDigits(serialTo.trim()),
         // العدد **محسوب مش متكتوب** — زي الويب. رقم متكتوب جنب مدى بيتناقض معاه أول
         // مرة حد يعدّل المدى وينسى الرقم، وبعدها الفاتورة بتدّعي عدد الأرقام ماتسندهوش.
         'count': couponCount(serialFrom, serialTo),
@@ -37,10 +45,12 @@ class SaleCouponRow {
 ///
 /// الأرقام أحياناً بسابقة («A-1050»)، فالمقارنة على الأرقام الآخرانية بس. ولو
 /// السابقتين مختلفتين أو واحد مش رقم، بترجع `null` مش تخمين — رقم غلط بيترحّل، والفاضي
-/// بيتشاف. (نفس الدالة حرفياً اللي في `frontend/src/pages/Invoices.tsx`.)
+/// بيتشاف. (نفس الدالة حرفياً اللي في `frontend/src/pages/Invoices.tsx` — زيادة
+/// توحيد الأرقام العربية بس: `\d` مابيمسكش «١٠٥٠»، فالمدى المكتوب بلوحة عربي كان
+/// بيطلع «مش مفهوم» وهو سليم.)
 int? couponCount(String? from, String? to) {
-  final f = (from ?? '').trim();
-  final t = (to ?? '').trim();
+  final f = asciiDigits((from ?? '').trim());
+  final t = asciiDigits((to ?? '').trim());
   if (f.isEmpty || t.isEmpty) return null;
   final re = RegExp(r'^(.*?)(\d+)$');
   final a = re.firstMatch(f);
@@ -56,10 +66,15 @@ int? couponCount(String? from, String? to) {
 
 /// قسم الكوبونات في شاشة الفاتورة — بيدير صفوفه بنفسه وبيبلّغ الأب بالتغيير.
 class SaleCouponsSection extends StatefulWidget {
-  const SaleCouponsSection({super.key, required this.rows, required this.onChanged});
+  const SaleCouponsSection(
+      {super.key, required this.rows, required this.onChanged, this.custody});
 
   final List<SaleCouponRow> rows;
   final VoidCallback onChanged;
+
+  /// عهدة المندوب من الكوبونات (الكاش ناقص الطابور) — `null` = مافيش منع. الأب هو
+  /// اللي بيقراها عشان يستعملها في الحفظ بنفس الحساب.
+  final CouponCustody? custody;
 
   @override
   State<SaleCouponsSection> createState() => _SaleCouponsSectionState();
@@ -93,6 +108,11 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
   @override
   Widget build(BuildContext context) {
     final filled = widget.rows.where((r) => !r.isEmpty).length;
+    // الفحص وهو بيكتب — نفس اللي الحفظ بيعمله، من غير «ناقصه طرف»: اللي لسه بيكتب
+    // الرقم التاني مش غلطان.
+    final custody = widget.custody ?? CouponCustody.none;
+    final errors = custody.check([for (final r in widget.rows) r.asInput]);
+    final hasError = errors.any((e) => e != null);
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Column(
@@ -102,9 +122,17 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
                 color: AppColors.accent),
             title: const Text('كوبونات مصروفة مع الفاتورة',
                 style: TextStyle(fontWeight: FontWeight.w700)),
-            subtitle: Text(_total > 0
-                ? '$_total كوبون في $filled ${filled == 1 ? 'فئة' : 'فئات'}'
-                : 'اختياري — دفاتر الكوبونات اللي اتسلّمت للعميل'),
+            // القسم ممكن يكون مقفول والغلط جوّاه — العنوان بيقوله بالأحمر عشان مايستخباش.
+            subtitle: Text(
+                hasError
+                    ? 'في مشكلة في سريالات الكوبونات — افتح وراجع'
+                    : _total > 0
+                        ? '$_total كوبون في $filled ${filled == 1 ? 'فئة' : 'فئات'}'
+                        : 'اختياري — دفاتر الكوبونات اللي اتسلّمت للعميل',
+                style: hasError
+                    ? const TextStyle(
+                        color: AppColors.danger, fontWeight: FontWeight.w700)
+                    : null),
             trailing: Icon(_open ? Icons.expand_less : Icons.expand_more),
             onTap: () => setState(() => _open = !_open),
           ),
@@ -115,7 +143,8 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
               child: Column(
                 children: [
                   for (var i = 0; i < widget.rows.length; i++)
-                    _row(widget.rows[i], i),
+                    _row(widget.rows[i], i, errors[i],
+                        custody.hintFor(widget.rows[i].kind)),
                   Align(
                     alignment: AlignmentDirectional.centerStart,
                     child: TextButton.icon(
@@ -141,13 +170,17 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
     );
   }
 
-  Widget _row(SaleCouponRow r, int i) {
+  /// [custodyError] = رسالة العهدة للصف ده (مش في عهدتك / على فاتورة تانية)، و[hint] =
+  /// «عهدتك في الفضي: …» — الاتنين `null` لفئة مالهاش منع.
+  Widget _row(SaleCouponRow r, int i, String? custodyError, String? hint) {
     final n = couponCount(r.serialFrom, r.serialTo);
     // المدى ناقص طرف: الواحد لسه بيكتب، فمش غلط — بس لو الاتنين مكتوبين والعدد `null`
     // يبقى المدى نفسه مايعملش معنى، وده بيتقال.
     final bad = r.serialFrom.trim().isNotEmpty &&
         r.serialTo.trim().isNotEmpty &&
         n == null;
+    // رسالة العهدة أدق لما تبقى موجودة («مقلوب»، «أرقام بس») — فهي اللي بتتقال.
+    final problem = custodyError ?? (bad ? 'المدى ده مش مفهوم — راجع الرقمين' : null);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -224,11 +257,21 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
               ),
             ],
           ),
-          if (bad)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
-              child: Text('المدى ده مش مفهوم — راجع الرقمين',
-                  style: TextStyle(fontSize: 12, color: AppColors.danger)),
+          // عهدته في الفئة دي — عشان يعرف يكتب منين قبل ما يغلط، مش بعد.
+          if (hint != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(hint,
+                  style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            ),
+          if (problem != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(problem,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.w700)),
             ),
         ],
       ),

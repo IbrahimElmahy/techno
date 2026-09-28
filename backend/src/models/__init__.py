@@ -70,6 +70,8 @@ from src.models.commission import CommissionRule  # noqa: E402
 from src.models.treasury import PeriodLock, Treasury  # noqa: E402
 from src.models.voucher import Voucher  # noqa: E402
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine  # noqa: E402
+# عهدة الكوبونات — دفاتر مرقّمة في إيد المندوب.
+from src.models.coupon_custody import CouponCustody, CouponCustodySerial  # noqa: E402
 from src.models.permission import RoleCapability  # noqa: E402
 from src.models.account_routing import AccountRouting  # noqa: E402
 from src.models.employee import Employee, JobTitle  # noqa: E402
@@ -122,4 +124,5 @@ __all__ = [
     "Owner",
     "Journal", "JournalSequence",
     "FullReconcile", "PartialReconcile",
+    "CouponCustody", "CouponCustodySerial",
 ]

@@ -226,7 +226,11 @@ export default function CouponReceipts() {
         couponKind: d.coupon_kind || kind,
         kinds: (d.kinds || []) as string[],
       } : e)));
-      if (st === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
+      // لسه في شنطة المندوب ⇒ السيرفر بيرجّعها «unknown» (مااتصرفتش لعميل)، بس السبب
+      // مختلف: الورقة حقيقية ولسه ماخرجتش. `in_custody` بيقول كده بالاسم.
+      if (d.in_custody) {
+        message.error(`الكوبون ${serial} لسه في عهدة المندوب ${d.custody_rep_name || ''} — ماتصرفش لعميل`);
+      } else if (st === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
       if (st === 'received') message.warning(`الكوبون ${serial} مُستلَم من قبل`);
       if (st === 'wrong_kind') {
         // ❌ الرفض مقصود، والتصحيح الأوتوماتيكي ممنوع: لو غيّرنا الفئة لوحدنا

@@ -379,7 +379,19 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> di
     if (status == "unknown" and coupon_kind and kinds
             and not any(_same_kind(k, coupon_kind) for k in kinds)):
         status = "wrong_kind"
+    # لسه في عهدة مندوب ⇒ مش متصرّفة لعميل، مهما لقينا لها نطاق قديم من غير فئة. الحالة
+    # بتفضل «unknown» عشان التطبيق القديم يرفضها زي ما هو، و`in_custody` بيقول السبب.
+    from src.services import coupon_custody_service
+
+    held = coupon_custody_service.held_serials(db, [serial], coupon_kind)
+    custody_rep_name = None
+    if held:
+        status = "unknown"
+        rid = next(iter(held.values()))
+        custody_rep_name = coupon_custody_service.rep_name(db, rid)
     return {
+        "in_custody": bool(held),
+        "custody_rep_name": custody_rep_name,
         "serial": serial,
         "status": status,
         "coupon_kind": resolved,
@@ -449,6 +461,16 @@ def create_receipt(
     duplicates = {s for s in cleaned if cleaned.count(s) > 1}
     if duplicates:
         raise CouponReceiptError(f"كوبونات مكرّرة في نفس الاستلام: {', '.join(sorted(duplicates))}")
+
+    # الورقة اللي لسه في عهدة مندوب (ماتصرفتش لعميل) مابتترجعش من سباك — ده قبل أي فحص
+    # تاني، لأنها مش على فاتورة فكانت هترجع «مش متصرّفة من النظام» وده مش السبب. الرسالة
+    # بتقول هي مع مين، عشان اللي بيستلم يعرف إن الورقة حقيقية بس لسه ماخرجتش.
+    from src.services import coupon_custody_service
+
+    held = coupon_custody_service.held_serials(db, cleaned, coupon_kind)
+    if held:
+        raise CouponReceiptError(
+            coupon_custody_service.held_message(db, held, coupon_kind))
 
     matched: list[tuple[str, SalesInvoice | None, CouponIssue | None, str | None]] = []
     unknown: list[str] = []

@@ -438,6 +438,8 @@ export const EXTRA_SECTIONS: NavGroup[] = [
     label: 'خدمات ما بعد البيع',
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
+      // دفاتر الكوبونات اللي في إيد المناديب — نفس اللي بيسلّموا الورق ويستلموه.
+      { key: '/coupon-custody', label: 'عهدة الكوبونات', roles: [...SALES, 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
       // الزيارة العادية مستند تاني: مافيهاش فني ولا أصناف ولا نقاط. كانت بتتخلط مع
       // المعاينات في كشف واحد، فاللي بيراجع النقاط بيعدّ صفوف مالهاش نقاط.

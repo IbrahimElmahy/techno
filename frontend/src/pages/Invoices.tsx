@@ -235,6 +235,19 @@ export default function Invoices() {
 
 
   const [couponRows, setCouponRows] = useState<CouponRow[]>(() => [blankCoupon()]);
+  // عهدة الكوبونات بتاعة مندوب الفاتورة — **تلميح بس**. السيرفر هو اللي بيرفض أرقام مش
+  // في عهدته؛ ده عشان اللي بيكتب يشوف الأرقام المتاحة قبل ما يحفظ ويترفض، مش بعدها.
+  const invoiceRepId = Form.useWatch('rep_id', createForm) as number | undefined;
+  const [repCustody, setRepCustody] = useState<
+    { coupon_kind: string; available: number; ranges: string[][] }[]>([]);
+  useEffect(() => {
+    if (!invoiceRepId) { setRepCustody([]); return undefined; }
+    let alive = true;
+    api.get('/api/v1/coupon-custody/balance', { params: { rep_user_id: invoiceRepId } })
+      .then((r) => { if (alive) setRepCustody(r.data || []); })
+      .catch(() => { if (alive) setRepCustody([]); });
+    return () => { alive = false; };
+  }, [invoiceRepId]);
   // The day the sale happened, asked for before the form opens. It is not always today — a rep
   // comes back from a round, a branch catches up on a backlog — and it dates the ledger entry
   // as well as the document, so it has to be settled before anything is typed rather than
@@ -2652,6 +2665,14 @@ function couponsTotal(inv: any): number {
               <div style={{ fontSize: 12, color: '#4a4a4a' }}>
                 الإجمالي: {couponRows.reduce(
                   (t, r) => t + (couponCount(r.serial_from, r.serial_to) ?? 0), 0)} كوبون
+              </div>
+            )}
+            {repCustody.length > 0 && (
+              <div style={{ fontSize: 12, color: '#4a4a4a', marginTop: 4 }}>
+                عهدة المندوب:{' '}
+                {repCustody.map((b) => `${b.coupon_kind} ${b.available}${b.ranges.length
+                  ? ` (${b.ranges.map(([a, z]) => (a === z ? a : `${a}–${z}`)).join('، ')})`
+                  : ' — خلصت'}`).join(' · ')}
               </div>
             )}
           </div>

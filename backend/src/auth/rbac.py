@@ -211,6 +211,17 @@ for _role in (RoleName.system_admin, RoleName.after_sales_staff, RoleName.branch
     ROLE_CAPABILITIES.setdefault(_role, set()).add(CAP_COUPON_RECEIVE)
 ALL_CAPABILITIES.add(CAP_COUPON_RECEIVE)
 
+# عهدة الكوبونات — صرف دفاتر للمندوب واسترجاعها منه. صلاحية المكتب اللي بيسلّم الورق.
+#
+# **مش للمندوب.** هو اللي العهدة عليه، فلو قدر يصرف لنفسه القفل كله مالوش معنى — بيقرا
+# رصيده بس (`GET /coupon-custody/balance` بيقفله على نفسه). ومدير الفرع والمالك بياخدوها
+# لوحدهم من القواعد اللي تحت («كل حاجة ما عدا» و«كل حاجة»).
+CAP_COUPON_CUSTODY = "coupon.custody"
+for _role in (RoleName.system_admin, RoleName.after_sales_staff, RoleName.branch_manager,
+              RoleName.sales_manager):
+    ROLE_CAPABILITIES.setdefault(_role, set()).add(CAP_COUPON_CUSTODY)
+ALL_CAPABILITIES.add(CAP_COUPON_CUSTODY)
+
 # ---------------------------------------------------------------------------
 # General Ledger (005) capability extension — additive.
 # ---------------------------------------------------------------------------

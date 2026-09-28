@@ -451,6 +451,13 @@ class ApiClient {
           code: _text(t['code']) ?? '',
         )
     ]);
+    // **عهدة الكوبونات** — السريالات اللي في إيده لسه ما اتصرفتش، مدايات، والفئات اللي
+    // عليها منع. بتنزل مع الحزمة عشان فاتورة البيع تمنعه من سريال مش بتاعه وهو عند
+    // العميل من غير شبكة، مش السيرفر يرفض بعد ما الدفتر اتسلّم.
+    //
+    // سيرفر قديم مابيبعتهمش ⇒ الكاش بيتمسح ومافيش منع — الفئات بتمشي زي ما كانت.
+    await LocalDb.instance.replaceCouponCustody(
+        body['coupon_custody'], body['coupon_custody_kinds']);
     await LocalDb.instance.setKv('last_sales_pull', DateTime.now().toIso8601String());
   }
 

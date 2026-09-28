@@ -36,6 +36,20 @@ final _strip = RegExp('[ـً-ْٰ]');
 const _digitsFrom = '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹';
 const _digitsTo = '01234567890123456789';
 
+/// الأرقام العربية والفارسية ← إنجليزية، **والباقي زي ما هو بالحرف**.
+///
+/// لخانات الأرقام اللي بتتكتب باللوحة اللي تحت إيد المندوب (سريالات الكوبونات مثلاً):
+/// «١٠٥٠» و«1050» رقم واحد. مش [bare] لأن دي بتصغّر الحروف وتشيل الهمزات — والسابقة
+/// اللي في سريال زي «A-1050» لازم تفضل زي ما اتكتبت.
+String asciiDigits(String text) {
+  final b = StringBuffer();
+  for (final ch in text.split('')) {
+    final d = _digitsFrom.indexOf(ch);
+    b.write(d >= 0 ? _digitsTo[d] : ch);
+  }
+  return b.toString();
+}
+
 /// الاسم موحَّد للمقارنة. مش للعرض.
 String bare(String? text) {
   final s = (text ?? '').trim().toLowerCase().replaceAll(_strip, '');

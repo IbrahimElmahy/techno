@@ -6,6 +6,7 @@ import '../services/app_updater.dart';
 import '../services/auto_sync.dart';
 import '../theme.dart';
 import 'login_screen.dart';
+import 'coupon_custody_screen.dart';
 import 'coupon_receipt_screen.dart';
 import 'sale_invoice_screen.dart';
 import 'bonus_invoice_screen.dart';
@@ -461,6 +462,16 @@ class _HomeScreenState extends State<HomeScreen> {
               } catch (e) {
                 messenger.showSnackBar(SnackBar(content: Text('فشل التحديث: $e')));
               }
+            },
+          ),
+          // عهدة الكوبونات — للقراءة: أنهي سريالات في إيده قبل ما يكتب مدى في فاتورة.
+          ListTile(
+            leading: const Icon(Icons.confirmation_number_outlined),
+            title: const Text('عهدة الكوبونات'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const CouponCustodyScreen()));
             },
           ),
           // التحديث بيحصل لوحده (أول ما التطبيق يفتح وبعد المزامنة، مرة كل ٦ ساعات)، ده

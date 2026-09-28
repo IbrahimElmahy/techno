@@ -46,6 +46,8 @@ from src.services import (
 )
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
+from src.services import coupon_custody_service
+from src.services.coupon_custody_service import CouponCustodyError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
 from src.services import document_edit_service
 from src.services.document_edit_service import DocumentEditError
@@ -655,8 +657,20 @@ def rep_bundle(
         ).all():
             tiers.setdefault(row.item_id, {})[row.tier.value] = str(row.price)
 
+    # عهدة الكوبونات — الورق اللي معاه دلوقتي، والفئات المقفولة عليه.
+    #
+    # التطبيق بيكتب الفاتورة من غير شبكة، فلازم يعرف وهو عند العميل إن «١٠٥١ فضي» مش
+    # معاه — بدل ما الفاتورة تقعد في الطابور وتترفض عند المزامنة والورقة اتسلّمت خلاص.
+    # السيرفر بيفضل هو الحكم (`consume_for_invoice`)؛ ده عشان الجهاز يمنع بدري بس.
+    coupon_custody, coupon_custody_kinds = coupon_custody_service.rep_bundle(
+        db, current.rep_id)
+
     return {
         "rep_id": current.rep_id,
+        # [{"kind": "فضي", "ranges": [["1001", "1050"]], "count": 50}, …] — المتاح معاه بس.
+        "coupon_custody": coupon_custody,
+        # الفئات اللي عليها قفل حتى لو ورقها خلص: الجهاز يرفض فيها أي رقم مش في النطاقات.
+        "coupon_custody_kinds": coupon_custody_kinds,
         # **هل المندوب مسموح له يبيع تحت سعر الشريحة.**
         #
         # التطبيق ماكانش يعرف، فكان بيسيبه يكتب الفاتورة بسعر أقل وتقعد في الطابور،
@@ -892,9 +906,30 @@ def _build_sale(
         db.add(SalesInvoiceCoupon(
             invoice_id=inv.id, coupon_kind=c.coupon_kind,
             coupon_type_id=c.coupon_type_id, count=c.count,
-            serial_from=c.serial_from, serial_to=c.serial_to,
+            # الأرقام بتتخزّن إنجليزي: «١٠٠١» المكتوبة من كيبورد عربي هي «1001» اللي في
+            # العهدة وفي الاستلام، والمقارنة هناك نصية.
+            serial_from=coupon_custody_service.ascii_digits(c.serial_from) or None,
+            serial_to=coupon_custody_service.ascii_digits(c.serial_to) or None,
         ))
     db.flush()
+
+    # عهدة الكوبونات: الورق اللي على الفاتورة لازم يكون في عهدة مندوبها (لو ليه عهدة من
+    # الفئة دي)، وبيتعلّم «اتصرف لعميل». النطاق القديم على رأس الفاتورة (من غير فئة) بيتقاس
+    # كصف من غير فئة. الرفض بيوقع الفاتورة كلها — الورقة والبضاعة حاجة واحدة عند العميل.
+    from types import SimpleNamespace
+
+    custody_rows: list = list(body.coupons)
+    if body.coupon_serial_from or body.coupon_serial_to:
+        custody_rows.append(SimpleNamespace(
+            coupon_kind=None, count=body.coupon_count,
+            serial_from=body.coupon_serial_from, serial_to=body.coupon_serial_to))
+    try:
+        coupon_custody_service.consume_for_invoice(db, inv, inv.rep_id, custody_rows)
+        if replace_invoice_id:
+            coupon_custody_service.assert_received_kept(db, inv)
+    except CouponCustodyError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            {"code": "coupon_custody", "message": str(exc)}) from exc
     return inv
 
 

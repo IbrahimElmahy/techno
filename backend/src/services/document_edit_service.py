@@ -245,6 +245,11 @@ def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) ->
     بيمسح سطور مستند استلام كوبونات محدش فتحه — والمستند بيفضل مكتوب عليه عدد كوبونات
     مالهاش سطور، والقيد الفريد على رقم الكوبون بيتفك فالكوبون يتسلّم تاني.
     """
+    # ورق الكوبونات اللي الفاتورة صرفته من عهدة المندوب بيرجع العهدة — **قبل** ما صفوف
+    # الكوبونات تتمسح تحت، لأن الإرجاع بيحفظ شكلها عشان التعديل مايتقفلش على فاتورة قديمة.
+    from src.services import coupon_custody_service
+
+    coupon_custody_service.release_for_invoice(db, invoice)
     _drop_points(db, sales_invoice_id=invoice.id)
     _restore_serials(db, sold_invoice_id=invoice.id,
                      document_type=StockDoc.SALE, document_id=invoice.id)

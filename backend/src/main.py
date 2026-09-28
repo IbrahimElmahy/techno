@@ -25,6 +25,7 @@ from src.api import (  # Sales & Inventory (002
     catalog,
     cheques,  # Cheques + financial statements + aging (020)
     cost_centers,  # Cost Centers (006)
+    coupon_custody,  # عهدة الكوبونات — دفاتر مرقّمة في إيد المندوب
     coupon_receipts,  # استلام الكوبونات من العملاء
     coupons,
     customers,
@@ -211,6 +212,7 @@ def create_app() -> FastAPI:
     app.include_router(orders.router, prefix=prefix)
     # Coupon hand-back from customers (mobile app + office)
     app.include_router(coupon_receipts.router, prefix=prefix)
+    app.include_router(coupon_custody.router, prefix=prefix)
     app.include_router(after_sales_reports.router, prefix=prefix)
     app.include_router(attachments.router, prefix=prefix)
     app.include_router(document_attachments.router, prefix=prefix)

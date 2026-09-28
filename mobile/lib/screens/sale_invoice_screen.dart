@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../db/local_db.dart';
+import '../models/coupon_custody.dart';
 import '../models/discount.dart';
 import '../models/models.dart';
 import '../theme.dart';
@@ -157,6 +158,11 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// بدل «خلص من العربية» وهي معاه.
   Map<int, List<PendingHold>> _holds = {};
 
+  /// عهدة الكوبونات — كاش الحزمة ناقص الكوبونات اللي على فواتير الطابور (من غير
+  /// الفاتورة دي لو بتتعدّل). بتتقري مع المتاح عشان صفوف الكوبونات تقول الغلط وهو
+  /// بيكتب، والحفظ بيقراها من جديد.
+  CouponCustody _couponCustody = CouponCustody.none;
+
   /// رقم الفاتورة اللي بتتعدّل على الجهاز — `null` يعني فاتورة جديدة.
   int? get _editingId => widget.existing?['local_id'] as int?;
   bool get _isEditing => _editingId != null;
@@ -188,10 +194,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         .availableForSaleAll(exceptInvoiceLocalId: _editingId);
     final holds =
         await LocalDb.instance.pendingHolds(exceptInvoiceLocalId: _editingId);
+    final custody =
+        await LocalDb.instance.couponCustody(exceptInvoiceLocalId: _editingId);
     if (!mounted) return;
     setState(() {
       _free = free;
       _holds = holds;
+      _couponCustody = custody;
     });
   }
 
@@ -700,6 +709,24 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     }
     if (_lines.isEmpty && !hasCoupons) {
       return _say('ضيف صنف أو دفتر كوبونات على الأقل');
+    }
+    // **عهدة الكوبونات — قبل فحص «ناقصه رقم» العام**، عشان فئة عليها عهدة تاخد رسالتها
+    // هي («لازم تكتب من وإلى»، «مش في عهدتك»، «على فاتورة تانية») مش الرسالة العامة.
+    //
+    // بتتقري من القاعدة من جديد مش من `_couponCustody` — زي `_overCustody`: فاتورة
+    // تانية ممكن تكون اتحفظت أو اترفعت أو المزامنة سحبت عهدة جديدة والشاشة مفتوحة.
+    // السيرفر بيرفض نفس الحاجة عند الرفع؛ المنع هنا عشان الدفتر مايتسلّمش أصلاً.
+    if (hasCoupons) {
+      final custody =
+          await LocalDb.instance.couponCustody(exceptInvoiceLocalId: _editingId);
+      if (!mounted) return;
+      setState(() => _couponCustody = custody);
+      final errors = custody.check(
+          [for (final c in _coupons) if (!c.isEmpty) c.asInput],
+          requireComplete: true);
+      for (final e in errors) {
+        if (e != null) return _say(e);
+      }
     }
     // صف كوبونات نص مكتوب مابيترحّلش ساكت. المدى هو اللي المرتجع بيراجع عليه الرقم
     // الراجع — مدى غلط معناه كوبون حقيقي بيترفض على العميل بعد شهر من غير سبب مفهوم.
@@ -1864,7 +1891,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
             // وبتتبعت من ورا المندوب.
             if (!_isBonus || _coupons.any((c) => !c.isEmpty))
               SaleCouponsSection(
-                  rows: _coupons, onChanged: () => setState(() {})),
+                  rows: _coupons,
+                  custody: _couponCustody,
+                  onChanged: () => setState(() {})),
           ],
         ),
       ),
