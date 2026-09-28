@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Button, Col, Input, Row, Select, Space, Table, Typography, message,
@@ -122,8 +123,8 @@ export function SerialsPanel({ itemId, canEdit }: { itemId: number; canEdit: boo
         <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 8,
                       maxWidth: 620 }}>
           <strong>استلام أرقام تسلسلية للمخزون</strong>
-          <Select style={{ width: '100%', margin: '8px 0' }} placeholder="مخزن الاستلام" value={whId}
-            onChange={setWhId} options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          <Select showSearch style={{ width: '100%', margin: '8px 0' }} placeholder="مخزن الاستلام" value={whId}
+            onChange={setWhId} options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           <Input.TextArea rows={3} placeholder="أرقام تسلسلية مفصولة بمسافة أو فاصلة أو سطر"
             value={text} onChange={(e) => setText(e.target.value)} />
           <Button type="primary" style={{ marginTop: 8 }} onClick={onReceive}>استلام</Button>

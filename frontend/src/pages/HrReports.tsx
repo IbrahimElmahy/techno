@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -150,6 +150,20 @@ export default function HrReports() {
   const byPeriod = subject === 'payroll' || subject === 'cost' || subject === 'adjustment';
   const isBalances = subject === 'leave_balance';
   const grouped = groupBy !== 'none';
+
+  // نفس قاعدة «المندوب ⇒ عملاءه»: قسم أو فرع مختار ⇒ قايمة الموظفين موظفينه هو بس.
+  // في أرصدة الإجازات الفلترين دول مقفولين ومابيتبعتوش، فمابيضيّقوش.
+  const fitsScope = (e: any, dept?: number, branch?: number) => isBalances
+    || ((!dept || e.department_id === dept) && (!branch || e.branch_id === branch));
+  const employeeOptions = useMemo(() => sortByName(
+    employees.filter((e) => fitsScope(e, departmentId, branchId)), (e: any) => e.name)
+    .map((e: any) => ({ value: e.id, label: String(e.name ?? '') })),
+  [employees, departmentId, branchId, isBalances]);
+  /** الموظف المختار مش من القسم/الفرع الجديد ⇒ يتفضّى في نفس التحديث (طلب واحد). */
+  const dropEmployeeUnlessFits = (dept?: number, branch?: number) => {
+    const e = employees.find((x) => x.id === employeeId);
+    if (e && !fitsScope(e, dept, branch)) setEmployeeId(undefined);
+  };
 
   const params = useMemo(() => {
     if (isBalances) {
@@ -519,21 +533,23 @@ export default function HrReports() {
         </Col>
         <Col xs={24} md={6}>
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear showSearch style={{ width: '100%' }}
             placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
-            options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+            options={employeeOptions} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={5}>
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
-            placeholder="كل الأقسام" value={departmentId} onChange={setDepartmentId}
+            allowClear showSearch style={{ width: '100%' }}
+            placeholder="كل الأقسام" value={departmentId}
+            onChange={(v) => { setDepartmentId(v); dropEmployeeUnlessFits(v, branchId); }}
             disabled={isBalances}
-            options={departments.map((d) => ({ value: d.id, label: d.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+            options={sortByName(departments, (d: any) => d.name).map((d) => ({ value: d.id, label: d.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
           <Select
             allowClear style={{ width: '100%' }} placeholder="كل الفروع"
-            value={branchId} onChange={setBranchId} disabled={isBalances}
+            value={branchId} disabled={isBalances}
+            onChange={(v) => { setBranchId(v); dropEmployeeUnlessFits(departmentId, v); }}
             options={branches.map((b) => ({ value: b.id, label: b.name }))}
           />
         </Col>

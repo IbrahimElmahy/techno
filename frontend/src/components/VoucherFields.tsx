@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Button, Form, Input, Select, Tag, message,
 } from 'antd';
@@ -72,7 +72,7 @@ export function TreasuryField({
       rules={[{ required: true, message: 'اختر الخزينة التي ستتحرك منها الأموال' }]}
     >
       <Select
-        showSearch optionFilterProp="label" style={{ width }}
+        showSearch style={{ width }}
         placeholder="اختر الخزينة"
         options={options.map((o) => ({
           value: o.value,
@@ -130,10 +130,14 @@ export function ExpenseAccountField({
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
-  const options = useMemo(() => accounts.map((a) => ({
+  const options = useMemo(() => sortByName(accounts, (a) => a.name).map((a) => ({
     value: a.id,
+    // **الاسم هو اللي بيتبحث فيه ويترتّب بيه، والكود في `search` المخفي.** لو الكود في أول
+    // `label` كل اسم بيبقى «كلمة في النص» مش «بيبدأ بـ»، فترتيب القُرب بيقع ويبقى بالكود.
+    label: a.name ?? a.code ?? '',
+    search: a.code ?? '',
     // Code AND name. Either alone is ambiguous on a real chart of accounts.
-    label: `${a.code ? `${a.code} — ` : ''}${a.name ?? ''}`.trim(),
+    full: `${a.code ? `${a.code} — ` : ''}${a.name ?? ''}`.trim(),
     spent: Number(a.balance || 0),
   })), [accounts]);
 
@@ -163,14 +167,16 @@ export function ExpenseAccountField({
         rules={[{ required: true, message: 'اختر حساب المصروف' }]}
       >
         <Select
-          showSearch optionFilterProp="label" style={{ width }}
+          showSearch style={{ width }}
           placeholder="إيجار / مرتبات / بنزين…"
           options={options}
+          // الخانة المقفولة بالكود والاسم زي القايمة.
+          labelRender={({ value, label }) => options.find((x) => x.value === value)?.full ?? label}
           optionRender={(opt) => {
             const o = options.find((x) => x.value === opt.value)!;
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                <span>{o.label}</span>
+                <span>{o.full}</span>
                 <span style={{ color: '#6b6b6b', fontSize: 12 }}>{money(o.spent)} ج.م</span>
               </div>
             );
@@ -197,7 +203,7 @@ export function ExpenseAccountField({
         <Form form={form} layout="vertical" onFinish={create} requiredMark={false}>
           <Form.Item name="parent_id" label="تحت أي حساب رئيسي"
             rules={[{ required: true, message: 'اختر الحساب الرئيسي' }]}>
-            <Select showSearch optionFilterProp="label" placeholder="مصروفات ..."
+            <Select showSearch placeholder="مصروفات ..."
               options={groups.map((g) => ({
                 value: g.id, label: `${g.code ? `${g.code} — ` : ''}${g.name ?? ''}`.trim(),
               }))} filterOption={searchFilter} filterSort={searchRank}/>

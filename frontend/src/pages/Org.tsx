@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Card, Tabs, Table, Button, Space, Form, Input, Select, Checkbox, Tag, message
 } from 'antd';
@@ -556,7 +557,7 @@ export default function Org() {
                 label="المحافظة التابع لها"
                 rules={[{ required: true, message: 'يرجى تحديد المحافظة!' }]}
               >
-                <Select placeholder="اختر المحافظة">
+                <Select showSearch placeholder="اختر المحافظة" filterOption={searchFilter} filterSort={searchRank}>
                   {governorates.map((g) => (
                     <Select.Option key={g.id} value={g.id}>
                       {g.name}
@@ -643,7 +644,7 @@ export default function Org() {
                         label="المندوب المسؤول"
                         rules={[{ required: true, message: 'يرجى اختيار المندوب!' }]}
                       >
-                        <Select placeholder="اختر المندوب للربط بالعهدة">
+                        <Select showSearch placeholder="اختر المندوب للربط بالعهدة" filterOption={searchFilter} filterSort={searchRank}>
                           {reps.map((r) => (
                             <Select.Option key={r.id} value={r.id}>
                               {r.full_name}
@@ -659,7 +660,7 @@ export default function Org() {
                         label="المستودع المسؤول"
                         rules={[{ required: true, message: 'يرجى اختيار المستودع!' }]}
                       >
-                        <Select placeholder="اختر المستودع للربط بالعهدة">
+                        <Select showSearch placeholder="اختر المستودع للربط بالعهدة" filterOption={searchFilter} filterSort={searchRank}>
                           {warehouses.map((w) => (
                             <Select.Option key={w.id} value={w.id}>
                               {w.name}
@@ -715,7 +716,7 @@ export default function Org() {
                 label="المحافظة التابع لها"
                 rules={[{ required: true, message: 'يرجى تحديد المحافظة!' }]}
               >
-                <Select placeholder="اختر المحافظة">
+                <Select showSearch placeholder="اختر المحافظة" filterOption={searchFilter} filterSort={searchRank}>
                   {governorates.map((g) => (
                     <Select.Option key={g.id} value={g.id}>
                       {g.name}

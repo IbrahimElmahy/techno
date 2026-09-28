@@ -19,7 +19,7 @@ import { printReport, type PrintColumn } from '../print/reportSheet';
 import StatsRow from '../components/StatsRow';
 import { useMovementLabels, useMovementTypes } from '../lib/movementTypes';
 import { useLookup, labelMap } from '../hooks/useLookup';
-import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
+import { compareArabic, searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { qty, money } from '../utils/money';
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
@@ -324,7 +324,7 @@ export default function ItemCard() {
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={4}>
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear showSearch style={{ width: '100%' }}
             placeholder="كل الفئات" value={category}
             onChange={(c) => {
               setCategory(c);
@@ -338,7 +338,7 @@ export default function ItemCard() {
         </Col>
         <Col xs={24} md={7}>
           <Select
-            showSearch optionFilterProp="label" style={{ width: '100%' }}
+            showSearch style={{ width: '100%' }}
             placeholder={category ? `أصناف «${categoryLabels[category] || category}»` : 'اختر الصنف'}
             value={itemId} onChange={setItemId}
             options={pickableItems.map((i: any) => ({
@@ -346,11 +346,10 @@ export default function ItemCard() {
             notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
-          <Select
+          <Select showSearch
             allowClear style={{ width: '100%' }} placeholder="كل المواقع"
             value={warehouseId} onChange={setWarehouseId}
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-          />
+            options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         </Col>
         <Col xs={24} md={7}>
           <DateRangeFilter

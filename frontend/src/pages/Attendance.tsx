@@ -268,7 +268,7 @@ export default function Attendance() {
         </Col>
         <Col xs={24} md={7}>
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear showSearch style={{ width: '100%' }}
             placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
             options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
@@ -298,7 +298,7 @@ export default function Attendance() {
       <Col span={12}>
         <div style={{ marginBottom: 4 }}>الموظف *</div>
         <Select
-          showSearch optionFilterProp="label" style={{ width: '100%' }}
+          showSearch style={{ width: '100%' }}
           value={entry.employee_id}
           onChange={(v) => setEntry({ ...entry, employee_id: v })}
           options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>

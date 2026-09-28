@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
+import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select,
   Space, Statistic, Table, Tag, Tooltip, Typography, message,
@@ -79,7 +80,7 @@ interface ReturnRecord {
   created_at?: string | null;
 }
 
-interface Customer { id: number; name: string; phone?: string | null; }
+interface Customer { id: number; name: string; phone?: string | null; rep_id?: number | null; }
 interface Product {
   id: number; name: string; sale_price: string | null; is_serialized: boolean; category: string | null;
   /** خصم الصنف — المرتجع بيفتح عليه زي الفاتورة، عشان البضاعة ترجع بنفس اللي اتباعت بيه. */
@@ -112,6 +113,8 @@ interface ReturnLineItem {
 
 interface Filters {
   q?: string; customer_id?: number; date_from?: string; date_to?: string;
+  /** مندوب المرتجع — نفس فلتر كشف الفواتير، والسيرفر بيقبله من الأول. */
+  rep_id?: number;
   /** جزء من «البيان». */
   statement?: string;
 }
@@ -357,6 +360,7 @@ export default function Returns() {
       const params: any = {};
       if (f.q) params.q = f.q;
       if (f.customer_id) params.customer_id = f.customer_id;
+      if (f.rep_id) params.rep_id = f.rep_id;
       if (f.date_from) params.date_from = f.date_from;
       if (f.date_to) params.date_to = f.date_to;
       if (f.statement) params.statement = f.statement;
@@ -373,7 +377,7 @@ export default function Returns() {
   const loadLookups = async () => {
     try {
       const [custRes, prodRes, whRes, ptRes, repRes, empRes] = await Promise.all([
-        api.get('/api/v1/customers/options', { params: { limit: 2000 } }),
+        api.get('/api/v1/customers/options', { params: { limit: 20000 } }),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
@@ -384,7 +388,10 @@ export default function Returns() {
       setCustomers(custRes.data);
       setProducts(prodRes.data);
       setWarehouses(whRes.data);
-      setReps(repRes.data || []);
+      // `?role=sales_rep` السيرفر مابيقراهاش (`list_users` مالهاش باراميتر) فبيرجّع كل
+      // المستخدمين — الأدمن والمحاسب كانوا بيطلعوا «مناديب». الفرز هنا، وأبجدي.
+      setReps(sortByName((repRes.data || []).filter((u: any) => u.role === 'sales_rep'),
+        (u: any) => u.full_name || u.username));
       setEmployees(empRes.data || []);
       const pts: Record<number, number> = {};
       (ptRes.data || []).forEach((r: any) => { pts[r.item_id] = parseFloat(r.point_value) || 0; });
@@ -399,9 +406,24 @@ export default function Returns() {
 
   const setFilter = (key: keyof Filters, value: any) => {
     const next = { ...filters, [key]: value };
+    // مندوب اتختار والعميل المختار مش بتاعه ⇒ العميل يتفضّى في نفس الجلب — زي كشف الفواتير.
+    if (key === 'rep_id' && !customerFitsRep(customers, next.customer_id, next.rep_id)) {
+      next.customer_id = undefined;
+    }
     setFilters(next); fetchReturns(next);
   };
-  const applySearch = () => setFilter('q', search.trim() || undefined);
+  // قايمة فلتر «العميل»: مندوب مختار ⇒ عملاءه هو بس (`repScope`). محفوظة عشان آلاف
+  // الأسماء مايتعادش ترتيبهم مع كل رندر.
+  const filterCustomerOptions = useMemo(
+    () => sortByName(customersOfRep(customers, filters.rep_id), (c) => c.name)
+      .map((c) => ({ value: c.id, label: c.name })),
+    [customers, filters.rep_id],
+  );
+  // الخروج من الخانة من غير تعديل كان بيعيد جلب الكشف كل مرة.
+  const applySearch = () => {
+    const q = search.trim() || undefined;
+    if (q !== filters.q) setFilter('q', q);
+  };
   const resetFilters = () => { setSearch(''); setStmtText(''); setFilters({}); fetchReturns({}); };
 
   const summary = useMemo(() => {
@@ -1260,7 +1282,6 @@ export default function Returns() {
                     showSearch
                     disabled={viewOnly}
                     placeholder="اختر المخزن المستلم"
-                    optionFilterProp="label"
                     value={docWarehouseId ?? undefined}
                     onChange={(v) => setDocWarehouseId(v as number)}
                     options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1271,7 +1292,7 @@ export default function Returns() {
             <Row gutter={16}>
               <Col xs={12} md={6}>
                 <Form.Item label="المندوب" style={{ marginBottom: 8 }}>
-                  <Select allowClear showSearch optionFilterProp="label" placeholder="بدون مندوب"
+                  <Select allowClear showSearch placeholder="بدون مندوب"
                     disabled={viewOnly}
                     value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
                     options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1353,7 +1374,7 @@ export default function Returns() {
                   return (
                     <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
                       <Col xs={24} md={12}>
-                        <Select showSearch style={{ width: '100%' }} optionFilterProp="label"
+                        <Select showSearch style={{ width: '100%' }}
                           disabled={viewOnly}
                           value={book ? `${row.invoice_id}:${row.coupon_type_id ?? ''}` : undefined}
                           onChange={(v) => {
@@ -1705,9 +1726,12 @@ export default function Returns() {
     },
     {
       title: 'مندوب', dataIndex: 'rep_id', key: 'rep_id', width: 150, ellipsis: true,
-      render: (v: number | null) => {
-        const rep = reps.find((r) => r.id === v);
-        return rep ? (rep.full_name || rep.username) : <span style={{ color: '#8c8c8c' }}>-</span>;
+      // الاسم الجاي مع الصف احتياطي: القايمة فيها المناديب الحاليين بس، والمرتجع القديم
+      // ممكن يكون على مستخدم دوره اتغيّر.
+      render: (v: number | null, r: any) => {
+        const rep = reps.find((x) => x.id === v);
+        const name = rep ? (rep.full_name || rep.username) : r?.rep_name;
+        return name || <span style={{ color: '#8c8c8c' }}>-</span>;
       },
     },
     {
@@ -1816,17 +1840,24 @@ export default function Returns() {
         }
       >
         <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={6}>
+          <Col xs={24} md={5}>
             <Input allowClear value={search} placeholder="بحث برقم السند" prefix={<SearchOutlined />}
               onChange={(e) => setSearch(e.target.value)} onPressEnter={applySearch} onBlur={applySearch} />
           </Col>
-          <Col xs={24} md={6}>
+          <Col xs={24} md={5}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="العميل"
               value={filters.customer_id} onChange={(v) => setFilter('customer_id', v)}
               filterOption={searchFilter} filterSort={searchRank}
-              options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+              options={filterCustomerOptions} />
           </Col>
-          <Col xs={24} md={8}>
+          <Col xs={12} md={4}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
+              value={filters.rep_id} onChange={(v) => setFilter('rep_id', v)}
+              filterOption={searchFilter} filterSort={searchRank}
+              options={sortByName(reps, (r) => r.full_name || r.username)
+                .map((r) => ({ value: r.id, label: r.full_name || r.username }))} />
+          </Col>
+          <Col xs={12} md={5}>
             <DateRangeFilter
               value={filters.date_from && filters.date_to
                 ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
@@ -1840,12 +1871,12 @@ export default function Returns() {
               }}
             />
           </Col>
-          <Col xs={16} md={6}>
+          <Col xs={16} md={3}>
             <Input.Search allowClear placeholder="البيان" value={stmtText}
               onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
               onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
           </Col>
-          <Col xs={8} md={4}>
+          <Col xs={8} md={2}>
             <Button icon={<ClearOutlined />} onClick={resetFilters} block>مسح</Button>
           </Col>
         </Row>

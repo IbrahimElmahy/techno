@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Descriptions, Input, Modal, Radio, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -101,6 +101,16 @@ interface InspectionSummary {
  * والفصل بالمسار مش بنسخة تانية من الملف: الكشف والفلاتر والتفاصيل والتصدير كلهم نفس
  * الشغل، ونسخة تانية معناها إن أي تصليح يتعمل مرة ويتنسى مرة.
  */
+/** القيمة بعد ما الكتابة تهدى — خانات النص في الفلتر كانت بتجيب الكشف مع كل حرف. */
+function useSettled<T>(value: T, ms = 400): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
+}
+
 const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixedKind }) => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<InspectionRecord[]>([]);
@@ -135,6 +145,13 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   const [visitTypeEdit, setVisitTypeEdit] = useState<string>('معاينة');
   const [saving, setSaving] = useState(false);
   const { options: visitTypeOptions } = useLookup('visit_type');
+  // خانات الكتابة (رقم الشهادة والمالك والفني والتاجر) كانت في تبعيات الجلب مباشرةً: كل
+  // حرف = طلبين (الكشف والإجماليات)، والرد اللي يوصل الأخر هو اللي بيتعرض — مش لازم
+  // يكون بتاع آخر حرف. دلوقتي بتتبعت لما الكتابة تهدى.
+  const certNoQ = useSettled(certNo);
+  const ownerQ = useSettled(ownerF);
+  const technicianQ = useSettled(technicianF);
+  const traderQ = useSettled(traderF);
 
   const buildParams = useCallback(() => {
     const params: Record<string, string> = {};
@@ -145,12 +162,12 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     if (statusF) params.status = statusF;
     if (printedF) params.printed = printedF;
     if (visitTypeF) params.visit_type = visitTypeF;
-    if (certNo) params.certificate_number = String(certNo);
-    if (ownerF.trim()) params.owner = ownerF.trim();
-    if (technicianF.trim()) params.technician = technicianF.trim();
-    if (traderF.trim()) params.trader = traderF.trim();
+    if (certNoQ) params.certificate_number = String(certNoQ);
+    if (ownerQ.trim()) params.owner = ownerQ.trim();
+    if (technicianQ.trim()) params.technician = technicianQ.trim();
+    if (traderQ.trim()) params.trader = traderQ.trim();
     return params;
-  }, [range, kind, repId, statusF, printedF, visitTypeF, certNo, ownerF, technicianF, traderF]);
+  }, [range, kind, repId, statusF, printedF, visitTypeF, certNoQ, ownerQ, technicianQ, traderQ]);
 
   const loadSummary = useCallback(async () => {
     try {
@@ -207,7 +224,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     setPage(1);
     load(1, pageSize);
     loadSummary();
-  }, [range, kind, repId, statusF, printedF, visitTypeF, certNo, ownerF, technicianF, traderF]);
+  }, [range, kind, repId, statusF, printedF, visitTypeF, certNoQ, ownerQ, technicianQ, traderQ]);
 
   // Reload when page changes without changing filters
   const handlePageChange = (newPage: number, newPageSize: number) => {
@@ -219,7 +236,8 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   useEffect(() => {
     api
       .get<UserRecord[]>('/api/v1/users')
-      .then((r) => setUsers(r.data))
+      // أبجدي من الأول — قايمة «المندوب» بتتعرض بترتيبها قبل ما حد يكتب.
+      .then((r) => setUsers(sortByName(r.data || [], (u) => u.full_name || u.username)))
       .catch(() => setUsers([]));
   }, []);
 
@@ -488,7 +506,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             value={ownerF}
             onChange={(e) => setOwnerF(e.target.value)}
             allowClear
-            onPressEnter={() => { setPage(1); load(1, pageSize); loadSummary(); }}
           />
           <Input
             placeholder="الفني"
@@ -496,7 +513,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             value={technicianF}
             onChange={(e) => setTechnicianF(e.target.value)}
             allowClear
-            onPressEnter={() => { setPage(1); load(1, pageSize); loadSummary(); }}
           />
           <Input
             placeholder="التاجر"
@@ -504,14 +520,12 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             value={traderF}
             onChange={(e) => setTraderF(e.target.value)}
             allowClear
-            onPressEnter={() => { setPage(1); load(1, pageSize); loadSummary(); }}
           />
           <Select
             placeholder="المندوب"
             style={{ width: 160 }}
             allowClear
             showSearch
-            optionFilterProp="label"
             value={repId}
             onChange={setRepId}
             options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>

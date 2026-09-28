@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useBackTo } from '../components/useBackTo';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Tabs, Table, Descriptions,
@@ -373,12 +373,14 @@ export default function CustomerProfile() {
 
   const statementLines: StatementLine[] = statement?.lines ?? [];
 
+  // مرتّبة أبجدي — السطور جاية بالتاريخ، فالقايمة كانت بترتيب أول ظهور.
+  const abc = (a: { label: string }, b: { label: string }) => compareArabic(a.label, b.label);
   const repOptions = useMemo(() => [...new Set(statementLines.map((l: any) => l.rep_name).filter(Boolean))]
-    .map((r) => ({ value: r as string, label: r as string })), [statementLines]);
+    .map((r) => ({ value: r as string, label: r as string })).sort(abc), [statementLines]);
   const typeOptions = useMemo(() => [...new Set(statementLines.map((l: any) => l.entry_type).filter(Boolean))]
-    .map((t) => ({ value: t as string, label: entryTypeLabel(t as string) })), [statementLines]);
+    .map((t) => ({ value: t as string, label: entryTypeLabel(t as string) })).sort(abc), [statementLines]);
   const ccOptions = useMemo(() => [...new Set(statementLines.map((l: any) => l.cost_center_name).filter(Boolean))]
-    .map((costCenter) => ({ value: costCenter as string, label: costCenter as string })), [statementLines]);
+    .map((costCenter) => ({ value: costCenter as string, label: costCenter as string })).sort(abc), [statementLines]);
 
   const PRESETS: Array<{ label: string; get: () => [Dayjs, Dayjs] }> = [
     { label: 'اليوم', get: () => [dayjs(), dayjs()] },
@@ -906,7 +908,6 @@ export default function CustomerProfile() {
                           <Select
                             mode="multiple"
                             showSearch
-                            optionFilterProp="label"
                             style={{ minWidth: 140 }}
                             allowClear
                             maxTagCount="responsive"
@@ -914,17 +915,16 @@ export default function CustomerProfile() {
                             value={typeFilter}
                             onChange={setTypeFilter}
                             options={typeOptions}
-                            disabled={!typeOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
+                            disabled={!typeOptions.length && !typeFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
                           <Select
                             showSearch
-                            optionFilterProp="label"
                             style={{ width: 130 }}
                             allowClear
                             placeholder="المندوب"
                             value={repFilter}
                             onChange={setRepFilter}
                             options={repOptions}
-                            disabled={!repOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
+                            disabled={!repOptions.length && !repFilter} filterOption={searchFilter} filterSort={searchRank}/>
                         </Space>
                       )}
                       extra={(
@@ -943,10 +943,10 @@ export default function CustomerProfile() {
                       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
                         <Col xs={24} md={6}>
                           <Select
-                            mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
+                            mode="multiple" showSearch style={{ width: '100%' }}
                             allowClear maxTagCount="responsive"
                             placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
-                            options={ccOptions} disabled={!ccOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
+                            options={ccOptions} disabled={!ccOptions.length && !ccFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
                         </Col>
                         <Col xs={24} md={5}>
                           <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"

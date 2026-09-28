@@ -150,7 +150,7 @@ export default function Orders() {
   useEffect(() => {
     load();
     Promise.all([
-      api.get('/api/v1/items'), api.get('/api/v1/customers/options', { params: { limit: 2000 } }),
+      api.get('/api/v1/items'), api.get('/api/v1/customers/options', { params: { limit: 20000 } }),
       api.get('/api/v1/suppliers'),
     ]).then(([i, c, s]) => {
       setItems(i.data || []); setCustomers(c.data || []);
@@ -175,11 +175,17 @@ export default function Orders() {
   const kindLabel = kind === 'sale' ? 'بيع' : 'شرا';
   const sheetName = `تسعيرة ${kindLabel}`;
 
+  // قبل `useListFilter`: البحث بيناديها وهو بيتحسب جوّه الهوك نفسه.
+  const partyName = (o: Order) => (o.kind === 'sale'
+    ? (o as any).customer_name || customers.find((c) => c.id === o.customer_id)?.name
+    : suppliers.find((s) => s.id === o.supplier_id)?.name) || '-';
+
   const filter = useListFilter(orders, {
     // «طلب بيع» and «طلب شراء» are two screens in their menu. The kind belongs on the list, not
     // only inside the create dialog — an entry that shows both kinds is not the screen it names.
     initialValues: { kind },
-    search: (o) => [o.document_number, o.notes, o.statement1],
+    // اسم العميل/المورد من ضمن البحث — العمود ظاهر في الجدول، والبحث بيه كان بيرجّع فاضي.
+    search: (o) => [o.document_number, partyName(o), o.notes, o.statement1],
     filters: {
       statement: (o, v) => matchesStatement(o, v),
       kind: (o, v) => o.kind === v,
@@ -188,10 +194,6 @@ export default function Orders() {
     // تاريخ الطلب هو اللي في العمود، مش وقت كتابة الصف.
     dateOf: (o) => o.order_date || o.created_at,
   });
-
-  const partyName = (o: Order) => (o.kind === 'sale'
-    ? (o as any).customer_name || customers.find((c) => c.id === o.customer_id)?.name
-    : suppliers.find((s) => s.id === o.supplier_id)?.name) || '-';
 
   /**
    * سعر الصنف المخزّن — سعر البيع للتسعيرة البيع، وسعر الشرا لتسعيرة الشرا.

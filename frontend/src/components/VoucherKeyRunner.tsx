@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, DatePicker, Descriptions, Form, Input, Select, Space, Spin, Steps, Tag, Tooltip, message,
 } from 'antd';
@@ -95,7 +95,7 @@ export function useRunnerWorld(enabled = true): [RunnerWorld, () => void] {
     if (!enabled) return;
     Promise.all([
       api.get('/api/v1/treasuries').catch(() => ({ data: [] })),
-      api.get('/api/v1/customers/options', { params: { limit: 2000 } }).catch(() => ({ data: [] })),
+      api.get('/api/v1/customers/options', { params: { limit: 20000 } }).catch(() => ({ data: [] })),
       api.get('/api/v1/suppliers').catch(() => ({ data: [] })),
       api.get('/api/v1/users', { params: { role: 'rep' } }).catch(() => ({ data: [] })),
       api.get('/api/v1/accounts').catch(() => ({ data: [] })),
@@ -103,7 +103,10 @@ export function useRunnerWorld(enabled = true): [RunnerWorld, () => void] {
       treasuries: t.data || [],
       customers: (c.data?.items ?? c.data) || [],
       suppliers: (s.data?.items ?? s.data) || [],
-      reps: (r.data?.items ?? r.data) || [],
+      // `role: 'rep'` السيرفر مابيقراهاش (ولا فيه دور اسمه كده) فكان بيرجع كل المستخدمين
+      // والأدمن والمحاسب يطلعوا في «اختر المندوب». الفرز هنا، وأبجدي.
+      reps: sortByName(((r.data?.items ?? r.data) || [])
+        .filter((u: any) => u.role === 'sales_rep'), (u: any) => u.full_name || u.username),
       accounts: a.data || [],
     }));
   }, [enabled]);
@@ -406,7 +409,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
           {doors.includes('rep') && (
             <Form.Item name="rep_user_id" label="المندوب"
               rules={[{ required: true, message: 'اختر المندوب' }]}>
-              <Select showSearch optionFilterProp="label" placeholder="اختر المندوب"
+              <Select showSearch placeholder="اختر المندوب"
                 options={world.reps.map((r) => ({
                   value: r.id, label: r.full_name || r.username || `#${r.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
@@ -416,7 +419,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
               label={`${side === 'debit' ? 'المدين' : 'الدائن'} — تحت «${
                 (side === 'debit' ? keyDef.debit_account_name : keyDef.credit_account_name) || '—'}»`}
               rules={[{ required: true, message: 'اختر الحساب' }]}>
-              <Select showSearch optionFilterProp="label" placeholder="اختر الحساب"
+              <Select showSearch placeholder="اختر الحساب"
                 options={groupSide(side).map((a) => ({ value: a.id, label: label(a) }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           ))}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message
@@ -414,7 +415,7 @@ export default function Users() {
                     label={isRep ? 'المنطقة الجغرافية' : 'المنطقة الجغرافية (اختياري)'}
                     rules={[{ required: isRep, message: 'مندوب المبيعات يتطلب تحديد منطقة!' }]}
                   >
-                    <Select placeholder="حدد المنطقة إن وجدت" allowClear>
+                    <Select showSearch placeholder="حدد المنطقة إن وجدت" allowClear filterOption={searchFilter} filterSort={searchRank}>
                       {territoriesForBranch(branchId).map((t) => (
                         <Select.Option key={t.id} value={t.id}>
                           {t.name}
@@ -522,7 +523,7 @@ export default function Users() {
                     label={isRep ? 'المنطقة الجغرافية' : 'المنطقة الجغرافية (اختياري)'}
                     rules={[{ required: isRep, message: 'مندوب المبيعات يتطلب تحديد منطقة!' }]}
                   >
-                    <Select placeholder="حدد المنطقة إن وجدت" allowClear>
+                    <Select showSearch placeholder="حدد المنطقة إن وجدت" allowClear filterOption={searchFilter} filterSort={searchRank}>
                       {territoriesForBranch(branchId).map((t) => (
                         <Select.Option key={t.id} value={t.id}>
                           {t.name}

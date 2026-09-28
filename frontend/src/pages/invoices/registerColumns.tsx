@@ -14,6 +14,7 @@ import {
 import { api } from '../../api/client';
 import { printInvoice } from '../../components/InvoiceDocument';
 import { money } from '../../utils/money';
+import { compareArabic } from '../../utils/arabicSort';
 import { InvoiceRecord, Customer, InvoiceFilters } from './types';
 
 export interface RegisterColumnsCtx {
@@ -124,7 +125,8 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) => {
         const cA = a.customer_name || customers.find((c) => c.id === a.customer_id)?.name || '';
         const cB = b.customer_name || customers.find((c) => c.id === b.customer_id)?.name || '';
-        return cA.localeCompare(cB);
+        // موحَّد: «أحمد» و«احمد» جنب بعض، مش في طرفين الجدول.
+        return compareArabic(cA, cB);
       },
       render: (cId: number, row: any) => {
         // الاسم جاي مع الصف؛ الكشف المحلي فاضل كخطة بديلة للصفوف القديمة.

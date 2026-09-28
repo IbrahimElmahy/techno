@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
@@ -233,11 +233,11 @@ export default function Employees() {
               options={branches.map((b) => ({ value: b.id, label: b.name }))} />
           </Col>
           <Col xs={24} md={8}>
-            <Select allowClear style={{ width: '100%' }} placeholder="الوظيفة"
+            <Select showSearch allowClear style={{ width: '100%' }} placeholder="الوظيفة"
               value={form.job_title_id}
               onChange={(v) => setForm({ ...form, job_title_id: v })}
               options={titles.filter((t) => t.active)
-                .map((t) => ({ value: t.id, label: t.name }))} />
+                .map((t) => ({ value: t.id, label: t.name }))} filterOption={searchFilter} filterSort={searchRank} />
           </Col>
 
           <Col xs={24} md={12}>
@@ -274,12 +274,12 @@ export default function Employees() {
               onChange={(v) => setForm({ ...form, collection_commission_pct: v })} />
           </Col>
           <Col xs={24} md={8}>
-            <Select allowClear style={{ width: '100%' }} placeholder="المخزن"
+            <Select showSearch allowClear style={{ width: '100%' }} placeholder="المخزن"
               value={form.warehouse_id} onChange={(v) => setForm({ ...form, warehouse_id: v })}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           </Col>
           <Col xs={24} md={8}>
-            <Select allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            <Select allowClear showSearch style={{ width: '100%' }}
               placeholder="مربوط بمستخدم (اختياري)" value={form.user_id}
               onChange={(v) => setForm({ ...form, user_id: v })}
               options={users.map((u) => ({

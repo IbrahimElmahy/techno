@@ -199,7 +199,7 @@ export default function ChartTab() {
           initialValues={{ is_postable: true, nature: 'expense' }}>
           <Form.Item name="parent_id" label="الحساب الأب (المجموعة)"
             extra="اترك فارغاً لإنشاء حساب جذر">
-            <Select allowClear placeholder="اختر المجموعة الأب" showSearch optionFilterProp="label"
+            <Select allowClear placeholder="اختر المجموعة الأب" showSearch
               options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item name="code" label="كود الحساب (مقطعي)"

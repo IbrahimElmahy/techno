@@ -343,7 +343,9 @@ class CustomerOptionOut(BaseModel):
 def customer_options(
     q: str | None = Query(default=None, description="بحث بالاسم أو الكود أو التليفون"),
     customer_type: str | None = Query(default=None),
-    limit: int = Query(default=500, ge=1, le=2000),
+    # الحد الأعلى أكبر من عدد العملاء كله: الفلاتر بتحمّل القايمة مرة وتدوّر فيها في
+    # الشاشة، وحد ٢٠٠٠ مع ٣٢٠٠+ عميل كان بيخلّي تلت العملاء مايظهروش في أي فلتر خالص.
+    limit: int = Query(default=500, ge=1, le=20000),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CustomerOptionOut]:

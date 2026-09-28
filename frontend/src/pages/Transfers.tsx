@@ -4,7 +4,7 @@ import DraftTag from '../components/DraftTag';
 // حد الجلب من الـAPI، مش عدد صفوف الجدول.
 import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
   from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
   Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
@@ -229,13 +229,13 @@ export default function Transfers() {
   const locationOptions = useMemo(() => ([
     {
       label: 'المخازن',
-      options: warehouses.map((w) => ({
+      options: sortByName(warehouses, (w) => w.name).map((w) => ({
         value: locValue('warehouse', w.id), label: w.name || `مخزن #${w.id}`,
       })),
     },
     {
       label: 'عهد المناديب',
-      options: custodies.map((c) => ({
+      options: sortByName(custodies, (c) => c.name).map((c) => ({
         value: locValue('custody', c.id), label: c.name || `عهدة #${c.id}`,
       })),
     },
@@ -1520,7 +1520,6 @@ export default function Transfers() {
               <div style={{ marginBottom: 6, fontWeight: 600 }}>من (المصدر)</div>
               <Select showSearch size="large" style={{ width: '100%' }}
                 placeholder="اختر المخزن أو العهدة المصدر"
-                optionFilterProp="label"
                 disabled={!!editing || viewOnly}
                 value={source ?? undefined} onChange={onSourceChange}
                 options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1529,7 +1528,6 @@ export default function Transfers() {
               <div style={{ marginBottom: 6, fontWeight: 600 }}>إلى (الوجهة)</div>
               <Select showSearch size="large" style={{ width: '100%' }}
                 placeholder="اختر المخزن أو العهدة الوجهة"
-                optionFilterProp="label"
                 disabled={!!editing || viewOnly}
                 value={dest ?? undefined} onChange={(v) => setDest(v)}
                 options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1590,7 +1588,6 @@ export default function Transfers() {
               <Col xs={24} md={7}>
                 <Select showSearch size="large" style={{ width: '100%' }}
                   placeholder="اختر الفئة" value={activeCategory ?? undefined}
-                  optionFilterProp="label"
                   disabled={viewOnly}
                   onChange={(v) => setActiveCategory(v ?? null)}
                   options={categories} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1599,7 +1596,6 @@ export default function Transfers() {
                 <Select showSearch size="large" style={{ width: '100%' }} value={null}
                   disabled={!activeCategory || viewOnly}
                   placeholder={activeCategory ? 'اختر صنفاً لإضافته (المتاح فقط)' : 'اختر الفئة أولاً'}
-                  optionFilterProp="label"
                   onChange={(v) => { if (v) addItem(v as number); }}
                   options={stockOfCategory.map((s) => ({
                     value: s.item_id,

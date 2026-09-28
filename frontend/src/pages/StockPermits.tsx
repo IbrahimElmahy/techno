@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { money, qty } from '../utils/money';
 import DocumentBar from '../components/DocumentBar';
 import DraftTag from '../components/DraftTag';
@@ -417,11 +418,10 @@ export default function StockPermits() {
 
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={8}>
-          <Select
+          <Select showSearch
             style={{ width: '100%' }} placeholder="المخزن" value={warehouseId}
             onChange={setWarehouseId}
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-          />
+            options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         </Col>
         <Col xs={24} md={8}>
           <DatePicker style={{ width: '100%' }} value={permitDate}

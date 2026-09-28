@@ -9,6 +9,7 @@
  * مالوش حالة خاصة بيه غير اللي يخصّه هو.
  */
 import React from 'react';
+import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, message,
 } from 'antd';
@@ -52,7 +53,9 @@ export default function TransferModal({
                 >
                   <Form.Item name="from_treasury_id" label="من" rules={[{ required: true, message: 'اختر الخزينة' }]}>
                     <Select
-                      style={{ width: 200 }}
+                      style={{ width: 200 }} showSearch
+                      // صندوق لكل خط لكل مندوب — القايمة طويلة كفاية إنها تتبحث.
+                      filterOption={searchFilter} filterSort={searchRank}
                       options={treasuries
                         .filter((t) => t.active)
                         .map((t) => ({ value: t.id, label: `${t.name} (${money(t.balance)})` }))}
@@ -60,7 +63,8 @@ export default function TransferModal({
                   </Form.Item>
                   <Form.Item name="to_treasury_id" label="إلى" rules={[{ required: true, message: 'اختر الخزينة' }]}>
                     <Select
-                      style={{ width: 200 }}
+                      style={{ width: 200 }} showSearch
+                      filterOption={searchFilter} filterSort={searchRank}
                       options={treasuries.filter((t) => t.active).map((t) => ({ value: t.id, label: t.name }))}
                     />
                   </Form.Item>

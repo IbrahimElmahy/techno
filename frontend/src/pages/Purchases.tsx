@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result,
   Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message, DatePicker,
@@ -1453,17 +1453,17 @@ export default function Purchases() {
       cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
     { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
-        <Select size="small" style={{ width: '100%' }} placeholder="مخزن الاستلام"
+        <Select showSearch size="small" style={{ width: '100%' }} placeholder="مخزن الاستلام"
           disabled={viewOnly}
           value={line.warehouse_id ?? undefined}
           onChange={(val) => {
             handleItemChange(line.key, 'warehouse_id', val ?? null);
             setStickyWarehouseId(val ?? null);
           }}
-          options={lineWarehouses.map((w: any) => ({
+          options={sortByName(lineWarehouses, (w: any) => w.name).map((w: any) => ({
             value: w.id,
             label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
-          }))} />
+          }))} filterOption={searchFilter} filterSort={searchRank} />
       ) },
     { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
       cell: (line) => {
@@ -1633,22 +1633,21 @@ export default function Purchases() {
                   disabled={viewOnly}
                   placeholder="اضغط لاختيار المورد"
                   onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
-                  options={suppliers.map((sp) => ({
+                  options={sortByName(suppliers, (sp) => sp.name).map((sp) => ({
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
               <Form.Item label="المخزن الافتراضي" style={{ marginBottom: 8 }}>
-                <Select
+                <Select showSearch
                   disabled={viewOnly}
                   placeholder="اختر المخزن الافتراضي"
                   value={stickyWarehouseId ?? undefined}
                   onChange={(val) => setStickyWarehouseId(val ?? null)}
-                  options={lineWarehouses.map((w: any) => ({
+                  options={sortByName(lineWarehouses, (w: any) => w.name).map((w: any) => ({
                     value: w.id,
                     label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
-                  }))}
-                />
+                  }))} filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
@@ -2128,7 +2127,7 @@ export default function Purchases() {
           { key: 'branch_id', placeholder: 'الفرع', span: 4,
             options: branches.map((b: any) => ({ value: b.id, label: b.name })) },
           { key: 'supplier_id', placeholder: 'المورد', span: 4,
-            options: suppliers.map((s) => ({ value: s.id, label: s.name })) },
+            options: sortByName(suppliers, (s) => s.name).map((s) => ({ value: s.id, label: s.name })) },
           // تحت الطيّة: بيتسألوا كل شوية، ولهم فلتر على العمود نفسه كمان.
           { key: 'document_number', placeholder: 'مستند رقم', kind: 'text',
             advanced: true, span: 5 },

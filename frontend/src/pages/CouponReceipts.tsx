@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
   Space, Statistic, Table, Tabs, Tag, Typography, message,
@@ -196,7 +196,7 @@ export default function CouponReceipts() {
   }, [searchQuery]);
 
   useEffect(() => {
-    api.get('/api/v1/customers/options', { params: { limit: 2000 } }).then((r) => setCustomers(r.data || [])).catch(console.error);
+    api.get('/api/v1/customers/options', { params: { limit: 20000 } }).then((r) => setCustomers(r.data || [])).catch(console.error);
   }, []);
 
   const customerName = (id: number | null) =>
@@ -291,7 +291,7 @@ export default function CouponReceipts() {
     .sort((a, b) => {
       const rank = (c: any) => (receiverTypes.includes(String(c.customer_type)) ? 0 : 1);
       return rank(a) - rank(b)
-        || String(a.name ?? '').localeCompare(String(b.name ?? ''), 'ar');
+        || compareArabic(a.name, b.name);
     })
     .map((c) => {
       const typeLabel = customerTypeLabel(c.customer_type);
@@ -426,7 +426,7 @@ export default function CouponReceipts() {
               الورقة مايعرفوش غير اللي ماسكها، فالحقل ده سؤال ليه مش عرض عليه.
               وبيتقفل بعد أول كوبون: المستند الواحد دفتر واحد. */}
           <Select
-            style={{ width: '100%' }} showSearch optionFilterProp="label"
+            style={{ width: '100%' }} showSearch
             placeholder="فئة الكوبون — اختر قبل الإدخال"
             status={!kind ? 'warning' : undefined}
             disabled={entries.length > 0}
@@ -468,7 +468,7 @@ export default function CouponReceipts() {
               كان بيتكتب لوحده من أول كوبون سليم، يعني اسم التاجر اللي اتصرف له —
               وده طرف تاني خالص. الملء الأوتوماتيكي اتشال عن قصد. */}
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear showSearch style={{ width: '100%' }}
             placeholder="بستلم من مين"
             status={!customerId ? 'warning' : undefined}
             value={customerId} onChange={setCustomerId}

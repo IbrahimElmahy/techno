@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Button, Col, DatePicker, Empty, Form, Input, Row, Select, Space, Spin, Tag, message,
 } from 'antd';
@@ -63,6 +63,9 @@ const PRICE_TIERS = [
   { value: 'semi_wholesale', label: 'نصف جملة' },
   { value: 'consumer', label: 'مستهلك' },
 ];
+/** نفس مقارنة `compareArabic` بالظبط، على أسماء موحَّدة من قبل — أسرع بكتير على آلاف الأسماء. */
+const arCollator = new Intl.Collator('ar', { numeric: true });
+
 const KIND_ENDPOINT: Record<PartyKind, string> = {
   customer: '/api/v1/customers',
   supplier: '/api/v1/suppliers',
@@ -138,17 +141,42 @@ export default function PartyPickerModal({
           : Promise.resolve({ data: [] }),
       ]);
       setParties(pRes.data);
-      setBranches(bRes.data || []);
-      setReps((uRes.data || []).filter((u: any) => u.role === 'sales_rep'));
-      setTerritories(tRes.data || []);
+      // قوايم فورم الإنشاء أبجدي — بتتعرض بترتيبها قبل ما حد يكتب.
+      const byName = (r: any) => r.full_name || r.username || r.name;
+      setBranches(sortByName(bRes.data || [], byName));
+      setReps(sortByName((uRes.data || []).filter((u: any) => u.role === 'sales_rep'), byName));
+      setTerritories(sortByName(tRes.data || [], byName));
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
   useEffect(() => { if (open) { load(); setQuery(''); setCreating(false); } }, [open, activeKind]);
 
+  // الاسم موحَّد مرة واحدة للكشف كله — الترتيب تحت بيقارن آلاف الأسماء مع كل حرف.
+  const bareNames = useMemo(
+    () => new Map(parties.map((p) => [p.id, normalizeAr(p.name)])), [parties]);
+
   const visible = useMemo(() => {
     const needle = normalizeAr(query);
     const onlyType = KIND_CUSTOMER_TYPE[activeKind];
+    const bare = (p: Party) => bareNames.get(p.id) ?? normalizeAr(p.name);
+    /**
+     * **الأقرب فوق، وجوّه كل مرتبة أبجدي** — نفس قاعدة `searchRank` في القوايم المقفولة:
+     *
+     *     ٠  الاسم بيبدأ بالحروف         «محمد حسن»
+     *     ١  كلمة جوّاه بتبدأ بيها        «احمد محمد»
+     *     ٢  جوّه كلمة                    «المحمدي»
+     *     ٣  لقيناه بالتليفون مش بالاسم
+     *
+     * كانت بتطلع بترتيب الكشف (الأحدث الأول)، فاللي بيكتب «محمد» يلاقي «احمد محمد» فوق
+     * «محمد حسن». ومن غير كتابة: أبجدي، عشان اللي بيدوّر بعينه يلاقي الاسم في مكانه.
+     */
+    const rank = (p: Party) => {
+      if (!needle) return 0;
+      const t = bare(p);
+      if (t.startsWith(needle)) return 0;
+      if (t.includes(` ${needle}`)) return 1;
+      return t.includes(needle) ? 2 : 3;
+    };
     return parties.filter((p) => {
       // تبويب «الموظفين» بيفرز نفس الكشف — مش بيجيب دفتر تاني. الموظف اللي بيشتري
       // كارته كارت عميل، ولو كان له كارت لوحده كان هيبقى ليه رصيدين لنفس الراجل.
@@ -156,9 +184,9 @@ export default function PartyPickerModal({
       if (excludeTypes?.includes((p as any).customer_type)) return false;
       if (branchId && p.branch_id !== branchId) return false;
       if (!needle) return true;
-      return normalizeAr(p.name).includes(needle) || normalizeAr(p.phone).includes(needle);
-    });
-  }, [parties, query, branchId, activeKind]);
+      return bare(p).includes(needle) || normalizeAr(p.phone).includes(needle);
+    }).sort((a, b) => (rank(a) - rank(b)) || arCollator.compare(bare(a), bare(b)));
+  }, [parties, bareNames, query, branchId, activeKind]);
 
   // Back to the top when the list changes, and never past its end.
   useEffect(() => { setCursor(0); }, [query, branchId, open]);
@@ -391,7 +419,7 @@ export default function PartyPickerModal({
                 <Form.Item name="rep_id" label="مندوب"
                   rules={[{ required: true, message: 'المندوب مطلوب' }]}
                   style={{ marginBottom: 10 }}>
-                  <Select showSearch optionFilterProp="label" placeholder="اختر المندوب"
+                  <Select showSearch placeholder="اختر المندوب"
                     options={reps.map((r: any) => ({
                       value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
@@ -467,7 +495,7 @@ export default function PartyPickerModal({
                 <Form.Item name="territory_id" label="المنطقة"
                   rules={[{ required: true, message: 'المنطقة مطلوبة' }]}
                   style={{ marginBottom: 10 }}>
-                  <Select showSearch optionFilterProp="label" placeholder="اختر المنطقة"
+                  <Select showSearch placeholder="اختر المنطقة"
                     options={territories.map((t: any) => ({ value: t.id, label: t.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>

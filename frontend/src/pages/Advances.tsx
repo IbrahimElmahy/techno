@@ -312,7 +312,7 @@ export default function Advances() {
     >
       <Space style={{ marginBottom: 10 }}>
         <Select
-          allowClear showSearch optionFilterProp="label" style={{ width: 260 }}
+          allowClear showSearch style={{ width: 260 }}
           placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
           options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
       </Space>
@@ -383,7 +383,7 @@ export default function Advances() {
         <Row gutter={[10, 10]}>
           <Col span={14}>
             <div style={{ marginBottom: 4 }}>الموظف *</div>
-            <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
+            <Select showSearch style={{ width: '100%' }}
               value={advForm.employee_id}
               onChange={(v) => setAdvForm({ ...advForm, employee_id: v })}
               options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -426,7 +426,7 @@ export default function Advances() {
         <Row gutter={[10, 10]}>
           <Col span={14}>
             <div style={{ marginBottom: 4 }}>الموظف *</div>
-            <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
+            <Select showSearch style={{ width: '100%' }}
               value={adjForm.employee_id}
               onChange={(v) => setAdjForm({ ...adjForm, employee_id: v })}
               options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>

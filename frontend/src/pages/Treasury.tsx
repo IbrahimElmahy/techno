@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Button, Card, Col, Divider, Form, Input, Row, Select, Space, Table, Tag, message,
@@ -432,12 +433,11 @@ export default function Treasury() {
           {journalLines.map((line) => (
             <Row gutter={12} key={line.key} align="middle" style={{ marginBottom: 12 }}>
               <Col span={10}>
-                <Select
+                <Select showSearch
                   placeholder="الحساب المالي"
                   style={{ width: '100%' }}
                   value={line.account_id}
-                  onChange={(val) => handleLineChange(line.key, 'account_id', val)}
-                >
+                  onChange={(val) => handleLineChange(line.key, 'account_id', val)} filterOption={searchFilter} filterSort={searchRank}>
                   {accounts.map((a) => (
                     <Select.Option key={a.id} value={a.id}>
                       {accountDisplay(a.id)}

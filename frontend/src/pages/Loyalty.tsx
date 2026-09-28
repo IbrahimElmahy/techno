@@ -127,7 +127,7 @@ export default function Loyalty() {
 
   const loadLookups = async () => {
     try {
-      const res = await api.get('/api/v1/customers/options', { params: { limit: 2000 } });
+      const res = await api.get('/api/v1/customers/options', { params: { limit: 20000 } });
       setCustomers(res.data);
     } catch (err) {
       console.error(err);
@@ -602,10 +602,8 @@ export default function Loyalty() {
           label: k.label,
           count: matching.length,
           value: matching.reduce((s, c) => s + Number(c.value || 0), 0),
-          onClick: () => {
-            couponFilter.setQuery(k.label);
-            setActiveTab('coupons');
-          },
+          // مافيش `onClick`: كان بيودّي على تبويب «الكوبونات» ويكتب الفئة في بحثه، والتبويب
+          // ده اتشال (5a2ddf37) — فالضغطة كانت بتفضّي الشاشة وتسيب بحث مخفي شغّال.
         };
       });
     }
@@ -634,7 +632,10 @@ export default function Loyalty() {
           kinds={kindStats}
           kindsTitle="أنواع الكوبونات وتوزيع الأعداد"
         />
-        <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
+        {/* التبويب اللي في الرابط (أو الافتراضي القديم «settings») ممكن يكون اتشال —
+            ساعتها أول تبويب موجود بدل شاشة من غير محتوى. */}
+        <Tabs activeKey={items.some((t) => t.key === activeTab) ? activeTab : items[0]?.key}
+          onChange={setActiveTab} items={items} />
       </Card>
 
       {/* Create Coupon Type Settings Drawer */}

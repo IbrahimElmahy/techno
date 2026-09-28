@@ -160,7 +160,7 @@ export default function TrialBalanceTab() {
         <Select allowClear placeholder="كل الفروع" style={{ width: 180 }} value={branchId} onChange={setBranchId}
           options={branches.map((b) => ({ value: b.id, label: b.name }))} />
         <Select allowClear placeholder="كل مراكز التكلفة" style={{ width: 220 }} value={costCenterId}
-          onChange={setCostCenterId} showSearch optionFilterProp="label"
+          onChange={setCostCenterId} showSearch
           options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} filterOption={searchFilter} filterSort={searchRank}/>
         <Radio.Group size="small" value={grouped} onChange={(e: any) => setGrouped(e.target.value)}>
           <Radio.Button value>مقسّم بالطبيعة</Radio.Button>

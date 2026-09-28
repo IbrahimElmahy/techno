@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
   Select, Space, Table, Tag, Tooltip, Typography, message,
@@ -671,7 +671,7 @@ export default function PurchaseReturns() {
       cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
     { key: 'warehouse', title: 'المخزن', minWidth: 120,
       cell: (line) => (
-        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+        <Select showSearch size="small" style={{ width: '100%' }} placeholder="المخزن"
           disabled={viewOnly}
           value={line.warehouse_id ?? warehouseId ?? undefined}
           onChange={(v) => {
@@ -679,10 +679,10 @@ export default function PurchaseReturns() {
               l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
             if (v != null) setWarehouseId(v as number);
           }}
-          options={warehouses.map((w: any) => ({
+          options={sortByName(warehouses, (w: any) => w.name).map((w: any) => ({
             value: w.id,
             label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
-          }))} />
+          }))} filterOption={searchFilter} filterSort={searchRank} />
       ) },
     { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
       cell: (line) => <b style={{ fontSize: 13 }}>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b> },
@@ -996,11 +996,17 @@ export default function PurchaseReturns() {
     dateOf: (r) => r.return_date || r.created_at,
   });
 
+  // اسم آخر مورد اتختار من النافذة. قايمة `suppliers` مبنية من المردودات اللي في الكشف،
+  // فمورد أول مرة يترجّع له كان بيظهر في خانة «المورد» كرقم مش كاسم.
+  const [pickedSupplier, setPickedSupplier] = useState<{ value: number; label: string } | null>(null);
   const suppliers = useMemo(() => {
     const seen = new Map<number, string>();
     rows.forEach((r) => { if (r.supplier_id) seen.set(r.supplier_id, r.supplier_name || ''); });
-    return [...seen].map(([value, label]) => ({ value, label }));
-  }, [rows]);
+    if (pickedSupplier && !seen.has(pickedSupplier.value)) {
+      seen.set(pickedSupplier.value, pickedSupplier.label);
+    }
+    return sortByName([...seen].map(([value, label]) => ({ value, label })), (o) => o.label);
+  }, [rows, pickedSupplier]);
 
   const kb = useTableKeyboard<ReturnRow>({
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: openReturn,
@@ -1151,11 +1157,11 @@ export default function PurchaseReturns() {
         destroyOnHidden
       >
         <Select
-          style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+          style={{ width: '100%' }} size="large" showSearch
           placeholder="اختر المخزن"
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
-          options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+          options={sortByName(warehouses, (w: any) => w.name).map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           هيثبت لكل أصناف المردود. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
         </div>
@@ -1184,6 +1190,7 @@ export default function PurchaseReturns() {
           setNewStep(null);
           setPartyPickerOpen(false);
           setSupplierFilter(picked.id);
+          setPickedSupplier({ value: picked.id, label: picked.name });
           setCreating(true);
         }}
         onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />

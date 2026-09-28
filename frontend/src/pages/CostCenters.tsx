@@ -235,7 +235,6 @@ export default function CostCenters() {
               <Form.Item name="parent_id" label="المركز التابع له"
                 extra="سيبه فاضي = مركز في المستوى الأول">
                 <Select allowClear showSearch placeholder="بدون (مستوى ١)"
-                  optionFilterProp="label"
                   options={rows.filter((c) => c.active).map((c) => ({
                     value: c.id, label: `${c.name} · مستوى ${c.level ?? 1}`,
                   }))} filterOption={searchFilter} filterSort={searchRank}/>

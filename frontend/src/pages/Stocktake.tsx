@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Select, Space, Statistic, Table, Tag, message,
@@ -346,11 +347,10 @@ export default function Stocktake() {
                 }}
               />
             </div>
-            <Select
+            <Select showSearch
               allowClear style={{ width: '100%' }} placeholder="كل المخازن"
               value={warehouseId} onChange={setWarehouseId}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-            />
+              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           </Space>
         )}
       />

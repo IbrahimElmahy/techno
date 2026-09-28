@@ -528,13 +528,12 @@ export default function Warehouses() {
           الموظف له مخزن واحد — لو كان على مخزن تاني هيتنقل لهنا. وشيل العلامة معناه إنه يخرج من
           المخزن ده.
         </p>
-        <Select
+        <Select showSearch
           mode="multiple"
           style={{ width: '100%' }}
           placeholder="اختر الموظفين"
           value={repsDraft}
           onChange={setRepsDraft}
-          optionFilterProp="label"
           options={employees.map((e) => ({
             value: e.id,
             // The current store is on the label so moving somebody is a visible act, not a
@@ -547,8 +546,7 @@ export default function Warehouses() {
                 : null,
               e.user_id ? null : 'بدون مستخدم',
             ].filter(Boolean).join(' · '),
-          }))}
-        />
+          }))} filterOption={searchFilter} filterSort={searchRank} />
       </TabModal>
 
       {/* عملاء المندوب — who this rep may work with and sell to. */}

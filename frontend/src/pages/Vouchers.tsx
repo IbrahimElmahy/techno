@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Statistic, Col, message, Descriptions, Alert,
 } from 'antd';
@@ -83,9 +83,12 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
     <Card title="حركة الخزينة">
       <Space wrap style={{ marginBottom: 12 }}>
         <Select
-          style={{ width: 260 }} placeholder="اختر الخزينة"
+          style={{ width: 260 }} placeholder="اختر الخزينة" showSearch
           value={treasuryId} onChange={setTreasuryId}
-          options={treasuries.map((t) => ({ value: t.id, label: `${t.name} (${fmt(t.balance)})` }))}
+          // صندوق لكل خط لكل مندوب — القايمة طويلة، فبتتبحث وبتترتّب زي أي قايمة أسماء.
+          options={sortByName(treasuries, (t) => t.name)
+            .map((t) => ({ value: t.id, label: `${t.name} (${fmt(t.balance)})` }))}
+          filterOption={searchFilter} filterSort={searchRank}
         />
         <div style={{ width: 280 }}>
           <DateRangeFilter value={range} onChange={(v) => setRange(v)} />
@@ -301,7 +304,8 @@ const Vouchers: React.FC = () => {
     api.get<Party[]>('/api/v1/suppliers').then((r) => setSuppliers(r.data)).catch(() => {});
     api
       .get<UserRecord[]>('/api/v1/users')
-      .then((r) => setReps(r.data.filter((u) => u.role === 'sales_rep')))
+      .then((r) => setReps(sortByName(r.data.filter((u) => u.role === 'sales_rep'),
+        (u) => u.full_name || u.username)))
       .catch(() => {});
   }, []);
 
@@ -429,12 +433,14 @@ const Vouchers: React.FC = () => {
     }
   };
 
-  const stPartyOptions =
+  // أبجدي قبل الكتابة — الكشف جاي من السيرفر بالأحدث الأول.
+  const stPartyOptions = sortByName(
     stKind === 'customer'
       ? customers.map((c) => ({ value: c.id, label: c.name }))
       : stKind === 'supplier'
         ? suppliers.map((s) => ({ value: s.id, label: s.name }))
-        : reps.map((r) => ({ value: r.id, label: r.full_name || r.username }));
+        : reps.map((r) => ({ value: r.id, label: r.full_name || r.username })),
+    (o) => o.label);
 
   const stPartyLabel = stPartyOptions.find((o) => o.value === stParty)?.label || '';
 
@@ -963,7 +969,6 @@ const Vouchers: React.FC = () => {
                   />
                   <Select
                     showSearch
-                    optionFilterProp="label"
                     style={{ width: 240 }}
                     placeholder="اختر الطرف"
                     value={stParty}

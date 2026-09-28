@@ -114,6 +114,9 @@ export function searchRank(a: any, b: any, info?: { searchValue?: string }): num
   const rank = (o: any) => {
     const t = optionText(o);
     if (t.startsWith(n)) return 0;
+    // «1201 — محمد حسن»: الحسابات بتتعرض بالكود قبل الاسم، فالاسم عمره ما كان «بيبدأ»
+    // بالحروف. أي جزء بعد «—» بيتحسب بداية.
+    if (t.split(' — ').some((part) => part.trim().startsWith(n))) return 0;
     if (t.includes(` ${n}`)) return 1;
     return 2;
   };

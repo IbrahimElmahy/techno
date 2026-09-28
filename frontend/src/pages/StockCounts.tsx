@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -437,7 +437,7 @@ export default function StockCounts() {
           {kind === 'spot' && (
             <Form.Item label="الأصناف" required
               extra="جرد العينة يلزمه تحديد الأصناف — و«عينة» بلا أصناف ليست جرداً.">
-              <Select mode="multiple" allowClear showSearch optionFilterProp="label"
+              <Select mode="multiple" allowClear showSearch
                 style={{ width: '100%' }} placeholder="اختر الأصناف"
                 value={spotItems} onChange={setSpotItems}
                 options={items.map((i: any) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -446,10 +446,10 @@ export default function StockCounts() {
 
           <Form.Item label="المخزن"
             help="سيبه فاضي والكشف هيفتح على كل المخازن النشطة (جرد عام)">
-            <Select allowClear showSearch optionFilterProp="label"
+            <Select allowClear showSearch
               placeholder="كل المخازن النشطة"
               value={warehouseId} onChange={setWarehouseId}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item label="تاريخ الجرد">
             <DatePicker style={{ width: '100%' }} value={countDate} allowClear={false}

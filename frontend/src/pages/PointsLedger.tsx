@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
   Card, Table, Row, Col, Statistic, Select, Button, Space, Tag, Typography, message, Alert,
@@ -87,13 +87,25 @@ export default function PointsLedger() {
   };
 
   useEffect(() => {
-    api.get('/api/v1/customers/options', { params: { limit: 2000 } }).then((r) => setCustomers(r.data || [])).catch(() => {});
+    api.get('/api/v1/customers/options', { params: { limit: 20000 } }).then((r) => setCustomers(r.data || [])).catch(() => {});
   }, []);
 
   // تغيير أي فلتر بيرجّع لأول صفحة: الصفحة ٧ من نتيجة قديمة على فلتر جديد بتطلع فاضية،
   // والمستخدم بيفتكر إن مافيش حركة.
-  useEffect(() => { setPage(1); }, [customerId, kinds, range]);
-  useEffect(() => { load(); }, [customerId, kinds, range, page]);
+  //
+  // والاتنين في تأثير واحد: كانوا تأثيرين، فتغيير فلتر وانت في الصفحة ٧ كان بيجيب الصفحة ٧
+  // بالفلتر الجديد وبعدين الصفحة ١ — طلبين، واللي يرجع الأخر هو اللي يتعرض.
+  const filterKey = JSON.stringify([
+    customerId ?? null, kinds, range ? range.map((d) => d.format('YYYY-MM-DD')) : null]);
+  const lastFilterKey = useRef(filterKey);
+  useEffect(() => {
+    if (lastFilterKey.current !== filterKey) {
+      lastFilterKey.current = filterKey;
+      if (page !== 1) { setPage(1); return; }   // تغيير الصفحة هيجيب الكشف
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey, page]);
 
   const kindOptions = useMemo(
     () => Object.entries(data?.kinds || {}).map(([value, label]) => ({ value, label })),
@@ -101,7 +113,7 @@ export default function PointsLedger() {
   );
 
   const customerOptions = useMemo(
-    () => customers.map((c) => ({ value: c.id, label: c.name })),
+    () => sortByName(customers, (c) => c.name).map((c) => ({ value: c.id, label: c.name })),
     [customers],
   );
 
@@ -199,7 +211,7 @@ export default function PointsLedger() {
         <Row gutter={[8, 8]} align="middle">
           <Col xs={24} md={8}>
             <Select
-              allowClear showSearch optionFilterProp="label"
+              allowClear showSearch
               style={{ width: '100%' }}
               placeholder="كل العملاء"
               value={customerId}

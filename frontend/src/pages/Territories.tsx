@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Empty, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
@@ -90,12 +91,12 @@ export default function Territories() {
     {
       title: 'تحت منطقة', dataIndex: 'parent_id', key: 'parent_id', width: 190,
       render: (v: number | null, r: Territory) => (
-        <Select size="small" style={{ width: '100%' }} allowClear placeholder="— رئيسية —"
+        <Select showSearch size="small" style={{ width: '100%' }} allowClear placeholder="— رئيسية —"
           value={v ?? undefined}
           onChange={(x) => patch(r, { parent_id: x ?? 0 }, 'المنطقة الأب')}
           options={parents
             .filter((p) => p.id !== r.id && p.branch_id === r.branch_id)
-            .map((p) => ({ value: p.id, label: p.name }))} />
+            .map((p) => ({ value: p.id, label: p.name }))} filterOption={searchFilter} filterSort={searchRank} />
       ),
     },
     {
@@ -190,11 +191,11 @@ export default function Territories() {
           <Select style={{ width: '100%' }} placeholder="الفرع" value={draft.branch_id}
             onChange={(v) => setDraft({ ...draft, branch_id: v, parent_id: undefined })}
             options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
-          <Select style={{ width: '100%' }} allowClear placeholder="تحت منطقة — اتركه فارغاً لمنطقة رئيسية"
+          <Select showSearch style={{ width: '100%' }} allowClear placeholder="تحت منطقة — اتركه فارغاً لمنطقة رئيسية"
             value={draft.parent_id}
             onChange={(v) => setDraft({ ...draft, parent_id: v })}
             options={parents.filter((p) => p.branch_id === draft.branch_id)
-              .map((p) => ({ value: p.id, label: p.name }))} />
+              .map((p) => ({ value: p.id, label: p.name }))} filterOption={searchFilter} filterSort={searchRank} />
         </Space>
       </Modal>
     </Card>

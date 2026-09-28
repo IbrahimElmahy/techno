@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
   Table,
@@ -278,22 +279,20 @@ export default function Owners() {
             onSearch={fetchOwners}
             allowClear
           />
-          <Select
+          <Select showSearch
             placeholder="المنطقة"
             style={{ width: 160 }}
             allowClear
             value={territoryId}
             onChange={setTerritoryId}
-            options={territories.map((t) => ({ label: t.name, value: t.id }))}
-          />
-          <Select
+            options={sortByName(territories, (t) => t.name).map((t) => ({ label: t.name, value: t.id }))} filterOption={searchFilter} filterSort={searchRank} />
+          <Select showSearch
             placeholder="مندوب الخدمة"
             style={{ width: 160 }}
             allowClear
             value={serviceRepId}
             onChange={setServiceRepId}
-            options={users.map((u) => ({ label: u.full_name || `#${u.id}`, value: u.id }))}
-          />
+            options={sortByName(users, (u) => u.full_name).map((u) => ({ label: u.full_name || `#${u.id}`, value: u.id }))} filterOption={searchFilter} filterSort={searchRank} />
           <Select
             placeholder="المعاينات"
             style={{ width: 150 }}

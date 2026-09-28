@@ -385,7 +385,7 @@ export default function Leave() {
         <Row gutter={[10, 10]}>
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>الموظف *</div>
-            <Select showSearch optionFilterProp="label" style={{ width: '100%' }}
+            <Select showSearch style={{ width: '100%' }}
               value={form.employee_id}
               onChange={(v) => setForm({ ...form, employee_id: v })}
               options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>

@@ -233,7 +233,6 @@ export default function SubAccounts() {
         <Form.Item name="parent_id" label="الحسابات الرئيسيه"
           rules={[{ required: isCreate, message: 'اختر الحساب الرئيسي' }]}>
           <Select showSearch disabled={!isCreate} placeholder="اختر الحساب الرئيسي"
-            optionFilterProp="label"
             options={groups.map((g) => ({
               value: g.id,
               label: `${g.name || g.id}${g.nature ? ` · ${NATURE_LABEL[g.nature]}` : ''}`,

@@ -118,7 +118,6 @@ export default function WarehouseGate({
           style={{ width: '100%' }}
           size="large"
           showSearch
-          optionFilterProp="label"
           placeholder={placeholder}
           value={value ?? undefined}
           onChange={(v) => {

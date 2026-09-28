@@ -173,7 +173,6 @@ export default function TreasuryGate({
           style={{ width: '100%' }}
           size="large"
           showSearch
-          optionFilterProp="label"
           placeholder="اختر الخزنة"
           value={value ?? undefined}
           onChange={(v) => { chosenRef.current = v as number; onChange(v as number); }}

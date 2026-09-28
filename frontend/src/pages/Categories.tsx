@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
   Button, Card, Descriptions, Dropdown, Form, Input, Select, Space, Table, Tooltip, message,
@@ -366,11 +367,10 @@ export default function Categories() {
               : 'سيبها فاضية لو دي فئة رئيسية.'}
           >
             <Select
-              allowClear showSearch optionFilterProp="label"
+              allowClear showSearch
               disabled={editingHasChildren}
               placeholder="— فئة رئيسية —"
-              options={parentChoices}
-            />
+              options={parentChoices} filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
           <Form.Item name="description" label="وصف">
             <Input.TextArea rows={2} maxLength={240} />

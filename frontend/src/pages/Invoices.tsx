@@ -4,7 +4,8 @@ import { useIsFactoryBranch } from '../components/useFactoryBranch';
 // حد الجلب من الـAPI، مش عدد صفوف الجدول.
 import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
   from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
+import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag,
   Tooltip, Typography, message,
@@ -374,8 +375,12 @@ export default function Invoices() {
         api.get('/api/v1/sales', {
           params: { ...params, kind: 'bonus', limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
         }).catch(() => ({ data: [] })),
+        // **المرتجعات بنفس فلاتر الفواتير** (عميل، مندوب، تاريخ، رقم، نوع، بيان). كانت
+        // بتاخد «البيان» بس، فاختيار عميل كان بيعرض فواتيره هو ومرتجعات العملاء كلهم
+        // في نفس الجدول — والملخّص فوق (من السيرفر) بيقول رقم تاني. «طريقة السداد»
+        // مالهاش معنى على المرتجع، والملخّص نفسه مش بيطبّقها عليه.
         api.get('/api/v1/sales/returns', {
-          params: { limit: PAGE_SIZE, ...(params.statement ? { statement: params.statement } : {}) } })
+          params: { ...params, payment: undefined, limit: PAGE_SIZE } })
           .catch(() => ({ data: [] })),
         api.get('/api/v1/sales/summary', { params }).catch(() => ({ data: null })),
       ]);
@@ -395,11 +400,28 @@ export default function Invoices() {
 
   const setFilter = (key: keyof InvoiceFilters, value: any) => {
     const next = { ...filters, [key]: value };
+    // مندوب اتختار والعميل المختار مش بتاعه ⇒ العميل يتفضّى في نفس التحديث (جلب واحد
+    // مش اتنين). من غيرها الكشف بيطلع فاضي والعميل مش باين في القايمة عشان يتشال.
+    if (key === 'rep_id' && !customerFitsRep(customers, next.customer_id, next.rep_id)) {
+      next.customer_id = undefined;
+    }
     setFilters(next);
     fetchInvoices(next);
   };
 
-  const applySearch = () => setFilter('q', search.trim() || undefined);
+  // قايمة فلتر «العميل»: مندوب مختار ⇒ عملاءه هو بس (`repScope`)، وأبجدي قبل الكتابة.
+  // محفوظة: ٣٣٠٠ اسم بيتعاد ترتيبهم مع كل رندر للشاشة (وهي بتترندر مع كل حرف في الفاتورة).
+  const filterCustomerOptions = useMemo(
+    () => sortByName(customersOfRep(customers, filters.rep_id), (c) => c.name)
+      .map((c) => ({ value: c.id, label: c.name })),
+    [customers, filters.rep_id],
+  );
+
+  // الخروج من الخانة من غير تعديل كان بيعيد الكشف كله (٤ طلبات) كل مرة.
+  const applySearch = () => {
+    const q = search.trim() || undefined;
+    if (q !== filters.q) setFilter('q', q);
+  };
 
   const resetFilters = () => {
     setStmtText('');
@@ -552,7 +574,7 @@ export default function Invoices() {
     try {
       const [custRes, prodRes, whRes, ptRes, empRes, userRes, acctRes,
         brRes] = await Promise.all([
-        api.get('/api/v1/customers/options', { params: { limit: 2000 } }),
+        api.get('/api/v1/customers/options', { params: { limit: 20000 } }),
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
@@ -2513,7 +2535,6 @@ function couponsTotal(inv: any): number {
                 <Select
                   showSearch
                   placeholder="اختر المخزن للبيع منه"
-                  optionFilterProp="label"
                   disabled={viewOnly}
                   value={docWarehouseId ?? undefined}
                   // `onWarehouseChange` مش `setDocWarehouseId` لوحدها: الرصيد بتاع المخزن
@@ -2531,7 +2552,6 @@ function couponsTotal(inv: any): number {
               {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
               <Form.Item name="rep_id" label="المندوب" style={{ marginBottom: 8 }}>
                 <Select allowClear showSearch placeholder="من العميل"
-                  optionFilterProp="label"
                   disabled={viewOnly}
                   onChange={(v) => {
                     const store = storeOfRep(v as number);
@@ -2601,7 +2621,6 @@ function couponsTotal(inv: any): number {
               <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
                 <Col xs={24} md={7}>
                   <Select allowClear showSearch style={{ width: '100%' }}
-                    optionFilterProp="label"
                     disabled={viewOnly}
                     placeholder="عادي / فضي / ذهبي"
                     value={row.coupon_kind}
@@ -2716,7 +2735,7 @@ function couponsTotal(inv: any): number {
             destroyOnHidden
           >
             <Select
-              style={{ width: '100%' }} size="large" showSearch optionFilterProp="label"
+              style={{ width: '100%' }} size="large" showSearch
               placeholder="اختر المخزن"
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
@@ -3208,14 +3227,15 @@ function couponsTotal(inv: any): number {
               value={filters.customer_id}
               onChange={(v) => setFilter('customer_id', v)}
               filterOption={searchFilter} filterSort={searchRank}
-              options={customers.map((c) => ({ value: c.id, label: c.name }))} />
+              options={filterCustomerOptions} />
           </Col>
           <Col xs={12} sm={12} md={3}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
               value={filters.rep_id}
               onChange={(v) => setFilter('rep_id', v)}
               filterOption={searchFilter} filterSort={searchRank}
-              options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+              options={sortByName(reps, (r) => r.full_name)
+                .map((r) => ({ value: r.id, label: r.full_name }))} />
           </Col>
           <Col xs={12} sm={12} md={3}>
             <Select allowClear style={{ width: '100%' }} placeholder="نوع الفاتورة"

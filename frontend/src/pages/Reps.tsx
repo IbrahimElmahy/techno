@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Button, Card, Empty, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
@@ -102,7 +103,7 @@ export default function Reps() {
     {
       title: 'المنطقة', dataIndex: 'territory_id', key: 'territory_id', width: 170,
       render: (v: number | null, r: Rep) => (
-        <Select size="small" style={{ width: '100%' }} allowClear placeholder="بلا منطقة"
+        <Select showSearch size="small" style={{ width: '100%' }} allowClear placeholder="بلا منطقة"
           value={v ?? undefined}
           onChange={(x) => patch(r, { territory_id: x ?? 0 }, 'المنطقة')}
           // مناطق فرعه بس: منطقة في فرع تاني معناها مندوب بيزور مكان مش تبعه.
@@ -111,19 +112,19 @@ export default function Reps() {
             .map((t: any) => ({
               value: t.id,
               label: t.parent_name ? `${t.parent_name} ← ${t.name}` : t.name,
-            }))} />
+            }))} filterOption={searchFilter} filterSort={searchRank} />
       ),
     },
     {
       title: 'مخزن البضاعة', dataIndex: 'warehouse_id', key: 'warehouse_id', width: 200,
       render: (v: number | null, r: Rep) => (
         <Space direction="vertical" size={0} style={{ width: '100%' }}>
-          <Select size="small" style={{ width: '100%' }} allowClear placeholder="بلا مخزن"
+          <Select showSearch size="small" style={{ width: '100%' }} allowClear placeholder="بلا مخزن"
             value={v ?? undefined}
             onChange={(x) => patch(r, { warehouse_id: x ?? 0 }, 'المخزن')}
             options={warehouses
               .filter((w: any) => !r.branch_id || !w.branch_id || w.branch_id === r.branch_id)
-              .map((w: any) => ({ value: w.id, label: w.name }))} />
+              .map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           {!v && !r.custody_id && (
             // من غير مكان بضاعة، التطبيق بيرد «مالكش عهدة ولا مخزن» ومابيزامنش أصلاً.
             <span style={{ fontSize: 11, color: '#cf1322' }}>التطبيق مش هيزامن من غير مخزن</span>
@@ -257,12 +258,12 @@ export default function Reps() {
           هيتنقل <b>{moveFrom?.customer_count}</b> عميل. والفواتير القديمة بتفضل باسم المندوب
           اللي باعها — اللي باع هو اللي باع، والعميل وحده هو اللي بيتحرّك.
         </p>
-        <Select style={{ width: '100%' }} placeholder="المندوب المنقول له"
+        <Select showSearch style={{ width: '100%' }} placeholder="المندوب المنقول له"
           value={moveTo ?? undefined} onChange={setMoveTo}
           options={others.map((r) => ({
             value: r.user_id,
             label: `${r.full_name}${r.branch_name ? ` — ${r.branch_name}` : ''}`,
-          }))} />
+          }))} filterOption={searchFilter} filterSort={searchRank} />
       </Modal>
     </Card>
   );

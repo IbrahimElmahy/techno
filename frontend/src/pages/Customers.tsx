@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Statistic, Table, Tag, Tooltip, message,
 } from 'antd';
@@ -214,14 +214,21 @@ export default function Customers() {
     loadSummary(next);
   };
 
-  const applySearch = () => setFilter('q', search.trim() || undefined);
+  // الخروج من الخانة من غير تعديل كان بيعيد الكشف والإجماليات كل مرة.
+  const applySearch = () => {
+    const q = search.trim() || undefined;
+    if (q !== filters.q) setFilter('q', q);
+  };
 
+  // المسح بيرجّع الشاشة زي ما بتفتح (على «نشط») — كان بيفضّي كل حاجة فبيطلع المعطلين
+  // الـ٦٢٣ اللي الفتح الافتراضي قاصد يخبيهم، وفلتر «الحالة» فوق فاضي كأنه مش مفلتر.
   const resetFilters = () => {
+    const initial: Filters = { active: true };
     setSearch('');
-    setFilters({});
+    setFilters(initial);
     setPage(1);
-    fetchCustomers({}, 1, pageSize);
-    loadSummary({});
+    fetchCustomers(initial, 1, pageSize);
+    loadSummary(initial);
   };
 
   const handlePageChange = (newPage: number, newPageSize: number) => {
@@ -238,12 +245,15 @@ export default function Customers() {
         api.get('/api/v1/governorates'),
         api.get('/api/v1/branches'),
       ]);
-      setReps(usersRes.data.filter((u: any) => u.role === 'sales_rep'));
+      // القوايم مرتّبة أبجدي من الأول — القايمة المقفولة بتعرض بترتيبها قبل ما حد يكتب.
+      const byName = (r: any) => r.full_name || r.name;
+      setReps(sortByName(usersRes.data.filter((u: any) => u.role === 'sales_rep'), byName));
       // مندوب الخدمة دوره `after_sales_staff` مش `sales_rep` — قايمة تانية خالص.
-      setServiceReps(usersRes.data.filter((u: any) => u.role === 'after_sales_staff'));
-      setTerritories(territoriesRes.data);
-      setGovernorates(governoratesRes.data);
-      setBranches(branchesRes.data);
+      setServiceReps(sortByName(
+        usersRes.data.filter((u: any) => u.role === 'after_sales_staff'), byName));
+      setTerritories(sortByName(territoriesRes.data || [], byName));
+      setGovernorates(sortByName(governoratesRes.data || [], byName));
+      setBranches(sortByName(branchesRes.data || [], byName));
     } catch (err) {
       console.error(err);
     }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
   Button, Card, DatePicker, Select, Space, Statistic, Table, Tabs, Tag, message,
 } from 'antd';
@@ -82,12 +82,34 @@ export default function RepReports() {
 
   // The rep list comes from the figures themselves rather than from a users call: these screens are
   // about who actually collected or sold, and a rep with nothing in the period has nothing to show.
-  const repOptions = useMemo(() => {
-    const seen = new Map<number, string>();
-    [...collections, ...byCustomer, ...items]
-      .forEach((r: any) => seen.set(r.rep_user_id, r.rep_name));
-    return [...seen].map(([value, label]) => ({ value, label }));
+  //
+  // **بس الأرقام بعد اختيار مندوب بتبقى أرقامه هو بس** — فالقايمة كانت بتنكمش لاسمه لوحده،
+  // واللي عايز يبدّل لمندوب تاني لازم يمسح الأول. فالأسماء بتتجمّع: اللي ظهر مرة في الشاشة
+  // بيفضل في القايمة. مندوب مالوش حاجة في الفترة الحالية بيطلع جدول فاضي — أهون من قايمة
+  // بتختفي منها الأسامي.
+  const [repNames, setRepNames] = useState<Map<number, string>>(new Map());
+  // وكل المناديب من الأول — مندوب مالوش حركة في الشاشة الحالية كان مابيتختارش أصلاً.
+  useEffect(() => {
+    api.get('/api/v1/users').then((res) => {
+      const reps = (res.data || []).filter((u: any) => u.role === 'sales_rep');
+      setRepNames((prev) => {
+        const next = new Map(prev);
+        reps.forEach((u: any) => { if (!next.has(u.id)) next.set(u.id, u.full_name || u.username); });
+        return next;
+      });
+    }).catch(() => { /* من غير صلاحية المستخدمين — القايمة بتتبني من الأرقام زي الأول */ });
+  }, []);
+  useEffect(() => {
+    setRepNames((prev) => {
+      const next = new Map(prev);
+      [...collections, ...byCustomer, ...items]
+        .forEach((r: any) => { if (r.rep_user_id != null) next.set(r.rep_user_id, r.rep_name); });
+      return next.size === prev.size ? prev : next;
+    });
   }, [collections, byCustomer, items]);
+  const repOptions = useMemo(() => [...repNames]
+    .map(([value, label]) => ({ value, label: String(label ?? `#${value}`) }))
+    .sort((a, b) => compareArabic(a.label, b.label)), [repNames]);
 
   const totalCollected = collections.reduce((s, r) => s + Number(r.collected || 0), 0);
   const totalSold = items.reduce((s, r) => s + Number(r.net || 0), 0);
@@ -112,7 +134,7 @@ export default function RepReports() {
         />
       </div>
       <Select
-        allowClear showSearch optionFilterProp="label" style={{ minWidth: 200 }}
+        allowClear showSearch style={{ minWidth: 200 }}
         placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
       <StatementFilter value={statement} onChange={setStatement} style={{ width: 220 }} />
       <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>

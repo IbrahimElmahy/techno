@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Form, Input, Select, Switch, Space, Button, Spin, Row, Col, message
 } from 'antd';
@@ -89,9 +89,11 @@ export default function CustomerEditModal({
         if (cancelled) return;
         const rec = c.data;
         setRecord(rec);
-        setReps(users.data.filter((u: any) => u.role === 'sales_rep'));
-        setTerritories(terr.data);
-        setGovernorates(gov.data);
+        // أبجدي — القوايم بتتعرض بترتيبها قبل ما حد يكتب.
+        const byName = (r: any) => r.full_name || r.username || r.name;
+        setReps(sortByName(users.data.filter((u: any) => u.role === 'sales_rep'), byName));
+        setTerritories(sortByName(terr.data || [], byName));
+        setGovernorates(sortByName(gov.data || [], byName));
         form.setFieldsValue({
           name: rec.name,
           phone: rec.phone,

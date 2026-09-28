@@ -304,7 +304,7 @@ export default function Departments() {
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>تابع لقسم</div>
             <Select
-              allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+              allowClear showSearch style={{ width: '100%' }}
               value={form.parent_id}
               onChange={(v) => setForm({ ...form, parent_id: v })}
               options={rows
@@ -316,7 +316,7 @@ export default function Departments() {
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>مدير القسم</div>
             <Select
-              allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+              allowClear showSearch style={{ width: '100%' }}
               value={form.manager_employee_id}
               onChange={(v) => setForm({ ...form, manager_employee_id: v })}
               options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -324,7 +324,7 @@ export default function Departments() {
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>مركز التكلفة</div>
             <Select
-              allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+              allowClear showSearch style={{ width: '100%' }}
               value={form.cost_center_id}
               onChange={(v) => setForm({ ...form, cost_center_id: v })}
               options={costCenters.map((c) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -332,7 +332,7 @@ export default function Departments() {
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>الفرع</div>
             <Select
-              allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+              allowClear showSearch style={{ width: '100%' }}
               value={form.branch_id}
               onChange={(v) => setForm({ ...form, branch_id: v })}
               options={branches.map((b) => ({ value: b.id, label: b.name }))} filterOption={searchFilter} filterSort={searchRank}/>

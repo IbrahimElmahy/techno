@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -113,7 +113,10 @@ export default function TradeReports() {
   const [groupBy, setGroupBy] = useState<GroupBy>(view?.groupBy ?? 'none');
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
     [dayjs().startOf('month'), dayjs()]);
-  const [partyId, setPartyId] = useState<number | undefined>();
+  // الطرف محفوظ ومعاه نوعه (عميل ولا مورد): رقم عميل مابينفعش يتبعت كرقم مورد. كان فيه
+  // effect بيفضّيه بعد تغيير نوع المستند — بس بعد ما الطلب يكون راح برقم العميل على
+  // المشتريات، فالتقرير كان بيتجاب مرتين وأول مرة غلط.
+  const [party, setParty] = useState<{ id: number; sale: boolean } | undefined>();
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [statement, setStatement] = useState('');
@@ -129,10 +132,15 @@ export default function TradeReports() {
 
   const isSale = docType.startsWith('sale');
   const parties = isSale ? customers : suppliers;
+  const partyId = party && party.sale === isSale ? party.id : undefined;
+  const setPartyId = (id?: number) => setParty(id ? { id, sale: isSale } : undefined);
+  // الموردين جايين بترتيب الإضافة — القايمة أبجدي قبل الكتابة، والكتابة بترتّب بالقُرب.
+  const partyOptions = useMemo(() => sortByName(parties, (p: any) => p.name)
+    .map((p: any) => ({ value: p.id, label: String(p.name ?? '') })), [parties]);
 
   useEffect(() => {
     Promise.all([
-      api.get('/api/v1/customers/options', { params: { limit: 2000 } }), api.get('/api/v1/suppliers'),
+      api.get('/api/v1/customers/options', { params: { limit: 20000 } }), api.get('/api/v1/suppliers'),
       api.get('/api/v1/items'), api.get('/api/v1/warehouses'),
     ]).then(([c, s, i, w]) => {
       setCustomers(c.data || []); setSuppliers(s.data || []);
@@ -149,14 +157,16 @@ export default function TradeReports() {
   useEffect(() => {
     if (!view) return;
     setDocType(view.docType); setLevel(view.level); setGroupBy(view.groupBy);
-    setItemId(undefined); setWarehouseId(undefined); setStatement('');
+    setParty(undefined); setItemId(undefined); setWarehouseId(undefined); setStatement('');
   }, [viewKey]);
 
   const offPreset = !!view && (docType !== view.docType || level !== view.level
     || groupBy !== view.groupBy);
 
-  // Switching between customers and suppliers must drop a party filter that no longer applies.
-  useEffect(() => { setPartyId(undefined); }, [docType]);
+  // Switching between customers and suppliers drops a party filter that no longer applies.
+  // `partyId` above already reads nothing in the same render (so one fetch, not two); this only
+  // forgets it, so going back to sales doesn't bring an old customer back.
+  useEffect(() => { setParty((p) => (p && p.sale !== isSale ? undefined : p)); }, [isSale]);
 
   const params = useMemo(() => {
     const p: any = { doc_type: docType, level, group_by: groupBy };
@@ -390,23 +400,22 @@ export default function TradeReports() {
         </Col>
         <Col xs={24} md={5}>
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear showSearch style={{ width: '100%' }}
             placeholder={isSale ? 'كل العملاء' : 'كل الموردين'}
             value={partyId} onChange={setPartyId}
-            options={parties.map((p) => ({ value: p.id, label: p.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+            options={partyOptions} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={5}>
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
+            allowClear showSearch style={{ width: '100%' }}
             placeholder="كل الأصناف" value={itemId} onChange={setItemId}
             options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
-          <Select
+          <Select showSearch
             allowClear style={{ width: '100%' }} placeholder="كل المخازن"
             value={warehouseId} onChange={setWarehouseId}
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-          />
+            options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         </Col>
         <Col xs={24} md={4}>
           <StatementFilter value={statement} onChange={setStatement} />

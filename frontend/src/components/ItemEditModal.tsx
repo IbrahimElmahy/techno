@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Form, Input, Select, Switch, Divider, Row, Col, Spin, message,
 } from 'antd';
@@ -216,7 +216,7 @@ export default function ItemEditModal({
                 extra="التصنيع يسحب/يودع هذا الصنف هنا تلقائياً">
                 <Select allowClear showSearch
                   filterOption={searchFilter} filterSort={searchRank}
-                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+                  options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} />
               </Form.Item>
             </Col>
             {/* (011) Planning limits — advisory only: they drive the reorder report, they never

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Empty, Input, Row, Select,
   Space, Spin, Statistic, Table, Tag, message,
@@ -302,12 +302,15 @@ export default function AccountStatement() {
   const [exactMatch, setExactMatch] = useState(u0.x);
   const [hideZero, setHideZero] = useState(u0.z);
 
+  // القوايم دي بتتبني من سطور الكشف بترتيب ظهورها (يعني بالتاريخ) — مرتّبة أبجدي عشان
+  // اللي بيدوّر بعينه على مندوب يلاقيه في مكانه.
+  const abc = (a: { label: string }, b: { label: string }) => compareArabic(a.label, b.label);
   const repOptions = [...new Set(lines.map((l) => l.rep_name).filter(Boolean))]
-    .map((r) => ({ value: r as string, label: r as string }));
+    .map((r) => ({ value: r as string, label: r as string })).sort(abc);
   const typeOptions = [...new Set(lines.map((l) => l.entry_type).filter(Boolean))]
-    .map((t) => ({ value: t as string, label: entryTypeLabel(t as string) }));
+    .map((t) => ({ value: t as string, label: entryTypeLabel(t as string) })).sort(abc);
   const ccOptions = [...new Set(lines.map((l) => l.cost_center_name).filter(Boolean))]
-    .map((c) => ({ value: c as string, label: c as string }));
+    .map((c) => ({ value: c as string, label: c as string })).sort(abc);
 
   const PRESETS: Array<{ label: string; get: () => [Dayjs, Dayjs] }> = [
     { label: 'اليوم', get: () => [dayjs(), dayjs()] },
@@ -889,32 +892,32 @@ export default function AccountStatement() {
           <>
             <Col xs={24} md={8}>
               <Select
-                showSearch optionFilterProp="label" style={{ width: '100%' }}
+                showSearch style={{ width: '100%' }}
                 placeholder="اختر الصنف" value={itemId} onChange={setItemId}
                 options={items.map((i: any) => ({
                   value: i.id,
                   label: i.name, search: i.code || '',
-                }))} filterOption={searchFilter} filterSort={searchRank}/>
+                })).sort(abc)} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
             <Col xs={24} md={4}>
               <Select
-                showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+                showSearch style={{ width: '100%' }} allowClear
                 placeholder="كل المخازن" value={warehouseId} onChange={setWarehouseId}
-                options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                options={warehouses.map((w: any) => ({ value: w.id, label: w.name })).sort(abc)} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
           </>
         ) : (
           <>
             <Col xs={24} md={4}>
               <Select
-                showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+                showSearch style={{ width: '100%' }} allowClear
                 placeholder="الحساب الرئيسي" value={mainKey}
                 onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
                 options={mainOptions} filterOption={searchFilter} filterSort={searchRank}/>
             </Col>
             <Col xs={24} md={8}>
               <Select
-                showSearch optionFilterProp="label" style={{ width: '100%' }}
+                showSearch style={{ width: '100%' }}
                 placeholder={mainKey ? 'الكل (كشف مجمّع) — أو اختر حساباً' : 'اختر الحساب'}
                 value={accountId} onChange={setAccountId} allowClear
                 options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -933,27 +936,29 @@ export default function AccountStatement() {
         </Col>
         <Col xs={24} md={4}>
           <Select
-            mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
+            mode="multiple" showSearch style={{ width: '100%' }}
             allowClear maxTagCount="responsive"
             placeholder="نوع الحركة" value={typeFilter} onChange={setTypeFilter}
-            options={typeOptions} disabled={!typeOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
+            options={typeOptions} disabled={!typeOptions.length && !typeFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
           <Select
-            showSearch optionFilterProp="label" style={{ width: '100%' }} allowClear
+            showSearch style={{ width: '100%' }} allowClear
             placeholder="المندوب" value={repFilter} onChange={setRepFilter}
             options={repOptions}
-            disabled={!repOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
+            // مقفولة بس لو فاضية: مندوب متختار من كشف حساب تاني ومالوش سطور هنا كان
+            // بيقفل الخانة وهي شايلاه — الكشف فاضي ومافيش أي طريقة تشيله بيها.
+            disabled={!repOptions.length && !repFilter} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
       </Row>
 
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col xs={24} md={5}>
           <Select
-            mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }}
+            mode="multiple" showSearch style={{ width: '100%' }}
             allowClear maxTagCount="responsive"
             placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
-            options={ccOptions} disabled={!ccOptions.length} filterOption={searchFilter} filterSort={searchRank}/>
+            options={ccOptions} disabled={!ccOptions.length && !ccFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={4}>
           <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"

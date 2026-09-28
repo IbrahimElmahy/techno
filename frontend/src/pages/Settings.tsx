@@ -447,7 +447,7 @@ function AccountRoutingCard() {
           { title: 'الحساب', key: 'acc',
             render: (_: unknown, r) => (
               <Select
-                style={{ minWidth: 320 }} showSearch optionFilterProp="label" allowClear
+                style={{ minWidth: 320 }} showSearch allowClear
                 value={r.account_id} loading={saving === r.role}
                 placeholder="الحساب الافتراضي"
                 onChange={(v) => save(r.role, v ?? null)}

@@ -54,7 +54,6 @@ export default function HandoverModal({
                   <Form.Item name="rep_user_id" label="المندوب" rules={[{ required: true, message: 'اختر المندوب' }]}>
                     <Select
                       showSearch
-                      optionFilterProp="label"
                       style={{ width: 240 }}
                       placeholder="اختر المندوب"
                       options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>

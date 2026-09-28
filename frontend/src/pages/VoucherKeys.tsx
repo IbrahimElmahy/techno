@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Empty, Form, Input, Row, Select, Space, Switch, Tag, Tooltip, message,
 } from 'antd';
@@ -77,7 +77,7 @@ function SideFields({
             <Form.Item name={`${side}_main`} label={title}
               style={{ marginBottom: 6 }}
               rules={[{ required: true, message: `اختار ${title}` }]}>
-              <Select showSearch optionFilterProp="label" options={mainOptions}
+              <Select showSearch options={mainOptions}
                 placeholder={`${hint} — الحساب الرئيسي`}
                 onChange={() => {
                   form.setFieldValue(`${side}_sub`, undefined);
@@ -85,7 +85,7 @@ function SideFields({
                 }} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
             <Form.Item name={`${side}_sub`} style={{ marginBottom: 14 }}>
-              <Select showSearch allowClear optionFilterProp="label" options={subs}
+              <Select showSearch allowClear options={subs}
                 disabled={!!why}
                 placeholder={why || 'حساب فرعي (اختياري) — سيبه فاضي للربط على الرئيسي'}
                 onChange={onChange} filterOption={searchFilter} filterSort={searchRank}/>
@@ -258,7 +258,8 @@ export default function VoucherKeys() {
     if (!mainValue) return [];
     if (mainValue.startsWith('g:')) {
       const t = mainValue.slice(2);
-      return accounts.filter((a) => (a.account_type || '') === t)
+      // حسابات الأطراف (العملاء بالآلاف) أبجدي — مالهاش كود يرتّبها، فكانت بترتيب الإدخال.
+      return sortByName(accounts.filter((a) => (a.account_type || '') === t), accLabel)
         .map((a) => ({ value: a.id, label: accLabel(a) }));
     }
     if (!mainValue.startsWith('a:')) return [];

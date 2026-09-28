@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { printWorkOrder, type WorkOrderStage } from '../print/workOrderSheet';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
@@ -376,8 +376,8 @@ function RecipesTab({
         <Form form={form} layout="vertical" onFinish={submit}>
           <Form.Item name="product_id" label="المنتج الناتج"
             rules={[{ required: true, message: 'اختر المنتج' }]}>
-            <Select placeholder="اختر المنتج" disabled={!!editing}
-              options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.unit_of_measure})` }))} />
+            <Select showSearch placeholder="اختر المنتج" disabled={!!editing}
+              options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.unit_of_measure})` }))} filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
           <Form.Item name="name" label="اسم الوصفة" rules={[{ required: true, message: 'أدخل اسم الوصفة' }]}>
             <Input placeholder="مثال: وصفة تصنيع الطاولة" />
@@ -396,7 +396,7 @@ function RecipesTab({
                   <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
                     <Form.Item {...field} name={[field.name, 'item_id']} style={{ flex: 1, marginBottom: 0 }}
                       rules={[{ required: true, message: 'اختر الخامة' }]}>
-                      <Select placeholder="الخامة" style={{ minWidth: 220 }}
+                      <Select showSearch placeholder="الخامة" style={{ minWidth: 220 }}
                         // Picking the material loads its units, and clears any unit carried over
                         // from the previous choice — a unit that belonged to another item would
                         // be rejected on save, and worse, might not be.
@@ -413,7 +413,7 @@ function RecipesTab({
                         // فاضية والوصفة المفتوحة بتوري رقم الصنف بدل اسمه.
                         options={[...rawMaterials, ...products].map((r) => ({
                           value: r.id, label: `${r.name} (${r.unit_of_measure})`,
-                          search: r.code || '' }))} />
+                          search: r.code || '' }))} filterOption={searchFilter} filterSort={searchRank} />
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
@@ -638,8 +638,8 @@ function WastageTab({
               filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
           <Form.Item name="warehouse_id" label="المخزن" rules={[{ required: true, message: 'اختر المخزن' }]}>
-            <Select placeholder="اختر المخزن"
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+            <Select showSearch placeholder="اختر المخزن"
+              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
           <Form.Item name="quantity" label="الكمية المهلَكة" rules={[{ required: true, message: 'أدخل الكمية' }]}>
             <InputNumber min={0.001} style={{ width: '100%' }} />
@@ -912,7 +912,7 @@ function ProductionOrdersTab({
   const itemOptions = (list: Item[]) =>
     // الكود مش بيتعرض، بيتبحث بيه — الشرح في `utils/itemLabel`.
     list.map((i) => ({ value: i.id, label: i.name, search: i.code || '' }));
-  const whOptions = warehouses.map((w) => ({ value: w.id, label: w.name }));
+  const whOptions = sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }));
 
   const branchName = useMemo(() => {
     const m = new Map(branches.map((b) => [b.id, b.name]));
@@ -1775,9 +1775,9 @@ function ProductionOrdersTab({
                   onChange={(v) => patchLine(ln.key, { bom_id: v ?? null }, 'product')} />
               </Col>
               <Col span={4}>
-                <Select style={{ width: '100%' }} placeholder="مخزن الإنتاج" value={ln.warehouse_id}
+                <Select showSearch style={{ width: '100%' }} placeholder="مخزن الإنتاج" value={ln.warehouse_id}
                   options={whOptions}
-                  onChange={(v) => patchLine(ln.key, { warehouse_id: v }, 'qty')} />
+                  onChange={(v) => patchLine(ln.key, { warehouse_id: v }, 'qty')} filterOption={searchFilter} filterSort={searchRank} />
               </Col>
               {/* **الورقة بتتفتح على خطة بس.** «اللي طلع» مش خانة هنا: وقت فتح الأمر
                   محدش يعرف هيطلع كام، والرقمين جنب بعض كانوا بيتكتبوا نفس الرقم مرتين
@@ -1829,9 +1829,9 @@ function ProductionOrdersTab({
                           onChange={(v) => patchMaterial(ln.key, m.key, { item_id: v })} />
                       </Col>
                       <Col span={5}>
-                        <Select style={{ width: '100%' }} placeholder="تتصرف من"
+                        <Select showSearch style={{ width: '100%' }} placeholder="تتصرف من"
                           value={m.warehouse_id} options={whOptions}
-                          onChange={(v) => patchMaterial(ln.key, m.key, { warehouse_id: v })} />
+                          onChange={(v) => patchMaterial(ln.key, m.key, { warehouse_id: v })} filterOption={searchFilter} filterSort={searchRank} />
                       </Col>
                       <Col span={4}>
                         <InputNumber style={{ width: '100%' }} min={0} placeholder="المطلوب"

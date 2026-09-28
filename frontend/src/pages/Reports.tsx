@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Col, Divider, Empty,
 } from 'antd';
@@ -206,7 +206,7 @@ function ProductionTab({ period, range, items }: TabProps) {
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
         <Select
-          allowClear showSearch optionFilterProp="label" placeholder="كل المنتجات"
+          allowClear showSearch placeholder="كل المنتجات"
           style={{ width: 240 }} value={productId} onChange={setProductId}
           options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         {(statementOn || statement) && (
@@ -277,12 +277,11 @@ function InventoryTab({ warehouses, items }: TabProps) {
   return (
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
-        <Select
+        <Select showSearch
           allowClear placeholder="كل المخازن" style={{ width: 200 }} value={warehouseId} onChange={setWarehouseId}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-        />
+          options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         <Select
-          allowClear showSearch optionFilterProp="label" placeholder="كل الأصناف"
+          allowClear showSearch placeholder="كل الأصناف"
           style={{ width: 240 }} value={itemId} onChange={setItemId}
           options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
@@ -370,13 +369,12 @@ function WastageTab({ range, warehouses, items }: TabProps) {
     <div>
       <Space wrap style={{ marginBottom: 16 }}>
         <Select
-          allowClear showSearch optionFilterProp="label" placeholder="كل الأصناف"
+          allowClear showSearch placeholder="كل الأصناف"
           style={{ width: 240 }} value={itemId} onChange={setItemId}
           options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-        <Select
+        <Select showSearch
           allowClear placeholder="كل المخازن" style={{ width: 200 }} value={warehouseId} onChange={setWarehouseId}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-        />
+          options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         {(statementOn || statement) && (
           <StatementFilter value={statement} onChange={setStatement} style={{ width: 240 }} />
         )}
@@ -457,10 +455,9 @@ function StagnantTab({ warehouses }: TabProps) {
       <Space wrap style={{ marginBottom: 16 }}>
         <span>عدد الأيام دون حركة:</span>
         <InputNumber min={1} value={days} onChange={(v) => setDays(v || 90)} style={{ width: 120 }} />
-        <Select
+        <Select showSearch
           allowClear placeholder="كل المخازن" style={{ width: 200 }} value={warehouseId} onChange={setWarehouseId}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
-        />
+          options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         <Button type="primary" danger icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
         {asOf && <Tag color="default">حتى تاريخ: {dayjs(asOf).format('YYYY-MM-DD')}</Tag>}
       </Space>

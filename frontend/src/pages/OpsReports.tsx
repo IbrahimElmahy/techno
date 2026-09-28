@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
+import { customerFitsRep, customersOfRep } from '../utils/repScope';
 import {
   Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
 } from 'antd';
@@ -127,10 +128,20 @@ export default function OpsReports() {
   const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
-    Promise.all([api.get('/api/v1/customers/options', { params: { limit: 2000 } }), api.get('/api/v1/users')])
+    Promise.all([api.get('/api/v1/customers/options', { params: { limit: 20000 } }), api.get('/api/v1/users')])
       .then(([c, u]) => { setCustomers(c.data || []); setUsers(u.data || []); })
       .catch(console.error);
   }, []);
+
+  // القوايم مرتّبة أبجدياً من غير بحث — والبحث بيرتّبها بالقُرب (`searchRank`).
+  // المناديب بس — القايمة كانت بتعرض كل مستخدمي النظام (محاسبين وأمناء مخازن…).
+  const repOptions = useMemo(() => users
+    .filter((u: any) => u.role === 'sales_rep')
+    .map((u) => ({ value: u.id, label: String(u.full_name || u.username || `#${u.id}`) }))
+    .sort((a, b) => compareArabic(a.label, b.label)), [users]);
+  const customerOptions = useMemo(() => customersOfRep(customers, repId)
+    .map((c) => ({ value: c.id, label: String(c.name ?? '') }))
+    .sort((a, b) => compareArabic(a.label, b.label)), [customers, repId]);
 
   useEffect(() => {
     if (!view) return;
@@ -459,17 +470,25 @@ export default function OpsReports() {
             />
           </Col>
         )}
-        <Col xs={24} md={5}>
-          <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
-            placeholder="كل العملاء" value={customerId} onChange={setCustomerId}
-            options={customers.map((c) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
+        {/* المندوب قبل العميل: اختيار المندوب بيضيّق قايمة العملاء اللي بعده. */}
         <Col xs={24} md={4}>
           <Select
-            allowClear showSearch optionFilterProp="label" style={{ width: '100%' }}
-            placeholder="كل المندوبين" value={repId} onChange={setRepId}
-            options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+            allowClear showSearch style={{ width: '100%' }}
+            placeholder="كل المندوبين" value={repId}
+            onChange={(v) => {
+              setRepId(v);
+              // عميل مش بتاع المندوب الجديد بيتشال في نفس الضغطة — لو فضل، الكشف بيطلع فاضي
+              // والعميل نفسه مش ظاهر في القايمة عشان حد يفهم ليه. والتحديثين مع بعض = طلب واحد.
+              if (!customerFitsRep(customers, customerId, v)) setCustomerId(undefined);
+            }}
+            options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
+        </Col>
+        <Col xs={24} md={5}>
+          <Select
+            allowClear showSearch style={{ width: '100%' }}
+            placeholder={repId ? 'كل عملاء المندوب' : 'كل العملاء'}
+            value={customerId} onChange={setCustomerId}
+            options={customerOptions} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
         <Col xs={24} md={isCheque ? 2 : 7}>
           <Select

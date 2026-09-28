@@ -667,7 +667,7 @@ export default function JournalTab() {
           {lines.map((l) => (
             <Row gutter={8} key={l.key} align="middle" style={{ marginBottom: 8 }}>
               <Col span={9}>
-                <Select placeholder="الحساب" style={{ width: '100%' }} showSearch optionFilterProp="label"
+                <Select placeholder="الحساب" style={{ width: '100%' }} showSearch
                   value={l.account_id} onChange={(v) => setLine(l.key, 'account_id', v)}
                   options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
@@ -689,7 +689,7 @@ export default function JournalTab() {
               </Col>
               <Col span={7} style={{ marginTop: 4 }}>
                 <Select size="small" allowClear placeholder="مركز التكلفة (اختياري)" style={{ width: '100%' }}
-                  showSearch optionFilterProp="label"
+                  showSearch
                   disabled={!!l.cost_center_distribution}
                   value={l.cost_center_id ?? undefined}
                   onChange={(v) => setLine(l.key, 'cost_center_id', v ?? null)}
@@ -754,7 +754,7 @@ export default function JournalTab() {
           {openLines.map((l) => (
             <Row gutter={8} key={l.key} align="middle" style={{ marginBottom: 8 }}>
               <Col span={14}>
-                <Select placeholder="الحساب" style={{ width: '100%' }} showSearch optionFilterProp="label"
+                <Select placeholder="الحساب" style={{ width: '100%' }} showSearch
                   value={l.account_id}
                   onChange={(v) => setOpenLines(openLines.map((x) => x.key === l.key ? { ...x, account_id: v } : x))}
                   options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>

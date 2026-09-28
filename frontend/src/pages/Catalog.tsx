@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
   Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, message,
@@ -291,8 +291,8 @@ const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }
         {canEdit && (
           <div style={{ marginBottom: 16, padding: 12, background: '#fafafa', borderRadius: 8 }}>
             <strong>استلام أرقام تسلسلية للمخزون</strong>
-            <Select style={{ width: '100%', margin: '8px 0' }} placeholder="مخزن الاستلام" value={whId}
-              onChange={setWhId} options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+            <Select showSearch style={{ width: '100%', margin: '8px 0' }} placeholder="مخزن الاستلام" value={whId}
+              onChange={setWhId} options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
             <Input.TextArea rows={3} placeholder="أرقام تسلسلية مفصولة بمسافة أو فاصلة أو سطر"
               value={text} onChange={(e) => setText(e.target.value)} />
             <Button type="primary" style={{ marginTop: 8 }} onClick={onReceive}>استلام</Button>
@@ -898,18 +898,18 @@ export default function Catalog() {
           <Col xs={12} md={4}>
             {/* اختيار فئة رئيسية بيجيب فروعها معاها — التوسعة بتحصل على السيرفر
                 (`with_children`)، عشان الكشف مترقّم والفلترة عليه مش محلية. */}
-            <Select allowClear showSearch optionFilterProp="label"
+            <Select allowClear showSearch
               style={{ width: '100%' }} placeholder="الفئة"
               value={filters.category}
               onChange={(v) => setFilter('category', v)}
-              options={categoryTreeOptions} />
+              options={categoryTreeOptions} filterOption={searchFilter} filterSort={searchRank} />
           </Col>
           <Col xs={12} md={4}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="المخزن الافتراضي"
               value={filters.warehouse_id}
               onChange={(v) => setFilter('warehouse_id', v)}
               filterOption={searchFilter} filterSort={searchRank}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} />
           </Col>
           <Col xs={12} md={5}>
             <Select allowClear style={{ width: '100%' }} placeholder="حالة المخزون"
@@ -1226,8 +1226,8 @@ export default function Catalog() {
             </Col>
             <Col span={12}>
               <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
-                <Select allowClear placeholder="اختياري"
-                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+                <Select showSearch allowClear placeholder="اختياري"
+                  options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
           </Row>

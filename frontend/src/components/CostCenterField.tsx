@@ -60,7 +60,6 @@ export default function CostCenterField({
     <Select
       allowClear
       showSearch
-      optionFilterProp="label"
       size={size}
       placeholder={placeholder}
       style={{ width: '100%', ...style }}

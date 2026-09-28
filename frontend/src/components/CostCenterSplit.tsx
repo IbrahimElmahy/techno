@@ -106,7 +106,7 @@ export default function CostCenterSplit({
               key: 'cc',
               render: (_: unknown, r) => (
                 <Select
-                  showSearch optionFilterProp="label" style={{ width: '100%' }}
+                  showSearch style={{ width: '100%' }}
                   placeholder="اختر المركز"
                   value={r.cost_center_id ?? undefined}
                   onChange={(v) => set(r.key, 'cost_center_id', v)}

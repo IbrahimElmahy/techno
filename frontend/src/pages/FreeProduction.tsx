@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank } from '../utils/arabicSort';
+import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Divider, Form, Input, Row, Select, Space, Statistic, Table, Tag, message,
 } from 'antd';
@@ -282,7 +282,7 @@ export default function FreeProduction() {
           <Col xs={24} md={8}>
             <Form.Item label="المنتج الناتج" required style={{ marginBottom: 0 }}>
               <Select
-                showSearch optionFilterProp="label" placeholder="اختر المنتج"
+                showSearch placeholder="اختر المنتج"
                 value={productId} onChange={setProductId}
                 options={products.map((p) => ({ value: p.id, label: p.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
@@ -305,9 +305,9 @@ export default function FreeProduction() {
           <Col xs={12} md={5}>
             <Form.Item label="المخزن" required style={{ marginBottom: 0 }}>
               <Select
-                showSearch optionFilterProp="label" placeholder="اختر المخزن"
+                showSearch placeholder="اختر المخزن"
                 value={warehouseId} onChange={setWarehouseId}
-                options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           </Col>
           <Col xs={12} md={4}>

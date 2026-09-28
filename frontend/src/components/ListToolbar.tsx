@@ -196,8 +196,10 @@ export default function ListToolbar({
   const primary = filters.filter((f) => !f.advanced);
   const advanced = filters.filter((f) => f.advanced);
   const [showMore, setShowMore] = useState(false);
+  // القايمة الفاضية مش فلتر شغّال — نفس قاعدة `active` والشرايح تحت.
   const hiddenActive = advanced.some((f) => values[f.key] !== undefined
-    && values[f.key] !== null && values[f.key] !== '');
+    && values[f.key] !== null && values[f.key] !== ''
+    && !(Array.isArray(values[f.key]) && !values[f.key].length));
   const expanded = showMore || hiddenActive;
 
   const control = (f: FilterDef) => (f.kind === 'text' ? (
@@ -229,7 +231,6 @@ export default function ListToolbar({
         if ((f.multi ?? true) && !Array.isArray(v)) return [v];
         return v;
       })()}
-      optionFilterProp="label"
       onChange={(v) => onValueChange?.(
         f.key, Array.isArray(v) && !v.length ? undefined : v)}
       // `undefined` مش قايمة فاضية: فلتر من غير خيارات كان بيوصل rc-select خام،

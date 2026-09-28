@@ -39,7 +39,7 @@ export default function PartyField({
   return (
     <>
       <Select
-        showSearch optionFilterProp="label"
+        showSearch
         style={style ?? { width: 240 }}
         placeholder={placeholder ?? (kind === 'customer' ? 'اختر العميل' : 'اختر المورد')}
         value={value}
