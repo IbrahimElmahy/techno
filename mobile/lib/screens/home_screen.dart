@@ -7,6 +7,7 @@ import '../theme.dart';
 import 'login_screen.dart';
 import 'coupon_receipt_screen.dart';
 import 'sale_invoice_screen.dart';
+import 'bonus_invoice_screen.dart';
 import 'collect_cash_screen.dart';
 import 'customer_profile_screen.dart';
 import 'debts_screen.dart';
@@ -203,6 +204,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SaleInvoiceScreen()));
+                      _refresh();
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  // **البونص صفحة لوحده جنب البيع** — بطلب العميل. كان زرار جوّه فاتورة
+                  // البيع، فاللي عايز يدّي هدية كان بيفتح بيع ويقلبه؛ دلوقتي الطريق باسمه.
+                  _BigAction(
+                    icon: Icons.card_giftcard_outlined,
+                    color: AppColors.accent,
+                    title: 'فاتورة بونص',
+                    subtitle: 'بضاعة هدية على فاتورة بيع — خصم ١٠٠٪ ومن غير فلوس',
+                    onTap: () async {
+                      await Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const BonusInvoiceScreen()));
                       _refresh();
                     },
                   ),

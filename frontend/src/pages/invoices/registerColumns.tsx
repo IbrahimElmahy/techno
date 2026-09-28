@@ -43,10 +43,12 @@ export function buildRegisterColumns({
   return [
     {
       title: 'نوع المستند',
-      dataIndex: 'doc_type',
+      // التصدير بياخد القيمة الخام من `dataIndex` — `doc_type` كان بينزل في الإكسل «sale»
+      // على الفاتورة والبونص الاتنين. الاسم المكتوب بيتصدّر، والرسم بيقرا النوع من الصف.
+      dataIndex: 'doc_type_label',
       key: 'doc_type',
       width: 100,
-      render: (t: string, r: any) => t === 'sale'
+      render: (_label: string, r: any) => r.doc_type === 'sale'
         ? (r.is_bonus
           // البونص نوع لوحده — قيمته صفر، واللي بيقرا الكشف لازم يعرفه من غير ما يفتحه.
           ? <Tag color="gold" style={{ fontWeight: 600 }}>فاتورة بونص</Tag>

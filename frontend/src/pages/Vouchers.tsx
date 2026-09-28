@@ -52,6 +52,7 @@ import StatsRow from '../components/StatsRow';
 import {
   VoucherRecord, StatementLine, StatementData, Party, UserRecord, KIND_LABEL, KIND_COLOR,
 } from './vouchers/types';
+import { useLiveRefresh } from '../utils/live';
 
 const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) => {
   const [treasuryId, setTreasuryId] = useState<number | undefined>();
@@ -225,8 +226,10 @@ const Vouchers: React.FC = () => {
     },
   });
 
-  const loadVouchers = useCallback(async () => {
-    setLoading(true);
+  const loadVouchers = useCallback(async (opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const params: Record<string, string> = {};
       if (kindFilter) params.kind = kindFilter;
@@ -236,7 +239,7 @@ const Vouchers: React.FC = () => {
       setVouchers(data);
     } catch {
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
       setListLoaded(true);
     }
   }, [kindFilter, range]);
@@ -283,6 +286,15 @@ const Vouchers: React.FC = () => {
     loadCheques();
     loadExpenseAccounts();
       }, [loadTreasuries, loadCheques]);
+
+  // سند أو شيك اتعمل من مكان تاني (المندوب من التطبيق، خزنة فرع تاني) ⇒ السندات والشيكات
+  // وأرصدة الخزن تتحدّث بهدوء بنفس الفلتر. المودال المفتوح مابيتلمسش — فورمه في `Form`
+  // مش في القوايم دي.
+  useLiveRefresh(['vouchers', 'cheques', 'treasuries'], () => {
+    loadVouchers({ silent: true });
+    loadCheques();
+    loadTreasuries();
+  });
 
   useEffect(() => {
     api.get<Party[]>('/api/v1/customers').then((r) => setCustomers(r.data)).catch(() => {});
@@ -1049,7 +1061,7 @@ const Vouchers: React.FC = () => {
             <div style={{ width: 280 }}>
               <DateRangeFilter value={range as any} onChange={(v) => setRange(v as any)} />
             </div>
-            <Button onClick={loadVouchers}>تحديث</Button>
+            <Button onClick={() => loadVouchers()}>تحديث</Button>
             <ExportExcelButton
               name="سجل السندات"
               rows={shownVouchers}

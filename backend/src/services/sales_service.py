@@ -285,9 +285,13 @@ def create_sale(
     # فاتورة بونص — الشرح عند `SalesInvoice.is_bonus`. `bonus_for_invoice_id` إجباري معاها.
     is_bonus: bool = False,
     bonus_for_invoice_id: int | None = None,
+    # **للسكربتات بس** — تصحيح فواتير قديمة لبونص ومافيش فاتورة بيع واضحة تتربط بيها.
+    # الربط الغلط أسوأ من «مش معروف»؛ الشاشات والتطبيق مابيبعتوهاش أبداً.
+    allow_unlinked_bonus: bool = False,
 ) -> SalesInvoice:
     if is_bonus:
-        _assert_bonus_target(db, bonus_for_invoice_id, customer_id, replace_invoice_id)
+        if not (allow_unlinked_bonus and bonus_for_invoice_id is None):
+            _assert_bonus_target(db, bonus_for_invoice_id, customer_id, replace_invoice_id)
         # **البونص مالوش فلوس.** الأصناف بسعرها والقيمة صفر، فمافيش نقدي ولا مصروف على
         # العميل ولا خصم مستند — أي رقم فيهم معناه إن ده مش بونص، ده بيع.
         if to_money(cash_amount or ZERO) != ZERO:

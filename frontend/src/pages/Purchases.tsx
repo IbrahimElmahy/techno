@@ -48,6 +48,7 @@ import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import StatsRow from '../components/StatsRow';
+import { useLiveRefresh } from '../utils/live';
 /** الاسم القديم في الشاشة دي — نفس الدالة. */
 const fmtMoney = money;
 
@@ -391,8 +392,10 @@ export default function Purchases() {
    * في العرض — بدل أصفار. صفر معناه «اتحسبت وطلعت صفر»؛ الفراغ معناه «السؤال ده مالوش لازمة
    * على المستند ده»، وده الفرق اللي بيمنع حد يجمع عمود ويطلعله رقم مالوش أصل.
    */
-  const fetchPurchases = async () => {
-    setListLoading(true);
+  const fetchPurchases = async (opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي): من غير سبينر على الجدول ولا رسالة لو فشل.
+    const silent = !!opts?.silent;
+    if (!silent) setListLoading(true);
     try {
       const [inv, ret] = await Promise.all([
         api.get('/api/v1/purchases'),
@@ -433,11 +436,13 @@ export default function Purchases() {
       setPurchases([...invoices, ...returns]);
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل سجل المشتريات');
+      if (!silent) message.error(err?.response?.data?.detail?.message || 'تعذر تحميل سجل المشتريات');
     } finally {
-      setListLoading(false);
+      if (!silent) setListLoading(false);
     }
   };
+  // فاتورة شراء أو مردود اتعمل من مكان تاني ⇒ السجل يتحدّث. المردودات تحت `/purchases`.
+  useLiveRefresh(['purchases'], () => fetchPurchases({ silent: true }));
 
   // Live summary for Purchases, Returns, and Net Purchases
   const purchasesSummary = useMemo(() => {

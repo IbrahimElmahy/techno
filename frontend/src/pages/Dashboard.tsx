@@ -6,6 +6,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
 /**
  * الصفحة الرئيسية — فيه إيه غلط، من غير ما تسأل.
@@ -82,22 +83,33 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setFailed(false);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي): النتيجة القديمة بتفضل معروضة لحد ما الجديدة توصل، ولو الطلب
+    // الهادي فشل مابنقلبش الشاشة لـ«فشل» — آخر فحص ناجح أصدق من شاشة فاضية.
+    const silent = !!opts?.silent;
+    if (!silent) {
+      setLoading(true);
+      setFailed(false);
+    }
     try {
       const res = await api.get<Health>('/api/v1/reports/health');
       setData(res.data);
+      setFailed(false);
     } catch (err) {
       // A failure has to look different from a clean system. Rendering «كله تمام» because the
       // request died is the worst thing this screen could do.
-      setFailed(true);
+      if (!silent) setFailed(true);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // الفحص بيبص على المستندات والأرصدة والحسابات، فأي حركة من دول بتعيده — وهو ظاهر بس.
+  useLiveRefresh(
+    [...STOCK_TOPICS, 'vouchers', 'cheques', 'customers', 'journal-entries', 'coupon-receipts', 'inspections'],
+    () => load({ silent: true }),
+  );
 
   const header = (
     <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
@@ -108,7 +120,7 @@ export default function Dashboard() {
         </span>
       </Col>
       <Col>
-        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
+        <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>
           إعادة الفحص
         </Button>
       </Col>
@@ -126,7 +138,7 @@ export default function Dashboard() {
         <Alert type="error" showIcon
           message="الفحص نفسه مانجحش"
           description="لا يعني ذلك عدم وجود مشكلات — بل يعني أننا لا نعلم. أعد الفحص."
-          action={<Button size="small" onClick={load}>إعادة المحاولة</Button>} />
+          action={<Button size="small" onClick={() => load()}>إعادة المحاولة</Button>} />
       </div>
     );
   }

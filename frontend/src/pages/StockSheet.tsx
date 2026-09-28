@@ -21,6 +21,7 @@ import {
   LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
 } from '../print/itemLogSheet';
 import { qty, money } from '../utils/money';
+import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
 /**
  * جرد المخازن · جرد عام المخازن — صفوف وأعمدة، وخلاص.
@@ -106,18 +107,22 @@ export default function StockSheet() {
   // مقارنة، والمقارنة مابتحصلش واحد واحد.
   const [openRows, setOpenRows] = useState<React.Key[]>([]);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي): من غير سبينر ولا رسالة — والسطور المفتوحة (`openRows`) بتفضل.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/api/v1/reports/stock-as-of');
       setRows(res.data?.rows || []);
       setCostingMethod(res.data?.costing_method ?? null);
     } catch {
-      message.error('تعذر تحميل الجرد');
-    } finally { setLoading(false); }
+      if (!silent) message.error('تعذر تحميل الجرد');
+    } finally { if (!silent) setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
+  // أي حركة بتحرّك رصيد ⇒ الجرد يتجاب تاني وهو ظاهر بس (الهوك بيأجّل المخبي).
+  useLiveRefresh(STOCK_TOPICS, () => load({ silent: true }));
 
   /**
    * The stores added together, for the «عام» view.
@@ -454,7 +459,7 @@ export default function StockSheet() {
           <Button icon={<DownloadOutlined />} onClick={exportCsv}>
             {picked.length ? `تصدير (${picked.length})` : 'تصدير'}
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
         </Space>
       )}
     >

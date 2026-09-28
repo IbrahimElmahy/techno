@@ -45,6 +45,7 @@ import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
 import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { useLiveRefresh } from '../utils/live';
 
 /**
  * مردودات شراء — goods going back to the supplier, as a register of its own.
@@ -179,6 +180,14 @@ export default function PurchaseReturns() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // مردود أو فاتورة شراء اتعملت من مكان تاني ⇒ القايمتين بس يتجابوا بهدوء. الأصناف
+  // والمخازن مش بتتلمس: دي قوايم الفورم، وتغييرها تحت فورم مفتوح مالوش لازمة.
+  useLiveRefresh(['purchases'], () => {
+    Promise.all([api.get('/api/v1/purchases/returns'), api.get('/api/v1/purchases')])
+      .then(([r, p]) => { setRows(r.data || []); setPurchases(p.data || []); })
+      .catch(() => {});
+  });
 
   // اتنقل فوق `useDocRoute`: الخُطّاف بيقرا `editingId` عشان يعرف إيه المفتوح.
   const [editingId, setEditingId] = useState<number | null>(null);

@@ -17,6 +17,7 @@ import DocumentLink from '../components/DocumentLink';
 import ListToolbar from '../components/ListToolbar';
 import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
+import { useLiveRefresh } from '../utils/live';
 
 // `wrong_kind` = الرقم متصرّف فعلاً، بس تحت فئة تانية. مش «مش موجود»، والفرق ده
 // هو اللي بيخلّي اللي بيدخل يبص على الورقة تاني بدل ما يفتكر إنها مزوّرة.
@@ -150,8 +151,12 @@ export default function CouponReceipts() {
     }
   }, [searchQuery]);
 
-  const loadReceipts = useCallback(async (targetPage = page, targetPageSize = pageSize, q = searchQuery) => {
-    setLoading(true);
+  const loadReceipts = useCallback(async (
+    targetPage = page, targetPageSize = pageSize, q = searchQuery, opts?: { silent?: boolean },
+  ) => {
+    // الهادي (التحديث الحي): نفس الصفحة ونفس البحث، من غير سبينر.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const params: Record<string, any> = {
         limit: targetPageSize,
@@ -170,9 +175,16 @@ export default function CouponReceipts() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [page, pageSize, searchQuery]);
+
+  // المندوب سلّم كوبونات من التطبيق ⇒ القايمة والإجماليات يتحدّثوا. فورم الاستلام
+  // اللي بيتكتب هنا حالته لوحدها فمابيتلمسش.
+  useLiveRefresh(['coupon-receipts'], () => {
+    loadReceipts(undefined, undefined, undefined, { silent: true });
+    loadSummary();
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => {

@@ -42,6 +42,7 @@ import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import StatsRow from '../components/StatsRow';
 import { qty } from '../utils/money';
+import { useLiveRefresh } from '../utils/live';
 // حجم الصفحة. الكشف كله بقى 1437 تحويل بـ17 ألف سطر بعد نقل داتا a5، وتحميلهم
 // كلهم كان بياخد 7.6 ثانية على السيرفر نفسه قبل ما الشبكة تشوف حاجة.
 const PAGE_SIZE = 300;
@@ -199,13 +200,17 @@ export default function Transfers() {
   const [editing, setEditing] = useState<TransferRecord | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
 
-  const fetchTransfers = async () => {
-    setLoading(true);
+  const fetchTransfers = async (opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/api/v1/transfers', { params: { limit: PAGE_SIZE } });
       setTransfers(res.data);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err) { console.error(err); } finally { if (!silent) setLoading(false); }
   };
+  // تحويل اتعمل أو اتعتمد من فرع تاني ⇒ القايمة تتحدّث من غير ما حد يعمل ريفرش.
+  useLiveRefresh(['transfers'], () => fetchTransfers({ silent: true }));
 
   const loadLookups = async () => {
     try {

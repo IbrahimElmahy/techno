@@ -61,6 +61,7 @@ import {
 import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
 import StatsRow from '../components/StatsRow';
+import { useLiveRefresh } from '../utils/live';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
 const newUuid = (): string =>
   (globalThis.crypto as any)?.randomUUID?.()
@@ -334,7 +335,11 @@ export default function Invoices() {
   const [salesReturns, setSalesReturns] = useState<any[]>([]);
   // إجماليات الكشف كله زي ما السيرفر حسبها — مش مجموع الصفحة اللي ظاهرة.
   const [serverSummary, setServerSummary] = useState<any>(null);
-  const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return'>('all');
+  const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return' | 'bonus'>('all');
+  // **فواتير البونص في قايمة لوحدها، مش وسط فواتير البيع.** الكشف كان بيجيب الاتنين في
+  // صفحة واحدة، فشريحة «فواتير المبيعات» كانت فيها فواتير بصفر مش بيع، وكل بونص بياخد
+  // مكان فاتورة بيع من الـ٦٠٠ صف. كل نوع ليه صفحته من السيرفر (`kind=`).
+  const [bonusInvoices, setBonusInvoices] = useState<InvoiceRecord[]>([]);
 
   // فحص النظام بيبعت أرقام الفواتير اللي فيها الخلل في الرابط. من غير ده الزرار
   // بيوديك على الكشف كله وتدوّر انت على الأربعة اللي هو عارفهم. `FocusedRows` بيشرح.
@@ -345,9 +350,11 @@ export default function Invoices() {
   focusRef.current = focus.ids ? Array.from(focus.ids).join(',') : null;
 
   // Filtering happens on the server so it covers ALL invoices, not just the loaded page.
-  const fetchInvoices = async (override?: InvoiceFilters) => {
+  const fetchInvoices = async (override?: InvoiceFilters, opts?: { silent?: boolean }) => {
     const active = override ?? filters;
-    setLoading(true);
+    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر ومابيطلّعش رسالة — الجديد بيظهر وخلاص.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const params: any = {};
       Object.entries(active).forEach(([k, v]) => {
@@ -359,25 +366,32 @@ export default function Invoices() {
       // أرقام فحص النظام بتتبعت للسيرفر مش بتتفلتر هنا: الشاشة بتحمّل صفحة، والفلترة
       // المحلية كانت بتعرض اللي من الأربعة في الصفحة دي بس — واحدة، والتلاتة مختفيين.
       const focusIds = focusRef.current;
-      const [salesRes, returnsRes, sumRes] = await Promise.all([
+      const [salesRes, bonusRes, returnsRes, sumRes] = await Promise.all([
         api.get('/api/v1/sales', {
-          params: { ...params, limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
+          params: { ...params, kind: 'sale', limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
         }),
+        // نفس الفلاتر بالظبط (عميل، مندوب، تاريخ، بحث، بيان) — البونص شريحة من نفس الكشف.
+        api.get('/api/v1/sales', {
+          params: { ...params, kind: 'bonus', limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
+        }).catch(() => ({ data: [] })),
         api.get('/api/v1/sales/returns', {
           params: { limit: PAGE_SIZE, ...(params.statement ? { statement: params.statement } : {}) } })
           .catch(() => ({ data: [] })),
         api.get('/api/v1/sales/summary', { params }).catch(() => ({ data: null })),
       ]);
       setInvoices(salesRes.data);
+      setBonusInvoices(bonusRes.data || []);
       setSalesReturns(returnsRes.data || []);
       setServerSummary(sumRes.data || null);
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفواتير والمرتجعات');
+      if (!silent) message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفواتير والمرتجعات');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+  // فاتورة أو مرتجع اتعمل من مكان تاني (التطبيق، جهاز تاني) ⇒ الكشف يتحدّث بنفس الفلاتر.
+  useLiveRefresh(['sales'], () => fetchInvoices(undefined, { silent: true }));
 
   const setFilter = (key: keyof InvoiceFilters, value: any) => {
     const next = { ...filters, [key]: value };
@@ -399,10 +413,17 @@ export default function Invoices() {
   // بيوديك على الكشف كله وتدوّر انت على الأربعة اللي هو عارفهم. `FocusedRows` بيشرح.
 
   const unifiedRecords = useMemo(() => {
-    const saleRows = (invoices || []).map((s: any) => ({
+    const toSaleRow = (s: any) => {
+      // **البونص بقيمته قبل خصم الـ١٠٠٪.** `gross` المخزّن بعد خصم السطور، وسطر البونص
+      // خصمه ١٠٠٪ فبيطلع صفر — والعميل عايز يشوف البضاعة اللي خرجت بكام. الكمية × السعر
+      // جاية جاهزة من السيرفر (`gross_before_line_discount`)، والخصم يبقى القيمة كلها.
+      const bonusGross = s.is_bonus ? Number(s.gross_before_line_discount || 0) : null;
+      const gross = bonusGross ?? Number(s.gross || 0);
+      return {
       id: s.id,
       rowKey: `sale-${s.id}`,
       doc_type: 'sale' as const,
+      doc_type_label: s.is_bonus ? 'فاتورة بونص' : 'فاتورة بيع',
       document_number: s.document_number,
       original_invoice_number: null,
       external_document_number: s.external_document_number,
@@ -420,15 +441,16 @@ export default function Invoices() {
       family: s.family,
       is_bonus: Boolean(s.is_bonus),
       bonus_for_number: s.bonus_for_number ?? null,
-      gross: Number(s.gross || 0),
+      bonus_for_invoice_id: s.bonus_for_invoice_id ?? null,
+      gross,
       combined_pct: Number(s.combined_pct || 0),
       // الفرق نفسه، مش النسبة × الإجمالي: النسبة المجمّعة مقرّبة لمنزلتين، والطرح
       // بيدّي القرش الصح مهما كانت الخصومات. وبيشمل خصم السطور تلقائياً لأن `net`
       // محسوب بعدها — وده اللي كان بيخلّي الكشف يقول «خصم ٠» على فاتورة خصمها ٢٠٪.
-      discount_value: Number(s.gross || 0) - Number(s.net || 0),
+      discount_value: gross - Number(s.net || 0),
       // الأساس اللي النسبة بتتقاس عليه في عمود «خصم%» — الإجمالي **قبل** خصم السطور،
       // وإلا ٢٠٪ بتطلع ٢٥٪.
-      discount_base: Number(s.gross_before_line_discount || 0) || Number(s.gross || 0),
+      discount_base: bonusGross ?? (Number(s.gross_before_line_discount || 0) || Number(s.gross || 0)),
       net: Number(s.net || 0),
       cash_amount: Number(s.cash_amount || 0),
       credit_amount: Number(s.credit_amount || 0),
@@ -439,12 +461,17 @@ export default function Invoices() {
       residual: s.residual ?? null,
       ledger_entry_id: s.ledger_entry_id,
       raw: s,
-    }));
+      };
+    };
+    // احتياط: لو السيرفر رجّع بونص في قايمة البيع، مايتحسبش بيع.
+    const saleRows = (invoices || []).filter((s: any) => !s.is_bonus).map(toSaleRow);
+    const bonusRows = (bonusInvoices || []).map(toSaleRow);
 
     const returnRows = (salesReturns || []).map((r: any) => ({
       id: r.id,
       rowKey: `ret-${r.id}`,
       doc_type: 'return' as const,
+      doc_type_label: 'مرتجع بيع',
       document_number: r.document_number,
       original_invoice_number: r.invoice_document_number,
       external_document_number: r.external_document_number,
@@ -470,15 +497,17 @@ export default function Invoices() {
 
     let combined: any[] = [];
     if (docKindFilter === 'all') {
-      combined = [...saleRows, ...returnRows];
+      combined = [...saleRows, ...bonusRows, ...returnRows];
     } else if (docKindFilter === 'sale') {
       combined = saleRows;
+    } else if (docKindFilter === 'bonus') {
+      combined = bonusRows;
     } else {
       combined = returnRows;
     }
 
     return combined.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
-  }, [invoices, salesReturns, docKindFilter]);
+  }, [invoices, bonusInvoices, salesReturns, docKindFilter]);
 
   /** الكشف بعد فلتر «ودّيني على اللي فيه المشكلة» — أو هو زي ما هو لو مافيش فلتر. */
   // الأرقام اتغيّرت (دوس «اعرض الكل» أو جه من الرئيسية) ⇒ الكشف يتجاب من جديد.
@@ -500,9 +529,15 @@ export default function Invoices() {
     const totalCredit = (invoices || []).reduce((s: number, i: any) => s + Number(i.credit_amount || 0), 0)
       - (salesReturns || []).reduce((s: number, r: any) => s + Number(r.credit_reduction || 0), 0);
 
+    const bonusGross = (bonusInvoices || []).reduce(
+      (t: number, i: any) => t + Number(i.gross_before_line_discount || 0), 0);
+
     // السيرفر بيحسب على الكشف كله؛ الجمع المحلي فاضل كخطة بديلة لو النداء وقع.
     const s = serverSummary;
     return {
+      // البونص بره «المبيعات» و«الصافي» — مش بيع. رقمه لشريحته بس.
+      totalBonusCount: s?.bonus_count != null ? Number(s.bonus_count) : (bonusInvoices || []).length,
+      totalBonusGross: s?.bonus_gross != null ? Number(s.bonus_gross) : bonusGross,
       totalSalesCount: s ? Number(s.sales_count) : totalSalesCount,
       totalReturnsCount: s ? Number(s.returns_count) : totalReturnsCount,
       totalSalesNet: s ? Number(s.sales_net) : totalSalesNet,
@@ -511,7 +546,7 @@ export default function Invoices() {
       totalCredit: s ? Number(s.credit_outstanding) : totalCredit,
       filteredCount: unifiedRecords.length,
     };
-  }, [invoices, salesReturns, unifiedRecords, serverSummary]);
+  }, [invoices, bonusInvoices, salesReturns, unifiedRecords, serverSummary]);
 
   const loadLookups = async () => {
     try {
@@ -1341,7 +1376,9 @@ export default function Invoices() {
       return;
     }
     if (isBonus && !bonusForId) {
-      message.error('فاتورة البونص لازم تبقى على فاتورة بيع — اختار الفاتورة.');
+      message.error(bonusTargets.length
+        ? 'فاتورة البونص لازم تبقى على فاتورة بيع — اختارها من «البونص على فاتورة بيع» جنب الخصم.'
+        : 'العميل ده مالوش فواتير بيع — البونص لازم يبقى على فاتورة بيع للعميل نفسه.');
       return;
     }
     // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has
@@ -1651,7 +1688,8 @@ export default function Invoices() {
     if (!viewInvoice) return null;
     // The list itself is the order — the server already returns it filtered and sorted, and the
     // table renders it unchanged, so the arrows walk exactly what the user is looking at.
-    const rows = invoices;
+    // فاتورة البونص بتمشي وسط البونص — مش في قايمة البيع اللي هي مش فيها أصلاً.
+    const rows = viewInvoice.is_bonus ? bonusInvoices : invoices;
     const at = rows.findIndex((r: any) => r.id === viewInvoice.id);
     if (at < 0) return null;
     return rows[at + step] ?? null;
@@ -1970,6 +2008,12 @@ function couponsTotal(inv: any): number {
           opts.push({ id: linked.id, document_number: linked.number, invoice_date: null, net: '0' });
         }
         setBonusTargets(opts);
+        // **آخر فاتورة بيع للعميل بتتختار لوحدها.** خانة «على فاتورة بيع» فوق في رأس
+        // الفاتورة، واللي بيكتب ١٠٠٪ تحت في الإجماليات مابيشوفهاش — فكان بيدوس حفظ
+        // ويطلعله «لازم تبقى على فاتورة بيع» ويفتكر إن البونص بايظ. الاختيار بيتغيّر عادي.
+        if (opts.length && !editingInvoice?.id) {
+          setBonusForId((cur) => cur ?? opts[0].id);
+        }
       })
       .catch(() => { if (alive) setBonusTargets([]); });
     return () => { alive = false; };
@@ -2070,6 +2114,39 @@ function couponsTotal(inv: any): number {
   // يبقوا نفس القايمة — لو كل واحد نادى `apply` لوحده، ملف بيطلع بأعمدة غير اللي على الشاشة
   // يبقى مسألة وقت.
   const visibleColumns = invoiceCols.apply(columns);
+
+  /**
+   * **أعمدة شريحة البونص — ثابتة، ومش من «حدد الأعمدة».**
+   *
+   * «اجمالي قبل» مخفي افتراضياً في الكشف، وهو الرقم الوحيد اللي البونص بيتقري عشانه —
+   * الصافي صفر دايماً. والتحصيل والباقي والكوبونات مالهمش معنى على بضاعة هدية. فالشريحة
+   * بتعرض اللي العميل طلبه بالاسم: الرقم، التاريخ، العميل، المندوب، الفاتورة اللي البونص
+   * عليها، والقيمة قبل خصم الـ١٠٠٪ — والجدول والتصدير نفس القايمة.
+   */
+  // من غير `useMemo`: `columns` نفسها بتتبني من جديد كل رسمة، فالحفظ مالوش لازمة.
+  const bonusColumns = (() => {
+    const pick = (key: string) => columns.find((c: any) => c.key === key);
+    const linked = {
+      title: 'على فاتورة',
+      dataIndex: 'bonus_for_number',
+      key: 'bonus_for_number',
+      width: 130,
+      render: (num: string | null, r: any) => (num && r.bonus_for_invoice_id
+        // بيفتح فاتورة البيع هنا في نفس الشاشة، زي ضغطة صفها بالظبط.
+        ? <a onClick={(e) => { e.stopPropagation(); openDetail({ id: r.bonus_for_invoice_id } as InvoiceRecord); }}>
+            <Tag color="blue" style={{ cursor: 'pointer' }}>{num}</Tag>
+          </a>
+        : (num || '-')),
+    };
+    const gross = pick('gross');
+    return [
+      pick('doc_type'), pick('document_number'), pick('date'), pick('customer_id'),
+      pick('rep_id'), linked,
+      gross && { ...gross, title: 'القيمة قبل الخصم', width: 130 },
+      pick('net'), pick('statement1'), pick('actions'),
+    ].filter(Boolean) as any[];
+  })();
+  const tableColumns = docKindFilter === 'bonus' ? bonusColumns : visibleColumns;
 
   // The create form is a full inner page (not a modal) — a big invoice form reads better on a
   // full page than boxed inside a scrolling modal.
@@ -2766,6 +2843,23 @@ function couponsTotal(inv: any): number {
                           setDiscountPct(v >= 100 ? 0 : v);
                         }} />
                     </Form.Item>
+                    {/* نفس خانة الرأس، هنا جنب الـ١٠٠٪ — اللي حوّل الفاتورة بونص من هنا يشوف
+                        هي على أنهي فاتورة من غير ما يطلع لفوق. */}
+                    {isBonus && (
+                      <Form.Item label="البونص على فاتورة بيع" required style={{ marginBottom: 12 }}
+                        help={selectedCustomerId && !bonusTargets.length
+                          ? 'العميل ده مالوش فواتير بيع — البونص لازم يبقى على فاتورة' : undefined}>
+                        <Select showSearch disabled={viewOnly || !selectedCustomerId}
+                          placeholder="اختار الفاتورة اللي البونص عليها"
+                          value={bonusForId ?? undefined}
+                          onChange={(v) => setBonusForId(v ?? null)}
+                          optionFilterProp="label"
+                          options={bonusTargets.map((t) => ({
+                            value: t.id,
+                            label: `${t.document_number} — ${t.invoice_date ?? ''} — ${money(t.net)} ج.م`,
+                          }))} />
+                      </Form.Item>
+                    )}
                     <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
                       help={hasParty ? 'ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة' : undefined}>
                       <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
@@ -2776,7 +2870,8 @@ function couponsTotal(inv: any): number {
                 )}
                 rows={[
                   { label: 'إجمالي الأصناف', value: money(grossTotal) },
-                  { label: `خصم الفاتورة (${discountPct}%)`,
+                  // البونص بيتعرض ١٠٠٪ — `discountPct` فيه آخر رقم اتكتب قبل التحويل (١٠ من «١٠٠»).
+                  { label: `خصم الفاتورة (${isBonus ? 100 : discountPct}%)`,
                     value: `− ${money(invoiceDiscount)}`, color: '#cf1322',
                     show: invoiceDiscount > 0.001 },
                   { label: 'صافي الفاتورة', value: money(netTotal),
@@ -3007,9 +3102,9 @@ function couponsTotal(inv: any): number {
             />
             {/* جوّه `Space`، فالمسافة الافتراضية بتتشال — الـ`Space` بيباعد لوحده. */}
             <ExportExcelButton
-              name="سجل الفواتير والمرتجعات"
+              name={docKindFilter === 'bonus' ? 'فواتير البونص' : 'سجل الفواتير والمرتجعات'}
               rows={unifiedRecords}
-              tableColumns={visibleColumns}
+              tableColumns={tableColumns}
               style={{ marginInlineStart: 0 }}
             />
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts}
@@ -3077,11 +3172,21 @@ function couponsTotal(inv: any): number {
             value={docKindFilter}
             onChange={(v: any) => setDocKindFilter(v)}
             options={[
-              { label: <span>الكل ({summary.totalSalesCount + summary.totalReturnsCount})</span>, value: 'all' },
+              // «الكل» = كل اللي الشرايح بتعرضه، والبونص منهم. الكروت فوق بتفضل على البيع بس.
+              { label: <span>الكل ({summary.totalSalesCount + summary.totalReturnsCount + summary.totalBonusCount})</span>, value: 'all' },
               { label: <span style={{ color: '#389e0d', fontWeight: 600 }}>🟢 فواتير المبيعات ({summary.totalSalesCount})</span>, value: 'sale' },
               { label: <span style={{ color: '#eb2f96', fontWeight: 600 }}>🔴 مرتجعات المبيعات ({summary.totalReturnsCount})</span>, value: 'return' },
+              { label: <span style={{ color: '#d48806', fontWeight: 600 }}>🎁 فواتير البونص ({summary.totalBonusCount})</span>, value: 'bonus' },
             ]}
           />
+          {/* قيمة البونص قبل خصم الـ١٠٠٪ بنفس الفلاتر — سطر مش كارت، عشان مايتقريش جنب
+            * «إجمالي فواتير المبيعات» كأنه بيع. */}
+          {docKindFilter === 'bonus' && (
+            <Tag color="gold" style={{ fontSize: 14, padding: '4px 10px', margin: 0 }}>
+              إجمالي البونص قبل الخصم: <b>{money(summary.totalBonusGross)} ج.م</b>
+              {' '}— {summary.totalBonusCount} فاتورة
+            </Tag>
+          )}
         </div>
 
         {/* --- Search + filters (server-side, so they cover every invoice) --- */}
@@ -3176,7 +3281,7 @@ function couponsTotal(inv: any): number {
             }),
             ...focusedRecords,
           ]}
-          columns={visibleColumns}
+          columns={tableColumns}
           size="small"
           tableLayout="fixed"
           // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.

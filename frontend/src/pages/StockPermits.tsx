@@ -30,6 +30,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import DocumentAttachments from '../components/DocumentAttachments';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
+import { useLiveRefresh } from '../utils/live';
 
 /**
  * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
@@ -125,13 +126,17 @@ export default function StockPermits() {
   const [available, setAvailable] = useState<Record<number, number>>({});
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/api/v1/stock/permits');
       setPermits(res.data || []);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err) { console.error(err); } finally { if (!silent) setLoading(false); }
   };
+  // إذن اتعمل أو اتعكس من جهاز تاني ⇒ القايمة تتحدّث. المسودّة اللي بتتكتب مش في `permits`.
+  useLiveRefresh(['stock'], () => load({ silent: true }));
 
   useEffect(() => {
     load();
@@ -742,7 +747,7 @@ export default function StockPermits() {
             onClick={() => { setKind('issue'); startNew(); }}>إذن صرف</Button>
           <Button icon={<PlusOutlined />}
             onClick={() => { setKind('opening'); setCreating(true); }}>بضاعة أول المدة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
         </Space>
       )}
     >

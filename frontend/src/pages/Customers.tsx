@@ -19,6 +19,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
 import { money } from '../utils/money';
+import { useLiveRefresh } from '../utils/live';
 interface CustomerRecord {
   id: number;
   code: string;
@@ -168,9 +169,13 @@ export default function Customers() {
   };
 
   // Filtering happens on the server so it covers ALL customers, not just the loaded page.
-  const fetchCustomers = async (override?: Filters, targetPage = page, targetPageSize = pageSize) => {
+  const fetchCustomers = async (
+    override?: Filters, targetPage = page, targetPageSize = pageSize, opts?: { silent?: boolean },
+  ) => {
     const active = override ?? filters;
-    setLoading(true);
+    // الهادي (التحديث الحي): نفس الفلاتر ونفس الصفحة، من غير سبينر.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const params: any = {
         limit: targetPageSize,
@@ -191,9 +196,15 @@ export default function Customers() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+  // عميل اتضاف من التطبيق، أو فاتورة/سند غيّر مديونيته ⇒ الصفحة الحالية والإجماليات
+  // يتحدّثوا. مودال التعديل فورمه لوحده فمابيتلمسش.
+  useLiveRefresh(['customers', 'sales', 'vouchers', 'cheques'], () => {
+    fetchCustomers(undefined, page, pageSize, { silent: true });
+    loadSummary();
+  });
 
   const setFilter = (key: keyof Filters, value: any) => {
     const next = { ...filters, [key]: value };

@@ -9,6 +9,7 @@ import '../theme.dart';
 import 'invoice_print_screen.dart';
 import 'sale_coupons_section.dart';
 import 'sale_invoice_screen.dart';
+import 'bonus_invoice_screen.dart';
 
 /// فواتير الجهاز — اللي راحت واللي لسه.
 ///
@@ -390,9 +391,13 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                             onPressed: () async {
                               final changed = await Navigator.push<bool>(
                                 context,
+                                // البونص بيتعدّل في صفحته هو — نفس الشكل اللي اتكتب بيه،
+                                // بخصم وسعر مقفولين. (الشاشة بتعرف لوحدها من `is_bonus`
+                                // كمان، بس الاسم هنا بيقول اللي بيحصل.)
                                 MaterialPageRoute(
-                                    builder: (_) =>
-                                        SaleInvoiceScreen(existing: r)),
+                                    builder: (_) => isBonus
+                                        ? BonusInvoiceScreen(existing: r)
+                                        : SaleInvoiceScreen(existing: r)),
                               );
                               if (changed == true) _load();
                             },

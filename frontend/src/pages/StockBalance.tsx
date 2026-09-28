@@ -9,6 +9,7 @@ import { normalizeAr } from '../components/ListToolbar';
 import MovementHistoryLog, { MovementHistoryTarget } from '../components/MovementHistoryLog';
 import { useTableKeyboard } from '../components/keyboard';
 import { qty, numeralsLocale } from '../utils/money';
+import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
 /**
  * رصيد صنف — the storekeeper's enquiry screen: pick a category, pick an item, and every price and
@@ -101,13 +102,16 @@ export default function StockBalance() {
       .catch(console.error);
   }, [stockScope]);
 
-  useEffect(() => {
-    setLoading(true);
+  const loadProducts = (silent = false) => {
+    if (!silent) setLoading(true);
     api.get('/api/v1/items?kind=product')
       .then((res) => setProducts(res.data))
       .catch((err) => console.error(err))
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => { if (!silent) setLoading(false); });
+  };
+  useEffect(() => { loadProducts(); }, []);
+  // أي حركة بتحرّك رصيد ⇒ الأرصدة تتجاب تاني بهدوء، والبحث والفلاتر زي ما هي.
+  useLiveRefresh(STOCK_TOPICS, () => loadProducts(true));
 
   const categories = useMemo(() => {
     const set = new Set<string>();

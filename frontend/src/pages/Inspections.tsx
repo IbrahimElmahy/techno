@@ -28,6 +28,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 
 import StatsRow from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
+import { useLiveRefresh } from '../utils/live';
 interface InspectionLine {
   id: number;
   item_id: number | null;
@@ -166,8 +167,12 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     }
   }, [buildParams]);
 
-  const load = useCallback(async (targetPage = page, targetPageSize = pageSize) => {
-    setLoading(true);
+  const load = useCallback(async (
+    targetPage = page, targetPageSize = pageSize, opts?: { silent?: boolean },
+  ) => {
+    // الهادي (التحديث الحي): نفس الفلاتر ونفس الصفحة، من غير سبينر ولا رسالة.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const params: Record<string, any> = {
         ...buildParams(),
@@ -184,11 +189,18 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         setTotalCount(Number(res.data.total || 0));
       }
     } catch (e: any) {
-      message.error(e?.message || (fixedKind === 'regular' ? 'تعذر تحميل الزيارات' : 'تعذر تحميل المعاينات'));
+      if (!silent) message.error(e?.message || (fixedKind === 'regular' ? 'تعذر تحميل الزيارات' : 'تعذر تحميل المعاينات'));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [buildParams, page, pageSize]);
+
+  // معاينة أو زيارة اتزامنت من التطبيق، أو اتقبلت/اترفضت من جهاز تاني ⇒ الصفحة
+  // الحالية والإجماليات يتحدّثوا بنفس الفلاتر.
+  useLiveRefresh(['inspections'], () => {
+    load(undefined, undefined, { silent: true });
+    loadSummary();
+  });
 
   // Load summary and reset page on filter change
   useEffect(() => {

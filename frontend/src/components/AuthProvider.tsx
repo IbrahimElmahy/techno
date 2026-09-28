@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Spin } from 'antd';
 import { api, clearApiCache, getApiBaseURL } from '../api/client';
+import { startLive, stopLive } from '../utils/live';
 
 // A session that never interrupts work: the token is long-lived on the server, and we
 // re-issue it on every app load and every few hours while the tab stays open. So anyone
@@ -127,6 +128,14 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
       window.clearInterval(timer);
     };
   }, []);
+
+  // قناة التحديث الحي بتتفتح مع الجلسة وبتتقفل معاها. التجديد بيغيّر التوكن بس الاتصال
+  // المفتوح بيكمّل — هو بيقرا التوكن الجديد من التخزين في أول إعادة اتصال. `utils/live.ts`.
+  useEffect(() => {
+    if (token) startLive();
+    else stopLive();
+  }, [token]);
+  useEffect(() => () => stopLive(), []);
 
   const login = (newToken: string, newUser: User) => {
     // كاش الطلبات بيتفضّى مع تغيير المستخدم.

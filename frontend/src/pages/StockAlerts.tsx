@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 
 import StatsRow from '../components/StatsRow';
 import { qty } from '../utils/money';
+import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 /**
  * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
  * what do I need to buy (below the reorder level), and what is about to go bad.
@@ -49,16 +50,20 @@ export default function StockAlerts() {
   const [summary, setSummary] = useState({ below_min: 0, above_max: 0 });
   const [loading, setLoading] = useState(false);
 
-  const loadReorder = async () => {
-    setLoading(true);
+  const loadReorder = async (opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/api/v1/reports/reorder');
       setReorder(res.data.rows || []);
       setSummary({ below_min: res.data.below_min || 0, above_max: res.data.above_max || 0 });
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err) { console.error(err); } finally { if (!silent) setLoading(false); }
   };
 
   useEffect(() => { loadReorder(); }, []);
+  // الرصيد اتحرّك ⇒ «تحت الحد / فوق الحد» يتحسب من جديد.
+  useLiveRefresh(STOCK_TOPICS, () => loadReorder({ silent: true }));
 
   const reorderFilter = useListFilter(reorder, {
     search: (r) => [r.code, r.name],
@@ -119,7 +124,7 @@ export default function StockAlerts() {
   return (
             <Card title="الأصناف خارج حدودها المخزنية"
               extra={<Space>{tableCols.control}
-                <Button icon={<ReloadOutlined />} onClick={loadReorder}>تحديث</Button></Space>}>
+                <Button icon={<ReloadOutlined />} onClick={() => loadReorder()}>تحديث</Button></Space>}>
               <Alert type="info" showIcon style={{ marginBottom: 12 }}
                 message="الحدود إرشادية للتخطيط فقط — لا تمنع أي عملية بيع."
                 description="الصنف يظهر هنا لو رصيده الكلي نزل تحت الحد الأدنى أو تعدّى الحد الأقصى." />

@@ -33,6 +33,7 @@ from src.api import (  # Sales & Inventory (002
     hr_reports,  # تقارير الموارد البشرية (HR-7)
     inspections,  # Site inspections / معاينات (015)
     leave,  # الأجازات (HR-3)
+    live,  # التحديث الحي — SSE بيقول للشاشات المفتوحة إن حاجة اتغيّرت
     loyalty_settings,
     manufacturing,
     ops_reports,  # تقارير التشغيل والتحليل (٨)
@@ -87,6 +88,12 @@ def create_app() -> FastAPI:
     from src.core.request_audit import RequestAuditMiddleware
 
     app.add_middleware(RequestAuditMiddleware)
+
+    # التحديث الحي: أي تغيير نجح بيتعلن للشاشات المفتوحة. جوّه CORS زي السجل، وبيعلن بعد
+    # ما الرد يخلص — الشرح في `lib/live_events.py`.
+    from src.lib.live_events import LiveEventsMiddleware
+
+    app.add_middleware(LiveEventsMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -210,6 +217,7 @@ def create_app() -> FastAPI:
     # Admin utilities (demo data seeding)
     app.include_router(drafts.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(live.router, prefix=prefix)
 
     @app.get("/health")
     def health() -> dict:

@@ -803,6 +803,7 @@ def _build_sale(
     db: Session, body: "SaleCreate", current: CurrentUser, *,
     replace_invoice_id: int | None = None,
     keep_costs: dict[int, Decimal] | None = None,
+    allow_unlinked_bonus: bool = False,
 ) -> SalesInvoice:
     """بيبني الفاتورة من الجسم — سواء جديدة أو مكان واحدة موجودة.
 
@@ -865,6 +866,7 @@ def _build_sale(
             client_uuid=body.client_uuid,
             replace_invoice_id=replace_invoice_id,
             keep_costs=keep_costs,
+            allow_unlinked_bonus=allow_unlinked_bonus,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1102,6 +1104,7 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
              line_disc: tuple[Decimal, Decimal] | None = None,
              coupons_in: list[InvoiceCouponOut] | None = None,
              payment_states: dict[int, tuple[str | None, Decimal]] | None = None,
+             bonus_for_numbers: dict[int, str] | None = None,
              ) -> SalesInvoiceOut:
     coupons: list[InvoiceCouponOut] = coupons_in or []
     if db is not None:
@@ -1158,43 +1161,27 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         is_bonus=bool(getattr(inv, "is_bonus", None)),
         statement1=inv.statement1,
         bonus_for_invoice_id=getattr(inv, "bonus_for_invoice_id", None),
-        bonus_for_number=(db.scalar(select(SalesInvoice.document_number).where(
-            SalesInvoice.id == inv.bonus_for_invoice_id))
+        bonus_for_number=(
+            (bonus_for_numbers or {}).get(inv.bonus_for_invoice_id)
+            if bonus_for_numbers is not None and getattr(inv, "bonus_for_invoice_id", None)
+            else db.scalar(select(SalesInvoice.document_number).where(
+                SalesInvoice.id == inv.bonus_for_invoice_id))
             if db is not None and getattr(inv, "bonus_for_invoice_id", None) else None),
     )
 
 
-@router.get("", response_model=list[SalesInvoiceOut])
-def list_sales(
-    q: str | None = None,
-    customer_id: int | None = None,
-    date_from: date | None = None,
-    date_to: date | None = None,
-    payment: str | None = None,   # cash | credit | partial
-    rep_id: int | None = None,            # (030)
-    family: str | None = None,
-    external_document_number: str | None = None,  # (030)
-    # أرقام فواتير بعينها — بييجي من رابط فحص النظام في الرئيسية.
-    #
-    # لازم يتفلتر **هنا** مش في الشاشة: الشاشة بتحمّل صفحة (٦٠٠ صف) وبتفلتر اللي
-    # عندها، فالفحص اللي بيقول «٤ فواتير» كان بيعرض اللي منهم في الصفحة المحمّلة بس —
-    # واحدة من أربعة، والتلاتة التانيين مش باينين ومافيش حاجة بتقول إنهم اتخفوا.
-    ids: str | None = None,
-    # «bonus» = فواتير البونص بس، «sale» = من غيرها. فاضي = الكل.
-    kind: str | None = None,
-    # جزء من «البيان» — الشرح عند `_statement_like`.
-    statement: str | None = None,
-    limit: int | None = None,
-    offset: int = 0,
-    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
-    db: Session = Depends(get_db),
-) -> list[SalesInvoiceOut]:
-    """List sales invoices with search + filters, newest first.
+def _sales_list_stmt(
+    current: CurrentUser, *, q: str | None = None, customer_id: int | None = None,
+    date_from: date | None = None, date_to: date | None = None, payment: str | None = None,
+    rep_id: int | None = None, family: str | None = None,
+    external_document_number: str | None = None, ids: str | None = None,
+    kind: str | None = None, statement: str | None = None,
+):
+    """فلاتر كشف المبيعات — مكان واحد لـ`list_sales` ولإجمالي البونص في `/sales/summary`.
 
-    `limit` بيتساب فاضي افتراضياً عشان اللي بيندهه دلوقتي مايتقطعش عليه الرد في صمت.
-    الشاشة بتبعته: ٦١٦٣ فاتورة = ٢.٩ ميجا، والشبكة بتاخد ٤٧ ثانية توصّلها فالشاشة بتفصل
-    قبلها وبتقول «فشل الاتصال». الإجماليات بقت من `/sales/summary` عشان الصفحة الواحدة
-    ماتخليش الأرقام تكدب.
+    كارت «إجمالي البونص قبل الخصم» لازم يجمع **نفس** الصفوف اللي الكشف بيعرضها. لو كل
+    واحد فيهم بنى فلاتره لوحده، أول فلتر يتضاف لواحد وينسى التاني بيخلّي الكارت يقول رقم
+    والجدول تحته يقول رقم تاني.
     """
     stmt = branch_scope.scope(select(SalesInvoice), SalesInvoice, current)
     if (cond := _statement_like(SalesInvoice, statement)) is not None:
@@ -1244,6 +1231,46 @@ def list_sales(
         stmt = stmt.where(SalesInvoice.cash_amount == 0)
     elif payment == "partial":  # a mix
         stmt = stmt.where(SalesInvoice.cash_amount > 0, SalesInvoice.credit_amount > 0)
+    return stmt
+
+
+@router.get("", response_model=list[SalesInvoiceOut])
+def list_sales(
+    q: str | None = None,
+    customer_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    payment: str | None = None,   # cash | credit | partial
+    rep_id: int | None = None,            # (030)
+    family: str | None = None,
+    external_document_number: str | None = None,  # (030)
+    # أرقام فواتير بعينها — بييجي من رابط فحص النظام في الرئيسية.
+    #
+    # لازم يتفلتر **هنا** مش في الشاشة: الشاشة بتحمّل صفحة (٦٠٠ صف) وبتفلتر اللي
+    # عندها، فالفحص اللي بيقول «٤ فواتير» كان بيعرض اللي منهم في الصفحة المحمّلة بس —
+    # واحدة من أربعة، والتلاتة التانيين مش باينين ومافيش حاجة بتقول إنهم اتخفوا.
+    ids: str | None = None,
+    # «bonus» = فواتير البونص بس، «sale» = من غيرها. فاضي = الكل.
+    kind: str | None = None,
+    # جزء من «البيان» — الشرح عند `_statement_like`.
+    statement: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> list[SalesInvoiceOut]:
+    """List sales invoices with search + filters, newest first.
+
+    `limit` بيتساب فاضي افتراضياً عشان اللي بيندهه دلوقتي مايتقطعش عليه الرد في صمت.
+    الشاشة بتبعته: ٦١٦٣ فاتورة = ٢.٩ ميجا، والشبكة بتاخد ٤٧ ثانية توصّلها فالشاشة بتفصل
+    قبلها وبتقول «فشل الاتصال». الإجماليات بقت من `/sales/summary` عشان الصفحة الواحدة
+    ماتخليش الأرقام تكدب.
+    """
+    stmt = _sales_list_stmt(
+        current, q=q, customer_id=customer_id, date_from=date_from, date_to=date_to,
+        payment=payment, rep_id=rep_id, family=family,
+        external_document_number=external_document_number, ids=ids, kind=kind,
+        statement=statement)
     stmt = stmt.order_by(SalesInvoice.id.desc())
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
@@ -1253,8 +1280,15 @@ def list_sales(
     discs = _line_discounts(db, rows)
     coups = _page_coupons(db, rows)
     states = _payment_states(db, rows)
+    # رقم فاتورة البيع اللي البونص عليها — الكشف كان بينده `_inv_out` من غير `db`، فالعمود
+    # «على فاتورة» كان بيرجع فاضي على كل صفوف البونص. استعلام واحد للصفحة كلها.
+    target_ids = {i.bonus_for_invoice_id for i in rows if getattr(i, "bonus_for_invoice_id", None)}
+    bonus_for = dict(db.execute(
+        select(SalesInvoice.id, SalesInvoice.document_number)
+        .where(SalesInvoice.id.in_(target_ids))).all()) if target_ids else {}
     return [_inv_out(i, names=names, line_disc=discs.get(i.id),
-                     coupons_in=coups.get(i.id), payment_states=states)
+                     coupons_in=coups.get(i.id), payment_states=states,
+                     bonus_for_numbers=bonus_for)
             for i in rows]
 
 
@@ -1390,6 +1424,21 @@ def sales_summary(
     inv_count, inv_net, inv_credit = totals(inv, "net", "credit_amount")
     ret_count, ret_net, ret_credit = totals(ret, "value", "credit_reduction")
 
+    # **البونص لوحده — بقيمته قبل خصم الـ١٠٠٪.** صافيه صفر، فجمع `net` أو `gross` بيدّي صفر
+    # (الـ`gross` المخزّن بعد خصم السطور). القيمة الحقيقية الكمية × سعر السطر، وهي نفس
+    # `gross_before_line_discount` اللي الكشف بيعرضه على كل صف. والفلاتر من
+    # `_sales_list_stmt` نفسها عشان الكارت يجمع اللي الجدول بيعرضه بالظبط — تاريخ الفاتورة
+    # مش ساعة الإدخال زي الكشف.
+    bonus_ids = _sales_list_stmt(
+        current, q=q, customer_id=customer_id, date_from=date_from, date_to=date_to,
+        payment=payment, rep_id=rep_id, family=family,
+        external_document_number=external_document_number, kind="bonus",
+        statement=statement).with_only_columns(SalesInvoice.id).subquery()
+    bonus_count = db.scalar(select(func.count()).select_from(bonus_ids)) or 0
+    bonus_gross = db.scalar(
+        select(func.coalesce(func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price), 0))
+        .where(SalesInvoiceLine.invoice_id.in_(select(bonus_ids.c.id)))) or 0
+
     # **المتبقي بيتحسب من المطابقة، مش من `credit_amount`.**
     #
     # `credit_amount` هو الآجل **يوم البيع** ومابيتحركش بعدها أبداً. جمعه كان بيدّي
@@ -1425,6 +1474,9 @@ def sales_summary(
         # الآجل يوم البيع — رقم الفترة، مش المديونية. بيترجع باسمه الصريح عشان
         # اللي عايزه يلاقيه، ومحدش يقراه بالغلط على إنه المستحق.
         "credit_sold": inv_credit - ret_credit,
+        # بره «المبيعات» و«الصافي» عن قصد: البونص مش بيع، وقيمته هنا للعرض بس.
+        "bonus_count": bonus_count,
+        "bonus_gross": to_money(Decimal(str(bonus_gross))),
     }
 
 

@@ -51,6 +51,7 @@ import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import StatsRow from '../components/StatsRow';
+import { useLiveRefresh } from '../utils/live';
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
  * they're bringing back; the items go back INTO stock and the money is credited to the customer.
@@ -347,8 +348,10 @@ export default function Returns() {
   // Purchase-history popup for a line's "آخر سعر شراء" tag.
   const [histModal, setHistModal] = useState<{ name: string; rows: HistRow[] } | null>(null);
 
-  const fetchReturns = async (override?: Filters) => {
-    setLoading(true);
+  const fetchReturns = async (override?: Filters, opts?: { silent?: boolean }) => {
+    // الهادي (التحديث الحي): من غير سبينر ولا رسالة، وبنفس الفلاتر اللي على الشاشة.
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const f = override ?? filters;
       const params: any = {};
@@ -361,9 +364,11 @@ export default function Returns() {
       setReturns(res.data);
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل المرتجعات');
-    } finally { setLoading(false); }
+      if (!silent) message.error(err?.response?.data?.detail?.message || 'تعذر تحميل المرتجعات');
+    } finally { if (!silent) setLoading(false); }
   };
+  // مرتجع اتعمل من التطبيق أو جهاز تاني ⇒ القايمة تتحدّث لوحدها. المرتجعات تحت `/sales`.
+  useLiveRefresh(['sales'], () => fetchReturns(undefined, { silent: true }));
 
   const loadLookups = async () => {
     try {

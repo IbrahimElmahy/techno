@@ -22,7 +22,20 @@ import 'sale_coupons_section.dart';
 /// يعرف وهو في الشارع، مش بديل عنها: الجهاز ممكن يكون بياناته قديمة، والسيرفر هو اللي
 /// عنده الحقيقة ساعة الترحيل.
 class SaleInvoiceScreen extends StatefulWidget {
-  const SaleInvoiceScreen({super.key, this.existing, this.initialLines});
+  const SaleInvoiceScreen(
+      {super.key, this.existing, this.initialLines, this.bonusMode = false});
+
+  /// **صفحة فاتورة البونص** — نفس الشاشة دي بالحرف، مقفولة على البونص.
+  ///
+  /// العميل طلب البونص صفحة لوحدها «نسخة طبق الأصل من فاتورة البيع» بخصم ١٠٠٪ على
+  /// الإجمالي والسعر ممنوع يتلمس. نسخة تانية من الشاشة كانت هتبقى ٢٠٠٠ سطر بيتعدّلوا
+  /// في مكان وينسوا في التاني — فالشاشة واحدة والفرق كله ورا العَلَم ده: الخصم ١٠٠٪
+  /// ومقفول، السعر من الشريحة ومقفول، ومافيش دفع ولا كوبونات. المدخل من الرئيسية
+  /// `BonusInvoiceScreen`.
+  ///
+  /// وفاتورة بونص في الطابور بتتفتح بونص لوحدها حتى من غير العَلَم (`existing` فيها
+  /// `is_bonus`) — التعديل مايقلبهاش بيع.
+  final bool bonusMode;
 
   /// صف فاتورة **لسه في الطابور** بيتعدّل، أو `null` لفاتورة جديدة.
   ///
@@ -85,21 +98,18 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   final List<SaleDraftLine> _lines = [];
   bool _saving = false;
 
-  /// المندوب شغّل «فاتورة بونص» بإيده.
-  ///
-  /// البونص بيتفتح بطريقتين: الزرار ده، أو إن **كل** السطور خصمها ١٠٠٪ (قرار العميل:
-  /// خصم ١٠٠٪ = بونص). الزرار بيحط ١٠٠٪ على كل السطور وبيقفل خانة الخصم — فالفاتورة
-  /// ماتبقاش بونص على الشاشة وسطورها بفلوس.
-  bool _bonusFlag = false;
-
   /// فاتورة البيع اللي البونص عليها. `null` = لسه ما اتختارتش، والحفظ مستنيها: السيرفر
   /// بيرفض بونص مش مربوط، والرفض ساعة المزامنة بيوقّف الطابور كله.
   _BonusTarget? _bonusFor;
 
-  /// الفاتورة دي بونص؟ — الزرار، أو كل السطور ١٠٠٪. نفس سؤال السيرفر
-  /// (`_is_full_discount`)، فاللي الشاشة بتقول عليه بونص هو اللي هيتسجّل بونص.
-  bool get _isBonus =>
-      _bonusFlag || (_lines.isNotEmpty && _lines.every((l) => l.isFull));
+  /// الفاتورة دي بونص؟ — **الصفحة هي اللي بتقول، مش الأرقام.**
+  ///
+  /// كان فيه زرار «فاتورة بونص» جوّه فاتورة البيع، وكل السطور ١٠٠٪ كانت بتقلبها بونص
+  /// لوحدها. العميل طلب البونص صفحة منفصلة، فبقى فيه طريق واحد واضح: اللي فتح «فاتورة
+  /// بونص» بيكتب بونص، واللي فتح «فاتورة بيع» بيكتب بيع — و١٠٠٪ في البيع بتترفض برسالة
+  /// بتوديه على صفحة البونص (`_save`). وبيتقري مرة واحدة: الصفحة مابتقلبش نوعها وهي مفتوحة.
+  late final bool _isBonus =
+      widget.bonusMode || (widget.existing?['is_bonus'] as int? ?? 0) == 1;
 
   /// خانة الكمية بتاعة كل سطر — بالـ`itemId` مش بالترتيب.
   ///
@@ -166,7 +176,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
             quantity: l.quantity,
             unitPrice: l.unitPrice,
             fixedDiscountPct: l.fixedDiscountPct,
-            variableDiscountPct: l.variableDiscountPct,
+            // البونص كل سطوره ١٠٠٪ من أول لحظة — مش سطر بفلوس مستني الحفظ يصلّحه.
+            variableDiscountPct: _isBonus ? 100 : l.variableDiscountPct,
           )));
     }
   }
@@ -211,11 +222,17 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       _coupons
         ..clear()
         ..addAll(_couponsFromJson(r['coupons'] as String?));
-      _bonusFlag = (r['is_bonus'] as int? ?? 0) == 1;
     });
     // الربط قبل الخط الأساسي — من غيره فاتورة بونص اتفتحت وماحدش لمسها بتسأل
     // «تسيب التعديل؟».
-    if (_bonusFlag) await _loadBonusTarget(r);
+    if (_isBonus) {
+      await _loadBonusTarget(r);
+      // **وسعر البونص بيرجع لسعر الشريحة قبل الخط الأساسي برضه.** البونص اللي اتكتب
+      // قبل الصفحة المنفصلة كانت خانة سعره مفتوحة، ودلوقتي مقفولة — فسعر اتعدّل ساعتها
+      // كان هيفضل على الشاشة من غير ما حد يقدر يصلّحه. والسيرفر أصلاً بيسجّل البونص
+      // بسعر الشريحة مهما اتبعت، فده بيخلّي الشاشة تقول نفس رقمه.
+      await _repriceAll();
+    }
     if (!mounted) return;
     // الخط الأساسي بيتاخد **بعد** ما الشاشة تمتلي، مش عند الفتح: اللي نزل دلوقتي هو
     // الفاتورة زي ما هي، فأي فرق بعد كده هو اللي المندوب عمله بإيده.
@@ -372,12 +389,16 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         _lines[i].unitPrice = _lines[i].unitPrice;
       }
     });
-    _repriceAll();
+    await _repriceAll();
+    // صفحة البونص: «على أنهي فاتورة؟» بيتسأل أول ما العميل يتحدّد — هو السؤال الوحيد
+    // اللي البونص محتاجه زيادة عن البيع، ومنتقيه محتاج العميل الأول.
+    if (_isBonus && _bonusFor == null && mounted) await _pickBonusTarget();
   }
 
   Future<void> _repriceAll() async {
     if (_customer == null) return;
     final items = await LocalDb.instance.saleItems();
+    if (!mounted) return;
     final byId = {for (final it in items) it.itemId: it};
     setState(() {
       for (final l in _lines) {
@@ -427,8 +448,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               // السعر والخصم من الصنف — الواحد بيراجع رقم، مش بيخترعه.
               unitPrice: picked.priceFor(_customer?.priceTier),
               // الثابت من الصنف، والمتغيّر بيبتدي صفر — ده اللي المندوب بيزوّده بإيده.
-              // **إلا في البونص**: الصنف بيدخل بـ١٠٠٪ زي اللي قبله، وإلا أول صنف
-              // يتضاف بيطلّع الفاتورة من البونص من غير ما حد يقصد.
+              // **إلا في صفحة البونص**: الصنف بيدخل بـ١٠٠٪ ومقفول — الخصم على
+              // الإجمالي كله ١٠٠٪ والمندوب مالوش يغيّره.
               fixedDiscountPct: picked.defaultDiscountPct,
               variableDiscountPct: _isBonus ? 100 : 0,
             ));
@@ -675,6 +696,11 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     // والمنع ده كان **صح** قبل ما الكوبونات تنزل في فاتورة التطبيق: فاتورة بلا أصناف
     // ساعتها كانت ورقة فاضية فعلاً. بقى غلط أول ما بقى فيه حاجة تانية تتكتب عليها.
     final hasCoupons = _coupons.any((c) => !c.isEmpty);
+    // بونص من غير أصناف مالوش معنى — الهدية بضاعة. بيتسأل قبل رسالة «صنف أو دفتر
+    // كوبونات» لأن صفحة البونص مافيهاش كوبونات أصلاً.
+    if (_isBonus && _lines.isEmpty) {
+      return _say('البونص لازم يبقى فيه صنف على الأقل');
+    }
     if (_lines.isEmpty && !hasCoupons) {
       return _say('ضيف صنف أو دفتر كوبونات على الأقل');
     }
@@ -707,23 +733,22 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
             'الخانة دي نسبة مش مبلغ. أعلى خصم ١٠٠٪ (بونص).');
       }
     }
-    // **١٠٠٪ على سطر لوحده في فاتورة بيع بيترفض.**
+    // **١٠٠٪ في فاتورة بيع بتترفض — سطر لوحده أو كل السطور.**
     //
-    // البونص الفاتورة كلها: السيرفر بيعتبرها بونص لما **كل** السطور ١٠٠٪ بس. سطر واحد
-    // ببلاش جوّه فاتورة بفلوس كان هيروح للسيرفر بخصم ١٠٠٪ على فاتورة بيع عادية —
-    // والسيرفر بيرفضه ساعة المزامنة، بعد ما البضاعة اتسلّمت. الهدية بتتكتب فاتورة
-    // بونص لوحدها على الفاتورة دي.
+    // سطر واحد ببلاش جوّه فاتورة بفلوس كان هيروح للسيرفر بخصم ١٠٠٪ على فاتورة بيع
+    // عادية — والسيرفر بيرفضه ساعة المزامنة، بعد ما البضاعة اتسلّمت. وكل السطور ١٠٠٪
+    // كانت بتقلب الفاتورة بونص من تحت إيده؛ دلوقتي البونص صفحة لوحدها («فاتورة بونص»
+    // من الرئيسية)، فالرسالة بتوديه عليها بدل ما الفاتورة تغيّر نوعها وهو مش واخد باله.
+    // السيرفر لسه بيعتبر ١٠٠٪ بونص — المنع هنا عشان الطريق يبقى واحد، مش عشان السيرفر.
     if (!_isBonus) {
       for (final l in _lines) {
         if (l.isFull) {
-          return _say('«${l.itemName}» بخصم ١٠٠٪ — ده بونص، والبونص فاتورة لوحدها. '
-              'احفظ البيع بخصم أقل من ١٠٠، واعمل فاتورة بونص عليه للهدية.');
+          return _say('«${l.itemName}» بخصم ١٠٠٪ — ده بونص، والبونص صفحة لوحدها. '
+              'احفظ البيع بخصم أقل من ١٠٠، واعمل الهدية من «فاتورة بونص» في الرئيسية.');
         }
       }
     }
     if (_isBonus) {
-      // بونص من غير أصناف مالوش معنى — الهدية بضاعة.
-      if (_lines.isEmpty) return _say('البونص لازم يبقى فيه صنف على الأقل');
       if (_bonusFor == null) {
         // الحفظ بيقف والمنتقي بيتفتح على طول — السؤال واقف قدامه مش في رسالة وبس.
         _say('البونص لازم يبقى على فاتورة بيع — اختار الفاتورة');
@@ -732,21 +757,22 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         if (!mounted) return;
       }
     }
-    // **فاتورة عليها بونص لسه في الطابور مابتتغيّرش لعميل تاني ولا بتبقى بونص.**
+    // **فاتورة عليها بونص لسه في الطابور مابتتغيّرش لعميل تاني.**
     //
     // السيرفر بيرفض البونص لو فاتورته مش لنفس العميل (أو مش بيع)، والطابور بيقف عند
     // أول رفض — فالبونص وكل اللي بعده كانوا هيفضلوا على الجهاز من غير ما حد يفهم ليه.
-    if (_isEditing && (widget.existing!['is_bonus'] as int? ?? 0) != 1) {
+    // (إنها «تبقى بونص» مابقتش واردة: فاتورة البيع مابتتقلبش بونص من الصفحة دي.)
+    if (_isEditing && !_isBonus) {
       final uuid = widget.existing!['client_uuid'] as String?;
       final movedCustomer = _customer!.id != widget.existing!['customer_id'];
       if (uuid != null &&
-          (movedCustomer || _isBonus) &&
+          movedCustomer &&
           await LocalDb.instance.queuedBonusesOn(uuid) > 0) {
         return _say('الفاتورة دي عليها بونص لسه ما اترفعش — '
-            'ماينفعش تتنقل لعميل تاني ولا تبقى بونص. ارفعهم الأول أو عدّل البونص.');
+            'ماينفعش تتنقل لعميل تاني. ارفعهم الأول أو عدّل البونص.');
       }
     }
-    // البونص كله ١٠٠٪ — سطر فضل بخصم تاني (مثلاً كان متكتب قبل ما الزرار يتشغّل)
+    // البونص كله ١٠٠٪ — سطر فضل بخصم تاني (مثلاً بونص قديم اتكتب قبل الصفحة المنفصلة)
     // بيتظبط هنا، عشان اللي يتخزّن ويتبعت هو نفس اللي الشاشة قالته: صفر.
     if (_isBonus) {
       setState(() {
@@ -763,7 +789,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     // بتتحفظ وتقعد في الطابور ويرجع الرفض كل مزامنة — بعد ما البضاعة اتسلّمت والعميل
     // واخد ورقته، ومن غير ما حاجة تتصلّح لوحدها. نفس الحساب بالظبط بيتعمل هنا وهو
     // واقف عند العميل، وبنفس نص الرسالة عشان اللي يقراها يبقى شايف نفس الكلام.
-    if ((await LocalDb.instance.getKv('can_sell_below_price')) == '0') {
+    //
+    // **والبونص برّه الفحص ده.** سعره مقفول على الشريحة والسيرفر بيسجّله بسعر الشريحة
+    // مهما اتبعت (`is_bonus` في `create_sale`) — فرسالة «ظبّط السعر» على خانة مقفولة
+    // كانت هتبقى باب مقفول من الناحيتين.
+    if (!_isBonus &&
+        (await LocalDb.instance.getKv('can_sell_below_price')) == '0') {
       final tier = _customer?.priceTier;
       final catalogue = {for (final i in await LocalDb.instance.saleItems()) i.itemId: i};
       for (final l in _lines) {
@@ -962,26 +993,6 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       text: t, selection: TextSelection.collapsed(offset: t.length));
   }
 
-  /// زرار البونص. التشغيل بيحط ١٠٠٪ على كل السطور ويمسح النقدي؛ الإطفاء بيرجّع خصم
-  /// السطور اللي كانت ١٠٠٪ لصفر — **مش** للي كان قبلها: الرقم القديم مش متخزّن، وصفر
-  /// ظاهر في الخانة أصدق من تخمين.
-  void _setBonus(bool on) {
-    setState(() {
-      _bonusFlag = on;
-      for (final l in _lines) {
-        if (on) {
-          l.variableDiscountPct = 100;
-        } else if (l.variableDiscountPct >= 100) {
-          l.variableDiscountPct = 0;
-        }
-        _discCtl[l.itemId]?.text = _blank(l.variableDiscountPct);
-      }
-      if (on) _cash.clear();
-    });
-    // «على أنهي فاتورة؟» بيتسأل على طول — هو السؤال الوحيد اللي البونص محتاجه.
-    if (on && _customer != null && _bonusFor == null) _pickBonusTarget();
-  }
-
   /// منتقي «على فاتورة بيع» — فواتير العميل ده اللي على الجهاز، ومعاها اللي على السيرفر
   /// لو فيه شبكة.
   Future<void> _pickBonusTarget() async {
@@ -1154,8 +1165,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ? 'التعديلات اللي عملتها هتروح، والفاتورة هتفضل زي ما كانت.'
               : _lines.isEmpty
                   ? 'اللي كتبته هيروح ومش هيترجع.'
-                  : 'فيها ${_lines.length} صنف بإجمالي ${_money(_total)} ج.م — '
-                      'هتروح كلها ومش هترجع.'),
+                  // البونص إجماليه صفر — «بإجمالي ٠٫٠٠» مابتقولش اللي هيضيع.
+                  : 'فيها ${_lines.length} صنف '
+                      '${_isBonus ? 'بقيمة ${_money(_bonusValue)}' : 'بإجمالي ${_money(_total)}'}'
+                      ' ج.م — هتروح كلها ومش هترجع.'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(dctx, false),
@@ -1191,9 +1204,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       // الشاشة وبعدها مايبانش، والمندوب اللي بيكتب عشرين صنف بينسى هو على أنهي خط —
       // وده بيحدّد أنهي حساب هيتسدّ منه.
       //
-      // **والبونص بيقول إنه بونص في نفس المكان** — «فاتورة بونص — أبيض». المندوب
-      // اللي كتب ١٠٠٪ في آخر سطر لازم يشوف إن الفاتورة كلها اتقلبت، مش يكتشفها في
-      // الورقة.
+      // **وصفحة البونص بتقول إنها بونص في نفس المكان** — «فاتورة بونص — أبيض». الشاشتين
+      // شكلهم واحد بالقصد، فالعنوان هو أول حاجة بتفرّق بينهم.
       appBar: AppBar(title: Text(
           '${_isBonus ? (_isEditing ? 'تعديل فاتورة بونص' : 'فاتورة بونص') : (_isEditing ? 'تعديل فاتورة' : 'فاتورة بيع')}'
           '${_family == null ? '' : ' — $_family'}')),
@@ -1407,13 +1419,20 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       children: [
         if (_headerOpen) _headerDetails(),
         if (_lines.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(28),
+          Padding(
+            padding: const EdgeInsets.all(28),
+            // صفحة البونص مافيهاش كوبونات — «سجّل دفتر كوبونات بس» هناك بتدلّ على
+            // خانة مش موجودة.
             child: Text(
-                'مافيش أصناف على الفاتورة لسه.\n'
-                'اضغط «صنف» فوق عشان تضيف — أو سيبها من غير أصناف\n'
-                'وسجّل دفتر كوبونات بس تحت.',
-                textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
+                _isBonus
+                    ? 'مافيش أصناف على البونص لسه.\n'
+                        'اضغط «صنف» فوق وضيف البضاعة الهدية — '
+                        'السعر من الشريحة والخصم ١٠٠٪ لوحدهم.'
+                    : 'مافيش أصناف على الفاتورة لسه.\n'
+                        'اضغط «صنف» فوق عشان تضيف — أو سيبها من غير أصناف\n'
+                        'وسجّل دفتر كوبونات بس تحت.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.black54)),
           )
         else
           for (var i = 0; i < _lines.length; i++) _lineTile(i),
@@ -1515,6 +1534,28 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   ],
                 ),
               ),
+            // ١٠٠٪ في فاتورة بيع بيتقال والسطر مكتوب — مش عند الحفظ بس. البونص بقى صفحة
+            // لوحدها، والسطر ده مش هيتحفظ كده.
+            if (!_isBonus && l.isFull)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.card_giftcard_outlined,
+                        size: 14, color: AppColors.danger),
+                    SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'خصم ١٠٠٪ = بونص — الهدية بتتعمل من «فاتورة بونص» مش هنا',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.danger,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 6),
             Row(
               children: [
@@ -1539,7 +1580,11 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     // والشرط على الداتا مش على أسماء الفئات: المكتب بيقرر من النظام
                     // (`Item.default_discount_pct`) أنهي أصناف تمشي بالقاعدة دي،
                     // من غير ما التطبيق يتبني من أول وجديد.
-                    readOnly: l.fixedDiscountPct > 0,
+                    //
+                    // **وفي صفحة البونص السعر مقفول على كل الأصناف** — «سعر البضاعة
+                    // ممنوع» بكلام العميل. السعر هنا مش فلوس بتتقبض، ده قيمة الهدية
+                    // بسعر الشريحة؛ والسيرفر بيسجّله بسعر الشريحة مهما اتكتب.
+                    readOnly: _isBonus || l.fixedDiscountPct > 0,
                     // **والخانة المقفولة بتوري صافي سعر الوحدة بعد الخصمين.**
                     //
                     // كانت بتوري سعر القايمة (١٦٦٫٢٥) والإجمالي محسوب على ١٤٩٫٦٣،
@@ -1550,7 +1595,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     // والخانة المفتوحة بتفضل بسعر القايمة: هي اللي بيتكتب فيها، ولو
                     // ورّت الصافي كان اللي يكتب فيه يبقى بيكتب في خانة معناها اتغيّر
                     // تحت إيده. الشارة «ثابت ١٠٪» جنب السطر بتقول الخصم جه منين.
-                    netPrice: l.fixedDiscountPct > 0
+                    //
+                    // البونص بيوري سعر الشريحة نفسه مش الصافي: الصافي صفر على كل سطر،
+                    // وخانة بتقول «٠» مابتقولش الهدية دي تسوى كام.
+                    netPrice: !_isBonus && l.fixedDiscountPct > 0
                         ? netOf(l.unitPrice, l.discountPct)
                         : null,
                   ),
@@ -1563,16 +1611,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         l.itemId,
                         () => TextEditingController(
                             text: _blank(l.variableDiscountPct))),
-                    // زرار البونص شغّال ⇒ الخصم ١٠٠٪ ومقفول. اللي عايز يرجّع خصم عادي
-                    // بيطفي الزرار — وإلا يبقى بونص فيه سطر بفلوس.
-                    readOnly: _bonusFlag,
-                    onChanged: (v) => setState(() {
-                      l.variableDiscountPct = v;
-                      // ١٠٠٪ على كل السطور قلبت الفاتورة بونص — النقدي بيتمسح من
-                      // الخانة كمان، مش بس بيتحسب صفر: رقم مكتوب في خانة مقفولة
-                      // بيقول إن فيه فلوس اتقبضت.
-                      if (_isBonus) _cash.clear();
-                    }),
+                    // صفحة البونص ⇒ الخصم ١٠٠٪ ومقفول. «الخصم على إجمالي الفاتورة ١٠٠٪»
+                    // مش رقم بيتفاوض عليه — ده اللي بيخلّيها بونص.
+                    readOnly: _isBonus,
+                    onChanged: (v) => setState(() => l.variableDiscountPct = v),
                   ),
                 ),
                 // سلة صريحة — بس بمقاس وحدود مضبوطة.
@@ -1703,33 +1745,43 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // **البونص بزرار صريح كمان** — مش بس بخصم ١٠٠٪ سطر سطر. اللي عايز يدّي
-            // عشرين صنف هدية مايكتبش ١٠٠ عشرين مرة.
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              value: _isBonus,
-              onChanged: _setBonus,
-              secondary: Icon(Icons.card_giftcard_outlined,
-                  color: _isBonus ? AppColors.accent : Colors.black38),
-              title: const Text('فاتورة بونص',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-              subtitle: const Text('بضاعة هدية على فاتورة بيع — خصم ١٠٠٪ ومن غير فلوس',
-                  style: TextStyle(fontSize: 11)),
-            ),
-            const Divider(height: 12),
+            // **صفحة البونص مافيهاش دفع خالص** — مش خانة نقدي مقفولة. البونص قيمته صفر
+            // والسيرفر بيرفض أي نقدي عليه، فخانة «المدفوع» حتى لو رمادية بتسأل سؤال
+            // إجابته معروفة. اللي بيتعرض بدالها: البضاعة تسوى كام، والخصم ١٠٠٪، والصافي صفر.
+            //
+            // (زرار «فاتورة بونص» اللي كان هنا اتشال: البونص بقى صفحة لوحدها من الرئيسية.)
+            if (_isBonus) ...[
+              const Row(
+                children: [
+                  Icon(Icons.card_giftcard_outlined,
+                      size: 18, color: AppColors.accent),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text('بضاعة هدية — خصم ١٠٠٪ على إجمالي الفاتورة، ومن غير فلوس',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                  ),
+                ],
+              ),
+              const Divider(height: 18),
+              _totalRow('قيمة البضاعة قبل الخصم', _money(_bonusValue)),
+              const SizedBox(height: 6),
+              _totalRow('الخصم على الإجمالي ١٠٠٪', '− ${_money(_bonusValue)}',
+                  color: AppColors.accent),
+              const Divider(height: 18),
+              _totalRow('صافي الفاتورة', _money(0), big: true),
+              const SizedBox(height: 4),
+              const Text('البونص مابيلمسش حساب العميل — مافيش دفع ولا تحصيل عليه.',
+                  style: TextStyle(fontSize: 11, color: Colors.black54)),
+            ] else ...[
             const Text('الدفع',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
             const SizedBox(height: 8),
             TextField(
               controller: _cash,
-              // البونص مالوش فلوس — الخانة مقفولة بدل ما تتكتب ويترفض الرقم بعدين.
-              enabled: !_isBonus,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'المدفوع نقداً',
                 suffixText: 'ج.م',
-                helperText: _isBonus ? 'البونص مالوش فلوس — النقدي صفر' : null,
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -1755,14 +1807,6 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
             ],
             const SizedBox(height: 10),
-            // **البونص مالوش حساب.** قيمته صفر ومابيلمسش رصيد العميل، فسطور المديونية
-            // و«الباقي» هتقول أرقام مالهاش علاقة بالمستند ده. اللي يهم: البضاعة
-            // خرجت بكام بسعر البيع، والعميل مطلوب منه صفر. نفس فوتر الويب.
-            if (_isBonus) ...[
-              _totalRow('قيمة البونص بسعر البيع', _money(_bonusValue)),
-              const SizedBox(height: 6),
-              _totalRow('المطلوب من العميل', _money(0), big: true),
-            ] else ...[
             _totalRow('إجمالي الأصناف', _money(_total)),
             const SizedBox(height: 6),
             _totalRow('صافي الفاتورة', _money(_total), color: AppColors.primary),
@@ -1817,8 +1861,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
             ),
             // الكوبونات جوّه نفس الفاتورة — مش شاشة تانية. اللي بيسلّم دفتر بيسلّمه
             // مع البضاعة في نفس اللحظة، والمدى ده هو اللي المرتجع بيراجع عليه بعدين.
-            SaleCouponsSection(
-                rows: _coupons, onChanged: () => setState(() {})),
+            //
+            // **وصفحة البونص مافيهاش كوبونات** — إلا بونص قديم في الطابور اتكتب عليه
+            // دفتر قبل الصفحة المنفصلة: صفوفه بتفضل ظاهرة تتعدّل أو تتمسح، مش مستخبية
+            // وبتتبعت من ورا المندوب.
+            if (!_isBonus || _coupons.any((c) => !c.isEmpty))
+              SaleCouponsSection(
+                  rows: _coupons, onChanged: () => setState(() {})),
           ],
         ),
       ),
@@ -1877,7 +1926,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
                 child: Row(
                   children: [
-                    Text(_isBonus ? 'بونص' : 'الإجمالي',
+                    Text(_isBonus ? 'الصافي' : 'الإجمالي',
                         style: TextStyle(
                             fontSize: 12,
                             color: _isBonus ? AppColors.accent : Colors.black54,
@@ -1897,7 +1946,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     // بتقول الباقي كله، فرقمين مختلفين بنفس الاسم في شاشة واحدة.
                     Text(
                         _isBonus
-                            ? 'قيمته ${_money(_bonusValue)}'
+                            // «قبل الخصم» صريحة — الصفر جنبها هو الصافي بعد الـ١٠٠٪.
+                            ? 'قيمة البضاعة قبل الخصم ${_money(_bonusValue)}'
                             : 'باقي ${_money(_dueAfter)}',
                         style: const TextStyle(fontSize: 12, color: Colors.black54)),
                   ],

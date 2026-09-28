@@ -29,7 +29,9 @@ log = logging.getLogger(__name__)
 
 _SKIP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 # الدخول بيتسجّل من `auth` نفسه بالاسم اللي اتكتب بيه — نجح ولا فشل — ومافيش داعي لصف تاني.
-_SKIP_PATHS = frozenset({"/api/v1/auth/login", "/api/v1/auth/refresh"})
+# وتذكرة التحديث المباشر بتتاخد مع كل فتح اتصال (كل عشر دقايق لكل تبويب) — مش عملية.
+_SKIP_PATHS = frozenset({"/api/v1/auth/login", "/api/v1/auth/refresh",
+                         "/api/v1/live/ticket"})
 _VERB = {"POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}
 
 
