@@ -1,3 +1,7 @@
+// **الملف ده مش اللي بيتقرا.** لما `build.gradle` و`build.gradle.kts` موجودين جنب بعض،
+// Gradle بياخد الـGroovy (`build.gradle`) — والبيلد الفعلي بيقول AGP 8.9.1 اللي مكتوب هناك
+// (`build/app/intermediates/app_metadata/.../app-metadata.properties`). أي تعديل يتعمل هناك
+// الأول، ويتنقل هنا عشان الاتنين مايبعدوش عن بعض لو حد مسح واحد فيهم.
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -10,6 +14,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // ota_update — الشرح في build.gradle جنبه.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -42,4 +48,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

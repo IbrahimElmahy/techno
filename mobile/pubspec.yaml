@@ -1,7 +1,7 @@
 name: techno_inspections
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.3.2+5
+version: 0.3.3+6
 
 environment:
   sdk: ^3.5.4
@@ -36,6 +36,15 @@ dependencies:
   path_provider: ^2.1.5
   pdf: ^3.13.0
   printing: ^5.15.0
+  # التحديث من السيرفر (`lib/services/app_updater.dart`) — التطبيق مش على المتجر، فكل
+  # نسخة كانت بتتبعت APK لكل مندوب بإيد.
+  #   package_info_plus: رقم النسخة المتثبّتة عشان نقارنه باللي على السيرفر.
+  #   device_info_plus: معمارية الموبايل عشان ينزّل الملف بتاعها (٢٨ ميجا بدل ٧٣).
+  #   ota_update: بينزّل الملف بنسبة ويفتح شاشة التثبيت. محتاج desugaring في
+  #   `android/app/build.gradle` والـprovider في `AndroidManifest.xml`.
+  package_info_plus: ^10.2.1
+  device_info_plus: ^13.2.0
+  ota_update: ^7.1.0
 
 dev_dependencies:
   flutter_test:

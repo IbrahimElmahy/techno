@@ -1,7 +1,14 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- المرفقات: المندوب بيصوّر العداد أو الوصلة في الشارع. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- التحديث من السيرفر: التطبيق بينزّل نسخته الجديدة ويفتح شاشة التثبيت.
+         من غير الإذن ده أندرويد مابيعرضش حتى سؤال «السماح بالتثبيت من التطبيق ده». -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- ota_update بيعلن كمان INSTALL_PACKAGES (للتثبيت الصامت) — دي لتطبيقات النظام بس،
+         أندرويد مابيدّيهاش لتطبيق عادي، وفحص lint بتاع البيلد بيعتبرها خطأ. بنشيلها. -->
+    <uses-permission android:name="android.permission.INSTALL_PACKAGES" tools:node="remove" />
     <application
         android:label="تكنو ثيرم — المعاينات"
         android:name="${applicationName}"
@@ -28,6 +35,18 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- ota_update بيسلّم الـAPK اللي نزل لشاشة التثبيت من هنا. الملف في مجلد التطبيق
+             الخاص (files/ota_update/)، وأندرويد مابيسمحش لتطبيق تاني يقراه غير برابط
+             content:// مؤقت — والـprovider ده اللي بيطلّعه. -->
+        <provider
+            android:name="sk.fourq.otaupdate.OtaUpdateFileProvider"
+            android:authorities="${applicationId}.ota_update_provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/ota_update_filepaths" />
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

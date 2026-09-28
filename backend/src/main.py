@@ -13,6 +13,7 @@ from src.api import (  # Sales & Inventory (002
     drafts,  # مسودّات المستندات — اللي اتكتب ولسه ما اترحّلش
     advances,  # السلف والجزاءات (HR-5)
     after_sales_reports,
+    app_update,  # تحديث التطبيق من السيرفر بدل ما الـAPK يتبعت لكل مندوب
     attachments,  # مرفقات الزيارات (صور المندوب)
     document_attachments,  # مرفقات أي مستند — صور وPDF على الفاتورة والإذن والسند
     a5_sync,  # استقبال تصدير a5 من فرع بعيد — المصنع بيرفع وإحنا بنستورد
@@ -218,6 +219,8 @@ def create_app() -> FastAPI:
     app.include_router(drafts.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
     app.include_router(live.router, prefix=prefix)
+    # تحديث التطبيق — من غير دخول، عشان يشتغل من شاشة الدخول كمان
+    app.include_router(app_update.router, prefix=prefix)
 
     @app.get("/health")
     def health() -> dict:

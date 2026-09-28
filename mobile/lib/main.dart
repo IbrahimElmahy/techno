@@ -8,6 +8,7 @@ import 'db/local_db.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/app_updater.dart';
 import 'theme.dart';
 
 void main() {
@@ -46,6 +47,8 @@ class TechnoInspectionsApp extends StatelessWidget {
     return MaterialApp(
       title: 'تكنو ثيرم — المعاينات',
       debugShowCheckedModeBanner: false,
+      // رسالة «فيه تحديث» بتطلع من خدمات مالهاش شاشة (المزامنة مثلاً) — فوق أي شاشة مفتوحة.
+      navigatorKey: AppUpdater.navigatorKey,
       theme: buildTheme(),
       locale: const Locale('ar', 'EG'),
       supportedLocales: const [Locale('ar', 'EG'), Locale('ar'), Locale('en')],
@@ -93,6 +96,12 @@ class _GateState extends State<_Gate> {
     final token = await reading;
     if (!mounted) return;
     setState(() => _loggedIn = token != null);
+    // **التحديث بيتسأل عليه هنا — قبل ما نعرف داخل ولا لأ.** المندوب اللي نسخته القديمة
+    // مش عارفة تدخل هو أكتر واحد محتاجه، فشاشة الدخول لازم تشوفه زي الرئيسية بالظبط.
+    // العنوان معروف من هنا (المتحفوظ أو الافتراضي). مافيش `await`: الشاشة بتفتح على طول،
+    // ومن غير نت السؤال بيفشل في صمت.
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => AppUpdater.instance.check(atStart: true));
   }
 
   @override

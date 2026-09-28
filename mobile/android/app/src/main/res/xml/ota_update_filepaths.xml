@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- المجلد الوحيد اللي provider بتاع ota_update يقدر يدّي منه رابط لشاشة التثبيت.
+     الاسم مش `filepaths` زي مثال المكتبة عشان مايتخانقش مع ملف بنفس الاسم في بلجن تاني:
+     مورد التطبيق بيغطّي على مورد المكتبة، فالبلجن التاني كان هيقرا مساراتنا إحنا. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="internal_apk_storage" path="ota_update/"/>
+</paths>

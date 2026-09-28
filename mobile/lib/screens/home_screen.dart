@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../db/local_db.dart';
+import '../services/app_updater.dart';
 import '../services/auto_sync.dart';
 import '../theme.dart';
 import 'login_screen.dart';
@@ -36,11 +37,16 @@ class _HomeScreenState extends State<HomeScreen> {
   int _pendingSales = 0;
   /// وسندات القبض اللي لسه في الطابور — نفس الحكاية.
   int _pendingReceipts = 0;
+  /// «0.3.3 (6)» — تحت زرار التحديث في القايمة. أول سؤال الدعم بيسأله في التليفون.
+  String? _version;
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    AppUpdater.instance.installed().then((v) {
+      if (mounted) setState(() => _version = v.label);
+    });
     AutoSync.instance.addListener(_onSync);
     // **المزامنة بتحصل لوحدها أول ما الشاشة تفتح** — لو فيه نت وآخر واحدة بقى لها
     // شوية. المندوب ماكانش لازم يفتكر: اللي بينسى بيفتح الفاتورة ويلاقيها ناقصة.
@@ -455,6 +461,17 @@ class _HomeScreenState extends State<HomeScreen> {
               } catch (e) {
                 messenger.showSnackBar(SnackBar(content: Text('فشل التحديث: $e')));
               }
+            },
+          ),
+          // التحديث بيحصل لوحده (أول ما التطبيق يفتح وبعد المزامنة، مرة كل ٦ ساعات)، ده
+          // للي عايز يتأكد دلوقتي — أو اللي الإدارة قالتله «حدّث».
+          ListTile(
+            leading: const Icon(Icons.system_update_outlined),
+            title: const Text('البحث عن تحديث'),
+            subtitle: _version == null ? null : Text('الإصدار $_version'),
+            onTap: () {
+              Navigator.pop(context);
+              AppUpdater.instance.check(manual: true);
             },
           ),
           const Divider(),

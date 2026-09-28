@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
 import '../db/local_db.dart';
+import 'app_updater.dart';
 
 /// حالة المزامنة اللي بتحصل لوحدها — الشاشات بتسمعها وبتعرض العلامة.
 enum AutoSyncState { idle, running, done, failed }
@@ -141,6 +142,9 @@ class AutoSync extends ChangeNotifier {
             : AutoSyncState.done,
         warn.isEmpty ? done : '$done\n⚠ ${warn.join('\n⚠ ')}',
       );
+      // المزامنة اللي نجحت معناها إن فيه نت والسيرفر بيرد — لحظة كويسة نسأل فيها عن
+      // تحديث. السؤال رد صغير، والنسخة اللي المندوب قال عليها «بعدين» بتتأجّل جوّه `check`.
+      if (state == AutoSyncState.done) unawaited(AppUpdater.instance.check());
     } catch (e) {
       _set(AutoSyncState.failed, _short(e));
     } finally {
