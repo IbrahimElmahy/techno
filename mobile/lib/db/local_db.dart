@@ -885,6 +885,35 @@ class LocalDb {
     };
   }
 
+  /// البضاعة المحجوزة على فواتير **تانية** لسه على الجهاز — لكل صنف: الفاتورة وكميتها.
+  ///
+  /// المتاح صفر مش دايماً معناه إن الصنف خلص من العربية. مندوب كتب نفس البضاعة على
+  /// فاتورتين لنفس العميل، ولما جه يعدّل التانية لقى «خلص من العربية» على ست أصناف
+  /// هي معاه فعلاً — محجوزة على الأولى. الرسالة لازم تقول هي فين عشان يعرف يصلّح إيه.
+  Future<Map<int, List<PendingHold>>> pendingHolds(
+      {int? exceptInvoiceLocalId}) async {
+    final d = await db;
+    final rows = await d.rawQuery(
+        'SELECT l.item_id AS item_id, i.local_id AS local_id, i.customer_name AS customer,'
+        ' i.is_bonus AS is_bonus, SUM(l.quantity) AS q '
+        'FROM sale_invoice_line l '
+        'JOIN sale_invoice i ON i.local_id = l.invoice_local_id '
+        'WHERE i.synced = 0'
+        '${exceptInvoiceLocalId == null ? '' : ' AND i.local_id <> ?'}'
+        ' GROUP BY l.item_id, i.local_id ORDER BY i.local_id',
+        [if (exceptInvoiceLocalId != null) exceptInvoiceLocalId]);
+    final out = <int, List<PendingHold>>{};
+    for (final r in rows) {
+      out.putIfAbsent(r['item_id'] as int, () => []).add(PendingHold(
+            localId: r['local_id'] as int,
+            customerName: (r['customer'] as String?) ?? '',
+            isBonus: (r['is_bonus'] as int? ?? 0) == 1,
+            quantity: (r['q'] as num?)?.toDouble() ?? 0,
+          ));
+    }
+    return out;
+  }
+
   /// بتحفظ فاتورة وسطورها في معاملة واحدة — فاتورة من غير سطور مش فاتورة.
   Future<int> saveSaleInvoice({
     required String clientUuid,
@@ -1736,3 +1765,17 @@ CREATE TABLE price_sheet_line(
   variable_discount_pct REAL NOT NULL DEFAULT 0,
   line_total REAL NOT NULL DEFAULT 0
 )''';
+
+/// كمية صنف محجوزة على فاتورة لسه على الجهاز — شوف [LocalDb.pendingHolds].
+class PendingHold {
+  const PendingHold({
+    required this.localId,
+    required this.customerName,
+    required this.isBonus,
+    required this.quantity,
+  });
+  final int localId;
+  final String customerName;
+  final bool isBonus;
+  final double quantity;
+}

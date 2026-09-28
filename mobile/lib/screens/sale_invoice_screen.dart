@@ -143,6 +143,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// بالإيد بعد ما السطر يتضاف، فالحد اللي اتفرض وقت الإضافة مابيمنعش حاجة بعدها.
   Map<int, double> _free = {};
 
+  /// البضاعة المحجوزة على فواتير تانية لسه على الجهاز — عشان التحذير يقول هي فين
+  /// بدل «خلص من العربية» وهي معاه.
+  Map<int, List<PendingHold>> _holds = {};
+
   /// رقم الفاتورة اللي بتتعدّل على الجهاز — `null` يعني فاتورة جديدة.
   int? get _editingId => widget.existing?['local_id'] as int?;
   bool get _isEditing => _editingId != null;
@@ -171,8 +175,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     // سطور الفاتورة اللي بتتعدّل مابتتخصمش من المتاح — اللي بيتكتب دلوقتي بياخد مكانها.
     final free = await LocalDb.instance
         .availableForSaleAll(exceptInvoiceLocalId: _editingId);
+    final holds =
+        await LocalDb.instance.pendingHolds(exceptInvoiceLocalId: _editingId);
     if (!mounted) return;
-    setState(() => _free = free);
+    setState(() {
+      _free = free;
+      _holds = holds;
+    });
   }
 
   /// بترجّع الفاتورة اللي في الطابور للشاشة زي ما اتكتبت.
@@ -510,11 +519,18 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     // بعد ما البوباب يتقفل.
     final free = await LocalDb.instance
         .availableForSaleAll(exceptInvoiceLocalId: _editingId);
-    if (mounted) setState(() => _free = free);
+    final holds =
+        await LocalDb.instance.pendingHolds(exceptInvoiceLocalId: _editingId);
+    if (mounted) {
+      setState(() {
+        _free = free;
+        _holds = holds;
+      });
+    }
     return [
       for (final l in _lines)
         if (l.quantity > (free[l.itemId] ?? 0) + 0.0001)
-          _OverLine(l, (free[l.itemId] ?? 0))
+          _OverLine(l, (free[l.itemId] ?? 0), holds[l.itemId] ?? const [])
     ];
   }
 
@@ -548,15 +564,37 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 for (final o in over)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      '• ${o.line.itemName}\n'
-                      '   طالب ${_qty(o.line.quantity)} — المتاح ${_qty(o.free)}'
-                      '${o.free <= 0 ? ' (خلص من العربية)' : ''}',
-                      style: const TextStyle(fontSize: 13),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '• ${o.line.itemName}\n'
+                          '   طالب ${_qty(o.line.quantity)} — المتاح ${_qty(o.free)}'
+                          '${o.free <= 0 && o.holds.isEmpty ? ' (خلص من العربية)' : ''}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        for (final h in o.holds)
+                          Text(
+                            '   ${_qty(h.quantity)} محجوزين على ${_holdLabel(h)}',
+                            style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.danger,
+                                fontWeight: FontWeight.w700),
+                          ),
+                      ],
                     ),
                   ),
               ],
               const SizedBox(height: 4),
+              if (over.any((o) => o.holds.isNotEmpty))
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: Text(
+                      'البضاعة دي متكتبة على فاتورة تانية لسه على الجهاز — مش خلصانة. '
+                      'لو اتكتبت مرتين بالغلط، قلّلها من الفاتورة التانية الأول '
+                      '(من «فواتيري») وارجع هنا.',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
               const Text(
                   'لو شايف إن البضاعة معاك فعلاً، اعمل «مزامنة البيانات» الأول — '
                   'أرصدة العربية بتتحدّث منها.',
@@ -1462,9 +1500,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        _freeOf(l.itemId) <= 0
-                            ? 'الصنف ده خلص من عربيتك — الفاتورة مش هتتحفظ بيه'
-                            : 'المتاح في عربيتك ${_qty(_freeOf(l.itemId))} بس',
+                        (_holds[l.itemId] ?? const []).isNotEmpty
+                            ? 'المتاح ${_qty(_freeOf(l.itemId))} — والباقي محجوز على '
+                                '${_holds[l.itemId]!.map(_holdLabel).join('، ')}'
+                            : _freeOf(l.itemId) <= 0
+                                ? 'الصنف ده خلص من عربيتك — الفاتورة مش هتتحفظ بيه'
+                                : 'المتاح في عربيتك ${_qty(_freeOf(l.itemId))} بس',
                         style: const TextStyle(
                             fontSize: 11,
                             color: AppColors.danger,
@@ -2168,11 +2209,17 @@ String _trim(double v) {
 /// اللي بيتكتب هو الرقم اللي المندوب قصده.
 String _blank(double v) => v == 0 ? '' : _trim(v);
 
-/// سطر كميته أكتر من المتاح، ومعاه المتاح وقت القياس.
+/// سطر كميته أكتر من المتاح، ومعاه المتاح وقت القياس والفواتير التانية اللي حاجزة الصنف.
 class _OverLine {
-  _OverLine(this.line, this.free);
+  _OverLine(this.line, this.free, this.holds);
   final SaleDraftLine line;
   final double free;
+  final List<PendingHold> holds;
 }
+
+/// «فاتورة شعبان هنداوي اللي لسه ما اترفعتش» — اسم العميل هو اللي المندوب فاكره،
+/// مش رقم محلي مالوش معنى عنده.
+String _holdLabel(PendingHold h) =>
+    '${h.isBonus ? 'فاتورة بونص' : 'فاتورة'} ${h.customerName} اللي لسه ما اترفعتش';
 
 String _qty(double v) => _trim(v);
