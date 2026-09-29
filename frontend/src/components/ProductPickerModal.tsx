@@ -60,13 +60,16 @@ const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { m
  * بين فتحة والتانية، وبيتنسوا لما المستند يتقفل (`open` بيبقى false والفئة بتترجّع null
  * من الشاشة اللي بتنده).
  */
-const memory = { query: '', scrollTop: 0, cursor: 0 };
+type PickerMemory = { query: string; scrollTop: number; cursor: number };
+// ذاكرة لكل شباك باسمه: منتقي الفاتورة غير منتقي المرتجع غير الشرا — كل واحد بقايمته.
+const memories: Record<string, PickerMemory> = {};
 
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion,
 }: Props) {
+  const memory = (memories[title] ??= { query: '', scrollTop: 0, cursor: 0 });
   const [query, setQuery] = useState(() => memory.query);
   const [cursor, setCursor] = useState(() => memory.cursor);
   /**
@@ -209,7 +212,8 @@ export default function ProductPickerModal({
    *  الكتالوج آلاف الأصناف، وكلهم كانوا بيتحطوا في الـDOM مرة واحدة — الشباك بيتجمّد
    *  ثواني قبل ما يبان. المعروض بيتقصّ، وبيزيد لما اللي بيدوّر يوصل لآخر القايمة. */
   const PAGE = 120;
-  const [shown, setShown] = useState(PAGE);
+  // الصفحة الأولى لازم تشمل الصف اللي كان مختار — وإلا Enter بيضيف صف مش ظاهر.
+  const [shown, setShown] = useState(() => Math.max(PAGE, memory.cursor + PAGE));
   // مش على `open`: الفتحة الجديدة بترجع لنفس المكان (شوف `memory` فوق).
   useEffect(() => { setShown((n) => Math.max(PAGE, Math.min(n, memory.cursor + PAGE))); }, [query, activeCategory, activeRoot, onlyAvailableStock]);
   const rendered = useMemo(() => visible.slice(0, shown), [visible, shown]);

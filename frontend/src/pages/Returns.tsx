@@ -320,6 +320,7 @@ export default function Returns() {
     createForm.resetFields();
     setCreateVisible(true);
     setNewStep(null);
+    setCustomerId(x.customer_id ?? null);
     if (x.customer_id) {
       createForm.setFieldsValue({ customer_id: x.customer_id });
       onCustomerChange(x.customer_id);
@@ -543,8 +544,12 @@ export default function Returns() {
         setCustomerBalance(Number(res.data?.total_balance || 0));
         // Pre-picked only when there is nothing to pick. With two lines it stays empty on
         // purpose — choosing for him is choosing which debt the refund comes off.
+        //
+        // **ومابيمسحش نوع اتحدّد خلاص.** الرد ده بيوصل بعد ما المسودّة (أو المستند
+        // المفتوح) حطّت نوعها، فكان بيرجّعه فاضي والحفظ يقول «لازم تحدد النوع» على
+        // مرتجع نوعه متسجّل. الفاضي بس هو اللي بيتملى.
         const named = rows.filter((a: any) => a.family);
-        setReturnFamily(named.length === 1 ? named[0].family : null);
+        setReturnFamily((cur) => cur ?? (named.length === 1 ? named[0].family : null));
       })
       .catch((err) => { console.error(err); setFamilyAccounts([]); setCustomerBalance(null); });
     // What he was actually given. A different customer holds different books, so the rows go

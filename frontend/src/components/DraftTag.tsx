@@ -53,7 +53,9 @@ export default function DraftTag({
   };
 
   return (
-    <Space size={6} onClick={(e) => e.stopPropagation()}>
+    // الوسم نفسه بيسيب الضغطة تعدّي للصف (عشان تفتح المسودّة) — زرار المسح بس هو اللي
+    // بيوقفها. كان الاتنين بيوقفوها، فالضغط على «مسودّة» — أول حاجة في الصف — مابيفتحش حاجة.
+    <Space size={6}>
       <Tag color="gold" style={{ marginInlineEnd: 0 }}>{label}</Tag>
       <Button
         size="small"

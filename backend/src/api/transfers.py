@@ -19,6 +19,8 @@ from src.models.stock import LocationKind
 from src.models.transfer import StockTransfer, StockTransferLine, TransferRoute
 from src.services import transfer_service
 from src.services.stock_service import StockError
+from src.services.batch_service import BatchError
+from src.services.serial_service import SerialError
 from src.services.transfer_service import TransferDenied, TransferError
 
 from src.auth.rbac import role_has_capability
@@ -262,7 +264,7 @@ def self_approve(
             approver_branch_id=current.branch_id, approver_user_id=current.id,
             is_admin=sees_all)
         db.commit()
-    except (TransferDenied, TransferError, StockError) as exc:
+    except (TransferDenied, TransferError, StockError, SerialError, BatchError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "transfer_conflict", "message": str(exc)})
     except Exception:  # noqa: BLE001
@@ -288,7 +290,7 @@ def approve_transfer(
             is_admin=branch_scope.visible_branch_id(current) is None)
     except TransferDenied as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "forbidden", "message": str(exc)})
-    except (TransferError, StockError) as exc:
+    except (TransferError, StockError, SerialError, BatchError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "transfer_conflict", "message": str(exc)})
     db.commit()
     return _out(t)

@@ -1164,7 +1164,11 @@ def create_standalone_return(
     # الفرق لحد ٥ قروش بيتحمّل على اللي بيتخصم من المديونية، والباقي هو الغلط الحقيقي.
     gap = refund_total - (cash_refund + credit_reduction)
     if gap != ZERO and abs(gap) <= Decimal("0.05"):
-        credit_reduction += gap
+        # مرتجع كله نقدي والفرق بالسالب ⇒ على النقدي، وإلا مديونية بالسالب والقيد مايتزنش.
+        if credit_reduction + gap >= ZERO:
+            credit_reduction += gap
+        else:
+            cash_refund += gap
     elif gap != ZERO:
         raise SalesError(
             "المرتجع نقدي + اللي بيتخصم من المديونية لازم يساوي صافي المرتجع." if tax == ZERO

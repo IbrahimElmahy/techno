@@ -363,12 +363,21 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   late bool _searchAll = widget.memory.searchAll;
 
   @override
+  void initState() {
+    super.initState();
+    // مكان التمرير بيتسجّل مع كل حركة: وقت `dispose` القايمة بتكون اتفكّت خلاص
+    // (`hasClients` = false) فمافيش رقم يتقرا منها ساعتها.
+    _scroll.addListener(() {
+      if (_scroll.hasClients) widget.memory.scrollOffset = _scroll.offset;
+    });
+  }
+
+  @override
   void dispose() {
     // بيتفكر عشان الفتحة الجايّة ترجع لنفس المكان.
     widget.memory
       ..query = _search.text
-      ..searchAll = _searchAll
-      ..scrollOffset = _scroll.hasClients ? _scroll.offset : 0;
+      ..searchAll = _searchAll;
     _search.dispose();
     _scroll.dispose();
     super.dispose();
