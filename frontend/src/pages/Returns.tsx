@@ -1526,7 +1526,8 @@ export default function Returns() {
                         <div key={line.key}
                           style={{ padding: '4px 12px 6px', borderTop: '1px solid #f5efec' }}>
                           <Row gutter={8} align="middle">
-                            {lineGrid.colRow(line, 0).map((c) => (
+                            {/* الترقيم على المستند كله مش جوّه الفئة — كان بيتبعت ٠ فكل سطر «١». */}
+                            {lineGrid.colRow(line, lines.indexOf(line)).map((c) => (
                               <Col key={c.key} md={c.span} xs={c.xs}
                                 style={c.align ? { textAlign: c.align } : undefined}
                                 {...(c.key === 'quantity' && line.item_id != null

@@ -383,6 +383,12 @@ class SalesInvoiceDetail(BaseModel):
     statement3: str | None = None
     fixed_discount_pct: Decimal | None = None
     variable_discount_pct: Decimal | None = None
+    # **البونص لازم يرجع مع التفاصيل.** الشاشة بتقرا `det.is_bonus` عشان تفتح الفاتورة بونص
+    # (الخصم ١٠٠٪ على الإجمالي والصافي صفر) — والحقل ماكانش هنا، فكانت بتفتح كطلب بيع
+    # بصافي كامل وآجل على العميل. ماكانش باين لأن سطور البونص كانت شايلة «متغيّر ١٠٠».
+    is_bonus: bool = False
+    bonus_for_invoice_id: int | None = None
+    bonus_for_number: str | None = None
     lines: list[InvoiceLineOut]
     # The coupon books handed over, one row per kind — read back so the printed invoice can name
     # them instead of showing a bare range.
@@ -1832,6 +1838,11 @@ def get_sale(
         statement3=inv.statement3,
         fixed_discount_pct=inv.fixed_discount_pct,
         variable_discount_pct=inv.variable_discount_pct,
+        is_bonus=bool(getattr(inv, "is_bonus", None)),
+        bonus_for_invoice_id=getattr(inv, "bonus_for_invoice_id", None),
+        bonus_for_number=(db.scalar(select(SalesInvoice.document_number).where(
+            SalesInvoice.id == inv.bonus_for_invoice_id))
+            if getattr(inv, "bonus_for_invoice_id", None) else None),
         lines=[
             InvoiceLineOut(
                 item_id=line.item_id,
