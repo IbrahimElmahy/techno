@@ -379,7 +379,10 @@ def create_sale(
         # which is why the customer's discount is nullable.
         # الخصم متقال بنصّيه ⇒ المحرك بيركّبهم، وده اللي بيتخزّن. متقال مجموع ⇒ زي ما هو.
         split = ln.fixed_discount_pct is not None or ln.variable_discount_pct is not None
-        if split:
+        # البونص خصمه ١٠٠٪ بطبيعته — التطبيق بيبعت المتغيّر ١٠٠ على كل سطر، وفحص
+        # النصّين تحت كان بيرفضه قبل ما يوصل لسطر «ده بونص». الفاتورة كانت بتقف في
+        # الطابور وتوقّف اللي وراها.
+        if split and not is_bonus:
             for half, label in ((ln.fixed_discount_pct, "الثابت"),
                                 (ln.variable_discount_pct, "المتغيّر")):
                 if half is None:
@@ -1153,7 +1156,16 @@ def create_standalone_return(
     net = discounts.apply(gross, fixed, variable)
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     refund_total = to_money(net + tax)
-    if to_money(cash_refund) + to_money(credit_reduction) != refund_total:
+    cash_refund = to_money(cash_refund)
+    credit_reduction = to_money(credit_reduction)
+    # **فرق قرش من التقريب مش غلطة كتابة.** الشاشة بتجمع السطور من غير تقريب وبتقرّب
+    # المجموع، والسيرفر بيقرّب كل سطر لوحده — ٣٨×٢٦٧ و٧٠×٦٥ و٤٣×٥٣ و٣٣×١١٦٫٧٥ بخصم ١٠٪
+    # بيطلعوا ١٨٧٤٤٫٩٧ هناك و١٨٧٤٤٫٩٨ هنا، والمرتجع كان بيترفض والمكتب مش فاهم ليه.
+    # الفرق لحد ٥ قروش بيتحمّل على اللي بيتخصم من المديونية، والباقي هو الغلط الحقيقي.
+    gap = refund_total - (cash_refund + credit_reduction)
+    if gap != ZERO and abs(gap) <= Decimal("0.05"):
+        credit_reduction += gap
+    elif gap != ZERO:
         raise SalesError(
             "المرتجع نقدي + اللي بيتخصم من المديونية لازم يساوي صافي المرتجع." if tax == ZERO
             else f"cash refund + credit reduction must equal the total including VAT ({refund_total})."

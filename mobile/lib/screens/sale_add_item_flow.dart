@@ -112,6 +112,9 @@ class SaleAddItemFlow {
 
     var keepGoing = true;
     String? category;
+    // البحث ومكان التمرير بيفضلوا بين صنف والتاني: اللي بيحط تلات أصناف من نفس المكان
+    // في القايمة كان بيرجع لأولها ويكتب البحث تاني كل مرة.
+    final pickerMemory = _PickerMemory();
     while (keepGoing && context.mounted) {
       // الفئة بتفضل زي ما هي بين الصنف والتاني: اللي بيحط تلات سخانات ورا بعض
       // مايرجعش لقايمة الفئات تلات مرات.
@@ -122,11 +125,12 @@ class SaleAddItemFlow {
       final picked = await _pickItem(
         context, items, free, onInvoice, category, priceTier,
         capToAvailable: capToAvailable, showAvailable: showAvailable,
-        showPrice: showPrice, showNetPrice: showNetPrice);
+        showPrice: showPrice, showNetPrice: showNetPrice, memory: pickerMemory);
       if (picked == null) {
         // رجوع من الأصناف بيرجّع للفئات — لو فيه فئات يترجع لها أصلاً.
         if (!hasCategoryLevel) return;
         category = null;
+        pickerMemory.reset();
         continue;
       }
 
@@ -209,6 +213,7 @@ Future<SaleItem?> _pickItem(
   required bool showAvailable,
   required bool showPrice,
   required bool showNetPrice,
+  required _PickerMemory memory,
 }) =>
     showDialog<SaleItem>(
       context: context,
@@ -224,9 +229,22 @@ Future<SaleItem?> _pickItem(
           showAvailable: showAvailable,
           showPrice: showPrice,
           showNetPrice: showNetPrice,
+          memory: memory,
         ),
       ),
     );
+
+/// اللي بوباب الصنف بيفتكره بين فتحة والتانية في نفس الجولة.
+class _PickerMemory {
+  String query = '';
+  double scrollOffset = 0;
+  bool searchAll = false;
+  void reset() {
+    query = '';
+    scrollOffset = 0;
+    searchAll = false;
+  }
+}
 
 Future<_QtyAnswer?> _askQuantity(
         BuildContext context, SaleItem item, double available, String? priceTier,
@@ -319,9 +337,11 @@ class _SaleItemDialog extends StatefulWidget {
     required this.showAvailable,
     required this.showPrice,
     required this.showNetPrice,
+    required this.memory,
   });
 
   final List<SaleItem> items;
+  final _PickerMemory memory;
   final Map<int, double> free;
   final Map<int, double> onInvoice;
   final String category;
@@ -336,23 +356,32 @@ class _SaleItemDialog extends StatefulWidget {
 }
 
 class _SaleItemDialogState extends State<_SaleItemDialog> {
-  final _search = TextEditingController();
+  late final _search = TextEditingController(text: widget.memory.query);
+  late final _scroll = ScrollController(initialScrollOffset: widget.memory.scrollOffset);
 
   /// وسّع البحث لكل الأصناف — بيتفتح بإيد المستخدم، وبيتقفل أول ما يمسح اللي كتبه.
-  bool _searchAll = false;
+  late bool _searchAll = widget.memory.searchAll;
 
   @override
   void dispose() {
+    // بيتفكر عشان الفتحة الجايّة ترجع لنفس المكان.
+    widget.memory
+      ..query = _search.text
+      ..searchAll = _searchAll
+      ..scrollOffset = _scroll.hasClients ? _scroll.offset : 0;
     _search.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
   double _availableOf(SaleItem it) =>
       (widget.free[it.itemId] ?? 0) - (widget.onInvoice[it.itemId] ?? 0);
 
-  String get _query => _search.text.trim().toLowerCase();
+  /// البحث بيوحّد العربي (`bare`): «جلبه» بتلاقي «جلبة»، و«كوع ٢» بتلاقي «كوع 2» — ومن أي
+  /// مكان في الاسم، مش من أوله.
+  String get _query => bare(_search.text);
 
-  bool _matches(SaleItem it) => it.name.toLowerCase().contains(_query);
+  bool _matches(SaleItem it) => bare(it.name).contains(_query);
 
   bool _inCategory(SaleItem it) => _categoryOf(it) == widget.category;
 
@@ -454,6 +483,7 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                       ),
                     )
                   : ListView.separated(
+                      controller: _scroll,
                       itemCount: rows.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (c, i) {

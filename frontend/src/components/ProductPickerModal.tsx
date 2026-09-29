@@ -54,13 +54,21 @@ interface Props {
 
 const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
 
+/**
+ * **الشباك بيرجع مكانه.** اللي بيختار صنف وبيرجع يختار التاني كان بيلاقي البحث اتمسح
+ * والقايمة رجعت لأولها — يكتب تاني ويلفّ تاني لنفس المكان. البحث ومكان التمرير بيتفكروا
+ * بين فتحة والتانية، وبيتنسوا لما المستند يتقفل (`open` بيبقى false والفئة بتترجّع null
+ * من الشاشة اللي بتنده).
+ */
+const memory = { query: '', scrollTop: 0, cursor: 0 };
+
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion,
 }: Props) {
-  const [query, setQuery] = useState('');
-  const [cursor, setCursor] = useState(0);
+  const [query, setQuery] = useState(() => memory.query);
+  const [cursor, setCursor] = useState(() => memory.cursor);
   /**
    * **الشجرة: فئة رئيسية ← فئة فرعية ← أصناف.** (031)
    *
@@ -202,12 +210,17 @@ export default function ProductPickerModal({
    *  ثواني قبل ما يبان. المعروض بيتقصّ، وبيزيد لما اللي بيدوّر يوصل لآخر القايمة. */
   const PAGE = 120;
   const [shown, setShown] = useState(PAGE);
-  useEffect(() => { setShown(PAGE); }, [query, activeCategory, activeRoot, open, onlyAvailableStock]);
+  // مش على `open`: الفتحة الجديدة بترجع لنفس المكان (شوف `memory` فوق).
+  useEffect(() => { setShown((n) => Math.max(PAGE, Math.min(n, memory.cursor + PAGE))); }, [query, activeCategory, activeRoot, onlyAvailableStock]);
   const rendered = useMemo(() => visible.slice(0, shown), [visible, shown]);
 
   // Back to the top whenever the list underneath changes, so the highlight is never left pointing
   // at a row that scrolled out from under it.
-  useEffect(() => { setCursor(0); }, [query, activeCategory, activeRoot, open, onlyAvailableStock]);
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    setCursor(0);
+  }, [query, activeCategory, activeRoot, onlyAvailableStock]);
   // …and never past the end when a search narrows the list.
   useEffect(() => {
     setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
@@ -232,11 +245,18 @@ export default function ProductPickerModal({
   }, [cursor, visible.length]);
   useEffect(() => {
     if (!open) return;
-    setQuery('');
+    setQuery(memory.query);
+    setCursor(memory.cursor);
     setPicked([]);
     setBulk(false);
-    setTimeout(() => searchRef.current?.focus?.(), 60);
+    setTimeout(() => {
+      searchRef.current?.focus?.();
+      if (listRef.current) listRef.current.scrollTop = memory.scrollTop;
+    }, 60);
   }, [open]);
+  useEffect(() => { memory.query = query; }, [query]);
+  useEffect(() => { memory.cursor = cursor; }, [cursor]);
+  const rememberScroll = () => { if (listRef.current) memory.scrollTop = listRef.current.scrollTop; };
 
   const toggle = (id: number) =>
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -368,7 +388,8 @@ export default function ProductPickerModal({
         </Col>
 
         <Col xs={24} md={17}>
-          <div ref={listRef} style={{ maxHeight: '52vh', overflowY: 'auto' }} onKeyDown={onKeyDown}>
+          <div ref={listRef} style={{ maxHeight: '52vh', overflowY: 'auto' }} onKeyDown={onKeyDown}
+            onScroll={rememberScroll}>
             {visible.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description={query

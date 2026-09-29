@@ -1,6 +1,8 @@
 """Transfers router (T042). FR-022–024, FR-027."""
 from __future__ import annotations
 
+import logging
+
 from datetime import date
 from decimal import Decimal
 
@@ -23,6 +25,8 @@ from src.auth.rbac import role_has_capability
 from src.models.role import RoleName
 from src.models.transfer import StockTransfer, TransferStatus
 from src.auth import branch_scope
+log = logging.getLogger(__name__)
+
 router = APIRouter(tags=["transfers"], prefix="/transfers")
 
 
@@ -257,10 +261,17 @@ def self_approve(
             db, transfer_id=transfer_id, approver_role=current.role,
             approver_branch_id=current.branch_id, approver_user_id=current.id,
             is_admin=sees_all)
+        db.commit()
     except (TransferDenied, TransferError, StockError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "transfer_conflict", "message": str(exc)})
-    db.commit()
+    except Exception:  # noqa: BLE001
+        # **الاعتماد التلقائي مايوقعش الإنشاء.** الإذن اتكتب خلاص؛ لو الاعتماد وقع لأي
+        # سبب (٢٠٢٦-٠٩-٢٩: ٥٠٠ على إذنين من المكتب) بيرجع «معلّق» والمكتب يعتمده بإيده —
+        # بدل رسالة «تعذّر» على مستند اتحفظ فعلاً. السبب بيتسجّل في اللوج.
+        db.rollback()
+        log.exception("self-approve %s وقع — الإذن اتساب معلّق", transfer_id)
+        t = db.get(StockTransfer, transfer_id)
     return _out(t)
 
 
