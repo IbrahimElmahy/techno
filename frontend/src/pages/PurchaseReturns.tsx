@@ -43,7 +43,7 @@ import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
-import { applyPct, combinePct } from '../utils/discounts';
+import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 import { useLiveRefresh } from '../utils/live';
 
@@ -290,8 +290,7 @@ export default function PurchaseReturns() {
         item_id: l.item_id,
         quantity: Number(l.quantity) || null,
         unit_price: Number(l.unit_price) || 0,
-        discount_pct: Number(l.discount_pct || 0),
-        fixed_discount_pct: 0,
+        ...splitLineDiscount(l),
         unit: l.unit || null,
         warehouse_id: l.warehouse_id ?? null,
       })));
@@ -773,8 +772,11 @@ export default function PurchaseReturns() {
         item_id: l.item_id,
         quantity: String(l.quantity),
         unit_price: String(l.unit_price || 0),
-        // الاتنين ورا بعض — سطر المردود في السيرفر بيشيل خصم واحد.
+        // الاتنين ورا بعض — ده اللي بيتحسب بيه.
         discount_pct: combinePct(l.fixed_discount_pct, l.discount_pct) || null,
+        // ...والنصّين، عشان المردود لما يتفتح تاني كل خصم يرجع خانته.
+        fixed_discount_pct: l.fixed_discount_pct ?? null,
+        variable_discount_pct: l.discount_pct ?? null,
         unit: l.unit,
         warehouse_id: l.warehouse_id ?? warehouseId,
       }));

@@ -45,7 +45,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import { money, numeralsLocale } from '../utils/money';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
-import { applyPct, combinePct } from '../utils/discounts';
+import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import StatsRow from '../components/StatsRow';
@@ -550,8 +550,7 @@ export default function Purchases() {
         quantity: Number(l.quantity) || null,
         unit_price: Number(l.unit_price) || 0,
         unit: l.unit ?? null,
-        discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
-        fixed_discount_pct: null,
+        ...splitLineDiscount(l),
         warehouse_id: l.line_location_id ?? det.location_id ?? null,
       }));
       setPurchaseItems(loadedItems);
@@ -1024,8 +1023,7 @@ export default function Purchases() {
       quantity: Number(l.quantity) || null,
       unit_price: Number(l.unit_price) || 0,
       unit: l.unit ?? null,
-      discount_pct: l.discount_pct == null ? null : Number(l.discount_pct),
-      fixed_discount_pct: null,
+      ...splitLineDiscount(l),
       warehouse_id: l.line_location_id ?? det.location_id ?? null,
     }));
     setPurchaseItems(loadedItems);
@@ -1159,8 +1157,11 @@ export default function Purchases() {
               quantity: Number(l.quantity || 0),
               unit_price: l.unit_price,
               unit: l.unit,
-              // الاتنين ورا بعض — سطر الفاتورة في السيرفر بيشيل خصم واحد، زي البيع بالظبط.
+              // الاتنين ورا بعض — ده اللي بيتحسب بيه، زي البيع بالظبط.
               discount_pct: combinePct(l.fixed_discount_pct, l.discount_pct) || null,
+              // ...والنصّين، عشان الفاتورة لما تتفتح تاني كل خصم يرجع خانته.
+              fixed_discount_pct: l.fixed_discount_pct ?? null,
+              variable_discount_pct: l.discount_pct ?? null,
               warehouse_id: l.warehouse_id,
             })),
             // The day the goods were received, taken from the first door — not the day this row was

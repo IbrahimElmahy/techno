@@ -85,6 +85,11 @@ class PurchaseInvoiceLine(Base):
     # Nullable on purpose, the same way the sale's is: an agreed zero and no agreement at all are
     # different facts, and a column defaulted to zero cannot tell them apart.
     discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    # نصّي الخصم زي سطر فاتورة البيع — الثابت والمتغيّر. `discount_pct` هو المركّب اللي
+    # الفلوس بتتحسب بيه؛ النصّين للعرض بس. من غيرهم الفاتورة كانت بتتفتح تاني والخصم كله
+    # في خانة «متغيّر» و«ثابت» فاضي. NULL = سطر اتكتب قبل العمودين، مش صفر.
+    fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
     # Unit of measure used on this line (008); NULL = base. Stock in base = quantity × unit_factor.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -187,6 +192,11 @@ class PurchaseReturnLine(Base):
     # مخزن السطر مش تفصيلة: الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن، والمردود اللي
     # بيرجّعها لازم يقدر يطلّع كل صنف من المخزن اللي فيه فعلاً.
     discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    # نصّي الخصم زي سطر فاتورة البيع — الثابت والمتغيّر. `discount_pct` هو المركّب اللي
+    # الفلوس بتتحسب بيه؛ النصّين للعرض بس. من غيرهم الفاتورة كانت بتتفتح تاني والخصم كله
+    # في خانة «متغيّر» و«ثابت» فاضي. NULL = سطر اتكتب قبل العمودين، مش صفر.
+    fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
     line_location_kind: Mapped[LocationKind | None] = mapped_column(

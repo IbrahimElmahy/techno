@@ -583,8 +583,14 @@ def create_sale(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                              unit_price=unit_price, discount_pct=line_disc,
                              # NULL لو العميل ماقالش القسمة — «مش متسجّل» مش صفر.
-                             fixed_discount_pct=ln.fixed_discount_pct,
-                             variable_discount_pct=ln.variable_discount_pct,
+                             # **البونص ١٠٠٪ على إجمالي الفاتورة، مش على السطر** (قرار
+                             # العميل): السطر بيتعرض من غير خصم ثابت ولا متغيّر، والـ١٠٠
+                             # في «خصم الفاتورة» تحت. التطبيق كان بيبعت المتغيّر ١٠٠ على
+                             # كل سطر، والشاشة كانت بتعرضه في عمود «خصم متغير».
+                             fixed_discount_pct=(ZERO if is_bonus
+                                                 else ln.fixed_discount_pct),
+                             variable_discount_pct=(ZERO if is_bonus
+                                                    else ln.variable_discount_pct),
                              line_total=line_total, price_tier=tier,
                              unit=ln.unit, unit_factor=factor,
                              location_kind=line_kind, location_id=line_loc,
@@ -1058,6 +1064,9 @@ class ReturnLine:
     warehouse_id: int | None = None
     # (009) المرتجع الحر: سيريالات الوحدات المرتجعة لأصناف مسلسلة — بدون ربط بفاتورة.
     serials: list[str] | None = None
+    # نصّي الخصم للعرض — `discount_pct` هو المركّب اللي بيتحسب بيه.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
 
 
 def create_standalone_return(
@@ -1260,6 +1269,8 @@ def create_standalone_return(
         ret.lines.append(SalesReturnLine(
             item_id=ln.item_id, quantity=Decimal(ln.quantity), unit_price=unit_price,
             discount_pct=(Decimal(ln.discount_pct) if ln.discount_pct is not None else ZERO),
+            fixed_discount_pct=ln.fixed_discount_pct,
+            variable_discount_pct=ln.variable_discount_pct,
             line_total=line_total, unit=ln.unit, unit_factor=factor,
             location_kind=back_kind, location_id=back_loc,
             # (030) A standalone return has no originating sale to copy a cost from, so it takes

@@ -187,6 +187,9 @@ class StandaloneReturnLineIn(BaseModel):
     unit_price: Decimal                    # refunded price per unit (defaults to last sold price)
     unit: str | None = None                # (008) unit of measure; None = base
     discount_pct: Decimal | None = None    # (027) per-line discount; None = 0
+    # نصّي الخصم — للعرض لما المرتجع يتفتح تاني. `discount_pct` هو اللي بيتحسب بيه.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     warehouse_id: int | None = None        # (030) this line returns into its own warehouse
     # (009) المرتجع الحر — سيريالات الأصناف المسلسلة المرتجعة.
     serials: list[str] | None = None
@@ -1626,7 +1629,9 @@ def create_standalone_return(
             cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
             cash_account_id=body.cash_account_id,
             lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
-                              l.warehouse_id, serials=l.serials)
+                              l.warehouse_id, serials=l.serials,
+                              fixed_discount_pct=l.fixed_discount_pct,
+                              variable_discount_pct=l.variable_discount_pct)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, family=body.family,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
@@ -1701,7 +1706,9 @@ def update_standalone_return(
             cash_refund=body.cash_refund, credit_reduction=body.credit_reduction,
             cash_account_id=body.cash_account_id,
             lines=[ReturnLine(l.item_id, l.quantity, l.unit_price, l.unit, l.discount_pct,
-                              l.warehouse_id, serials=l.serials)
+                              l.warehouse_id, serials=l.serials,
+                              fixed_discount_pct=l.fixed_discount_pct,
+                              variable_discount_pct=l.variable_discount_pct)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id, family=body.family,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
@@ -1767,6 +1774,10 @@ def get_standalone_return(
             "item_id": ln.item_id, "quantity": str(ln.quantity),
             "unit_price": str(ln.unit_price) if ln.unit_price is not None else None,
             "discount_pct": str(ln.discount_pct), "unit": ln.unit,
+            "fixed_discount_pct": (str(ln.fixed_discount_pct)
+                                   if ln.fixed_discount_pct is not None else None),
+            "variable_discount_pct": (str(ln.variable_discount_pct)
+                                      if ln.variable_discount_pct is not None else None),
             "line_total": str(ln.line_total) if ln.line_total is not None else None,
             "warehouse_id": ln.location_id,   # (030)
         }

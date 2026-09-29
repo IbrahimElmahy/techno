@@ -49,7 +49,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
-import { applyPct, combinePct } from '../utils/discounts';
+import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import StatsRow from '../components/StatsRow';
@@ -933,8 +933,11 @@ export default function Returns() {
                   .map((r) => ({ serial_from: r.serial_from, serial_to: r.serial_to, count: r.count })),
                 lines: valid.map((l) => ({
                   item_id: l.item_id, quantity: Number(l.quantity || 0), unit_price: l.unit_price,
-                  // الاتنين بيتجمعوا — سطر المرتجع في السيرفر بيشيل خصم واحد.
+                  // الاتنين بيتجمعوا — ده اللي بيتحسب بيه...
                   discount_pct: lineDiscountPct(l),
+                  // ...والنصّين، عشان المرتجع لما يتفتح تاني كل خصم يرجع خانته.
+                  fixed_discount_pct: Number(l.fixed_discount || 0),
+                  variable_discount_pct: Number(l.discount || 0),
                   // (030) only when the line differs from the document's warehouse
                   warehouse_id: l.warehouse_id ?? undefined,
                   serials: l.is_serialized ? (l.serials || []) : undefined,
@@ -970,7 +973,7 @@ export default function Returns() {
   const lineColumns: EntryColumn<ReturnLineItem>[] = [
     // ترقيم السطور — اللي بيراجع ورقة فيها ٣٥ صنف محتاج يقول «السطر رقم ١٢»
     // بدل ما يعدّ بصباعه، واللي بيقارنها بورقة مطبوعة محتاج نفس الأرقام.
-    { key: 'idx', title: '#', width: 28, locked: true,
+    { key: 'idx', title: '#', width: 28, span: 1, xs: 2, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' },
       cell: (_l: any, i: number) => i + 1 },
     { key: 'item', title: 'الصنف', span: 4, xs: 24, locked: true,
@@ -1024,7 +1027,7 @@ export default function Returns() {
             advance(line.key);
           }} />
       ) },
-    { key: 'unit_price', title: 'سعر الإرجاع', span: 3, xs: 8,
+    { key: 'unit_price', title: 'سعر الإرجاع', span: 2, xs: 8,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
           disabled={viewOnly}
@@ -1167,8 +1170,10 @@ export default function Returns() {
         item_id: l.item_id,
         quantity: Number(l.quantity) || null,
         unit_price: Number(l.unit_price) || 0,
-        discount: Number(l.discount_pct) || 0,
-        fixed_discount: 0,
+        ...(() => {
+          const d = splitLineDiscount(l);
+          return { discount: d.discount_pct || 0, fixed_discount: d.fixed_discount_pct || 0 };
+        })(),
         warehouse_id: l.warehouse_id ?? null,
         is_serialized: Boolean(l.serials && l.serials.length > 0),
         serials: l.serials || [],
@@ -1505,6 +1510,9 @@ export default function Returns() {
                         <span style={{ color: '#6b6b6b', fontSize: 12 }}>{group.items.length} صنف</span>
                       </div>
 
+                      {/* **الصنف كله في صف واحد، والإجمالي آخره.** المجموع كان ٢٤ خانة + عمود
+                          الترقيم، فالصف بيتكسر والإجمالي ينزل سطر لوحده تحت (الترقيم من غير
+                          عرض بياخد ٢ من `colHead`). دلوقتي ٢٤ بالظبط. على الموبايل بيتكسر عن قصد (`xs`). */}
                       <Row gutter={8} style={{ padding: '6px 12px 0', color: '#6b6b6b', fontSize: 12 }}>
                         {lineGrid.colHead.map((c) => (
                           <Col key={c.key} md={c.span}
@@ -1526,7 +1534,9 @@ export default function Returns() {
                                 {c.node}
                               </Col>
                             ))}
-                            {line.is_serialized && (
+                          </Row>
+                          {line.is_serialized && (
+                            <Row gutter={8}>
                               <Col span={24}>
                                 <Input.TextArea
                                   disabled={viewOnly}
@@ -1538,8 +1548,8 @@ export default function Returns() {
                                       .map((x) => x.trim()).filter(Boolean))}
                                 />
                               </Col>
-                            )}
-                          </Row>
+                            </Row>
+                          )}
                         </div>
                       ))}
                     </div>

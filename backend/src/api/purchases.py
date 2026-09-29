@@ -41,6 +41,9 @@ class PurchaseLineIn(BaseModel):
     unit: str | None = None    # (008) unit of measure; None = base
     warehouse_id: int | None = None   # (030) receive this line into its own warehouse
     discount_pct: Decimal | None = None   # خصم السطر؛ None = مفيش خصم متفق عليه
+    # نصّي الخصم — للعرض لما الفاتورة تتفتح تاني. `discount_pct` هو اللي بيتحسب بيه.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
 
 
 class PurchaseCreate(BaseModel):
@@ -145,6 +148,8 @@ class PurchaseLineOut(BaseModel):
     quantity: Decimal
     unit_price: Decimal
     discount_pct: Decimal | None = None
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     line_total: Decimal
     unit: str | None = None
 
@@ -349,6 +354,8 @@ class PurchaseReturnLineOut(BaseModel):
     line_total: Decimal = Decimal("0")
     # نفس ما على سطر الفاتورة — الشاشة بتعيد بناء السطر منهم لما المردود يتفتح للتعديل.
     discount_pct: Decimal | None = None
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     unit: str | None = None
     warehouse_id: int | None = None
 
@@ -405,6 +412,8 @@ def get_purchase_return(
                 item_id=ln.item_id, item_name=names.get(ln.item_id), quantity=ln.quantity,
                 unit_price=ln.unit_price or 0, line_total=ln.line_total or 0,
                 discount_pct=ln.discount_pct, unit=ln.unit,
+                fixed_discount_pct=ln.fixed_discount_pct,
+                variable_discount_pct=ln.variable_discount_pct,
                 warehouse_id=ln.line_location_id)
             for ln in r.lines
         ],
@@ -441,6 +450,8 @@ def get_purchase(
         statement1=p.statement1, statement2=p.statement2, statement3=p.statement3,
         lines=[PurchaseLineOut(item_id=ln.item_id, quantity=ln.quantity, unit_price=ln.unit_price,
                                discount_pct=ln.discount_pct,
+                               fixed_discount_pct=ln.fixed_discount_pct,
+                               variable_discount_pct=ln.variable_discount_pct,
                                line_total=ln.line_total, unit=ln.unit) for ln in p.lines],
         returns=[PurchaseReturnOut(id=r.id, document_number=r.document_number, value=r.value,
                                    created_at=str(r.created_at)) for r in returns],
@@ -485,7 +496,7 @@ def update_purchase(
             credit_amount=body.credit_amount,
             cash_account_id=body.cash_account_id,
             lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id,
-                                l.discount_pct)
+                                l.discount_pct, l.fixed_discount_pct, l.variable_discount_pct)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
             rep_id=body.rep_id, expense_account_id=body.expense_account_id,
@@ -535,7 +546,7 @@ def create_purchase(
             credit_amount=body.credit_amount,
             cash_account_id=body.cash_account_id,
             lines=[PurchaseLine(l.item_id, l.quantity, l.unit_price, l.unit, l.warehouse_id,
-                                l.discount_pct)
+                                l.discount_pct, l.fixed_discount_pct, l.variable_discount_pct)
                    for l in body.lines],
             actor_role=current.role, actor_user_id=current.id,
             rep_id=body.rep_id, expense_account_id=body.expense_account_id,
@@ -584,6 +595,9 @@ class StandaloneReturnLineIn(BaseModel):
     quantity: Decimal
     unit_price: Decimal = Decimal("0")
     discount_pct: Decimal | None = None
+    # نصّي الخصم — للعرض لما الفاتورة تتفتح تاني. `discount_pct` هو اللي بيتحسب بيه.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
     unit: str | None = None
     # مخزن السطر. فاضي يعني مخزن المستند — الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن،
     # والمردود اللي بيرجّعها لازم يقدر يطلّع كل صنف من مخزنه.
@@ -632,6 +646,8 @@ def create_standalone_purchase_return(
             lines=[{
                 "item_id": ln.item_id, "quantity": ln.quantity, "unit_price": ln.unit_price,
                 "discount_pct": ln.discount_pct, "unit": ln.unit,
+                "fixed_discount_pct": ln.fixed_discount_pct,
+                "variable_discount_pct": ln.variable_discount_pct,
                 "location_kind": LocationKind.warehouse if ln.warehouse_id else None,
                 "location_id": ln.warehouse_id,
             } for ln in body.lines],
@@ -678,6 +694,8 @@ def update_purchase_return(
             lines=[{
                 "item_id": ln.item_id, "quantity": ln.quantity, "unit_price": ln.unit_price,
                 "discount_pct": ln.discount_pct, "unit": ln.unit,
+                "fixed_discount_pct": ln.fixed_discount_pct,
+                "variable_discount_pct": ln.variable_discount_pct,
                 "location_kind": LocationKind.warehouse if ln.warehouse_id else None,
                 "location_id": ln.warehouse_id,
             } for ln in body.lines],

@@ -31,12 +31,17 @@ export interface LineColumnsCtx {
   setPanelItemId: (id: number | null) => void;
   /** فرع المصنع مافيهوش نقاط — العمود بيتشال مش بيتعرض فاضي. */
   hidePoints?: boolean;
+  /**
+   * فاتورة بونص ⇒ مافيش خصم على السطر. **البونص ١٠٠٪ على إجمالي الفاتورة تحت** (قرار
+   * العميل) — مش «خصم متغير ١٠٠٪» على كل صنف.
+   */
+  isBonus?: boolean;
 }
 
 export function buildLineColumns({
   viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
   saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
-  advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints = false,
+  advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints = false, isBonus = false,
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
   return [
     { key: 'idx', title: '#', width: 28, locked: true,
@@ -101,7 +106,7 @@ export function buildLineColumns({
     { key: 'unit_price', title: 'سعر الوحدة', minWidth: 80,
       cell: (line) => (
         viewOnly ? (
-          <span>{money(line.unit_price)} ج.م</span>
+          <b>{money(line.unit_price)} ج.م</b>
         ) : (
           <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
             placeholder="السعر" value={line.unit_price}
@@ -112,13 +117,13 @@ export function buildLineColumns({
       footer: () => null },
     { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
       cellStyle: { whiteSpace: 'nowrap' },
-      cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
+      cell: (line) => <b>{money(Number(line.quantity || 0) * (line.unit_price || 0))}</b>,
       footer: (rows) => money(rows.reduce(
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
     { key: 'variable_discount', title: 'خصم متغير %', minWidth: 75,
       cell: (line) => (
-        viewOnly ? (
-          <span>{line.variable_discount != null ? `${line.variable_discount}%` : '-'}</span>
+        isBonus ? <span style={{ color: '#8c8c8c' }}>-</span> : viewOnly ? (
+          <b>{line.variable_discount ? `${line.variable_discount}%` : '-'}</b>
         ) : (
           <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
             placeholder="متغير" value={line.variable_discount ?? undefined}
@@ -129,8 +134,8 @@ export function buildLineColumns({
       footer: () => null },
     { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
-        viewOnly ? (
-          <span>{line.fixed_discount ? `${line.fixed_discount}%` : '-'}</span>
+        isBonus ? <span style={{ color: '#8c8c8c' }}>-</span> : viewOnly ? (
+          <b>{line.fixed_discount ? `${line.fixed_discount}%` : '-'}</b>
         ) : (
           <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
             placeholder="ثابت" value={line.fixed_discount ?? undefined}

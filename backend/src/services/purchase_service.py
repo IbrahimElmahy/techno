@@ -57,6 +57,9 @@ class PurchaseLine:
     warehouse_id: int | None = None
     # خصم السطر. None = مفيش خصم متفق عليه — مش صفر.
     discount_pct: Decimal | None = None
+    # نصّيه للعرض بس — الفلوس بتتحسب من `discount_pct` المركّب.
+    fixed_discount_pct: Decimal | None = None
+    variable_discount_pct: Decimal | None = None
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -219,6 +222,8 @@ def create_purchase(
             PurchaseInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                                 unit_price=to_money(ln.unit_price), line_total=line_total,
                                 discount_pct=ln.discount_pct, unit=ln.unit, unit_factor=factor,
+                                fixed_discount_pct=ln.fixed_discount_pct,
+                                variable_discount_pct=ln.variable_discount_pct,
                                 line_location_kind=line_kind, line_location_id=line_loc)
         )
 
@@ -507,6 +512,8 @@ def create_standalone_purchase_return(
         built.append({
             "item_id": item.id, "quantity": qty, "unit": unit, "factor": to_qty(factor),
             "unit_price": price, "discount_pct": disc, "line_total": line_total,
+            "fixed_discount_pct": ln.get("fixed_discount_pct"),
+            "variable_discount_pct": ln.get("variable_discount_pct"),
             "location_kind": ln.get("location_kind") or origin_location_kind,
             "location_id": ln.get("location_id") or origin_location_id,
         })
@@ -572,6 +579,8 @@ def create_standalone_purchase_return(
         ret.lines.append(PurchaseReturnLine(
             item_id=b["item_id"], quantity=b["quantity"], unit_price=b["unit_price"],
             discount_pct=b["discount_pct"], unit=b["unit"], unit_factor=b["factor"],
+            fixed_discount_pct=b["fixed_discount_pct"],
+            variable_discount_pct=b["variable_discount_pct"],
             line_location_kind=b["location_kind"], line_location_id=b["location_id"],
             line_total=b["line_total"]))
 

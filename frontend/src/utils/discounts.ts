@@ -43,6 +43,30 @@ export function netOf(amount: number | string | null | undefined,
   return applyPct(amount, pct);
 }
 
+/**
+ * نصّي خصم سطر محفوظ — للشاشات اللي خانة المتغيّر فيها اسمها `discount_pct`
+ * (الشرا ومردوده ومردود البيع).
+ *
+ * كانت بتحط المركّب كله في خانة «متغيّر» و«ثابت» فاضي، فالسطر اللي اتحفظ بخصم ثابت ١٠
+ * بيرجع «متغيّر ١٠». السيرفر بقى بيحفظ النصّين؛ السطر القديم اللي مالوش قسمة (الاتنين
+ * `null`) بيفضل زي ما كان: المركّب في المتغيّر.
+ */
+export function splitLineDiscount(l: {
+  discount_pct?: unknown; fixed_discount_pct?: unknown; variable_discount_pct?: unknown;
+}): { discount_pct: number | null; fixed_discount_pct: number | null } {
+  const has = (v: unknown) => v !== null && v !== undefined && v !== '';
+  if (has(l.fixed_discount_pct) || has(l.variable_discount_pct)) {
+    return {
+      discount_pct: Number(l.variable_discount_pct || 0) || null,
+      fixed_discount_pct: Number(l.fixed_discount_pct || 0) || null,
+    };
+  }
+  return {
+    discount_pct: has(l.discount_pct) ? Number(l.discount_pct) : null,
+    fixed_discount_pct: null,
+  };
+}
+
 /** أسماء قديمة — الملف `utils/discount.ts` اتشال، ودول عشان اللي بيستورده مايتكسرش. */
 export const combineDiscounts = combinePct;
 export const applyDiscounts = applyPct;

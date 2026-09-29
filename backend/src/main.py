@@ -640,6 +640,13 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     # متسجّل» مش صفر: السطور القديمة والمستوردة من a5 فعلاً مش عارفة القسمة.
     ("sales_invoice_line", "fixed_discount_pct", "NUMERIC(5,2)"),
     ("sales_invoice_line", "variable_discount_pct", "NUMERIC(5,2)"),
+    # ونفس القسمة على سطور الشرا والمردودات (٢٠٢٦-٠٩-٢٩).
+    ("purchase_invoice_line", "fixed_discount_pct", "NUMERIC(5,2)"),
+    ("purchase_invoice_line", "variable_discount_pct", "NUMERIC(5,2)"),
+    ("purchase_return_line", "fixed_discount_pct", "NUMERIC(5,2)"),
+    ("purchase_return_line", "variable_discount_pct", "NUMERIC(5,2)"),
+    ("sales_return_line", "fixed_discount_pct", "NUMERIC(5,2)"),
+    ("sales_return_line", "variable_discount_pct", "NUMERIC(5,2)"),
     ("manufacturing_order", "material_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order", "resource_cost", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     ("manufacturing_order_consumption", "waste_quantity", "NUMERIC(18,3) NOT NULL DEFAULT 0"),

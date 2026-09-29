@@ -197,12 +197,32 @@ body,
 .ant-table-tbody > tr > td {
   font-weight: 600;
 }
+/*
+ * **الخانة المقفولة مقفولة — مش مخفية.** (طلب العميل ٢٠٢٦-٠٩-٢٩)
+ *
+ * antd بترسم نص الخانة المقفولة رمادي فاتح جداً، فالفاتورة المحفوظة (بيع، شرا، مردود)
+ * الكمية والسعر والخصمين فيها بيبقوا شبه مش ظاهرين — والفاتورة المحفوظة دي بالظبط اللي
+ * بتتفتح عشان حد يقراها. الخلفية الرمادي بتفضل هي علامة القفل، والرقم نفسه غامق وبولد.
+ */
+.ant-input[disabled],
+.ant-input-disabled,
+.ant-input-affix-wrapper-disabled .ant-input,
+.ant-input-number-disabled .ant-input-number-input,
+.ant-select-disabled .ant-select-selection-item,
+.ant-picker-disabled .ant-picker-input > input,
+textarea.ant-input[disabled] {
+  color: #141414 !important;
+  -webkit-text-fill-color: #141414;
+  font-weight: 700;
+  opacity: 1;
+}
 /* النص الباهت اللي antd بتحطه على الـplaceholder — لسه باهت عن قصد، بس مقروء. */
 .ant-input::placeholder,
 .ant-input-number-input::placeholder,
 .ant-select-selection-placeholder,
 .ant-picker-input > input::placeholder {
   color: #8c8c8c !important;
+  -webkit-text-fill-color: #8c8c8c;
 }
 
 /* Custom scrollbar styled for RTL layout */

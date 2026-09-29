@@ -1514,9 +1514,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   ),
                 ],
                 const SizedBox(width: 6),
-                // سطر البونص بيقول قيمته بسعر البيع مشطوبة جنب الصفر — المندوب بيشوف
-                // هو بيدّي هدية بكام، والصفر هو اللي بيتسجّل.
-                if (l.isFull && l.gross > 0) ...[
+                // سطر بخصم ١٠٠٪ في فاتورة بيع (هيترفض عند الحفظ) بيقول قيمته مشطوبة جنب
+                // الصفر. البونص مش كده: الـ١٠٠٪ على إجمالي الفاتورة تحت، فالسطر بقيمته.
+                if (!_isBonus && l.isFull && l.gross > 0) ...[
                   Text(_money(l.gross),
                       style: const TextStyle(
                           fontSize: 11,
@@ -1524,7 +1524,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                           decoration: TextDecoration.lineThrough)),
                   const SizedBox(width: 4),
                 ],
-                Text('${_money(l.net)} ج.م',
+                Text('${_money(_isBonus ? l.gross : l.net)} ج.م',
                     style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14,
@@ -1627,6 +1627,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         : null,
                   ),
                 ),
+                // **البونص مالوش خصم على السطر** (قرار العميل ٢٠٢٦-٠٩-٢٩): الـ١٠٠٪ على
+                // إجمالي الفاتورة تحت، مش خانة «خصم ١٠٠» على كل صنف.
+                if (!_isBonus) ...[
                 const SizedBox(width: 6),
                 Expanded(
                   child: _inlineField(
@@ -1635,12 +1638,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         l.itemId,
                         () => TextEditingController(
                             text: _blank(l.variableDiscountPct))),
-                    // صفحة البونص ⇒ الخصم ١٠٠٪ ومقفول. «الخصم على إجمالي الفاتورة ١٠٠٪»
-                    // مش رقم بيتفاوض عليه — ده اللي بيخلّيها بونص.
-                    readOnly: _isBonus,
                     onChanged: (v) => setState(() => l.variableDiscountPct = v),
                   ),
                 ),
+                ],
                 // سلة صريحة — بس بمقاس وحدود مضبوطة.
                 //
                 // `IconButton` بمقاسه الافتراضي (٤٨) جنب خانة الكمية بيطلع

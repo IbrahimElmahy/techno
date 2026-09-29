@@ -278,6 +278,11 @@ class SalesReturnLine(Base):
     # original invoice, so these stay NULL/default for them).
     unit_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
+    # نصّي الخصم زي سطر فاتورة البيع — الثابت والمتغيّر. `discount_pct` هو المركّب اللي
+    # الفلوس بتتحسب بيه؛ النصّين للعرض بس. من غيرهم الفاتورة كانت بتتفتح تاني والخصم كله
+    # في خانة «متغيّر» و«ثابت» فاضي. NULL = سطر اتكتب قبل العمودين، مش صفر.
+    fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     line_total: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # AFTER the line discount
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
