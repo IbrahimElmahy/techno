@@ -50,6 +50,11 @@ interface Props {
    * بيدي الميمو حاجة يتعلّق بيها من غير التكلفة دي.
    */
   availabilityVersion?: string | number;
+  /**
+   * بيخفي «شراء: …» من جنب الصنف. سعر الشراء تكلفة الشركة — مالوش مكان قدام اللي بيبيع
+   * أو بيرجّع من عميل (فاتورة البيع ومردودها وطلب البيع). الشرا ومردوده بيفضل ظاهر فيهم.
+   */
+  hidePurchasePrice?: boolean;
 }
 
 const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
@@ -67,7 +72,7 @@ const memories: Record<string, PickerMemory> = {};
 export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
-  disableOutOfStock = false, availabilityVersion,
+  disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
 }: Props) {
   const memory = (memories[title] ??= { query: '', scrollTop: 0, cursor: 0 });
   const [query, setQuery] = useState(() => memory.query);
@@ -490,7 +495,7 @@ export default function ProductPickerModal({
                         السعر: {typeof priceFor(p.id) === 'number' ? fmtPrice(priceFor(p.id)) : priceFor(p.id)}
                       </Tag>
                     )}
-                    {!priceFor && p.purchase_price != null && Number(p.purchase_price) > 0 && (
+                    {!priceFor && !hidePurchasePrice && p.purchase_price != null && Number(p.purchase_price) > 0 && (
                       <Tag color="blue" style={{ fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>
                         شراء: {fmtPrice(p.purchase_price)}
                       </Tag>

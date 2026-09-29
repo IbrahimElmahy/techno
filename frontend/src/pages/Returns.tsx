@@ -1469,6 +1469,7 @@ export default function Returns() {
                 <ProductPickerModal
                   open={pickerOpen}
                   title="اختر الصنف المرتجع"
+                  hidePurchasePrice
                   categories={productCategories}
                   categoryLabels={categoryLabels}
                   products={products}

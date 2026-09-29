@@ -2770,6 +2770,7 @@ function couponsTotal(inv: any): number {
               ? null : availableFor(id, null, docWarehouseId))}
             availabilityVersion={`${docWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
             disableOutOfStock
+            hidePurchasePrice
             onCancel={() => setPickerOpen(false)}
             onPick={(id) => {
               setPickerOpen(false);

@@ -652,6 +652,7 @@ export default function Orders() {
       <ProductPickerModal
         open={pickerOpen}
         title={kind === 'sale' ? 'اختر الصنف المطلوب' : 'اختر الصنف المطلوب شراؤه'}
+        hidePurchasePrice={kind === 'sale'}
         categories={[...new Set(items.map((i) => i.category).filter(Boolean))] as string[]}
         categoryLabels={categoryLabels}
         products={items}
