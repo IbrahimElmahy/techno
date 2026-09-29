@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { compareArabic, sortByName } from '../utils/arabicSort';
+import { compareArabic, matchesWords, sortByName } from '../utils/arabicSort';
 import {
   Button, Col, Empty, Input, Row, Space, Tag
 } from 'antd';
@@ -145,10 +145,33 @@ export default function ProductPickerModal({
    * `rootOf(c)`، واللي مالوش أب جذره هو نفسه. من غير شجرة النتيجة بتبقى نفس القايمة
    * المرتّبة اللي كانت بالحرف — كل فئة مجموعة لوحدها من غير فروع.
    */
+  /**
+   * **عدد الأصناف المتاحة في كل فئة — والفئة اللي مافيهاش حاجة في المخزن مابتظهرش.**
+   *
+   * فلتر «المتاح في المخزن فقط» كان بيخفي الأصناف بس، والفئات فاضلة كلها على الجنب: المندوب
+   * اللي بيبيع من عربيته يدوس فئة يلاقيها مافيهاش ولا صنف عنده. زي التطبيق بالظبط: الفئات
+   * اللي فيها أصناف متاحة فعلاً، ومعاها عددها.
+   *
+   * `null` = الفلتر مش شغّال، أو الأرصدة لسه ماوصلتش / المخزن فاضي — ساعتها كل الفئات
+   * بتظهر، لنفس سبب «الفلتر اللي بيخفي كل حاجة مش فلتر» تحت.
+   */
+  const stockCounts = useMemo(() => {
+    const avail = availableRef.current;
+    if (!(disableOutOfStock && onlyAvailableStock && avail)) return null;
+    const counts = new Map<string, number>();
+    products.forEach((p) => {
+      const av = avail(p.id);
+      if (av === null || av > 0) counts.set(p.category, (counts.get(p.category) || 0) + 1);
+    });
+    return counts.size ? counts : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, disableOutOfStock, onlyAvailableStock, availabilityVersion]);
+
   const groups = useMemo(() => {
     const kids = new Map<string, string[]>();
     const roots: string[] = [];
     categories.forEach((c) => {
+      if (stockCounts && !stockCounts.get(c)) return;
       const root = tree.parentOf[c] || c;
       if (!kids.has(root)) { kids.set(root, []); roots.push(root); }
       if (root !== c) kids.get(root)!.push(c);
@@ -158,7 +181,20 @@ export default function ProductPickerModal({
       value: root,
       children: (kids.get(root) || []).sort(compareArabic),
     }));
-  }, [categories, tree]);
+  }, [categories, tree, stockCounts]);
+
+  /** عدد الأصناف المتاحة تحت فئة (هي وفروعها) — `null` لما الفلتر مش شغّال. */
+  const countOf = (c: string, children: string[] = []) => (stockCounts
+    ? [c, ...children].reduce((n, x) => n + (stockCounts.get(x) || 0), 0) : null);
+
+  /** الفئة المختارة اختفت (المخزن اتغيّر ومافيهاش حاجة فيه) ⇒ رجوع لـ«كل الفئات»،
+   *  بدل ما القايمة تفضل محبوسة في فئة مش ظاهرة على الجنب. */
+  useEffect(() => {
+    if (!stockCounts) return;
+    if (activeCategory && !stockCounts.get(activeCategory)) onCategoryChange(null);
+    if (activeRoot && !groups.some((g) => g.value === activeRoot)) setActiveRoot(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockCounts, groups]);
 
   const catLabel = (c: string) => categoryLabels[c] || tree.labels[c] || c;
   /** اسم اللي متفلتر عليه دلوقتي — للبحث ولرسالة «مافيش نتيجة». */
@@ -176,7 +212,9 @@ export default function ProductPickerModal({
       // قال بيدوّر فين؛ الكتابة بعدها تضييق للنطاق ده مش إلغاء له.
       //
       // والبحث في الكتالوج كله لسه موجود — بـ«كل الفئات» فوق قايمة الفئات.
-      list = list.filter((p) => normalizeAr(p.name).includes(needle)
+      //
+      // وكل كلمة لوحدها: «كو نح» بتلاقي «كوع ١/٢ نحاس» (`matchesWords`).
+      list = list.filter((p) => matchesWords(normalizeAr(p.name), needle)
         || normalizeAr(p.code || '').includes(needle));
     }
     const avail = availableRef.current;
@@ -356,9 +394,9 @@ export default function ProductPickerModal({
                         ? 700 : 400,
                     }}>
                     {catLabel(g.value)}
-                    {g.children.length > 0 && (
+                    {(stockCounts || g.children.length > 0) && (
                       <span style={{ fontSize: 11, opacity: 0.75, marginInlineStart: 6 }}>
-                        ({g.children.length})
+                        ({stockCounts ? countOf(g.value, g.children) : g.children.length})
                       </span>
                     )}
                   </div>
@@ -375,6 +413,11 @@ export default function ProductPickerModal({
                           border: '1px solid #eef4ec', fontWeight: active ? 700 : 400,
                         }}>
                         {catLabel(c)}
+                        {stockCounts && (
+                          <span style={{ fontSize: 11, opacity: 0.75, marginInlineStart: 6 }}>
+                            ({countOf(c)})
+                          </span>
+                        )}
                       </div>
                     );
                   })}

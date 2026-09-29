@@ -235,15 +235,15 @@ const HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 /**
  * الأنماط: عنوان عريض، وتاريخ، وتاريخ بساعة، ومبلغ بمنزلتين.
  *
- * المبلغ بياخد `#,##0.00` بس لما يبقى فيه كسر — عدد الفواتير `12` يفضل `12`، والمبلغ `1234.5`
- * يبقى `1,234.50` زي ما هو مكتوب في الفاتورة. والاتنين لسه أرقام بيتجمع عليهم.
+ * المبلغ بياخد `0.00` بس لما يبقى فيه كسر — عدد الفواتير `12` يفضل `12`، والمبلغ `1234.5`
+ * يبقى `1234.50` زي ما هو مكتوب في الفاتورة (من غير فاصل آلاف — طلب العميل). والاتنين لسه أرقام.
  */
 const STYLES = `${HEAD}
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="3">
 <numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/>
 <numFmt numFmtId="165" formatCode="yyyy\\-mm\\-dd\\ hh:mm"/>
-<numFmt numFmtId="166" formatCode="#,##0.00"/>
+<numFmt numFmtId="166" formatCode="0.00"/>
 </numFmts>
 <fonts count="2">
 <font><sz val="11"/><name val="Calibri"/></font>

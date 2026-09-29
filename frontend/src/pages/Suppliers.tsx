@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Statistic,
+  Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space,
   Table, Tag, Tooltip, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import {
   PlusOutlined, MinusCircleOutlined, EyeOutlined, StopOutlined,
   SearchOutlined, ClearOutlined, DeleteOutlined,

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Card, Row, Col, Statistic, Tag } from 'antd';
+import { Card, Row, Col, Tag } from 'antd';
+import { Statistic } from './Statistic';
 import { money, numeralsLocale } from '../utils/money';
 
 export interface CouponKindStat {

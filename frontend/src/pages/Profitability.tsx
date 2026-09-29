@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Statistic, Switch, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Segmented, Switch, Table, Tabs, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';

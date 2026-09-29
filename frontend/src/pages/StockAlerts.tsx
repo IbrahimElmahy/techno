@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, Space, Statistic, Table, Tag,
+  Alert, Button, Card, Col, Space, Table, Tag,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';

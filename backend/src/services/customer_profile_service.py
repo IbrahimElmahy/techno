@@ -275,7 +275,7 @@ def profile(db: Session, customer_id: int, *, limit: int = 200) -> Profile:
 
 
 def _money(v) -> str:
-    return f"{to_money(v or 0):,.2f}"
+    return f"{to_money(v or 0):.2f}"
 
 
 def record_detail(db: Session, customer_id: int, kind: str, record_id: int) -> dict:

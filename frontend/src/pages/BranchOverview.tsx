@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Row, Space, Statistic, Table, Tag, Button, Empty } from 'antd';
+import { Card, Col, Row, Space, Table, Tag, Button, Empty } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';

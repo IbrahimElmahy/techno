@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { Alert, Button, Card, Col, Input, Row, Segmented, Select, Space, Statistic, Table, Tag, message } from 'antd';
+import { Alert, Button, Card, Col, Input, Row, Segmented, Select, Space, Table, Tag, message } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 

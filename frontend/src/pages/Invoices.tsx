@@ -7,9 +7,10 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Statistic, Table, Tag,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Table, Tag,
   Tooltip, Typography, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -2558,7 +2559,9 @@ function couponsTotal(inv: any): number {
                   disabled={viewOnly}
                   onChange={(v) => {
                     const store = storeOfRep(v as number);
-                    if (store) setDocWarehouseId(store);
+                    // أرصدة العربية لازم تيجي معاها — من غيرها منتقي الأصناف مابيعرفش
+                    // إيه اللي فيها، فبيعرض الكتالوج كله بكل فئاته.
+                    if (store) onWarehouseChange(store);
                   }}
                   options={reps.map((r) => ({ value: r.id, label: r.full_name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>

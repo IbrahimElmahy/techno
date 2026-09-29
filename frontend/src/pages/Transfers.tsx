@@ -7,8 +7,9 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
-  Select, Space, Statistic, Table, Tag, Tooltip, Typography, message,
+  Select, Space, Table, Tag, Tooltip, Typography, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';

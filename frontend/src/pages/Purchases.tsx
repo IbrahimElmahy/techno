@@ -4,8 +4,9 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result,
-  Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, Typography, message, DatePicker,
+  Row, Segmented, Select, Space, Table, Tag, Tooltip, Typography, message, DatePicker,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import {

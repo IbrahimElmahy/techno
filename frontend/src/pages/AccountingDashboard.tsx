@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Card, Col, Empty, Row, Skeleton, Space, Statistic, Tag, Tooltip } from 'antd';
+import { Badge, Button, Card, Col, Empty, Row, Skeleton, Space, Tag, Tooltip } from 'antd';
+import { Statistic } from '../components/Statistic';
 import {
   ReloadOutlined, PlusOutlined, FileTextOutlined, BankOutlined,
   SafetyCertificateOutlined, WalletOutlined, ArrowLeftOutlined,

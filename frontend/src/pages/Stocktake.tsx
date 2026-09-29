@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Table, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';

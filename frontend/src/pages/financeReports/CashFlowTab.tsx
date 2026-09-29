@@ -7,8 +7,9 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Select, Space, Statistic, Table, Tag,
+  Alert, Button, Card, Col, Select, Space, Table, Tag,
 } from 'antd';
+import { Statistic } from '../../components/Statistic';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';

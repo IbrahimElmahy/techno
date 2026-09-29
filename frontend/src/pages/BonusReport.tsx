@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Col, Row, Segmented, Space, Statistic, Table, Button, Typography } from 'antd';
+import { Card, Col, Row, Segmented, Space, Table, Button, Typography } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';

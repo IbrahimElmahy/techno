@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Divider, Input, Row, Select, Space, Statistic, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Divider, Input, Row, Select, Space, Table, Tabs, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';

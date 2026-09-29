@@ -3,8 +3,9 @@ import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
-  Space, Statistic, Table, Tabs, Tag, Typography, message,
+  Space, Table, Tabs, Tag, Typography, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { InputNumber } from '../components/NumberInput';

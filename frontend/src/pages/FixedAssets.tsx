@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Input, Row, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import { PlusOutlined, ReloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';

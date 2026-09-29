@@ -4,10 +4,10 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Tabs, Table, Descriptions,
-  Statistic, Row, Col, Card, Tag, Spin, Space, Button, Empty, Typography,
+  Tabs, Table, Descriptions, Row, Col, Card, Tag, Spin, Space, Button, Empty, Typography,
   Segmented, Checkbox, Input, Select, message, Alert
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import {
   ReloadOutlined, ArrowRightOutlined, EditOutlined, FileTextOutlined,
   DownloadOutlined, PrinterOutlined, LinkOutlined, SearchOutlined

@@ -5,8 +5,9 @@ import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select,
-  Space, Statistic, Table, Tag, Tooltip, Typography, message,
+  Space, Table, Tag, Tooltip, Typography, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';
 // التأكيدات اتشالت من النظام — الشيم بينفّذ من غير ما يسأل (`components/noConfirm`).

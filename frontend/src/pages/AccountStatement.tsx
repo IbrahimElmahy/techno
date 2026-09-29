@@ -3,8 +3,9 @@ import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Empty, Input, Row, Select,
-  Space, Spin, Statistic, Table, Tag, message,
+  Space, Spin, Table, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import {
   DownloadOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
 } from '@ant-design/icons';

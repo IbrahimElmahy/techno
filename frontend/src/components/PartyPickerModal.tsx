@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
+import { matchesWords, searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Button, Col, DatePicker, Empty, Form, Input, Row, Select, Space, Spin, Tag, message,
 } from 'antd';
@@ -175,7 +175,8 @@ export default function PartyPickerModal({
       const t = bare(p);
       if (t.startsWith(needle)) return 0;
       if (t.includes(` ${needle}`)) return 1;
-      return t.includes(needle) ? 2 : 3;
+      if (t.includes(needle)) return 2;
+      return matchesWords(t, needle) ? 2.5 : 3;   // «مح حس» — كلمات متفرّقة
     };
     return parties.filter((p) => {
       // تبويب «الموظفين» بيفرز نفس الكشف — مش بيجيب دفتر تاني. الموظف اللي بيشتري
@@ -184,7 +185,7 @@ export default function PartyPickerModal({
       if (excludeTypes?.includes((p as any).customer_type)) return false;
       if (branchId && p.branch_id !== branchId) return false;
       if (!needle) return true;
-      return bare(p).includes(needle) || normalizeAr(p.phone).includes(needle);
+      return matchesWords(bare(p), needle) || normalizeAr(p.phone).includes(needle);
     }).sort((a, b) => (rank(a) - rank(b)) || arCollator.compare(bare(a), bare(b)));
   }, [parties, bareNames, query, branchId, activeKind]);
 

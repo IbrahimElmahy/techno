@@ -95,8 +95,20 @@ function optionText(option: any): string {
  *     <Select showSearch filterOption={searchFilter} filterSort={searchRank} … />
  */
 export function searchFilter(input: string, option: any): boolean {
-  const n = normalizeAr(input);
-  return !n || optionText(option).includes(n);
+  return matchesWords(optionText(option), normalizeAr(input));
+}
+
+/**
+ * **كل كلمة مكتوبة موجودة في الاسم — بأي ترتيب، ولو حتة منها.**
+ *
+ * كان البحث بيدوّر على الجملة المكتوبة حتة واحدة: «كوع نحاس» مابتلاقيش «كوع ١/٢ نحاس»
+ * لأن الكلمتين مش جنب بعض، فاللي بيكتب لازم يكتب الاسم كامل بالظبط. دلوقتي «كو نح» كفاية.
+ *
+ * الاتنين لازم يكونوا متوحّدين بـ`normalizeAr` قبل ما يوصلوا هنا.
+ */
+export function matchesWords(text: string, needle: string): boolean {
+  if (!needle) return true;
+  return needle.split(' ').every((w) => text.includes(w));
 }
 
 /**

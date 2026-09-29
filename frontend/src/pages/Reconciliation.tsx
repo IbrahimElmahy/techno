@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, Empty, Input, Row, Segmented, Space, Statistic, Table, Tabs, Tag,
+  Alert, Button, Card, Col, Empty, Input, Row, Segmented, Space, Table, Tabs, Tag,
   Tooltip, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import {
   LinkOutlined, DisconnectOutlined, ReloadOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';

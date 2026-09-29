@@ -3,8 +3,9 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Statistic, Table, Tag, Tooltip, message,
+  Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined,

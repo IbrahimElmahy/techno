@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Select, Space, Table, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import { ReloadOutlined, DownloadOutlined, PrinterOutlined } from '@ant-design/icons';

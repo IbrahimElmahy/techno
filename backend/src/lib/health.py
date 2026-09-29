@@ -61,8 +61,8 @@ def _with_ids(link: str, ids) -> str:
 
 
 def _money(v) -> str:
-    """Readable money in a sample line. `-36047.66` is a number; `-36,047.66` is an amount."""
-    return f"{to_money(v or 0):,.2f}"
+    """Readable money in a sample line. `-36047.66` is a number; no thousands separator — the client asked for the decimal point only (2026-09-29)."""
+    return f"{to_money(v or 0):.2f}"
 
 # How many examples travel with each finding. Enough to recognise the problem without turning the
 # response into the report it links to.

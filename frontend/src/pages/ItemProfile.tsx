@@ -3,8 +3,9 @@ import { useBackTo } from '../components/useBackTo';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  Tabs, Table, Descriptions, Statistic, Col, Card, Tag, Spin, Space, Button, Empty, Typography,
+  Tabs, Table, Descriptions, Col, Card, Tag, Spin, Space, Button, Empty, Typography,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import {
   ReloadOutlined, ArrowRightOutlined, RiseOutlined, FallOutlined, EditOutlined, FileTextOutlined,
 } from '@ant-design/icons';

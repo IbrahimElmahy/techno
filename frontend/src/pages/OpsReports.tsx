@@ -3,8 +3,9 @@ import { PAGE_SIZE } from '../utils/pagination';
 import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
 import { customerFitsRep, customersOfRep } from '../utils/repScope';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Statistic, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Table, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';

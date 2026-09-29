@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
-  Card, Table, Row, Col, Statistic, Select, Button, Space, Tag, Typography, message, Alert,
+  Card, Table, Row, Col, Select, Button, Space, Tag, Typography, message, Alert,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { Dayjs } from 'dayjs';

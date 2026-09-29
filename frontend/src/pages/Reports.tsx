@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Tabs, Table, Select, DatePicker, Card, Statistic, Tag, Button, Space, Col, Divider, Empty,
+  Tabs, Table, Select, DatePicker, Card, Tag, Button, Space, Col, Divider, Empty,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import {

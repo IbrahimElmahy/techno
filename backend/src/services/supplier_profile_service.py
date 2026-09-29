@@ -217,7 +217,7 @@ def _cheques(db: Session, supplier_id: int, limit: int) -> list[dict]:
 
 
 def _money(v) -> str:
-    return f"{to_money(v or 0):,.2f}"
+    return f"{to_money(v or 0):.2f}"
 
 
 def record_detail(db: Session, supplier_id: int, kind: str, record_id: int) -> dict:

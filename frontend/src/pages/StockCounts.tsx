@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Statistic, Table, Tag, message,
+  Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Table, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined , ArrowRightOutlined } from '@ant-design/icons';

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Card, Space, Statistic, Table, Tabs, Tag, message,
+  Card, Space, Table, Tabs, Tag, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { useNavigate } from 'react-router-dom';
 import { Dayjs } from 'dayjs';
 import { api } from '../api/client';

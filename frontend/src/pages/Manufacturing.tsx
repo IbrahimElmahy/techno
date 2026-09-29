@@ -3,8 +3,9 @@ import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { printWorkOrder, type WorkOrderStage } from '../print/workOrderSheet';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Statistic, Steps, Table, Tabs, Tag, Tooltip, message,
+  Alert, Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Select, Space, Steps, Table, Tabs, Tag, Tooltip, message,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {

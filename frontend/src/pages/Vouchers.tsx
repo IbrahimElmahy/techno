@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Statistic, Col, message, Descriptions, Alert,
+  Card, Tabs, Table, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Col, message, Descriptions, Alert,
 } from 'antd';
+import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
