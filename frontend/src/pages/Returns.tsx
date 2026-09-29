@@ -311,7 +311,13 @@ export default function Returns() {
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
-    closeCreate();
+    // **مش `closeCreate()`**: دي بتنده `markClosed()` اللي بترجع خطوة في المتصفح لو الشاشة
+    // اتفتحت من مكان تاني (`?back=1`) — فالمسودّة كانت بتفتح وتتقفل في نفس اللحظة والصفحة
+    // ترجع لورا. التفضية هنا بإيدنا، من غير لمس العنوان.
+    setViewOnly(false); setViewReturn(null); setEditingSourceId(null);
+    setLastInfo({}); setCustomerBalance(null); setIssuedBooks([]); setActiveCategory(null);
+    setStatements(['', '', '']);
+    createForm.resetFields();
     setCreateVisible(true);
     setNewStep(null);
     if (x.customer_id) {
