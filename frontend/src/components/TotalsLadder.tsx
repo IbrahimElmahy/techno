@@ -67,9 +67,9 @@ export default function TotalsLadder({
 
   return (
     <div style={{
-      background: t.bg, border: `1px solid ${t.border}`, borderRadius: 10, padding: 16,
+      background: t.bg, border: `1px solid ${t.border}`, borderRadius: 10, padding: 10,
     }}>
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/*
           * خانات السُلّم — أسماؤها فوقها، مش جنبها.
           *
@@ -81,48 +81,62 @@ export default function TotalsLadder({
         <div className="ladder-inputs"
           style={{ flex: '1 1 260px', minWidth: 240, maxWidth: 340 }}>{inputs}</div>
 
-        <div style={{ flex: '1 1 320px', minWidth: 280 }}>
-          <div style={{ maxWidth: 460, marginInlineStart: 'auto' }}>
-            {visible.map((r, i) => (
+        {/*
+          * **الأرقام جنب بعض، مش تحت بعض** (طلب العميل ٢٠٢٦-٠٩-٣٠ — «زي الطباعة»).
+          *
+          * السُلّم كان عمود واحد: سبع سطور تحت بعض بتاخد نص الشاشة، والأصناف فوقها بتضطر
+          * تتسكرل. دلوقتي كل رقم كارت صغير (الاسم فوقه والرقم تحته) في شبكة تلات أعمدة،
+          * والرقم الأخير (`big`) شريط بعرض الشبكة كلها تحتها — هو اللي العين بتدوّر عليه.
+          * الترتيب هو هو، فالحسبة لسه بتتقري بالترتيب: من أول كارت لآخر كارت.
+          */}
+        <div style={{ flex: '3 1 480px', minWidth: 280 }}>
+          <div style={{
+            display: 'grid', gap: 6,
+            gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+          }}>
+            {visible.filter((r) => !r.big).map((r, i) => (
               <div key={i} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-                padding: r.big ? '7px 0' : '5px 0',
-                borderTop: r.rule ? `1px solid ${t.rule}` : undefined,
-                marginTop: r.rule ? 4 : undefined,
-                // The row in play. A tint and a rule on the leading edge rather than a heavy box:
-                // it has to be findable at a glance without turning the ladder into a poster.
-                ...(r.highlight ? {
-                  background: '#f2fbee',
-                  borderInlineStart: '3px solid #6AB42D',
-                  paddingInlineStart: 8,
-                  marginInlineStart: -11,
-                  borderRadius: 4,
-                } : null),
+                background: r.highlight ? '#f2fbee' : '#fff',
+                border: `1px solid ${r.highlight ? '#b9dca5' : t.border}`,
+                borderInlineStart: r.highlight ? '3px solid #6AB42D' : `1px solid ${t.border}`,
+                borderRadius: 8, padding: '5px 10px',
               }}>
-                <span style={{
-                  fontSize: r.big ? 14 : 13,
-                  color: r.highlight ? '#3f6b26' : '#7a7a7a',
-                  fontWeight: r.highlight ? 700 : undefined,
-                }}>{r.label}</span>
-                <span style={{
-                  fontSize: r.big ? 24 : 15,
-                  fontWeight: r.big || r.strong ? 800 : 600,
-                  color: r.color,
+                <div style={{
+                  fontSize: 12,
+                  color: r.highlight ? '#3f6b26' : '#6b6b6b',
+                  fontWeight: r.highlight ? 700 : 500,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}>{r.label}</div>
+                <div style={{
+                  fontSize: 15, fontWeight: r.strong ? 800 : 700, color: r.color,
+                  whiteSpace: 'nowrap',
                 }}>
                   {r.value} {currency}
-                </span>
+                </div>
               </div>
             ))}
-
-            {shownNotes.length > 0 && (
-              <div style={{
-                display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 10, paddingTop: 8,
-                borderTop: `1px dashed ${t.rule}`, fontSize: 12, color: '#6b6b6b',
-              }}>
-                {shownNotes.map((n, i) => <span key={i}>{n}</span>)}
-              </div>
-            )}
           </div>
+          {visible.filter((r) => r.big).map((r, i) => (
+            <div key={`big-${i}`} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              marginTop: 6, padding: '6px 12px', borderRadius: 8,
+              background: '#fff', border: `1px solid ${t.rule}`,
+            }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#4a4a4a' }}>{r.label}</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: r.color }}>
+                {r.value} {currency}
+              </span>
+            </div>
+          ))}
+
+          {shownNotes.length > 0 && (
+            <div style={{
+              display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6, paddingTop: 6,
+              borderTop: `1px dashed ${t.rule}`, fontSize: 12, color: '#6b6b6b',
+            }}>
+              {shownNotes.map((n, i) => <span key={i}>{n}</span>)}
+            </div>
+          )}
         </div>
       </div>
     </div>
