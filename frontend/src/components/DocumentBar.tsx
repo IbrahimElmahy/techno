@@ -1,7 +1,6 @@
 import React from 'react';
 import { Button, Space, Tag, Tooltip } from 'antd';
 import { RightOutlined, LeftOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
 
 /**
  * شريط المستند — المسار، والمكان في السجل، والحالة. زي ترويسة الفورم في أودو.
@@ -47,49 +46,36 @@ export default function DocumentBar({
   current?: string | null;
   extra?: React.ReactNode;
 }) {
-  const navigate = useNavigate();
   const showPager = onPrev || onNext;
+  // المرحلة الحالية بس — ومعاها عدد المراحل في التلميح.
+  const now = steps?.find((s) => s.key === current);
 
+  /**
+   * **سطر العنوان، مش سطر لوحده** (طلب العميل ٢٠٢٦-٠٩-٣٠: «الجزء اللي فوق واخد نص الصفحة»).
+   *
+   * كان صف كامل تحت العنوان: «فواتير البيع › SINV-000041» — ورقم المستند مكتوب فوقه
+   * بالظبط في العنوان، و«رجوع» جنبه بيعمل نفس اللي بيعمله المسار. وبعده المراحل التلاتة
+   * كلها. دلوقتي الشريط بيتحط **جوّه سطر العنوان**: المرحلة الحالية بس، والعدّاد والأسهم.
+   * `listLabel`/`listTo`/`title` فاضلين في الواجهة عشان الشاشات اللي بتبعتهم ماتتكسرش.
+   */
+  void listLabel; void listTo; void title;
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-      padding: '6px 0 10px', borderBottom: '1px solid rgba(0,0,0,.06)', marginBottom: 12,
-    }}>
-      <Space size={4} style={{ flex: '1 1 auto', minWidth: 200 }}>
-        {listTo ? (
-          <Button type="link" style={{ padding: 0 }} onClick={() => navigate(listTo)}>
-            {listLabel}
-          </Button>
-        ) : <span style={{ color: '#888' }}>{listLabel}</span>}
-        <span style={{ color: '#bbb' }}>›</span>
-        <b>{title}</b>
-      </Space>
-
-      {steps && steps.length > 0 && (
-        <Space size={4}>
-          {steps.map((s) => (
-            <Tag
-              key={s.key}
-              color={s.key === current ? (s.color || 'blue') : 'default'}
-              style={{ marginInlineEnd: 0, opacity: s.key === current ? 1 : 0.5 }}
-            >
-              {s.label}
-            </Tag>
-          ))}
-        </Space>
+    <Space size={6} style={{ fontWeight: 400 }}>
+      {now && (
+        <Tooltip title={steps!.map((s) => s.label).join(' ← ')}>
+          <Tag color={now.color || 'blue'} style={{ marginInlineEnd: 0 }}>{now.label}</Tag>
+        </Tooltip>
       )}
-
       {extra}
-
       {showPager && (
-        <Space size={2}>
+        <Space size={0}>
           {/* الاتجاه معكوس عن اللاتيني: في واجهة عربية «السابق» على اليمين. */}
           <Tooltip title="السابق">
             <Button size="small" type="text" icon={<RightOutlined />}
                     disabled={!onPrev} onClick={onPrev} />
           </Tooltip>
           {position != null && total != null && (
-            <span style={{ color: '#888', fontSize: 13, minWidth: 54, textAlign: 'center' }}>
+            <span style={{ color: '#888', fontSize: 12, minWidth: 48, textAlign: 'center' }}>
               {position} / {total}
             </span>
           )}
@@ -99,6 +85,6 @@ export default function DocumentBar({
           </Tooltip>
         </Space>
       )}
-    </div>
+    </Space>
   );
 }

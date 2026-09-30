@@ -1233,14 +1233,7 @@ export default function Returns() {
             <Typography.Text strong style={{ fontSize: 16 }}>
               {viewReturn ? `مردود مبيعات ${viewReturn.document_number}` : (editingSourceId ? 'تعديل مردود مبيعات' : 'تسجيل مرتجع مبيعات جديد')}
             </Typography.Text>
-          </Space>
-        )}
-          extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
-        {/* **شريط الحالة** — نفس اللي على فاتورة البيع.
-            الحالة كانت بتتعرف من الأزرار المتاحة: اللي شايف «عكس» يبقى المستند مرحّل،
-            واللي مش شايفه يبقى… مش واضح. دلوقتي مكتوبة، وجنبها المسار والترقيم في
-            السجل والأسهم اللي بتمشي على نفس الترتيب اللي قدامك. */}
-        <DocumentBar
+            <DocumentBar
           listLabel="مرتجعات المبيعات"
           listTo="/returns"
           title={viewReturn
@@ -1257,6 +1250,9 @@ export default function Returns() {
           current={!viewReturn && !editingSourceId ? 'draft'
             : (viewReturn?.reversed_by ? 'reversed' : 'posted')}
         />
+          </Space>
+        )}
+          extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
           <LoadPeriodModal
             open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
             title="تحميل مرتجعات فترة" endpoint="/api/v1/sales/returns"
@@ -1270,12 +1266,9 @@ export default function Returns() {
           <DocumentToolbar actions={returnToolbar()} />
           <Form form={createForm} layout="vertical" size="small" className="doc-form"
             onFinish={handleSubmit}>
+            {/* **الترويسة في سطرين** (طلب العميل ٢٠٢٦-٠٩-٣٠). «نوع المستند: مردود مبيعات»
+                اتشالت — العنوان فوق بيقولها. */}
             <Row gutter={16}>
-              <Col xs={12} md={4}>
-                <Form.Item label="نوع المستند" style={{ marginBottom: 8 }}>
-                  <Input value="مردود مبيعات" readOnly style={{ fontWeight: 700, color: '#c53030', background: '#fff5f5', textAlign: 'center' }} />
-                </Form.Item>
-              </Col>
               <Col xs={12} md={4}>
                 <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                   <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
@@ -1283,7 +1276,7 @@ export default function Returns() {
                     value={returnDate} onChange={(v) => setReturnDate(v || dayjs())} />
                 </Form.Item>
               </Col>
-              <Col xs={24} md={8}>
+              <Col xs={24} md={7}>
                 <Form.Item label="اسم العميل" required style={{ marginBottom: 8 }}>
                   <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                     disabled={viewOnly}
@@ -1293,8 +1286,8 @@ export default function Returns() {
                     options={customers.map((c: any) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
-              <Col xs={24} md={8}>
-                <Form.Item label="المخزن (مخزن استلام المرتجع)" required style={{ marginBottom: 8 }}>
+              <Col xs={12} md={5}>
+                <Form.Item label="المخزن" required style={{ marginBottom: 8 }}>
                   <Select
                     showSearch
                     disabled={viewOnly}
@@ -1304,10 +1297,7 @@ export default function Returns() {
                     options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
-            </Row>
-
-            <Row gutter={16}>
-              <Col xs={12} md={6}>
+              <Col xs={12} md={4}>
                 <Form.Item label="المندوب" style={{ marginBottom: 8 }}>
                   <Select allowClear showSearch placeholder="بدون مندوب"
                     disabled={viewOnly}
@@ -1315,8 +1305,8 @@ export default function Returns() {
                     options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
-              <Col xs={12} md={6}>
-                <Form.Item label="نوع المرتجع (الخط)" style={{ marginBottom: 8 }}>
+              <Col xs={12} md={4}>
+                <Form.Item label="الخط" style={{ marginBottom: 8 }}>
                   <Select
                     allowClear
                     disabled={viewOnly}
@@ -1330,7 +1320,7 @@ export default function Returns() {
                   />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={6}>
+              <Col xs={12} md={4}>
                 <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
                   <Input placeholder="رقم ورقة العميل" disabled={viewOnly} value={externalDocNumber}
                     onChange={(e) => setExternalDocNumber(e.target.value)} />
@@ -1343,7 +1333,7 @@ export default function Returns() {
                 </Form.Item>
               </Col>
               {/* **البيان** — كان بيتبعت (`statement1`) ومالوش خانة، زي فاتورة البيع بالظبط. */}
-              <Col xs={24} md={12}>
+              <Col xs={24} md={14}>
                 <Form.Item label="البيان" style={{ marginBottom: 8 }}>
                   <Input placeholder="اختياري — بيتطبع وبيتدوّر بيه" disabled={viewOnly}
                     value={statements[0]}

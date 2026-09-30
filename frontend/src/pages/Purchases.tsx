@@ -1630,14 +1630,7 @@ export default function Purchases() {
           value={purchaseDate} allowClear={false} format="YYYY-MM-DD"
           onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())}
         />
-      </Space>
-    )}
-      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
-        {/* **شريط الحالة** — نفس اللي على فاتورة البيع.
-            الحالة كانت بتتعرف من الأزرار المتاحة: اللي شايف «عكس» يبقى المستند مرحّل،
-            واللي مش شايفه يبقى… مش واضح. دلوقتي مكتوبة، وجنبها المسار والترقيم في
-            السجل والأسهم اللي بتمشي على نفس الترتيب اللي قدامك. */}
-      <DocumentBar
+        <DocumentBar
         listLabel="فواتير الشراء"
         listTo="/purchases"
         title={viewPurchase
@@ -1654,6 +1647,9 @@ export default function Purchases() {
         current={!viewPurchase && !editingId ? 'draft'
           : ((viewPurchase as any)?.reversed_by ? 'reversed' : 'posted')}
       />
+      </Space>
+    )}
+      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
       <LoadPeriodModal
         open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
         title="تحميل فواتير شراء فترة" endpoint="/api/v1/purchases"
@@ -1668,15 +1664,9 @@ export default function Purchases() {
       <Form form={form} layout="vertical" size="small" className="doc-form"
         onValuesChange={() => setFormTick((n) => n + 1)}
         onFinish={handleSubmit} requiredMark={false}>
+          {/* **الترويسة في سطرين** (طلب العميل ٢٠٢٦-٠٩-٣٠: «واخدة نص صفحة»). التاريخ مش هنا —
+              هو في سطر العنوان فوق بنفس القيمة، كان مكتوب مرتين. */}
           <Row gutter={16}>
-            <Col xs={12} md={5}>
-              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
-                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
-                  disabled={viewOnly}
-                  value={purchaseDate}
-                  onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())} />
-              </Form.Item>
-            </Col>
             <Col xs={24} md={7}>
               <Form.Item name="supplier_id" label="المورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
@@ -1689,8 +1679,8 @@ export default function Purchases() {
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
-              <Form.Item label="المخزن الافتراضي" style={{ marginBottom: 8 }}>
+            <Col xs={12} md={5}>
+              <Form.Item label="المخزن" style={{ marginBottom: 8 }}>
                 <Select showSearch
                   disabled={viewOnly}
                   placeholder="اختر المخزن الافتراضي"
@@ -1702,21 +1692,18 @@ export default function Purchases() {
                   }))} filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={4}>
               <Form.Item name="external_document_number" label="المستند"
                 style={{ marginBottom: 8 }}>
                 <Input placeholder="رقم فاتورة المورد" disabled={viewOnly} />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col xs={24} md={6}>
+            <Col xs={12} md={4}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={6}>
+            <Col xs={12} md={4}>
               <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="cost_center_id" noStyle>
@@ -1729,7 +1716,7 @@ export default function Purchases() {
               </Form.Item>
             </Col>
             {([1, 2, 3] as const).map((n) => (
-              <Col xs={24} md={6} key={n}>
+              <Col xs={24} md={8} key={n}>
                 <Form.Item name={`statement${n}`} label={`بيان ${n}`}
                   style={{ marginBottom: 8 }}>
                   <Input placeholder="اختياري" disabled={viewOnly} />
@@ -1738,7 +1725,7 @@ export default function Purchases() {
             ))}
           </Row>
 
-          <Divider style={{ margin: '10px 0' }} />
+          <Divider style={{ margin: '4px 0' }} />
 
           <Row gutter={16}>
             <Col xs={24}>

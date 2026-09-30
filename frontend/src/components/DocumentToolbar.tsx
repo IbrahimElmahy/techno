@@ -65,7 +65,8 @@ export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] 
   return (
     <div
       style={{
-        display: 'flex', flexWrap: 'wrap', gap: 4, padding: '4px 6px', marginBottom: 8,
+        // شريط رفيع: الأيقونة جنب الاسم مش فوقه (٢٠٢٦-٠٩-٣٠ — الترويسة كانت واخدة نص الصفحة).
+        display: 'flex', flexWrap: 'wrap', gap: 2, padding: '2px 4px', marginBottom: 6,
         background: '#f6faf3', border: '1px solid #e2ede0', borderRadius: 8,
       }}
     >
@@ -80,8 +81,8 @@ export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] 
               disabled={dim}
               onClick={a.onClick}
               style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-                minWidth: 58, padding: '3px 8px', border: '1px solid transparent',
+                display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 4,
+                padding: '2px 8px', border: '1px solid transparent',
                 borderRadius: 6, background: 'transparent',
                 cursor: dim ? 'default' : 'pointer',
                 color: dim ? '#bfbfbf' : (a.danger ? '#cf1322' : '#2f4f2f'),
@@ -98,8 +99,8 @@ export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] 
                 e.currentTarget.style.borderColor = 'transparent';
               }}
             >
-              <span style={{ fontSize: 16, display: 'block', lineHeight: 1.2 }}>{a.icon}</span>
-              <span style={{ fontSize: 11.5, fontWeight: 600 }}>{a.label}</span>
+              <span style={{ fontSize: 14, display: 'block', lineHeight: 1 }}>{a.icon}</span>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{a.label}</span>
             </button>
           </Tooltip>
         );

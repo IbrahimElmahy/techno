@@ -2438,12 +2438,7 @@ function couponsTotal(inv: any): number {
                 disabled={viewOnly}
                 onChange={(v) => setInvoiceDate(v || dayjs())}
               />
-            </Space>
-          }
-        >
-        {/* شريط المستند — المسار والمكان في السجل والحالة، فوق شريط الأدوات.
-            الأسهم بتمشي على نفس الترتيب المفلتر اللي المستخدم شايفه. */}
-        <DocumentBar
+              <DocumentBar
           listLabel="فواتير البيع"
           listTo="/invoices"
           title={viewInvoice
@@ -2468,6 +2463,9 @@ function couponsTotal(inv: any): number {
             ? 'draft'
             : (viewInvoice || editingInvoice)?.voided ? 'voided' : 'posted'}
         />
+            </Space>
+          }
+        >
         <DocumentToolbar actions={docToolbar()} />
         {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — نفس فاتورة الشرا. */}
         <Form form={createForm} layout="vertical" size="small" className="doc-form"
@@ -2513,14 +2511,8 @@ function couponsTotal(inv: any): number {
                 </Form.Item>
               </Col>
             )}
-            <Col xs={12} md={4}>
-              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
-                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
-                  disabled={viewOnly}
-                  value={invoiceDate} onChange={(v) => setInvoiceDate(v || dayjs())} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
+            {/* التاريخ مش هنا: هو في سطر العنوان فوق (نفس القيمة) — كان مكتوب مرتين. */}
+            <Col xs={24} md={7}>
               {/* Picked from a searchable modal that can also create the customer on the spot,
                   so a new walk-in never costs the half-entered invoice. */}
               <Form.Item
@@ -2539,8 +2531,8 @@ function couponsTotal(inv: any): number {
                   }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <Form.Item label="المخزن (المخزن الذي سأبيع منه)" required style={{ marginBottom: 8 }}>
+            <Col xs={12} md={5}>
+              <Form.Item label="المخزن" required style={{ marginBottom: 8 }}>
                 <Select
                   showSearch
                   placeholder="اختر المخزن للبيع منه"
@@ -2554,10 +2546,7 @@ function couponsTotal(inv: any): number {
                   options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={4}>
               {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
               <Form.Item name="rep_id" label="المندوب" style={{ marginBottom: 8 }}>
                 <Select allowClear showSearch placeholder="من العميل"
@@ -2572,9 +2561,11 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
             {/* الخط أداة تجزئة — مش في المصنع. الشرح فوق عند `isFactory`. */}
-            {!isFactory && (
-            <Col xs={12} md={6}>
-              <Form.Item label="نوع الفاتورة (الخط)" style={{ marginBottom: 8 }}>
+            {/* الخط هنا بس لو مافيش شريط «أبيض/بولي» تحت (عميل بحساب واحد) — كان مكتوب
+                تلات مرات: هنا، وفي الشريط، وفي العنوان. */}
+            {!isFactory && families.length <= 1 && (
+            <Col xs={12} md={4}>
+              <Form.Item label="الخط" style={{ marginBottom: 8 }}>
                 <Select
                   allowClear
                   placeholder="أبيض / بولي"
@@ -2586,25 +2577,25 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
             )}
-            <Col xs={12} md={6}>
+            <Col xs={12} md={4}>
               <Form.Item name="external_document_number" label="رقم المستند"
                 style={{ marginBottom: 8 }}>
                 <Input placeholder="رقم فاتورة العميل" disabled={viewOnly} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={5}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
             {/* **البيان** — كان بيتبعت للسيرفر (`statement1`) ومالوش خانة على الشاشة، فعمر ما
                 حد كتبه. بقى جنب الملاحظات، وبيتطبع، وبيتفلتر بيه في الكشف والتقارير. */}
-            <Col xs={24} md={12}>
+            <Col xs={24} md={8}>
               <Form.Item name="statement1" label="البيان" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري — بيتطبع على الفاتورة وبيتدوّر بيه" disabled={viewOnly} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
+            <Col xs={12} md={7}>
               <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="cost_center_id" noStyle>
@@ -2619,8 +2610,9 @@ function couponsTotal(inv: any): number {
           </Row>
 
           {/* الكوبونات المصروفة — مش في المصنع */}
-          {!isFactory && (
-          <div style={{ marginTop: 14, marginBottom: 12 }}>
+          {/* الكوبونات: مسافات أقل، ومابتظهرش في فاتورة محفوظة مافيهاش كوبونات. */}
+          {!isFactory && !(viewOnly && !couponRows.some((r) => r.serial_from || r.coupon_kind)) && (
+          <div style={{ marginTop: 2, marginBottom: 6 }}>
             <Row gutter={8} className="mini-head">
               <Col xs={24} md={7}>فئة الكوبون</Col>
               <Col xs={8} md={4}>العدد</Col>
@@ -2687,10 +2679,9 @@ function couponsTotal(inv: any): number {
           )}
 
           {!isFactory && families.length > 1 && (
-            <div style={{ marginBottom: 10 }}>
+            <div style={{ marginBottom: 6 }}>
               <Segmented
                 block
-                size="large"
                 disabled={viewOnly}
                 value={invoiceFamily ?? ''}
                 onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}

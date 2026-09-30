@@ -1205,14 +1205,7 @@ export default function PurchaseReturns() {
           <Typography.Text strong style={{ fontSize: 16 }}>
             {viewing ? `مردود شراء ${viewing.document_number}` : (editingId ? 'تعديل مردود شراء' : 'تسجيل مردود شراء جديد')}
           </Typography.Text>
-        </Space>
-      )}
-      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
-        {/* **شريط الحالة** — نفس اللي على فاتورة البيع.
-            الحالة كانت بتتعرف من الأزرار المتاحة: اللي شايف «عكس» يبقى المستند مرحّل،
-            واللي مش شايفه يبقى… مش واضح. دلوقتي مكتوبة، وجنبها المسار والترقيم في
-            السجل والأسهم اللي بتمشي على نفس الترتيب اللي قدامك. */}
-        <DocumentBar
+          <DocumentBar
           listLabel="مردودات الشراء"
           listTo="/purchase-returns"
           title={viewing
@@ -1229,6 +1222,9 @@ export default function PurchaseReturns() {
           current={!viewing && !editingId ? 'draft'
             : (viewing?.reversed_by ? 'reversed' : 'posted')}
         />
+        </Space>
+      )}
+      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
         <LoadPeriodModal
           open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
           title="تحميل مردودات شراء فترة" endpoint="/api/v1/purchases/returns"
@@ -1242,15 +1238,16 @@ export default function PurchaseReturns() {
         <DocumentToolbar actions={returnToolbar()} />
 
         <Form layout="vertical" size="small" className="doc-form">
+          {/* الترويسة في سطرين (طلب العميل ٢٠٢٦-٠٩-٣٠). */}
           <Row gutter={16}>
-            <Col xs={12} md={5}>
+            <Col xs={12} md={4}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
                   disabled={viewOnly}
                   value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
+            <Col xs={24} md={7}>
               <Form.Item label="المورد" required style={{ marginBottom: 8 }}>
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                   disabled={viewOnly}
@@ -1259,16 +1256,13 @@ export default function PurchaseReturns() {
                   options={suppliers} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
+            <Col xs={12} md={4}>
               <Form.Item label="المستند" style={{ marginBottom: 8 }}>
                 <Input placeholder="رقم إشعار المورد" disabled={viewOnly} value={externalNumber}
                   onChange={(e) => setExternalNumber(e.target.value)} />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col xs={24} md={6}>
+            <Col xs={24} md={9}>
               <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
                   disabled={viewOnly}
@@ -1276,7 +1270,7 @@ export default function PurchaseReturns() {
               </Form.Item>
             </Col>
             {([1, 2, 3] as const).map((n) => (
-              <Col xs={24} md={6} key={n}>
+              <Col xs={24} md={8} key={n}>
                 <Form.Item label={`بيان ${n}`} style={{ marginBottom: 8 }}>
                   <Input placeholder="اختياري" disabled={viewOnly} value={statements[n - 1]}
                     onChange={(e) => setStatements((prev) => {
@@ -1288,7 +1282,7 @@ export default function PurchaseReturns() {
           </Row>
         </Form>
 
-        <Divider style={{ margin: '10px 0' }} />
+        <Divider style={{ margin: '4px 0' }} />
 
         {!viewOnly && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
