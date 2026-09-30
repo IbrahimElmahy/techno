@@ -27,6 +27,7 @@ import {
 import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
 } from './navigation';
+import ShortcutsDock from './ShortcutsDock';
 import { useAuth, RoleName, roleForAccess } from './AuthProvider';
 import RowDensityControl from './RowDensity';
 import NumeralsControl from './Numerals';
@@ -466,6 +467,10 @@ export default function AppLayout() {
           </div>
         </Content>
       </Layout>
+      {/* الاختصارات — «+» تحت على الشمال. نفس الشجرة المفلترة بتاعة القايمة، فالشاشة
+          اللي مالوش صلاحية عليها مابتظهرش في «إضافة اختصار» كمان. */}
+      <ShortcutsDock userId={(user as any)?.id} tree={buildItems([...NAVIGATION, ...EXTRA_SECTIONS])}
+        openTab={openTab} />
     </Layout>
   );
 }

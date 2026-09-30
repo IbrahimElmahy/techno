@@ -97,10 +97,34 @@ export function useDocRoute<T extends { id: number }>(opts: {
   // الرقم اللي اتعامل معاه خلاص — بيمنع إعادة الجلب لنفس المستند مع كل رندر.
   const handled = useRef<number | null>(null);
 
+  /**
+   * **الشاشة سبقت العنوان — استنّى العنوان يلحقها، ماتعكسش عليها.** (٢٠٢٦-٠٩-٣٠)
+   *
+   * الراوتر شغّال بـ`v7_startTransition`، فتغيير العنوان بيتأجّل عن تغيير الشاشة لفّة أو
+   * اتنين. فكان «رجوع» بيقفل المستند (`openId` = null) والعنوان لسه فيه `?doc=12` ⇒
+   * المزامنة تشوف «العنوان عايز ١٢ والشاشة فاضية» وتفتحه تاني، وبعدين العنوان يتنضّف
+   * فتقفله تاني: رجوع ← دخول ← رجوع. والفتح نفس الحكاية بالعكس: الشاشة فتحت والعنوان
+   * لسه فاضي ⇒ «اقفل»، وبعدين العنوان يوصل ⇒ «افتح».
+   *
+   * فـ`markOpen`/`markClosed` بيعلّموا إن فيه تغيير عنوان في السكة، والمزامنة بتسكت لحد
+   * ما العنوان والشاشة يتقابلوا.
+   */
+  const pendingOpen = useRef<number | null>(null);
+  const pendingClose = useRef(false);
+
   useEffect(() => {
     // تبويب مخفي: مايسمعش ومايقفلش. الشرح عند `enabled`.
     if (!enabled) return;
-    if (wanted === openId) { handled.current = wanted; return; }
+    if (wanted === openId) {
+      handled.current = wanted;
+      pendingOpen.current = null;
+      pendingClose.current = false;
+      return;
+    }
+    // اتطلب فتح المستند ده والعنوان لسه مالحقش — والشاشة نفسها ممكن تكون لسه بتجيبه.
+    if (pendingOpen.current != null && wanted !== pendingOpen.current) return;
+    // اتطلب قفل والعنوان لسه شايل المستند اللي اتقفل.
+    if (pendingClose.current && wanted != null) return;
     if (wanted == null) {
       // العنوان مابقاش فيه مستند (رجوع، أو قفل من شاشة تانية) ⇒ اقفل.
       handled.current = null;
@@ -121,10 +145,12 @@ export function useDocRoute<T extends { id: number }>(opts: {
   const markOpen = useCallback((id: number, m: DocMode = 'view') => {
     if (!enabled) return;
     handled.current = id;
+    pendingClose.current = false;
     // العنوان بيقول كده خلاص ⇒ مافيش خطوة جديدة. الشرح فوق.
     const key = m === 'edit' ? 'edit' : 'doc';
     const other = key === 'doc' ? 'edit' : 'doc';
     if (params.get(key) === String(id) && !params.get(other)) return;
+    pendingOpen.current = id;
     setParams((p) => {
       const next = new URLSearchParams(p);
       next.delete('doc');
@@ -138,8 +164,10 @@ export function useDocRoute<T extends { id: number }>(opts: {
   const markClosed = useCallback(() => {
     if (!enabled) return;
     handled.current = null;
+    pendingOpen.current = null;
     // العنوان اتنضّف خلاص (رجوع المتصفح) ⇒ مافيش خطوة تانية تتعمل.
     if (!params.get('doc') && !params.get('edit')) return;
+    pendingClose.current = true;
     if (fromScreen) { navigate(-1); return; }
     setParams((p) => {
       const next = new URLSearchParams(p);
