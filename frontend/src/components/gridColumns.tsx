@@ -160,3 +160,56 @@ export function choiceColumn<T>(
     onFilter: (value: any, row: T) => match(row, String(value)),
   };
 }
+
+/**
+ * **فلتر على كل عمود — لوحده.** (طلب العميل ٢٠٢٦-٠٩-٣٠: «فلتر بكل أنواع الأعمدة في صفحات
+ * إدارة المخازن»)
+ *
+ * بدل ما كل شاشة تكتب فلتر لكل عمود بإيدها (والعمود اللي اتنسي يفضل من غير فلتر)، الدالة دي
+ * بتلف على الأعمدة وبتدّي كل واحد مالوش فلتر النوع اللي يناسب داتاه:
+ *
+ *   • أرقام ⇐ `numberColumn` — من/إلى.
+ *   • تواريخ (`YYYY-MM-DD…`) ⇐ `dateColumn` — فترة.
+ *   • نص ⇐ `textColumn` — قايمة القيم بتاعته ومعاها بحث.
+ *
+ * العمود اللي عنده فلتر خلاص مابيتلمسش، وكذلك اللي مالوش `dataIndex` (الإجراءات، الترقيم).
+ * والعمود اللي قيمته محسوبة يقدر يقول هو بيتفلتر على إيه بـ`filterValue: (row) => …`.
+ */
+export function autoColumnFilters<T>(columns: any[] | undefined, rows: readonly T[] | undefined): any[] {
+  const data = (rows || []) as T[];
+  const valueOf = (col: any) => (row: any): any => {
+    if (typeof col.filterValue === 'function') return col.filterValue(row);
+    const di = col.dataIndex;
+    if (di === undefined || di === null) return undefined;
+    if (Array.isArray(di)) return di.reduce((v: any, k: any) => (v == null ? v : v[k]), row);
+    return row?.[di];
+  };
+  const kindOf = (get: (r: any) => any): 'number' | 'date' | 'text' | null => {
+    const sample = data.map(get).filter((v) => v !== null && v !== undefined && v !== '').slice(0, 50);
+    if (!sample.length) return null;
+    if (sample.every((v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v))) return 'date';
+    if (sample.every((v) => typeof v === 'number'
+      || (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))))) return 'number';
+    if (sample.every((v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
+      return 'text';
+    }
+    return null;
+  };
+  const walk = (cols: any[]): any[] => cols.map((col) => {
+    if (!col || typeof col !== 'object') return col;
+    if (Array.isArray(col.children)) return { ...col, children: walk(col.children) };
+    if (col.filters || col.filterDropdown || col.onFilter) return col;
+    if (col.dataIndex === undefined && typeof col.filterValue !== 'function') return col;
+    const get = valueOf(col);
+    const kind = kindOf(get);
+    if (!kind) return col;
+    const extra = kind === 'number' ? numberColumn(get as any)
+      : kind === 'date' ? dateColumn(get as any)
+        : textColumn(data, get as any);
+    // الترتيب اللي الشاشة حاطّاه بيفضل — الفلتر بس اللي بيتضاف.
+    return { ...extra, ...col, ...(col.sorter ? {} : { sorter: extra.sorter }),
+      filters: (extra as any).filters, filterSearch: (extra as any).filterSearch,
+      filterDropdown: (extra as any).filterDropdown, onFilter: extra.onFilter };
+  });
+  return walk(columns || []);
+}

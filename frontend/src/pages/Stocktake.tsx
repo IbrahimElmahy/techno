@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Tag, message,
 } from 'antd';
+// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';

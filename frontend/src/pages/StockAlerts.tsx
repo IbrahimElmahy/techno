@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, Space, Table, Tag,
+  Alert, Button, Card, Col, Space, Tag,
 } from 'antd';
+// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../api/client';

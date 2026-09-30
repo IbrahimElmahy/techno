@@ -5,8 +5,10 @@ import DocumentBar from '../components/DocumentBar';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Table, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Tabs, Tag, message,
 } from 'antd';
+// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';
 import { Popconfirm } from '../components/noConfirm';
@@ -445,7 +447,7 @@ export default function StockPermits() {
         </Col>
       </Row>
 
-      <Table<DraftLine>
+      <Table<DraftLine> autoFilters={false}
         size="small" rowKey="key" dataSource={lines} pagination={false}
         style={{ marginBottom: 12 }}
         columns={[

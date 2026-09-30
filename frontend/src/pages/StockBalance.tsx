@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Empty, Input, Radio, Row, Spin, Table, Tag , Space} from 'antd';
+import { Card, Col, Empty, Input, Radio, Row, Spin, Tag , Space} from 'antd';
+// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { SearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';

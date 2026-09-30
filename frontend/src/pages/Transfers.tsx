@@ -7,8 +7,10 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
-  Select, Space, Table, Tag, Tooltip, Typography, message,
+  Select, Space, Tag, Tooltip, Typography, message,
 } from 'antd';
+// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
@@ -1631,7 +1633,7 @@ export default function Transfers() {
 
           {/* Lines */}
           {!editing && lines.length > 0 && (
-            <Table
+            <Table autoFilters={false}
               style={{ marginTop: 16 }} size="small" rowKey="key" pagination={false}
               dataSource={lines}
               columns={draftCols.columns}

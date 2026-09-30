@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Table, Tag, message,
+  Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Tag, message,
 } from 'antd';
+// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';

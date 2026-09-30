@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Tag, message,
 } from 'antd';
+// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';

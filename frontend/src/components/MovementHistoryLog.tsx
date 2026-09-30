@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Card, Collapse, DatePicker, Descriptions, Empty, Select, Space, Spin, Tag,
+  Button, Card, DatePicker, Empty, Select, Spin, Tag,
 } from 'antd';
+import { FilterTable } from './FilterTable';
 import { CloseOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 
@@ -114,48 +115,44 @@ export default function MovementHistoryLog({
     if (target) box.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [target]);
 
-  const items = useMemo(() => rows.map((r: any, i: number) => {
-    const inQ = Number(r.quantity_in || 0);
-    const outQ = Number(r.quantity_out || 0);
-    return {
-      key: String(r.movement_id ?? i),
-      label: (
-        <Space size={8} wrap>
-          <span style={{ color: '#6b6b6b', fontSize: 12 }}>
-            {r.date ? String(r.date).slice(0, 10) : '-'}
-          </span>
-          <Tag color={r.direction === 'in' ? 'green' : 'red'}>
-            {moveLabels[r.movement_type] || r.movement_type}
-          </Tag>
-          {inQ
-            ? <b style={{ color: '#6AB42D' }}>+{qty(inQ)}</b>
-            : <b style={{ color: '#cf1322' }}>−{qty(outQ)}</b>}
-          <span style={{ color: '#6b6b6b', fontSize: 12 }}>
-            الرصيد بعدها <b style={{ color: '#16241c' }}>{qty(r.balance_after)}</b>
-          </span>
-          {r.document_number && <Tag>{r.document_number}</Tag>}
-        </Space>
-      ),
-      children: (
-        <Descriptions size="small" column={2} bordered>
-          <Descriptions.Item label="المستند">
-            {r.document_number || <span style={{ color: '#8c8c8c' }}>-</span>}
-          </Descriptions.Item>
-          <Descriptions.Item label="جهة التعامل">
-            {r.party || <span style={{ color: '#8c8c8c' }}>-</span>}
-          </Descriptions.Item>
-          <Descriptions.Item label="الموقع">{r.location || '-'}</Descriptions.Item>
-          <Descriptions.Item label="التاريخ">
-            {r.date ? String(r.date).slice(0, 10) : '-'}
-          </Descriptions.Item>
-          {/* The three that make this a history rather than a list: what it was, what moved,
-              what it became. */}
-          <Descriptions.Item label="الرصيد قبل">{qty(r.balance_before)}</Descriptions.Item>
-          <Descriptions.Item label="الرصيد بعد"><b>{qty(r.balance_after)}</b></Descriptions.Item>
-        </Descriptions>
-      ),
-    };
-  }), [rows]);
+  /**
+   * **السجل جدول — عمود لكل حاجة، وفلتر على كل عمود، والأحدث فوق.** (طلب العميل ٢٠٢٦-٠٩-٣٠)
+   *
+   * كان قايمة بتتفتح سطر سطر: التاريخ والنوع والكمية في العنوان، والمستند والطرف والموقع
+   * جوّه لما تدوس. فاللي بيدوّر على «فين راحت الخمس قطع» كان بيفتح عشرين سطر. دلوقتي كله
+   * ظاهر في أعمدة، وكل عمود بيتفلتر (`FilterTable`). والسيرفر بيبعت الحركات بترتيبها عشان
+   * «الرصيد بعدها» يتحسب صح؛ العرض بس اللي بيتقلب.
+   */
+  const tableRows = useMemo(() => rows.map((r: any, i: number) => ({
+    key: String(r.movement_id ?? i),
+    date: r.date ? String(r.date).slice(0, 10) : '',
+    kind: moveLabels[r.movement_type] || r.movement_type,
+    direction: r.direction === 'in' ? 'وارد' : 'منصرف',
+    qin: Number(r.quantity_in || 0) || null,
+    qout: Number(r.quantity_out || 0) || null,
+    document_number: r.document_number || '',
+    party: r.party || '',
+    location: r.location || '',
+    before: Number(r.balance_before ?? 0),
+    after: Number(r.balance_after ?? 0),
+  })).reverse(), [rows, moveLabels]);
+
+  const columns = [
+    { title: 'التاريخ', dataIndex: 'date', width: 110 },
+    { title: 'نوع الحركة', dataIndex: 'kind',
+      render: (v: string, r: any) => <Tag color={r.direction === 'وارد' ? 'green' : 'red'}>{v}</Tag> },
+    { title: 'المستند', dataIndex: 'document_number' },
+    { title: 'جهة التعامل', dataIndex: 'party' },
+    { title: 'الموقع', dataIndex: 'location' },
+    { title: 'وارد', dataIndex: 'qin', align: 'center' as const,
+      render: (v: number | null) => (v ? <b style={{ color: '#6AB42D' }}>+{qty(v)}</b> : '') },
+    { title: 'منصرف', dataIndex: 'qout', align: 'center' as const,
+      render: (v: number | null) => (v ? <b style={{ color: '#cf1322' }}>−{qty(v)}</b> : '') },
+    { title: 'الرصيد قبل', dataIndex: 'before', align: 'center' as const,
+      render: (v: number) => qty(v) },
+    { title: 'الرصيد بعد', dataIndex: 'after', align: 'center' as const,
+      render: (v: number) => <b>{qty(v)}</b> },
+  ];
 
   if (!target) return null;
 
@@ -237,8 +234,10 @@ export default function MovementHistoryLog({
             كان بيشرح حاجة السجل نفسه بيقولها: الصفوف بتتفتح لما تتضغط، واللي بيفتحها
             مرة عمره ما هيحتاج يتقاله تاني. */}
 
-        {loading ? <Spin /> : items.length
-          ? <Collapse accordion items={items} />
+        {loading ? <Spin /> : tableRows.length
+          ? <FilterTable size="small" rowKey="key" dataSource={tableRows} columns={columns as any}
+              pagination={{ pageSize: 50, showSizeChanger: false, hideOnSinglePage: true }}
+              scroll={{ x: 'max-content' }} />
           : <Empty description="لا توجد حركات في هذه الفترة" />}
       </Card>
     </div>
