@@ -666,6 +666,9 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("inspection", "customer_id", "BIGINT"),
     # 021: opt-in VAT (rate 0 = off) and the tax charged on each sale.
     ("sales_setting", "vat_rate_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
+    # خصم الشرا الثابت لكل خط (٢٠٢٦-٠٩-٣٠).
+    ("sales_setting", "purchase_poly_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 52.5"),
+    ("sales_setting", "purchase_white_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 34.5"),
     ("sales_invoice", "tax_amount", "NUMERIC(18,2) NOT NULL DEFAULT 0"),
     # 019: vouchers can name the safe the cash moved through.
     ("voucher", "treasury_id", "BIGINT"),

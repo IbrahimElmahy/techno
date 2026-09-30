@@ -314,6 +314,11 @@ class SalesSetting(Base):
     # It lives here because this singleton is already where company-wide values sit (the VAT rate is
     # not a sales-only setting either); a fourth settings table would be one more place to look.
     edit_lock_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # **خصم الشرا الثابت لكل خط** (طلب العميل ٢٠٢٦-٠٩-٣٠): بولي (تكنو ثيرم) ٥٢٫٥،
+    # وأبيض وجوان (الصرف) ٣٤٫٥. بيتحط لوحده على سطر فاتورة الشرا، واللي يغيّره من السطر
+    # بيبقى هو الافتراضي من بعدها — «يفضل متثبت ع التغيير الجديد».
+    purchase_poly_discount_pct: Mapped[object] = mapped_column(PCT, default=52.5, nullable=False)
+    purchase_white_discount_pct: Mapped[object] = mapped_column(PCT, default=34.5, nullable=False)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

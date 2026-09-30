@@ -704,13 +704,22 @@ export default function Transfers() {
       // الشاشة تقول «اتسجّل الطلب»، وهو يروح يبص على المخزن يلاقي مافيش حاجة اتحركت،
       // لأنه مستني موافقة نفسه. السيرفر هو اللي بيقرر — بيعتمد لو يقدر، وبيسيبه معلّق لو لأ.
       let approved = false;
+      let refused: string | null = null;
       try {
         const r = await api.post(`/api/v1/transfers/${created.data.id}/self-approve`);
         approved = r.data?.status === 'approved';
-      } catch { /* الإذن اتكتب؛ الاعتماد هيحصل من حد تاني */ }
-      message.success(approved
-        ? `تم اعتماد إذن التحويل بـ${valid.length} صنف واتحرّك المخزون`
-        : `اتسجّل طلب التحويل بـ${valid.length} صنف — بانتظار المراجعة والاعتماد`);
+      } catch (err: any) {
+        // الإذن اتكتب؛ بس الرفض (رصيد مش كفاية، سيريال ناقص) بيتقال بسببه — كان بيتبلع،
+        // واللي قدامه يشوف «بانتظار الاعتماد» من غير ما يعرف إن فيه حاجة لازم تتصلّح.
+        refused = err?.response?.data?.detail?.message || err?.response?.data?.message || null;
+      }
+      if (refused) {
+        message.warning(`اتسجّل طلب التحويل بس مااتعتمدش: ${refused}`, 8);
+      } else {
+        message.success(approved
+          ? `تم اعتماد إذن التحويل بـ${valid.length} صنف واتحرّك المخزون`
+          : `اتسجّل طلب التحويل بـ${valid.length} صنف — بانتظار المراجعة والاعتماد`);
+      }
       // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
       discardDraft();
       closeCreate();

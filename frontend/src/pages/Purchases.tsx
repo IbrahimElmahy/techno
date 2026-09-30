@@ -748,6 +748,44 @@ export default function Purchases() {
     ];
   };
 
+  /**
+   * **خصم الشرا الثابت لكل خط** (طلب العميل ٢٠٢٦-٠٩-٣٠): بولي ٥٢٫٥، وأبيض وجوان ٣٤٫٥.
+   *
+   * الصنف بينزل على الفاتورة وخصمه الثابت مكتوب لوحده حسب فئته. واللي يغيّره من السطر
+   * بيبقى هو الافتراضي من بعدها — على السيرفر، فكل الأجهزة بتاخد الرقم الجديد.
+   */
+  const [purchaseDisc, setPurchaseDisc] = useState<{
+    poly_pct: number; white_pct: number; groups: Record<string, string>;
+  } | null>(null);
+  useEffect(() => {
+    api.get('/api/v1/settings/purchase-discounts')
+      .then((r) => setPurchaseDisc({
+        poly_pct: Number(r.data.poly_pct), white_pct: Number(r.data.white_pct),
+        groups: r.data.groups || {},
+      }))
+      .catch(() => { /* من غير صلاحية أو السيرفر قديم — السطر بينزل من غير خصم زي الأول */ });
+  }, []);
+  const discGroupOf = (itemId: number | null) => {
+    const cat = items.find((i) => i.id === itemId)?.category;
+    return cat ? purchaseDisc?.groups[cat] ?? null : null;
+  };
+  const defaultFixedDisc = (itemId: number | null): number | null => {
+    const g = discGroupOf(itemId);
+    if (!g || !purchaseDisc) return null;
+    return g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
+  };
+  /** الخصم اتغيّر من السطر ⇒ بقى الافتراضي بتاع خطه («يفضل متثبت ع التغيير الجديد»). */
+  const rememberFixedDisc = (itemId: number | null, pct: number | null) => {
+    const g = discGroupOf(itemId);
+    if (!g || pct == null || !purchaseDisc) return;
+    const current = g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
+    if (Math.abs(current - pct) < 0.001) return;
+    setPurchaseDisc({ ...purchaseDisc, [g === 'poly' ? 'poly_pct' : 'white_pct']: pct });
+    api.put('/api/v1/settings/purchase-discounts', { group: g, pct })
+      .then(() => message.success(`خصم ${g === 'poly' ? 'البولي' : 'الأبيض والجوان'} بقى ${pct}% للفواتير الجاية`))
+      .catch(() => { /* الفاتورة دي شايلة الرقم؛ الافتراضي بيفضل القديم */ });
+  };
+
   const fetchUnits = async (itemId: number) => {
     if (unitsCache[itemId]) return;
     try {
@@ -783,6 +821,7 @@ export default function Purchases() {
           if (!p && selected?.sale_price) p = parseFloat(selected.sale_price);
           updatedItem.unit_price = p;
           updatedItem.unit = null;
+          updatedItem.fixed_discount_pct = defaultFixedDisc(value);
           updatedItem.warehouse_id = updatedItem.warehouse_id ?? stickyWarehouseId ?? lineWarehouses[0]?.id ?? null;
           if (value) fetchUnits(value);
         }
@@ -1173,9 +1212,18 @@ export default function Purchases() {
           const res = editingId !== null
             ? await api.put(`/api/v1/purchases/${editingId}`, payload)
             : await api.post('/api/v1/purchases', payload);
-          setDocResult(res.data);
+          // **بعد الحفظ على سجل فواتير الشرا على طول — زي البيع** (طلب العميل ٢٠٢٦-٠٩-٣٠).
+          // كانت بتقف على شاشة «تم التسجيل» بزرار «فاتورة جديدة» بس، واللي عايز يشوف
+          // الفاتورة في السجل مالوش طريق غير إنه يخرج ويدخل من القايمة.
           message.success(editingId !== null
-            ? 'تم حفظ الفاتورة' : 'تم تسجيل فاتورة الشراء بنجاح');
+            ? `تم حفظ الفاتورة ${res.data?.document_number ?? ''}`
+            : `تم تسجيل فاتورة الشراء ${res.data?.document_number ?? ''} بنجاح`);
+          markClosed();
+          setCreateVisible(false);
+          setDetail(null);
+          setDocResult(null);
+          setNewStep(null);
+          setOpenedFingerprint(null);
           setEditingId(null);
           form.resetFields();
           setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
@@ -1245,13 +1293,14 @@ export default function Purchases() {
         landedRef.current = blank.key;
         return prev.map((l) => (l.key === blank.key
           ? { ...l, item_id: itemId, unit_price: price, unit: null,
+              fixed_discount_pct: defaultFixedDisc(itemId),
               warehouse_id: l.warehouse_id ?? warehouseId } : l));
       }
       const key = `${Date.now()}-${itemId}`;
       landedRef.current = key;
       return [...prev, {
         key, item_id: itemId, quantity: null, unit_price: price, unit: null,
-        fixed_discount_pct: null,
+        fixed_discount_pct: defaultFixedDisc(itemId),
         // بيرث المخزن اللي اتسأل عنه — الشحنة العادية كلها بتنزل مخزن واحد.
         discount_pct: null, warehouse_id: warehouseId,
       }];
@@ -1536,6 +1585,7 @@ export default function Purchases() {
           disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
           onChange={(val) => handleItemChange(line.key, 'fixed_discount_pct', val ?? null)}
+          onBlur={() => rememberFixedDisc(line.item_id, line.fixed_discount_pct)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },

@@ -1023,7 +1023,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           exceptLocalId: _editingId),
     );
     if (picked == null || !mounted) return;
-    setState(() => _bonusFor = picked);
+    setState(() => _bonusFor = picked.isNone ? null : picked);
   }
 
   /// الشريط اللي بيقول «دي فاتورة بونص» وعلى أنهي فاتورة — والضغط عليه بيغيّرها.
@@ -2014,8 +2014,20 @@ class _BonusTarget {
     this.net,
     this.onDevice = false,
     this.repName,
-  });
+  }) : isNone = false;
 
+  /// «من غير ربط» من القايمة — بيقفلها وبيشيل أي ربط كان متختار.
+  const _BonusTarget.none()
+      : serverId = null,
+        clientUuid = null,
+        number = null,
+        date = null,
+        net = null,
+        onDevice = false,
+        repName = null,
+        isNone = true;
+
+  final bool isNone;
   final int? serverId;
   final String? clientUuid;
 
@@ -2135,8 +2147,21 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
       child: Column(
         children: [
           const SizedBox(height: 10),
-          const Text('البونص على أنهي فاتورة بيع؟',
+          const Text('البونص على أنهي فاتورة بيع؟ (اختياري)',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          // **الربط اختياري** (قرار العميل ٢٠٢٦-٠٩-٢٨، واتأكد ٢٠٢٦-٠٩-٣٠): اللي فتح القايمة
+          // دي ممكن يكون عايز يقفلها من غير ما يختار — والزرار ده بيقولها صريحة.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.link_off, size: 18),
+                label: const Text('من غير ربط — كمّل البونص'),
+                onPressed: () => Navigator.pop(context, const _BonusTarget.none()),
+              ),
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
             child: Text('فواتير ${widget.customerName}',

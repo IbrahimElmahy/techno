@@ -9,7 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_SETTINGS_WRITE, CAP_STOCK_READ
+from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_SETTINGS_WRITE, CAP_STOCK_READ
+from src.lib import item_points
+from src.models.catalog import Item
 from src.core.db import get_db
 from src.models.sales import SalesSetting
 from src.models.stock import CostingMethod, StockSetting
@@ -69,6 +71,76 @@ def update_sales_settings(
     return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct),
                              vat_rate_pct=Decimal(s.vat_rate_pct or 0),
                              edit_lock_days=getattr(s, "edit_lock_days", None))
+
+
+# ---------------------------------------------------------------- خصم الشرا الثابت لكل خط
+#
+# بولي = تكنو ثيرم ومعزوله، وأبيض وجوان = الصرف (تكنو وايت/ابيض تكنوو/تكنو جوان). نفس
+# تصنيف العيال اللي النقاط ماشية بيه (`item_points.family_of`) — مش قايمة تانية بتتكتب بإيد
+# وتختلف عنها أول ما فئة تتضاف.
+_POLY = {item_points.PPR, item_points.PPR_INS}
+_WHITE = {item_points.DRAIN}
+
+
+class PurchaseDiscountsBody(BaseModel):
+    poly_pct: Decimal
+    white_pct: Decimal
+    # فئة الصنف ← «poly» أو «white». الفئة اللي مش فيهم مالهاش خصم افتراضي.
+    groups: dict[str, str] = {}
+
+
+def _purchase_discounts(db: Session, s: SalesSetting) -> PurchaseDiscountsBody:
+    groups: dict[str, str] = {}
+    for cat in db.scalars(select(Item.category).where(Item.category.is_not(None)).distinct()):
+        fam = item_points.family_of(cat)
+        if fam in _POLY:
+            groups[cat] = "poly"
+        elif fam in _WHITE:
+            groups[cat] = "white"
+    return PurchaseDiscountsBody(
+        poly_pct=Decimal(s.purchase_poly_discount_pct if s.purchase_poly_discount_pct is not None
+                         else "52.5"),
+        white_pct=Decimal(s.purchase_white_discount_pct
+                          if s.purchase_white_discount_pct is not None else "34.5"),
+        groups=groups)
+
+
+@router.get("/purchase-discounts", response_model=PurchaseDiscountsBody)
+def get_purchase_discounts(
+    _: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> PurchaseDiscountsBody:
+    s = _get_or_create(db)
+    db.commit()
+    return _purchase_discounts(db, s)
+
+
+class PurchaseDiscountIn(BaseModel):
+    group: str          # «poly» أو «white»
+    pct: Decimal
+
+
+@router.put("/purchase-discounts", response_model=PurchaseDiscountsBody)
+def set_purchase_discount(
+    body: PurchaseDiscountIn,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> PurchaseDiscountsBody:
+    """اللي بيغيّر خصم الخط من سطر الفاتورة بيغيّر الافتراضي — ده اللي العميل طلبه بالظبط،
+    فالصلاحية هي صلاحية كتابة فاتورة الشرا نفسها، مش الإعدادات."""
+    if body.group not in ("poly", "white"):
+        raise HTTPException(422, {"code": "validation", "message": "الخط لازم يكون بولي أو أبيض."})
+    if body.pct < 0 or body.pct >= 100:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "الخصم لازم يكون من صفر لأقل من ١٠٠٪."})
+    s = _get_or_create(db)
+    if body.group == "poly":
+        s.purchase_poly_discount_pct = body.pct
+    else:
+        s.purchase_white_discount_pct = body.pct
+    s.updated_by = current.id
+    db.commit()
+    return _purchase_discounts(db, s)
 
 
 class StockSettingsBody(BaseModel):

@@ -375,9 +375,17 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   @override
   void dispose() {
     // بيتفكر عشان الفتحة الجايّة ترجع لنفس المكان.
-    widget.memory
-      ..query = _search.text
-      ..searchAll = _searchAll;
+    //
+    // **إلا لو الصنف اتاخد من البحث** (طلب العميل ٢٠٢٦-٠٩-٣٠): اللي لقى اللي بيدوّر
+    // عليه خلص من الكلمة دي، فالفتحة الجاية بخانة بحث فاضية وعلى فئته من أولها — مكان
+    // التمرير القديم كان على قايمة نتايج مش موجودة.
+    if (_pickedFromSearch) {
+      widget.memory.reset();
+    } else {
+      widget.memory
+        ..query = _search.text
+        ..searchAll = _searchAll;
+    }
     _search.dispose();
     _scroll.dispose();
     super.dispose();
@@ -390,7 +398,14 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   /// مكان في الاسم، مش من أوله.
   String get _query => bare(_search.text);
 
-  bool _matches(SaleItem it) => bare(it.name).contains(_query);
+  /// كل كلمة مكتوبة لوحدها ولو حتة منها وبأي ترتيب — «كو نح» بتلاقي «كوع ١/٢ نحاس».
+  /// نفس بحث النظام (`matchesWords`).
+  bool _matches(SaleItem it) {
+    final name = bare(it.name);
+    return _query.split(' ').where((w) => w.isNotEmpty).every(name.contains);
+  }
+
+  bool _pickedFromSearch = false;
 
   bool _inCategory(SaleItem it) => _categoryOf(it) == widget.category;
 
@@ -525,7 +540,12 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                                 fontSize: 12,
                                 color: out ? AppColors.danger : Colors.black54),
                           ),
-                          onTap: out ? null : () => Navigator.pop(context, it),
+                          onTap: out
+                              ? null
+                              : () {
+                                  _pickedFromSearch = _query.isNotEmpty;
+                                  Navigator.pop(context, it);
+                                },
                         );
                       },
                     ),

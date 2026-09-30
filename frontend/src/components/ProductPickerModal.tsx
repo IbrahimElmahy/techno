@@ -65,7 +65,12 @@ const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { m
  * بين فتحة والتانية، وبيتنسوا لما المستند يتقفل (`open` بيبقى false والفئة بتترجّع null
  * من الشاشة اللي بتنده).
  */
-type PickerMemory = { query: string; scrollTop: number; cursor: number };
+/**
+ * **والبحث بيتفضّى بعد الاختيار** (طلب العميل ٢٠٢٦-٠٩-٣٠): اللي اختار الصنف اللي كان بيدوّر
+ * عليه خلص من الكلمة دي، والصنف الجاي اسمه غيره. فالفتحة الجاية بتبتدي بخانة فاضية،
+ * والقايمة واقفة على الصنف اللي لسه اتاخد (`lastPicked`) — مش أولها.
+ */
+type PickerMemory = { query: string; scrollTop: number; cursor: number; lastPicked?: number | null };
 // ذاكرة لكل شباك باسمه: منتقي الفاتورة غير منتقي المرتجع غير الشرا — كل واحد بقايمته.
 const memories: Record<string, PickerMemory> = {};
 
@@ -296,11 +301,30 @@ export default function ProductPickerModal({
     setCursor(memory.cursor);
     setPicked([]);
     setBulk(false);
+    const jumpTo = memory.lastPicked;
     setTimeout(() => {
       searchRef.current?.focus?.();
-      if (listRef.current) listRef.current.scrollTop = memory.scrollTop;
+      // اتختار صنف بالبحث ⇒ القايمة كلها رجعت، فمكان التمرير القديم كان على قايمة تانية.
+      // المؤشر بيروح على الصنف نفسه و`keepInView` بيجيبه قدام العين.
+      if (jumpTo == null && listRef.current) listRef.current.scrollTop = memory.scrollTop;
     }, 60);
   }, [open]);
+  useEffect(() => {
+    // بيستنى البحث يتفضّى الأول: الشباك بيفضل متركّب بين الفتحات، فأول رندر بعد الفتح
+    // لسه شايل القايمة المتفلترة بالكلمة القديمة — والمكان فيها مش مكانه في القايمة كلها.
+    if (!open || memory.lastPicked == null || query) return;
+    const idx = visible.findIndex((p) => p.id === memory.lastPicked);
+    memory.lastPicked = null;
+    if (idx < 0) return;
+    setShown((n) => Math.max(n, idx + PAGE));
+    setCursor(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, visible, query]);
+  /** اختيار صنف — بيفضّي البحث للفتحة الجاية (شوف `PickerMemory`). */
+  const pick = (id: number) => {
+    if (memory.query) { memory.query = ''; memory.lastPicked = id; }
+    onPick(id);
+  };
   useEffect(() => { memory.query = query; }, [query]);
   useEffect(() => { memory.cursor = cursor; }, [cursor]);
   const rememberScroll = () => { if (listRef.current) memory.scrollTop = listRef.current.scrollTop; };
@@ -317,7 +341,7 @@ export default function ProductPickerModal({
       const av = availableFor ? availableFor(p.id) : null;
       if (disableOutOfStock && av !== null && av <= 0) return;
       if (bulk) toggle(p.id);
-      else onPick(p.id);
+      else pick(p.id);
     }
   };
 
@@ -470,7 +494,7 @@ export default function ProductPickerModal({
                   // المجمّع بالذات: تعلّم صنف بالماوس وتحاول تكمّل بالكيبورد فمافيش حاجة
                   // بتتحرك. `preventDefault` على `mousedown` هي اللي بتخلّي التركيز مكانه.
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => { if (out) return; return bulk ? toggle(p.id) : onPick(p.id); }}
+                  onClick={() => { if (out) return; return bulk ? toggle(p.id) : pick(p.id); }}
                   onMouseEnter={() => setCursor(i)}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -541,7 +565,10 @@ export default function ProductPickerModal({
             {bulk && (
               <Button
                 type="primary" size="small" disabled={!picked.length}
-                onClick={() => { onPickMany(picked); setPicked([]); }}
+                onClick={() => {
+                  if (memory.query) { memory.query = ''; memory.lastPicked = picked[picked.length - 1] ?? null; }
+                  onPickMany(picked); setPicked([]);
+                }}
               >
                 أضف {picked.length || ''} صنف
               </Button>

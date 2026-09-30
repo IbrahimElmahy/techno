@@ -73,6 +73,7 @@ import { KeyboardProvider } from './components/keyboard';
 import { DensityProvider } from './components/RowDensity';
 import ColumnResizeProvider from './components/ColumnResize';
 import Login from './pages/Login';
+import UpdateBanner from './components/UpdateBanner';
 import { setApiBaseURL } from './api/client';
 import { useNumerals } from './utils/numerals';
 
@@ -173,6 +174,7 @@ export default function App() {
           with nothing to do with who is logged in or which tab is open. Mounted inside the
           authenticated shell they would also reset on every logout, which is not what a saved
           preference means. */}
+      <UpdateBanner />
       <DensityProvider>
       <ColumnResizeProvider>
       <AuthProvider apiUrl={apiUrl}>

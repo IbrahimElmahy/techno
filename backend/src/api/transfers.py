@@ -251,13 +251,17 @@ def self_approve(
         raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود"})
     if t.status != TransferStatus.pending or not _may_approve_now(db, current, t):
         return _out(t)
-        # **«بيشوف الفروع كلها» = بيعتمد لأي فرع.**
-        #
-        # `is_admin` معناها `system_admin` وبس، فالمالك — اللي عنده كل الصلاحيات ومالوش
-        # فرع — كان بيترفض بـ«الاعتماد لمدير فرع المصدر بس» وهو مش مدير أي فرع ولا
-        # المفروض يكون. `visible_branch_id` هي نفس القاعدة اللي القوايم بتتفلتر بيها:
-        # `None` يعني بيشوف كل الفروع، وساعتها الاعتماد لأي فرع بتاعه.
-        sees_all = branch_scope.visible_branch_id(current) is None
+    # **«بيشوف الفروع كلها» = بيعتمد لأي فرع.**
+    #
+    # `is_admin` معناها `system_admin` وبس، فالمالك — اللي عنده كل الصلاحيات ومالوش
+    # فرع — كان بيترفض بـ«الاعتماد لمدير فرع المصدر بس» وهو مش مدير أي فرع ولا
+    # المفروض يكون. `visible_branch_id` هي نفس القاعدة اللي القوايم بتتفلتر بيها:
+    # `None` يعني بيشوف كل الفروع، وساعتها الاعتماد لأي فرع بتاعه.
+    #
+    # (٢٠٢٦-٠٩-٣٠) السطر ده كان متزق جوّه الـ`if` اللي فوق بعد `return` — عمره ما اتنفّذ،
+    # فكل اعتماد تلقائي كان بيقع بـ`UnboundLocalError`، والـ`except` تحت كان بيداريه
+    # ويرجّع الإذن «معلّق». ده اللي خلّى الإذن من السيستم مايتعتمدش لوحده.
+    sees_all = branch_scope.visible_branch_id(current) is None
     try:
         t = transfer_service.approve(
             db, transfer_id=transfer_id, approver_role=current.role,
