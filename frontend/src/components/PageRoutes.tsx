@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';
 
@@ -85,6 +85,30 @@ const Vouchers = lazy(() => import('../pages/Vouchers'));
 const VoucherKeys = lazy(() => import('../pages/VoucherKeys'));
 const FinanceReports = lazy(() => import('../pages/FinanceReports'));
 
+/**
+ * **كل الشاشات بتتحمّل في الخلفية بعد ما البرنامج يفتح** (٢٠٢٦-٠٩-٣٠ — «الحركة بطيئة»).
+ *
+ * `lazy` خلّى البداية خفيفة، بس نقل التأخير لأول فتحة لكل شاشة: تدوس «فواتير الشرا» فتستنى
+ * ملفها ينزل قبل ما حاجة تبان. هنا بعد ما البرنامج يفتح ويهدى، الملفات بتنزل واحد ورا
+ * التاني في الوقت الفاضي — فأول فتحة لأي شاشة بتلاقي كودها جاهز. `import.meta.glob` بيطلّع
+ * نفس الملفات اللي `lazy` فوق بيطلبها، فمافيش حاجة بتنزل مرتين.
+ */
+let preloaded = false;
+export function preloadAllPages() {
+  if (preloaded) return;
+  preloaded = true;
+  const loaders = Object.values(import.meta.glob('../pages/*.tsx'));
+  const idle = (cb: () => void) => ((window as any).requestIdleCallback
+    ? (window as any).requestIdleCallback(cb, { timeout: 2000 })
+    : window.setTimeout(cb, 200));
+  const next = () => {
+    const load = loaders.shift();
+    if (!load) return;
+    load().catch(() => { /* شاشة وقعت في التحميل — هتتحمّل لما تتفتح */ }).finally(() => idle(next));
+  };
+  window.setTimeout(() => idle(next), 1500);
+}
+
 const Placeholder = ({ name }: { name: string }) => (
   <div style={{ padding: 24, background: '#fff', borderRadius: 8 }}>
     <h2>{name}</h2>
@@ -95,6 +119,8 @@ const Placeholder = ({ name }: { name: string }) => (
 /** The application's page routes, WITHOUT the app chrome — rendered inside each work tab.
  *  `location` renders this tab's routes at its own path without changing the shared URL. */
 export default function PageRoutes({ location }: { location?: string }) {
+  // أول تبويب اتفتح ⇒ باقي الشاشات تبتدي تنزل في الخلفية (شوف `preloadAllPages`).
+  useEffect(() => { preloadAllPages(); }, []);
   return (
     <Suspense fallback={<div style={{ padding: 40, textAlign: 'center' }}><Spin size="large" /></div>}>
     <Routes location={location}>
