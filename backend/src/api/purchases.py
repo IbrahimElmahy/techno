@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.lib.doc_order import newest_first
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
 from src.services.account_resolver import AccountResolutionError
@@ -234,7 +235,7 @@ def list_purchases(
 
     total = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
 
-    stmt = base_stmt.order_by(PurchaseInvoice.id.desc())
+    stmt = base_stmt.order_by(*newest_first(PurchaseInvoice, PurchaseInvoice.purchase_date))
     if limit is not None:
         stmt = stmt.limit(min(limit, 500)).offset(offset)
 
@@ -310,7 +311,7 @@ def list_purchase_returns(
         _q = _q.where(PurchaseReturn.return_date <= date_to)
     rows = db.scalars(
         _q
-        .order_by(PurchaseReturn.id.desc())
+        .order_by(*newest_first(PurchaseReturn, PurchaseReturn.return_date))
     ).all()
     invoices = {
         p.id: p for p in db.scalars(

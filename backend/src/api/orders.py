@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from src.lib.doc_order import newest_first
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ
 from src.core.db import get_db
@@ -239,7 +240,7 @@ def list_orders(
         stmt = stmt.where(TradeOrder.customer_id == customer_id)
     if supplier_id:
         stmt = stmt.where(TradeOrder.supplier_id == supplier_id)
-    rows = db.scalars(stmt.order_by(TradeOrder.id.desc())).all()
+    rows = db.scalars(stmt.order_by(*newest_first(TradeOrder, TradeOrder.order_date))).all()
     parties = _party_names(db, rows)
     return [_out(db, o, parties) for o in rows]
 

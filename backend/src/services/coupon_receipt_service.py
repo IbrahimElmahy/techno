@@ -25,6 +25,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from src.lib.doc_order import newest_first
 from src.auth.branch_scope import branch_for
 from src.models.coupon_issue import CouponIssue, CouponIssueLine
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
@@ -585,7 +586,7 @@ def list_receipts(
     base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q)
     total_count = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
 
-    query = base_stmt.options(selectinload(CouponReceipt.lines)).order_by(CouponReceipt.id.desc())
+    query = base_stmt.options(selectinload(CouponReceipt.lines)).order_by(*newest_first(CouponReceipt, CouponReceipt.received_date))
     if limit is not None:
         query = query.limit(min(limit, 500)).offset(offset)
     return list(db.scalars(query).all()), total_count

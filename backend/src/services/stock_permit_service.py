@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy.orm import selectinload
 
+from src.lib.doc_order import newest_first
 from src.services import numbering
 
 from src.core import clock
@@ -240,7 +241,7 @@ def list_permits(
         stmt = stmt.where(day >= date_from)
     if date_to:
         stmt = stmt.where(day <= date_to)
-    return list(db.scalars(stmt.order_by(StockPermit.id.desc())).all())
+    return list(db.scalars(stmt.order_by(*newest_first(StockPermit, StockPermit.permit_date))).all())
 
 
 def get_permit(db: Session, permit_id: int) -> StockPermit:

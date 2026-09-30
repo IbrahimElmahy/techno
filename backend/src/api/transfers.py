@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from src.lib.doc_order import newest_first
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_TRANSFER_APPROVE, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
@@ -164,7 +165,7 @@ def list_transfers(
         stmt = stmt.where(StockTransfer.status == status_filter)
     if item_id is not None:
         stmt = stmt.where(StockTransfer.item_id == item_id)
-    stmt = stmt.order_by(StockTransfer.id.desc()).options(
+    stmt = stmt.order_by(*newest_first(StockTransfer, StockTransfer.transfer_date)).options(
         selectinload(StockTransfer.lines))
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)

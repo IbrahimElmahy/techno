@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from sqlalchemy.orm import selectinload
 
+from src.lib.doc_order import newest_first
 from src.services import numbering
 
 from src.core.money import to_qty
@@ -263,4 +264,4 @@ def listing(db: Session, *, status: str | None = None) -> list[StockCount]:
     stmt = select(StockCount)
     if status:
         stmt = stmt.where(StockCount.status == status)
-    return list(db.scalars(stmt.order_by(StockCount.id.desc())).all())
+    return list(db.scalars(stmt.order_by(*newest_first(StockCount, StockCount.count_date))).all())

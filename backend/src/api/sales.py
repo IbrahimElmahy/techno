@@ -11,6 +11,7 @@ from typing import Literal
 from sqlalchemy import case, delete as sa_delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from src.lib.doc_order import newest_first
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
     CAP_RETURN_WRITE,
@@ -1313,7 +1314,7 @@ def list_sales(
         payment=payment, rep_id=rep_id, family=family,
         external_document_number=external_document_number, ids=ids, kind=kind,
         statement=statement)
-    stmt = stmt.order_by(SalesInvoice.id.desc())
+    stmt = stmt.order_by(*newest_first(SalesInvoice, SalesInvoice.invoice_date))
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
     rows = list(db.scalars(stmt).all())
@@ -1610,7 +1611,7 @@ def list_standalone_returns(
         stmt = stmt.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
     if date_to is not None:
         stmt = stmt.where(SalesReturn.created_at < clock.day_end_utc(date_to))
-    stmt = stmt.order_by(SalesReturn.id.desc())
+    stmt = stmt.order_by(*newest_first(SalesReturn, SalesReturn.return_date))
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
     rows = list(db.scalars(stmt).all())
