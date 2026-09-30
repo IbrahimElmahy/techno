@@ -5,10 +5,10 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, timedelta
 from typing import Literal
 
-from sqlalchemy import case, delete as sa_delete, func, or_, select
+from sqlalchemy import Date, case, cast, delete as sa_delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.lib.doc_order import newest_first
@@ -724,6 +724,12 @@ def rep_bundle(
         # والصناديق نازلة كلها مع الحزمة مش بتتجاب عند الحفظ، لأن المندوب بيكتب في الشارع
         # من غير شبكة. والاسم نازل عشان الشاشة تعرضه — يشوف فلوسه رايحة فين قبل ما يحفظ.
         "treasuries": _rep_treasuries(db, current.rep_id),
+        # **فواتير المندوب زي ما هي على السيرفر دلوقتي** (٢٠٢٦-٠٩-٣٠).
+        #
+        # التطبيق كان بيرفع الفاتورة وينساها: لو المكتب عدّل المدفوع (أو الكمية) من النظام،
+        # الموبايل بيفضل يوري الرقم القديم في كشف الفواتير والطباعة ونقدية اليوم. هنا بتنزل
+        # فواتيره من آخر ٦٠ يوم بـ`client_uuid`، والجهاز بيحدّث نسخته المرفوعة منها.
+        "recent_invoices": _rep_recent_invoices(db, current.rep_id),
         "customers": [
             {
                 "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,
@@ -781,6 +787,44 @@ def rep_bundle(
             for c in catalog
         ],
     }
+
+
+def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
+    """فواتير المندوب اللي اتكتبت من التطبيق (ليها `client_uuid`) في آخر ٦٠ يوم — للجهاز
+    يحدّث نسخته لو المكتب عدّلها. السطور معاها عشان تعديل الكمية يوصل كمان."""
+    since = date.today() - timedelta(days=60)
+    rows = db.scalars(
+        select(SalesInvoice)
+        .options(selectinload(SalesInvoice.lines))
+        .where(SalesInvoice.rep_id == rep_id,
+               SalesInvoice.client_uuid.is_not(None),
+               func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
+               >= since)
+    ).all()
+    out = []
+    for inv in rows:
+        out.append({
+            "client_uuid": inv.client_uuid,
+            "id": inv.id,
+            "document_number": inv.document_number,
+            "cash_amount": str(inv.cash_amount or 0),
+            "credit_amount": str(inv.credit_amount or 0),
+            "total": str(inv.net or 0),
+            "prior_balance": str(inv.prior_balance) if inv.prior_balance is not None else None,
+            "lines": [
+                {
+                    "item_id": ln.item_id,
+                    "quantity": str(ln.quantity),
+                    "unit_price": str(ln.unit_price),
+                    "discount_pct": str(ln.discount_pct or 0),
+                    "fixed_discount_pct": str(ln.fixed_discount_pct or 0),
+                    "variable_discount_pct": str(ln.variable_discount_pct or 0),
+                    "line_total": str(ln.line_total or 0),
+                }
+                for ln in inv.lines
+            ],
+        })
+    return out
 
 
 # الحروف اللي بتتكتب بشكلين: «تجربة/تجربه»، «على/علي»، «أحمد/احمد». البحث بيوحّدهم في

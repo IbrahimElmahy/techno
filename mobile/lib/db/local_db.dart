@@ -1457,6 +1457,79 @@ class LocalDb {
     return (r.first['c'] as int?) ?? 0;
   }
 
+  /// **الفواتير المرفوعة بتتحدّث من السيرفر** (٢٠٢٦-٠٩-٣٠).
+  ///
+  /// المندوب بيرفع الفاتورة وبعدين المكتب ممكن يعدّلها من النظام — المدفوع اتكتب غلط،
+  /// أو الكمية. الجهاز كان بيفضل على نسخته: كشف الفواتير والطباعة ونقدية اليوم بالرقم
+  /// القديم. هنا كل سحب للحزمة بيحط نسخة السيرفر مكان النسخة المرفوعة (`synced = 1`)
+  /// بنفس `client_uuid`. **اللي لسه في الطابور مابيتلمسش** — ده شغل المندوب اللي لسه
+  /// ماوصلش السيرفر أصلاً.
+  Future<int> applyServerInvoices(List<dynamic> invoices) async {
+    if (invoices.isEmpty) return 0;
+    final d = await db;
+    num? n(Object? v) => v == null ? null : num.tryParse('$v');
+    var changed = 0;
+    await d.transaction((tx) async {
+      for (final raw in invoices) {
+        final inv = raw as Map;
+        final uuid = inv['client_uuid'] as String?;
+        if (uuid == null) continue;
+        final local = await tx.query('sale_invoice',
+            columns: ['local_id'],
+            where: 'client_uuid = ? AND synced = 1',
+            whereArgs: [uuid],
+            limit: 1);
+        if (local.isEmpty) continue;
+        final localId = local.first['local_id'] as int;
+        await tx.update(
+            'sale_invoice',
+            {
+              'cash_amount': n(inv['cash_amount']) ?? 0,
+              'credit_amount': n(inv['credit_amount']) ?? 0,
+              'total': n(inv['total']) ?? 0,
+              if (inv['document_number'] != null) 'document_number': inv['document_number'],
+              if (inv['prior_balance'] != null) 'prev_balance': n(inv['prior_balance']),
+            },
+            where: 'local_id = ?',
+            whereArgs: [localId]);
+        final lines = inv['lines'] as List?;
+        if (lines != null) {
+          // الاسم من السطر القديم لو موجود، وإلا من أصناف العهدة — السيرفر بيبعت الرقم بس.
+          final old = await tx.query('sale_invoice_line',
+              columns: ['item_id', 'item_name'],
+              where: 'invoice_local_id = ?',
+              whereArgs: [localId]);
+          final names = {for (final r in old) r['item_id'] as int: r['item_name'] as String};
+          await tx.delete('sale_invoice_line',
+              where: 'invoice_local_id = ?', whereArgs: [localId]);
+          for (final raw in lines) {
+            final l = raw as Map;
+            final itemId = l['item_id'] as int;
+            var name = names[itemId];
+            if (name == null) {
+              final it = await tx.query('sale_item',
+                  columns: ['name'], where: 'item_id = ?', whereArgs: [itemId], limit: 1);
+              name = it.isEmpty ? 'صنف #$itemId' : it.first['name'] as String;
+            }
+            await tx.insert('sale_invoice_line', {
+              'invoice_local_id': localId,
+              'item_id': itemId,
+              'item_name': name,
+              'quantity': n(l['quantity']) ?? 0,
+              'unit_price': n(l['unit_price']) ?? 0,
+              'discount_pct': n(l['discount_pct']) ?? 0,
+              'fixed_discount_pct': n(l['fixed_discount_pct']) ?? 0,
+              'variable_discount_pct': n(l['variable_discount_pct']) ?? 0,
+              'line_total': n(l['line_total']) ?? 0,
+            });
+          }
+        }
+        changed++;
+      }
+    });
+    return changed;
+  }
+
   Future<void> markSaleSynced(String clientUuid, String documentNumber,
       {String? bonusForNumber}) async {
     final d = await db;

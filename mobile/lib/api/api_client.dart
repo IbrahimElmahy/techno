@@ -369,6 +369,10 @@ class ApiClient {
           balance: double.tryParse('${c['balance'] ?? 0}') ?? 0,
         )
     ]);
+    // الفواتير اللي المكتب عدّلها بعد الرفع — بتتحدّث على الجهاز. شوف `applyServerInvoices`.
+    // سيرفر قديم مابيبعتهاش ⇒ قايمة فاضية ومافيش حاجة بتتغيّر.
+    await LocalDb.instance
+        .applyServerInvoices((body['recent_invoices'] as List?) ?? const []);
     await LocalDb.instance.replaceSaleItems([
       for (final i in (body['items'] as List))
         SaleItem(

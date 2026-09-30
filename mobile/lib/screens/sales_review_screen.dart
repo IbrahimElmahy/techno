@@ -10,6 +10,7 @@ import 'invoice_print_screen.dart';
 import 'sale_coupons_section.dart';
 import 'sale_invoice_screen.dart';
 import 'bonus_invoice_screen.dart';
+import '../services/auto_sync.dart';
 
 /// فواتير الجهاز — اللي راحت واللي لسه.
 ///
@@ -199,7 +200,12 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                 ),
                 Expanded(
                   child: RefreshIndicator(
-                    onRefresh: _load,
+                    // السحبة بتجيب من السيرفر الأول (الفواتير اللي المكتب عدّلها والأرصدة)، وبعدين
+                          // تقرا من الجهاز — كانت بتقرا الجهاز بس فمافيش جديد يظهر.
+                          onRefresh: () async {
+                            await AutoSync.instance.maybeRun(force: true);
+                            await _load();
+                          },
                     child: _visible.isEmpty
                         ? ListView(children: [
                             Padding(

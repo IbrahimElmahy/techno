@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../theme.dart';
 import 'collect_cash_screen.dart';
 import 'customer_profile_screen.dart';
+import '../services/auto_sync.dart';
 
 /// كشف المديونيات — **مين عليه كام، وعلى أنهي خط**.
 ///
@@ -188,7 +189,12 @@ class _DebtsScreenState extends State<DebtsScreen> {
                           ),
                         )
                       : RefreshIndicator(
-                          onRefresh: _load,
+                          // السحبة بتجيب من السيرفر الأول (الفواتير اللي المكتب عدّلها والأرصدة)، وبعدين
+                          // تقرا من الجهاز — كانت بتقرا الجهاز بس فمافيش جديد يظهر.
+                          onRefresh: () async {
+                            await AutoSync.instance.maybeRun(force: true);
+                            await _load();
+                          },
                           child: ListView.separated(
                             itemCount: rows.length,
                             separatorBuilder: (_, __) => const Divider(height: 1),

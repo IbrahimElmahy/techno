@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../db/local_db.dart';
 import '../theme.dart';
+import '../services/auto_sync.dart';
 
 /// ملخّص اليوم — بعت بكام وحصّلت كام.
 ///
@@ -69,7 +70,12 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _load,
+              // السحبة بتجيب من السيرفر الأول (الفواتير اللي المكتب عدّلها والأرصدة)، وبعدين
+                          // تقرا من الجهاز — كانت بتقرا الجهاز بس فمافيش جديد يظهر.
+                          onRefresh: () async {
+                            await AutoSync.instance.maybeRun(force: true);
+                            await _load();
+                          },
               child: ListView(
                 children: [
                   Padding(
