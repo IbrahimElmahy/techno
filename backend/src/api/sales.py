@@ -1114,12 +1114,20 @@ def _line_discounts(db: Session, rows: list[SalesInvoice]) -> dict[int, tuple[De
         return {}
     before = func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price)
     after = func.sum(SalesInvoiceLine.line_total)
+    # **قيمة البونص بعد خصم اللسته** (العميل ٢٠٢٦-١٠-٠١): البونص ١٠٠٪ على الإجمالي، بس
+    # الإجمالي ده بعد خصم الصنف الثابت (١٠٪ مثلاً) — زي فاتورة البيع بالظبط.
+    after_fixed = func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price
+                           * (1 - func.coalesce(SalesInvoiceLine.fixed_discount_pct, 0) / 100))
+    bonus_ids = {r.id for r in rows if getattr(r, "is_bonus", False)}
     out: dict[int, tuple[Decimal, Decimal]] = {}
-    for inv_id, b, a in db.execute(
-        select(SalesInvoiceLine.invoice_id, before, after)
+    for inv_id, b, a, af in db.execute(
+        select(SalesInvoiceLine.invoice_id, before, after, after_fixed)
         .where(SalesInvoiceLine.invoice_id.in_([r.id for r in rows]))
         .group_by(SalesInvoiceLine.invoice_id)
     ).all():
+        if inv_id in bonus_ids:
+            out[inv_id] = (to_money(Decimal(str(af or 0))), Decimal("0"))
+            continue
         gross_before = Decimal(str(b or 0))
         net_lines = Decimal(str(a or 0))
         gap = gross_before - net_lines
@@ -1522,8 +1530,11 @@ def sales_summary(
         external_document_number=external_document_number, kind="bonus",
         statement=statement).with_only_columns(SalesInvoice.id).subquery()
     bonus_count = db.scalar(select(func.count()).select_from(bonus_ids)) or 0
+    # قيمة البونص بعد خصم اللسته — شوف `_line_discounts`.
     bonus_gross = db.scalar(
-        select(func.coalesce(func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price), 0))
+        select(func.coalesce(func.sum(
+            SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price
+            * (1 - func.coalesce(SalesInvoiceLine.fixed_discount_pct, 0) / 100)), 0))
         .where(SalesInvoiceLine.invoice_id.in_(select(bonus_ids.c.id)))) or 0
 
     # **المتبقي بيتحسب من المطابقة، مش من `credit_amount`.**

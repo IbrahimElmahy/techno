@@ -32,8 +32,8 @@ export interface LineColumnsCtx {
   /** فرع المصنع مافيهوش نقاط — العمود بيتشال مش بيتعرض فاضي. */
   hidePoints?: boolean;
   /**
-   * فاتورة بونص ⇒ مافيش خصم على السطر. **البونص ١٠٠٪ على إجمالي الفاتورة تحت** (قرار
-   * العميل) — مش «خصم متغير ١٠٠٪» على كل صنف.
+   * فاتورة بونص ⇒ مافيش خصم **متغيّر** على السطر. **البونص ١٠٠٪ على إجمالي الفاتورة تحت**
+   * (قرار العميل) — مش «خصم متغير ١٠٠٪» على كل صنف. خصم اللسته (الثابت) بيفضل ظاهر.
    */
   isBonus?: boolean;
 }
@@ -134,7 +134,7 @@ export function buildLineColumns({
       footer: () => null },
     { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 75,
       cell: (line) => (
-        isBonus ? <span style={{ color: '#8c8c8c' }}>-</span> : viewOnly ? (
+        viewOnly ? (
           <b>{line.fixed_discount ? `${line.fixed_discount}%` : '-'}</b>
         ) : (
           <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}

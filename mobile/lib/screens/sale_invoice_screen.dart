@@ -358,7 +358,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
 
   /// قيمة البضاعة بسعر البيع — الكمية × السعر، قبل أي خصم. ده اللي البونص «يسوى»، ونفس
   /// حساب الويب (`bonusValue` في `Invoices.tsx`) عشان الرقمين يطابقوا.
-  double get _bonusValue => _lines.fold(0.0, (t, l) => t + l.gross);
+  /// قيمة البونص **بعد خصم اللسته** (الثابت) — الـ١٠٠٪ بتتشال من ده (العميل ٢٠٢٦-١٠-٠١).
+  double get _bonusValue =>
+      _lines.fold(0.0, (t, l) => t + netOf(l.gross, l.fixedDiscountPct));
 
   /// البونص مالوش فلوس — النقدي صفر مهما كان مكتوب في الخانة. السيرفر بيرفض بونص فيه
   /// نقدي، فالرقم ده لازم يطلع صفر من هنا مش يترفض بعدين.
@@ -1524,7 +1526,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                           decoration: TextDecoration.lineThrough)),
                   const SizedBox(width: 4),
                 ],
-                Text('${_money(_isBonus ? l.gross : l.net)} ج.م',
+                Text('${_money(_isBonus ? netOf(l.gross, l.fixedDiscountPct) : l.net)} ج.م',
                     style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14,

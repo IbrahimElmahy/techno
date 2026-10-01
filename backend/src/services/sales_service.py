@@ -584,11 +584,10 @@ def create_sale(
                              unit_price=unit_price, discount_pct=line_disc,
                              # NULL لو العميل ماقالش القسمة — «مش متسجّل» مش صفر.
                              # **البونص ١٠٠٪ على إجمالي الفاتورة، مش على السطر** (قرار
-                             # العميل): السطر بيتعرض من غير خصم ثابت ولا متغيّر، والـ١٠٠
-                             # في «خصم الفاتورة» تحت. التطبيق كان بيبعت المتغيّر ١٠٠ على
-                             # كل سطر، والشاشة كانت بتعرضه في عمود «خصم متغير».
-                             fixed_discount_pct=(ZERO if is_bonus
-                                                 else ln.fixed_discount_pct),
+                             # العميل): المتغيّر صفر — التطبيق كان بيبعته ١٠٠ والشاشة بتعرضه.
+                             # **والثابت (خصم اللسته) بيفضل** (٢٠٢٦-١٠-٠١): قيمة البونص
+                             # بعده، زي فاتورة البيع — من غيره البونص كان بيطلع بالسعر كامل.
+                             fixed_discount_pct=ln.fixed_discount_pct,
                              variable_discount_pct=(ZERO if is_bonus
                                                     else ln.variable_discount_pct),
                              line_total=line_total, price_tier=tier,

@@ -722,10 +722,10 @@ export default function Invoices() {
   // A line's amount AFTER its own discounts — the variable one comes off what the
   // fixed one left, not off the list price.
   //
-  // والبونص من غير خصم سطر: الـ١٠٠٪ على إجمالي الفاتورة تحت، والأصناف بقيمتها — نفس
-  // «قيمة البضاعة قبل الخصم» اللي السيرفر بيسجّلها (`gross_before_line_discount`).
+  // والبونص: الـ١٠٠٪ على إجمالي الفاتورة تحت، والسطر بقيمته **بعد خصم اللسته** (الثابت)
+  // من غير المتغيّر — نفس «قيمة البضاعة قبل الخصم» اللي السيرفر بيحسبها (٢٠٢٦-١٠-٠١).
   const lineTotal = (l: SaleLineItem) => (isBonus
-    ? Number(l.quantity || 0) * l.unit_price
+    ? applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount)
     : applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount, l.variable_discount));
 
   // Loyalty points a line earns = the product's point value × quantity.
@@ -1518,8 +1518,8 @@ export default function Invoices() {
                 // ...والنصّين، عشان الفاتورة اللي بتتقرا تاني تفضل عارفة القسمة. من غيرهم
                 // الشاشة بتحطّ الخصم كله في «خصم ثابت» وتقول «متغيّر ٠» — يعني بتنسب
                 // للشركة خصم ماعملتهوش. والقاعدة بقى فيها العمودين.
-                // البونص مالوش خصم سطر — الـ١٠٠٪ على الإجمالي (السيرفر بيصفّرهم كمان).
-                fixed_discount_pct: (isBonus ? 0 : Number(l.fixed_discount || 0)).toFixed(2),
+                // البونص: الثابت (خصم اللسته) بيفضل، والمتغيّر صفر — الـ١٠٠٪ على الإجمالي.
+                fixed_discount_pct: Number(l.fixed_discount || 0).toFixed(2),
                 variable_discount_pct: (isBonus ? 0 : Number(l.variable_discount || 0)).toFixed(2),
                 serials: prod?.is_serialized ? parseSerials(l.serials) : null,
                 // (030) Only sent when it differs from the document's, so the server keeps its
