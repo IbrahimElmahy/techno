@@ -34,7 +34,8 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { printReport } from '../print/reportSheet';
-import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { QTY_DATA_ATTR } from '../utils/duplicateItem';
+import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { money, numeralsLocale, qty } from '../utils/money';
 import './docs.extra.css';
 
@@ -111,6 +112,7 @@ export default function Orders() {
   // The doors, in the order the paper form asks: which kind of order, then who, then what.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
+  const keySeq = useRef(0);
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -472,23 +474,31 @@ export default function Orders() {
     })),
   });
 
-  const addItem = (itemId: number) => {
-    setPickerOpen(false);
+  const addItem = (itemId: number, qty: number | null = null): PickResult => {
     const existing = lines.find((l) => l.item_id === itemId);
     if (existing) {
       const name = items.find((i) => i.id === itemId)?.name ?? `صنف #${itemId}`;
-      flashExistingItem(itemId);
-      message.info(`«${name}» موجود بالفعل — عدّل الكمية من السطر`);
-      return;
+      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر (الشيت مالوش سقف رصيد).
+      if (qty) {
+        setLines((prev) => prev.map((l) => (l.key === existing.key
+          ? { ...l, quantity: Number(l.quantity || 0) + qty } : l)));
+        message.info(`«${name}» موجود بالفعل — اتزوّدت كميته`);
+      } else {
+        message.info(`«${name}» موجود بالفعل — عدّل الكمية من السطر`);
+      }
+      return { dup: itemId };
     }
-    const key = (lines[lines.length - 1]?.key ?? 0) + 1;
+    // العدّاد عشان الإضافة المجمّعة: كل الأصناف بتقرا نفس `lines` فكانت هتاخد نفس المفتاح.
+    const key = Math.max(lines[lines.length - 1]?.key ?? 0, keySeq.current) + 1;
+    keySeq.current = key;
     // An order is a price quoted in advance, so the line opens on the item's own price rather
     // than empty — the person is confirming a number, not inventing one. والخصم كمان.
     setLines((prev) => [...prev, { key, item_id: itemId,
+      ...(qty ? { quantity: qty } : {}),
       unit_price: storedPrice(itemId),
       unit: null, discount_pct: storedDiscount(itemId) }]);
-    setFocusLineKey(key);
     void fetchUnits(itemId);
+    return qty ? null : { needsQty: key };
   };
 
   useEffect(() => {
@@ -691,7 +701,14 @@ export default function Orders() {
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
         onCancel={() => setPickerOpen(false)}
-        onPick={addItem} />
+        onPick={(id, q) => {
+          setPickerOpen(false);
+          addPickedSequentially([id], q ? { [id]: q } : undefined, addItem, setFocusLineKey);
+        }}
+        onPickMany={(ids, qtys) => {
+          setPickerOpen(false);
+          addPickedSequentially(ids, qtys, addItem, setFocusLineKey);
+        }} />
 
       {creating && (
       // **شكل فاتورة البيع الجديد** (٢٠٢٦-١٠-٠١): كروت بيضا على رمادي — الترويسة والأدوات،

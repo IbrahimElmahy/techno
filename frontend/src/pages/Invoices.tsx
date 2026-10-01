@@ -55,7 +55,8 @@ import { money, numeralsLocale } from '../utils/money';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import { applyPct, combinePct } from '../utils/discounts';
-import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { QTY_DATA_ATTR } from '../utils/duplicateItem';
+import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
 // الأنواع والثوابت وبنّائي الأعمدة اتفصلوا — الشاشة كانت ٣١٢٠ سطر.
 import {
@@ -341,6 +342,9 @@ export default function Invoices() {
    */
   const [pendingItems, setPendingItems] = useState<number[]>([]);
   const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
+  /** الكميات اللي اتكتبت في الشباك للأصناف اللي مستنية سؤال المخزن. */
+  const pendingQtys = useRef<Record<number, number>>({});
+  const lineSeq = useRef(0);
   const [cashAmount, setCashAmount] = useState<number>(0);
   // **فاتورة بونص** — بضاعة هدية على فاتورة بيع لنفس العميل. قيمتها صفر ومابتلمسش رصيده.
   // الربط بالفاتورة إجباري (قرار العميل)، والقايمة بتتجاب لما العميل يتحدد.
@@ -838,6 +842,7 @@ export default function Invoices() {
     setParty(null);
     setDocWarehouseId(null);
     setPendingItems([]);
+    pendingQtys.current = {};
     setPendingWarehouse(null);
     setPickerOpen(false);
     setPartyPickerOpen(false);
@@ -996,52 +1001,62 @@ export default function Invoices() {
    * مافيش تدوير أوتوماتيكي على مخزن تاني فيه الصنف. اللي عايز يصرف من مخزن غير ده بيغيّره
    * من عمود «المخزن» على السطر، واللي بعده بينزل على اللي هو اختاره.
    */
-  const addProductByIdWith = async (itemId: number, warehouseId: number) => {
+  const addProductByIdWith = async (
+    itemId: number, warehouseId: number, qty: number | null = null,
+  ): Promise<PickResult> => {
     const fresh = await fetchPrices(itemId);
+    const existing = lines.find((x) => x.item_id === itemId);
+    if (existing) {
+      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر الموجود، بنفس القص بتاع الخانة.
+      if (qty) {
+        const wh = lineWarehouse(existing);
+        const total = pickedQty(existing.key, itemId, existing.unit, wh,
+          Number(existing.quantity || 0) + qty);
+        setLines((prev) => prev.map((x) => (x.key === existing.key ? { ...x, quantity: total } : x)));
+        message.info(`«${productName(itemId)}» موجود بالفعل — اتزوّدت كميته`);
+      } else {
+        message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      }
+      return { dup: itemId };
+    }
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
-    const l = blankLine(Date.now().toString(), tier);
+    // عدّاد مع الوقت: الإضافة المجمّعة بتنزّل كذا سطر في نفس المللي ثانية.
+    const l = blankLine(`${Date.now()}-${++lineSeq.current}`, tier);
     // يثبت على المخزن المختار فقط ولا يتم تغييره تلقائياً
     l.warehouse_id = warehouseId;
     l.category = prod?.category ?? null;
     l.item_id = itemId;
     l.unit_price = resolvePrice(itemId, tier, null, fresh);
     l.fixed_discount = defaultFixedDiscount(itemId, fresh);
-    const existing = lines.find((x) => x.item_id === itemId);
-    if (existing) {
-      flashExistingItem(itemId);
-      message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
-      return;
-    }
+    if (qty) l.quantity = pickedQty(l.key, itemId, null, warehouseId, qty);
     setLines((prev) => [...prev, l]);
-    setFocusLineKey(l.key);
+    return l.quantity == null ? { needsQty: l.key } : null;
   };
 
-  const addProductById = async (itemId: number) => {
-    if (!itemId) return;
+  const addProductById = async (itemId: number, qty: number | null = null): Promise<PickResult> => {
+    if (!itemId) return null;
     if (docWarehouseId === null) {
+      if (qty) pendingQtys.current[itemId] = qty;
       setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
       setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
-      return;
+      return null;
     }
-    const fresh = await fetchPrices(itemId);
-    const prod = products.find((p) => p.id === itemId);
-    const tier = customerTier || 'consumer';
-    const l = blankLine(Date.now().toString(), tier);
-    // يثبت على مخزن الفاتورة المختار فقط
-    l.warehouse_id = docWarehouseId;
-    l.category = prod?.category ?? null;
-    l.item_id = itemId;
-    l.unit_price = resolvePrice(itemId, tier, null, fresh);
-    l.fixed_discount = defaultFixedDiscount(itemId, fresh);
-    const existing = lines.find((x) => x.item_id === itemId);
-    if (existing) {
-      flashExistingItem(itemId);
-      message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
-      return;
-    }
-    setLines((prev) => [...prev, l]);
-    setFocusLineKey(l.key);
+    return addProductByIdWith(itemId, docWarehouseId, qty);
+  };
+
+  /**
+   * كمية جاية من الشباك — بتتقصّ على المتاح زي الكتابة في الخانة بالظبط (`handleLineChange`).
+   * أرصدة المخزن لسه ماوصلتش ⇒ بتنزل زي ما هي، والحفظ والسيرفر بيقيسوا.
+   */
+  const pickedQty = (key: string, itemId: number, unit: string | null,
+                     wh: number | null, q: number): number | null => {
+    if (!wh || !availability[wh]) return q;
+    const stock = availableFor(itemId, unit, wh);
+    if (q <= stock) return q;
+    announceQuantityCap(key, productName(itemId),
+      warehouses.find((w) => w.id === wh)?.name ?? 'المخزن', stock, unit);
+    return stock > 0 ? stock : null;
   };
 
   const handleRemoveLine = (key: string) => {
@@ -2777,17 +2792,20 @@ function couponsTotal(inv: any): number {
               : 'الفاتورة دي من أنهي مخزن؟'}
             okText="تمام" cancelText="إلغاء"
             okButtonProps={{ disabled: pendingWarehouse === null }}
-            onCancel={() => setPendingItems([])}
+            onCancel={() => { pendingQtys.current = {}; setPendingItems([]); }}
             onOk={async () => {
               const wh = pendingWarehouse;
               const items = pendingItems;
               if (wh === null || items.length === 0) return;
+              const typed = pendingQtys.current;
+              pendingQtys.current = {};
               setPendingItems([]);
               setDocWarehouseId(wh);
               await loadWarehouseStock(wh);
               // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها، فلو اتنفّذوا مع بعض
               // كل واحد فيهم هيشوف القايمة زي ما كانت قبل أي إضافة.
-              for (const id of items) await addProductByIdWith(id, wh);
+              await addPickedSequentially(items, typed,
+                (id, q) => addProductByIdWith(id, wh, q), setFocusLineKey);
             }}
             destroyOnHidden
           >
@@ -2816,16 +2834,16 @@ function couponsTotal(inv: any): number {
             disableOutOfStock
             hidePurchasePrice
             onCancel={() => setPickerOpen(false)}
-            onPick={(id) => {
+            onPick={(id, q) => {
               setPickerOpen(false);
               setPanelItemId(id);
-              addProductById(id);
+              addPickedSequentially([id], q ? { [id]: q } : undefined, addProductById, setFocusLineKey);
             }}
-            onPickMany={async (ids) => {
+            onPickMany={async (ids, qtys) => {
               setPickerOpen(false);
               // Sequentially: each add reads the lines it is appending to, so firing them at once
               // would have every one of them see the list as it was before any were added.
-              for (const id of ids) await addProductById(id);
+              await addPickedSequentially(ids, qtys, addProductById, setFocusLineKey);
               if (ids.length) setPanelItemId(ids[ids.length - 1]);
             }}
           />

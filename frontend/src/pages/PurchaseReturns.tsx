@@ -47,7 +47,8 @@ import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
 import { money, numeralsLocale } from '../utils/money';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
-import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { QTY_DATA_ATTR } from '../utils/duplicateItem';
+import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { useLiveRefresh } from '../utils/live';
 
 /**
@@ -140,6 +141,8 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
   const [pendingItems, setPendingItems] = useState<number[]>([]);
   const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
+  /** الكميات اللي اتكتبت في الشباك للأصناف اللي مستنية سؤال المخزن. */
+  const pendingQtys = useRef<Record<number, number>>({});
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -611,16 +614,28 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
    * كل التحديث من `prev`: اللي بيختار عشر أصناف مرة واحدة بيعمل عشر إضافات ورا بعض، ولو
    * واحدة قرت نسخة قديمة من السطور بتكتب فوق اللي قبلها.
    */
-  const addReturnLine = (itemId: number) => {
-    if (!itemId) return;
+  const addReturnLine = async (itemId: number, qty: number | null = null): Promise<PickResult> => {
+    if (!itemId) return null;
     // مافيش مخزن للمردود لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
     if (warehouseId === null) {
+      if (qty) pendingQtys.current[itemId] = qty;
       setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
       setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
-      return;
+      return null;
     }
-    addReturnLineWith(itemId, warehouseId);
+    return addReturnLineWith(itemId, warehouseId, qty);
   };
+
+  /**
+   * كمية جاية من الشباك — نفس حارس الخانة لما تسيبها (`guardQuantity` على رصيد المخزن):
+   * أكتر من المتاح بتترفض بتحذير وترجع للي كانت.
+   */
+  const pickedQty = (itemId: number, wh: number, q: number, previous: number | null) =>
+    guardQuantity({
+      value: q,
+      available: availability[wh] ? availability[wh][itemId] : undefined,
+      itemName: itemName(itemId),
+    }, previous);
 
   useQtyFocus(focusLineKey, setFocusLineKey, pickerOpen, returnLines);
   /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف. */
@@ -634,7 +649,9 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
    * شراء هو اللي البضاعة دي دخلت بيه فعلاً، وهو الرقم اللي بيخلّي المخزون والحساب يقفلوا
    * على نفس المبلغ لما ترجع.
    */
-  const addReturnLineWith = async (itemId: number, wh: number) => {
+  const addReturnLineWith = async (
+    itemId: number, wh: number, qty: number | null = null,
+  ): Promise<PickResult> => {
     const product = items.find((i: any) => i.id === itemId) as any;
     let price = product?.purchase_price ? parseFloat(product.purchase_price) : 0;
     let disc: number | null = null;
@@ -643,30 +660,39 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
       if (Number(r.data?.discount_pct) > 0) disc = Number(r.data.discount_pct);
     } catch { /* الكتالوج بيفضل الاحتياطي */ }
-    if (returnLines.some((l) => l.item_id === itemId)) {
-      flashExistingItem(itemId);
-      message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
-      return;
+    const dup = returnLines.find((l) => l.item_id === itemId);
+    if (dup) {
+      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر الموجود، بنفس الحارس.
+      if (qty) {
+        const lineWh = dup.warehouse_id ?? wh;
+        const total = pickedQty(itemId, lineWh, Number(dup.quantity || 0) + qty, dup.quantity);
+        setReturnLines((prev) => prev.map((l) => (l.key === dup.key ? { ...l, quantity: total } : l)));
+        message.info(`«${itemName(itemId)}» موجود بالفعل — اتزوّدت كميته`);
+      } else {
+        message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      }
+      return { dup: itemId };
     }
     // المفتاح بيتحسب هنا مش جوّه `setState` — عشان التركيز يروح للسطر ده بالظبط.
     // لو اتحسب جوّه، الكود اللي بره مايعرفوش، والمؤشر بيدوّر على سطر مالوش وجود.
     const key = `${Date.now()}-${itemId}`;
-    let landed = key;
+    const quantity = qty ? pickedQty(itemId, wh, qty, null) : null;
+    let landed = true;
     setReturnLines((prev) => {
       const existing = prev.find((l) => l.item_id === itemId);
       if (existing) {
-        landed = '';
+        landed = false;
         return prev;
       }
       return [...prev, {
-        key, item_id: itemId, quantity: null, unit_price: price,
+        key, item_id: itemId, quantity, unit_price: price,
         discount_pct: null, fixed_discount_pct: disc, unit: null,
         warehouse_id: wh,
       }];
     });
-    setFocusLineKey(landed);
     fetchOnHand(itemId, wh);
     fetchUnits(itemId);
+    return landed && quantity == null ? { needsQty: key } : null;
   };
 
   /**
@@ -1227,14 +1253,17 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           : 'البضاعة خارجة من أنهي مخزن؟'}
         okText="تمام" cancelText="إلغاء"
         okButtonProps={{ disabled: pendingWarehouse === null }}
-        onCancel={() => setPendingItems([])}
-        onOk={() => {
+        onCancel={() => { pendingQtys.current = {}; setPendingItems([]); }}
+        onOk={async () => {
           const wh = pendingWarehouse;
           const queued = pendingItems;
           if (wh === null || queued.length === 0) return;
+          const typed = pendingQtys.current;
+          pendingQtys.current = {};
           setPendingItems([]);
           setWarehouseId(wh);
-          for (const id of queued) addReturnLineWith(id, wh);
+          await addPickedSequentially(queued, typed,
+            (id, q) => addReturnLineWith(id, wh, q), setFocusLineKey);
         }}
         destroyOnHidden
       >
@@ -1261,8 +1290,15 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           ? (availability[warehouseId][id] ?? 0) : null)}
         availabilityVersion={`${warehouseId ?? ''}|${Object.keys(availability).join(',')}`}
         onCancel={() => setPickerOpen(false)}
-        onPick={(id) => { setPickerOpen(false); addReturnLine(id); }}
-        onPickMany={(ids) => { setPickerOpen(false); ids.forEach(addReturnLine); }} />
+        onPick={(id, q) => {
+          setPickerOpen(false);
+          addPickedSequentially([id], q ? { [id]: q } : undefined, addReturnLine, setFocusLineKey);
+        }}
+        onPickMany={(ids, qtys) => {
+          setPickerOpen(false);
+          // واحد ورا التاني — كل إضافة بتستنى سعرها من السيرفر قبل اللي بعدها.
+          addPickedSequentially(ids, qtys, addReturnLine, setFocusLineKey);
+        }} />
 
       <PartyPickerModal contextLabel="مردود مشتريات"
         open={newStep === 'party' || partyPickerOpen} kind="supplier"

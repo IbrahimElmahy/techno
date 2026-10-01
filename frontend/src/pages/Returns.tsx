@@ -52,7 +52,8 @@ import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
-import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { QTY_DATA_ATTR } from '../utils/duplicateItem';
+import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
 import ListPage from '../components/ListPage';
 import { useLiveRefresh } from '../utils/live';
@@ -274,8 +275,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
    * عموده. والأصناف بتتجمّع في طابور لأن «اختار كذا صنف مرة واحدة» بينده الإضافة لكل
    * صنف — لو كل واحد مسح اللي قبله كان هينزل صنف واحد والباقي يضيع في السكوت.
    */
-  const [pendingItems, setPendingItems] = useState<number[]>([]);
-  const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
+  const lineSeq = useRef(0);
   // The customer's purchase history per item — drives the last-price autofill + the info popover.
   const [lastInfo, setLastInfo] = useState<Record<number, LastInfo>>({});
 
@@ -586,16 +586,16 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     }
   };
 
-  const addProductById = async (itemId: number) => {
-    if (!itemId || !customerId) return;
+  const addProductById = async (itemId: number, qty: number | null = null): Promise<PickResult> => {
+    if (!itemId || !customerId) return null;
     const prod = products.find((p) => p.id === itemId);
     // مافيش مخزن للمرتجع لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
+    // الطابور القديم كان بيستنى بوباب اتشال — فالأصناف كانت بتضيع في السكوت. دلوقتي بنقول.
     if (docWarehouseId === null) {
-      setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
-      setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
-      return;
+      message.warning('اختار مخزن المرتجع الأول من خانة «المخزن» فوق، وبعدين ضيف الأصناف.');
+      return null;
     }
-    await addProductByIdWith(itemId, docWarehouseId);
+    return addProductByIdWith(itemId, docWarehouseId, qty);
   };
 
   /**
@@ -604,7 +604,9 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
    * ضروري لأن `setDocWarehouseId` مابيغيّرش القيمة في نفس اللفّة: الندهة اللي بعده على
    * طول بتقرا `null` وتنزّل السطر من غير مخزن — وهي دي المشكلة اللي البوباب اتعمل عشانها.
    */
-  const addProductByIdWith = async (itemId: number, warehouseId: number) => {
+  const addProductByIdWith = async (
+    itemId: number, warehouseId: number, qty: number | null = null,
+  ): Promise<PickResult> => {
     const prod = products.find((p) => p.id === itemId);
     const info = await fetchLastInfo(itemId);
     /**
@@ -628,13 +630,21 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     if (!(price > 0)) price = prod?.sale_price ? parseFloat(prod.sale_price) : 0;
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
-      flashExistingItem(itemId);
-      message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر الموجود (المرتجع مالوش سقف رصيد).
+      if (qty) {
+        setLines((prev) => prev.map((x) => (x.key === existing.key
+          ? { ...x, quantity: Number(x.quantity || 0) + qty } : x)));
+        message.info(`«${productName(itemId)}» موجود بالفعل — اتزوّدت كميته`);
+      } else {
+        message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
+      }
+      return { dup: itemId };
     } else {
-      const key = Date.now().toString();
+      // عدّاد مع الوقت: الإضافة المجمّعة بتنزّل كذا سطر في نفس المللي ثانية.
+      const key = `${Date.now()}-${++lineSeq.current}`;
       setLines((prev) => [...prev, {
         key, category: prod?.category ?? null, item_id: itemId,
-        quantity: null, unit_price: price, discount: 0,
+        quantity: qty || null, unit_price: price, discount: 0,
         // الثابت من الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر، وخصم الشريحة لو
         // الصنف مالوش خصم افتراضي مكتوب عليه.
         fixed_discount: prod?.default_discount_pct
@@ -643,7 +653,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         is_serialized: !!prod?.is_serialized,
         serials: [] as string[],
       }]);
-      setFocusLineKey(key);
+      return qty ? null : { needsQty: key };
     }
   };
 
@@ -1526,14 +1536,14 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                     ? (availability[docWarehouseId][id] ?? 0) : null)}
                   availabilityVersion={`${docWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
                   onCancel={() => setPickerOpen(false)}
-                  onPick={(id) => {
+                  onPick={(id, q) => {
                     setPickerOpen(false);
                     setPanelItemId(id);
-                    addProductById(id);
+                    addPickedSequentially([id], q ? { [id]: q } : undefined, addProductById, setFocusLineKey);
                   }}
-                  onPickMany={async (ids) => {
+                  onPickMany={async (ids, qtys) => {
                     setPickerOpen(false);
-                    for (const id of ids) await addProductById(id);
+                    await addPickedSequentially(ids, qtys, addProductById, setFocusLineKey);
                     if (ids.length) setPanelItemId(ids[ids.length - 1]);
                   }}
                 />

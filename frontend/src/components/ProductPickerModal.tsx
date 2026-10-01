@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { compareArabic, matchesWords, sortByName } from '../utils/arabicSort';
 import {
-  Button, Checkbox, Col, Empty, Input, Row, Select, Space, Tag
+  Button, Checkbox, Col, Empty, Input, InputNumber, Row, Select, Space, Tag
 } from 'antd';
 import { AppstoreOutlined, CheckOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { keepInView } from '../utils/keepInView';
@@ -31,9 +31,13 @@ interface Props {
   /** Category currently in focus; lifted so the caller's stock panel can follow it. */
   activeCategory: string | null;
   onCategoryChange: (category: string | null) => void;
-  onPick: (itemId: number) => void;
-  /** Add several at once. When given, the modal offers a اضافة مجمعة mode. */
-  onPickMany?: (itemIds: number[]) => void;
+  /** `qty` = الكمية اللي اتكتبت على الكارت (شكل الكروت بس) — `null` لو ماتكتبتش. */
+  onPick: (itemId: number, qty?: number | null) => void;
+  /**
+   * Add several at once. When given, the modal offers a اضافة مجمعة mode.
+   * `qtys` فيها بس الأصناف اللي اتكتبلها كمية على الكارت؛ الباقي كميته فاضية زي العادة.
+   */
+  onPickMany?: (itemIds: number[], qtys?: Record<number, number>) => void;
   onCancel: () => void;
   title?: string;
   /** Quantity available for an item, when the caller knows it — shown beside the name. */
@@ -120,6 +124,12 @@ export default function ProductPickerModal({
   const [activeRoot, setActiveRoot] = useState<string | null>(null);
   const [bulk, setBulk] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
+  /**
+   * **الكمية على الكارت** (طلب العميل ٢٠٢٦-١٠-٠١): يعلّم كذا صنف ويكتب كمية كل واحد وهو
+   * بيختار، أو يسيبها فاضية ويكتبها على السطور بعدين زي ما كان. الخانة بتبتدي فاضية —
+   * نفس سبب خانة السطر: «١» مكتوبة بتخلّي «٥» تبقى «١٥».
+   */
+  const [qtys, setQtys] = useState<Record<number, number>>({});
   /**
    * **بيبتدي شغّال: الصنف اللي مافيش منه حاجة في المخزن مابيظهرش.**
    *
@@ -373,6 +383,7 @@ export default function ProductPickerModal({
     setQuery(memory.query);
     setCursor(memory.cursor);
     setPicked([]);
+    setQtys({});
     setBulk(false);
     const jumpTo = memory.lastPicked;
     if (cards) {
@@ -404,7 +415,7 @@ export default function ProductPickerModal({
   /** اختيار صنف — بيفضّي البحث للفتحة الجاية (شوف `PickerMemory`). */
   const pick = (id: number) => {
     if (memory.query) { memory.query = ''; memory.lastPicked = id; }
-    onPick(id);
+    onPick(id, qtys[id] ?? null);
   };
   useEffect(() => { memory.query = query; }, [query]);
   useEffect(() => { memory.cursor = cursor; }, [cursor]);
@@ -440,8 +451,11 @@ export default function ProductPickerModal({
   const commitMany = (ids: number[]) => {
     if (!onPickMany || !ids.length) return;
     if (memory.query) { memory.query = ''; memory.lastPicked = ids[ids.length - 1] ?? null; }
-    onPickMany(ids);
+    const typed: Record<number, number> = {};
+    ids.forEach((id) => { if (qtys[id] > 0) typed[id] = qtys[id]; });
+    onPickMany(ids, typed);
     setPicked([]);
+    setQtys({});
   };
   /**
    * إضافة صنف واحد من شكل الكروت (Enter أو «+ إضافة»). لو فيه أصناف متعلّمة، بتتضاف
@@ -450,6 +464,18 @@ export default function ProductPickerModal({
   const addOne = (id: number) => {
     if (onPickMany && picked.length) commitMany([...picked.filter((x) => x !== id), id]);
     else pick(id);
+  };
+
+  /** كمية اتكتبت على كارت ⇒ الكارت بيتعلّم لوحده. والمسح مابيشيلش العلامة. */
+  const setQtyOf = (id: number, v: number | null) => {
+    setQtys((prev) => {
+      const next = { ...prev };
+      if (v != null && v > 0) next[id] = v; else delete next[id];
+      return next;
+    });
+    if (v != null && v > 0 && onPickMany) {
+      setPicked((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    }
   };
 
   const [catsExpanded, setCatsExpanded] = useState(false);
@@ -481,6 +507,12 @@ export default function ProductPickerModal({
       catch { /* متصفح مقفّل التخزين — الاختيار بيعيش للجلسة دي */ }
       searchRef.current?.focus?.({ preventScroll: true });
     };
+    // «المعروض» = الكروت المترسومة قدامه، مش الكتالوج كله ورا «عرض المزيد».
+    const selectable = rendered.filter((p) => {
+      const av = availableFor ? availableFor(p.id) : null;
+      return !(disableOutOfStock && av !== null && av <= 0);
+    }).map((p) => p.id);
+    const allSelected = selectable.length > 0 && selectable.every((id) => picked.includes(id));
     const catItem = (key: string, label: string, count: number | null, active: boolean,
       onClick: () => void, child = false) => (
       <div key={key} className={`ppk-cat${active ? ' is-active' : ''}${child ? ' is-child' : ''}`}
@@ -577,6 +609,15 @@ export default function ProductPickerModal({
                 <div>
                   <b>{hidePurchasePrice ? 'الأصناف المتاحة للبيع' : 'الأصناف'}</b>
                   <span className="ppk-found"> (تم العثور على {qty(ordered.length)} صنف مطابق)</span>
+                  {onPickMany && selectable.length > 0 && (
+                    <button type="button" className="ppk-select-all"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setPicked((prev) => (allSelected
+                        ? prev.filter((id) => !selectable.includes(id))
+                        : [...prev, ...selectable.filter((id) => !prev.includes(id))]))}>
+                      {allSelected ? 'إلغاء التحديد' : 'تحديد الكل المعروض'}
+                    </button>
+                  )}
                 </div>
                 {availableFor && (
                   <div className="ppk-legend">
@@ -668,6 +709,31 @@ export default function ProductPickerModal({
                         {cost != null && (
                           <div className="ppk-box cost"><span>سعر الشراء</span><b>{money(cost)}</b></div>
                         )}
+                        {/* الضغط هنا بياخد التركيز (الكارت بيمنعه)، والمفاتيح مابتطلعش للقايمة:
+                            Enter = علّم وارجع للبحث، مش «أضف وأقفل». */}
+                        <span className="ppk-qty-wrap"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => e.stopPropagation()}>
+                          <InputNumber
+                            className="ppk-qty" size="middle" min={0} controls={false}
+                            keyboard={false} tabIndex={-1} disabled={out}
+                            placeholder="الكمية" value={qtys[p.id] ?? null}
+                            onChange={(v) => setQtyOf(p.id, v == null ? null : Number(v))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') return;
+                              e.stopPropagation();
+                              // ↑↓ من هنا بترجع للبحث وتكمّل تنقّل — الإيد مابتروحش للماوس.
+                              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                searchRef.current?.focus?.({ preventScroll: true });
+                                onKeyDown(e);
+                                return;
+                              }
+                              if (e.key !== 'Enter') return;
+                              e.preventDefault();
+                              if (onPickMany) setPicked((prev) => (prev.includes(p.id) ? prev : [...prev, p.id]));
+                              searchRef.current?.focus?.({ preventScroll: true });
+                            }} />
+                        </span>
                         <Button type="primary" className="ppk-add" disabled={out} tabIndex={-1}
                           icon={isCursor ? undefined : <PlusOutlined />}
                           onMouseDown={(e) => e.preventDefault()}

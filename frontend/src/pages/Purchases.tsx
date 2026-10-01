@@ -1277,12 +1277,15 @@ export default function Purchases() {
   };
 
   /** A picked product becomes a line, and the caret lands in its quantity. */
-  const addProductById = async (itemId: number) => {
+  const addProductById = async (itemId: number, qty: number | null = null) => {
     if (!itemId) return;
+    addProducts([itemId], qty ? { [itemId]: qty } : undefined);
+  };
+
+  /** كذا صنف من الشباك مرة واحدة — ومعاهم الكميات اللي اتكتبت على الكروت لو فيه. */
+  const addProducts = (ids: number[], qtys?: Record<number, number>) => {
     const wh = stickyWarehouseId ?? lineWarehouses[0]?.id;
-    if (wh) {
-      await addProductByIdWith(itemId, wh);
-    }
+    if (wh && ids.length) addProductsWith(ids, wh, qtys);
   };
 
   /**
@@ -1290,44 +1293,66 @@ export default function Purchases() {
    *
    * `setStickyWarehouseId` مابيغيّرش القيمة في نفس اللفّة، فالندهة اللي بعده على طول
    * بتقرا `null` وتنزّل السطر من غير مخزن — وهي المشكلة اللي البوباب اتعمل عشانها.
+   *
+   * **الأصناف كلها في تحديث واحد، واحد ورا التاني جوّاه**: كل صنف بيشوف السطور اللي
+   * الصنف اللي قبله نزّلها (السطر الفاضي اللي اتعبّى مايتعبّاش تاني). والمؤشر بيروح لأول
+   * سطر جديد كميته فاضية — لو كله اتكتبت كميته مافيش حاجة تتمسك.
    */
-  const addProductByIdWith = async (itemId: number, warehouseId: number) => {
-    const selected = items.find((i) => i.id === itemId);
-    let price = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
-    if (!price && selected?.sale_price) price = parseFloat(selected.sale_price);
-
-    if (purchaseItems.some((l) => l.item_id === itemId)) {
-      flashExistingItem(itemId);
-      message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
-      return;
-    }
+  const addProductsWith = (ids: number[], warehouseId: number, qtys?: Record<number, number>) => {
+    const priceOf = (itemId: number) => {
+      const selected = items.find((i) => i.id === itemId);
+      const p = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
+      return !p && selected?.sale_price ? parseFloat(selected.sale_price) : p;
+    };
+    const dups = ids.filter((id) => purchaseItems.some((l) => l.item_id === id));
+    dups.forEach((id) => message.info(qtys?.[id]
+      ? `«${itemName(id)}» موجود بالفعل — اتزوّدت كميته`
+      : `«${itemName(id)}» موجود بالفعل — عدّل الكمية من السطر`));
+    const fresh = ids.filter((id) => !dups.includes(id));
+    // مافيش ولا سطر جديد ⇒ زي الأول: بنعلّم السطر الموجود (ولو له كمية بتتزوّد تحت).
+    if (!fresh.length && dups.length) flashExistingItem(dups[0]);
+    if (!fresh.length && !dups.some((id) => qtys?.[id])) return;
 
     setPurchaseItems((prev) => {
-      const existing = prev.find((l) => l.item_id === itemId);
-      if (existing) {
-        return prev;
-      }
-      // Reuse a blank row rather than leaving an empty line above the real one.
-      const blank = prev.find((l) => l.item_id === null);
-      if (blank) {
-        landedRef.current = blank.key;
-        return prev.map((l) => (l.key === blank.key
-          ? { ...l, item_id: itemId, unit_price: price, unit: null,
-              fixed_discount_pct: defaultFixedDisc(itemId),
-              warehouse_id: l.warehouse_id ?? warehouseId } : l));
-      }
-      const key = `${Date.now()}-${itemId}`;
-      landedRef.current = key;
-      return [...prev, {
-        key, item_id: itemId, quantity: null, unit_price: price, unit: null,
-        fixed_discount_pct: defaultFixedDisc(itemId),
-        // بيرث المخزن اللي اتسأل عنه — الشحنة العادية كلها بتنزل مخزن واحد.
-        discount_pct: null, warehouse_id: warehouseId,
-      }];
+      let next = prev;
+      let first = '';
+      ids.forEach((itemId) => {
+        const q = qtys?.[itemId] ?? null;
+        const existing = next.find((l) => l.item_id === itemId);
+        if (existing) {
+          // الشرا مالوش سقف رصيد — الكمية بتتزوّد زي ما اتكتبت.
+          if (q) {
+            next = next.map((l) => (l.key === existing.key
+              ? { ...l, quantity: Number(l.quantity || 0) + q } : l));
+          }
+          return;
+        }
+        // Reuse a blank row rather than leaving an empty line above the real one.
+        const blank = next.find((l) => l.item_id === null);
+        if (blank) {
+          next = next.map((l) => (l.key === blank.key
+            ? { ...l, item_id: itemId, unit_price: priceOf(itemId), unit: null,
+                quantity: q ?? l.quantity,
+                fixed_discount_pct: defaultFixedDisc(itemId),
+                warehouse_id: l.warehouse_id ?? warehouseId } : l));
+          if (!first && !(q ?? blank.quantity)) first = blank.key;
+          return;
+        }
+        const key = `${Date.now()}-${itemId}`;
+        if (!first && !q) first = key;
+        next = [...next, {
+          key, item_id: itemId, quantity: q, unit_price: priceOf(itemId), unit: null,
+          fixed_discount_pct: defaultFixedDisc(itemId),
+          // بيرث المخزن اللي اتسأل عنه — الشحنة العادية كلها بتنزل مخزن واحد.
+          discount_pct: null, warehouse_id: warehouseId,
+        }];
+      });
+      landedRef.current = first;
+      return next;
     });
 
-    setPanelItemId(itemId);
-    fetchUnits(itemId);
+    if (fresh.length) setPanelItemId(fresh[fresh.length - 1]);
+    fresh.forEach((id) => fetchUnits(id));
   };
 
   const handleProductPicked = (item: any) => {
@@ -2485,15 +2510,14 @@ export default function Purchases() {
           ? (availability[stickyWarehouseId][id] ?? 0) : null)}
         availabilityVersion={`${stickyWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
         onCancel={() => setPickerOpen(false)}
-        onPick={(id) => {
+        onPick={(id, q) => {
           setPickerOpen(false);
-          addProductById(id);
+          addProductById(id, q ?? null);
         }}
-        onPickMany={async (ids) => {
+        onPickMany={(ids, qtys) => {
           setPickerOpen(false);
-          // بالترتيب: كل إضافة بتقرا السطور اللي بتتضاف عليها، فلو اتنفّذوا مع بعض كل واحد
-          // فيهم هيشوف القايمة زي ما كانت قبل أي إضافة.
-          for (const id of ids) await addProductById(id);
+          // بالترتيب جوّه تحديث واحد: كل إضافة بتشوف السطور اللي قبلها (`addProductsWith`).
+          addProducts(ids, qtys);
         }} />
 
     </>

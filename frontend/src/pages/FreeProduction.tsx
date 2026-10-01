@@ -20,6 +20,7 @@ import { guardQuantity } from '../components/quantityGuard';
 import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
+import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { money, numeralsLocale } from '../utils/money';
@@ -78,6 +79,7 @@ export default function FreeProduction() {
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
+  const keySeq = useRef(0);
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -106,11 +108,12 @@ export default function FreeProduction() {
   const materials = useMemo(() => items.filter((i) => i.active), [items]);
 
   /** A material picked in the window becomes a line, and the caret goes to its quantity. */
-  const addMaterial = (itemId: number) => {
-    setPickerOpen(false);
-    const key = (lines[lines.length - 1]?.key ?? 0) + 1;
-    setLines((prev) => [...prev, { key, item_id: itemId }]);
-    setFocusLineKey(key);
+  const addMaterial = (itemId: number, qty: number | null = null): PickResult => {
+    // العدّاد عشان الإضافة المجمّعة: كل الخامات بتقرا نفس `lines` فكانت هتاخد نفس المفتاح.
+    const key = Math.max(lines[lines.length - 1]?.key ?? 0, keySeq.current) + 1;
+    keySeq.current = key;
+    setLines((prev) => [...prev, { key, item_id: itemId, quantity: qty || null }]);
+    return qty ? null : { needsQty: key };
   };
 
   useEffect(() => {
@@ -139,7 +142,14 @@ export default function FreeProduction() {
       activeCategory={activeCategory}
       onCategoryChange={setActiveCategory}
       onCancel={() => setPickerOpen(false)}
-      onPick={addMaterial} />
+      onPick={(id, q) => {
+        setPickerOpen(false);
+        addPickedSequentially([id], q ? { [id]: q } : undefined, addMaterial, setFocusLineKey);
+      }}
+      onPickMany={(ids, qtys) => {
+        setPickerOpen(false);
+        addPickedSequentially(ids, qtys, addMaterial, setFocusLineKey);
+      }} />
   );
   const itemName = (id: number) => items.find((i) => i.id === id)?.name ?? `صنف #${id}`;
   const priceOf = (id?: number) => Number(items.find((i) => i.id === id)?.purchase_price || 0);

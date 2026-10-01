@@ -29,6 +29,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { useScreenShortcuts } from '../components/keyboard';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
+import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
 import { TabModal } from '../components/TabModal';
@@ -124,6 +125,7 @@ export default function StockPermits() {
   const [newStep, setNewStep] = useState<null | 'warehouse'>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
+  const keySeq = useRef(0);
   /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف —
    *  انظر `lineKeyboard`. كان بيفتح الشباك على طول، فاللي عنده سطور مكتوبة
    *  كان لازم يرجع للماوس عشان يوصل لأي سطر منهم. */
@@ -268,11 +270,18 @@ export default function StockPermits() {
   };
 
   /** An item picked in the window becomes a line, and the caret goes to its quantity. */
-  const addItem = (itemId: number) => {
-    setPickerOpen(false);
-    const key = (lines[lines.length - 1]?.key ?? 0) + 1;
-    setLines((prev) => [...prev, { key, item_id: itemId }]);
-    setFocusLineKey(key);
+  const addItem = (itemId: number, qty: number | null = null): PickResult => {
+    // العدّاد عشان الإضافة المجمّعة: كل الأصناف بتقرا نفس `lines` فكانت هتاخد نفس المفتاح.
+    const key = Math.max(lines[lines.length - 1]?.key ?? 0, keySeq.current) + 1;
+    keySeq.current = key;
+    // كمية من الشباك بتعدّي على نفس حارس الخانة: الصرف مسقوف برصيد المخزن، والإضافة لأ.
+    const quantity = qty ? guardQuantity({
+      value: qty,
+      available: kind === 'issue' ? available[itemId] : undefined,
+      itemName: items.find((i) => i.id === itemId)?.name,
+    }, null) : null;
+    setLines((prev) => [...prev, { key, item_id: itemId, ...(quantity ? { quantity } : {}) }]);
+    return quantity ? null : { needsQty: key };
   };
 
   // Keep asking until the caret lands, and CHECK — one attempt lands in whatever the browser is
@@ -394,7 +403,14 @@ export default function StockPermits() {
         onCategoryChange={setActiveCategory}
         availableFor={(id: number) => (kind === 'issue' ? available[id] ?? null : null)}
         onCancel={() => setPickerOpen(false)}
-        onPick={addItem} />
+        onPick={(id, q) => {
+          setPickerOpen(false);
+          addPickedSequentially([id], q ? { [id]: q } : undefined, addItem, setFocusLineKey);
+        }}
+        onPickMany={(ids, qtys) => {
+          setPickerOpen(false);
+          addPickedSequentially(ids, qtys, addItem, setFocusLineKey);
+        }} />
 
       <WarehouseGate
         open={newStep === 'warehouse' && !detail}

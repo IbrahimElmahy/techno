@@ -205,6 +205,15 @@
 .ppk-cards .ppk-done.ant-btn-primary:not(:disabled):hover { background: #15803d; border-color: #15803d; }
 /* عرض ثابت: «إضافة ↵» و«+ إضافة» مايغيّروش مقاس الكارت لما المؤشر يعدّي. */
 .ppk-cards .ppk-add { width: 96px; border-radius: 9px; }
+/* الكمية على الكارت — فاضية لحد ما تتكتب. */
+.ppk-cards .ppk-qty-wrap { display: inline-flex; cursor: default; }
+.ppk-cards .ppk-qty { width: 82px; border-radius: 9px; }
+.ppk-cards .ppk-qty input { text-align: center; }
+.ppk-cards .ppk-select-all {
+  margin-inline-start: 10px; padding: 1px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--ppk-green-border); background: var(--ppk-green-bg);
+  color: var(--ppk-green); font: inherit; font-size: 12px; font-weight: 600;
+}
 
 /* ── الشريط اللي تحت ── */
 .ppk-cards .ppk-foot {

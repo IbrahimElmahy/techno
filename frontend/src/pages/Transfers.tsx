@@ -43,7 +43,8 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { useTableColumns } from '../components/ColumnSettings';
-import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { QTY_DATA_ATTR } from '../utils/duplicateItem';
+import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
 import { qty, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
@@ -320,9 +321,9 @@ export default function Transfers() {
     return hasUncategorised ? [...list, { value: NO_CATEGORY, label: 'بدون فئة' }] : list;
   }, [sourceStock, categoryLabels]);
 
-  const addItem = (itemId: number) => {
+  const addItem = (itemId: number, qtyTyped: number | null = null): PickResult => {
     const row = sourceStock.find((s) => s.item_id === itemId);
-    if (!row) return;
+    if (!row) return null;
     // **المتاح = الرصيد ناقص المتعهّد عليه على أذونات معلّقة.**
     //
     // الإذن مابيحرّكش مخزون لحد الاعتماد، فالرصيد بيفضل قايل إن البضاعة موجودة. واللي
@@ -333,16 +334,27 @@ export default function Transfers() {
       0, Number(row.on_hand || 0) - Number(row.pending_out || 0));
     const existing = lines.find((l) => l.item_id === itemId);
     if (existing) {
-      flashExistingItem(itemId);
-      message.info(`«${row.name}» موجود بالفعل — عدّل الكمية من السطر`);
-      return;
+      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر، بنفس سقف `setLineQty`.
+      if (qtyTyped) setLineQty(existing.key, Number(existing.quantity || 0) + qtyTyped);
+      else message.info(`«${row.name}» موجود بالفعل — عدّل الكمية من السطر`);
+      return { dup: itemId };
     }
     const key = `${itemId}-${lines.length}`;
+    // نفس قص `setLineQty`: أكتر من المتاح بيتسجّل المتاح، ومعاه رسالة بتقول كده.
+    let quantity: number | null = null;
+    if (qtyTyped) {
+      if (qtyTyped > available) {
+        message.warning(available > 0
+          ? `«${row.name}»: المتاح ${qty(available)} — اتسجّلت ${qty(available)}.`
+          : `«${row.name}»: مفيش رصيد متاح في المصدر — ممنوع تحويل صنف مش موجود.`);
+      }
+      quantity = Math.min(available, qtyTyped) || null;
+    }
     setLines((prev) => [...prev, {
       key, item_id: itemId, name: row.name,
-      category: row.category, unit: row.unit_of_measure, available, quantity: null,
+      category: row.category, unit: row.unit_of_measure, available, quantity,
     }]);
-    setFocusLineKey(key);
+    return quantity == null ? { needsQty: key } : null;
   };
 
   // Keep asking until the caret lands in the new line's quantity. One attempt lands in whatever
@@ -1128,7 +1140,14 @@ export default function Transfers() {
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
         onCancel={() => setPickerOpen(false)}
-        onPick={(id: number) => { setPickerOpen(false); addItem(id); }} />
+        onPick={(id: number, q) => {
+          setPickerOpen(false);
+          addPickedSequentially([id], q ? { [id]: q } : undefined, addItem, setFocusLineKey);
+        }}
+        onPickMany={(ids, qtys) => {
+          setPickerOpen(false);
+          addPickedSequentially(ids, qtys, addItem, setFocusLineKey);
+        }} />
 
       <WarehouseGate
         open={newStep === 'source' && !editing && !viewOnly}
@@ -1627,7 +1646,9 @@ export default function Transfers() {
                 <Select showSearch size="large" style={{ width: '100%' }} value={null}
                   disabled={!activeCategory || viewOnly}
                   placeholder={activeCategory ? 'اختر صنفاً لإضافته (المتاح فقط)' : 'اختر الفئة أولاً'}
-                  onChange={(v) => { if (v) addItem(v as number); }}
+                  onChange={(v) => {
+                    if (v) addPickedSequentially([v as number], undefined, addItem, setFocusLineKey);
+                  }}
                   options={stockOfCategory.map((s) => ({
                     value: s.item_id,
                     label: `${s.name} — المتاح: ${qty(s.on_hand)}`,
